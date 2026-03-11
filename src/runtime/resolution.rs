@@ -1,7 +1,14 @@
 use super::*;
 use crate::symbol::Symbol;
 
+type CompiledFnMap = std::collections::HashMap<String, crate::opcode::CompiledFunction>;
+type ProtectBlockCompiled = std::sync::Arc<crate::opcode::CompiledCode>;
+type ProtectBlockCompiledFns = std::sync::Arc<CompiledFnMap>;
+type ProtectBlockCapturedSlots = std::sync::Arc<Vec<usize>>;
+
 impl Interpreter {
+    const LAZY_GATHER_TAKE_LIMIT_SIGNAL: &str = "__mutsu_lazy_gather_take_limit_reached__";
+
     fn is_stub_method_body(body: &[Stmt]) -> bool {
         body.len() == 1
             && matches!(
@@ -389,10 +396,13 @@ impl Interpreter {
         let saved_len = self.gather_items.len();
         self.env = list.env.clone();
         self.gather_items.push(Vec::new());
+        self.gather_take_limits.push(None);
         let run_res = self.run_block(&list.body);
         let items = self.gather_items.pop().unwrap_or_default();
+        self.gather_take_limits.pop();
         while self.gather_items.len() > saved_len {
             self.gather_items.pop();
+            self.gather_take_limits.pop();
         }
         let mut merged_env = saved_env;
         for (k, v) in self.env.iter() {
@@ -401,6 +411,51 @@ impl Interpreter {
         self.env = merged_env;
         run_res?;
         *list.cache.lock().unwrap() = Some(items.clone());
+        Ok(items)
+    }
+
+    pub(crate) fn force_lazy_list_prefix_bridge(
+        &mut self,
+        list: &crate::value::LazyList,
+        needed_len: usize,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        if needed_len == 0 {
+            return Ok(Vec::new());
+        }
+        if let Some(cached) = list.cache.lock().unwrap().clone()
+            && cached.len() >= needed_len
+        {
+            return Ok(cached[..needed_len].to_vec());
+        }
+
+        let saved_env = self.env.clone();
+        let saved_len = self.gather_items.len();
+        self.env = list.env.clone();
+        self.gather_items.push(Vec::new());
+        self.gather_take_limits.push(Some(needed_len));
+        let run_res = self.run_block(&list.body);
+        let mut items = self.gather_items.pop().unwrap_or_default();
+        self.gather_take_limits.pop();
+        while self.gather_items.len() > saved_len {
+            self.gather_items.pop();
+            self.gather_take_limits.pop();
+        }
+        let mut merged_env = saved_env;
+        for (k, v) in self.env.iter() {
+            merged_env.insert(k.clone(), v.clone());
+        }
+        self.env = merged_env;
+
+        match run_res {
+            Ok(()) => {
+                *list.cache.lock().unwrap() = Some(items.clone());
+            }
+            Err(err) if err.message == Self::LAZY_GATHER_TAKE_LIMIT_SIGNAL => {}
+            Err(err) => return Err(err),
+        }
+        if items.len() > needed_len {
+            items.truncate(needed_len);
+        }
         Ok(items)
     }
 
@@ -691,12 +746,14 @@ impl Interpreter {
                     .find(|v| !matches!(v, Value::Pair(_, _)))
             {
                 new_env.insert("_".to_string(), first_positional.clone());
+                new_env.insert("$_".to_string(), first_positional.clone());
             } else if data.params.is_empty()
                 && sanitized_args.is_empty()
                 && data.name == ""
                 && let Some(caller_topic) = saved_env.get("_")
             {
                 new_env.insert("_".to_string(), caller_topic.clone());
+                new_env.insert("$_".to_string(), caller_topic.clone());
             }
             // &?BLOCK: weak self-reference to break reference cycles
             let block_arc = std::sync::Arc::new(crate::value::SubData {
@@ -937,6 +994,31 @@ impl Interpreter {
         })
     }
 
+    /// Fast path for simple closures (e.g. sequence generators) that don't
+    /// declare subs or modify proto registries. Takes pre-compiled bytecode
+    /// to avoid recompilation on every call.
+    pub(crate) fn eval_precompiled_block_fast(
+        &mut self,
+        code: &crate::opcode::CompiledCode,
+        compiled_fns: &std::collections::HashMap<String, crate::opcode::CompiledFunction>,
+    ) -> Result<Value, RuntimeError> {
+        self.block_scope_depth += 1;
+        let interp = std::mem::take(self);
+        let vm = crate::vm::VM::new(interp);
+        let (mut interp, result) = vm.run(code, compiled_fns);
+        for (slot, key) in &code.state_locals {
+            if let Some(name) = code.locals.get(*slot)
+                && let Some(val) = interp.env().get(name).cloned()
+            {
+                interp.set_state_var(key.clone(), val);
+            }
+        }
+        let value = interp.env().get("_").cloned().unwrap_or(Value::Nil);
+        *self = interp;
+        self.block_scope_depth = self.block_scope_depth.saturating_sub(1);
+        result.map(|last_value| last_value.unwrap_or(value))
+    }
+
     /// Fast path for `Lock::Async.protect { ... }` — executes a bare block
     /// directly in the current env without the full env save/restore overhead
     /// of `call_sub_value`.  Shared vars must already be synced to env by the
@@ -945,26 +1027,79 @@ impl Interpreter {
         if let Value::Sub(data) = code {
             // Targeted sync: only refresh variables the closure captures
             // (much cheaper than syncing ALL shared vars)
-            {
-                let sv = self.shared_vars.read().unwrap();
-                if !sv.is_empty() {
-                    for key in data.env.keys() {
-                        if let Some(val) = sv.get(key) {
-                            self.env.insert(key.clone(), val.clone());
-                        }
-                    }
-                }
-            }
-            if let Some(ref cc) = data.compiled_code {
-                self.run_compiled_block(cc, &std::collections::HashMap::new())
-            } else {
-                let compiler = crate::compiler::Compiler::new();
-                let (compiled, compiled_fns) = compiler.compile(&data.body);
-                self.run_compiled_block(&compiled, &compiled_fns)
-            }
+            self.sync_shared_vars_for_env(&data.env);
+            let (compiled, compiled_fns) = self.get_or_compile_protect_block(data);
+            self.run_compiled_block(&compiled, compiled_fns.as_ref())
         } else {
             self.call_sub_value(code.clone(), Vec::new(), true)
         }
+    }
+
+    pub(crate) fn get_or_compile_protect_block(
+        &mut self,
+        data: &std::sync::Arc<crate::value::SubData>,
+    ) -> (ProtectBlockCompiled, ProtectBlockCompiledFns) {
+        if let Some(ref cc) = data.compiled_code {
+            return (
+                cc.clone(),
+                std::sync::Arc::new(std::collections::HashMap::new()),
+            );
+        }
+        let entry = self.protect_block_cache.entry(data.id).or_insert_with(|| {
+            let compiler = crate::compiler::Compiler::new();
+            let (compiled, compiled_fns) = compiler.compile(&data.body);
+            let captured_slots = compiled
+                .locals
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, name)| data.env.contains_key(name).then_some(idx))
+                .collect();
+            (
+                std::sync::Arc::new(compiled),
+                std::sync::Arc::new(compiled_fns),
+                std::sync::Arc::new(captured_slots),
+            )
+        });
+        (entry.0.clone(), entry.1.clone())
+    }
+
+    pub(crate) fn get_or_compile_protect_block_with_slots(
+        &mut self,
+        data: &std::sync::Arc<crate::value::SubData>,
+    ) -> (
+        ProtectBlockCompiled,
+        ProtectBlockCompiledFns,
+        ProtectBlockCapturedSlots,
+    ) {
+        if let Some(ref cc) = data.compiled_code {
+            let slots = cc
+                .locals
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, name)| data.env.contains_key(name).then_some(idx))
+                .collect();
+            return (
+                cc.clone(),
+                std::sync::Arc::new(std::collections::HashMap::new()),
+                std::sync::Arc::new(slots),
+            );
+        }
+        let entry = self.protect_block_cache.entry(data.id).or_insert_with(|| {
+            let compiler = crate::compiler::Compiler::new();
+            let (compiled, compiled_fns) = compiler.compile(&data.body);
+            let captured_slots = compiled
+                .locals
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, name)| data.env.contains_key(name).then_some(idx))
+                .collect();
+            (
+                std::sync::Arc::new(compiled),
+                std::sync::Arc::new(compiled_fns),
+                std::sync::Arc::new(captured_slots),
+            )
+        });
+        (entry.0.clone(), entry.1.clone(), entry.2.clone())
     }
 
     /// Run pre-compiled bytecode and return the `$_` topic value.
@@ -1059,6 +1194,7 @@ impl Interpreter {
             let (code, compiled_fns) = compiler.compile(&data.body);
 
             let underscore = "_".to_string();
+            let dollar_topic = "$_".to_string();
 
             // Save/restore only temporary bindings introduced by map itself.
             // Captured lexical vars (in data.env) must keep mutations done inside
@@ -1076,6 +1212,9 @@ impl Interpreter {
             }
             if !touched_keys.iter().any(|k| k == "_") {
                 touched_keys.push(underscore.clone());
+            }
+            if !touched_keys.iter().any(|k| k == "$_") {
+                touched_keys.push(dollar_topic.clone());
             }
             let saved: Vec<(String, Option<Value>)> = touched_keys
                 .iter()
@@ -1123,7 +1262,8 @@ impl Interpreter {
                         if let Some(p) = data.params.get(assumed_count) {
                             interp.env_insert(p.clone(), item.clone());
                         }
-                        interp.env_insert(underscore.clone(), item);
+                        interp.env_insert(underscore.clone(), item.clone());
+                        interp.env_insert(dollar_topic.clone(), item);
                     } else {
                         for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
                             if i + idx < list_items.len() {
@@ -1131,6 +1271,7 @@ impl Interpreter {
                             }
                         }
                         interp.env_insert(underscore.clone(), list_items[i].clone());
+                        interp.env_insert(dollar_topic.clone(), list_items[i].clone());
                     }
                 }
                 match vm.run_reuse(&code, &compiled_fns) {
@@ -1242,6 +1383,7 @@ impl Interpreter {
             let (code, compiled_fns) = compiler.compile(&data.body);
 
             let underscore = "_".to_string();
+            let dollar_topic = "$_".to_string();
 
             let mut touched_keys: Vec<String> = Vec::with_capacity(data.params.len() + 2);
             for k in data.env.keys() {
@@ -1256,6 +1398,9 @@ impl Interpreter {
             }
             if !touched_keys.iter().any(|k| k == "_") {
                 touched_keys.push(underscore.clone());
+            }
+            if !touched_keys.iter().any(|k| k == "$_") {
+                touched_keys.push(dollar_topic.clone());
             }
             let topic_source_key = "__mutsu_grep_topic_source".to_string();
             if !touched_keys.iter().any(|k| k == &topic_source_key) {
@@ -1300,6 +1445,7 @@ impl Interpreter {
                                 interp.env_insert(p.clone(), chunk[0].clone());
                             }
                             interp.env_insert(underscore.clone(), chunk[0].clone());
+                            interp.env_insert(dollar_topic.clone(), chunk[0].clone());
                             interp.env_insert(topic_source_key.clone(), chunk[0].clone());
                         } else {
                             for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
@@ -1308,6 +1454,7 @@ impl Interpreter {
                                 }
                             }
                             interp.env_insert(underscore.clone(), chunk[0].clone());
+                            interp.env_insert(dollar_topic.clone(), chunk[0].clone());
                         }
                     }
                     vm.set_topic_source_var((arity == 1).then_some(topic_source_key.clone()));

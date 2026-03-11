@@ -524,9 +524,6 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if let Ok(r) = try_kw("e", Value::Num(std::f64::consts::E)) {
         return Ok(r);
     }
-    if let Ok(r) = try_kw("i", Value::Complex(0.0, 1.0)) {
-        return Ok(r);
-    }
     if let Ok(r) = try_kw("\u{1D452}", Value::Num(std::f64::consts::E)) {
         return Ok(r);
     }
@@ -648,6 +645,7 @@ pub(super) fn is_listop(name: &str) -> bool {
             | "roll"
             | "sleep"
             | "dir"
+            | "open"
             | "elems"
             | "end"
     ) || is_expr_listop(name)
@@ -670,6 +668,7 @@ pub(super) fn is_expr_listop(name: &str) -> bool {
             | "indir"
             | "cross"
             | "await"
+            | "sleep"
             | "dir"
             | "first"
             | "make"

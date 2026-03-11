@@ -2,6 +2,49 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    fn cmp_eqv_bool(left: &Value, right: &Value) -> bool {
+        use crate::value::JunctionKind;
+        match (left, right) {
+            (
+                Value::Junction {
+                    kind: lkind,
+                    values: lvals,
+                },
+                _,
+            ) => match lkind {
+                JunctionKind::Any => lvals.iter().any(|lv| Self::cmp_eqv_bool(lv, right)),
+                JunctionKind::All => lvals.iter().all(|lv| Self::cmp_eqv_bool(lv, right)),
+                JunctionKind::One => {
+                    lvals
+                        .iter()
+                        .filter(|lv| Self::cmp_eqv_bool(lv, right))
+                        .count()
+                        == 1
+                }
+                JunctionKind::None => lvals.iter().all(|lv| !Self::cmp_eqv_bool(lv, right)),
+            },
+            (
+                _,
+                Value::Junction {
+                    kind: rkind,
+                    values: rvals,
+                },
+            ) => match rkind {
+                JunctionKind::Any => rvals.iter().any(|rv| Self::cmp_eqv_bool(left, rv)),
+                JunctionKind::All => rvals.iter().all(|rv| Self::cmp_eqv_bool(left, rv)),
+                JunctionKind::One => {
+                    rvals
+                        .iter()
+                        .filter(|rv| Self::cmp_eqv_bool(left, rv))
+                        .count()
+                        == 1
+                }
+                JunctionKind::None => rvals.iter().all(|rv| !Self::cmp_eqv_bool(left, rv)),
+            },
+            _ => left.eqv(right),
+        }
+    }
+
     fn unwrap_test_arg_value(value: &Value) -> Value {
         match value {
             Value::Capture { positional, named }
@@ -373,8 +416,8 @@ impl Interpreter {
                 ">=" => super::to_float_value(&left) >= super::to_float_value(&right),
                 "===" => crate::runtime::utils::values_identical(&left, &right),
                 "!===" => !crate::runtime::utils::values_identical(&left, &right),
-                "eqv" => left.eqv(&right),
-                "=:=" => left == right,
+                "eqv" => Self::cmp_eqv_bool(&left, &right),
+                "=:=" => crate::runtime::utils::values_identical(&left, &right),
                 "=~=" | "\u{2245}" => {
                     // =~= / ≅ approximately equal
                     let (lr, li) = match &left {
@@ -1024,89 +1067,91 @@ impl Interpreter {
             }
         };
 
-        // Use subtest format only when we have a structured exception with attributes
+        // Only structured exception objects reliably expose arbitrary attribute matchers.
         let has_structured_exception = exception_val.as_ref().is_some_and(|ex| {
             if let Value::Instance { class_name, .. } = ex {
-                class_name.resolve().starts_with("X::") || class_name != "Exception"
+                class_name.resolve().starts_with("X::")
             } else {
                 false
             }
         });
-        if !named_matchers.is_empty() && has_structured_exception {
-            let ctx = self.begin_subtest();
-            let total = 2 + named_matchers.len();
-            let state = self.test_state.get_or_insert_with(TestState::new);
-            state.planned = Some(total);
-            self.emit_output(&format!("1..{}\n", total));
-            self.test_ok(result.is_err(), "code dies", false)?;
-            self.test_ok(
-                type_ok,
-                &format!("right exception type ({})", expected_normalized),
-                false,
-            )?;
-            for (attr_name, expected_val) in &named_matchers {
-                let actual_val = exception_val.as_ref().and_then(|ex| {
-                    if let Value::Instance { attributes, .. } = ex {
-                        attributes.get(attr_name).cloned()
+        let named_checks: Vec<(String, Value)> = if has_structured_exception {
+            named_matchers
+        } else {
+            Vec::new()
+        };
+
+        let ctx = self.begin_subtest();
+        let total = 2 + named_checks.len();
+        let state = self.test_state.get_or_insert_with(TestState::new);
+        state.planned = Some(total);
+        self.emit_output(&format!("1..{}\n", total));
+        self.test_ok(result.is_err(), "code dies", false)?;
+        self.test_ok(
+            type_ok,
+            &format!("right exception type ({})", expected_normalized),
+            false,
+        )?;
+        for (attr_name, expected_val) in &named_checks {
+            let actual_val = exception_val.as_ref().and_then(|ex| {
+                if let Value::Instance { attributes, .. } = ex {
+                    attributes.get(attr_name).cloned()
+                } else {
+                    None
+                }
+            });
+            // Fall back to err.message for "message" attribute
+            let actual_str = actual_val
+                .as_ref()
+                .map(|v| v.to_string_value())
+                .unwrap_or_else(|| {
+                    if attr_name == "message" {
+                        err_message.clone()
                     } else {
-                        None
+                        String::new()
                     }
                 });
-                // Fall back to err.message for "message" attribute
-                let actual_str = actual_val
-                    .as_ref()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_else(|| {
-                        if attr_name == "message" {
-                            err_message.clone()
-                        } else {
-                            String::new()
-                        }
-                    });
-                let matched = match expected_val {
-                    Value::Whatever => true, // * matches anything
-                    Value::Regex(pattern) => self
-                        .regex_match_with_captures(pattern, &actual_str)
-                        .is_some(),
-                    Value::Sub(_) | Value::Routine { .. } => {
-                        // Smart-match: call the block with the actual value as topic
-                        let call_arg = actual_val.clone().unwrap_or(Value::Nil);
-                        match self.call_sub_value(expected_val.clone(), vec![call_arg], false) {
-                            Ok(result_val) => result_val.truthy(),
-                            Err(_) => false,
-                        }
+            let matched = match expected_val {
+                Value::Whatever => true, // * matches anything
+                Value::Regex(pattern) => self
+                    .regex_match_with_captures(pattern, &actual_str)
+                    .is_some(),
+                Value::Sub(_) | Value::Routine { .. } => {
+                    // Smart-match: call the block with the actual value as topic
+                    let call_arg = actual_val.clone().unwrap_or(Value::Nil);
+                    match self.call_sub_value(expected_val.clone(), vec![call_arg], false) {
+                        Ok(result_val) => result_val.truthy(),
+                        Err(_) => false,
                     }
-                    _ => actual_str == expected_val.to_string_value(),
-                };
-                let expected_display = match expected_val {
-                    Value::Regex(pattern) => format!("/{}/", pattern),
-                    Value::Sub(_) | Value::Routine { .. } => expected_val.to_string_value(),
-                    _ => expected_val.to_string_value(),
-                };
-                self.test_ok(
-                    matched,
-                    &format!(".{} matches {}", attr_name, expected_display),
-                    false,
-                )?;
-            }
-            let all_ok = type_ok && result.is_err();
-            let label = if desc.is_empty() {
-                format!("did we throws-like {}?", expected_normalized)
-            } else {
-                desc.clone()
+                }
+                _ => actual_str == expected_val.to_string_value(),
             };
-            self.finish_subtest(
-                ctx,
-                &label,
-                if all_ok {
-                    Ok(())
-                } else {
-                    Err(RuntimeError::new(""))
-                },
+            let expected_display = match expected_val {
+                Value::Regex(pattern) => format!("/{}/", pattern),
+                Value::Sub(_) | Value::Routine { .. } => expected_val.to_string_value(),
+                _ => expected_val.to_string_value(),
+            };
+            self.test_ok(
+                matched,
+                &format!(".{} matches {}", attr_name, expected_display),
+                false,
             )?;
-        } else {
-            self.test_ok(type_ok, &desc, false)?;
         }
+        let all_ok = type_ok && result.is_err();
+        let label = if desc.is_empty() {
+            format!("did we throws-like {}?", expected_normalized)
+        } else {
+            desc.clone()
+        };
+        self.finish_subtest(
+            ctx,
+            &label,
+            if all_ok {
+                Ok(())
+            } else {
+                Err(RuntimeError::new(""))
+            },
+        )?;
         Ok(Value::Bool(type_ok))
     }
 
@@ -1576,16 +1621,35 @@ impl Interpreter {
                     tap_values = self.supply_emit_buffer.pop().unwrap_or_default();
                     let _ = self.supply_emit_timed_buffer.pop();
                 } else {
-                    let values = attributes
-                        .get("values")
-                        .and_then(|v| {
-                            if let Value::Array(a, ..) = v {
-                                Some(a.to_vec())
-                            } else {
-                                None
-                            }
-                        })
-                        .unwrap_or_default();
+                    let values = if let Some(Value::Int(sid)) = attributes.get("supplier_id") {
+                        let (snap_values, _, _) =
+                            crate::runtime::native_methods::supplier_snapshot(*sid as u64);
+                        if !snap_values.is_empty() {
+                            snap_values
+                        } else {
+                            attributes
+                                .get("values")
+                                .and_then(|v| {
+                                    if let Value::Array(a, ..) = v {
+                                        Some(a.to_vec())
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or_default()
+                        }
+                    } else {
+                        attributes
+                            .get("values")
+                            .and_then(|v| {
+                                if let Value::Array(a, ..) = v {
+                                    Some(a.to_vec())
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or_default()
+                    };
                     let do_cbs = attributes
                         .get("do_callbacks")
                         .and_then(|v| {
@@ -1616,7 +1680,47 @@ impl Interpreter {
                 let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
                 let timed_emitted = self.supply_emit_timed_buffer.pop().unwrap_or_default();
                 let emitted = if let Value::Instance { ref attributes, .. } = supply {
-                    if matches!(attributes.get("unique_filter"), Some(Value::Bool(true))) {
+                    if matches!(attributes.get("elems_filter"), Some(Value::Bool(true))) {
+                        let interval = attributes
+                            .get("elems_interval")
+                            .map(Value::to_f64)
+                            .unwrap_or(0.0);
+                        let initial_count = attributes
+                            .get("elems_initial_count")
+                            .and_then(|v| match v {
+                                Value::Int(i) => Some(*i),
+                                _ => None,
+                            })
+                            .unwrap_or(0);
+                        if interval <= 0.0 {
+                            (1..=emitted.len())
+                                .map(|idx| Value::Int(initial_count + idx as i64))
+                                .collect::<Vec<_>>()
+                        } else {
+                            let events = if timed_emitted.is_empty() {
+                                let now = std::time::Instant::now();
+                                emitted.into_iter().map(|v| (v, now)).collect::<Vec<_>>()
+                            } else {
+                                timed_emitted.clone()
+                            };
+                            let mut total = initial_count;
+                            let mut last_emit_at: Option<std::time::Instant> = None;
+                            let mut out = Vec::new();
+                            for (_, ts) in events {
+                                total += 1;
+                                let should_emit = if let Some(last) = last_emit_at {
+                                    ts.duration_since(last).as_secs_f64() >= interval
+                                } else {
+                                    true
+                                };
+                                if should_emit {
+                                    out.push(Value::Int(total));
+                                    last_emit_at = Some(ts);
+                                }
+                            }
+                            out
+                        }
+                    } else if matches!(attributes.get("unique_filter"), Some(Value::Bool(true))) {
                         let as_fn = attributes.get("unique_as").cloned();
                         let with_fn = attributes.get("unique_with").cloned();
                         let expires_secs = attributes.get("unique_expires").map(Value::to_f64);

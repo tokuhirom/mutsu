@@ -202,6 +202,30 @@ impl VM {
         }
     }
 
+    fn extract_varref_binding(raw_val: Value) -> (Value, Option<String>) {
+        if let Value::Capture { positional, named } = &raw_val
+            && positional.is_empty()
+            && let Some(Value::Str(name)) = named.get("__mutsu_varref_name")
+            && let Some(inner) = named.get("__mutsu_varref_value")
+        {
+            return (inner.clone(), Some(name.to_string()));
+        }
+        (raw_val, None)
+    }
+
+    fn resolve_sigilless_alias_source_name(&self, source_name: &str) -> String {
+        let mut resolved = source_name.to_string();
+        let mut seen = std::collections::HashSet::new();
+        while seen.insert(resolved.clone()) {
+            let key = format!("__mutsu_sigilless_alias::{}", resolved);
+            let Some(Value::Str(next)) = self.interpreter.env().get(&key) else {
+                break;
+            };
+            resolved = next.to_string();
+        }
+        resolved
+    }
+
     fn coerce_typed_container_assignment(
         &mut self,
         var_name: &str,
@@ -427,6 +451,30 @@ impl VM {
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
+        let alias_key = format!("__mutsu_sigilless_alias::{}", name);
+        let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
+            if let Value::Str(name) = v {
+                Some(name.to_string())
+            } else {
+                None
+            }
+        });
+        let mut seen_aliases = std::collections::HashSet::new();
+        while let Some(current_alias) = alias_name {
+            if !seen_aliases.insert(current_alias.clone()) {
+                break;
+            }
+            self.set_env_with_main_alias(&current_alias, new_val.clone());
+            self.update_local_if_exists(code, &current_alias, &new_val);
+            let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
+            alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
+                if let Value::Str(name) = v {
+                    Some(name.to_string())
+                } else {
+                    None
+                }
+            });
+        }
         // Write back to source variable when incrementing $_ bound to a container
         if name == "_"
             && let Some(ref source_var) = self.topic_source_var
@@ -458,6 +506,30 @@ impl VM {
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
+        let alias_key = format!("__mutsu_sigilless_alias::{}", name);
+        let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
+            if let Value::Str(name) = v {
+                Some(name.to_string())
+            } else {
+                None
+            }
+        });
+        let mut seen_aliases = std::collections::HashSet::new();
+        while let Some(current_alias) = alias_name {
+            if !seen_aliases.insert(current_alias.clone()) {
+                break;
+            }
+            self.set_env_with_main_alias(&current_alias, new_val.clone());
+            self.update_local_if_exists(code, &current_alias, &new_val);
+            let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
+            alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
+                if let Value::Str(name) = v {
+                    Some(name.to_string())
+                } else {
+                    None
+                }
+            });
+        }
         self.stack.push(val);
         Ok(())
     }
@@ -1101,10 +1173,12 @@ impl VM {
         idx: u32,
     ) -> Result<(), RuntimeError> {
         let idx = idx as usize;
+        let raw_popped = self.stack.pop().unwrap_or(Value::Nil);
+        let (raw_popped, bind_source) = Self::extract_varref_binding(raw_popped);
 
         // Fast path for simple scalar variables — skip all metadata checks
-        if code.simple_locals[idx] {
-            let mut val = self.stack.pop().unwrap_or(Value::Nil);
+        if code.simple_locals[idx] && bind_source.is_none() {
+            let mut val = raw_popped;
             let name = &code.locals[idx];
             if !name.starts_with('@') && !name.starts_with('%') {
                 val = Self::normalize_scalar_assignment_value(val);
@@ -1151,12 +1225,11 @@ impl VM {
             return Ok(());
         }
 
-        let val = self.stack.pop().unwrap_or(Value::Nil);
         let name = &code.locals[idx];
         let mut val = if name.starts_with('%') {
-            self.coerce_hash_var_value(name, val)?
+            self.coerce_hash_var_value(name, raw_popped)?
         } else if name.starts_with('@') {
-            let mut assigned = match val {
+            let mut assigned = match raw_popped {
                 Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
                     Some(Value::Bool(true)) => Value::LazyList(list),
                     _ => Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?),
@@ -1187,7 +1260,7 @@ impl VM {
             }
             assigned
         } else {
-            Self::normalize_scalar_assignment_value(val)
+            Self::normalize_scalar_assignment_value(raw_popped)
         };
         if matches!(val, Value::Nil)
             && !matches!(self.locals[idx], Value::Nil)
@@ -1232,6 +1305,15 @@ impl VM {
         if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
             self.interpreter.reset_atomic_var_key(name);
         }
+        if let Some(source_name) = bind_source {
+            let resolved_source = self.resolve_sigilless_alias_source_name(&source_name);
+            self.interpreter
+                .env_mut()
+                .insert(alias_key.clone(), Value::str(resolved_source));
+            self.interpreter
+                .env_mut()
+                .insert(readonly_key, Value::Bool(false));
+        }
         // If the current value is a Proxy, invoke STORE instead of overwriting
         if let Value::Proxy { storer, .. } = &self.locals[idx]
             && !matches!(storer.as_ref(), Value::Nil)
@@ -1262,15 +1344,30 @@ impl VM {
                     .insert(format!("{pkg}::term:<{symbol}>"), val.clone());
             }
         }
-        if let Some(alias_name) = self.interpreter.env().get(&alias_key).and_then(|v| {
+        let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
             if let Value::Str(name) = v {
                 Some(name.to_string())
             } else {
                 None
             }
-        }) {
-            self.update_local_if_exists(code, &alias_name, &val);
-            self.interpreter.env_mut().insert(alias_name, val.clone());
+        });
+        let mut seen_aliases = std::collections::HashSet::new();
+        while let Some(current_alias) = alias_name {
+            if !seen_aliases.insert(current_alias.clone()) {
+                break;
+            }
+            self.update_local_if_exists(code, &current_alias, &val);
+            self.interpreter
+                .env_mut()
+                .insert(current_alias.clone(), val.clone());
+            let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
+            alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
+                if let Value::Str(name) = v {
+                    Some(name.to_string())
+                } else {
+                    None
+                }
+            });
         }
         if let Some(attr) = name.strip_prefix('.') {
             self.interpreter
@@ -1526,6 +1623,20 @@ impl VM {
 
     pub(super) fn exec_get_pseudo_stash_op(&mut self, code: &CompiledCode, name_idx: u32) {
         let name = Self::const_str(code, name_idx);
+        if name.strip_suffix("::") == Some("OUTER") {
+            // OUTER:: is lexical, not package-based. Expose captured lexical vars
+            // from the current interpreter environment as stash entries.
+            let mut entries: HashMap<String, Value> = HashMap::new();
+            for (key, val) in self.interpreter.env() {
+                if self.interpreter.should_hide_from_my_global_stash(key) {
+                    continue;
+                }
+                let display_key = Self::add_sigil_prefix(key);
+                entries.insert(display_key, val.clone());
+            }
+            self.stack.push(Value::Hash(Arc::new(entries)));
+            return;
+        }
         if let Some(package) = name.strip_suffix("::")
             && package != "MY"
         {

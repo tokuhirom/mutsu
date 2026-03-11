@@ -528,8 +528,10 @@ pub(crate) fn native_method_0arg(
         };
     }
     // Capture methods
-    if let Value::Capture { positional, named } = target {
-        return dispatch_capture(positional, named, method);
+    if let Value::Capture { positional, named } = target
+        && let result @ Some(_) = dispatch_capture(positional, named, method)
+    {
+        return result;
     }
     // Try core string/numeric/array methods first
     if let result @ Some(_) = dispatch_core(target, method) {
@@ -1320,6 +1322,27 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Value::Int(i) => Value::Int(*i),
                 Value::BigInt(_) => target.clone(),
                 Value::Num(f) => Value::Int(*f as i64),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Instant" || class_name == "Duration" => {
+                    let numeric = attributes
+                        .get("value")
+                        .and_then(|v| match v {
+                            Value::Int(i) => Some(*i as f64),
+                            Value::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
+                            Value::Num(f) => Some(*f),
+                            Value::Rat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+                            Value::FatRat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+                            Value::BigRat(n, d) if !d.is_zero() => {
+                                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or(0.0);
+                    Value::Int(numeric as i64)
+                }
                 Value::Rat(n, d) if *d != 0 => Value::Int(*n / *d),
                 Value::FatRat(n, d) if *d != 0 => Value::Int(*n / *d),
                 Value::BigRat(n, d) if !d.is_zero() => {
@@ -1352,6 +1375,27 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     Value::Num(n.to_f64().unwrap_or(f64::INFINITY))
                 }
                 Value::Num(f) => Value::Num(*f),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Instant" || class_name == "Duration" => {
+                    let numeric = attributes
+                        .get("value")
+                        .and_then(|v| match v {
+                            Value::Int(i) => Some(*i as f64),
+                            Value::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
+                            Value::Num(f) => Some(*f),
+                            Value::Rat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+                            Value::FatRat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+                            Value::BigRat(n, d) if !d.is_zero() => {
+                                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or(0.0);
+                    Value::Num(numeric)
+                }
                 Value::Rat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
                 Value::FatRat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
                 Value::BigRat(n, d) if !d.is_zero() => {
@@ -1418,6 +1462,27 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Value::Int(i) => Value::Int(*i),
                 Value::BigInt(_) => target.clone(),
                 Value::Num(f) => Value::Num(*f),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Instant" || class_name == "Duration" => {
+                    let numeric = attributes
+                        .get("value")
+                        .and_then(|v| match v {
+                            Value::Int(i) => Some(*i as f64),
+                            Value::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
+                            Value::Num(f) => Some(*f),
+                            Value::Rat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+                            Value::FatRat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+                            Value::BigRat(n, d) if !d.is_zero() => {
+                                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or(0.0);
+                    Value::Num(numeric)
+                }
                 Value::Rat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
                 Value::Str(s) => {
                     if let Ok(i) = s.trim().parse::<i64>() {
@@ -1569,6 +1634,27 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Some(Ok(Value::str(s)))
         }
         "elems" => {
+            if let Value::LazyList(list) = target {
+                if matches!(
+                    list.env.get("__mutsu_lazylist_from_gather"),
+                    Some(Value::Bool(true))
+                ) {
+                    return None;
+                }
+                let mut ex_attrs = std::collections::HashMap::new();
+                ex_attrs.insert(
+                    "message".to_string(),
+                    Value::str("Cannot .elems a lazy list".to_string()),
+                );
+                let exception = Value::make_instance(Symbol::intern("X::Cannot::Lazy"), ex_attrs);
+                let mut failure_attrs = std::collections::HashMap::new();
+                failure_attrs.insert("exception".to_string(), exception);
+                failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                return Some(Ok(Value::make_instance(
+                    Symbol::intern("Failure"),
+                    failure_attrs,
+                )));
+            }
             if let Some(items) = target.as_list_items() {
                 return Some(Ok(Value::Int(items.len() as i64)));
             }
@@ -1588,23 +1674,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     } else {
                         Value::Int(0)
                     }
-                }
-                // LazyList is lazy — .elems returns a Failure
-                Value::LazyList(_) => {
-                    let mut ex_attrs = std::collections::HashMap::new();
-                    ex_attrs.insert(
-                        "message".to_string(),
-                        Value::str("Cannot .elems a lazy list".to_string()),
-                    );
-                    let exception =
-                        Value::make_instance(Symbol::intern("X::Cannot::Lazy"), ex_attrs);
-                    let mut failure_attrs = std::collections::HashMap::new();
-                    failure_attrs.insert("exception".to_string(), exception);
-                    failure_attrs.insert("handled".to_string(), Value::Bool(false));
-                    return Some(Ok(Value::make_instance(
-                        Symbol::intern("Failure"),
-                        failure_attrs,
-                    )));
                 }
                 _ => Value::Int(1),
             };
@@ -2934,6 +3003,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             other => Some(Ok(Value::Scalar(Box::new(other.clone())))),
         },
         "race" | "hyper" => {
+            if matches!(target, Value::LazyList(_)) {
+                return None;
+            }
             // Single-threaded: just materialize into an array
             let items = runtime::value_to_list(target);
             Some(Ok(Value::array(items)))

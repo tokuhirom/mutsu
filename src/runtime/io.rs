@@ -124,11 +124,38 @@ impl Interpreter {
     }
 
     fn normalize_pod_text(parts: &[String]) -> String {
-        parts
-            .iter()
-            .flat_map(|part| part.split_whitespace())
-            .collect::<Vec<_>>()
-            .join(" ")
+        // Join all parts, then collapse runs of breaking whitespace into single spaces.
+        // Non-breaking whitespace (U+00A0, U+202F, U+2060, U+FEFF) is preserved as-is.
+        let joined = parts.join(" ");
+        let mut result = String::new();
+        let mut in_breaking_ws = false;
+        for ch in joined.chars() {
+            if Self::is_breaking_whitespace(ch) {
+                if !in_breaking_ws && !result.is_empty() {
+                    result.push(' ');
+                }
+                in_breaking_ws = true;
+            } else {
+                in_breaking_ws = false;
+                result.push(ch);
+            }
+        }
+        // Trim trailing space
+        if result.ends_with(' ') {
+            result.pop();
+        }
+        result
+    }
+
+    /// Returns true for whitespace characters that should be normalized (collapsed)
+    /// in Pod text. Non-breaking spaces (U+00A0, U+202F, U+2060, U+FEFF) are NOT
+    /// considered breaking and are preserved as-is.
+    fn is_breaking_whitespace(ch: char) -> bool {
+        matches!(
+            ch,
+            ' ' | '\t' | '\n' | '\r' | '\x0B' | '\x0C' | '\u{1680}' | '\u{180E}' | '\u{2000}'
+                ..='\u{200A}' | '\u{2028}' | '\u{2029}' | '\u{205F}' | '\u{3000}'
+        )
     }
 
     fn collect_pod_para(lines: &[&str], mut idx: usize) -> (Value, usize) {
@@ -717,12 +744,18 @@ impl Interpreter {
                 )
             }
             "linux" => {
-                let kernel_release = Command::new("uname")
-                    .arg("-r")
-                    .output()
-                    .ok()
-                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-                    .unwrap_or_default();
+                use std::sync::OnceLock;
+                static DISTRO_UNAME_R: OnceLock<String> = OnceLock::new();
+                let kernel_release = DISTRO_UNAME_R
+                    .get_or_init(|| {
+                        Command::new("uname")
+                            .arg("-r")
+                            .output()
+                            .ok()
+                            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                            .unwrap_or_default()
+                    })
+                    .clone();
                 let mut distro_desc = String::new();
                 if let Ok(content) = std::fs::read_to_string("/etc/os-release") {
                     for line in content.lines() {
@@ -759,12 +792,18 @@ impl Interpreter {
                 )
             }
             _ => {
-                let kernel_release = Command::new("uname")
-                    .arg("-r")
-                    .output()
-                    .ok()
-                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-                    .unwrap_or_default();
+                use std::sync::OnceLock;
+                static FALLBACK_UNAME_R: OnceLock<String> = OnceLock::new();
+                let kernel_release = FALLBACK_UNAME_R
+                    .get_or_init(|| {
+                        Command::new("uname")
+                            .arg("-r")
+                            .output()
+                            .ok()
+                            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                            .unwrap_or_default()
+                    })
+                    .clone();
                 (
                     os.to_string(),
                     "unknown".to_string(),
@@ -899,6 +938,10 @@ impl Interpreter {
     }
 
     pub(super) fn make_kernel_instance() -> Value {
+        use std::sync::OnceLock;
+        static UNAME_R: OnceLock<String> = OnceLock::new();
+        static UNAME_M: OnceLock<String> = OnceLock::new();
+
         let os = std::env::consts::OS;
         let arch = std::env::consts::ARCH;
 
@@ -909,21 +952,29 @@ impl Interpreter {
             _ => os.to_string(),
         };
 
-        // Kernel release (e.g., "6.18.7-76061807-generic")
-        let release = Command::new("uname")
-            .arg("-r")
-            .output()
-            .ok()
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-            .unwrap_or_default();
+        // Kernel release (e.g., "6.18.7-76061807-generic") — cached
+        let release = UNAME_R
+            .get_or_init(|| {
+                Command::new("uname")
+                    .arg("-r")
+                    .output()
+                    .ok()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .unwrap_or_default()
+            })
+            .clone();
 
-        // Hardware (e.g., "x86_64")
-        let hardware = Command::new("uname")
-            .arg("-m")
-            .output()
-            .ok()
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-            .unwrap_or_else(|| arch.to_string());
+        // Hardware (e.g., "x86_64") — cached
+        let hardware = UNAME_M
+            .get_or_init(|| {
+                Command::new("uname")
+                    .arg("-m")
+                    .output()
+                    .ok()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .unwrap_or_else(|| arch.to_string())
+            })
+            .clone();
 
         // Architecture (mapped from Rust's ARCH constant)
         let arch_str = match arch {
@@ -942,12 +993,17 @@ impl Interpreter {
             32
         };
 
-        // Hostname
-        let hostname = Command::new("hostname")
-            .output()
-            .ok()
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-            .unwrap_or_default();
+        // Hostname — cached
+        static HOSTNAME: OnceLock<String> = OnceLock::new();
+        let hostname = HOSTNAME
+            .get_or_init(|| {
+                Command::new("hostname")
+                    .output()
+                    .ok()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .unwrap_or_default()
+            })
+            .clone();
 
         // Version from release string
         let version = Self::parse_version_string(&release);

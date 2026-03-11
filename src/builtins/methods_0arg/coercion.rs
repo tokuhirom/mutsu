@@ -273,6 +273,42 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             _ => Some(Ok(Value::array(vec![target.clone()]))),
         },
+        "__mutsu_zen_angle" => match target {
+            Value::Range(a, b) => {
+                if *b == i64::MAX || *a == i64::MIN {
+                    Some(Ok(target.clone()))
+                } else {
+                    Some(Ok(Value::array((*a..=*b).map(Value::Int).collect())))
+                }
+            }
+            Value::RangeExcl(a, b) => {
+                if *b == i64::MAX || *a == i64::MIN {
+                    Some(Ok(target.clone()))
+                } else {
+                    Some(Ok(Value::array((*a..*b).map(Value::Int).collect())))
+                }
+            }
+            Value::RangeExclStart(a, b) => {
+                if *b == i64::MAX || *a == i64::MIN {
+                    Some(Ok(target.clone()))
+                } else {
+                    Some(Ok(Value::array((a + 1..=*b).map(Value::Int).collect())))
+                }
+            }
+            Value::RangeExclBoth(a, b) => {
+                if *b == i64::MAX || *a == i64::MIN {
+                    Some(Ok(target.clone()))
+                } else {
+                    Some(Ok(Value::array((a + 1..*b).map(Value::Int).collect())))
+                }
+            }
+            Value::GenericRange { .. } => {
+                let items = crate::runtime::utils::value_to_list(target);
+                Some(Ok(Value::array(items)))
+            }
+            Value::Array(..) | Value::Seq(..) | Value::Slip(..) => Some(Ok(target.clone())),
+            _ => Some(Ok(target.clone())),
+        },
         "list" | "Array" => match target {
             Value::Instance {
                 class_name,
@@ -372,7 +408,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         },
         "Supply" => {
             if let Value::Instance { class_name, .. } = target
-                && class_name == "Supplier"
+                && (class_name == "Supplier" || class_name == "Supplier::Preserving")
             {
                 // Supplier.Supply has runtime behavior (live stream), not generic coercion.
                 return None;
@@ -386,7 +422,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // Supplier.Supply must be handled by runtime native methods
             // so the returned Supply remains linked to Supplier.emit/.done.
             if let Value::Instance { class_name, .. } = target
-                && class_name == "Supplier"
+                && (class_name == "Supplier" || class_name == "Supplier::Preserving")
             {
                 return None;
             }

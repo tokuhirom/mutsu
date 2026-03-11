@@ -416,6 +416,12 @@ impl Interpreter {
         let args: Vec<Value> = if args.len() == 1 && !is_set_op {
             match &args[0] {
                 Value::Array(items, ..) => items.to_vec(),
+                Value::Hash(map) if matches!(op, "andthen" | "notandthen") => map
+                    .iter()
+                    .map(|(k, v)| {
+                        Value::ValuePair(Box::new(Value::str(k.clone())), Box::new(v.clone()))
+                    })
+                    .collect(),
                 _ => args.to_vec(),
             }
         } else {
@@ -814,7 +820,17 @@ impl Interpreter {
     pub(super) fn repeat_lhs_once(&mut self, left: &Value) -> Result<Value, RuntimeError> {
         match left {
             Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
-                self.eval_call_on_value(left.clone(), Vec::new())
+                let saved_topic = self.env.get("_").cloned();
+                let result = self.eval_call_on_value(left.clone(), Vec::new());
+                match saved_topic {
+                    Some(value) => {
+                        self.env.insert("_".to_string(), value);
+                    }
+                    None => {
+                        self.env.remove("_");
+                    }
+                }
+                result
             }
             // Seq → List when used as xx LHS (Raku caches/listifies Seq on repeat)
             Value::Seq(items) => Ok(Value::array(items.as_ref().clone())),

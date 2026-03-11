@@ -5,7 +5,7 @@ mod number;
 mod quote_adverbs;
 pub(crate) mod regex;
 pub(in crate::parser) mod string;
-mod var;
+pub(crate) mod var;
 
 use super::memo::{MemoEntry, MemoStats, ParseMemo};
 use super::parse_result::{PError, PResult, update_best_error};
@@ -409,6 +409,20 @@ mod tests {
                 if param_defs.len() == 1
                     && param_defs[0].slurpy
                     && param_defs[0].name == "@a"
+        ));
+    }
+
+    #[test]
+    fn parse_pointy_capture_param_method_call() {
+        let (rest, expr) = primary("(-> |c { }).count").unwrap();
+        assert_eq!(rest, ".count");
+        assert!(matches!(
+            expr,
+            Expr::AnonSubParams { ref param_defs, .. }
+                if param_defs.len() == 1
+                    && param_defs[0].slurpy
+                    && param_defs[0].sigilless
+                    && param_defs[0].name == "c"
         ));
     }
 

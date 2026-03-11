@@ -2,6 +2,31 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Compiler {
+    fn atomic_target_name(expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::Var(name) => Some(name.clone()),
+            Expr::ArrayVar(name) => Some(format!("@{}", name)),
+            Expr::HashVar(name) => Some(format!("%{}", name)),
+            Expr::CodeVar(name) => Some(format!("&{}", name)),
+            Expr::Index { target, index }
+                if matches!(target.as_ref(), Expr::PseudoStash(_))
+                    && matches!(index.as_ref(), Expr::Literal(Value::Str(_))) =>
+            {
+                let Expr::Literal(Value::Str(raw)) = index.as_ref() else {
+                    return None;
+                };
+                let mut name = raw.as_ref().clone();
+                if let Some(first) = name.chars().next()
+                    && matches!(first, '$' | '@' | '%' | '&')
+                {
+                    name = name.chars().skip(1).collect();
+                }
+                if name.is_empty() { None } else { Some(name) }
+            }
+            _ => None,
+        }
+    }
+
     pub(super) fn compile_expr(&mut self, expr: &Expr) {
         match expr {
             Expr::Whatever => {
@@ -250,11 +275,40 @@ impl Compiler {
                     // Raku's list repeat reevaluates call-like lhs expressions on each
                     // repetition (e.g. rand/pick). Keep literal/list lhs values as-is.
                     if Self::xx_lhs_needs_reeval(left) {
+                        let reevaluated_lhs = if let Expr::MethodCall {
+                            target,
+                            name,
+                            args,
+                            modifier,
+                            quoted,
+                        } = left.as_ref()
+                        {
+                            if matches!(target.as_ref(), Expr::Var(v) if v == "_") {
+                                let temp_name = format!(
+                                    "__mutsu_xx_target_{}",
+                                    STATE_COUNTER.fetch_add(1, Ordering::Relaxed)
+                                );
+                                self.compile_expr(target);
+                                self.code.emit(OpCode::Dup);
+                                self.emit_set_named_var(&temp_name);
+                                Expr::MethodCall {
+                                    target: Box::new(Expr::Var(temp_name)),
+                                    name: *name,
+                                    args: args.clone(),
+                                    modifier: *modifier,
+                                    quoted: *quoted,
+                                }
+                            } else {
+                                (**left).clone()
+                            }
+                        } else {
+                            (**left).clone()
+                        };
                         let thunk = Expr::AnonSubParams {
                             params: Vec::new(),
                             param_defs: Vec::new(),
                             return_type: None,
-                            body: vec![Stmt::Expr((**left).clone())],
+                            body: vec![Stmt::Expr(reevaluated_lhs)],
                             is_rw: false,
                         };
                         self.compile_expr(&thunk);
@@ -329,14 +383,28 @@ impl Compiler {
                         return;
                     }
                     TokenKind::AndThen => {
-                        // a andthen b: result is b if a.defined, else Empty
+                        // a andthen b: result is b if a.defined, else Empty.
+                        // For callable RHS values (e.g. pointy blocks), invoke them with
+                        // the LHS as argument while keeping $_ topicalized to LHS.
                         self.compile_expr(left);
                         self.code.emit(OpCode::Dup);
                         self.code.emit(OpCode::CallDefined);
                         let jump_undef = self.code.emit(OpCode::JumpIfFalse(0));
-                        // Defined path: pop original, evaluate right
-                        self.code.emit(OpCode::Pop);
+                        // Defined path:
+                        // - topicalize $_ with LHS for RHS evaluation
+                        // - evaluate RHS
+                        // - if RHS is callable, invoke it with LHS argument
+                        self.code.emit(OpCode::Dup);
+                        self.code.emit(OpCode::SetTopic);
                         self.compile_expr(right);
+                        let finalize_name_idx = self
+                            .code
+                            .add_constant(Value::str_from("__mutsu_andthen_finalize"));
+                        self.code.emit(OpCode::CallFunc {
+                            name_idx: finalize_name_idx,
+                            arity: 2,
+                            arg_sources_idx: None,
+                        });
                         let jump_end = self.code.emit(OpCode::Jump(0));
                         // Undefined path: replace with Empty
                         self.code.patch_jump(jump_undef);
@@ -514,7 +582,7 @@ impl Compiler {
                 // Rewrite cas($var, ...) → __mutsu_cas_var($var_name_str, ...)
                 if name == "cas"
                     && (args.len() == 2 || args.len() == 3)
-                    && let Expr::Var(var_name) = &args[0]
+                    && let Some(var_name) = Self::atomic_target_name(&args[0])
                 {
                     if args.len() == 2
                         && let Expr::Lambda { param, body } = &args[1]
@@ -716,13 +784,7 @@ impl Compiler {
                 // Rewrite cas($var, &fn) to assignment expression:
                 // $var = fn($var)
                 else if name == "cas" && args.len() == 2 {
-                    let var_name = match &args[0] {
-                        Expr::Var(n) => Some(n.clone()),
-                        Expr::ArrayVar(n) => Some(format!("@{}", n)),
-                        Expr::HashVar(n) => Some(format!("%{}", n)),
-                        Expr::CodeVar(n) => Some(format!("&{}", n)),
-                        _ => None,
-                    };
+                    let var_name = Self::atomic_target_name(&args[0]);
                     if let Some(vname) = var_name {
                         if let Expr::Lambda { param, body } = &args[1]
                             && let [Stmt::Expr(Expr::Binary { left, op, right })] = body.as_slice()
@@ -1379,6 +1441,8 @@ impl Compiler {
                 samemark,
                 nth,
                 x,
+                global,
+                perl5,
             } => {
                 let pattern_idx = self.code.add_constant(Value::str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::str(replacement.clone()));
@@ -1391,6 +1455,8 @@ impl Compiler {
                     samemark: *samemark,
                     nth_idx,
                     x_count: x.map(|n| n as u32),
+                    global: *global,
+                    perl5: *perl5,
                 });
             }
             // S/// non-destructive substitution
@@ -1400,6 +1466,8 @@ impl Compiler {
                 samemark,
                 nth,
                 x,
+                global,
+                perl5,
             } => {
                 let pattern_idx = self.code.add_constant(Value::str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::str(replacement.clone()));
@@ -1412,6 +1480,8 @@ impl Compiler {
                     samemark: *samemark,
                     nth_idx,
                     x_count: x.map(|n| n as u32),
+                    global: *global,
+                    perl5: *perl5,
                 });
             }
             // tr/// transliteration
@@ -2169,6 +2239,7 @@ impl Compiler {
                     || name == "pick"
                     || name == "roll"
                     || name == "take"
+                    || name == "readchars"
                     || (name == "new" && matches!(target.as_ref(), Expr::BareWord(n) if n == "Promise"))
                     || Self::xx_lhs_needs_reeval(target)
         ) || matches!(

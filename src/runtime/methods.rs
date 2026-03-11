@@ -6,6 +6,43 @@ use crate::symbol::Symbol;
 use crate::value::signature::extract_sig_info;
 
 impl Interpreter {
+    fn promise_combinator_error(combinator: &str) -> RuntimeError {
+        let message = format!(
+            "Can only use {} to combine defined Promise objects",
+            combinator
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("message".to_string(), Value::str(message.clone()));
+        let ex = Value::make_instance(Symbol::intern("X::Promise::Combinator"), attrs);
+        let mut err = RuntimeError::new(message);
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
+    fn collect_promise_combinator_inputs(
+        &self,
+        combinator: &str,
+        args: &[Value],
+    ) -> Result<Vec<SharedPromise>, RuntimeError> {
+        let mut promises = Vec::new();
+        for arg in args {
+            match arg {
+                Value::Promise(promise) => promises.push(promise.clone()),
+                _ if arg.as_list_items().is_some() => {
+                    for item in arg.as_list_items().unwrap().iter() {
+                        if let Value::Promise(promise) = item {
+                            promises.push(promise.clone());
+                        } else {
+                            return Err(Self::promise_combinator_error(combinator));
+                        }
+                    }
+                }
+                _ => return Err(Self::promise_combinator_error(combinator)),
+            }
+        }
+        Ok(promises)
+    }
+
     fn supply_list_values(
         &mut self,
         attributes: &HashMap<String, Value>,
@@ -134,6 +171,24 @@ impl Interpreter {
             }
             return Ok(Value::str(format!("{}({})", kind_name, parts.join(", "))));
         }
+        if matches!(&target, Value::Instance { class_name, .. } if class_name == "IterationBuffer")
+            && matches!(
+                method,
+                "elems"
+                    | "AT-POS"
+                    | "BIND-POS"
+                    | "push"
+                    | "unshift"
+                    | "List"
+                    | "Slip"
+                    | "Seq"
+                    | "append"
+                    | "prepend"
+                    | "clear"
+            )
+        {
+            return self.dispatch_instance_and_fallback(target, method, args);
+        }
         // Immutable List/Range: push/pop/shift/unshift/append/prepend/splice must throw X::Immutable
         if matches!(
             method,
@@ -197,6 +252,24 @@ impl Interpreter {
             } else {
                 Self::signature_count_value(&sig_info)
             });
+        }
+
+        if method == "Str"
+            && args.is_empty()
+            && let Value::Instance { class_name, .. } = &target
+        {
+            let receiver = class_name.resolve();
+            if !self.class_mro(&receiver).iter().any(|cn| cn == "Str") {
+                // Non-Str classes should keep normal method lookup/coercion behavior.
+                // Only values in Str's inheritance tree get identity .Str by default.
+                // This preserves custom .Str methods on unrelated classes.
+            } else if let Some((owner, _)) = self.resolve_method_with_owner(&receiver, "Str", &[]) {
+                if owner == "Str" {
+                    return Ok(target.clone());
+                }
+            } else {
+                return Ok(target.clone());
+            }
         }
 
         // Early check: private method call on non-Instance, non-Package values
@@ -424,8 +497,10 @@ impl Interpreter {
                 return Ok(Value::str(format!("({inner})")));
             }
         }
-        if matches!(method, "max" | "min" | "lines" | "delayed" | "reduce")
-            && matches!(&target, Value::Package(name) if name == "Supply")
+        if matches!(
+            method,
+            "max" | "min" | "lines" | "delayed" | "reduce" | "classify"
+        ) && matches!(&target, Value::Package(name) if name == "Supply")
         {
             return Err(RuntimeError::new(format!(
                 "Cannot call .{} on a Supply type object",
@@ -878,10 +953,12 @@ impl Interpreter {
             || method == "squish"
             || (matches!(method, "max" | "min")
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
+            || (method == "elems" && matches!(&target, Value::Instance { .. }))
             || (matches!(method, "list" | "Array" | "Seq")
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
             || (method == "Supply"
-                && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supplier"))
+                && matches!(&target, Value::Instance { class_name, .. }
+                    if class_name == "Supplier" || class_name == "Supplier::Preserving"))
             || matches!(&target, Value::Instance { class_name, .. }
                 if self.is_native_method(&class_name.resolve(), method))
             || (matches!(&target, Value::Instance { .. })
@@ -928,13 +1005,16 @@ impl Interpreter {
                 }
             }
         };
+        if method == "tail"
+            && !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply")
+        {
+            return self.dispatch_tail(target, &args);
+        }
         if let Some(result) = native_result {
             return result;
         }
 
         // Force LazyList and re-dispatch as Seq for methods that need element access.
-        // Save/restore the environment to prevent gather body side effects from leaking
-        // into the outer scope (preserves laziness semantics).
         if let Value::LazyList(ll) = &target
             && matches!(
                 method,
@@ -942,6 +1022,9 @@ impl Interpreter {
                     | "Array"
                     | "Numeric"
                     | "Int"
+                    | "elems"
+                    | "hyper"
+                    | "race"
                     | "first"
                     | "grep"
                     | "map"
@@ -969,7 +1052,9 @@ impl Interpreter {
         {
             let saved_env = self.env.clone();
             let items = self.force_lazy_list_bridge(ll)?;
-            self.env = saved_env;
+            if !matches!(method, "elems" | "hyper" | "race") {
+                self.env = saved_env;
+            }
             let seq = Value::Seq(std::sync::Arc::new(items));
             return self.call_method_with_values(seq, method, args);
         }
@@ -1041,6 +1126,7 @@ impl Interpreter {
                     | "mro"
                     | "mro_unhidden"
                     | "methods"
+                    | "attributes"
                     | "candidates"
                     | "concretization"
                     | "curried_role"
@@ -1212,7 +1298,8 @@ impl Interpreter {
             "are" => {
                 return self.dispatch_are(target, &args);
             }
-            "classify" | "categorize" => {
+            "classify" | "categorize" if !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply") =>
+            {
                 let mut call_args = Vec::with_capacity(args.len() + 1);
                 call_args.extend(args.iter().cloned());
                 call_args.push(target);
@@ -1357,22 +1444,38 @@ impl Interpreter {
             "return-rw" if args.is_empty() => {
                 return Ok(target);
             }
-            "encode" => {
+            "encode" if !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply") =>
+            {
                 let encoding = args
                     .first()
                     .map(|v| v.to_string_value())
                     .unwrap_or_else(|| "utf-8".to_string());
+                let normalized_encoding = self
+                    .find_encoding(&encoding)
+                    .map(|e| e.name.as_str().to_lowercase())
+                    .unwrap_or_else(|| encoding.to_lowercase());
                 let input = target.to_string_value();
                 let translated = self.translate_newlines_for_encode(&input);
-                let bytes = self.encode_with_encoding(&translated, &encoding)?;
-                let bytes_vals: Vec<Value> =
-                    bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
                 let mut attrs = HashMap::new();
-                attrs.insert("bytes".to_string(), Value::array(bytes_vals));
-                let type_name = match encoding.to_lowercase().as_str() {
-                    "utf-8" | "utf8" => "utf8",
-                    "utf-16" | "utf16" => "utf16",
-                    _ => "Buf",
+                let type_name = match normalized_encoding.as_str() {
+                    "utf-16" | "utf16" => {
+                        let units: Vec<Value> = translated
+                            .encode_utf16()
+                            .map(|u| Value::Int(u as i64))
+                            .collect();
+                        attrs.insert("bytes".to_string(), Value::array(units));
+                        "utf16"
+                    }
+                    _ => {
+                        let bytes = self.encode_with_encoding(&translated, &encoding)?;
+                        let bytes_vals: Vec<Value> =
+                            bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
+                        attrs.insert("bytes".to_string(), Value::array(bytes_vals));
+                        match normalized_encoding.as_str() {
+                            "utf-8" | "utf8" => "utf8",
+                            _ => "Buf",
+                        }
+                    }
                 };
                 return Ok(Value::make_instance(Symbol::intern(type_name), attrs));
             }
@@ -1384,11 +1487,40 @@ impl Interpreter {
                 } = &target
                     && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
                 {
+                    let default_encoding = if class_name == "utf16" {
+                        "utf-16"
+                    } else {
+                        "utf-8"
+                    };
                     let encoding = args
                         .first()
                         .map(|v| v.to_string_value())
-                        .unwrap_or_else(|| "utf-8".to_string());
-                    let bytes = if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                        .unwrap_or_else(|| default_encoding.to_string());
+                    let normalized_encoding = self
+                        .find_encoding(&encoding)
+                        .map(|e| e.name.as_str().to_lowercase())
+                        .unwrap_or_else(|| encoding.to_lowercase());
+                    let bytes = if class_name == "utf16" {
+                        if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                            let use_be = normalized_encoding == "utf-16be";
+                            let mut out = Vec::with_capacity(items.len() * 2);
+                            for item in items.iter() {
+                                let unit = match item {
+                                    Value::Int(i) => *i as u16,
+                                    _ => 0u16,
+                                };
+                                let pair = if use_be {
+                                    unit.to_be_bytes()
+                                } else {
+                                    unit.to_le_bytes()
+                                };
+                                out.extend_from_slice(&pair);
+                            }
+                            out
+                        } else {
+                            Vec::new()
+                        }
+                    } else if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
                         items
                             .iter()
                             .map(|v| match v {
@@ -1581,19 +1713,10 @@ impl Interpreter {
                 if let Some(cls) = self.promise_class_name(&target) {
                     let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
                     let ret = Value::Promise(promise.clone());
-                    let mut promises = Vec::new();
-                    for arg in &args {
-                        match arg {
-                            Value::Promise(p) => promises.push(p.clone()),
-                            Value::Array(arr, ..) => {
-                                for elem in arr.iter() {
-                                    if let Value::Promise(p) = elem {
-                                        promises.push(p.clone());
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
+                    let promises = self.collect_promise_combinator_inputs("allof", &args)?;
+                    if promises.is_empty() {
+                        promise.keep(Value::Bool(true), String::new(), String::new());
+                        return Ok(ret);
                     }
                     std::thread::spawn(move || {
                         for p in &promises {
@@ -1608,19 +1731,10 @@ impl Interpreter {
                 if let Some(cls) = self.promise_class_name(&target) {
                     let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
                     let ret = Value::Promise(promise.clone());
-                    let mut promises = Vec::new();
-                    for arg in &args {
-                        match arg {
-                            Value::Promise(p) => promises.push(p.clone()),
-                            Value::Array(arr, ..) => {
-                                for elem in arr.iter() {
-                                    if let Value::Promise(p) = elem {
-                                        promises.push(p.clone());
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
+                    let promises = self.collect_promise_combinator_inputs("anyof", &args)?;
+                    if promises.is_empty() {
+                        promise.keep(Value::Bool(true), String::new(), String::new());
+                        return Ok(ret);
                     }
                     std::thread::spawn(move || {
                         // Poll until any promise resolves
@@ -2546,6 +2660,55 @@ impl Interpreter {
                 let items = Self::value_to_list(&target);
                 return self.reduce_items(callable, items);
             }
+            "elems" => {
+                if let Value::Instance {
+                    ref class_name,
+                    ref attributes,
+                    ..
+                } = target
+                    && class_name == "Supply"
+                {
+                    let interval = args.first().map(Value::to_f64).unwrap_or(0.0).max(0.0);
+
+                    if let Some(Value::Int(supplier_id)) = attributes.get("supplier_id")
+                        && *supplier_id > 0
+                    {
+                        let (emitted, done, quit_reason) =
+                            crate::runtime::native_methods::supplier_snapshot(*supplier_id as u64);
+                        let mut elems_attrs = HashMap::new();
+                        elems_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                        elems_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                        elems_attrs.insert("live".to_string(), Value::Bool(false));
+                        elems_attrs.insert("supplier_id".to_string(), Value::Int(*supplier_id));
+                        elems_attrs.insert("supplier_done".to_string(), Value::Bool(done));
+                        elems_attrs.insert("elems_filter".to_string(), Value::Bool(true));
+                        elems_attrs.insert("elems_interval".to_string(), Value::Num(interval));
+                        elems_attrs.insert(
+                            "elems_initial_count".to_string(),
+                            Value::Int(emitted.len() as i64),
+                        );
+                        if let Some(reason) = quit_reason {
+                            elems_attrs.insert("quit_reason".to_string(), reason);
+                        }
+                        return Ok(Value::make_instance(Symbol::intern("Supply"), elems_attrs));
+                    }
+
+                    let source_values = self.supply_list_values(attributes, true)?;
+                    let elems_values = if interval > 0.0 {
+                        Vec::new()
+                    } else {
+                        (1..=source_values.len())
+                            .map(|idx| Value::Int(idx as i64))
+                            .collect()
+                    };
+                    let mut elems_attrs = HashMap::new();
+                    elems_attrs.insert("values".to_string(), Value::array(elems_values));
+                    elems_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    elems_attrs.insert("live".to_string(), Value::Bool(false));
+                    return Ok(Value::make_instance(Symbol::intern("Supply"), elems_attrs));
+                }
+                return self.call_function("elems", vec![target]);
+            }
             "map" => {
                 if let Value::Instance {
                     ref class_name,
@@ -2664,7 +2827,7 @@ impl Interpreter {
                 return self.dispatch_collate(target);
             }
             "take" if args.is_empty() => {
-                self.take_value(target.clone());
+                self.take_value(target.clone())?;
                 return Ok(target);
             }
             "rotor" => {
@@ -3012,6 +3175,13 @@ impl Interpreter {
             }
             "first" if !args.is_empty() => {
                 return self.dispatch_first(target, &args);
+            }
+            "first" if args.is_empty() => {
+                if let Value::Instance { class_name, .. } = &target
+                    && class_name == "Supply"
+                {
+                    return self.dispatch_first(target, &args);
+                }
             }
             "tree" if !args.is_empty() => {
                 return self.dispatch_tree(target, &args);

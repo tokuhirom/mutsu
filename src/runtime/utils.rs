@@ -249,10 +249,23 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
         }
         (Value::Array(a, _), Value::Array(b, _)) => std::sync::Arc::ptr_eq(a, b),
         (Value::Seq(a), Value::Seq(b)) => std::sync::Arc::ptr_eq(a, b),
-        (Value::Slip(a), Value::Slip(b)) => std::sync::Arc::ptr_eq(a, b),
+        (Value::Slip(a), Value::Slip(b)) => {
+            // Empty is a singleton semantic value in Raku even when represented
+            // by distinct empty Slip allocations.
+            (a.is_empty() && b.is_empty()) || std::sync::Arc::ptr_eq(a, b)
+        }
         (Value::LazyList(a), Value::LazyList(b)) => std::sync::Arc::ptr_eq(a, b),
         (Value::Hash(a), Value::Hash(b)) => std::sync::Arc::ptr_eq(a, b),
-        (Value::Sub(a), Value::Sub(b)) => std::sync::Arc::ptr_eq(a, b),
+        (Value::Sub(a), Value::Sub(b)) => {
+            if std::sync::Arc::ptr_eq(a, b) {
+                return true;
+            }
+            // Named subs with the same package and name are identical
+            // (e.g. &foo === &EXPORT::ALL::foo when both resolve to the same definition)
+            let a_name = a.name.resolve();
+            let b_name = b.name.resolve();
+            !a_name.is_empty() && a_name == b_name && a.package == b.package
+        }
         (Value::WeakSub(a), Value::WeakSub(b)) => a.ptr_eq(b),
         (Value::Mixin(a_inner, a_mix), Value::Mixin(b_inner, b_mix)) => {
             a_inner.eqv(b_inner) && a_mix == b_mix

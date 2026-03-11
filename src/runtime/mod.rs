@@ -17,7 +17,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::ast::{Expr, FunctionDef, ParamDef, PhaserKind, Stmt};
 use crate::env::Env;
-use crate::opcode::{CompiledCode, OpCode};
+use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
 use crate::parse_dispatch;
 use crate::value::{
     ArrayKind, JunctionKind, LazyList, RuntimeError, SharedChannel, SharedPromise, Value, make_rat,
@@ -76,6 +76,13 @@ fn current_process_id() -> i64 {
         0
     }
 }
+
+type ProtectBlockCacheEntry = (
+    Arc<CompiledCode>,
+    Arc<HashMap<String, CompiledFunction>>,
+    Arc<Vec<usize>>,
+);
+type ProtectBlockCache = HashMap<u64, ProtectBlockCacheEntry>;
 
 mod accessors;
 mod builtins;
@@ -436,6 +443,7 @@ pub struct Interpreter {
     type_metadata: HashMap<String, HashMap<String, Value>>,
     when_matched: bool,
     gather_items: Vec<Vec<Value>>,
+    gather_take_limits: Vec<Option<usize>>,
     block_scope_depth: usize,
     enum_types: HashMap<String, Vec<(String, i64)>>,
     classes: HashMap<String, ClassDef>,
@@ -452,6 +460,7 @@ pub struct Interpreter {
     role_hides: HashMap<String, Vec<String>>,
     role_type_params: HashMap<String, Vec<String>>,
     class_role_param_bindings: HashMap<String, HashMap<String, Value>>,
+    attribute_build_overrides: HashMap<(String, String), Value>,
     subsets: HashMap<String, SubsetDef>,
     proto_subs: HashSet<String>,
     proto_tokens: HashSet<String>,
@@ -461,6 +470,7 @@ pub struct Interpreter {
     loaded_modules: HashSet<String>,
     need_hidden_classes: HashSet<String>,
     closure_env_overrides: HashMap<u64, Env>,
+    protect_block_cache: ProtectBlockCache,
     module_load_stack: Vec<String>,
     /// Exported subroutine symbols by package and export tag.
     exported_subs: HashMap<String, HashMap<String, HashSet<String>>>,
@@ -687,6 +697,22 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "IterationBuffer".to_string(),
+            ClassDef {
+                parents: vec!["Any".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec![
+                    "IterationBuffer".to_string(),
+                    "Any".to_string(),
+                    "Mu".to_string(),
+                ],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
             "Promise".to_string(),
             ClassDef {
                 parents: Vec::new(),
@@ -750,6 +776,7 @@ impl Interpreter {
                     "emit",
                     "tap",
                     "act",
+                    "encode",
                     "decode",
                     "repeated",
                     "do",
@@ -763,6 +790,8 @@ impl Interpreter {
                     "lines",
                     "merge",
                     "unique",
+                    "on-close",
+                    "classify",
                     "Supply",
                     "Promise",
                     "schedule-on",
@@ -839,6 +868,18 @@ impl Interpreter {
                     .map(|s| s.to_string())
                     .collect(),
                 mro: vec!["Supplier".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
+            "Supplier::Preserving".to_string(),
+            ClassDef {
+                parents: vec!["Supplier".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Supplier::Preserving".to_string(), "Supplier".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
             },
@@ -1089,6 +1130,7 @@ impl Interpreter {
                     "close",
                     "get",
                     "getc",
+                    "readchars",
                     "lines",
                     "words",
                     "read",
@@ -1633,6 +1675,7 @@ impl Interpreter {
             type_metadata: HashMap::new(),
             when_matched: false,
             gather_items: Vec::new(),
+            gather_take_limits: Vec::new(),
             block_scope_depth: 0,
             enum_types: HashMap::new(),
             classes,
@@ -1662,6 +1705,15 @@ impl Interpreter {
                 );
                 roles.insert(
                     "Iterator".to_string(),
+                    RoleDef {
+                        attributes: Vec::new(),
+                        methods: HashMap::new(),
+                        is_stub_role: false,
+                        is_hidden: false,
+                    },
+                );
+                roles.insert(
+                    "PredictiveIterator".to_string(),
                     RoleDef {
                         attributes: Vec::new(),
                         methods: HashMap::new(),
@@ -1717,6 +1769,7 @@ impl Interpreter {
             role_hides: HashMap::new(),
             role_type_params: HashMap::new(),
             class_role_param_bindings: HashMap::new(),
+            attribute_build_overrides: HashMap::new(),
             subsets: HashMap::new(),
             proto_subs: HashSet::new(),
             proto_tokens: HashSet::new(),
@@ -1726,6 +1779,7 @@ impl Interpreter {
             loaded_modules: HashSet::new(),
             need_hidden_classes: HashSet::new(),
             closure_env_overrides: HashMap::new(),
+            protect_block_cache: HashMap::new(),
             module_load_stack: Vec::new(),
             exported_subs: HashMap::new(),
             exported_vars: HashMap::new(),
@@ -2813,6 +2867,16 @@ impl Interpreter {
         self.var_bindings.get(name).map(|s| s.as_str())
     }
 
+    /// Save and clear var_bindings, returning the saved state.
+    pub(crate) fn take_var_bindings(&mut self) -> HashMap<String, String> {
+        std::mem::take(&mut self.var_bindings)
+    }
+
+    /// Restore previously saved var_bindings.
+    pub(crate) fn restore_var_bindings(&mut self, bindings: HashMap<String, String>) {
+        self.var_bindings = bindings;
+    }
+
     pub(crate) fn has_class(&self, name: &str) -> bool {
         self.classes.contains_key(name)
     }
@@ -2906,6 +2970,7 @@ impl Interpreter {
             type_metadata: self.type_metadata.clone(),
             when_matched: false,
             gather_items: Vec::new(),
+            gather_take_limits: Vec::new(),
             block_scope_depth: self.block_scope_depth,
             enum_types: self.enum_types.clone(),
             classes: self.classes.clone(),
@@ -2921,6 +2986,7 @@ impl Interpreter {
             role_hides: self.role_hides.clone(),
             role_type_params: self.role_type_params.clone(),
             class_role_param_bindings: self.class_role_param_bindings.clone(),
+            attribute_build_overrides: self.attribute_build_overrides.clone(),
             subsets: self.subsets.clone(),
             proto_subs: self.proto_subs.clone(),
             proto_tokens: self.proto_tokens.clone(),
@@ -2930,6 +2996,7 @@ impl Interpreter {
             loaded_modules: self.loaded_modules.clone(),
             need_hidden_classes: self.need_hidden_classes.clone(),
             closure_env_overrides: self.closure_env_overrides.clone(),
+            protect_block_cache: HashMap::new(),
             module_load_stack: Vec::new(),
             exported_subs: self.exported_subs.clone(),
             exported_vars: self.exported_vars.clone(),
@@ -2993,13 +3060,11 @@ impl Interpreter {
         values: Vec<Value>,
         target_fallback: &Value,
     ) -> Value {
-        if key.starts_with('@') {
+        if key.starts_with('@') && self.shared_vars_active {
             // Drop env's copy of the Arc first so that shared_vars holds
             // the only strong reference (refcount=1).  This allows
             // Arc::make_mut to mutate the vector in-place (O(1)) instead
             // of deep-copying it every time (which would make N pushes O(n²)).
-            // Reads still work because get_env_with_main_alias checks
-            // shared_vars first when shared_vars_active is true.
             self.env.remove(key);
             let mut sv = self.shared_vars.write().unwrap();
             if let Some(shared_value) = sv.remove(key) {
@@ -3009,6 +3074,7 @@ impl Interpreter {
                     let result = Value::Array(Arc::clone(&arc_items), kind);
                     sv.insert(key.to_string(), Value::Array(arc_items, kind));
                     drop(sv);
+                    self.env.insert(key.to_string(), result.clone());
                     let needs_mark_dirty = self
                         .shared_vars_dirty
                         .read()
@@ -3026,6 +3092,7 @@ impl Interpreter {
                 items.extend(values);
                 let result = Value::Array(Arc::clone(arc_items), *kind);
                 drop(sv);
+                self.env.insert(key.to_string(), result.clone());
                 let needs_mark_dirty = self
                     .shared_vars_dirty
                     .read()
@@ -3107,24 +3174,53 @@ impl Interpreter {
         if dirty_keys.is_empty() {
             return;
         }
-        let sv = self.shared_vars.read().unwrap();
-        for key in &dirty_keys {
-            if let Some(val) = sv.get(key) {
-                self.env.insert(key.clone(), val.clone());
+        let updates: Vec<(String, Value)> = {
+            let sv = self.shared_vars.read().unwrap();
+            let mut updates = Vec::new();
+            for key in &dirty_keys {
+                // Atomic ops store the value under an internal shared key, while
+                // dirty tracking also marks the user-visible variable name.
+                let name_key = format!("__mutsu_atomic_name::{key}");
+                let value_key = match sv.get(&name_key).or_else(|| self.env.get(&name_key)) {
+                    Some(Value::Str(vk)) => Some(vk.as_ref().clone()),
+                    _ => None,
+                };
+                if let Some(value_key) = value_key
+                    && let Some(val) = sv.get(value_key.as_str())
+                {
+                    updates.push((key.clone(), val.clone()));
+                    continue;
+                }
+
+                if let Some(val) = sv.get(key) {
+                    updates.push((key.clone(), val.clone()));
+                }
             }
+            updates
+        };
+        for (key, val) in updates {
+            self.env.insert(key, val);
         }
     }
 
-    /// Sync only the specified keys from shared_vars into env.
-    /// More efficient than full sync when we know which keys the block accesses.
-    pub(crate) fn sync_shared_vars_for_keys<'a>(&mut self, keys: impl Iterator<Item = &'a String>) {
+    /// Sync shared vars that are captured by the provided closure env.
+    /// Iterates whichever side is smaller to reduce per-call overhead.
+    pub(crate) fn sync_shared_vars_for_env(&mut self, captured_env: &Env) {
         if !self.shared_vars_active {
             return;
         }
         let sv = self.shared_vars.read().unwrap();
-        for key in keys {
-            if let Some(val) = sv.get(key) {
-                self.env.insert(key.clone(), val.clone());
+        if sv.len() <= captured_env.len() {
+            for (key, val) in sv.iter() {
+                if captured_env.contains_key(key) {
+                    self.env.insert(key.clone(), val.clone());
+                }
+            }
+        } else {
+            for key in captured_env.keys() {
+                if let Some(val) = sv.get(key) {
+                    self.env.insert(key.clone(), val.clone());
+                }
             }
         }
     }
@@ -3157,11 +3253,40 @@ impl Interpreter {
             if !key.starts_with("__mutsu_sigilless_alias::") {
                 continue;
             }
+            if !key.starts_with("__mutsu_sigilless_alias::!") {
+                continue;
+            }
             let Value::Str(alias_name) = alias else {
                 continue;
             };
+            if let Some(bare) = alias_name
+                .strip_prefix('$')
+                .or_else(|| alias_name.strip_prefix('@'))
+                .or_else(|| alias_name.strip_prefix('%'))
+                .or_else(|| alias_name.strip_prefix('&'))
+                && let Some(value) = current_env.get(bare).cloned()
+            {
+                saved_env.insert(alias_name.to_string(), value.clone());
+                saved_env.insert(bare.to_string(), value);
+                continue;
+            }
+            saved_env.insert(key.clone(), alias.clone());
             if let Some(value) = current_env.get(alias_name.as_str()).cloned() {
                 saved_env.insert(alias_name.to_string(), value);
+                continue;
+            }
+            if let Some(bare_name) = key.strip_prefix("__mutsu_sigilless_alias::")
+                && let Some(value) = current_env.get(bare_name).cloned()
+            {
+                saved_env.insert(bare_name.to_string(), value.clone());
+                saved_env.insert(alias_name.to_string(), value);
+            }
+        }
+        for (key, value) in current_env {
+            if key.starts_with("__mutsu_predictive_seq_iter::")
+                || key.starts_with("__mutsu_sigilless_alias::!")
+            {
+                saved_env.insert(key.clone(), value.clone());
             }
         }
     }

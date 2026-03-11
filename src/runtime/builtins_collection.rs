@@ -1282,13 +1282,27 @@ impl Interpreter {
 
     pub(super) fn builtin_roundrobin(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.is_empty() {
-            return Ok(Value::array(Vec::new()));
-        }
-        if args.len() == 1 {
-            return Ok(args[0].clone());
+            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
         }
 
-        let streams: Vec<Vec<Value>> = args
+        // Implement Raku's single-arg rule (+@lol): when called with a single
+        // iterable arg, iterate it to get the list of streams.
+        let effective_args: Vec<Value> = if args.len() == 1 {
+            match &args[0] {
+                Value::Array(items, kind) if kind.is_itemized() => args.to_vec(),
+                Value::Array(items, _) => items.iter().cloned().collect(),
+                Value::Seq(items) | Value::Slip(items) => items.iter().cloned().collect(),
+                _ => args.to_vec(),
+            }
+        } else {
+            args.to_vec()
+        };
+
+        if effective_args.is_empty() {
+            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+        }
+
+        let streams: Vec<Vec<Value>> = effective_args
             .iter()
             .map(|arg| match arg {
                 Value::Capture { positional, named }
@@ -1324,6 +1338,6 @@ impl Interpreter {
             rounds.push(Value::array(tuple));
         }
 
-        Ok(Value::array(rounds))
+        Ok(Value::Seq(std::sync::Arc::new(rounds)))
     }
 }

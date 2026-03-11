@@ -577,6 +577,8 @@ impl VM {
             let result = self.interpreter.call_function(name, Vec::new())?;
             self.env_dirty = true;
             result
+        } else if name == "i" {
+            Value::Complex(0.0, 1.0)
         } else if name == "NaN" {
             Value::Num(f64::NAN)
         } else if name == "Inf" {
@@ -636,7 +638,26 @@ impl VM {
             return Ok(());
         }
         if let Value::LazyList(ref ll) = target {
-            target = Value::array(self.interpreter.force_lazy_list_bridge(ll)?);
+            let forced = if matches!(
+                ll.env.get("__mutsu_lazylist_from_gather"),
+                Some(Value::Bool(true))
+            ) {
+                match &index {
+                    Value::Int(i) if *i >= 0 => self
+                        .interpreter
+                        .force_lazy_list_prefix_bridge(ll, (*i as usize).saturating_add(1))?,
+                    Value::Range(_, end) if *end >= 0 => self
+                        .interpreter
+                        .force_lazy_list_prefix_bridge(ll, (*end as usize).saturating_add(1))?,
+                    Value::RangeExcl(_, end) if *end > 0 => self
+                        .interpreter
+                        .force_lazy_list_prefix_bridge(ll, *end as usize)?,
+                    _ => self.interpreter.force_lazy_list_bridge(ll)?,
+                }
+            } else {
+                self.interpreter.force_lazy_list_bridge(ll)?
+            };
+            target = Value::array(forced);
         }
         let result = match (target, index) {
             (Value::Array(items, is_arr), Value::Int(i)) => {

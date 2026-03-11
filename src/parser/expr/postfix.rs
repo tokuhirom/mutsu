@@ -738,6 +738,22 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         let (r, expr) = prefix_expr(r)?;
         return Ok((r, expr));
     }
+    // hyper prefix: eager materialization variant (same surface semantics as `.hyper`)
+    if input.starts_with("hyper") && !is_ident_char(input.as_bytes().get(5).copied()) {
+        let r = &input[5..];
+        let (r, _) = ws(r)?;
+        let (r, expr) = prefix_expr(r)?;
+        return Ok((
+            r,
+            Expr::MethodCall {
+                target: Box::new(expr),
+                name: Symbol::intern("hyper"),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+            },
+        ));
+    }
     // eager prefix: force lazy evaluation
     if input.starts_with("eager") && !is_ident_char(input.as_bytes().get(5).copied()) {
         let r = &input[5..];
@@ -1303,6 +1319,35 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     rest = r;
                     continue;
                 }
+                // Check for colon-arg syntax: !method: arg, arg2
+                let (r2, _) = ws(r)?;
+                if r2.starts_with(':') && !r2.starts_with("::") {
+                    let r3 = &r2[1..];
+                    let (r3, _) = ws(r3)?;
+                    let (r3, first_arg) = expression(r3)?;
+                    let mut args = vec![first_arg];
+                    let mut r_inner = r3;
+                    loop {
+                        let (r4, _) = ws(r_inner)?;
+                        if !r4.starts_with(',') {
+                            break;
+                        }
+                        let r4 = &r4[1..];
+                        let (r4, _) = ws(r4)?;
+                        let (r4, next) = expression(r4)?;
+                        args.push(next);
+                        r_inner = r4;
+                    }
+                    expr = Expr::MethodCall {
+                        target: Box::new(expr),
+                        name,
+                        args,
+                        modifier: Some('!'),
+                        quoted: false,
+                    };
+                    rest = r_inner;
+                    continue;
+                }
                 expr = Expr::MethodCall {
                     target: Box::new(expr),
                     name,
@@ -1501,7 +1546,16 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 )
             };
             let indexed_expr = if is_zen_angle {
-                expr.clone()
+                match &expr {
+                    Expr::HashVar(_) => expr.clone(),
+                    _ => Expr::MethodCall {
+                        target: Box::new(expr.clone()),
+                        name: Symbol::intern("__mutsu_zen_angle"),
+                        args: Vec::new(),
+                        modifier: None,
+                        quoted: false,
+                    },
+                }
             } else {
                 Expr::Index {
                     target: Box::new(expr),

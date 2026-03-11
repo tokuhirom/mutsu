@@ -27,15 +27,26 @@ impl VM {
         }
     }
 
-    fn append_flattened_call_arg(args: &mut Vec<Value>, arg: Value) {
+    fn append_flattened_call_arg(args: &mut Vec<Value>, arg: Value, preserve_empty_slip: bool) {
         match arg {
             Value::Slip(items) => {
+                if preserve_empty_slip && items.is_empty() {
+                    args.push(Value::Slip(items));
+                    return;
+                }
                 for item in items.iter() {
                     Self::append_slip_item(args, item);
                 }
             }
             other => args.push(other),
         }
+    }
+
+    fn preserve_empty_slip_arg(name: &str) -> bool {
+        matches!(
+            name,
+            "infix:<andthen>" | "infix:<notandthen>" | "andthen" | "notandthen"
+        )
     }
 
     fn append_slip_value(args: &mut Vec<Value>, slip_val: Value) {
@@ -218,9 +229,10 @@ impl VM {
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
         // Flatten any Slip values in the argument list (from |capture slipping)
+        let preserve_empty_slip = Self::preserve_empty_slip_arg(&name);
         let mut args = Vec::new();
         for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg);
+            Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
         }
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {
@@ -381,9 +393,10 @@ impl VM {
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
         // Flatten any Slip values in the argument list (from |capture slipping)
+        let preserve_empty_slip = Self::preserve_empty_slip_arg(&method);
         let mut args = Vec::new();
         for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg);
+            Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
         }
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethod target".to_string())
@@ -512,6 +525,25 @@ impl VM {
                     | "stdout"
                     | "stderr"
                     | "Supply"
+            )
+        {
+            skip_native = true;
+        }
+        if !skip_native
+            && matches!(&target, Value::Instance { class_name, .. } if class_name == "IterationBuffer")
+            && matches!(
+                method.as_str(),
+                "elems"
+                    | "AT-POS"
+                    | "BIND-POS"
+                    | "push"
+                    | "unshift"
+                    | "List"
+                    | "Slip"
+                    | "Seq"
+                    | "append"
+                    | "prepend"
+                    | "clear"
             )
         {
             skip_native = true;
@@ -939,7 +971,7 @@ impl VM {
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
         let mut args = Vec::new();
         for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg);
+            Self::append_flattened_call_arg(&mut args, arg, false);
         }
         let name_val = self
             .stack
@@ -990,7 +1022,7 @@ impl VM {
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
         let mut args = Vec::new();
         for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg);
+            Self::append_flattened_call_arg(&mut args, arg, false);
         }
         let name_val = self
             .stack
@@ -1040,9 +1072,10 @@ impl VM {
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
         // Flatten any Slip values in the argument list (from |capture slipping)
+        let preserve_empty_slip = Self::preserve_empty_slip_arg(&method);
         let mut args = Vec::new();
         for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg);
+            Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
         }
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethodMut target".to_string())
@@ -1182,6 +1215,25 @@ impl VM {
         {
             skip_native = true;
         }
+        if !skip_native
+            && matches!(&target, Value::Instance { class_name, .. } if class_name == "IterationBuffer")
+            && matches!(
+                method.as_str(),
+                "elems"
+                    | "AT-POS"
+                    | "BIND-POS"
+                    | "push"
+                    | "unshift"
+                    | "List"
+                    | "Slip"
+                    | "Seq"
+                    | "append"
+                    | "prepend"
+                    | "clear"
+            )
+        {
+            skip_native = true;
+        }
         if skip_native {
             self.interpreter.skip_pseudo_method_native = Some(method.clone());
         }
@@ -1234,7 +1286,7 @@ impl VM {
         // Flatten any Slip values in the argument list (from |capture slipping)
         let mut args = Vec::new();
         for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg);
+            Self::append_flattened_call_arg(&mut args, arg, false);
         }
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {
@@ -1831,19 +1883,14 @@ impl VM {
         _outer_code: &CompiledCode,
         code_val: &Value,
     ) -> Result<Value, RuntimeError> {
-        let (block_cc, captured_env) = match code_val {
+        let (block_cc, block_fns, captured_env, captured_slots) = match code_val {
             Value::Sub(data) => {
                 // Targeted sync: refresh shared vars for keys the closure captures
-                self.interpreter.sync_shared_vars_for_keys(data.env.keys());
-                let block_cc = match &data.compiled_code {
-                    Some(cc) => cc.clone(),
-                    None => {
-                        let compiler = crate::compiler::Compiler::new();
-                        let (compiled, _) = compiler.compile(&data.body);
-                        Arc::new(compiled)
-                    }
-                };
-                (block_cc, Some(&data.env))
+                self.interpreter.sync_shared_vars_for_env(&data.env);
+                let (block_cc, block_fns, captured_slots) = self
+                    .interpreter
+                    .get_or_compile_protect_block_with_slots(data);
+                (block_cc, block_fns, Some(&data.env), captured_slots)
             }
             _ => {
                 return self.interpreter.call_protect_block(code_val);
@@ -1857,8 +1904,9 @@ impl VM {
         // Initialize locals for the block
         self.locals = vec![Value::Nil; block_cc.locals.len()];
         if let Some(captured) = captured_env {
-            for (i, name) in block_cc.locals.iter().enumerate() {
-                if captured.contains_key(name)
+            for i in captured_slots.iter().copied() {
+                if let Some(name) = block_cc.locals.get(i)
+                    && captured.contains_key(name)
                     && let Some(val) = self.interpreter.env().get(name)
                 {
                     self.locals[i] = val.clone();
@@ -1867,11 +1915,10 @@ impl VM {
         }
 
         // Execute the block's opcodes inline
-        let empty_fns = HashMap::new();
         let mut sub_ip = 0;
         let mut exec_err = None;
         while sub_ip < block_cc.ops.len() {
-            if let Err(e) = self.exec_one(&block_cc, &mut sub_ip, &empty_fns) {
+            if let Err(e) = self.exec_one(&block_cc, &mut sub_ip, &block_fns) {
                 exec_err = Some(e);
                 break;
             }
@@ -1879,8 +1926,10 @@ impl VM {
 
         // Sync locals back to env
         if let Some(captured) = captured_env {
-            for (i, name) in block_cc.locals.iter().enumerate() {
-                if captured.contains_key(name) {
+            for i in captured_slots.iter().copied() {
+                if let Some(name) = block_cc.locals.get(i)
+                    && captured.contains_key(name)
+                {
                     self.interpreter
                         .env_mut()
                         .insert(name.clone(), self.locals[i].clone());

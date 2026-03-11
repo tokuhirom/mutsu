@@ -51,6 +51,7 @@ impl Interpreter {
                 if status == "Broken" {
                     // .result on a Broken promise throws the cause as X::AdHoc
                     let (result, _, _) = shared.wait();
+                    self.sync_shared_vars_to_env();
                     let msg = result.to_string_value();
                     let mut attrs = HashMap::new();
                     attrs.insert("payload".to_string(), Value::str(msg.clone()));
@@ -62,6 +63,7 @@ impl Interpreter {
                 } else {
                     // Planned blocks, Kept returns value
                     let result = shared.result_blocking();
+                    self.sync_shared_vars_to_env();
                     // Replay deferred taps for Proc::Async results
                     if let Value::Instance {
                         ref class_name,

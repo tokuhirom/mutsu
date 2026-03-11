@@ -201,7 +201,7 @@ impl Value {
             Value::Nil => false,
             Value::Whatever => true,
             Value::HyperWhatever => true,
-            Value::Capture { positional, .. } => !positional.is_empty(),
+            Value::Capture { positional, named } => !positional.is_empty() || !named.is_empty(),
             Value::Uni { text, .. } => !text.is_empty(),
             Value::Mixin(inner, mixins) => {
                 if let Some(bool_val) = mixins.get("Bool") {

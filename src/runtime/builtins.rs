@@ -414,6 +414,7 @@ impl Interpreter {
             "__mutsu_feed_array_assign" => self.builtin_feed_array_assign(&args),
             "__mutsu_reverse_xx" => self.builtin_reverse_xx(&args),
             "__mutsu_reverse_andthen" => self.builtin_reverse_andthen(&args),
+            "__mutsu_andthen_finalize" => self.builtin_andthen_finalize(&args),
             "__mutsu_cross_shortcircuit" => self.builtin_cross_shortcircuit(&args),
             "__mutsu_bind_index_value" => Ok(Value::Pair(
                 "__mutsu_bind_index_value".to_string(),
@@ -577,8 +578,13 @@ impl Interpreter {
             "slip" | "Slip" => self.builtin_slip(&args),
             "take" => {
                 let value = args.first().cloned().unwrap_or(Value::Nil);
-                self.take_value(value.clone());
+                self.take_value(value.clone())?;
                 Ok(value)
+            }
+            "return" => {
+                let mut err = RuntimeError::new("return");
+                err.return_value = Some(args.first().cloned().unwrap_or(Value::Nil));
+                Err(err)
             }
             "reverse" => self.builtin_reverse(&args),
             "sort" => self.builtin_sort(&args),
@@ -590,6 +596,44 @@ impl Interpreter {
             "map" => self.builtin_map(&args),
             "grep" => self.builtin_grep(&args),
             "first" => self.builtin_first(&args),
+            "tail" => {
+                if args.len() < 2 {
+                    return Err(RuntimeError::new("Too few positionals passed to 'tail'"));
+                }
+                let tail_spec = args[0].clone();
+                let arg_sources = self.pending_call_arg_sources.clone().unwrap_or_default();
+                let mut values = Vec::new();
+                for (offset, value) in args[1..].iter().enumerate() {
+                    let source_name = arg_sources
+                        .get(offset + 1)
+                        .and_then(|entry| entry.as_ref())
+                        .map(String::as_str);
+                    if source_name.is_some_and(|name| {
+                        !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&')
+                    }) {
+                        values.push(value.clone());
+                        continue;
+                    }
+                    match value {
+                        Value::Array(items, ..) => {
+                            values.extend(items.iter().cloned());
+                        }
+                        Value::Seq(items) | Value::Slip(items) => {
+                            values.extend(items.iter().cloned());
+                        }
+                        Value::Range(..)
+                        | Value::RangeExcl(..)
+                        | Value::RangeExclStart(..)
+                        | Value::RangeExclBoth(..)
+                        | Value::GenericRange { .. } => {
+                            values.extend(crate::runtime::value_to_list(value));
+                        }
+                        other => values.push(other.clone()),
+                    }
+                }
+                let list = Value::array(values);
+                self.call_method_with_values(list, "tail", vec![tail_spec])
+            }
             "classify" | "categorize" => self.builtin_classify(name, &args),
             // String functions
             "index" => {
@@ -1896,6 +1940,38 @@ impl Interpreter {
         result
     }
 
+    fn builtin_andthen_finalize(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() != 2 {
+            return Err(RuntimeError::new(
+                "__mutsu_andthen_finalize expects lhs and rhs",
+            ));
+        }
+        let lhs = args[0].clone();
+        let rhs = args[1].clone();
+        if matches!(
+            rhs,
+            Value::Sub(_)
+                | Value::WeakSub(_)
+                | Value::Routine { .. }
+                | Value::Instance { .. }
+                | Value::Mixin(..)
+        ) {
+            let saved_topic = self.env.get("_").cloned();
+            self.env.insert("_".to_string(), lhs.clone());
+            let result = self.eval_call_on_value(rhs, vec![lhs]);
+            match saved_topic {
+                Some(value) => {
+                    self.env.insert("_".to_string(), value);
+                }
+                None => {
+                    self.env.remove("_");
+                }
+            }
+            return result;
+        }
+        Ok(rhs)
+    }
+
     fn builtin_cross_shortcircuit(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.len() != 3 {
             return Err(RuntimeError::new(
@@ -2322,13 +2398,42 @@ impl Interpreter {
         Ok(Value::Nil)
     }
 
-    fn atomic_var_name_arg(args: &[Value]) -> Result<String, RuntimeError> {
+    fn canonical_atomic_var_name(&self, raw_name: &str, target_value: Option<&Value>) -> String {
+        let is_user_visible = |name: &str| {
+            name != "_"
+                && name != "@_"
+                && name != "?LINE"
+                && !name.starts_with("__mutsu_")
+                && !name.starts_with('&')
+        };
+        if is_user_visible(raw_name) && self.env.contains_key(raw_name) {
+            return raw_name.to_string();
+        }
+
+        let current = target_value
+            .cloned()
+            .or_else(|| self.env.get(raw_name).cloned());
+        if let Some(current) = current {
+            for (key, value) in &self.env {
+                if !is_user_visible(key) {
+                    continue;
+                }
+                if crate::runtime::values_identical(value, &current) {
+                    return key.clone();
+                }
+            }
+        }
+        raw_name.to_string()
+    }
+
+    fn atomic_var_name_arg(&self, args: &[Value]) -> Result<String, RuntimeError> {
         let Some(name) = args.first() else {
             return Err(RuntimeError::new(
                 "atomic variable operation requires variable name",
             ));
         };
-        Ok(name.to_string_value())
+        let raw_name = name.to_string_value();
+        Ok(self.canonical_atomic_var_name(&raw_name, Some(name)))
     }
 
     fn atomic_shared_value_key(id: u64) -> String {
@@ -2416,7 +2521,7 @@ impl Interpreter {
     }
 
     fn builtin_atomic_fetch_var(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let name = Self::atomic_var_name_arg(args)?;
+        let name = self.atomic_var_name_arg(args)?;
         let value_key = self.atomic_value_key_for_name(&name);
         let shared = self.shared_vars.read().unwrap();
         Ok(self.atomic_current_value(&shared, &name, &value_key))
@@ -2428,7 +2533,8 @@ impl Interpreter {
                 "atomic store requires variable name and value",
             ));
         }
-        let name = args[0].to_string_value();
+        let raw_name = args[0].to_string_value();
+        let name = self.canonical_atomic_var_name(&raw_name, args.first());
         let value = self.atomic_assign_coerced_value(&name, args[1].clone())?;
         let value_key = self.atomic_value_key_for_name(&name);
         self.env.insert(name.clone(), value.clone());
@@ -2449,7 +2555,8 @@ impl Interpreter {
                 "atomic add requires variable name and increment value",
             ));
         }
-        let name = args[0].to_string_value();
+        let raw_name = args[0].to_string_value();
+        let name = self.canonical_atomic_var_name(&raw_name, args.first());
         let delta = args[1].clone();
         self.check_readonly_for_modify(&name)?;
         let value_key = self.atomic_value_key_for_name(&name);
@@ -2472,7 +2579,7 @@ impl Interpreter {
         delta: i64,
         return_old: bool,
     ) -> Result<Value, RuntimeError> {
-        let name = Self::atomic_var_name_arg(args)?;
+        let name = self.atomic_var_name_arg(args)?;
         self.check_readonly_for_modify(&name)?;
         let value_key = self.atomic_value_key_for_name(&name);
         let mut shared = self.shared_vars.write().unwrap();
@@ -2513,7 +2620,8 @@ impl Interpreter {
                 "cas requires 2 or 3 arguments: cas($var, $expected, $new) or cas($var, &code)",
             ));
         }
-        let name = args[0].to_string_value();
+        let raw_name = args[0].to_string_value();
+        let name = self.canonical_atomic_var_name(&raw_name, args.first());
         self.check_readonly_for_modify(&name)?;
         let value_key = self.atomic_value_key_for_name(&name);
 
@@ -2575,10 +2683,18 @@ impl Interpreter {
                 };
                 self.env.insert(name.clone(), current.clone());
                 let new_val = {
+                    let bind_dollar_topic =
+                        matches!(&code, Value::Sub(sub) if sub.params.is_empty());
                     let saved_topic = self.env.get("_").cloned();
-                    let saved_dollar_topic = self.env.get("$_").cloned();
+                    let saved_dollar_topic = if bind_dollar_topic {
+                        self.env.get("$_").cloned()
+                    } else {
+                        None
+                    };
                     self.env.insert("_".to_string(), current.clone());
-                    self.env.insert("$_".to_string(), current.clone());
+                    if bind_dollar_topic {
+                        self.env.insert("$_".to_string(), current.clone());
+                    }
                     let call_args = if let Value::Sub(sub) = &code {
                         if sub.params.is_empty() {
                             Vec::new()
@@ -2588,7 +2704,7 @@ impl Interpreter {
                     } else {
                         vec![current.clone()]
                     };
-                    let result = self.call_sub_value(code.clone(), call_args, true)?;
+                    let result = self.call_sub_value(code.clone(), call_args, bind_dollar_topic)?;
                     match saved_topic {
                         Some(v) => {
                             self.env.insert("_".to_string(), v);
@@ -2597,12 +2713,14 @@ impl Interpreter {
                             self.env.remove("_");
                         }
                     }
-                    match saved_dollar_topic {
-                        Some(v) => {
-                            self.env.insert("$_".to_string(), v);
-                        }
-                        None => {
-                            self.env.remove("$_");
+                    if bind_dollar_topic {
+                        match saved_dollar_topic {
+                            Some(v) => {
+                                self.env.insert("$_".to_string(), v);
+                            }
+                            None => {
+                                self.env.remove("$_");
+                            }
                         }
                     }
                     result

@@ -279,7 +279,7 @@ Roast test fixing is automated via a fleet of sandboxed AI agents. The parent AI
 - **`ai-run-roast.sh`** — Takes a single roast test file path, builds a prompt with investigation steps, and runs an agent in a sandbox to fix it. If the sandbox has uncommitted changes from a previous interrupted session, the prompt instructs the agent to continue from where it left off. Retries up to 3 times on failure.
 - **`ai-next-roast.sh`** — Continuously picks random failing roast tests (via `pick-next-roast.sh`), coordinates with other instances via `wip.txt` to avoid duplicate work, and delegates each test to `ai-run-roast.sh`.
 - **`ai-supervisor.sh`** — Monitors open PRs for merge conflicts and CI failures. Dispatches agents to rebase/fix them. When idle, triggers roast history updates. Polls every 10 minutes.
-- **`ai-fleet.sh`** — Fleet manager. Monitors tmux windows with the `fleet:` prefix and automatically restarts dead workers. Can run as a daemon (`ai-fleet.sh`) or one-shot (`ai-fleet.sh --once`).
+- **`ai-fleet.sh`** — Fleet manager. Monitors tmux windows with the `fleet:` prefix and automatically restarts dead workers. Fleet composition is configured via CLI options.
 - **`tmux-status.sh`** — Quick status display of all tmux windows (pid, alive/dead, last N lines of output). Usage: `./scripts/tmux-status.sh [lines]`
 
 ### Fleet manager
@@ -287,20 +287,31 @@ Roast test fixing is automated via a fleet of sandboxed AI agents. The parent AI
 `ai-fleet.sh` manages the fleet automatically. It monitors tmux windows with the `fleet:` prefix and restarts dead workers.
 
 ```bash
-# Start the fleet manager (runs in foreground, Ctrl-C to stop)
+# Start with defaults (codex x2, claude x1, supervisor using codex)
 ./scripts/ai-fleet.sh
+
+# Custom fleet composition
+./scripts/ai-fleet.sh --codex 3 --claude 2 --supervisor claude
+
+# No supervisor
+./scripts/ai-fleet.sh --codex 2 --claude 1 --no-supervisor
 
 # Check status once without looping
 ./scripts/ai-fleet.sh --once
 
 # Dry-run: show what would be launched
 ./scripts/ai-fleet.sh --once --dry-run
+
+# Gracefully stop specific workers (fleet manager will restart them)
+./scripts/ai-fleet.sh --stop supervisor
+./scripts/ai-fleet.sh --stop codex        # stops all codex workers
+./scripts/ai-fleet.sh --stop all
 ```
 
-Default fleet composition (edit `FLEET` array in `ai-fleet.sh` to change):
-- `fleet:codex:1`, `fleet:codex:2` — codex workers
-- `fleet:claude:1` — claude worker
-- `fleet:supervisor:1` — PR supervisor
+Default fleet composition (override with CLI options):
+- `--codex 2` — 2 codex workers
+- `--claude 1` — 1 claude worker
+- `--supervisor codex` — supervisor using codex agent
 
 ### Monitoring
 

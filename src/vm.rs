@@ -442,11 +442,28 @@ impl VM {
                 {
                     return Err(self.strict_undeclared_error(&name));
                 }
-                let val = self.stack.pop().unwrap();
-                let mut val = if name.starts_with('%') {
-                    runtime::coerce_to_hash(val)
+                let raw_val = self.stack.pop().unwrap_or(Value::Nil);
+                let (raw_val, bind_source) = if let Value::Capture { positional, named } = &raw_val
+                {
+                    if positional.is_empty() {
+                        if let (Some(Value::Str(source_name)), Some(inner)) = (
+                            named.get("__mutsu_varref_name"),
+                            named.get("__mutsu_varref_value"),
+                        ) {
+                            (inner.clone(), Some(source_name.to_string()))
+                        } else {
+                            (raw_val, None)
+                        }
+                    } else {
+                        (raw_val, None)
+                    }
                 } else {
-                    val
+                    (raw_val, None)
+                };
+                let mut val = if name.starts_with('%') {
+                    runtime::coerce_to_hash(raw_val)
+                } else {
+                    raw_val
                 };
                 if let Some(constraint) = self.interpreter.var_type_constraint(&name)
                     && !name.starts_with('%')
@@ -480,18 +497,49 @@ impl VM {
                 {
                     return Err(RuntimeError::new("X::Assignment::RO"));
                 }
-                if let Some(alias_name) = self.interpreter.env().get(&alias_key).and_then(|v| {
+                if let Some(source_name) = bind_source {
+                    let mut resolved_source = source_name;
+                    let mut seen = std::collections::HashSet::new();
+                    while seen.insert(resolved_source.clone()) {
+                        let key = format!("__mutsu_sigilless_alias::{}", resolved_source);
+                        let Some(Value::Str(next)) = self.interpreter.env().get(&key) else {
+                            break;
+                        };
+                        resolved_source = next.to_string();
+                    }
+                    self.interpreter
+                        .env_mut()
+                        .insert(alias_key.clone(), Value::str(resolved_source));
+                    self.interpreter
+                        .env_mut()
+                        .insert(readonly_key.clone(), Value::Bool(false));
+                }
+                self.set_env_with_main_alias(&name, val.clone());
+                // Sync to shared_vars for cross-thread visibility
+                self.interpreter.set_shared_var(&name, val.clone());
+                let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
                     if let Value::Str(name) = v {
                         Some(name.to_string())
                     } else {
                         None
                     }
-                }) {
-                    self.interpreter.env_mut().insert(alias_name, val.clone());
+                });
+                let mut seen_aliases = std::collections::HashSet::new();
+                while let Some(current_alias) = alias_name {
+                    if !seen_aliases.insert(current_alias.clone()) {
+                        break;
+                    }
+                    self.set_env_with_main_alias(&current_alias, val.clone());
+                    self.update_local_if_exists(code, &current_alias, &val);
+                    let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
+                    alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
+                        if let Value::Str(name) = v {
+                            Some(name.to_string())
+                        } else {
+                            None
+                        }
+                    });
                 }
-                self.set_env_with_main_alias(&name, val.clone());
-                // Sync to shared_vars for cross-thread visibility
-                self.interpreter.set_shared_var(&name, val.clone());
                 if name == "_"
                     && let Some(ref source_var) = self.topic_source_var
                     && !source_var.starts_with('@')
@@ -1526,6 +1574,8 @@ impl VM {
                 samemark,
                 nth_idx,
                 x_count,
+                global,
+                perl5,
             } => {
                 self.exec_subst_op(
                     code,
@@ -1534,6 +1584,8 @@ impl VM {
                     *samemark,
                     *nth_idx,
                     *x_count,
+                    *global,
+                    *perl5,
                 )?;
                 *ip += 1;
             }
@@ -1543,6 +1595,8 @@ impl VM {
                 samemark,
                 nth_idx,
                 x_count,
+                global,
+                perl5,
             } => {
                 self.exec_non_destructive_subst_op(
                     code,
@@ -1551,6 +1605,8 @@ impl VM {
                     *samemark,
                     *nth_idx,
                     *x_count,
+                    *global,
+                    *perl5,
                 )?;
                 *ip += 1;
             }
@@ -1576,7 +1632,7 @@ impl VM {
 
             // -- Take --
             OpCode::Take => {
-                self.exec_take_op();
+                self.exec_take_op()?;
                 *ip += 1;
             }
 

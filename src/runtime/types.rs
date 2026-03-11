@@ -625,6 +625,19 @@ pub(crate) fn value_is_defined(value: &Value) -> bool {
 }
 
 impl Interpreter {
+    fn resolve_sigilless_alias_source_name(&self, source_name: &str) -> String {
+        let mut resolved = source_name.to_string();
+        let mut seen = std::collections::HashSet::new();
+        while seen.insert(resolved.clone()) {
+            let key = sigilless_alias_key(&resolved);
+            let Some(Value::Str(next)) = self.env.get(&key) else {
+                break;
+            };
+            resolved = next.to_string();
+        }
+        resolved
+    }
+
     /// Save the current readonly_vars set (call before function body execution).
     pub(crate) fn save_readonly_vars(&self) -> HashSet<String> {
         self.readonly_vars.clone()
@@ -692,6 +705,24 @@ impl Interpreter {
 
     fn bind_param_value(&mut self, name: &str, value: Value) {
         self.env.insert(name.to_string(), value.clone());
+        if let Some(attr_name) = name.strip_prefix('!')
+            && let Some(Value::Instance {
+                class_name,
+                attributes,
+                id,
+            }) = self.env.get("self").cloned()
+        {
+            let mut updated_attrs = (*attributes).clone();
+            updated_attrs.insert(attr_name.to_string(), value.clone());
+            self.env.insert(
+                "self".to_string(),
+                Value::Instance {
+                    class_name,
+                    attributes: std::sync::Arc::new(updated_attrs),
+                    id,
+                },
+            );
+        }
         if matches!(
             value,
             Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
@@ -1977,15 +2008,16 @@ impl Interpreter {
                 } else {
                     has_positional_slurpy = true;
                 }
-            } else {
+            } else if pd.default.is_none() && !pd.optional_marker {
                 required += 1;
             }
         }
+        let max_positional = positional_params.iter().filter(|p| !p.slurpy).count();
         if has_positional_slurpy {
             if positional_arg_count < required {
                 return false;
             }
-        } else if positional_arg_count != required {
+        } else if positional_arg_count < required || positional_arg_count > max_positional {
             return false;
         }
         if !has_hash_slurpy {
@@ -2071,7 +2103,11 @@ impl Interpreter {
             // and named placeholders ($:name) by matching Pair arg keys.
             let positional_args: Vec<Value> = plain_args
                 .iter()
-                .filter(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
+                .filter(|a| match a {
+                    Value::Pair(..) => false,
+                    Value::ValuePair(key, _) => !matches!(key.as_ref(), Value::Str(..)),
+                    _ => true,
+                })
                 .cloned()
                 .collect();
             let named_args: Vec<(String, Value)> = plain_args
@@ -2445,9 +2481,27 @@ impl Interpreter {
                         let alias_key = sigilless_alias_key(&pd.name);
                         let readonly_key = sigilless_readonly_key(&pd.name);
                         if let Some((source_name, inner)) = varref_from_value(&raw_arg) {
+                            let resolved_source =
+                                self.resolve_sigilless_alias_source_name(&source_name);
                             value = inner;
-                            self.env.insert(alias_key, Value::str(source_name));
+                            self.env.insert(alias_key, Value::str(resolved_source));
                             self.env.insert(readonly_key, Value::Bool(false));
+                        } else if let Some(source_name) = arg_sources
+                            .as_ref()
+                            .and_then(|names| names.get(positional_idx))
+                            .and_then(|name| name.as_ref())
+                            .cloned()
+                        {
+                            let resolved_source =
+                                self.resolve_sigilless_alias_source_name(&source_name);
+                            if let Some(source_val) = self.env.get(&resolved_source).cloned() {
+                                value = source_val;
+                                self.env.insert(alias_key, Value::str(resolved_source));
+                                self.env.insert(readonly_key, Value::Bool(false));
+                            } else {
+                                self.env.remove(&alias_key);
+                                self.env.insert(readonly_key, Value::Bool(true));
+                            }
                         } else {
                             self.env.remove(&alias_key);
                             self.env.insert(readonly_key, Value::Bool(true));

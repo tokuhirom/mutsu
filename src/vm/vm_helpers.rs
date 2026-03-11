@@ -1,6 +1,8 @@
 use super::*;
 use crate::symbol::Symbol;
 
+const ATTR_ALIAS_META_PREFIX: &str = "__mutsu_attr_alias::";
+
 impl VM {
     fn thread_right_first(
         left: &crate::value::JunctionKind,
@@ -104,6 +106,10 @@ impl VM {
         if let Some(val) = self.interpreter.env().get(name) {
             return Some(val.clone());
         }
+        // Anonymous scalar placeholders (from bare `$`) are invocation-local.
+        if name.starts_with("__ANON_STATE_") {
+            return None;
+        }
         // Fall back to shared_vars for cross-thread visibility of variables
         // that were explicitly updated by other threads.
         if let Some(v) = self.interpreter.get_shared_var(name) {
@@ -139,6 +145,10 @@ impl VM {
     }
 
     pub(super) fn set_env_with_main_alias(&mut self, name: &str, value: Value) {
+        if name.starts_with("__ANON_STATE_") {
+            self.interpreter.env_mut().insert(name.to_string(), value);
+            return;
+        }
         if !name.starts_with('^') {
             let placeholder = format!("^{name}");
             if self.interpreter.env().contains_key(&placeholder) {
@@ -902,6 +912,16 @@ impl VM {
         for (i, name) in code.locals.iter().enumerate() {
             if let Some(val) = self.interpreter.env().get(name) {
                 self.locals[i] = val.clone();
+                continue;
+            }
+            if let Some(bare) = name
+                .strip_prefix('$')
+                .or_else(|| name.strip_prefix('@'))
+                .or_else(|| name.strip_prefix('%'))
+                .or_else(|| name.strip_prefix('&'))
+                && let Some(val) = self.interpreter.env().get(bare)
+            {
+                self.locals[i] = val.clone();
             }
         }
     }
@@ -918,8 +938,7 @@ impl VM {
         if self.locals_dirty {
             for (i, name) in code.locals.iter().enumerate() {
                 if code.simple_locals[i] {
-                    self.interpreter
-                        .set_shared_var(name, self.locals[i].clone());
+                    self.set_env_with_main_alias(name, self.locals[i].clone());
                 }
             }
             self.locals_dirty = false;
@@ -965,13 +984,15 @@ impl VM {
                 _ => false,
             }
         }
-        let bypass_supply_extrema_fastpath =
-            (method_sym == "max" || method_sym == "min" || method_sym == "lines")
-                && args.len() <= 1
-                && (matches!(
-                    target,
-                    Value::Instance { class_name, .. } if class_name == "Supply"
-                ) || matches!(target, Value::Package(name) if name == "Supply"));
+        let bypass_supply_extrema_fastpath = (method_sym == "max"
+            || method_sym == "min"
+            || method_sym == "lines"
+            || method_sym == "elems")
+            && args.len() <= 1
+            && (matches!(
+                target,
+                Value::Instance { class_name, .. } if class_name == "Supply"
+            ) || matches!(target, Value::Package(name) if name == "Supply"));
         let bypass_supplier_supply_fastpath = method_sym == "Supply"
             && args.is_empty()
             && matches!(
@@ -984,6 +1005,7 @@ impl VM {
             && args.len() <= 1
             && matches!(target, Value::Package(_) | Value::Str(_));
         let bypass_squish_fastpath = method_sym == "squish";
+        let bypass_tail_fastpath = method_sym == "tail";
         let bypass_numeric_bridge_instance_fastpath = matches!(target, Value::Instance { .. })
             && (self.interpreter.type_matches_value("Real", target)
                 || self.interpreter.type_matches_value("Numeric", target)
@@ -1005,6 +1027,7 @@ impl VM {
             || bypass_gist_fastpath
             || bypass_pickroll_type_fastpath
             || bypass_squish_fastpath
+            || bypass_tail_fastpath
             || bypass_numeric_bridge_instance_fastpath
             || bypass_runtime_native_instance_fastpath
             || bypass_proxy
@@ -1612,6 +1635,8 @@ impl VM {
             .iter()
             .map(|(_, source)| source.clone())
             .collect();
+        let captured_names: std::collections::HashSet<&str> =
+            data.env.keys().map(|s| s.as_str()).collect();
         // Write back captured-variable changes, but NOT the closure's own
         // parameters/locals (which live in cc.locals).  Without this filter,
         // recursive &?BLOCK calls clobber the outer frame's $n, etc.
@@ -1620,9 +1645,12 @@ impl VM {
         for (k, v) in self.interpreter.env().iter() {
             if k != "_"
                 && k != "@_"
-                && restored_env.contains_key(k)
                 && !rw_sources.contains(k)
-                && !local_names.contains(k.as_str())
+                && (restored_env.contains_key(k)
+                    || captured_names.contains(k.as_str())
+                    || k.starts_with("__mutsu_predictive_seq_iter::")
+                    || k.starts_with("__mutsu_sigilless_alias::!"))
+                && (!local_names.contains(k.as_str()) || captured_names.contains(k.as_str()))
             {
                 restored_env.insert(k.clone(), v.clone());
             }
@@ -1677,6 +1705,11 @@ impl VM {
 
         self.push_call_frame();
         let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
+
+        // Clear var_bindings so attribute aliases from outer interpreter-level
+        // method calls don't leak into compiled method locals (e.g. `x → !x`
+        // from run_instance_method_resolved shadowing a local parameter `x`).
+        let saved_var_bindings = self.interpreter.take_var_bindings();
 
         self.interpreter.push_method_class(owner_class.to_string());
 
@@ -1818,6 +1851,7 @@ impl VM {
                                 .insert("self".to_string(), base.clone());
                         }
                         if !self.interpreter.type_matches_value(expected, &base) {
+                            self.interpreter.restore_var_bindings(saved_var_bindings);
                             self.interpreter.pop_method_class();
                             self.stack.truncate(saved_stack_depth);
                             let frame = self.pop_call_frame();
@@ -1844,12 +1878,44 @@ impl VM {
 
         // Bind attributes
         for (attr_name, attr_val) in &attributes {
+            if let Some(actual_attr) = attr_name.strip_prefix(ATTR_ALIAS_META_PREFIX) {
+                if let Value::Str(source_name) = attr_val {
+                    self.interpreter.env_mut().insert(
+                        format!("__mutsu_sigilless_alias::!{}", actual_attr),
+                        Value::str(source_name.to_string()),
+                    );
+                    self.interpreter.env_mut().insert(
+                        format!("__mutsu_sigilless_readonly::!{}", actual_attr),
+                        Value::Bool(false),
+                    );
+                }
+                continue;
+            }
             self.interpreter
                 .env_mut()
                 .insert(format!("!{}", attr_name), attr_val.clone());
             self.interpreter
                 .env_mut()
                 .insert(format!(".{}", attr_name), attr_val.clone());
+            match attr_val {
+                Value::Array(..) => {
+                    self.interpreter
+                        .env_mut()
+                        .insert(format!("@!{}", attr_name), attr_val.clone());
+                    self.interpreter
+                        .env_mut()
+                        .insert(format!("@.{}", attr_name), attr_val.clone());
+                }
+                Value::Hash(..) => {
+                    self.interpreter
+                        .env_mut()
+                        .insert(format!("%!{}", attr_name), attr_val.clone());
+                    self.interpreter
+                        .env_mut()
+                        .insert(format!("%.{}", attr_name), attr_val.clone());
+                }
+                _ => {}
+            }
         }
 
         // Bind method parameters
@@ -1859,6 +1925,7 @@ impl VM {
         {
             Ok(_) => {}
             Err(e) => {
+                self.interpreter.restore_var_bindings(saved_var_bindings);
                 self.interpreter.pop_method_class();
                 self.stack.truncate(saved_stack_depth);
                 let frame = self.pop_call_frame();
@@ -1992,8 +2059,15 @@ impl VM {
             method_local_keys.insert(p.clone());
         }
         for attr_name in attributes.keys() {
+            if attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
+                continue;
+            }
             method_local_keys.insert(format!("!{}", attr_name));
             method_local_keys.insert(format!(".{}", attr_name));
+            method_local_keys.insert(format!("@!{}", attr_name));
+            method_local_keys.insert(format!("@.{}", attr_name));
+            method_local_keys.insert(format!("%!{}", attr_name));
+            method_local_keys.insert(format!("%.{}", attr_name));
         }
         for local_name in &cc.locals {
             if !local_name.is_empty() {
@@ -2005,6 +2079,16 @@ impl VM {
             self.interpreter.env(),
             &method_local_keys,
         );
+
+        // Merge var_bindings: keep any new bindings set during method execution
+        // (e.g. from $CALLER:: rebinding), then restore original bindings for
+        // keys not touched during execution.
+        let method_var_bindings = self.interpreter.take_var_bindings();
+        let mut restored_bindings = saved_var_bindings;
+        for (k, v) in method_var_bindings {
+            restored_bindings.insert(k, v);
+        }
+        self.interpreter.restore_var_bindings(restored_bindings);
 
         self.interpreter.pop_method_class();
         let _frame = self.pop_call_frame();
@@ -2075,25 +2159,59 @@ impl VM {
 /// env entries, preferring public when private is unchanged and public differs.
 fn writeback_attributes(env: &HashMap<String, Value>, attributes: &mut HashMap<String, Value>) {
     for attr_name in attributes.keys().cloned().collect::<Vec<_>>() {
+        if attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
+            continue;
+        }
         let original = attributes.get(&attr_name).cloned().unwrap_or(Value::Nil);
         let env_key = format!("!{}", attr_name);
         let public_env_key = format!(".{}", attr_name);
+        let env_array_private_key = format!("@!{}", attr_name);
+        let env_array_public_key = format!("@.{}", attr_name);
+        let env_hash_private_key = format!("%!{}", attr_name);
+        let env_hash_public_key = format!("%.{}", attr_name);
         let env_private = env.get(&env_key).cloned();
         let env_public = env.get(&public_env_key).cloned();
-        if let (Some(private_val), Some(public_val)) = (&env_private, &env_public) {
+        let env_array_private = env.get(&env_array_private_key).cloned();
+        let env_array_public = env.get(&env_array_public_key).cloned();
+        let env_hash_private = env.get(&env_hash_private_key).cloned();
+        let env_hash_public = env.get(&env_hash_public_key).cloned();
+        if let (Some(private_val), Some(public_val)) = (&env_array_private, &env_array_public) {
             if *private_val == original && *public_val != original {
-                attributes.insert(attr_name, public_val.clone());
+                attributes.insert(attr_name.clone(), public_val.clone());
             } else {
-                attributes.insert(attr_name, private_val.clone());
+                attributes.insert(attr_name.clone(), private_val.clone());
             }
             continue;
         }
-        if let Some(val) = env.get(&env_key) {
-            attributes.insert(attr_name, val.clone());
+        if let (Some(private_val), Some(public_val)) = (&env_hash_private, &env_hash_public) {
+            if *private_val == original && *public_val != original {
+                attributes.insert(attr_name.clone(), public_val.clone());
+            } else {
+                attributes.insert(attr_name.clone(), private_val.clone());
+            }
             continue;
         }
-        if let Some(val) = env.get(&public_env_key) {
-            attributes.insert(attr_name, val.clone());
+        if let (Some(private_val), Some(public_val)) = (&env_private, &env_public) {
+            if *private_val == original && *public_val != original {
+                attributes.insert(attr_name.clone(), public_val.clone());
+            } else {
+                attributes.insert(attr_name.clone(), private_val.clone());
+            }
+            continue;
+        }
+        if let Some(val) = env_array_private.or(env_hash_private).or(env_private) {
+            attributes.insert(attr_name.clone(), val);
+            continue;
+        }
+        if let Some(val) = env_array_public.or(env_hash_public).or(env_public) {
+            attributes.insert(attr_name.clone(), val);
+        }
+        let alias_env_key = format!("__mutsu_sigilless_alias::!{}", attr_name);
+        if let Some(Value::Str(alias_name)) = env.get(&alias_env_key) {
+            attributes.insert(
+                format!("{}{}", ATTR_ALIAS_META_PREFIX, attr_name),
+                Value::str(alias_name.to_string()),
+            );
         }
     }
 }
@@ -2113,7 +2231,11 @@ fn merge_method_env(saved: &Env, current: &Env, method_local_keys: &HashSet<Stri
         if saved.contains_key(k) {
             merged.insert(k.clone(), v.clone());
         }
-        if (k.starts_with('&') && !k.starts_with("&?")) || k.starts_with("__mutsu_method_value::") {
+        if (k.starts_with('&') && !k.starts_with("&?"))
+            || k.starts_with("__mutsu_method_value::")
+            || k.starts_with("__mutsu_sigilless_alias::!")
+            || k.starts_with("__mutsu_predictive_seq_iter::")
+        {
             merged.insert(k.clone(), v.clone());
         }
     }

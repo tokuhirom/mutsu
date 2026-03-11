@@ -310,7 +310,11 @@ impl Compiler {
                 // Emit readonly check for assignment to potentially readonly params
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::CheckReadOnly(name_idx));
-                self.compile_expr(expr);
+                if matches!(op, AssignOp::Bind) {
+                    self.compile_call_arg(expr);
+                } else {
+                    self.compile_expr(expr);
+                }
                 self.emit_set_named_var(name);
             }
             Stmt::If {

@@ -40,6 +40,7 @@ impl Interpreter {
                 | "find_method"
                 | "add_method"
                 | "methods"
+                | "attributes"
                 | "concretization"
                 | "curried_role"
         ) {
@@ -367,6 +368,33 @@ impl Interpreter {
                 )))
             }
             "methods" if !args.is_empty() => self.dispatch_classhow_methods(&args),
+            "attributes" if !args.is_empty() => {
+                let owner_class = match &args[0] {
+                    Value::Package(name) => name.resolve(),
+                    Value::Instance { class_name, .. } => class_name.resolve(),
+                    _ => value_type_name(&args[0]).to_string(),
+                };
+                let attrs = self.collect_class_attributes(&owner_class);
+                let values = attrs
+                    .into_iter()
+                    .map(
+                        |(attr_name, is_public, _default, is_rw, _is_required, sigil, _where)| {
+                            let mut meta = HashMap::new();
+                            meta.insert("name".to_string(), Value::str(attr_name.clone()));
+                            meta.insert("__mutsu_attr_name".to_string(), Value::str(attr_name));
+                            meta.insert(
+                                "__mutsu_attr_owner".to_string(),
+                                Value::str(owner_class.clone()),
+                            );
+                            meta.insert("is_public".to_string(), Value::Bool(is_public));
+                            meta.insert("is_rw".to_string(), Value::Bool(is_rw));
+                            meta.insert("sigil".to_string(), Value::str(sigil.to_string()));
+                            Value::make_instance(Symbol::intern("Attribute"), meta)
+                        },
+                    )
+                    .collect::<Vec<_>>();
+                Ok(Value::array(values))
+            }
             "candidates" if !args.is_empty() => {
                 let base_name = match &args[0] {
                     Value::Package(name) => name.resolve(),

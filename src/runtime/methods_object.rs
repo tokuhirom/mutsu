@@ -169,7 +169,155 @@ impl Interpreter {
             } else {
                 (cn_resolved.as_str(), None)
             };
+            if cn_resolved.starts_with("IO::Path::") && !self.classes.contains_key(&cn_resolved) {
+                self.classes.insert(
+                    cn_resolved.clone(),
+                    ClassDef {
+                        parents: vec!["IO::Path".to_string()],
+                        attributes: Vec::new(),
+                        methods: HashMap::new(),
+                        native_methods: std::collections::HashSet::new(),
+                        mro: Vec::new(),
+                        attribute_types: HashMap::new(),
+                        wildcard_handles: Vec::new(),
+                    },
+                );
+            }
+            let class_key = if self.classes.contains_key(&cn_resolved) {
+                cn_resolved.as_str()
+            } else {
+                base_class_name
+            };
+            let is_io_path_like = base_class_name == "IO::Path"
+                || self
+                    .class_mro(class_key)
+                    .iter()
+                    .any(|name| name == "IO::Path");
+            if is_io_path_like && !self.has_user_method(class_key, "new") {
+                let mut positional_path: Option<String> = None;
+                let mut basename_part: Option<String> = None;
+                let mut dirname_part: Option<String> = None;
+                let mut volume_part: Option<String> = None;
+                let mut cwd_attr: Option<String> = None;
+                let mut spec_attr: Option<Value> = None;
+                for arg in &args {
+                    match arg {
+                        Value::Pair(key, value) if key == "CWD" => {
+                            cwd_attr = Some(value.to_string_value());
+                        }
+                        Value::Pair(key, value) if key == "SPEC" => {
+                            spec_attr = Some((**value).clone());
+                        }
+                        Value::Pair(key, value) if key == "basename" => {
+                            basename_part = Some(value.to_string_value());
+                        }
+                        Value::Pair(key, value) if key == "dirname" => {
+                            dirname_part = Some(value.to_string_value());
+                        }
+                        Value::Pair(key, value) if key == "volume" => {
+                            volume_part = Some(value.to_string_value());
+                        }
+                        Value::Instance {
+                            class_name,
+                            attributes,
+                            ..
+                        } if positional_path.is_none()
+                            && self
+                                .class_mro(&class_name.resolve())
+                                .iter()
+                                .any(|n| n == "IO::Path") =>
+                        {
+                            positional_path = Some(
+                                attributes
+                                    .get("path")
+                                    .map(|v| v.to_string_value())
+                                    .unwrap_or_default(),
+                            );
+                            if cwd_attr.is_none() {
+                                cwd_attr = attributes.get("cwd").map(|v| v.to_string_value());
+                            }
+                        }
+                        Value::Pair(_, _) => {}
+                        _ if positional_path.is_none() => {
+                            positional_path = Some(arg.to_string_value());
+                        }
+                        _ => {}
+                    }
+                }
+                let path = if let Some(positional) = positional_path {
+                    positional
+                } else if let Some(basename) = basename_part {
+                    let mut built = match dirname_part {
+                        Some(dirname) if !dirname.is_empty() => {
+                            if dirname.ends_with('/') || dirname.ends_with('\\') {
+                                format!("{dirname}{basename}")
+                            } else {
+                                format!("{dirname}/{basename}")
+                            }
+                        }
+                        _ => basename,
+                    };
+                    if let Some(volume) = volume_part
+                        && !volume.is_empty()
+                    {
+                        built = format!("{volume}:{built}");
+                    }
+                    built
+                } else {
+                    String::new()
+                };
+                if path.contains('\0') {
+                    return Err(RuntimeError::new(
+                        "X::IO::Null: Found null byte in pathname",
+                    ));
+                }
+                let mut attrs = HashMap::new();
+                attrs.insert("path".to_string(), Value::str(path));
+                if let Some(cwd) = cwd_attr {
+                    attrs.insert("cwd".to_string(), Value::str(cwd));
+                }
+                if cn_resolved.starts_with("IO::Path::") {
+                    let spec_name =
+                        format!("IO::Spec::{}", cn_resolved.trim_start_matches("IO::Path::"));
+                    attrs.insert(
+                        "SPEC".to_string(),
+                        Value::Package(Symbol::intern(&spec_name)),
+                    );
+                } else if let Some(spec) = spec_attr {
+                    attrs.insert("SPEC".to_string(), spec);
+                }
+                return Ok(Value::make_instance(*class_name, attrs));
+            }
             match base_class_name {
+                "IterationBuffer" => {
+                    let mut items = Vec::new();
+                    for arg in &args {
+                        match arg {
+                            Value::Array(vals, ..) | Value::Seq(vals) | Value::Slip(vals) => {
+                                items.extend(vals.iter().cloned())
+                            }
+                            Value::Instance {
+                                class_name,
+                                attributes,
+                                ..
+                            } if class_name == "IterationBuffer" => {
+                                if let Some(
+                                    Value::Array(vals, ..) | Value::Seq(vals) | Value::Slip(vals),
+                                ) = attributes.get("__mutsu_iterationbuffer_items")
+                                {
+                                    items.extend(vals.iter().cloned());
+                                }
+                            }
+                            other => items.push(other.clone()),
+                        }
+                    }
+                    let mut attrs = HashMap::new();
+                    attrs.insert(
+                        "__mutsu_iterationbuffer_items".to_string(),
+                        Value::real_array(items),
+                    );
+                    return Ok(Value::make_instance(*class_name, attrs));
+                }
                 "Array" | "List" | "Positional" | "array" => {
                     if let Some(dims) = self.shaped_dims_from_new_args(&args) {
                         // Check for :data argument to populate the shaped array
@@ -312,14 +460,53 @@ impl Interpreter {
                 "Seq" => {
                     // Seq.new(iterator) — pull all items from the iterator
                     if let Some(iterator) = args.first() {
+                        if matches!(iterator, Value::Instance { .. })
+                            && self.type_matches_value("PredictiveIterator", iterator)
+                        {
+                            let seq = Value::Seq(std::sync::Arc::new(Vec::new()));
+                            if let Value::Seq(items) = &seq {
+                                let seq_id = std::sync::Arc::as_ptr(items) as usize;
+                                self.env.insert(
+                                    format!("__mutsu_predictive_seq_iter::{seq_id}"),
+                                    iterator.clone(),
+                                );
+                            }
+                            return Ok(seq);
+                        }
+                        if let Value::Instance { attributes, .. } = iterator
+                            && let Some(Value::Array(items, ..)) =
+                                attributes.get("items").or_else(|| attributes.get("stuff"))
+                        {
+                            return Ok(Value::Seq(std::sync::Arc::new(items.to_vec())));
+                        }
                         let mut items = Vec::new();
+                        let iter_slot = "$mutsu_seq_new_iterator";
+                        let saved_iter = self.env.get(iter_slot).cloned();
+                        self.env.insert(iter_slot.to_string(), iterator.clone());
+                        let mut iterations = 0usize;
                         loop {
+                            iterations += 1;
+                            let current_iter =
+                                self.env.get(iter_slot).cloned().unwrap_or(Value::Nil);
                             let val =
-                                self.call_method_with_values(iterator.clone(), "pull-one", vec![])?;
-                            if matches!(&val, Value::Str(s) if s.as_str() == "IterationEnd") {
+                                self.call_method_with_values(current_iter, "pull-one", vec![])?;
+                            if iterations > 10_000 {
+                                return Err(RuntimeError::new(format!(
+                                    "Seq.new iterator did not terminate (last value: {})",
+                                    val.to_string_value()
+                                )));
+                            }
+                            if matches!(&val, Value::Str(s) if s.as_str() == "IterationEnd")
+                                || matches!(&val, Value::Package(name) if *name == Symbol::intern("IterationEnd"))
+                            {
                                 break;
                             }
                             items.push(val);
+                        }
+                        if let Some(prev) = saved_iter {
+                            self.env.insert(iter_slot.to_string(), prev);
+                        } else {
+                            self.env.remove(iter_slot);
                         }
                         return Ok(Value::Seq(std::sync::Arc::new(items)));
                     }
@@ -548,7 +735,7 @@ impl Interpreter {
                     ));
                 }
                 "Supply" => return Ok(self.make_supply_instance()),
-                "Supplier" => {
+                "Supplier" | "Supplier::Preserving" => {
                     let mut attrs = HashMap::new();
                     attrs.insert("emitted".to_string(), Value::array(Vec::new()));
                     attrs.insert("done".to_string(), Value::Bool(false));
@@ -693,89 +880,6 @@ impl Interpreter {
                         attrs.insert("w".to_string(), Value::Bool(true));
                     }
                     return Ok(Value::make_instance(*class_name, attrs));
-                }
-                "IO::Path" => {
-                    let mut positional_path: Option<String> = None;
-                    let mut basename_part: Option<String> = None;
-                    let mut dirname_part: Option<String> = None;
-                    let mut volume_part: Option<String> = None;
-                    let mut cwd_attr: Option<String> = None;
-                    let mut spec_attr: Option<Value> = None;
-                    for arg in &args {
-                        match arg {
-                            Value::Pair(key, value) if key == "CWD" => {
-                                cwd_attr = Some(value.to_string_value());
-                            }
-                            Value::Pair(key, value) if key == "SPEC" => {
-                                spec_attr = Some((**value).clone());
-                            }
-                            Value::Pair(key, value) if key == "basename" => {
-                                basename_part = Some(value.to_string_value());
-                            }
-                            Value::Pair(key, value) if key == "dirname" => {
-                                dirname_part = Some(value.to_string_value());
-                            }
-                            Value::Pair(key, value) if key == "volume" => {
-                                volume_part = Some(value.to_string_value());
-                            }
-                            Value::Instance {
-                                class_name,
-                                attributes,
-                                ..
-                            } if positional_path.is_none() && class_name == "IO::Path" => {
-                                positional_path = Some(
-                                    attributes
-                                        .get("path")
-                                        .map(|v| v.to_string_value())
-                                        .unwrap_or_default(),
-                                );
-                                if cwd_attr.is_none() {
-                                    cwd_attr = attributes.get("cwd").map(|v| v.to_string_value());
-                                }
-                            }
-                            Value::Pair(_, _) => {}
-                            _ if positional_path.is_none() => {
-                                positional_path = Some(arg.to_string_value());
-                            }
-                            _ => {}
-                        }
-                    }
-                    let path = if let Some(positional) = positional_path {
-                        positional
-                    } else if let Some(basename) = basename_part {
-                        let mut built = match dirname_part {
-                            Some(dirname) if !dirname.is_empty() => {
-                                if dirname.ends_with('/') || dirname.ends_with('\\') {
-                                    format!("{dirname}{basename}")
-                                } else {
-                                    format!("{dirname}/{basename}")
-                                }
-                            }
-                            _ => basename,
-                        };
-                        if let Some(volume) = volume_part
-                            && !volume.is_empty()
-                        {
-                            built = format!("{volume}:{built}");
-                        }
-                        built
-                    } else {
-                        String::new()
-                    };
-                    if path.contains('\0') {
-                        return Err(RuntimeError::new(
-                            "X::IO::Null: Found null byte in pathname",
-                        ));
-                    }
-                    let mut attrs = HashMap::new();
-                    attrs.insert("path".to_string(), Value::str(path));
-                    if let Some(cwd) = cwd_attr {
-                        attrs.insert("cwd".to_string(), Value::str(cwd));
-                    }
-                    if let Some(spec) = spec_attr {
-                        attrs.insert("SPEC".to_string(), spec);
-                    }
-                    return Ok(Value::make_instance(Symbol::intern("IO::Path"), attrs));
                 }
                 "utf8" | "utf16" => {
                     let elems: Vec<Value> = args
@@ -1272,7 +1376,7 @@ impl Interpreter {
                         }
                     }
                 }
-                self.enforce_attribute_where_constraints(&class_attrs_info, &attrs)?;
+                self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
                 let int_ctor_val =
                     if matches!(positional_ctor_args.first(), Some(Value::Package(_))) {
                         return Err(RuntimeError::new("Cannot convert type object to Int"));
@@ -1316,7 +1420,14 @@ impl Interpreter {
                     if attrs.contains_key(&attr_name) {
                         continue;
                     }
-                    let val = if let Some(expr) = default {
+                    let val = if let Some(build_override) = self
+                        .attribute_build_overrides
+                        .get(&(class_key.to_string(), attr_name.clone()))
+                        .cloned()
+                    {
+                        let val = self.call_sub_value(build_override, Vec::new(), false)?;
+                        Self::coerce_attr_value_by_sigil(val, sigil)
+                    } else if let Some(expr) = default {
                         let temp_self = Value::make_instance(*class_name, attrs.clone());
                         let old_self = self.env.get("self").cloned();
                         self.env.insert("self".to_string(), temp_self);
@@ -1337,9 +1448,16 @@ impl Interpreter {
                     };
                     attrs.insert(attr_name, val);
                 }
-                self.enforce_attribute_where_constraints(&class_attrs_info, &attrs)?;
-                // Restore env after default evaluation
-                self.env = saved_default_env.clone();
+                self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
+                // Restore env after default evaluation, but preserve side effects
+                // on variables that already existed in the caller environment.
+                let mut restored_env = saved_default_env.clone();
+                for (key, value) in self.env.iter() {
+                    if restored_env.contains_key(key) {
+                        restored_env.insert(key.clone(), value.clone());
+                    }
+                }
+                self.env = restored_env;
                 let class_def = self.classes.get(class_key);
                 let has_direct_build = class_def.and_then(|def| def.methods.get("BUILD")).is_some();
                 let has_direct_tweak = class_def.and_then(|def| def.methods.get("TWEAK")).is_some();
@@ -1373,7 +1491,7 @@ impl Interpreter {
                             }
                         }
                     }
-                    self.enforce_attribute_where_constraints(&class_attrs_info, &attrs)?;
+                    self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
                 }
                 if self.class_has_method(&class_name.resolve(), "TWEAK") {
                     let tweak_args = if has_direct_tweak {
@@ -1389,7 +1507,7 @@ impl Interpreter {
                         Some(Value::make_instance(*class_name, attrs.clone())),
                     )?;
                     attrs = updated;
-                    self.enforce_attribute_where_constraints(&class_attrs_info, &attrs)?;
+                    self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
                 }
                 let instance = Value::make_instance(*class_name, attrs);
                 if let Some(type_args) = type_args.as_ref() {
@@ -1498,14 +1616,43 @@ impl Interpreter {
         }
     }
 
+    fn collect_attribute_type_constraints(&mut self, class_name: &str) -> HashMap<String, String> {
+        let mut constraints = HashMap::new();
+        for owner in self.class_mro(class_name) {
+            if let Some(class_def) = self.classes.get(&owner) {
+                for (attr_name, tc) in &class_def.attribute_types {
+                    constraints
+                        .entry(attr_name.clone())
+                        .or_insert_with(|| tc.clone());
+                }
+            }
+        }
+        constraints
+    }
+
     fn enforce_attribute_where_constraints(
         &mut self,
+        class_name: &str,
         class_attrs_info: &[ClassAttributeDef],
         attrs: &HashMap<String, Value>,
     ) -> Result<(), RuntimeError> {
+        let type_constraints = self.collect_attribute_type_constraints(class_name);
         for (attr_name, _is_public, _default, _is_rw, _is_required, _sigil, where_constraint) in
             class_attrs_info
         {
+            if let Some(constraint) = type_constraints.get(attr_name)
+                && (constraint.starts_with(char::is_uppercase) || constraint.starts_with("::"))
+                && let Some(value) = attrs.get(attr_name)
+                && !matches!(value, Value::Nil)
+                && !self.type_matches_value(constraint, value)
+            {
+                return Err(RuntimeError::new(format!(
+                    "Type check failed in assignment to $!{}; expected {}, got {}",
+                    attr_name,
+                    constraint,
+                    super::value_type_name(value)
+                )));
+            }
             let Some(pred) = where_constraint else {
                 continue;
             };
@@ -1568,7 +1715,7 @@ impl Interpreter {
                 extra_attrs.insert(attr_name.clone(), default_val);
             }
         }
-        self.enforce_attribute_where_constraints(&class_attrs_info, &extra_attrs)?;
+        self.enforce_attribute_where_constraints(class_name, &class_attrs_info, &extra_attrs)?;
 
         let subclass_attrs = std::sync::Arc::new(std::sync::Mutex::new(extra_attrs));
         Ok(Value::Proxy {
