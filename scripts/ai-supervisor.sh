@@ -399,10 +399,28 @@ if [[ "$RUN_ALL" -eq 1 ]]; then
     exit 0
 fi
 
+LAST_HISTORY_MAIN_HEAD=""
+
+should_run_history_update() {
+    local current_head
+    current_head="$(git ls-remote origin HEAD 2>/dev/null | cut -f1)"
+    if [[ -z "$current_head" ]]; then
+        return 1
+    fi
+    if [[ "$current_head" == "$LAST_HISTORY_MAIN_HEAD" ]]; then
+        echo "No new commits on main since last history update. Skipping."
+        return 1
+    fi
+    return 0
+}
+
 while true; do
     check_stop_file
     if [[ -z "$CANDIDATES" ]]; then
-        run_history_update
+        if should_run_history_update; then
+            LAST_HISTORY_MAIN_HEAD="$(git ls-remote origin HEAD 2>/dev/null | cut -f1)"
+            run_history_update
+        fi
         if [[ "$DRY_RUN" -eq 1 ]]; then
             exit 0
         fi
