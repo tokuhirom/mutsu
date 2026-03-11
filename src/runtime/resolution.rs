@@ -994,6 +994,31 @@ impl Interpreter {
         })
     }
 
+    /// Fast path for simple closures (e.g. sequence generators) that don't
+    /// declare subs or modify proto registries. Takes pre-compiled bytecode
+    /// to avoid recompilation on every call.
+    pub(crate) fn eval_precompiled_block_fast(
+        &mut self,
+        code: &crate::opcode::CompiledCode,
+        compiled_fns: &std::collections::HashMap<String, crate::opcode::CompiledFunction>,
+    ) -> Result<Value, RuntimeError> {
+        self.block_scope_depth += 1;
+        let interp = std::mem::take(self);
+        let vm = crate::vm::VM::new(interp);
+        let (mut interp, result) = vm.run(code, compiled_fns);
+        for (slot, key) in &code.state_locals {
+            if let Some(name) = code.locals.get(*slot)
+                && let Some(val) = interp.env().get(name).cloned()
+            {
+                interp.set_state_var(key.clone(), val);
+            }
+        }
+        let value = interp.env().get("_").cloned().unwrap_or(Value::Nil);
+        *self = interp;
+        self.block_scope_depth = self.block_scope_depth.saturating_sub(1);
+        result.map(|last_value| last_value.unwrap_or(value))
+    }
+
     /// Fast path for `Lock::Async.protect { ... }` — executes a bare block
     /// directly in the current env without the full env save/restore overhead
     /// of `call_sub_value`.  Shared vars must already be synced to env by the

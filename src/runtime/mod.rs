@@ -2867,6 +2867,16 @@ impl Interpreter {
         self.var_bindings.get(name).map(|s| s.as_str())
     }
 
+    /// Save and clear var_bindings, returning the saved state.
+    pub(crate) fn take_var_bindings(&mut self) -> HashMap<String, String> {
+        std::mem::take(&mut self.var_bindings)
+    }
+
+    /// Restore previously saved var_bindings.
+    pub(crate) fn restore_var_bindings(&mut self, bindings: HashMap<String, String>) {
+        self.var_bindings = bindings;
+    }
+
     pub(crate) fn has_class(&self, name: &str) -> bool {
         self.classes.contains_key(name)
     }
