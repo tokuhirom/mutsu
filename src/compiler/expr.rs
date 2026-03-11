@@ -2,6 +2,31 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Compiler {
+    fn atomic_target_name(expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::Var(name) => Some(name.clone()),
+            Expr::ArrayVar(name) => Some(format!("@{}", name)),
+            Expr::HashVar(name) => Some(format!("%{}", name)),
+            Expr::CodeVar(name) => Some(format!("&{}", name)),
+            Expr::Index { target, index }
+                if matches!(target.as_ref(), Expr::PseudoStash(_))
+                    && matches!(index.as_ref(), Expr::Literal(Value::Str(_))) =>
+            {
+                let Expr::Literal(Value::Str(raw)) = index.as_ref() else {
+                    return None;
+                };
+                let mut name = raw.as_ref().clone();
+                if let Some(first) = name.chars().next()
+                    && matches!(first, '$' | '@' | '%' | '&')
+                {
+                    name = name.chars().skip(1).collect();
+                }
+                if name.is_empty() { None } else { Some(name) }
+            }
+            _ => None,
+        }
+    }
+
     pub(super) fn compile_expr(&mut self, expr: &Expr) {
         match expr {
             Expr::Whatever => {
@@ -557,7 +582,7 @@ impl Compiler {
                 // Rewrite cas($var, ...) → __mutsu_cas_var($var_name_str, ...)
                 if name == "cas"
                     && (args.len() == 2 || args.len() == 3)
-                    && let Expr::Var(var_name) = &args[0]
+                    && let Some(var_name) = Self::atomic_target_name(&args[0])
                 {
                     if args.len() == 2
                         && let Expr::Lambda { param, body } = &args[1]
@@ -759,13 +784,7 @@ impl Compiler {
                 // Rewrite cas($var, &fn) to assignment expression:
                 // $var = fn($var)
                 else if name == "cas" && args.len() == 2 {
-                    let var_name = match &args[0] {
-                        Expr::Var(n) => Some(n.clone()),
-                        Expr::ArrayVar(n) => Some(format!("@{}", n)),
-                        Expr::HashVar(n) => Some(format!("%{}", n)),
-                        Expr::CodeVar(n) => Some(format!("&{}", n)),
-                        _ => None,
-                    };
+                    let var_name = Self::atomic_target_name(&args[0]);
                     if let Some(vname) = var_name {
                         if let Expr::Lambda { param, body } = &args[1]
                             && let [Stmt::Expr(Expr::Binary { left, op, right })] = body.as_slice()

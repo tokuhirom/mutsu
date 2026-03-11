@@ -6,6 +6,43 @@ use crate::symbol::Symbol;
 use crate::value::signature::extract_sig_info;
 
 impl Interpreter {
+    fn promise_combinator_error(combinator: &str) -> RuntimeError {
+        let message = format!(
+            "Can only use {} to combine defined Promise objects",
+            combinator
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("message".to_string(), Value::str(message.clone()));
+        let ex = Value::make_instance(Symbol::intern("X::Promise::Combinator"), attrs);
+        let mut err = RuntimeError::new(message);
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
+    fn collect_promise_combinator_inputs(
+        &self,
+        combinator: &str,
+        args: &[Value],
+    ) -> Result<Vec<SharedPromise>, RuntimeError> {
+        let mut promises = Vec::new();
+        for arg in args {
+            match arg {
+                Value::Promise(promise) => promises.push(promise.clone()),
+                _ if arg.as_list_items().is_some() => {
+                    for item in arg.as_list_items().unwrap().iter() {
+                        if let Value::Promise(promise) = item {
+                            promises.push(promise.clone());
+                        } else {
+                            return Err(Self::promise_combinator_error(combinator));
+                        }
+                    }
+                }
+                _ => return Err(Self::promise_combinator_error(combinator)),
+            }
+        }
+        Ok(promises)
+    }
+
     fn supply_list_values(
         &mut self,
         attributes: &HashMap<String, Value>,
@@ -1676,19 +1713,10 @@ impl Interpreter {
                 if let Some(cls) = self.promise_class_name(&target) {
                     let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
                     let ret = Value::Promise(promise.clone());
-                    let mut promises = Vec::new();
-                    for arg in &args {
-                        match arg {
-                            Value::Promise(p) => promises.push(p.clone()),
-                            Value::Array(arr, ..) => {
-                                for elem in arr.iter() {
-                                    if let Value::Promise(p) = elem {
-                                        promises.push(p.clone());
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
+                    let promises = self.collect_promise_combinator_inputs("allof", &args)?;
+                    if promises.is_empty() {
+                        promise.keep(Value::Bool(true), String::new(), String::new());
+                        return Ok(ret);
                     }
                     std::thread::spawn(move || {
                         for p in &promises {
@@ -1703,19 +1731,10 @@ impl Interpreter {
                 if let Some(cls) = self.promise_class_name(&target) {
                     let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
                     let ret = Value::Promise(promise.clone());
-                    let mut promises = Vec::new();
-                    for arg in &args {
-                        match arg {
-                            Value::Promise(p) => promises.push(p.clone()),
-                            Value::Array(arr, ..) => {
-                                for elem in arr.iter() {
-                                    if let Value::Promise(p) = elem {
-                                        promises.push(p.clone());
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
+                    let promises = self.collect_promise_combinator_inputs("anyof", &args)?;
+                    if promises.is_empty() {
+                        promise.keep(Value::Bool(true), String::new(), String::new());
+                        return Ok(ret);
                     }
                     std::thread::spawn(move || {
                         // Poll until any promise resolves

@@ -3174,11 +3174,32 @@ impl Interpreter {
         if dirty_keys.is_empty() {
             return;
         }
-        let sv = self.shared_vars.read().unwrap();
-        for key in &dirty_keys {
-            if let Some(val) = sv.get(key) {
-                self.env.insert(key.clone(), val.clone());
+        let updates: Vec<(String, Value)> = {
+            let sv = self.shared_vars.read().unwrap();
+            let mut updates = Vec::new();
+            for key in &dirty_keys {
+                // Atomic ops store the value under an internal shared key, while
+                // dirty tracking also marks the user-visible variable name.
+                let name_key = format!("__mutsu_atomic_name::{key}");
+                let value_key = match sv.get(&name_key).or_else(|| self.env.get(&name_key)) {
+                    Some(Value::Str(vk)) => Some(vk.as_ref().clone()),
+                    _ => None,
+                };
+                if let Some(value_key) = value_key
+                    && let Some(val) = sv.get(value_key.as_str())
+                {
+                    updates.push((key.clone(), val.clone()));
+                    continue;
+                }
+
+                if let Some(val) = sv.get(key) {
+                    updates.push((key.clone(), val.clone()));
+                }
             }
+            updates
+        };
+        for (key, val) in updates {
+            self.env.insert(key, val);
         }
     }
 
