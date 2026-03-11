@@ -1623,6 +1623,20 @@ impl VM {
 
     pub(super) fn exec_get_pseudo_stash_op(&mut self, code: &CompiledCode, name_idx: u32) {
         let name = Self::const_str(code, name_idx);
+        if name.strip_suffix("::") == Some("OUTER") {
+            // OUTER:: is lexical, not package-based. Expose captured lexical vars
+            // from the current interpreter environment as stash entries.
+            let mut entries: HashMap<String, Value> = HashMap::new();
+            for (key, val) in self.interpreter.env() {
+                if self.interpreter.should_hide_from_my_global_stash(key) {
+                    continue;
+                }
+                let display_key = Self::add_sigil_prefix(key);
+                entries.insert(display_key, val.clone());
+            }
+            self.stack.push(Value::Hash(Arc::new(entries)));
+            return;
+        }
         if let Some(package) = name.strip_suffix("::")
             && package != "MY"
         {

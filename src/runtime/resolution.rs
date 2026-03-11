@@ -746,12 +746,14 @@ impl Interpreter {
                     .find(|v| !matches!(v, Value::Pair(_, _)))
             {
                 new_env.insert("_".to_string(), first_positional.clone());
+                new_env.insert("$_".to_string(), first_positional.clone());
             } else if data.params.is_empty()
                 && sanitized_args.is_empty()
                 && data.name == ""
                 && let Some(caller_topic) = saved_env.get("_")
             {
                 new_env.insert("_".to_string(), caller_topic.clone());
+                new_env.insert("$_".to_string(), caller_topic.clone());
             }
             // &?BLOCK: weak self-reference to break reference cycles
             let block_arc = std::sync::Arc::new(crate::value::SubData {
@@ -1167,6 +1169,7 @@ impl Interpreter {
             let (code, compiled_fns) = compiler.compile(&data.body);
 
             let underscore = "_".to_string();
+            let dollar_topic = "$_".to_string();
 
             // Save/restore only temporary bindings introduced by map itself.
             // Captured lexical vars (in data.env) must keep mutations done inside
@@ -1184,6 +1187,9 @@ impl Interpreter {
             }
             if !touched_keys.iter().any(|k| k == "_") {
                 touched_keys.push(underscore.clone());
+            }
+            if !touched_keys.iter().any(|k| k == "$_") {
+                touched_keys.push(dollar_topic.clone());
             }
             let saved: Vec<(String, Option<Value>)> = touched_keys
                 .iter()
@@ -1231,7 +1237,8 @@ impl Interpreter {
                         if let Some(p) = data.params.get(assumed_count) {
                             interp.env_insert(p.clone(), item.clone());
                         }
-                        interp.env_insert(underscore.clone(), item);
+                        interp.env_insert(underscore.clone(), item.clone());
+                        interp.env_insert(dollar_topic.clone(), item);
                     } else {
                         for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
                             if i + idx < list_items.len() {
@@ -1239,6 +1246,7 @@ impl Interpreter {
                             }
                         }
                         interp.env_insert(underscore.clone(), list_items[i].clone());
+                        interp.env_insert(dollar_topic.clone(), list_items[i].clone());
                     }
                 }
                 match vm.run_reuse(&code, &compiled_fns) {
@@ -1350,6 +1358,7 @@ impl Interpreter {
             let (code, compiled_fns) = compiler.compile(&data.body);
 
             let underscore = "_".to_string();
+            let dollar_topic = "$_".to_string();
 
             let mut touched_keys: Vec<String> = Vec::with_capacity(data.params.len() + 2);
             for k in data.env.keys() {
@@ -1364,6 +1373,9 @@ impl Interpreter {
             }
             if !touched_keys.iter().any(|k| k == "_") {
                 touched_keys.push(underscore.clone());
+            }
+            if !touched_keys.iter().any(|k| k == "$_") {
+                touched_keys.push(dollar_topic.clone());
             }
             let topic_source_key = "__mutsu_grep_topic_source".to_string();
             if !touched_keys.iter().any(|k| k == &topic_source_key) {
@@ -1408,6 +1420,7 @@ impl Interpreter {
                                 interp.env_insert(p.clone(), chunk[0].clone());
                             }
                             interp.env_insert(underscore.clone(), chunk[0].clone());
+                            interp.env_insert(dollar_topic.clone(), chunk[0].clone());
                             interp.env_insert(topic_source_key.clone(), chunk[0].clone());
                         } else {
                             for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
@@ -1416,6 +1429,7 @@ impl Interpreter {
                                 }
                             }
                             interp.env_insert(underscore.clone(), chunk[0].clone());
+                            interp.env_insert(dollar_topic.clone(), chunk[0].clone());
                         }
                     }
                     vm.set_topic_source_var((arity == 1).then_some(topic_source_key.clone()));

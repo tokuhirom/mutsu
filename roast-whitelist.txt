@@ -458,6 +458,7 @@ roast/S17-procasync/nonexistent.t
 roast/S17-procasync/print.t
 roast/S17-procasync/stress.t
 roast/S17-procasync/windows-arg-quoting.t
+roast/S17-promise/allof.t
 roast/S17-promise/at.t
 roast/S17-promise/in.t
 roast/S17-promise/lock-async-stress.t

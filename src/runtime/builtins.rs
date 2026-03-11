@@ -2393,13 +2393,42 @@ impl Interpreter {
         Ok(Value::Nil)
     }
 
-    fn atomic_var_name_arg(args: &[Value]) -> Result<String, RuntimeError> {
+    fn canonical_atomic_var_name(&self, raw_name: &str, target_value: Option<&Value>) -> String {
+        let is_user_visible = |name: &str| {
+            name != "_"
+                && name != "@_"
+                && name != "?LINE"
+                && !name.starts_with("__mutsu_")
+                && !name.starts_with('&')
+        };
+        if is_user_visible(raw_name) && self.env.contains_key(raw_name) {
+            return raw_name.to_string();
+        }
+
+        let current = target_value
+            .cloned()
+            .or_else(|| self.env.get(raw_name).cloned());
+        if let Some(current) = current {
+            for (key, value) in &self.env {
+                if !is_user_visible(key) {
+                    continue;
+                }
+                if crate::runtime::values_identical(value, &current) {
+                    return key.clone();
+                }
+            }
+        }
+        raw_name.to_string()
+    }
+
+    fn atomic_var_name_arg(&self, args: &[Value]) -> Result<String, RuntimeError> {
         let Some(name) = args.first() else {
             return Err(RuntimeError::new(
                 "atomic variable operation requires variable name",
             ));
         };
-        Ok(name.to_string_value())
+        let raw_name = name.to_string_value();
+        Ok(self.canonical_atomic_var_name(&raw_name, Some(name)))
     }
 
     fn atomic_shared_value_key(id: u64) -> String {
@@ -2487,7 +2516,7 @@ impl Interpreter {
     }
 
     fn builtin_atomic_fetch_var(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let name = Self::atomic_var_name_arg(args)?;
+        let name = self.atomic_var_name_arg(args)?;
         let value_key = self.atomic_value_key_for_name(&name);
         let shared = self.shared_vars.read().unwrap();
         Ok(self.atomic_current_value(&shared, &name, &value_key))
@@ -2499,7 +2528,8 @@ impl Interpreter {
                 "atomic store requires variable name and value",
             ));
         }
-        let name = args[0].to_string_value();
+        let raw_name = args[0].to_string_value();
+        let name = self.canonical_atomic_var_name(&raw_name, args.first());
         let value = self.atomic_assign_coerced_value(&name, args[1].clone())?;
         let value_key = self.atomic_value_key_for_name(&name);
         self.env.insert(name.clone(), value.clone());
@@ -2520,7 +2550,8 @@ impl Interpreter {
                 "atomic add requires variable name and increment value",
             ));
         }
-        let name = args[0].to_string_value();
+        let raw_name = args[0].to_string_value();
+        let name = self.canonical_atomic_var_name(&raw_name, args.first());
         let delta = args[1].clone();
         self.check_readonly_for_modify(&name)?;
         let value_key = self.atomic_value_key_for_name(&name);
@@ -2543,7 +2574,7 @@ impl Interpreter {
         delta: i64,
         return_old: bool,
     ) -> Result<Value, RuntimeError> {
-        let name = Self::atomic_var_name_arg(args)?;
+        let name = self.atomic_var_name_arg(args)?;
         self.check_readonly_for_modify(&name)?;
         let value_key = self.atomic_value_key_for_name(&name);
         let mut shared = self.shared_vars.write().unwrap();
@@ -2584,7 +2615,8 @@ impl Interpreter {
                 "cas requires 2 or 3 arguments: cas($var, $expected, $new) or cas($var, &code)",
             ));
         }
-        let name = args[0].to_string_value();
+        let raw_name = args[0].to_string_value();
+        let name = self.canonical_atomic_var_name(&raw_name, args.first());
         self.check_readonly_for_modify(&name)?;
         let value_key = self.atomic_value_key_for_name(&name);
 
@@ -2646,10 +2678,18 @@ impl Interpreter {
                 };
                 self.env.insert(name.clone(), current.clone());
                 let new_val = {
+                    let bind_dollar_topic =
+                        matches!(&code, Value::Sub(sub) if sub.params.is_empty());
                     let saved_topic = self.env.get("_").cloned();
-                    let saved_dollar_topic = self.env.get("$_").cloned();
+                    let saved_dollar_topic = if bind_dollar_topic {
+                        self.env.get("$_").cloned()
+                    } else {
+                        None
+                    };
                     self.env.insert("_".to_string(), current.clone());
-                    self.env.insert("$_".to_string(), current.clone());
+                    if bind_dollar_topic {
+                        self.env.insert("$_".to_string(), current.clone());
+                    }
                     let call_args = if let Value::Sub(sub) = &code {
                         if sub.params.is_empty() {
                             Vec::new()
@@ -2659,7 +2699,7 @@ impl Interpreter {
                     } else {
                         vec![current.clone()]
                     };
-                    let result = self.call_sub_value(code.clone(), call_args, true)?;
+                    let result = self.call_sub_value(code.clone(), call_args, bind_dollar_topic)?;
                     match saved_topic {
                         Some(v) => {
                             self.env.insert("_".to_string(), v);
@@ -2668,12 +2708,14 @@ impl Interpreter {
                             self.env.remove("_");
                         }
                     }
-                    match saved_dollar_topic {
-                        Some(v) => {
-                            self.env.insert("$_".to_string(), v);
-                        }
-                        None => {
-                            self.env.remove("$_");
+                    if bind_dollar_topic {
+                        match saved_dollar_topic {
+                            Some(v) => {
+                                self.env.insert("$_".to_string(), v);
+                            }
+                            None => {
+                                self.env.remove("$_");
+                            }
                         }
                     }
                     result
