@@ -184,7 +184,7 @@ run_history_update() {
     elif [[ "$AGENT" == "codex" ]]; then
         cmd=("${SCRIPT_DIR}/ai-sandbox.sh" "$branch_name" codex --dangerously-bypass-approvals-and-sandbox exec "$prompt")
     else
-        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" "$branch_name" claude --dangerously-skip-permissions -p --verbose --output-format stream-json "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" "$branch_name" claude --dangerously-skip-permissions -p --verbose --no-session-persistence --output-format stream-json "$prompt")
     fi
 
     echo "No fixable PR found. Running roast history update on: $branch_name"
@@ -334,7 +334,7 @@ run_for_pr() {
     elif [[ "$AGENT" == "codex" ]]; then
         cmd=("${SCRIPT_DIR}/ai-sandbox.sh" "$head_ref" codex --dangerously-bypass-approvals-and-sandbox exec "$prompt")
     else
-        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" "$head_ref" claude --dangerously-skip-permissions -p --verbose --output-format stream-json "$prompt")
+        cmd=("${SCRIPT_DIR}/ai-sandbox.sh" "$head_ref" claude --dangerously-skip-permissions -p --verbose --no-session-persistence --output-format stream-json "$prompt")
     fi
 
     echo "Target PR #$pr_number [$reason] $head_ref"
