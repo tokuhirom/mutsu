@@ -1748,8 +1748,19 @@ impl VM {
             } => {
                 self.exec_block_scope_op(code, *enter_end, *body_end, *end, ip, compiled_fns)?;
             }
-            OpCode::DoBlockExpr { body_end, label } => {
-                self.exec_do_block_expr_op(code, *body_end, label, ip, compiled_fns)?;
+            OpCode::DoBlockExpr {
+                body_end,
+                label,
+                scope_isolate,
+            } => {
+                self.exec_do_block_expr_op(
+                    code,
+                    *body_end,
+                    label,
+                    *scope_isolate,
+                    ip,
+                    compiled_fns,
+                )?;
             }
             OpCode::DoGivenExpr { body_end } => {
                 self.exec_do_given_expr_op(code, *body_end, ip, compiled_fns)?;

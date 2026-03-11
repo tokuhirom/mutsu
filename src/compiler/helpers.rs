@@ -1090,6 +1090,17 @@ impl Compiler {
         let idx = self.code.emit(OpCode::DoBlockExpr {
             body_end: 0,
             label: label.clone(),
+            scope_isolate: false,
+        });
+        self.compile_block_inline(body);
+        self.code.patch_body_end(idx);
+    }
+
+    pub(super) fn compile_do_block_expr_scoped(&mut self, body: &[Stmt], label: &Option<String>) {
+        let idx = self.code.emit(OpCode::DoBlockExpr {
+            body_end: 0,
+            label: label.clone(),
+            scope_isolate: true,
         });
         self.compile_block_inline(body);
         self.code.patch_body_end(idx);
@@ -1876,6 +1887,33 @@ impl Compiler {
                             self.pop_dynamic_scope_lexical(saved);
                             return;
                         }
+                    }
+                    Stmt::VarDecl {
+                        name,
+                        expr,
+                        is_dynamic: ast_is_dynamic,
+                        ..
+                    } => {
+                        // my $x = expr in block-final position: declare and return value
+                        let is_dynamic = *ast_is_dynamic || self.var_is_dynamic(name);
+                        let name_idx = self.code.add_constant(Value::Str(name.clone().into()));
+                        self.code.emit(OpCode::SetVarDynamic {
+                            name_idx,
+                            dynamic: is_dynamic,
+                        });
+                        self.compile_expr(expr);
+                        self.code.emit(OpCode::Dup);
+                        self.emit_set_named_var(name);
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
+                    Stmt::Assign { name, expr, .. } => {
+                        // $x = expr in block-final position: assign and return value
+                        self.compile_expr(expr);
+                        self.code.emit(OpCode::Dup);
+                        self.emit_set_named_var(name);
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
                     }
                     _ => {}
                 }

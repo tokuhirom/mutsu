@@ -269,6 +269,7 @@ pub(crate) enum OpCode {
     DoBlockExpr {
         body_end: u32,
         label: Option<String>,
+        scope_isolate: bool,
     },
     DoGivenExpr {
         body_end: u32,
