@@ -150,7 +150,7 @@ RETRY_DELAY=30
 if [[ "$AGENT" == "codex" ]]; then
     CMD=("${SCRIPT_DIR}/ai-sandbox.sh" "$FILE" codex --dangerously-bypass-approvals-and-sandbox exec "$PROMPT")
 else
-    CMD=("${SCRIPT_DIR}/ai-sandbox.sh" "$FILE" claude --dangerously-skip-permissions -p --verbose --output-format stream-json "$PROMPT")
+    CMD=("${SCRIPT_DIR}/ai-sandbox.sh" "$FILE" claude --dangerously-skip-permissions -p --verbose --no-session-persistence --output-format stream-json "$PROMPT")
 fi
 
 echo "Selected file: $FILE"
