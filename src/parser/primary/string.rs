@@ -312,12 +312,55 @@ fn read_delimited_content<'a>(input: &'a str, escape_backslash: bool) -> PResult
     }
     // Non-bracket delimiter
     let after_open = &rest[delim_char.len_utf8()..];
-    let end = after_open
-        .find(delim_char)
-        .ok_or_else(|| PError::expected("closing Q delimiter"))?;
+    let end = if escape_backslash {
+        find_unescaped(after_open, delim_char)
+    } else {
+        after_open.find(delim_char)
+    }
+    .ok_or_else(|| PError::expected("closing Q delimiter"))?;
     let content = &after_open[..end];
     let after = &after_open[end + delim_char.len_utf8()..];
     Ok((after, content))
+}
+
+/// Find the position of the first unescaped occurrence of `delim` in `s`.
+/// A `\` before the delimiter prevents it from matching.
+fn find_unescaped(s: &str, delim: char) -> Option<usize> {
+    let mut chars = s.char_indices();
+    while let Some((i, ch)) = chars.next() {
+        if ch == '\\' {
+            chars.next(); // skip escaped character
+            continue;
+        }
+        if ch == delim {
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// Process escape sequences in q-string content for a given delimiter.
+/// Only `\\` → `\` and `\<delim>` → `<delim>` are recognized.
+fn process_q_escapes(content: &str, delim: char) -> String {
+    let mut result = String::new();
+    let mut chars = content.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(next) = chars.next() {
+                if next == '\\' || next == delim {
+                    result.push(next);
+                } else {
+                    result.push('\\');
+                    result.push(next);
+                }
+            } else {
+                result.push('\\');
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+    result
 }
 
 fn parse_to_heredoc(input: &str, interpolate: bool) -> PResult<'_, Expr> {
@@ -539,6 +582,37 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
     // Read delimited content
     let escape = flags.q_mode || flags.qq_mode || flags.backslash;
     let (rest, content) = read_delimited_content(after_q, escape)?;
+
+    // For q-mode with symmetric delimiters, pre-process \<delim> → <delim>
+    let delim_char = after_q.trim_start().chars().next().unwrap_or('/');
+    let is_symmetric =
+        !matches!(delim_char, '{' | '[' | '(' | '<') && unicode_bracket_close(delim_char).is_none();
+    if is_symmetric
+        && flags.q_mode
+        && !flags.qq_mode
+        && delim_char != '\''
+        && !flags.has_interpolation()
+        && !flags.full_backslash()
+    {
+        let processed = process_q_escapes(content, delim_char);
+        let expr = Expr::Literal(Value::str(processed));
+        return apply_post_processing(rest, expr, &flags);
+    }
+
+    // When delimiter is {}, disable closure interpolation (Raku spec)
+    if delim_char == '{' && flags.closure {
+        flags.closure = false;
+    }
+    if delim_char == '{' && flags.qq_mode {
+        // qq{...} — disable closure interp by switching to explicit flags
+        flags.qq_mode = false;
+        flags.scalar = true;
+        flags.array = true;
+        flags.hash = true;
+        flags.function = true;
+        flags.backslash = true;
+        // closure stays false
+    }
 
     // Process content with flags
     let expr = process_content_with_flags(content, &flags);
@@ -842,10 +916,18 @@ pub(super) fn process_escape_sequence<'a>(
         't' => current.push('\t'),
         'r' => current.push('\r'),
         'b' => current.push('\u{0008}'),
+        'a' => current.push('\u{0007}'),
+        'e' => current.push('\u{001B}'),
+        'f' => current.push('\u{000C}'),
         '0' => current.push('\0'),
         '\\' => current.push('\\'),
         '$' => current.push('$'),
         '@' => current.push('@'),
+        '%' => current.push('%'),
+        '&' => current.push('&'),
+        '"' => current.push('"'),
+        '\'' => current.push('\''),
+        ' ' => current.push(' '),
         'x' => {
             let r = &rest[2..];
             if r.starts_with('[') {
@@ -941,6 +1023,9 @@ pub(super) fn process_escape_sequence<'a>(
         _ => {
             if extra_escapes.contains(&c) {
                 current.push(c);
+            } else if !c.is_alphanumeric() {
+                // Non-alphanumeric chars after \ produce themselves in Raku
+                current.push(c);
             } else {
                 return None;
             }
@@ -951,36 +1036,119 @@ pub(super) fn process_escape_sequence<'a>(
 
 /// Try to parse a method call chain on an interpolated variable: "$var.method()" or "$var.method".
 /// Only recognizes simple identifier method names followed by `()` (no args).
+/// Try to parse a method call chain on an interpolated variable: "$var.method()" or "$var.method".
+/// Supports chained methods: "$var.flip.chars()" — intermediate methods need no parens,
+/// but the chain is only interpolated if the LAST method has parens.
+/// Also supports methods with arguments: "$var.substr(0,1)".
+/// Also supports indirect (quoted) method names: "$var.'method'()" or "$var."method"()".
 fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, &str) {
     let mut expr = target;
     let mut rest = input;
-    while let Some(after_dot) = rest.strip_prefix('.') {
-        // Must start with an alphabetic char or underscore (method name)
+    // Collect chain of .method parts; only commit if chain ends with parens
+    let mut chain: Vec<(String, bool)> = Vec::new(); // (method_name, is_quoted)
+    let mut chain_rest = rest;
+    while let Some(after_dot) = chain_rest.strip_prefix('.') {
         if after_dot.is_empty() {
             break;
         }
-        let first = after_dot.as_bytes()[0];
-        if !(first.is_ascii_alphabetic() || first == b'_') {
-            break;
-        }
-        let end = after_dot
-            .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
-            .unwrap_or(after_dot.len());
-        let method_name = &after_dot[..end];
-        let after_name = &after_dot[end..];
-        // Must be followed by "()" to be recognized as a method call
-        if let Some(after_parens) = after_name.strip_prefix("()") {
-            expr = Expr::MethodCall {
-                target: Box::new(expr),
-                name: Symbol::intern(method_name),
-                args: vec![],
-                modifier: None,
-                quoted: false,
+        // Check for quoted method name: .'method'() or ."method"()
+        let (method_name, after_name, is_quoted) =
+            if let Some(after_q) = after_dot.strip_prefix('\'') {
+                if let Some(end) = after_q.find('\'') {
+                    let name = &after_q[..end];
+                    // Reject quoted method names containing whitespace
+                    if name.contains(char::is_whitespace) {
+                        break;
+                    }
+                    let rest = &after_q[end + 1..];
+                    (name, rest, true)
+                } else {
+                    break;
+                }
+            } else if let Some(after_q) = after_dot.strip_prefix('\u{201C}') {
+                // Unicode left double quote
+                if let Some(end) = after_q.find('\u{201D}') {
+                    let name = &after_q[..end];
+                    let rest = &after_q[end + '\u{201D}'.len_utf8()..];
+                    (name, rest, true)
+                } else {
+                    break;
+                }
+            } else if let Some(after_q) = after_dot.strip_prefix('"') {
+                if let Some(end) = after_q.find('"') {
+                    let name = &after_q[..end];
+                    // Reject quoted method names containing whitespace
+                    if name.contains(char::is_whitespace) {
+                        break;
+                    }
+                    let rest = &after_q[end + 1..];
+                    (name, rest, true)
+                } else {
+                    break;
+                }
+            } else {
+                let first = after_dot.as_bytes()[0];
+                if !(first.is_ascii_alphabetic() || first == b'_') {
+                    break;
+                }
+                let end = after_dot
+                    .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                    .unwrap_or(after_dot.len());
+                (&after_dot[..end], &after_dot[end..], false)
             };
-            rest = after_parens;
-        } else {
+        chain.push((method_name.to_string(), is_quoted));
+        // Check if followed by (...) — parse args
+        if after_name.starts_with('(') {
+            // Find matching closing paren
+            let mut depth = 0usize;
+            let mut paren_end = None;
+            for (idx, ch) in after_name.char_indices() {
+                if ch == '(' {
+                    depth += 1;
+                } else if ch == ')' {
+                    depth -= 1;
+                    if depth == 0 {
+                        paren_end = Some(idx);
+                        break;
+                    }
+                }
+            }
+            if let Some(pe) = paren_end {
+                let args_str = &after_name[1..pe];
+                let after_parens = &after_name[pe + 1..];
+                // Build the full chain
+                for (i, (name, quoted)) in chain.iter().enumerate() {
+                    let args = if i == chain.len() - 1 {
+                        // Last method gets the args
+                        if args_str.trim().is_empty() {
+                            vec![]
+                        } else {
+                            let mut args = vec![];
+                            for arg in args_str.split(',') {
+                                let arg = arg.trim();
+                                if let Ok((_, e)) = crate::parser::expr::expression(arg) {
+                                    args.push(e);
+                                }
+                            }
+                            args
+                        }
+                    } else {
+                        vec![]
+                    };
+                    expr = Expr::MethodCall {
+                        target: Box::new(expr),
+                        name: Symbol::intern(name),
+                        args,
+                        modifier: None,
+                        quoted: *quoted,
+                    };
+                }
+                rest = after_parens;
+                chain.clear();
+            }
             break;
         }
+        chain_rest = after_name;
     }
     (expr, rest)
 }
@@ -1077,6 +1245,59 @@ pub(super) fn try_interpolate_var<'a>(
             parts.push(expr);
             return Some(var_rest);
         }
+        // $(...) expression interpolation
+        if next == '(' {
+            let after_dollar = &rest[1..];
+            // Find matching closing paren
+            let mut depth = 0usize;
+            let mut paren_end = None;
+            for (idx, ch) in after_dollar.char_indices() {
+                if ch == '(' {
+                    depth += 1;
+                } else if ch == ')' {
+                    depth -= 1;
+                    if depth == 0 {
+                        paren_end = Some(idx);
+                        break;
+                    }
+                }
+            }
+            if let Some(pe) = paren_end {
+                let inner = &after_dollar[1..pe];
+                let remainder = &after_dollar[pe + 1..];
+                // Try parsing as statement list first (supports if/for modifiers)
+                let parsed = if let Ok((leftover, stmts)) =
+                    crate::parser::stmt::stmt_list_pub(inner.trim())
+                    && leftover.trim().is_empty()
+                    && !stmts.is_empty()
+                {
+                    // When there's a single statement, use DoStmt so that
+                    // For/If/etc. get expression-level compilation that
+                    // collects results (e.g. list comprehensions).
+                    if stmts.len() == 1 {
+                        Some(Expr::DoStmt(Box::new(stmts.into_iter().next().unwrap())))
+                    } else {
+                        Some(Expr::DoBlock {
+                            body: stmts,
+                            label: None,
+                        })
+                    }
+                } else if let Ok((leftover, expr)) = expression(inner.trim())
+                    && leftover.trim().is_empty()
+                {
+                    Some(expr)
+                } else {
+                    None
+                };
+                if let Some(expr) = parsed {
+                    if !current.is_empty() {
+                        parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                    }
+                    parts.push(expr);
+                    return Some(remainder);
+                }
+            }
+        }
         if next.is_alphabetic()
             || next == '_'
             || next == '*'
@@ -1119,22 +1340,28 @@ pub(super) fn try_interpolate_var<'a>(
     if rest.starts_with('@') && rest.len() > 1 {
         let next = rest.as_bytes()[1] as char;
         if next.is_alphabetic() || next == '_' {
-            if !current.is_empty() {
-                parts.push(Expr::Literal(Value::str(std::mem::take(current))));
-            }
             let var_rest = &rest[1..];
             let end = var_rest
                 .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
                 .unwrap_or(var_rest.len());
             let name = &var_rest[..end];
             let expr = Expr::ArrayVar(name.to_string());
-            let mut remainder = &var_rest[end..];
-            // Zen-slice interpolation: "@arr[]" should interpolate the array value,
-            // not leave literal "[]".
+            let after_name = &var_rest[end..];
+            let mut remainder = after_name;
+            // Zen-slice interpolation: "@arr[]" should interpolate the array value
+            let mut consumed = false;
             if let Some(r) = remainder.strip_prefix("[]") {
                 remainder = r;
+                consumed = true;
             }
             let (expr, remainder) = parse_postcircumfix_index(remainder, expr);
+            if !consumed && remainder.len() == after_name.len() {
+                // @array without postcircumfix ([], [n], <key>) is literal
+                return None;
+            }
+            if !current.is_empty() {
+                parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+            }
             parts.push(expr);
             return Some(remainder);
         }
@@ -1149,6 +1376,14 @@ pub(super) fn try_interpolate_var<'a>(
             let name = &var_rest[..end];
             let expr = Expr::HashVar(name.to_string());
             let tail = &var_rest[end..];
+            // Zen-slice: %hash{} should stringify the whole hash
+            if let Some(r) = tail.strip_prefix("{}") {
+                if !current.is_empty() {
+                    parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                }
+                parts.push(expr);
+                return Some(r);
+            }
             // Zen-slice: %hash<> should stringify the whole hash
             if let Some(after_zen) = tail.strip_prefix("<>") {
                 if !current.is_empty() {
@@ -1169,6 +1404,60 @@ pub(super) fn try_interpolate_var<'a>(
             }
             parts.push(expr);
             return Some(remainder);
+        }
+    }
+    // &func() interpolation — only with parentheses
+    if rest.starts_with('&') && rest.len() > 1 {
+        let next = rest.as_bytes()[1] as char;
+        if next.is_alphabetic() || next == '_' {
+            let var_rest = &rest[1..];
+            let end = var_rest
+                .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                .unwrap_or(var_rest.len());
+            let name = &var_rest[..end];
+            let after_name = &var_rest[end..];
+            // Must be followed by (...) to interpolate
+            if after_name.starts_with('(') {
+                // Find matching closing paren
+                let mut depth = 0usize;
+                let mut paren_end = None;
+                for (idx, ch) in after_name.char_indices() {
+                    if ch == '(' {
+                        depth += 1;
+                    } else if ch == ')' {
+                        depth -= 1;
+                        if depth == 0 {
+                            paren_end = Some(idx);
+                            break;
+                        }
+                    }
+                }
+                if let Some(pe) = paren_end {
+                    let args_str = &after_name[1..pe];
+                    let remainder = &after_name[pe + 1..];
+                    // Parse arguments
+                    let args = if args_str.trim().is_empty() {
+                        vec![]
+                    } else {
+                        let mut args = vec![];
+                        for arg in args_str.split(',') {
+                            let arg = arg.trim();
+                            if let Ok((_, expr)) = crate::parser::expr::expression(arg) {
+                                args.push(expr);
+                            }
+                        }
+                        args
+                    };
+                    if !current.is_empty() {
+                        parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                    }
+                    parts.push(Expr::Call {
+                        name: Symbol::intern(name),
+                        args,
+                    });
+                    return Some(remainder);
+                }
+            }
         }
     }
     None
@@ -1503,11 +1792,19 @@ pub(super) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
             }
             if end > 0 {
                 let block_src = rest[1..end].trim();
-                if !block_src.is_empty()
-                    && let Ok((expr_rest, expr)) = expression(block_src)
-                    && expr_rest.trim().is_empty()
-                {
-                    parts.push(expr);
+                if !block_src.is_empty() {
+                    // Use DoStmt(Block) for scope isolation — block-local `my` doesn't leak
+                    if let Ok((sr, stmts)) = crate::parser::stmt::stmt_list_pub(block_src)
+                        && sr.trim().is_empty()
+                    {
+                        parts.push(Expr::DoStmt(Box::new(crate::ast::Stmt::Block(stmts))));
+                    } else if let Ok((expr_rest, expr)) = expression(block_src)
+                        && expr_rest.trim().is_empty()
+                    {
+                        parts.push(Expr::DoStmt(Box::new(crate::ast::Stmt::Block(vec![
+                            crate::ast::Stmt::Expr(expr),
+                        ]))));
+                    }
                 }
                 rest = &rest[end + 1..];
                 continue;
@@ -1521,7 +1818,7 @@ pub(super) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
     Ok((rest, finalize_interpolation(parts, current)))
 }
 
-/// Parse a Unicode smart-quoted string `“...”` with interpolation support.
+/// Parse a Unicode smart-quoted string `\u{201c}...\u{201d}` with interpolation support.
 pub(super) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '“')?;
     let mut parts: Vec<Expr> = Vec::new();
@@ -1577,11 +1874,18 @@ pub(super) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
             }
             if end > 0 {
                 let block_src = rest[1..end].trim();
-                if !block_src.is_empty()
-                    && let Ok((expr_rest, expr)) = expression(block_src)
-                    && expr_rest.trim().is_empty()
-                {
-                    parts.push(expr);
+                if !block_src.is_empty() {
+                    if let Ok((sr, stmts)) = crate::parser::stmt::stmt_list_pub(block_src)
+                        && sr.trim().is_empty()
+                    {
+                        parts.push(Expr::DoStmt(Box::new(crate::ast::Stmt::Block(stmts))));
+                    } else if let Ok((expr_rest, expr)) = expression(block_src)
+                        && expr_rest.trim().is_empty()
+                    {
+                        parts.push(Expr::DoStmt(Box::new(crate::ast::Stmt::Block(vec![
+                            crate::ast::Stmt::Expr(expr),
+                        ]))));
+                    }
                 }
                 rest = &rest[end + 1..];
                 continue;

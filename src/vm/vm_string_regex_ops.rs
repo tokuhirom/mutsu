@@ -1037,7 +1037,7 @@ impl VM {
                         return Ok(Value::make_instance(Symbol::intern("Method"), attrs));
                     }
                     Err(RuntimeError::new(format!(
-                        "Unknown infix function: {}",
+                        "Confused: two terms in a row (unknown infix function: {})",
                         name
                     )))
                 } else {
@@ -1076,7 +1076,7 @@ impl VM {
                             return Ok(Value::make_instance(Symbol::intern("Method"), attrs));
                         }
                         Err(RuntimeError::new(format!(
-                            "Unknown infix function: {}",
+                            "Confused: two terms in a row (unknown infix function: {})",
                             name
                         )))
                     }
