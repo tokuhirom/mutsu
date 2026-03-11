@@ -1706,6 +1706,11 @@ impl VM {
         self.push_call_frame();
         let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
 
+        // Clear var_bindings so attribute aliases from outer interpreter-level
+        // method calls don't leak into compiled method locals (e.g. `x → !x`
+        // from run_instance_method_resolved shadowing a local parameter `x`).
+        let saved_var_bindings = self.interpreter.take_var_bindings();
+
         self.interpreter.push_method_class(owner_class.to_string());
 
         // Detect role context (same logic as class.rs)
@@ -1846,6 +1851,7 @@ impl VM {
                                 .insert("self".to_string(), base.clone());
                         }
                         if !self.interpreter.type_matches_value(expected, &base) {
+                            self.interpreter.restore_var_bindings(saved_var_bindings);
                             self.interpreter.pop_method_class();
                             self.stack.truncate(saved_stack_depth);
                             let frame = self.pop_call_frame();
@@ -1919,6 +1925,7 @@ impl VM {
         {
             Ok(_) => {}
             Err(e) => {
+                self.interpreter.restore_var_bindings(saved_var_bindings);
                 self.interpreter.pop_method_class();
                 self.stack.truncate(saved_stack_depth);
                 let frame = self.pop_call_frame();
@@ -2072,6 +2079,16 @@ impl VM {
             self.interpreter.env(),
             &method_local_keys,
         );
+
+        // Merge var_bindings: keep any new bindings set during method execution
+        // (e.g. from $CALLER:: rebinding), then restore original bindings for
+        // keys not touched during execution.
+        let method_var_bindings = self.interpreter.take_var_bindings();
+        let mut restored_bindings = saved_var_bindings;
+        for (k, v) in method_var_bindings {
+            restored_bindings.insert(k, v);
+        }
+        self.interpreter.restore_var_bindings(restored_bindings);
 
         self.interpreter.pop_method_class();
         let _frame = self.pop_call_frame();

@@ -1034,10 +1034,16 @@ impl Interpreter {
                         // For non-numeric values (e.g. custom objects), try .succ/.pred
                         if matches!(last, Value::Instance { .. }) {
                             let method = if *step >= 0.0 { "succ" } else { "pred" };
-                            match self.call_method_with_values(last.clone(), method, vec![]) {
+                            let saved = self.env.clone();
+                            let saved_vb = self.var_bindings.clone();
+                            let v = match self.call_method_with_values(last.clone(), method, vec![])
+                            {
                                 Ok(v) => v,
                                 Err(_) => Self::seq_add(last, *step),
-                            }
+                            };
+                            self.env = saved;
+                            self.var_bindings = saved_vb;
+                            v
                         } else {
                             Self::seq_add(last, *step)
                         }
