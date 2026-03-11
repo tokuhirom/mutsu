@@ -133,6 +133,17 @@ check_stop_file() {
         exit 0
     fi
 }
+
+# Sleep that checks stop file every 5 seconds
+interruptible_sleep() {
+    local total="$1"
+    local elapsed=0
+    while (( elapsed < total )); do
+        sleep 5
+        elapsed=$((elapsed + 5))
+        check_stop_file
+    done
+}
 if [[ ! -x "${SCRIPT_DIR_CHECK}/ai-sandbox.sh" ]]; then
     echo "Error: ${SCRIPT_DIR_CHECK}/ai-sandbox.sh not found or not executable" >&2
     exit 1
@@ -425,7 +436,7 @@ while true; do
             exit 0
         fi
         echo "No open PRs with conflicts or CI failures were found. Sleeping ${POLL_INTERVAL_SECONDS}s..."
-        sleep "$POLL_INTERVAL_SECONDS"
+        interruptible_sleep "$POLL_INTERVAL_SECONDS"
         CANDIDATES="$(collect_candidates_tsv)"
         continue
     fi

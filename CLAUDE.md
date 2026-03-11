@@ -301,6 +301,11 @@ Roast test fixing is automated via a fleet of sandboxed AI agents. The parent AI
 
 # Dry-run: show what would be launched
 ./scripts/ai-fleet.sh --once --dry-run
+
+# Gracefully stop specific workers (fleet manager will restart them)
+./scripts/ai-fleet.sh --stop supervisor
+./scripts/ai-fleet.sh --stop codex        # stops all codex workers
+./scripts/ai-fleet.sh --stop all
 ```
 
 Default fleet composition (override with CLI options):
