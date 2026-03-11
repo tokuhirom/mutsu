@@ -1067,89 +1067,91 @@ impl Interpreter {
             }
         };
 
-        // Use subtest format only when we have a structured exception with attributes
+        // Only structured exception objects reliably expose arbitrary attribute matchers.
         let has_structured_exception = exception_val.as_ref().is_some_and(|ex| {
             if let Value::Instance { class_name, .. } = ex {
-                class_name.resolve().starts_with("X::") || class_name != "Exception"
+                class_name.resolve().starts_with("X::")
             } else {
                 false
             }
         });
-        if !named_matchers.is_empty() && has_structured_exception {
-            let ctx = self.begin_subtest();
-            let total = 2 + named_matchers.len();
-            let state = self.test_state.get_or_insert_with(TestState::new);
-            state.planned = Some(total);
-            self.emit_output(&format!("1..{}\n", total));
-            self.test_ok(result.is_err(), "code dies", false)?;
-            self.test_ok(
-                type_ok,
-                &format!("right exception type ({})", expected_normalized),
-                false,
-            )?;
-            for (attr_name, expected_val) in &named_matchers {
-                let actual_val = exception_val.as_ref().and_then(|ex| {
-                    if let Value::Instance { attributes, .. } = ex {
-                        attributes.get(attr_name).cloned()
+        let named_checks: Vec<(String, Value)> = if has_structured_exception {
+            named_matchers
+        } else {
+            Vec::new()
+        };
+
+        let ctx = self.begin_subtest();
+        let total = 2 + named_checks.len();
+        let state = self.test_state.get_or_insert_with(TestState::new);
+        state.planned = Some(total);
+        self.emit_output(&format!("1..{}\n", total));
+        self.test_ok(result.is_err(), "code dies", false)?;
+        self.test_ok(
+            type_ok,
+            &format!("right exception type ({})", expected_normalized),
+            false,
+        )?;
+        for (attr_name, expected_val) in &named_checks {
+            let actual_val = exception_val.as_ref().and_then(|ex| {
+                if let Value::Instance { attributes, .. } = ex {
+                    attributes.get(attr_name).cloned()
+                } else {
+                    None
+                }
+            });
+            // Fall back to err.message for "message" attribute
+            let actual_str = actual_val
+                .as_ref()
+                .map(|v| v.to_string_value())
+                .unwrap_or_else(|| {
+                    if attr_name == "message" {
+                        err_message.clone()
                     } else {
-                        None
+                        String::new()
                     }
                 });
-                // Fall back to err.message for "message" attribute
-                let actual_str = actual_val
-                    .as_ref()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_else(|| {
-                        if attr_name == "message" {
-                            err_message.clone()
-                        } else {
-                            String::new()
-                        }
-                    });
-                let matched = match expected_val {
-                    Value::Whatever => true, // * matches anything
-                    Value::Regex(pattern) => self
-                        .regex_match_with_captures(pattern, &actual_str)
-                        .is_some(),
-                    Value::Sub(_) | Value::Routine { .. } => {
-                        // Smart-match: call the block with the actual value as topic
-                        let call_arg = actual_val.clone().unwrap_or(Value::Nil);
-                        match self.call_sub_value(expected_val.clone(), vec![call_arg], false) {
-                            Ok(result_val) => result_val.truthy(),
-                            Err(_) => false,
-                        }
+            let matched = match expected_val {
+                Value::Whatever => true, // * matches anything
+                Value::Regex(pattern) => self
+                    .regex_match_with_captures(pattern, &actual_str)
+                    .is_some(),
+                Value::Sub(_) | Value::Routine { .. } => {
+                    // Smart-match: call the block with the actual value as topic
+                    let call_arg = actual_val.clone().unwrap_or(Value::Nil);
+                    match self.call_sub_value(expected_val.clone(), vec![call_arg], false) {
+                        Ok(result_val) => result_val.truthy(),
+                        Err(_) => false,
                     }
-                    _ => actual_str == expected_val.to_string_value(),
-                };
-                let expected_display = match expected_val {
-                    Value::Regex(pattern) => format!("/{}/", pattern),
-                    Value::Sub(_) | Value::Routine { .. } => expected_val.to_string_value(),
-                    _ => expected_val.to_string_value(),
-                };
-                self.test_ok(
-                    matched,
-                    &format!(".{} matches {}", attr_name, expected_display),
-                    false,
-                )?;
-            }
-            let all_ok = type_ok && result.is_err();
-            let label = if desc.is_empty() {
-                format!("did we throws-like {}?", expected_normalized)
-            } else {
-                desc.clone()
+                }
+                _ => actual_str == expected_val.to_string_value(),
             };
-            self.finish_subtest(
-                ctx,
-                &label,
-                if all_ok {
-                    Ok(())
-                } else {
-                    Err(RuntimeError::new(""))
-                },
+            let expected_display = match expected_val {
+                Value::Regex(pattern) => format!("/{}/", pattern),
+                Value::Sub(_) | Value::Routine { .. } => expected_val.to_string_value(),
+                _ => expected_val.to_string_value(),
+            };
+            self.test_ok(
+                matched,
+                &format!(".{} matches {}", attr_name, expected_display),
+                false,
             )?;
-        } else {
-            self.test_ok(type_ok, &desc, false)?;
         }
+        let all_ok = type_ok && result.is_err();
+        let label = if desc.is_empty() {
+            format!("did we throws-like {}?", expected_normalized)
+        } else {
+            desc.clone()
+        };
+        self.finish_subtest(
+            ctx,
+            &label,
+            if all_ok {
+                Ok(())
+            } else {
+                Err(RuntimeError::new(""))
+            },
+        )?;
         Ok(Value::Bool(type_ok))
     }
 
