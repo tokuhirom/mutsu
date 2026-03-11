@@ -268,7 +268,7 @@ pub(super) fn block_inner(input: &str) -> PResult<'_, Vec<Stmt>> {
 }
 
 /// Public accessor for stmt_list (used by primary.rs for block expressions).
-pub(super) fn stmt_list_pub(input: &str) -> PResult<'_, Vec<Stmt>> {
+pub(in crate::parser) fn stmt_list_pub(input: &str) -> PResult<'_, Vec<Stmt>> {
     stmt_list_with_mode(input, false)
 }
 

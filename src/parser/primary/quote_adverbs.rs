@@ -181,6 +181,12 @@ pub(super) fn parse_fused_adverbs_small_q<'a>(input: &'a str, flags: &mut QuoteF
         flags.backslash = true;
         return r;
     }
+    if let Some(r) = input.strip_prefix('a')
+        && not_alnum(r)
+    {
+        flags.array = true;
+        return r;
+    }
     input
 }
 
