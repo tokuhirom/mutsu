@@ -766,15 +766,15 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    // :name{ ... } (block-valued colonpair)
+    // :name{ ... } (block/hash-valued colonpair)
     if rest.starts_with('{') {
-        let (r, body) = parse_block_body(rest)?;
+        let (r, block_or_hash) = block_or_hash_expr(rest)?;
         return Ok((
             r,
             Expr::Binary {
                 left: Box::new(Expr::Literal(Value::str(name.to_string()))),
                 op: crate::token_kind::TokenKind::FatArrow,
-                right: Box::new(Expr::AnonSub { body, is_rw: false }),
+                right: Box::new(block_or_hash),
             },
         ));
     }
@@ -1692,10 +1692,10 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
         return Ok((r, (name, Some(Expr::ArrayLiteral(items)))));
     }
 
-    // :name{block} (block-valued colonpair)
+    // :name{...} (block/hash-valued colonpair)
     if r.starts_with('{') {
-        let (r, body) = parse_block_body(r)?;
-        return Ok((r, (name, Some(Expr::AnonSub { body, is_rw: false }))));
+        let (r, block_or_hash) = block_or_hash_expr(r)?;
+        return Ok((r, (name, Some(block_or_hash))));
     }
 
     // :name<word> or :name<words> (angle bracket form)

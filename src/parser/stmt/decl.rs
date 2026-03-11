@@ -70,6 +70,10 @@ fn default_decl_expr(
     }
 }
 
+fn scalar_binding_rhs_is_readonly(expr: &Expr) -> bool {
+    matches!(expr, Expr::Literal(_))
+}
+
 fn is_decl_trailing_or_chain_op(op: &TokenKind) -> bool {
     matches!(op, TokenKind::OrWord | TokenKind::OrElse)
 }
@@ -1250,6 +1254,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             rest = r_after;
         }
         let bound_name = name.clone();
+        let mark_scalar_readonly =
+            !is_array && !bound_name.starts_with('%') && scalar_binding_rhs_is_readonly(&expr);
         let stmt = Stmt::VarDecl {
             name,
             expr,
@@ -1279,6 +1285,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 }));
             }
             Stmt::SyntheticBlock(stmts)
+        } else if mark_scalar_readonly {
+            Stmt::SyntheticBlock(vec![Stmt::MarkReadonly(bound_name), stmt])
         } else {
             stmt
         };

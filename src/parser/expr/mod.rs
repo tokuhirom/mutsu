@@ -1682,6 +1682,23 @@ mod tests {
     }
 
     #[test]
+    fn parse_reverse_meta_compound_assign_rhs_target() {
+        let (rest, expr) = expression("10 R+= ($a ||= 42)").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::DoBlock { .. } | Expr::AssignExpr { .. }
+        ));
+    }
+
+    #[test]
+    fn parse_reverse_meta_compound_assign_non_lvalue_target() {
+        let (rest, expr) = expression("($a ||= 42) R+= 10").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::DoBlock { .. }));
+    }
+
+    #[test]
     fn parse_reverse_dot_concat_reports_obsolete() {
         let err = expression("3 R. \"foo\"").unwrap_err();
         assert!(err.message().contains("X::Obsolete"));
