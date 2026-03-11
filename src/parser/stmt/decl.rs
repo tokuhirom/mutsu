@@ -518,7 +518,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         .or_else(|| keyword("our", input))
         .or_else(|| keyword("state", input))
         .ok_or_else(|| PError::expected("my/our/state declaration"))?;
-    let (rest, _) = ws1(rest)?;
+    let (mut rest, _) = ws1(rest)?;
 
     // my enum Foo <...>
     if let Some(r) = keyword("enum", rest) {
@@ -528,7 +528,20 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
 
     // my/our proto ...
     if keyword("proto", rest).is_some() {
-        return proto_decl(rest);
+        // If proto is followed by a variable sigil (e.g., `my proto $!`),
+        // treat it as a regular variable declaration, ignoring proto.
+        let after_proto = keyword("proto", rest).unwrap();
+        let (after_ws, _) = ws(after_proto)?;
+        if after_ws.starts_with('$')
+            || after_ws.starts_with('@')
+            || after_ws.starts_with('%')
+            || after_ws.starts_with('&')
+        {
+            rest = after_ws;
+            // Fall through to normal variable parsing below
+        } else {
+            return proto_decl(rest);
+        }
     }
 
     // Typed routine declarations, e.g. `my Bool sub f(...) { ... }`.
@@ -820,9 +833,10 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         let (r, n) = var_name(rest)?;
         (r, format!("{}{}", prefix, n))
     } else {
-        // Sigilless variable
-        let (r, n) = ident(rest)?;
-        (r, n)
+        // Sigilless variable without \ — this is an error in Raku
+        return Err(PError::fatal(
+            "X::Syntax::Malformed: Malformed my variable (did you mean to declare a sigilless variable with \\?)".to_string(),
+        ));
     };
     let term_decl_name = if sigil == b'$' {
         format!("${name}")

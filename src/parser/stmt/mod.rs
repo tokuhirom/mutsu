@@ -196,6 +196,13 @@ fn var_name(input: &str) -> PResult<'_, String> {
                 }
             }
         }
+        // Handle $! as a special variable (not twigil + name)
+        if input.starts_with('$') && twigil == "!" {
+            // If no identifier follows, this is the $! error variable
+            if r.is_empty() || !r.chars().next().is_some_and(is_raku_identifier_start) {
+                return Ok((r, "!".to_string()));
+            }
+        }
         // Handle bare $ (anonymous variable) — no name after sigil
         if let Ok((mut rest, mut name)) = qualified_ident(r) {
             while rest.starts_with(':') && !rest.starts_with("::") {
@@ -204,6 +211,19 @@ fn var_name(input: &str) -> PResult<'_, String> {
                     name.push(':');
                     name.push_str(&suffix);
                     rest = r2;
+                    // Double colon after adverb is X::Syntax::Confused
+                    if rest.starts_with("::") {
+                        return Err(PError::fatal(
+                            "X::Syntax::Confused: Confused (double colon in variable adverb)"
+                                .to_string(),
+                        ));
+                    }
+                    // Parse adverb value: <...>, «...», [...], (...)
+                    if let Some((canonical, r3)) = super::primary::var::parse_adverb_value_pub(rest)
+                    {
+                        name.push_str(&canonical);
+                        rest = r3;
+                    }
                 } else {
                     break;
                 }
