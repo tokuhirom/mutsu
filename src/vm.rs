@@ -1580,8 +1580,6 @@ impl VM {
                 samemark,
                 nth_idx,
                 x_count,
-                global,
-                perl5,
             } => {
                 self.exec_subst_op(
                     code,
@@ -1590,8 +1588,6 @@ impl VM {
                     *samemark,
                     *nth_idx,
                     *x_count,
-                    *global,
-                    *perl5,
                 )?;
                 *ip += 1;
             }
@@ -1601,8 +1597,6 @@ impl VM {
                 samemark,
                 nth_idx,
                 x_count,
-                global,
-                perl5,
             } => {
                 self.exec_non_destructive_subst_op(
                     code,
@@ -1611,8 +1605,6 @@ impl VM {
                     *samemark,
                     *nth_idx,
                     *x_count,
-                    *global,
-                    *perl5,
                 )?;
                 *ip += 1;
             }

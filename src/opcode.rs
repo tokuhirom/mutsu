@@ -447,8 +447,6 @@ pub(crate) enum OpCode {
         samemark: bool,
         nth_idx: Option<u32>,
         x_count: Option<u32>,
-        global: bool,
-        perl5: bool,
     },
 
     // -- Non-destructive substitution (S///) --
@@ -458,8 +456,6 @@ pub(crate) enum OpCode {
         samemark: bool,
         nth_idx: Option<u32>,
         x_count: Option<u32>,
-        global: bool,
-        perl5: bool,
     },
 
     // -- Transliteration (tr///) --
