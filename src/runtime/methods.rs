@@ -189,6 +189,26 @@ impl Interpreter {
         {
             return self.dispatch_instance_and_fallback(target, method, args);
         }
+        if args.is_empty()
+            && matches!(method, "Str" | "gist")
+            && let Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } = &target
+            && self
+                .class_mro(&class_name.resolve())
+                .iter()
+                .any(|name| name == "DateTime")
+            && let Some(formatter) = attributes.get("formatter")
+        {
+            let saved_env = self.env().clone();
+            let saved_readonly = self.save_readonly_vars();
+            let rendered = self.eval_call_on_value(formatter.clone(), vec![target.clone()])?;
+            *self.env_mut() = saved_env;
+            self.restore_readonly_vars(saved_readonly);
+            return Ok(Value::str(rendered.to_string_value()));
+        }
         // Immutable List/Range: push/pop/shift/unshift/append/prepend/splice must throw X::Immutable
         if matches!(
             method,
@@ -3014,12 +3034,26 @@ impl Interpreter {
                 }
                 return Ok(Value::make_instance(class_name, attributes));
             }
-            "now" if args.is_empty() => {
+            "now" => {
                 if let Value::Package(ref class_name) = target
-                    && class_name == "DateTime"
+                    && self
+                        .class_mro(&class_name.resolve())
+                        .iter()
+                        .any(|name| name == "DateTime")
                 {
                     use crate::builtins::methods_0arg::temporal;
-                    let secs = crate::value::current_time_secs_f64();
+                    let mut timezone = 0i64;
+                    let mut formatter: Option<Value> = None;
+                    for arg in &args {
+                        if let Value::Pair(key, value) = arg {
+                            match key.as_str() {
+                                "timezone" => timezone = value.to_f64() as i64,
+                                "formatter" => formatter = Some(*value.clone()),
+                                _ => {}
+                            }
+                        }
+                    }
+                    let secs = crate::value::current_time_secs_f64() + timezone as f64;
                     let total_i = secs.floor() as i64;
                     let frac = secs - total_i as f64;
                     let day_secs = total_i.rem_euclid(86400);
@@ -3028,7 +3062,68 @@ impl Interpreter {
                     let h = day_secs / 3600;
                     let mi = (day_secs % 3600) / 60;
                     let s = (day_secs % 60) as f64 + frac;
-                    return Ok(temporal::make_datetime(y, m, d, h, mi, s, 0));
+                    let dt = temporal::make_datetime(y, m, d, h, mi, s, timezone);
+                    if let Some(formatter_value) = formatter
+                        && let Value::Instance {
+                            class_name,
+                            ref attributes,
+                            id,
+                        } = dt
+                    {
+                        let mut attrs = (**attributes).clone();
+                        attrs.insert("formatter".to_string(), formatter_value.clone());
+                        let dt_with_formatter = Value::Instance {
+                            class_name,
+                            attributes: std::sync::Arc::new(attrs),
+                            id,
+                        };
+                        let saved_env = self.env().clone();
+                        let saved_readonly = self.save_readonly_vars();
+                        let rendered = self
+                            .eval_call_on_value(formatter_value, vec![dt_with_formatter.clone()])?
+                            .to_string_value();
+                        *self.env_mut() = saved_env;
+                        self.restore_readonly_vars(saved_readonly);
+                        if let Value::Instance {
+                            class_name,
+                            attributes,
+                            id,
+                        } = dt_with_formatter
+                        {
+                            let mut updated = (*attributes).clone();
+                            updated
+                                .insert("__formatter_rendered".to_string(), Value::str(rendered));
+                            return Ok(Value::Instance {
+                                class_name,
+                                attributes: std::sync::Arc::new(updated),
+                                id,
+                            });
+                        }
+                    }
+                    if class_name != "DateTime" {
+                        return self.dispatch_new(target.clone(), vec![dt]);
+                    }
+                    return Ok(dt);
+                }
+            }
+            "Date" if args.is_empty() => {
+                if let Value::Package(ref class_name) = target
+                    && self
+                        .class_mro(&class_name.resolve())
+                        .iter()
+                        .any(|name| name == "DateTime")
+                {
+                    return Ok(Value::Package(Symbol::intern("Date")));
+                }
+            }
+            "DateTime" if args.is_empty() => {
+                if let Value::Package(ref class_name) = target
+                    && self
+                        .class_mro(&class_name.resolve())
+                        .iter()
+                        .any(|name| name == "DateTime")
+                {
+                    return Ok(target.clone());
                 }
             }
             "today" if args.is_empty() => {

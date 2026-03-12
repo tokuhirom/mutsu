@@ -1136,6 +1136,23 @@ impl Interpreter {
         match (left, right) {
             // Whatever on RHS always matches (ACCEPTS returns True for any value)
             (_, Value::Whatever) => true,
+            (
+                Value::Instance {
+                    class_name: left_class,
+                    attributes: left_attrs,
+                    ..
+                },
+                Value::Instance {
+                    class_name: right_class,
+                    attributes: right_attrs,
+                    ..
+                },
+            ) if left_class == "DateTime" && right_class == "Date" => {
+                let (y, m, d, _, _, _, _) =
+                    crate::builtins::methods_0arg::temporal::datetime_attrs(left_attrs);
+                let (ry, rm, rd) = crate::builtins::methods_0arg::temporal::date_attrs(right_attrs);
+                y == ry && m == rm && d == rd
+            }
             (Value::Version { .. }, Value::Version { parts, plus, minus }) => {
                 Self::version_smart_match(left, parts, *plus, *minus)
             }

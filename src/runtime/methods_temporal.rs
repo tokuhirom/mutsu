@@ -2,6 +2,88 @@
 
 use crate::builtins::methods_0arg::temporal;
 use crate::value::{RuntimeError, Value};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+fn has_date_attrs(attributes: &Arc<HashMap<String, Value>>) -> bool {
+    attributes.contains_key("year")
+        && attributes.contains_key("month")
+        && attributes.contains_key("day")
+}
+
+fn has_datetime_attrs(attributes: &Arc<HashMap<String, Value>>) -> bool {
+    has_date_attrs(attributes)
+        && attributes.contains_key("hour")
+        && attributes.contains_key("minute")
+        && attributes.contains_key("second")
+        && attributes.contains_key("timezone")
+}
+
+fn rebless_datetime_result(
+    result: Value,
+    target_class_name: crate::symbol::Symbol,
+    original_attrs: &Arc<HashMap<String, Value>>,
+) -> Value {
+    if target_class_name == "DateTime" {
+        return result;
+    }
+    let Value::Instance {
+        class_name,
+        attributes,
+        ..
+    } = &result
+    else {
+        return result;
+    };
+    if class_name != "DateTime" {
+        return result;
+    }
+    let mut merged = (**original_attrs).clone();
+    for key in [
+        "year", "month", "day", "hour", "minute", "second", "timezone",
+    ] {
+        if let Some(value) = attributes.get(key) {
+            merged.insert(key.to_string(), value.clone());
+        }
+    }
+    Value::Instance {
+        class_name: target_class_name,
+        attributes: Arc::new(merged),
+        id: crate::value::next_instance_id(),
+    }
+}
+
+fn rebless_date_result(
+    result: Value,
+    target_class_name: crate::symbol::Symbol,
+    original_attrs: &Arc<HashMap<String, Value>>,
+) -> Value {
+    if target_class_name == "Date" {
+        return result;
+    }
+    let Value::Instance {
+        class_name,
+        attributes,
+        ..
+    } = &result
+    else {
+        return result;
+    };
+    if class_name != "Date" {
+        return result;
+    }
+    let mut merged = (**original_attrs).clone();
+    for key in ["year", "month", "day"] {
+        if let Some(value) = attributes.get(key) {
+            merged.insert(key.to_string(), value.clone());
+        }
+    }
+    Value::Instance {
+        class_name: target_class_name,
+        attributes: Arc::new(merged),
+        id: crate::value::next_instance_id(),
+    }
+}
 
 /// Dispatch temporal n-arg methods for Date/DateTime instances.
 /// Returns Some(result) if handled, None if not a temporal method.
@@ -15,12 +97,21 @@ pub(super) fn dispatch_temporal_method(
             class_name,
             attributes,
             ..
-        } if class_name == "Date" => {
+        } if has_date_attrs(attributes) && !has_datetime_attrs(attributes) => {
             let (year, month, day) = temporal::date_attrs(attributes);
             match method {
-                "later" | "earlier" => Some(date_later_earlier(year, month, day, args, method)),
-                "clone" => Some(date_clone(year, month, day, args)),
-                "truncated-to" => Some(date_truncated_to(year, month, day, args)),
+                "later" | "earlier" => Some(
+                    date_later_earlier(year, month, day, args, method)
+                        .map(|v| rebless_date_result(v, *class_name, attributes)),
+                ),
+                "clone" => Some(
+                    date_clone(year, month, day, args)
+                        .map(|v| rebless_date_result(v, *class_name, attributes)),
+                ),
+                "truncated-to" => Some(
+                    date_truncated_to(year, month, day, args)
+                        .map(|v| rebless_date_result(v, *class_name, attributes)),
+                ),
                 "in-timezone" => {
                     // Date.in-timezone returns a DateTime
                     if let Some(arg) = args.first() {
@@ -37,37 +128,55 @@ pub(super) fn dispatch_temporal_method(
             class_name,
             attributes,
             ..
-        } if class_name == "DateTime" => {
+        } if has_datetime_attrs(attributes) => {
             let (year, month, day, hour, minute, second, timezone) =
                 temporal::datetime_attrs(attributes);
             match method {
-                "later" | "earlier" => Some(datetime_later_earlier(
-                    year, month, day, hour, minute, second, timezone, args, method,
-                )),
-                "clone" => Some(datetime_clone(
-                    year, month, day, hour, minute, second, timezone, args,
-                )),
-                "truncated-to" => Some(datetime_truncated_to(
-                    year, month, day, hour, minute, second, timezone, args,
-                )),
+                "later" | "earlier" => Some(
+                    datetime_later_earlier(
+                        year, month, day, hour, minute, second, timezone, args, method,
+                    )
+                    .map(|v| rebless_datetime_result(v, *class_name, attributes)),
+                ),
+                "clone" => Some(
+                    datetime_clone(year, month, day, hour, minute, second, timezone, args)
+                        .map(|v| rebless_datetime_result(v, *class_name, attributes)),
+                ),
+                "truncated-to" => Some(
+                    datetime_truncated_to(year, month, day, hour, minute, second, timezone, args)
+                        .map(|v| rebless_datetime_result(v, *class_name, attributes)),
+                ),
                 "in-timezone" => {
                     if let Some(arg) = args.first() {
                         let new_tz = arg.to_f64() as i64;
-                        Some(datetime_in_timezone(
-                            year, month, day, hour, minute, second, timezone, new_tz,
-                        ))
+                        Some(
+                            datetime_in_timezone(
+                                year, month, day, hour, minute, second, timezone, new_tz,
+                            )
+                            .map(|v| rebless_datetime_result(v, *class_name, attributes)),
+                        )
                     } else {
-                        Some(Ok(temporal::make_datetime(
-                            year, month, day, hour, minute, second, timezone,
-                        )))
+                        Some(
+                            Ok(temporal::make_datetime(
+                                year, month, day, hour, minute, second, timezone,
+                            ))
+                            .map(|v| rebless_datetime_result(v, *class_name, attributes)),
+                        )
                     }
                 }
                 "posix" if args.len() == 1 => {
-                    // .posix(True) includes leap seconds
+                    // .posix(True) / .posix(:real) keeps fractional seconds.
+                    // .posix(False) / .posix(:!real) truncates to whole seconds.
                     let posix = temporal::datetime_to_posix(
                         year, month, day, hour, minute, second, timezone,
                     );
-                    if posix == posix.floor() {
+                    let real = match &args[0] {
+                        Value::Pair(key, value) if key == "real" => value.truthy(),
+                        other => other.truthy(),
+                    };
+                    if !real {
+                        Some(Ok(Value::Int(posix.floor() as i64)))
+                    } else if posix == posix.floor() {
                         Some(Ok(Value::Int(posix as i64)))
                     } else {
                         Some(Ok(Value::Num(posix)))
@@ -93,46 +202,59 @@ fn date_later_earlier(
     let mut m = month;
     let mut d = day;
 
+    let mut apply_pair = |key: &str, value: &Value| -> Result<(), RuntimeError> {
+        let amount = value.to_f64() as i64 * sign;
+        let key_str = normalize_unit(key);
+        match key_str.as_str() {
+            "day" | "days" => {
+                let days = temporal::civil_to_epoch_days(y, m, d) + amount;
+                let (ny, nm, nd) = temporal::epoch_days_to_civil(days);
+                y = ny;
+                m = nm;
+                d = nd;
+            }
+            "week" | "weeks" => {
+                let days = temporal::civil_to_epoch_days(y, m, d) + amount * 7;
+                let (ny, nm, nd) = temporal::epoch_days_to_civil(days);
+                y = ny;
+                m = nm;
+                d = nd;
+            }
+            "month" | "months" => {
+                let total_months = (y * 12 + (m - 1)) + amount;
+                y = total_months.div_euclid(12);
+                m = total_months.rem_euclid(12) + 1;
+                let max_d = temporal::days_in_month(y, m);
+                if d > max_d {
+                    d = max_d;
+                }
+            }
+            "year" | "years" => {
+                y += amount;
+                let max_d = temporal::days_in_month(y, m);
+                if d > max_d {
+                    d = max_d;
+                }
+            }
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "Unknown unit '{}' for Date.{}",
+                    key, method
+                )));
+            }
+        }
+        Ok(())
+    };
+
     for arg in args {
         if let Value::Pair(key, value) = arg {
-            let amount = value.to_f64() as i64 * sign;
-            let key_str = normalize_unit(key);
-            match key_str.as_str() {
-                "day" | "days" => {
-                    let days = temporal::civil_to_epoch_days(y, m, d) + amount;
-                    let (ny, nm, nd) = temporal::epoch_days_to_civil(days);
-                    y = ny;
-                    m = nm;
-                    d = nd;
-                }
-                "week" | "weeks" => {
-                    let days = temporal::civil_to_epoch_days(y, m, d) + amount * 7;
-                    let (ny, nm, nd) = temporal::epoch_days_to_civil(days);
-                    y = ny;
-                    m = nm;
-                    d = nd;
-                }
-                "month" | "months" => {
-                    let total_months = (y * 12 + (m - 1)) + amount;
-                    y = total_months.div_euclid(12);
-                    m = total_months.rem_euclid(12) + 1;
-                    let max_d = temporal::days_in_month(y, m);
-                    if d > max_d {
-                        d = max_d;
-                    }
-                }
-                "year" | "years" => {
-                    y += amount;
-                    let max_d = temporal::days_in_month(y, m);
-                    if d > max_d {
-                        d = max_d;
-                    }
-                }
-                _ => {
-                    return Err(RuntimeError::new(format!(
-                        "Unknown unit '{}' for Date.{}",
-                        key, method
-                    )));
+            apply_pair(key, value)?;
+            continue;
+        }
+        if let Some(items) = arg.as_list_items() {
+            for item in items.iter() {
+                if let Value::Pair(key, value) = item {
+                    apply_pair(key, value)?;
                 }
             }
         }
@@ -162,106 +284,119 @@ fn datetime_later_earlier(
     let mut mi = minute;
     let mut s = second;
 
+    let clip_non_leap_second = |y: i64, m: i64, d: i64, h: i64, mi: i64, s: &mut f64, tz: i64| {
+        if *s < 60.0 {
+            return;
+        }
+        if temporal::validate_datetime(y, m, d, h, mi, *s, tz).is_ok() {
+            return;
+        }
+        let frac = (*s - 60.0).clamp(0.0, 0.999_999);
+        *s = 59.0 + frac;
+    };
+
+    let mut apply_pair = |key: &str, value: &Value| -> Result<(), RuntimeError> {
+        let key_str = normalize_unit(key);
+        match key_str.as_str() {
+            "second" | "seconds" => {
+                let amount = value.to_f64() * sign_f;
+                let instant = temporal::datetime_to_instant_leap_aware(y, m, d, h, mi, s, timezone);
+                let (ny, nm, nd, nh, nmi, ns) =
+                    temporal::instant_to_datetime_leap_aware(instant + amount, timezone);
+                y = ny;
+                m = nm;
+                d = nd;
+                h = nh;
+                mi = nmi;
+                s = ns;
+            }
+            "minute" | "minutes" => {
+                let amount = value.to_f64() * 60.0 * sign_f;
+                let instant = temporal::datetime_to_instant_leap_aware(y, m, d, h, mi, s, timezone);
+                let (ny, nm, nd, nh, nmi, ns) =
+                    temporal::instant_to_datetime_leap_aware(instant + amount, timezone);
+                y = ny;
+                m = nm;
+                d = nd;
+                h = nh;
+                mi = nmi;
+                s = ns;
+            }
+            "hour" | "hours" => {
+                let amount = value.to_f64() * 3_600.0 * sign_f;
+                let instant = temporal::datetime_to_instant_leap_aware(y, m, d, h, mi, s, timezone);
+                let (ny, nm, nd, nh, nmi, ns) =
+                    temporal::instant_to_datetime_leap_aware(instant + amount, timezone);
+                y = ny;
+                m = nm;
+                d = nd;
+                h = nh;
+                mi = nmi;
+                s = ns;
+            }
+            "day" | "days" => {
+                let amount = value.to_f64() as i64 * sign;
+                let days = temporal::civil_to_epoch_days(y, m, d) + amount;
+                let (ny, nm, nd) = temporal::epoch_days_to_civil(days);
+                y = ny;
+                m = nm;
+                d = nd;
+                clip_non_leap_second(y, m, d, h, mi, &mut s, timezone);
+            }
+            "week" | "weeks" => {
+                let amount = value.to_f64() as i64 * sign;
+                let days = temporal::civil_to_epoch_days(y, m, d) + amount * 7;
+                let (ny, nm, nd) = temporal::epoch_days_to_civil(days);
+                y = ny;
+                m = nm;
+                d = nd;
+                clip_non_leap_second(y, m, d, h, mi, &mut s, timezone);
+            }
+            "month" | "months" => {
+                let amount = value.to_f64() as i64 * sign;
+                let total_months = (y * 12 + (m - 1)) + amount;
+                y = total_months.div_euclid(12);
+                m = total_months.rem_euclid(12) + 1;
+                let max_d = temporal::days_in_month(y, m);
+                if d > max_d {
+                    d = max_d;
+                }
+                clip_non_leap_second(y, m, d, h, mi, &mut s, timezone);
+            }
+            "year" | "years" => {
+                let amount = value.to_f64() as i64 * sign;
+                y += amount;
+                let max_d = temporal::days_in_month(y, m);
+                if d > max_d {
+                    d = max_d;
+                }
+                clip_non_leap_second(y, m, d, h, mi, &mut s, timezone);
+            }
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "Unknown unit '{}' for DateTime.{}",
+                    key, method
+                )));
+            }
+        }
+        Ok(())
+    };
+
     for arg in args {
         if let Value::Pair(key, value) = arg {
-            let key_str = normalize_unit(key);
-            match key_str.as_str() {
-                "second" | "seconds" => {
-                    let amount = value.to_f64() * sign_f;
-                    s += amount;
-                    normalize_datetime(&mut y, &mut m, &mut d, &mut h, &mut mi, &mut s);
-                }
-                "minute" | "minutes" => {
-                    let amount = value.to_f64() as i64 * sign;
-                    mi += amount;
-                    normalize_datetime(&mut y, &mut m, &mut d, &mut h, &mut mi, &mut s);
-                }
-                "hour" | "hours" => {
-                    let amount = value.to_f64() as i64 * sign;
-                    h += amount;
-                    normalize_datetime(&mut y, &mut m, &mut d, &mut h, &mut mi, &mut s);
-                }
-                "day" | "days" => {
-                    let amount = value.to_f64() as i64 * sign;
-                    let days = temporal::civil_to_epoch_days(y, m, d) + amount;
-                    let (ny, nm, nd) = temporal::epoch_days_to_civil(days);
-                    y = ny;
-                    m = nm;
-                    d = nd;
-                }
-                "week" | "weeks" => {
-                    let amount = value.to_f64() as i64 * sign;
-                    let days = temporal::civil_to_epoch_days(y, m, d) + amount * 7;
-                    let (ny, nm, nd) = temporal::epoch_days_to_civil(days);
-                    y = ny;
-                    m = nm;
-                    d = nd;
-                }
-                "month" | "months" => {
-                    let amount = value.to_f64() as i64 * sign;
-                    let total_months = (y * 12 + (m - 1)) + amount;
-                    y = total_months.div_euclid(12);
-                    m = total_months.rem_euclid(12) + 1;
-                    let max_d = temporal::days_in_month(y, m);
-                    if d > max_d {
-                        d = max_d;
-                    }
-                }
-                "year" | "years" => {
-                    let amount = value.to_f64() as i64 * sign;
-                    y += amount;
-                    let max_d = temporal::days_in_month(y, m);
-                    if d > max_d {
-                        d = max_d;
-                    }
-                }
-                _ => {
-                    return Err(RuntimeError::new(format!(
-                        "Unknown unit '{}' for DateTime.{}",
-                        key, method
-                    )));
+            apply_pair(key, value)?;
+            continue;
+        }
+        if let Some(items) = arg.as_list_items() {
+            for item in items.iter() {
+                if let Value::Pair(key, value) = item {
+                    apply_pair(key, value)?;
                 }
             }
         }
     }
+    s = (s * 1_000_000.0).round() / 1_000_000.0;
     Ok(temporal::make_datetime(y, m, d, h, mi, s, timezone))
-}
-
-/// Normalize datetime components after arithmetic.
-fn normalize_datetime(
-    year: &mut i64,
-    month: &mut i64,
-    day: &mut i64,
-    hour: &mut i64,
-    minute: &mut i64,
-    second: &mut f64,
-) {
-    // Normalize seconds -> minutes
-    if *second < 0.0 || *second >= 60.0 {
-        let extra_min = (*second / 60.0).floor() as i64;
-        *minute += extra_min;
-        *second -= extra_min as f64 * 60.0;
-        if *second < 0.0 {
-            *minute -= 1;
-            *second += 60.0;
-        }
-    }
-    // Normalize minutes -> hours
-    if *minute < 0 || *minute >= 60 {
-        let extra_h = (*minute).div_euclid(60);
-        *hour += extra_h;
-        *minute = (*minute).rem_euclid(60);
-    }
-    // Normalize hours -> days
-    if *hour < 0 || *hour >= 24 {
-        let extra_d = (*hour).div_euclid(24);
-        let days = temporal::civil_to_epoch_days(*year, *month, *day) + extra_d;
-        let (ny, nm, nd) = temporal::epoch_days_to_civil(days);
-        *year = ny;
-        *month = nm;
-        *day = nd;
-        *hour = (*hour).rem_euclid(24);
-    }
 }
 
 /// Date.clone with optional overrides.
@@ -313,7 +448,7 @@ fn datetime_clone(
             }
         }
     }
-    temporal::validate_date(year, month, day)?;
+    temporal::validate_datetime(year, month, day, hour, minute, second, timezone)?;
     Ok(temporal::make_datetime(
         year, month, day, hour, minute, second, timezone,
     ))
