@@ -27,7 +27,7 @@ pub(super) fn ternary(input: &str) -> PResult<'_, Expr> {
 }
 
 pub(super) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
-    let (rest, cond) = or_expr_mode(input, mode)?;
+    let (rest, cond) = or_expr_no_assign_mode(input, mode)?;
     let (rest_ws, _) = ws(rest)?;
     if let Ok((input, _)) = parse_tag(rest_ws, "??") {
         let (input, _) = ws(input)?;
@@ -102,7 +102,9 @@ pub(super) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             },
         ));
     }
-    Ok((rest, cond))
+    // No ternary operator: fall back to regular OR-level parsing, which includes
+    // assignment expressions.
+    or_expr_mode(input, mode)
 }
 
 /// Parse an operand at additive level or tighter (for loose prefix operators).
@@ -163,6 +165,32 @@ fn or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     Ok((rest, left))
 }
 
+/// Low-precedence OR/XOR chain for ternary condition parsing.
+/// This intentionally excludes assignment expressions so:
+/// `a = b ?? c !! d` parses as `a = (b ?? c !! d)`.
+fn or_expr_no_assign_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
+    let (mut rest, mut left) = and_expr_no_assign_mode(input, mode)?;
+    loop {
+        let (r, _) = ws(rest)?;
+        if let Some((op @ (LogicalOp::Or | LogicalOp::XorXor | LogicalOp::OrElse), len)) =
+            parse_word_logical_op(r)
+        {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = and_expr_no_assign_mode(r, mode)?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: op.token_kind(),
+                right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
+        break;
+    }
+    Ok((rest, left))
+}
+
 /// Assignment expressions at the or/and level: $var = expr
 /// This sits between or/and and not in precedence.
 fn assign_or_and_expr(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
@@ -190,6 +218,29 @@ fn and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             } else {
                 assign_not_expr_mode(r, mode)?
             };
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: op.token_kind(),
+                right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
+        break;
+    }
+    Ok((rest, left))
+}
+
+fn and_expr_no_assign_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
+    let (mut rest, mut left) = not_expr_mode(input, mode)?;
+    loop {
+        let (r, _) = ws(rest)?;
+        if let Some((op @ (LogicalOp::And | LogicalOp::AndThen | LogicalOp::NotAndThen), len)) =
+            parse_word_logical_op(r)
+        {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = not_expr_mode(r, mode)?;
             left = Expr::Binary {
                 left: Box::new(left),
                 op: op.token_kind(),
@@ -493,7 +544,7 @@ fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Expr> {
 }
 
 fn parse_assignment_rhs_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
-    let (rest, first) = assign_not_expr_mode(input, mode)?;
+    let (rest, first) = ternary_mode(input, mode)?;
     let (r, _) = ws(rest)?;
     if !r.starts_with(',') || r.starts_with(",,") {
         return Ok((rest, first));
@@ -507,7 +558,7 @@ fn parse_assignment_rhs_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         if r2.is_empty() || r2.starts_with(';') || r2.starts_with('}') || r2.starts_with(')') {
             return Ok((r2, Expr::ArrayLiteral(items)));
         }
-        let (r3, next) = assign_not_expr_mode(r2, mode)?;
+        let (r3, next) = ternary_mode(r2, mode)?;
         items.push(next);
         let (r3, _) = ws(r3)?;
         if !r3.starts_with(',') || r3.starts_with(",,") {

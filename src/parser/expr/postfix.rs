@@ -220,6 +220,21 @@ fn supports_postfix_call_adverbs(expr: &Expr) -> bool {
     )
 }
 
+fn auto_invoke_bareword_method_target(expr: Expr) -> Expr {
+    let Expr::BareWord(name) = expr else {
+        return expr;
+    };
+    if crate::parser::stmt::simple::is_user_declared_sub(&name)
+        || crate::parser::stmt::simple::is_imported_function(&name)
+    {
+        return Expr::Call {
+            name: Symbol::intern(&name),
+            args: Vec::new(),
+        };
+    }
+    Expr::BareWord(name)
+}
+
 fn append_call_arg(expr: &mut Expr, arg: Expr) -> bool {
     match expr {
         Expr::Call { args, .. } => {
@@ -897,6 +912,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         // Also handles: .^method (meta-method)
         // Also handles call-on: .(args)
         if rest.starts_with('.') && !rest.starts_with("..") {
+            expr = auto_invoke_bareword_method_target(expr);
             let r = &rest[1..];
             // `.=` is handled by statement-level assignment parsing, not postfix
             // method-call parsing. Stop postfix parsing and let the caller consume it.

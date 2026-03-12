@@ -333,6 +333,46 @@ impl VM {
             (Value::Num(a), Value::Int(b)) => a
                 .partial_cmp(&(*b as f64))
                 .unwrap_or(std::cmp::Ordering::Equal),
+            (
+                Value::Instance {
+                    attributes: left_attrs,
+                    ..
+                },
+                Value::Instance {
+                    attributes: right_attrs,
+                    ..
+                },
+            ) if left_attrs.contains_key("year")
+                && left_attrs.contains_key("month")
+                && left_attrs.contains_key("day")
+                && left_attrs.contains_key("hour")
+                && left_attrs.contains_key("minute")
+                && left_attrs.contains_key("second")
+                && left_attrs.contains_key("timezone")
+                && right_attrs.contains_key("year")
+                && right_attrs.contains_key("month")
+                && right_attrs.contains_key("day")
+                && right_attrs.contains_key("hour")
+                && right_attrs.contains_key("minute")
+                && right_attrs.contains_key("second")
+                && right_attrs.contains_key("timezone") =>
+            {
+                let (ly, lm, ld, lh, lmin, ls, ltz) =
+                    crate::builtins::methods_0arg::temporal::datetime_attrs(left_attrs);
+                let (ry, rm, rd, rh, rmin, rs, rtz) =
+                    crate::builtins::methods_0arg::temporal::datetime_attrs(right_attrs);
+                let left_instant =
+                    crate::builtins::methods_0arg::temporal::datetime_to_instant_leap_aware(
+                        ly, lm, ld, lh, lmin, ls, ltz,
+                    );
+                let right_instant =
+                    crate::builtins::methods_0arg::temporal::datetime_to_instant_leap_aware(
+                        ry, rm, rd, rh, rmin, rs, rtz,
+                    );
+                left_instant
+                    .partial_cmp(&right_instant)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            }
             (l, r)
                 if matches!(
                     l,
