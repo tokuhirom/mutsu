@@ -504,6 +504,14 @@ impl Interpreter {
         method_args: Vec<Value>,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        if let Value::Instance { class_name, .. } = &target
+            && (class_name == "Date" || class_name == "DateTime")
+        {
+            return Err(RuntimeError::new(format!(
+                "X::Assignment::RO: {} is immutable",
+                class_name.resolve()
+            )));
+        }
         if method == "subbuf-rw" {
             return self.assign_subbuf_rw(target_var, target, method_args, value);
         }

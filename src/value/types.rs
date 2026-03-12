@@ -104,6 +104,45 @@ impl Value {
                 };
                 raku_a == raku_b
             }
+            (
+                Value::Instance {
+                    class_name: cn_a,
+                    attributes: a_attrs,
+                    ..
+                },
+                Value::Instance {
+                    class_name: cn_b,
+                    attributes: b_attrs,
+                    ..
+                },
+            ) if cn_a == cn_b
+                && a_attrs.contains_key("year")
+                && a_attrs.contains_key("month")
+                && a_attrs.contains_key("day")
+                && a_attrs.contains_key("hour")
+                && a_attrs.contains_key("minute")
+                && a_attrs.contains_key("second")
+                && a_attrs.contains_key("timezone")
+                && b_attrs.contains_key("year")
+                && b_attrs.contains_key("month")
+                && b_attrs.contains_key("day")
+                && b_attrs.contains_key("hour")
+                && b_attrs.contains_key("minute")
+                && b_attrs.contains_key("second")
+                && b_attrs.contains_key("timezone") =>
+            {
+                let (ay, am, ad, ah, amin, asec, atz) =
+                    crate::builtins::methods_0arg::temporal::datetime_attrs(a_attrs);
+                let (by, bm, bd, bh, bmin, bsec, btz) =
+                    crate::builtins::methods_0arg::temporal::datetime_attrs(b_attrs);
+                ay == by
+                    && am == bm
+                    && ad == bd
+                    && ah == bh
+                    && amin == bmin
+                    && atz == btz
+                    && (asec - bsec).abs() < 1e-6
+            }
             // Other Instance types: use identity comparison
             (Value::Instance { .. }, Value::Instance { .. }) => self == other,
             (Value::Range(_, _), Value::Range(_, _))

@@ -582,19 +582,27 @@ impl Value {
                 .get("format")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_else(|| format!("{}()", class_name)),
-            Value::Instance {
-                class_name,
-                attributes,
-                ..
-            } if class_name == "Date" => {
+            Value::Instance { attributes, .. }
+                if attributes.contains_key("year")
+                    && attributes.contains_key("month")
+                    && attributes.contains_key("day")
+                    && !attributes.contains_key("hour") =>
+            {
                 let (y, m, d) = crate::builtins::methods_0arg::temporal::date_attrs(attributes);
                 crate::builtins::methods_0arg::temporal::format_date(y, m, d)
             }
-            Value::Instance {
-                class_name,
-                attributes,
-                ..
-            } if class_name == "DateTime" => {
+            Value::Instance { attributes, .. }
+                if attributes.contains_key("year")
+                    && attributes.contains_key("month")
+                    && attributes.contains_key("day")
+                    && attributes.contains_key("hour")
+                    && attributes.contains_key("minute")
+                    && attributes.contains_key("second")
+                    && attributes.contains_key("timezone") =>
+            {
+                if let Some(Value::Str(s)) = attributes.get("__formatter_rendered") {
+                    return s.to_string();
+                }
                 let (y, mo, d, h, mi, s, tz) =
                     crate::builtins::methods_0arg::temporal::datetime_attrs(attributes);
                 crate::builtins::methods_0arg::temporal::format_datetime(y, mo, d, h, mi, s, tz)

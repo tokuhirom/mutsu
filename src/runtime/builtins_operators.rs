@@ -370,6 +370,14 @@ impl Interpreter {
             return Err(err);
         }
 
+        if matches!(name, "DateTime" | "Date") && args.len() == 1 {
+            return self.call_method_with_values(
+                Value::Package(Symbol::intern(name)),
+                "new",
+                args.to_vec(),
+            );
+        }
+
         Err(RuntimeError::new(format!(
             "X::Undeclared::Symbols: Unknown function: {}",
             name

@@ -68,6 +68,25 @@ fn instance_duration_value(value: &Value) -> Option<f64> {
     }
 }
 
+fn instance_datetime_parts(value: &Value) -> Option<(i64, i64, i64, i64, i64, f64, i64)> {
+    match value {
+        Value::Instance { attributes, .. }
+            if attributes.contains_key("year")
+                && attributes.contains_key("month")
+                && attributes.contains_key("day")
+                && attributes.contains_key("hour")
+                && attributes.contains_key("minute")
+                && attributes.contains_key("second")
+                && attributes.contains_key("timezone") =>
+        {
+            Some(crate::builtins::methods_0arg::temporal::datetime_attrs(
+                attributes,
+            ))
+        }
+        _ => None,
+    }
+}
+
 fn make_duration(secs: f64) -> Value {
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("value".to_string(), Value::Num(secs));
@@ -149,6 +168,25 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
     {
         let delta = runtime::to_float_value(&left).unwrap_or(0.0);
         return Ok(make_duration(dur + delta));
+    }
+    // DateTime + Duration => DateTime
+    if let Some((y, m, d, h, mi, s, tz)) = instance_datetime_parts(&left)
+        && let Some(delta) = instance_duration_value(&right)
+    {
+        use crate::builtins::methods_0arg::temporal;
+        let instant = temporal::datetime_to_instant_leap_aware(y, m, d, h, mi, s, tz);
+        let (ny, nm, nd, nh, nmi, ns) =
+            temporal::instant_to_datetime_leap_aware(instant + delta, tz);
+        return Ok(temporal::make_datetime(ny, nm, nd, nh, nmi, ns, tz));
+    }
+    if let Some(delta) = instance_duration_value(&left)
+        && let Some((y, m, d, h, mi, s, tz)) = instance_datetime_parts(&right)
+    {
+        use crate::builtins::methods_0arg::temporal;
+        let instant = temporal::datetime_to_instant_leap_aware(y, m, d, h, mi, s, tz);
+        let (ny, nm, nd, nh, nmi, ns) =
+            temporal::instant_to_datetime_leap_aware(instant + delta, tz);
+        return Ok(temporal::make_datetime(ny, nm, nd, nh, nmi, ns, tz));
     }
     let (l, r) = runtime::coerce_numeric(left, right);
     Ok(arith_add_coerced(l, r))
@@ -256,6 +294,27 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
     {
         let delta = runtime::to_float_value(&right).unwrap_or(0.0);
         return make_duration(a - delta);
+    }
+    // DateTime - DateTime => Duration
+    if let (Some((ly, lm, ld, lh, lmin, ls, ltz)), Some((ry, rm, rd, rh, rmin, rs, rtz))) = (
+        instance_datetime_parts(&left),
+        instance_datetime_parts(&right),
+    ) {
+        use crate::builtins::methods_0arg::temporal;
+        let left_instant = temporal::datetime_to_instant_leap_aware(ly, lm, ld, lh, lmin, ls, ltz);
+        let right_instant = temporal::datetime_to_instant_leap_aware(ry, rm, rd, rh, rmin, rs, rtz);
+        let secs = ((left_instant - right_instant) * 1_000_000.0).round() / 1_000_000.0;
+        return make_duration(secs);
+    }
+    // DateTime - Duration => DateTime
+    if let Some((y, m, d, h, mi, s, tz)) = instance_datetime_parts(&left)
+        && let Some(delta) = instance_duration_value(&right)
+    {
+        use crate::builtins::methods_0arg::temporal;
+        let instant = temporal::datetime_to_instant_leap_aware(y, m, d, h, mi, s, tz);
+        let (ny, nm, nd, nh, nmi, ns) =
+            temporal::instant_to_datetime_leap_aware(instant - delta, tz);
+        return temporal::make_datetime(ny, nm, nd, nh, nmi, ns, tz);
     }
     if let (Some(a), Some(b)) = (instance_days(&left), instance_days(&right)) {
         return Value::Int(a - b);

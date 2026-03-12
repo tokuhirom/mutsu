@@ -1043,7 +1043,7 @@ impl Interpreter {
         ProtectBlockCapturedSlots,
     ) {
         if let Some(ref cc) = data.compiled_code {
-            let slots = cc
+            let slots: Vec<usize> = cc
                 .locals
                 .iter()
                 .enumerate()
@@ -1058,7 +1058,7 @@ impl Interpreter {
         let entry = self.protect_block_cache.entry(data.id).or_insert_with(|| {
             let compiler = crate::compiler::Compiler::new();
             let (compiled, compiled_fns) = compiler.compile(&data.body);
-            let captured_slots = compiled
+            let captured_slots: Vec<usize> = compiled
                 .locals
                 .iter()
                 .enumerate()
