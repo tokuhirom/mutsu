@@ -1025,42 +1025,13 @@ impl Interpreter {
     /// caller.
     pub(crate) fn call_protect_block(&mut self, code: &Value) -> Result<Value, RuntimeError> {
         if let Value::Sub(data) = code {
-            // Targeted sync: only refresh variables the closure captures
-            // (much cheaper than syncing ALL shared vars)
-            self.sync_shared_vars_for_env(&data.env);
-            let (compiled, compiled_fns) = self.get_or_compile_protect_block(data);
+            let (compiled, compiled_fns, _captured_slots) =
+                self.get_or_compile_protect_block_with_slots(data);
+            self.sync_shared_vars_for_names(data.env.keys().map(|name| name.as_str()));
             self.run_compiled_block(&compiled, compiled_fns.as_ref())
         } else {
             self.call_sub_value(code.clone(), Vec::new(), true)
         }
-    }
-
-    pub(crate) fn get_or_compile_protect_block(
-        &mut self,
-        data: &std::sync::Arc<crate::value::SubData>,
-    ) -> (ProtectBlockCompiled, ProtectBlockCompiledFns) {
-        if let Some(ref cc) = data.compiled_code {
-            return (
-                cc.clone(),
-                std::sync::Arc::new(std::collections::HashMap::new()),
-            );
-        }
-        let entry = self.protect_block_cache.entry(data.id).or_insert_with(|| {
-            let compiler = crate::compiler::Compiler::new();
-            let (compiled, compiled_fns) = compiler.compile(&data.body);
-            let captured_slots = compiled
-                .locals
-                .iter()
-                .enumerate()
-                .filter_map(|(idx, name)| data.env.contains_key(name).then_some(idx))
-                .collect();
-            (
-                std::sync::Arc::new(compiled),
-                std::sync::Arc::new(compiled_fns),
-                std::sync::Arc::new(captured_slots),
-            )
-        });
-        (entry.0.clone(), entry.1.clone())
     }
 
     pub(crate) fn get_or_compile_protect_block_with_slots(
@@ -1072,7 +1043,7 @@ impl Interpreter {
         ProtectBlockCapturedSlots,
     ) {
         if let Some(ref cc) = data.compiled_code {
-            let slots = cc
+            let slots: Vec<usize> = cc
                 .locals
                 .iter()
                 .enumerate()
@@ -1087,7 +1058,7 @@ impl Interpreter {
         let entry = self.protect_block_cache.entry(data.id).or_insert_with(|| {
             let compiler = crate::compiler::Compiler::new();
             let (compiled, compiled_fns) = compiler.compile(&data.body);
-            let captured_slots = compiled
+            let captured_slots: Vec<usize> = compiled
                 .locals
                 .iter()
                 .enumerate()

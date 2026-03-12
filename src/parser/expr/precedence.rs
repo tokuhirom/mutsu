@@ -1,5 +1,9 @@
 use super::super::helpers::{is_ident_char, ws};
 use super::super::parse_result::{PError, PResult, merge_expected_messages, parse_char, parse_tag};
+use super::super::stmt::assign::{
+    compound_assign_op_from_name, compound_assigned_value_expr, parse_assign_expr_or_comma,
+    parse_meta_compound_assign_op,
+};
 
 use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
@@ -23,7 +27,7 @@ pub(super) fn ternary(input: &str) -> PResult<'_, Expr> {
 }
 
 pub(super) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
-    let (rest, cond) = or_expr_mode(input, mode)?;
+    let (rest, cond) = or_expr_no_assign_mode(input, mode)?;
     let (rest_ws, _) = ws(rest)?;
     if let Ok((input, _)) = parse_tag(rest_ws, "??") {
         let (input, _) = ws(input)?;
@@ -98,7 +102,9 @@ pub(super) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             },
         ));
     }
-    Ok((rest, cond))
+    // No ternary operator: fall back to regular OR-level parsing, which includes
+    // assignment expressions.
+    or_expr_mode(input, mode)
 }
 
 /// Parse an operand at additive level or tighter (for loose prefix operators).
@@ -159,6 +165,32 @@ fn or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     Ok((rest, left))
 }
 
+/// Low-precedence OR/XOR chain for ternary condition parsing.
+/// This intentionally excludes assignment expressions so:
+/// `a = b ?? c !! d` parses as `a = (b ?? c !! d)`.
+fn or_expr_no_assign_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
+    let (mut rest, mut left) = and_expr_no_assign_mode(input, mode)?;
+    loop {
+        let (r, _) = ws(rest)?;
+        if let Some((op @ (LogicalOp::Or | LogicalOp::XorXor | LogicalOp::OrElse), len)) =
+            parse_word_logical_op(r)
+        {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = and_expr_no_assign_mode(r, mode)?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: op.token_kind(),
+                right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
+        break;
+    }
+    Ok((rest, left))
+}
+
 /// Assignment expressions at the or/and level: $var = expr
 /// This sits between or/and and not in precedence.
 fn assign_or_and_expr(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
@@ -186,6 +218,29 @@ fn and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             } else {
                 assign_not_expr_mode(r, mode)?
             };
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: op.token_kind(),
+                right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
+        break;
+    }
+    Ok((rest, left))
+}
+
+fn and_expr_no_assign_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
+    let (mut rest, mut left) = not_expr_mode(input, mode)?;
+    loop {
+        let (r, _) = ws(rest)?;
+        if let Some((op @ (LogicalOp::And | LogicalOp::AndThen | LogicalOp::NotAndThen), len)) =
+            parse_word_logical_op(r)
+        {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = not_expr_mode(r, mode)?;
             left = Expr::Binary {
                 left: Box::new(left),
                 op: op.token_kind(),
@@ -291,6 +346,168 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     }
 }
 
+fn assignment_ro_expr(lhs: Expr, rhs: Expr) -> Expr {
+    Expr::DoBlock {
+        body: vec![
+            Stmt::Expr(lhs),
+            Stmt::Expr(rhs),
+            Stmt::Expr(Expr::Call {
+                name: Symbol::intern("__mutsu_assignment_ro"),
+                args: Vec::new(),
+            }),
+        ],
+        label: None,
+    }
+}
+
+fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
+    match target {
+        Expr::Var(name) => Expr::AssignExpr {
+            name,
+            expr: Box::new(value),
+        },
+        Expr::Index { target, index } => Expr::IndexAssign {
+            target,
+            index,
+            value: Box::new(value),
+        },
+        Expr::MultiDimIndex { target, dimensions } => Expr::IndexAssign {
+            target,
+            index: Box::new(Expr::ArrayLiteral(dimensions)),
+            value: Box::new(value),
+        },
+        Expr::Call { name, args } => Expr::Call {
+            name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
+            args: vec![
+                Expr::Literal(Value::str(name.resolve())),
+                Expr::ArrayLiteral(args),
+                value,
+            ],
+        },
+        Expr::CallOn { target, args } => Expr::Call {
+            name: Symbol::intern("__mutsu_assign_callable_lvalue"),
+            args: vec![*target, Expr::ArrayLiteral(args), value],
+        },
+        Expr::DoStmt(stmt) => {
+            if let Stmt::VarDecl {
+                name,
+                type_constraint,
+                is_state,
+                is_our,
+                is_dynamic,
+                is_export,
+                export_tags,
+                custom_traits,
+                where_constraint,
+                ..
+            } = *stmt
+            {
+                Expr::DoStmt(Box::new(Stmt::VarDecl {
+                    name,
+                    expr: value,
+                    type_constraint,
+                    is_state,
+                    is_our,
+                    is_dynamic,
+                    is_export,
+                    export_tags,
+                    custom_traits,
+                    where_constraint,
+                }))
+            } else {
+                assignment_ro_expr(Expr::DoStmt(stmt), value)
+            }
+        }
+        other => assignment_ro_expr(other, value),
+    }
+}
+
+fn build_compound_assign_target_expr(target: Expr, op_name: &str, value: Expr) -> Expr {
+    if op_name == "=" {
+        return assign_to_target_expr(target, value);
+    }
+    let Some(op) = compound_assign_op_from_name(op_name) else {
+        return assignment_ro_expr(target, value);
+    };
+    match target {
+        Expr::Var(name) => Expr::AssignExpr {
+            name: name.clone(),
+            expr: Box::new(compound_assigned_value_expr(Expr::Var(name), op, value)),
+        },
+        Expr::ArrayVar(name) => Expr::AssignExpr {
+            name: format!("@{}", name.clone()),
+            expr: Box::new(compound_assigned_value_expr(
+                Expr::ArrayVar(name),
+                op,
+                value,
+            )),
+        },
+        Expr::HashVar(name) => Expr::AssignExpr {
+            name: format!("%{}", name.clone()),
+            expr: Box::new(compound_assigned_value_expr(Expr::HashVar(name), op, value)),
+        },
+        Expr::Index { target, index } => {
+            let lhs_expr = Expr::Index {
+                target: target.clone(),
+                index: index.clone(),
+            };
+            Expr::IndexAssign {
+                target,
+                index,
+                value: Box::new(compound_assigned_value_expr(lhs_expr, op, value)),
+            }
+        }
+        Expr::MultiDimIndex { target, dimensions } => {
+            let lhs_expr = Expr::MultiDimIndex {
+                target: target.clone(),
+                dimensions: dimensions.clone(),
+            };
+            Expr::IndexAssign {
+                target,
+                index: Box::new(Expr::ArrayLiteral(dimensions)),
+                value: Box::new(compound_assigned_value_expr(lhs_expr, op, value)),
+            }
+        }
+        Expr::AssignExpr { name, expr } => {
+            if op_name == "=" {
+                return Expr::AssignExpr {
+                    name,
+                    expr: Box::new(value),
+                };
+            }
+            let Some(op) = compound_assign_op_from_name(op_name) else {
+                return assignment_ro_expr(Expr::AssignExpr { name, expr }, value);
+            };
+            Expr::AssignExpr {
+                name: name.clone(),
+                expr: Box::new(compound_assigned_value_expr(
+                    Expr::AssignExpr { name, expr },
+                    op,
+                    value,
+                )),
+            }
+        }
+        Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier: _,
+            quoted: _,
+        } if name == "AT-POS" && args.len() == 1 => {
+            let index = args.into_iter().next().unwrap_or(Expr::Literal(Value::Nil));
+            build_compound_assign_target_expr(
+                Expr::Index {
+                    target,
+                    index: Box::new(index),
+                },
+                op_name,
+                value,
+            )
+        }
+        other => assignment_ro_expr(other, value),
+    }
+}
+
 fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Expr> {
     let mut saw_whatever = false;
     let mut lvalues: Vec<Expr> = Vec::new();
@@ -327,7 +544,7 @@ fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Expr> {
 }
 
 fn parse_assignment_rhs_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
-    let (rest, first) = assign_not_expr_mode(input, mode)?;
+    let (rest, first) = ternary_mode(input, mode)?;
     let (r, _) = ws(rest)?;
     if !r.starts_with(',') || r.starts_with(",,") {
         return Ok((rest, first));
@@ -341,7 +558,7 @@ fn parse_assignment_rhs_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         if r2.is_empty() || r2.starts_with(';') || r2.starts_with('}') || r2.starts_with(')') {
             return Ok((r2, Expr::ArrayLiteral(items)));
         }
-        let (r3, next) = assign_not_expr_mode(r2, mode)?;
+        let (r3, next) = ternary_mode(r2, mode)?;
         items.push(next);
         let (r3, _) = ws(r3)?;
         if !r3.starts_with(',') || r3.starts_with(",,") {
@@ -888,6 +1105,21 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
             }
         }
         // Meta operators: R-, X+, Z~, bare Z, bare X, R[...], etc.
+        if let Some((stripped, meta, op_name)) = parse_meta_compound_assign_op(r)
+            && meta == "R"
+        {
+            let (r, _) = ws(stripped)?;
+            let (r, rhs) = parse_assign_expr_or_comma(r).map_err(|err| {
+                enrich_expected_error(
+                    err,
+                    "expected expression after reverse meta compound assignment",
+                    r.len(),
+                )
+            })?;
+            *left = build_compound_assign_target_expr(rhs, &op_name, left.clone());
+            rest = r;
+            continue;
+        }
         if let Some((meta, op, len)) = parse_meta_op(r) {
             if meta == "X"
                 && op == "cmp"
@@ -1384,9 +1616,9 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             || after.starts_with("m/")
             || after.starts_with("m ")
         {
-            return Err(PError::expected_at(
-                "Unsupported use of =~ to do pattern matching; in Raku please use ~~",
-                r,
+            return Err(PError::fatal(
+                "X::Obsolete: Unsupported use of =~ to do pattern matching; in Raku please use ~~"
+                    .to_string(),
             ));
         }
     }
@@ -1397,9 +1629,9 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             || after.starts_with("m/")
             || after.starts_with("m ")
         {
-            return Err(PError::expected_at(
-                "Unsupported use of !~ to do pattern matching; in Raku please use !~~",
-                r,
+            return Err(PError::fatal(
+                "X::Obsolete: Unsupported use of !~ to do pattern matching; in Raku please use !~~"
+                    .to_string(),
             ));
         }
     }

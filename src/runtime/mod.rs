@@ -3203,24 +3203,20 @@ impl Interpreter {
         }
     }
 
-    /// Sync shared vars that are captured by the provided closure env.
-    /// Iterates whichever side is smaller to reduce per-call overhead.
-    pub(crate) fn sync_shared_vars_for_env(&mut self, captured_env: &Env) {
+    /// Sync shared vars for a narrow set of captured lexical names.
+    /// This is used by hot paths (e.g. Lock::Async.protect) to avoid scanning
+    /// large closure environments on every invocation.
+    pub(crate) fn sync_shared_vars_for_names<'a, I>(&mut self, names: I)
+    where
+        I: IntoIterator<Item = &'a str>,
+    {
         if !self.shared_vars_active {
             return;
         }
         let sv = self.shared_vars.read().unwrap();
-        if sv.len() <= captured_env.len() {
-            for (key, val) in sv.iter() {
-                if captured_env.contains_key(key) {
-                    self.env.insert(key.clone(), val.clone());
-                }
-            }
-        } else {
-            for key in captured_env.keys() {
-                if let Some(val) = sv.get(key) {
-                    self.env.insert(key.clone(), val.clone());
-                }
+        for name in names {
+            if let Some(val) = sv.get(name) {
+                self.env.insert(name.to_string(), val.clone());
             }
         }
     }

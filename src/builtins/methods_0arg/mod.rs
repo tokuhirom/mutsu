@@ -856,23 +856,28 @@ fn hash_pick_item(key: &str, value: &Value) -> Value {
 }
 
 fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
+    fn has_date_attrs(attributes: &std::sync::Arc<HashMap<String, Value>>) -> bool {
+        attributes.contains_key("year")
+            && attributes.contains_key("month")
+            && attributes.contains_key("day")
+    }
+    fn has_datetime_attrs(attributes: &std::sync::Arc<HashMap<String, Value>>) -> bool {
+        has_date_attrs(attributes)
+            && attributes.contains_key("hour")
+            && attributes.contains_key("minute")
+            && attributes.contains_key("second")
+            && attributes.contains_key("timezone")
+    }
+
     // Date/DateTime 0-arg methods
     match target {
-        Value::Instance {
-            class_name,
-            attributes,
-            ..
-        } if class_name == "Date" => {
-            if let Some(result) = temporal_dispatch::date_method_0arg(attributes, method) {
+        Value::Instance { attributes, .. } if has_datetime_attrs(attributes) => {
+            if let Some(result) = temporal_dispatch::datetime_method_0arg(attributes, method) {
                 return Some(result);
             }
         }
-        Value::Instance {
-            class_name,
-            attributes,
-            ..
-        } if class_name == "DateTime" => {
-            if let Some(result) = temporal_dispatch::datetime_method_0arg(attributes, method) {
+        Value::Instance { attributes, .. } if has_date_attrs(attributes) => {
+            if let Some(result) = temporal_dispatch::date_method_0arg(attributes, method) {
                 return Some(result);
             }
         }

@@ -1,5 +1,6 @@
 use super::super::helpers::{is_ident_char, ws};
 use super::super::parse_result::{PError, PResult};
+use super::super::stmt::assign::parse_meta_compound_assign_op;
 
 use crate::ast::Expr;
 use crate::token_kind::TokenKind;
@@ -722,6 +723,12 @@ pub(super) fn additive_expr(input: &str) -> PResult<'_, Expr> {
                 continue;
             }
         }
+        if let Some((_, meta, op_name)) = parse_meta_compound_assign_op(r)
+            && meta == "R"
+            && matches!(classify_base_op(&op_name), OpPrecedence::Additive)
+        {
+            break;
+        }
         // Try bracket meta-op at additive level: R[+], R[-], [R+], [R-], etc.
         if let Some((meta, op, len)) = try_bracket_op_at_level(r, &OpPrecedence::Additive) {
             let r = &r[len..];
@@ -795,6 +802,12 @@ pub(super) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
                 rest = new_rest;
                 continue;
             }
+        }
+        if let Some((_, meta, op_name)) = parse_meta_compound_assign_op(r)
+            && meta == "R"
+            && matches!(classify_base_op(&op_name), OpPrecedence::Multiplicative)
+        {
+            break;
         }
         // Try bracket meta-op at multiplicative level: R[*], R[/], [R*], [R/], etc.
         if let Some((meta, op, len)) = try_bracket_op_at_level(r, &OpPrecedence::Multiplicative) {

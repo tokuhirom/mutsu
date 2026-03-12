@@ -69,6 +69,84 @@ pub fn validate_date(year: i64, month: i64, day: i64) -> Result<(), RuntimeError
     Ok(())
 }
 
+fn make_out_of_range_error(what: &str, got: String, range: &str) -> RuntimeError {
+    RuntimeError::new(format!(
+        "X::OutOfRange: {} out of range. Is: {}, should be in {}",
+        what, got, range
+    ))
+}
+
+fn is_valid_utc_leap_second_day(year: i64, month: i64, day: i64) -> bool {
+    // LEAP_SECONDS includes a base offset entry at 1972-01-01 (not a leap second day),
+    // so skip it and map thresholds to the preceding UTC date.
+    LEAP_SECONDS.iter().skip(1).any(|(threshold, _)| {
+        let insertion_day = threshold.div_euclid(86_400) - 1;
+        let (y, m, d) = epoch_days_to_civil(insertion_day);
+        y == year && m == month && d == day
+    })
+}
+
+/// Validate full DateTime components, including leap-second legality.
+pub fn validate_datetime(
+    year: i64,
+    month: i64,
+    day: i64,
+    hour: i64,
+    minute: i64,
+    second: f64,
+    timezone: i64,
+) -> Result<(), RuntimeError> {
+    validate_date(year, month, day)?;
+    if !(0..=23).contains(&hour) {
+        return Err(make_out_of_range_error("Hour", hour.to_string(), "0..23"));
+    }
+    if !(0..=59).contains(&minute) {
+        return Err(make_out_of_range_error(
+            "Minute",
+            minute.to_string(),
+            "0..59",
+        ));
+    }
+    if second < 0.0 {
+        return Err(make_out_of_range_error(
+            "Second",
+            second.to_string(),
+            "0..60.999999...",
+        ));
+    }
+    if second < 60.0 {
+        return Ok(());
+    }
+    if second >= 61.0 {
+        return Err(make_out_of_range_error(
+            "Second",
+            second.to_string(),
+            "0..60.999999...",
+        ));
+    }
+
+    // Leap second values [60, 61) are only valid at UTC 23:59 on an insertion day.
+    let posix_at_local_minute_start =
+        datetime_to_posix(year, month, day, hour, minute, 0.0, timezone);
+    let total_i = posix_at_local_minute_start.floor() as i64;
+    let day_secs = total_i.rem_euclid(86_400);
+    let epoch_days = (total_i - day_secs) / 86_400;
+    let (utc_year, utc_month, utc_day) = epoch_days_to_civil(epoch_days);
+    let utc_hour = day_secs / 3600;
+    let utc_minute = (day_secs % 3600) / 60;
+    if utc_hour != 23
+        || utc_minute != 59
+        || !is_valid_utc_leap_second_day(utc_year, utc_month, utc_day)
+    {
+        return Err(make_out_of_range_error(
+            "Second",
+            second.to_string(),
+            "0..59.999999... (or leap second on a valid UTC insertion day)",
+        ));
+    }
+    Ok(())
+}
+
 /// Day of week (1=Monday .. 7=Sunday) from epoch days.
 pub fn day_of_week(days: i64) -> i64 {
     (days + 3).rem_euclid(7) + 1
@@ -163,9 +241,14 @@ pub fn format_datetime(
 ) -> String {
     let sec_str = format_second(second);
     let tz_str = format_timezone(timezone);
+    let year_str = if year >= 10_000 {
+        format!("+{}", year)
+    } else {
+        format!("{:04}", year)
+    };
     format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{}{}",
-        year, month, day, hour, minute, sec_str, tz_str
+        "{}-{:02}-{:02}T{:02}:{:02}:{}{}",
+        year_str, month, day, hour, minute, sec_str, tz_str
     )
 }
 
@@ -174,10 +257,17 @@ fn format_second(second: f64) -> String {
     if second == second.floor() {
         format!("{:02}", second as i64)
     } else {
-        // Format with up to 6 decimal places, removing trailing zeros
-        let s = format!("{:09.6}", second);
-        let s = s.trim_end_matches('0');
-        s.to_string()
+        // DateTime.Str renders subsecond values with fixed microsecond precision.
+        let mut int_part = second.floor() as i64;
+        let mut micros = ((second - int_part as f64) * 1_000_000.0).round() as i64;
+        if micros >= 1_000_000 {
+            micros = 0;
+            int_part += 1;
+        }
+        if micros < 0 {
+            micros = 0;
+        }
+        format!("{:02}.{:06}", int_part, micros)
     }
 }
 
@@ -245,15 +335,20 @@ pub fn parse_datetime_string(s: &str) -> Result<DateTimeParts, RuntimeError> {
         ))
     };
 
-    // Split on T
-    let (date_part, time_tz) = s.split_once('T').ok_or_else(make_err)?;
+    // Split on T/t
+    let t_pos = s.find(['T', 't']).ok_or_else(make_err)?;
+    let (date_part, time_tz_with_t) = s.split_at(t_pos);
+    let time_tz = &time_tz_with_t[1..];
 
     let (year, month, day) = parse_date_string(date_part)?;
 
     // Parse time and timezone
     // Time can end with Z, +HH:MM, -HH:MM, +HHMM, -HHMM, or nothing (implies UTC)
-    let (time_part, timezone) = if let Some(pos) = time_tz.rfind('Z') {
-        (&time_tz[..pos], 0i64)
+    let (time_part, timezone) = if let Some(stripped) = time_tz
+        .strip_suffix('Z')
+        .or_else(|| time_tz.strip_suffix('z'))
+    {
+        (stripped, 0i64)
     } else if let Some(pos) = time_tz.rfind('+') {
         if pos > 0 {
             let tz = parse_tz_offset(&time_tz[pos..])?;
@@ -276,11 +371,13 @@ pub fn parse_datetime_string(s: &str) -> Result<DateTimeParts, RuntimeError> {
     let hour = time_parts[0].parse::<i64>().map_err(|_| make_err())?;
     let minute = time_parts[1].parse::<i64>().map_err(|_| make_err())?;
     let second = if time_parts.len() > 2 {
-        time_parts[2].parse::<f64>().map_err(|_| make_err())?
+        let sec_norm = time_parts[2].replace(',', ".");
+        sec_norm.parse::<f64>().map_err(|_| make_err())?
     } else {
         0.0
     };
 
+    validate_datetime(year, month, day, hour, minute, second, timezone)?;
     Ok((year, month, day, hour, minute, second, timezone))
 }
 
@@ -307,9 +404,19 @@ fn parse_tz_offset(s: &str) -> Result<i64, RuntimeError> {
             rest[..2].parse::<i64>().map_err(|_| make_err())?,
             rest[2..].parse::<i64>().map_err(|_| make_err())?,
         )
+    } else if rest.len() == 2 {
+        (rest.parse::<i64>().map_err(|_| make_err())?, 0)
     } else {
         return Err(make_err());
     };
+    if !(0..=59).contains(&minutes) {
+        return Err(RuntimeError::new(
+            "X::OutOfRange: minutes of timezone".to_string(),
+        ));
+    }
+    if hours < 0 {
+        return Err(make_err());
+    }
     Ok(sign * (hours * 3600 + minutes * 60))
 }
 
@@ -487,6 +594,61 @@ pub fn instant_to_posix(instant: f64) -> f64 {
         posix = instant - ls;
     }
     posix
+}
+
+/// Convert DateTime components to a leap-aware instant value.
+/// Unlike `posix_to_instant(datetime_to_posix(...))`, this keeps leap second
+/// values (`second in [60, 61)`) distinct from the following `:00` second.
+pub fn datetime_to_instant_leap_aware(
+    year: i64,
+    month: i64,
+    day: i64,
+    hour: i64,
+    minute: i64,
+    second: f64,
+    timezone: i64,
+) -> f64 {
+    let posix = datetime_to_posix(year, month, day, hour, minute, second, timezone);
+    let mut instant = posix_to_instant(posix);
+    if second >= 60.0 {
+        instant -= 1.0;
+    }
+    instant
+}
+
+/// Convert leap-aware instant value back to DateTime components in a timezone.
+pub fn instant_to_datetime_leap_aware(
+    instant: f64,
+    timezone: i64,
+) -> (i64, i64, i64, i64, i64, f64) {
+    for &(threshold, cumulative) in LEAP_SECONDS.iter().skip(1) {
+        let leap_start = threshold as f64 + (cumulative - 1) as f64;
+        if instant >= leap_start && instant < leap_start + 1.0 {
+            let frac = instant - leap_start;
+            let local = (threshold - 1) as f64 + frac + timezone as f64;
+            let total_i = local.floor() as i64;
+            let local_frac = local - total_i as f64;
+            let day_secs = total_i.rem_euclid(86_400);
+            let epoch_days = (total_i - day_secs) / 86_400;
+            let (y, m, d) = epoch_days_to_civil(epoch_days);
+            let h = day_secs / 3_600;
+            let mi = (day_secs % 3_600) / 60;
+            let s = 60.0 + local_frac;
+            return (y, m, d, h, mi, s);
+        }
+    }
+
+    let posix = instant_to_posix(instant);
+    let local = posix + timezone as f64;
+    let total_i = local.floor() as i64;
+    let frac = local - total_i as f64;
+    let day_secs = total_i.rem_euclid(86_400);
+    let epoch_days = (total_i - day_secs) / 86_400;
+    let (y, m, d) = epoch_days_to_civil(epoch_days);
+    let h = day_secs / 3_600;
+    let mi = (day_secs % 3_600) / 60;
+    let s = (day_secs % 60) as f64 + frac;
+    (y, m, d, h, mi, s)
 }
 
 #[cfg(test)]

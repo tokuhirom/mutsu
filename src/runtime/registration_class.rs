@@ -346,6 +346,8 @@ impl Interpreter {
             "Setty",
             "Baggy",
             "Mixy",
+            "Date",
+            "DateTime",
             "Grammar",
             "Proxy",
         ];

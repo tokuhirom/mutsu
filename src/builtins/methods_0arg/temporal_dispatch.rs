@@ -96,12 +96,33 @@ pub fn datetime_method_0arg(
         }
         "timezone" => Some(Ok(Value::Int(timezone))),
         "offset" => Some(Ok(Value::Int(timezone))),
+        "offset-in-hours" => {
+            let mut num = timezone;
+            let mut den = 3600i64;
+            let mut a = num.abs();
+            let mut b = den;
+            while b != 0 {
+                let t = b;
+                b = a % b;
+                a = t;
+            }
+            let gcd = a.max(1);
+            num /= gcd;
+            den /= gcd;
+            Some(Ok(Value::Rat(num, den)))
+        }
         "day-of-week" | "weekday" => Some(Ok(Value::Int(day_of_week(days)))),
         "day-of-year" => Some(Ok(Value::Int(day_of_year(year, month, day)))),
         "is-leap-year" => Some(Ok(Value::Bool(is_leap_year(year)))),
         "days-in-month" => Some(Ok(Value::Int(days_in_month(year, month)))),
         "daycount" => Some(Ok(Value::Int(daycount(year, month, day)))),
         "whole-second" => Some(Ok(Value::Int(second.floor() as i64))),
+        "hh-mm-ss" => Some(Ok(Value::str(format!(
+            "{:02}:{:02}:{:02}",
+            hour,
+            minute,
+            second.floor() as i64
+        )))),
         "Str" | "gist" => Some(Ok(Value::str(format_datetime(
             year, month, day, hour, minute, second, timezone,
         )))),
@@ -122,7 +143,19 @@ pub fn datetime_method_0arg(
             let posix = datetime_to_posix(year, month, day, hour, minute, second, timezone);
             Some(Ok(Value::Int(posix as i64)))
         }
-        "utc" => Some(Ok(make_datetime(year, month, day, hour, minute, second, 0))),
+        "utc" => {
+            // Keep the same instant, convert representation to UTC timezone.
+            let posix = datetime_to_posix(year, month, day, hour, minute, second, timezone);
+            let total_i = posix.floor() as i64;
+            let frac = posix - total_i as f64;
+            let day_secs = total_i.rem_euclid(86400);
+            let epoch_days = (total_i - day_secs) / 86400;
+            let (uy, um, ud) = epoch_days_to_civil(epoch_days);
+            let uh = day_secs / 3600;
+            let umi = (day_secs % 3600) / 60;
+            let us = (day_secs % 60) as f64 + frac;
+            Some(Ok(make_datetime(uy, um, ud, uh, umi, us, 0)))
+        }
         "week-year" => {
             let (wy, _) = iso_week(year, month, day);
             Some(Ok(Value::Int(wy)))

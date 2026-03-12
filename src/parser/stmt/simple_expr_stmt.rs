@@ -172,22 +172,34 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         return parse_statement_modifier(rest, stmt);
     }
 
-    let (rest, expr) = expression(input).map_err(|err| {
-        if err.is_fatal()
-            && (err.exception.is_some()
-                || err
-                    .messages
-                    .first()
-                    .is_some_and(|m| m.contains("X::Comp::Trait::Unknown")))
-        {
-            return err;
+    let (rest, expr) = match expression(input) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            if err.messages.iter().any(|m| m.contains("X::Obsolete")) {
+                return Err(err);
+            }
+            if let Ok(parsed_assign) = super::assign::parse_assign_expr_or_comma(input) {
+                parsed_assign
+            } else if err.is_fatal()
+                && (err.exception.is_some()
+                    || err
+                        .messages
+                        .first()
+                        .is_some_and(|m| m.contains("X::Comp::Trait::Unknown")))
+            {
+                return Err(err);
+            } else {
+                return Err(PError {
+                    messages: merge_expected_messages(
+                        "expected expression statement",
+                        &err.messages,
+                    ),
+                    remaining_len: err.remaining_len.or(Some(input.len())),
+                    exception: err.exception,
+                });
+            }
         }
-        PError {
-            messages: merge_expected_messages("expected expression statement", &err.messages),
-            remaining_len: err.remaining_len.or(Some(input.len())),
-            exception: err.exception,
-        }
-    })?;
+    };
 
     // Check for index assignment after expression
     let rest_before_ws = rest;
@@ -840,11 +852,27 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             });
             return parse_statement_modifier(r, stmt);
         }
-        let stmt = Stmt::Expr(Expr::Binary {
-            left: Box::new(expr),
-            op: op.token_kind(),
-            right: Box::new(rhs),
-        });
+        let stmt = if matches!(expr, Expr::BracketArray(_))
+            && matches!(op, super::assign::CompoundAssignOp::Comma)
+        {
+            Stmt::Expr(Expr::Binary {
+                left: Box::new(expr),
+                op: op.token_kind(),
+                right: Box::new(rhs),
+            })
+        } else {
+            Stmt::Expr(Expr::DoBlock {
+                body: vec![
+                    Stmt::Expr(expr),
+                    Stmt::Expr(rhs),
+                    Stmt::Expr(Expr::Call {
+                        name: Symbol::intern("__mutsu_assignment_ro"),
+                        args: Vec::new(),
+                    }),
+                ],
+                label: None,
+            })
+        };
         return parse_statement_modifier(r, stmt);
     }
 
@@ -906,6 +934,11 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     }
 
     add_xor_sink_warnings(&expr);
+    if let Expr::DoStmt(stmt) = expr.clone()
+        && let Stmt::VarDecl { .. } = stmt.as_ref()
+    {
+        return parse_statement_modifier(rest, *stmt);
+    }
     let stmt = Stmt::Expr(expr);
     parse_statement_modifier(rest, stmt)
 }
