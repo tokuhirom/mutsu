@@ -1441,6 +1441,8 @@ impl Compiler {
                 samemark,
                 nth,
                 x,
+                global,
+                perl5,
             } => {
                 let pattern_idx = self.code.add_constant(Value::str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::str(replacement.clone()));
@@ -1453,6 +1455,8 @@ impl Compiler {
                     samemark: *samemark,
                     nth_idx,
                     x_count: x.map(|n| n as u32),
+                    global: *global,
+                    perl5: *perl5,
                 });
             }
             // S/// non-destructive substitution
@@ -1462,6 +1466,8 @@ impl Compiler {
                 samemark,
                 nth,
                 x,
+                global,
+                perl5,
             } => {
                 let pattern_idx = self.code.add_constant(Value::str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::str(replacement.clone()));
@@ -1474,6 +1480,8 @@ impl Compiler {
                     samemark: *samemark,
                     nth_idx,
                     x_count: x.map(|n| n as u32),
+                    global: *global,
+                    perl5: *perl5,
                 });
             }
             // tr/// transliteration
@@ -1863,6 +1871,11 @@ impl Compiler {
                     } else {
                         self.code.emit(OpCode::LoadNil);
                     }
+                }
+                Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
+                    // Block in expression context: compile as scoped block
+                    // that returns its last value, with scope isolation.
+                    self.compile_do_block_expr_scoped(inner, &None);
                 }
                 _ => {
                     self.compile_stmt(stmt);

@@ -1885,10 +1885,11 @@ impl VM {
     ) -> Result<Value, RuntimeError> {
         let (block_cc, block_fns, captured_env, captured_slots) = match code_val {
             Value::Sub(data) => {
-                let (block_cc, block_fns, captured_slots, sync_names) = self
+                let (block_cc, block_fns, captured_slots) = self
                     .interpreter
                     .get_or_compile_protect_block_with_slots(data);
-                self.interpreter.sync_shared_vars_for_names(&sync_names);
+                self.interpreter
+                    .sync_shared_vars_for_names(data.env.keys().map(|name| name.as_str()));
                 (block_cc, block_fns, Some(&data.env), captured_slots)
             }
             _ => {

@@ -1983,11 +1983,42 @@ impl Interpreter {
     }
 
     pub(super) fn method_args_match(&mut self, args: &[Value], param_defs: &[ParamDef]) -> bool {
-        let filtered_params: Vec<ParamDef> = param_defs
-            .iter()
-            .filter(|p| !p.is_invocant && !p.traits.iter().any(|t| t == "invocant"))
-            .cloned()
-            .collect();
+        let is_invocant_param =
+            |p: &ParamDef| p.is_invocant || p.traits.iter().any(|t| t == "invocant");
+        let all_invocant_only = param_defs.iter().all(is_invocant_param);
+        if all_invocant_only {
+            // Hot path for methods like `method m { ... }` where only the implicit invocant
+            // is present in signature metadata. Reject any explicit user arguments quickly.
+            for arg in args {
+                match arg {
+                    Value::Pair(key, _) if key == TEST_CALLSITE_LINE_KEY => {}
+                    Value::ValuePair(key, _) => {
+                        if let Value::Str(name) = key.as_ref() {
+                            if name.as_str() != TEST_CALLSITE_LINE_KEY {
+                                return false;
+                            }
+                        } else {
+                            return false;
+                        }
+                    }
+                    _ => return false,
+                }
+            }
+            return self.args_match_param_types(args, &[]);
+        }
+
+        let filtered_storage;
+        let filtered_params: &[ParamDef] = if param_defs.iter().any(is_invocant_param) {
+            filtered_storage = param_defs
+                .iter()
+                .filter(|p| !is_invocant_param(p))
+                .cloned()
+                .collect::<Vec<_>>();
+            filtered_storage.as_slice()
+        } else {
+            // Common path: method signatures without explicit invocant metadata.
+            param_defs
+        };
         let positional_params: Vec<&ParamDef> =
             filtered_params.iter().filter(|p| !p.named).collect();
         let positional_arg_count = args
@@ -2048,7 +2079,7 @@ impl Interpreter {
                 }
             }
         }
-        if !self.args_match_param_types(args, &filtered_params) {
+        if !self.args_match_param_types(args, filtered_params) {
             return false;
         }
         true

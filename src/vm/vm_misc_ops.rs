@@ -1325,6 +1325,7 @@ impl VM {
         code: &CompiledCode,
         body_end: u32,
         label: &Option<String>,
+        scope_isolate: bool,
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
@@ -1332,9 +1333,14 @@ impl VM {
         let end = body_end as usize;
         let label = label.clone();
         let stack_base = self.stack.len();
-        loop {
+        let saved_env = if scope_isolate {
+            Some((self.interpreter.env().clone(), self.locals.clone()))
+        } else {
+            None
+        };
+        let result = loop {
             match self.run_range(code, body_start, end, compiled_fns) {
-                Ok(()) => break,
+                Ok(()) => break Ok(()),
                 Err(e) if e.is_redo && Self::label_matches(&e.label, &label) => {
                     self.stack.truncate(stack_base);
                     continue;
@@ -1342,7 +1348,7 @@ impl VM {
                 Err(e) if e.is_next && Self::label_matches(&e.label, &label) => {
                     self.stack.truncate(stack_base);
                     self.stack.push(Value::Slip(std::sync::Arc::new(vec![])));
-                    break;
+                    break Ok(());
                 }
                 Err(e)
                     if e.is_leave
@@ -1355,7 +1361,7 @@ impl VM {
                         e.return_value
                             .unwrap_or(Value::Slip(std::sync::Arc::new(vec![]))),
                     );
-                    break;
+                    break Ok(());
                 }
                 Err(e) if e.is_last && Self::label_matches(&e.label, &label) => {
                     self.stack.truncate(stack_base);
@@ -1363,13 +1369,26 @@ impl VM {
                         e.return_value
                             .unwrap_or(Value::Slip(std::sync::Arc::new(vec![]))),
                     );
-                    break;
+                    break Ok(());
                 }
-                Err(e) => return Err(e),
+                Err(e) => break Err(e),
             }
+        };
+        // Restore scope if scope_isolate is true
+        if let Some((saved_env, saved_locals)) = saved_env {
+            let block_result = self.stack.pop().unwrap_or(Value::Nil);
+            let restored_env = saved_env.clone();
+            *self.interpreter.env_mut() = restored_env;
+            self.locals = saved_locals;
+            for (idx, name) in code.locals.iter().enumerate() {
+                if let Some(val) = self.interpreter.env().get(name).cloned() {
+                    self.locals[idx] = val;
+                }
+            }
+            self.stack.push(block_result);
         }
         *ip = end;
-        Ok(())
+        result
     }
 
     pub(super) fn exec_let_save_op(

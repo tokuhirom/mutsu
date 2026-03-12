@@ -133,6 +133,17 @@ check_stop_file() {
         exit 0
     fi
 }
+
+# Sleep that checks stop file every 5 seconds
+interruptible_sleep() {
+    local total="$1"
+    local elapsed=0
+    while (( elapsed < total )); do
+        sleep 5
+        elapsed=$((elapsed + 5))
+        check_stop_file
+    done
+}
 if [[ ! -x "${SCRIPT_DIR_CHECK}/ai-sandbox.sh" ]]; then
     echo "Error: ${SCRIPT_DIR_CHECK}/ai-sandbox.sh not found or not executable" >&2
     exit 1
@@ -399,15 +410,33 @@ if [[ "$RUN_ALL" -eq 1 ]]; then
     exit 0
 fi
 
+LAST_HISTORY_MAIN_HEAD=""
+
+should_run_history_update() {
+    local current_head
+    current_head="$(git ls-remote origin HEAD 2>/dev/null | cut -f1)"
+    if [[ -z "$current_head" ]]; then
+        return 1
+    fi
+    if [[ "$current_head" == "$LAST_HISTORY_MAIN_HEAD" ]]; then
+        echo "No new commits on main since last history update. Skipping."
+        return 1
+    fi
+    return 0
+}
+
 while true; do
     check_stop_file
     if [[ -z "$CANDIDATES" ]]; then
-        run_history_update
+        if should_run_history_update; then
+            LAST_HISTORY_MAIN_HEAD="$(git ls-remote origin HEAD 2>/dev/null | cut -f1)"
+            run_history_update
+        fi
         if [[ "$DRY_RUN" -eq 1 ]]; then
             exit 0
         fi
         echo "No open PRs with conflicts or CI failures were found. Sleeping ${POLL_INTERVAL_SECONDS}s..."
-        sleep "$POLL_INTERVAL_SECONDS"
+        interruptible_sleep "$POLL_INTERVAL_SECONDS"
         CANDIDATES="$(collect_candidates_tsv)"
         continue
     fi

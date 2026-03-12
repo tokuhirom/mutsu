@@ -54,6 +54,75 @@ fn write_bits_into_bytes(bytes: &mut [u8], from: usize, bits: usize, value: &Big
 }
 
 impl Interpreter {
+    fn strip_scalar(value: Value) -> Value {
+        match value {
+            Value::Scalar(inner) => Self::strip_scalar(*inner),
+            other => other,
+        }
+    }
+
+    fn apply_hash_assignment_entry(
+        updated: &mut std::collections::HashMap<String, Value>,
+        item: Value,
+    ) -> bool {
+        match Self::strip_scalar(item) {
+            Value::Pair(key, boxed) => {
+                updated.insert(key, *boxed);
+                true
+            }
+            Value::ValuePair(key, boxed) => {
+                updated.insert(key.to_string_value(), *boxed);
+                true
+            }
+            Value::Hash(map) => {
+                updated.extend((*map).clone());
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn normalize_hash_like_assignment(
+        existing_hash: std::collections::HashMap<String, Value>,
+        value: Value,
+    ) -> Value {
+        let normalized_value = Self::strip_scalar(value);
+        match normalized_value {
+            Value::Pair(..) | Value::ValuePair(..) | Value::Hash(..) => {
+                let mut updated = existing_hash;
+                let _ = Self::apply_hash_assignment_entry(&mut updated, normalized_value);
+                Value::hash(updated)
+            }
+            Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => {
+                let mut updated = existing_hash;
+                let mut iter = items.iter().cloned();
+                if let Some(first) = iter.next()
+                    && !Self::apply_hash_assignment_entry(&mut updated, first)
+                {
+                    // Preserve existing hash when comma assignment returns [<hash>, <pair>].
+                }
+                for item in iter {
+                    if !Self::apply_hash_assignment_entry(&mut updated, item) {
+                        return Value::Array(items.clone(), ArrayKind::List);
+                    }
+                }
+                Value::hash(updated)
+            }
+            other => other,
+        }
+    }
+
+    fn normalize_rw_accessor_assignment(current: Option<Value>, value: Value) -> Value {
+        let current = current.map(Self::strip_scalar);
+        match current {
+            Some(Value::Hash(existing_hash)) => {
+                Self::normalize_hash_like_assignment((*existing_hash).clone(), value)
+            }
+            Some(Value::Array(..)) => super::coerce_to_array(value),
+            _ => value,
+        }
+    }
+
     fn normalize_push_unshift_arg(arg: Value) -> Value {
         match arg {
             Value::Scalar(inner) => *inner,
@@ -637,7 +706,18 @@ impl Interpreter {
                 }
                 if let Some(attr_name) = Self::rw_method_attribute_target(&method_def.body) {
                     let mut updated = (**attributes).clone();
-                    updated.insert(attr_name, value.clone());
+                    let current = if method_args.is_empty() {
+                        self.call_method_with_values(target.clone(), actual_method, Vec::new())
+                            .ok()
+                    } else {
+                        None
+                    };
+                    let assigned_value = if method_args.is_empty() {
+                        Self::normalize_rw_accessor_assignment(current, value)
+                    } else {
+                        value
+                    };
+                    updated.insert(attr_name, assigned_value.clone());
                     let cn = *class_name;
                     if let Some(var_name) = target_var {
                         self.overwrite_instance_bindings_by_identity(
@@ -654,7 +734,7 @@ impl Interpreter {
                             },
                         );
                     }
-                    return Ok(value);
+                    return Ok(assigned_value);
                 }
             } else {
                 // No explicit method found — try auto-accessor for public `is rw` attributes
@@ -674,7 +754,18 @@ impl Interpreter {
                 }
                 if found_rw {
                     let mut updated = (**attributes).clone();
-                    updated.insert(actual_method.to_string(), value.clone());
+                    let current = if method_args.is_empty() {
+                        self.call_method_with_values(target.clone(), actual_method, Vec::new())
+                            .ok()
+                    } else {
+                        None
+                    };
+                    let assigned_value = if method_args.is_empty() {
+                        Self::normalize_rw_accessor_assignment(current, value)
+                    } else {
+                        value
+                    };
+                    updated.insert(actual_method.to_string(), assigned_value.clone());
                     let cn = *class_name;
                     if let Some(var_name) = target_var {
                         self.overwrite_instance_bindings_by_identity(
@@ -691,7 +782,7 @@ impl Interpreter {
                             },
                         );
                     }
-                    return Ok(value);
+                    return Ok(assigned_value);
                 }
             }
             return Err(RuntimeError::new(format!(
@@ -701,7 +792,9 @@ impl Interpreter {
         }
 
         // Preserve existing accessor/setter assignment behavior for concrete variables.
-        if let Some(var_name) = target_var {
+        if let Some(var_name) = target_var
+            && !method_args.is_empty()
+        {
             match self.call_method_mut_with_values(
                 var_name,
                 target.clone(),
@@ -733,9 +826,64 @@ impl Interpreter {
             )));
         };
 
-        let method_def = self
-            .resolve_method(&class_name.resolve(), method, &method_args)
-            .ok_or_else(|| super::methods_signature::make_multi_no_match_error(method))?;
+        let method_def = if let Some(def) =
+            self.resolve_method(&class_name.resolve(), method, &method_args)
+        {
+            def
+        } else if method_args.is_empty() {
+            let class_attrs = self.collect_class_attributes(&class_name.resolve());
+            let mut found_public_rw = false;
+            for (attr_name, is_public, _default, is_rw, ..) in &class_attrs {
+                if attr_name == method && *is_public {
+                    if !is_rw {
+                        return Err(RuntimeError::new(format!(
+                            "X::Assignment::RO: method '{}' is not rw",
+                            method
+                        )));
+                    }
+                    found_public_rw = true;
+                    break;
+                }
+            }
+            if found_public_rw {
+                let attr_key = if attributes.contains_key(method) {
+                    method.to_string()
+                } else if attributes.contains_key(&format!("@{}", method)) {
+                    format!("@{}", method)
+                } else if attributes.contains_key(&format!("%{}", method)) {
+                    format!("%{}", method)
+                } else if attributes.contains_key(&format!("${}", method)) {
+                    format!("${}", method)
+                } else if attributes.contains_key(&format!("!{}", method)) {
+                    format!("!{}", method)
+                } else {
+                    method.to_string()
+                };
+                let mut updated = (*attributes).clone();
+                let assigned_value =
+                    Self::normalize_rw_accessor_assignment(updated.get(&attr_key).cloned(), value);
+                updated.insert(attr_key, assigned_value.clone());
+                if let Some(var_name) = target_var {
+                    self.overwrite_instance_bindings_by_identity(
+                        &class_name.resolve(),
+                        target_id,
+                        updated.clone(),
+                    );
+                    self.env.insert(
+                        var_name.to_string(),
+                        Value::Instance {
+                            class_name,
+                            attributes: std::sync::Arc::new(updated),
+                            id: target_id,
+                        },
+                    );
+                }
+                return Ok(assigned_value);
+            }
+            return Err(super::methods_signature::make_multi_no_match_error(method));
+        } else {
+            return Err(super::methods_signature::make_multi_no_match_error(method));
+        };
         if !method_def.is_rw {
             return Err(RuntimeError::new(format!(
                 "X::Assignment::RO: method '{}' is not rw",
@@ -744,7 +892,26 @@ impl Interpreter {
         }
         if let Some(attr_name) = Self::rw_method_attribute_target(&method_def.body) {
             let mut updated = (*attributes).clone();
-            updated.insert(attr_name, value.clone());
+            let current = if method_args.is_empty() {
+                self.call_method_with_values(
+                    Value::Instance {
+                        class_name,
+                        attributes: attributes.clone(),
+                        id: target_id,
+                    },
+                    method,
+                    Vec::new(),
+                )
+                .ok()
+            } else {
+                None
+            };
+            let assigned_value = if method_args.is_empty() {
+                Self::normalize_rw_accessor_assignment(current, value)
+            } else {
+                value
+            };
+            updated.insert(attr_name, assigned_value.clone());
             if let Some(var_name) = target_var {
                 self.overwrite_instance_bindings_by_identity(
                     &class_name.resolve(),
@@ -760,7 +927,7 @@ impl Interpreter {
                     },
                 );
             }
-            return Ok(value);
+            return Ok(assigned_value);
         }
 
         // The method body doesn't directly expose an attribute — run it and check for Proxy

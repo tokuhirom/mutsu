@@ -81,7 +81,6 @@ type ProtectBlockCacheEntry = (
     Arc<CompiledCode>,
     Arc<HashMap<String, CompiledFunction>>,
     Arc<Vec<usize>>,
-    Arc<Vec<String>>,
 );
 type ProtectBlockCache = HashMap<u64, ProtectBlockCacheEntry>;
 
@@ -3204,35 +3203,20 @@ impl Interpreter {
         }
     }
 
-    /// Sync a precomputed list of shared variable names for a protect block.
-    /// This avoids scanning large envs or dirty sets in tight protect loops.
-    pub(crate) fn sync_shared_vars_for_names(&mut self, names: &[String]) {
+    /// Sync shared vars for a narrow set of captured lexical names.
+    /// This is used by hot paths (e.g. Lock::Async.protect) to avoid scanning
+    /// large closure environments on every invocation.
+    pub(crate) fn sync_shared_vars_for_names<'a, I>(&mut self, names: I)
+    where
+        I: IntoIterator<Item = &'a str>,
+    {
         if !self.shared_vars_active {
             return;
         }
         let sv = self.shared_vars.read().unwrap();
-        for key in names {
-            // Keep shared arrays out of thread-local env to avoid extra Arc
-            // references that would force Arc::make_mut to clone on each push.
-            if key.starts_with('@') {
-                self.env.remove(key);
-                continue;
-            }
-            if key.starts_with('$') {
-                let name_key = format!("__mutsu_atomic_name::{key}");
-                let value_key = match sv.get(&name_key).or_else(|| self.env.get(&name_key)) {
-                    Some(Value::Str(vk)) => Some(vk.as_ref().clone()),
-                    _ => None,
-                };
-                if let Some(value_key) = value_key
-                    && let Some(val) = sv.get(value_key.as_str())
-                {
-                    self.env.insert(key.clone(), val.clone());
-                    continue;
-                }
-            }
-            if let Some(val) = sv.get(key) {
-                self.env.insert(key.clone(), val.clone());
+        for name in names {
+            if let Some(val) = sv.get(name) {
+                self.env.insert(name.to_string(), val.clone());
             }
         }
     }

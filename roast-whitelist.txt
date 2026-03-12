@@ -30,6 +30,7 @@ roast/S02-literals/format.t
 roast/S02-literals/hex_chars.t
 roast/S02-literals/listquote-whitespace.t
 roast/S02-literals/listquote.t
+roast/S02-literals/misc-interpolation.t
 roast/S02-literals/pair-boolean.t
 roast/S02-literals/subscript.t
 roast/S02-literals/types.t
@@ -91,6 +92,7 @@ roast/S03-buf/read-write-bits.t
 roast/S03-feeds/basic.t
 roast/S03-metaops/cross.t
 roast/S03-metaops/eager-hyper.t
+roast/S03-metaops/misc.t
 roast/S03-metaops/not.t
 roast/S03-metaops/reverse.t
 roast/S03-operators/also.t
@@ -221,6 +223,7 @@ roast/S05-metasyntax/sequential-alternation.t
 roast/S05-metasyntax/single-quotes.t
 roast/S05-metasyntax/unicode-property-pair.t
 roast/S05-metasyntax/unknown.t
+roast/S05-modifier/Perl_0.t
 roast/S05-modifier/Perl_1.t
 roast/S05-modifier/Perl_10.t
 roast/S05-modifier/Perl_2.t

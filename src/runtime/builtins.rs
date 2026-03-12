@@ -404,6 +404,7 @@ impl Interpreter {
             "__mutsu_assign_method_lvalue" => self.builtin_assign_method_lvalue(&args),
             "__mutsu_assign_named_sub_lvalue" => self.builtin_assign_named_sub_lvalue(&args),
             "__mutsu_assign_callable_lvalue" => self.builtin_assign_callable_lvalue(&args),
+            "__mutsu_assignment_ro" => self.builtin_assignment_ro(&args),
             "__mutsu_star_lvalue_rhs" => self.builtin_star_lvalue_rhs(&args),
             "__mutsu_record_bound_array_len" => self.builtin_record_bound_array_len(&args),
             "__mutsu_record_shaped_array_dims" => self.builtin_record_shaped_array_dims(&args),
@@ -2319,6 +2320,10 @@ impl Interpreter {
         let call_args = Self::sub_call_args_from_value(args.get(1));
         let value = args[2].clone();
         self.assign_callable_lvalue_with_values(callable, call_args, value)
+    }
+
+    fn builtin_assignment_ro(&mut self, _args: &[Value]) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::new("X::Assignment::RO"))
     }
 
     fn builtin_star_lvalue_rhs(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

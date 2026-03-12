@@ -268,7 +268,7 @@ pub(super) fn block_inner(input: &str) -> PResult<'_, Vec<Stmt>> {
 }
 
 /// Public accessor for stmt_list (used by primary.rs for block expressions).
-pub(super) fn stmt_list_pub(input: &str) -> PResult<'_, Vec<Stmt>> {
+pub(in crate::parser) fn stmt_list_pub(input: &str) -> PResult<'_, Vec<Stmt>> {
     stmt_list_with_mode(input, false)
 }
 
@@ -1757,6 +1757,16 @@ mod tests {
             }
             other => panic!("expected Assign stmt, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parse_meta_compound_assign_op_recognizes_reverse_add_assign() {
+        let parsed = assign::parse_meta_compound_assign_op("R+= 10");
+        assert!(parsed.is_some());
+        let (rest, meta, op) = parsed.unwrap();
+        assert_eq!(rest, " 10");
+        assert_eq!(meta, "R");
+        assert_eq!(op, "+");
     }
 
     #[test]

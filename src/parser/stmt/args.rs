@@ -1,8 +1,8 @@
 use super::super::expr::expression;
 use super::super::helpers::{split_angle_words, ws};
 use super::super::parse_result::{PError, PResult, merge_expected_messages, parse_char};
+use super::super::primary::misc::block_or_hash_expr;
 use super::super::primary::misc::reduction_call_style_expr;
-use super::super::primary::parse_block_body;
 
 use crate::ast::{CallArg, Expr};
 use crate::value::Value;
@@ -384,14 +384,14 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                         },
                     ));
                 }
-                // :name{ ... } (block-valued named argument)
+                // :name{ ... } (block/hash-valued named argument)
                 if r.starts_with('{') {
-                    let (r, body) = parse_block_body(r)?;
+                    let (r, block_or_hash) = block_or_hash_expr(r)?;
                     return Ok((
                         r,
                         CallArg::Named {
                             name,
-                            value: Some(Expr::AnonSub { body, is_rw: false }),
+                            value: Some(block_or_hash),
                         },
                     ));
                 }
@@ -459,7 +459,14 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
     // But do not consume a prefix before a fat-arrow chain (e.g. `2 => "x" => {...}`).
     if let Ok((rest, assign_expr)) = try_parse_assign_expr(input) {
         let (rest_ws, _) = ws(rest)?;
-        if !rest_ws.starts_with("=>") || rest_ws.starts_with("==>") {
+        let assign_is_arg_boundary = rest_ws.is_empty()
+            || rest_ws.starts_with(',')
+            || rest_ws.starts_with(';')
+            || rest_ws.starts_with('}')
+            || rest_ws.starts_with(')')
+            || is_stmt_modifier_keyword(rest_ws)
+            || (rest_ws.starts_with(':') && !rest_ws.starts_with("::"));
+        if assign_is_arg_boundary && (!rest_ws.starts_with("=>") || rest_ws.starts_with("==>")) {
             return Ok((rest, CallArg::Positional(assign_expr)));
         }
     }

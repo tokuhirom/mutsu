@@ -1,5 +1,9 @@
 use super::super::helpers::{is_ident_char, ws};
 use super::super::parse_result::{PError, PResult, merge_expected_messages, parse_char, parse_tag};
+use super::super::stmt::assign::{
+    compound_assign_op_from_name, compound_assigned_value_expr, parse_assign_expr_or_comma,
+    parse_meta_compound_assign_op,
+};
 
 use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
@@ -339,6 +343,168 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             },
         )),
         _ => Ok((rest, expr)),
+    }
+}
+
+fn assignment_ro_expr(lhs: Expr, rhs: Expr) -> Expr {
+    Expr::DoBlock {
+        body: vec![
+            Stmt::Expr(lhs),
+            Stmt::Expr(rhs),
+            Stmt::Expr(Expr::Call {
+                name: Symbol::intern("__mutsu_assignment_ro"),
+                args: Vec::new(),
+            }),
+        ],
+        label: None,
+    }
+}
+
+fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
+    match target {
+        Expr::Var(name) => Expr::AssignExpr {
+            name,
+            expr: Box::new(value),
+        },
+        Expr::Index { target, index } => Expr::IndexAssign {
+            target,
+            index,
+            value: Box::new(value),
+        },
+        Expr::MultiDimIndex { target, dimensions } => Expr::IndexAssign {
+            target,
+            index: Box::new(Expr::ArrayLiteral(dimensions)),
+            value: Box::new(value),
+        },
+        Expr::Call { name, args } => Expr::Call {
+            name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
+            args: vec![
+                Expr::Literal(Value::str(name.resolve())),
+                Expr::ArrayLiteral(args),
+                value,
+            ],
+        },
+        Expr::CallOn { target, args } => Expr::Call {
+            name: Symbol::intern("__mutsu_assign_callable_lvalue"),
+            args: vec![*target, Expr::ArrayLiteral(args), value],
+        },
+        Expr::DoStmt(stmt) => {
+            if let Stmt::VarDecl {
+                name,
+                type_constraint,
+                is_state,
+                is_our,
+                is_dynamic,
+                is_export,
+                export_tags,
+                custom_traits,
+                where_constraint,
+                ..
+            } = *stmt
+            {
+                Expr::DoStmt(Box::new(Stmt::VarDecl {
+                    name,
+                    expr: value,
+                    type_constraint,
+                    is_state,
+                    is_our,
+                    is_dynamic,
+                    is_export,
+                    export_tags,
+                    custom_traits,
+                    where_constraint,
+                }))
+            } else {
+                assignment_ro_expr(Expr::DoStmt(stmt), value)
+            }
+        }
+        other => assignment_ro_expr(other, value),
+    }
+}
+
+fn build_compound_assign_target_expr(target: Expr, op_name: &str, value: Expr) -> Expr {
+    if op_name == "=" {
+        return assign_to_target_expr(target, value);
+    }
+    let Some(op) = compound_assign_op_from_name(op_name) else {
+        return assignment_ro_expr(target, value);
+    };
+    match target {
+        Expr::Var(name) => Expr::AssignExpr {
+            name: name.clone(),
+            expr: Box::new(compound_assigned_value_expr(Expr::Var(name), op, value)),
+        },
+        Expr::ArrayVar(name) => Expr::AssignExpr {
+            name: format!("@{}", name.clone()),
+            expr: Box::new(compound_assigned_value_expr(
+                Expr::ArrayVar(name),
+                op,
+                value,
+            )),
+        },
+        Expr::HashVar(name) => Expr::AssignExpr {
+            name: format!("%{}", name.clone()),
+            expr: Box::new(compound_assigned_value_expr(Expr::HashVar(name), op, value)),
+        },
+        Expr::Index { target, index } => {
+            let lhs_expr = Expr::Index {
+                target: target.clone(),
+                index: index.clone(),
+            };
+            Expr::IndexAssign {
+                target,
+                index,
+                value: Box::new(compound_assigned_value_expr(lhs_expr, op, value)),
+            }
+        }
+        Expr::MultiDimIndex { target, dimensions } => {
+            let lhs_expr = Expr::MultiDimIndex {
+                target: target.clone(),
+                dimensions: dimensions.clone(),
+            };
+            Expr::IndexAssign {
+                target,
+                index: Box::new(Expr::ArrayLiteral(dimensions)),
+                value: Box::new(compound_assigned_value_expr(lhs_expr, op, value)),
+            }
+        }
+        Expr::AssignExpr { name, expr } => {
+            if op_name == "=" {
+                return Expr::AssignExpr {
+                    name,
+                    expr: Box::new(value),
+                };
+            }
+            let Some(op) = compound_assign_op_from_name(op_name) else {
+                return assignment_ro_expr(Expr::AssignExpr { name, expr }, value);
+            };
+            Expr::AssignExpr {
+                name: name.clone(),
+                expr: Box::new(compound_assigned_value_expr(
+                    Expr::AssignExpr { name, expr },
+                    op,
+                    value,
+                )),
+            }
+        }
+        Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier: _,
+            quoted: _,
+        } if name == "AT-POS" && args.len() == 1 => {
+            let index = args.into_iter().next().unwrap_or(Expr::Literal(Value::Nil));
+            build_compound_assign_target_expr(
+                Expr::Index {
+                    target,
+                    index: Box::new(index),
+                },
+                op_name,
+                value,
+            )
+        }
+        other => assignment_ro_expr(other, value),
     }
 }
 
@@ -939,6 +1105,21 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
             }
         }
         // Meta operators: R-, X+, Z~, bare Z, bare X, R[...], etc.
+        if let Some((stripped, meta, op_name)) = parse_meta_compound_assign_op(r)
+            && meta == "R"
+        {
+            let (r, _) = ws(stripped)?;
+            let (r, rhs) = parse_assign_expr_or_comma(r).map_err(|err| {
+                enrich_expected_error(
+                    err,
+                    "expected expression after reverse meta compound assignment",
+                    r.len(),
+                )
+            })?;
+            *left = build_compound_assign_target_expr(rhs, &op_name, left.clone());
+            rest = r;
+            continue;
+        }
         if let Some((meta, op, len)) = parse_meta_op(r) {
             if meta == "X"
                 && op == "cmp"
@@ -1435,9 +1616,9 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             || after.starts_with("m/")
             || after.starts_with("m ")
         {
-            return Err(PError::expected_at(
-                "Unsupported use of =~ to do pattern matching; in Raku please use ~~",
-                r,
+            return Err(PError::fatal(
+                "X::Obsolete: Unsupported use of =~ to do pattern matching; in Raku please use ~~"
+                    .to_string(),
             ));
         }
     }
@@ -1448,9 +1629,9 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             || after.starts_with("m/")
             || after.starts_with("m ")
         {
-            return Err(PError::expected_at(
-                "Unsupported use of !~ to do pattern matching; in Raku please use !~~",
-                r,
+            return Err(PError::fatal(
+                "X::Obsolete: Unsupported use of !~ to do pattern matching; in Raku please use !~~"
+                    .to_string(),
             ));
         }
     }

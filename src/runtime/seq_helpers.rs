@@ -345,7 +345,7 @@ impl Interpreter {
     }
 
     #[cfg(feature = "pcre2")]
-    fn compile_p5_regex(&self, pattern: &str) -> Option<PcreRegex> {
+    pub(super) fn compile_p5_regex(&self, pattern: &str) -> Option<PcreRegex> {
         let interpolated = self.expand_p5_interpolation(pattern);
         let converted = Self::p5_pattern_to_rust_regex(&interpolated);
         let transformed = Self::transform_p5_pattern(&converted);
@@ -1024,7 +1024,11 @@ impl Interpreter {
     }
 
     #[cfg(feature = "pcre2")]
-    fn regex_match_with_captures_p5(&self, pattern: &str, text: &str) -> Option<RegexCaptures> {
+    pub(crate) fn regex_match_with_captures_p5(
+        &self,
+        pattern: &str,
+        text: &str,
+    ) -> Option<RegexCaptures> {
         let re = self.compile_p5_regex(pattern)?;
         let mut locs = re.capture_locations();
         let m0 = re.captures_read(&mut locs, text.as_bytes()).ok()??;
@@ -1059,7 +1063,11 @@ impl Interpreter {
     }
 
     #[cfg(feature = "pcre2")]
-    fn regex_match_all_with_captures_p5(&self, pattern: &str, text: &str) -> Vec<RegexCaptures> {
+    pub(crate) fn regex_match_all_with_captures_p5(
+        &self,
+        pattern: &str,
+        text: &str,
+    ) -> Vec<RegexCaptures> {
         let Some(re) = self.compile_p5_regex(pattern) else {
             return Vec::new();
         };
