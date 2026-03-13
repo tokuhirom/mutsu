@@ -165,7 +165,7 @@ impl VM {
     fn should_retry_with_canonical_infix_name(name: &str) -> bool {
         matches!(
             name,
-            "(<=)" | "⊆" | "(>=)" | "⊇" | "(<)" | "⊂" | "(>)" | "⊃" | "⊈" | "⊉"
+            "(<=)" | "⊆" | "(>=)" | "⊇" | "(<)" | "⊂" | "(>)" | "⊃" | "⊈" | "⊉" | "⊄" | "⊅"
         )
     }
 

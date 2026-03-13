@@ -130,6 +130,8 @@ fn is_valid_reduction_op(op: &str) -> bool {
             | "⊇"
             | "⊂"
             | "⊃"
+            | "⊄"
+            | "⊅"
     ) {
         return true;
     }

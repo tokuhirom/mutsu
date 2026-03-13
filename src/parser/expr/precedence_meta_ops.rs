@@ -363,6 +363,10 @@ fn parse_set_op(input: &str) -> Option<(TokenKind, usize)> {
         Some((TokenKind::SetStrictSuperset, 3))
     } else if input.starts_with('⊃') {
         Some((TokenKind::SetStrictSuperset, '⊃'.len_utf8()))
+    } else if input.starts_with('⊄') {
+        Some((TokenKind::Ident("⊄".to_string()), '⊄'.len_utf8()))
+    } else if input.starts_with('⊅') {
+        Some((TokenKind::Ident("⊅".to_string()), '⊅'.len_utf8()))
     } else if input.starts_with("(elem)") {
         Some((TokenKind::SetElem, 6))
     } else if input.starts_with('∈') {
