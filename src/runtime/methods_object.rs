@@ -1335,11 +1335,55 @@ impl Interpreter {
                     return Ok(Value::make_instance(Symbol::intern("Match"), attrs));
                 }
                 // Types that cannot be instantiated with .new
-                "HyperWhatever" | "Whatever" | "Junction" => {
+                "HyperWhatever" | "Whatever" => {
                     return Err(RuntimeError::new(format!(
                         "X::Cannot::New: Cannot create new object of type {}",
                         class_name
                     )));
+                }
+                "Junction" => {
+                    // Junction.new(values, :type<kind>)
+                    // or Junction.new("kind", values)
+                    // Extract named :type from Pair args
+                    let mut type_str: Option<String> = None;
+                    let mut positional: Vec<&Value> = Vec::new();
+                    for arg in &args {
+                        if let Value::Pair(key, value) = arg {
+                            if key == "type" {
+                                type_str = Some(value.to_string_value());
+                            }
+                        } else {
+                            positional.push(arg);
+                        }
+                    }
+                    // If no named :type, check if first positional is a type string
+                    let type_name = if let Some(t) = type_str {
+                        t
+                    } else if positional.len() >= 2 {
+                        if let Value::Str(s) = positional[0] {
+                            let name = s.to_string();
+                            positional.remove(0);
+                            name
+                        } else {
+                            "any".to_string()
+                        }
+                    } else {
+                        "any".to_string()
+                    };
+                    let kind = match type_name.as_str() {
+                        "all" => JunctionKind::All,
+                        "one" => JunctionKind::One,
+                        "none" => JunctionKind::None,
+                        _ => JunctionKind::Any,
+                    };
+                    let values_arg = positional.first().copied();
+                    let elems: Vec<Value> = match values_arg {
+                        Some(Value::Array(items, ..)) => items.to_vec(),
+                        Some(Value::Seq(items)) | Some(Value::Slip(items)) => items.to_vec(),
+                        Some(other) => vec![other.clone()],
+                        None => vec![],
+                    };
+                    return Ok(Value::junction(kind, elems));
                 }
                 _ => {}
             }

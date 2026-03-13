@@ -485,7 +485,10 @@ impl Interpreter {
             {
                 return Ok(Value::str(msg.to_string_value()));
             }
-            if (method == "raku" || method == "perl") && args.is_empty() {
+            if (method == "raku" || method == "perl")
+                && args.is_empty()
+                && !self.has_user_method(&class_name.resolve(), method)
+            {
                 if class_name == "ObjAt" {
                     let which = attributes
                         .get("WHICH")

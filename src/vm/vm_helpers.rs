@@ -694,12 +694,21 @@ impl VM {
     }
 
     /// Smartmatch with junction threading but WITHOUT forcing lazy values.
+    /// For `!~~` (negate=true), we compute `~~` first and then negate the
+    /// collapsed result.  Raku defines `$x !~~ $y` as `not ($x ~~ $y)`,
+    /// where `not` collapses junctions before negating.
     pub(super) fn eval_smartmatch_with_junctions(
         &mut self,
         left: Value,
         right: Value,
         negate: bool,
     ) -> Result<Value, RuntimeError> {
+        // For !~~, compute ~~ first, then negate the collapsed boolean.
+        if negate {
+            let match_result = self.eval_smartmatch_with_junctions(left, right, false)?;
+            let bool_val = match_result.truthy();
+            return Ok(Value::Bool(!bool_val));
+        }
         if let (
             Value::Junction {
                 kind: left_kind,
@@ -715,7 +724,7 @@ impl VM {
             let results: Result<Vec<Value>, RuntimeError> = right_values
                 .iter()
                 .cloned()
-                .map(|v| self.eval_smartmatch_with_junctions(left.clone(), v, negate))
+                .map(|v| self.eval_smartmatch_with_junctions(left.clone(), v, false))
                 .collect();
             return Ok(Value::junction(right_kind.clone(), results?));
         }
@@ -723,7 +732,7 @@ impl VM {
             let results: Result<Vec<Value>, RuntimeError> = values
                 .iter()
                 .cloned()
-                .map(|v| self.eval_smartmatch_with_junctions(v, right.clone(), negate))
+                .map(|v| self.eval_smartmatch_with_junctions(v, right.clone(), false))
                 .collect();
             return Ok(Value::junction(kind, results?));
         }
@@ -731,15 +740,11 @@ impl VM {
             let results: Result<Vec<Value>, RuntimeError> = values
                 .iter()
                 .cloned()
-                .map(|v| self.eval_smartmatch_with_junctions(left.clone(), v, negate))
+                .map(|v| self.eval_smartmatch_with_junctions(left.clone(), v, false))
                 .collect();
             return Ok(Value::junction(kind, results?));
         }
-        if negate {
-            self.not_smart_match_op(left, right)
-        } else {
-            self.smart_match_op(left, right)
-        }
+        self.smart_match_op(left, right)
     }
 
     pub(super) fn smart_match_op(
@@ -773,16 +778,6 @@ impl VM {
         } else {
             Ok(Value::Bool(matched))
         }
-    }
-
-    pub(super) fn not_smart_match_op(
-        &mut self,
-        left: Value,
-        right: Value,
-    ) -> Result<Value, RuntimeError> {
-        Ok(Value::Bool(
-            !self.interpreter.smart_match_values(&left, &right),
-        ))
     }
 
     pub(super) fn eval_reduction_operator_values(

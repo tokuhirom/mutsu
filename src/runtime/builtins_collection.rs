@@ -161,19 +161,24 @@ impl Interpreter {
             "one" => JunctionKind::One,
             _ => JunctionKind::None,
         };
-        let mut elems = Vec::new();
-        for arg in args {
+        // One-arg rule: when called with a single list/range argument,
+        // flatten it into the junction elements. With multiple arguments,
+        // each argument becomes a junction element without flattening.
+        let elems = if args.len() == 1 {
+            let arg = args.into_iter().next().unwrap();
             match arg {
-                Value::Array(items, ..) => elems.extend(items.iter().cloned()),
-                Value::Seq(items) | Value::Slip(items) => elems.extend(items.iter().cloned()),
+                Value::Array(items, ..) => items.to_vec(),
+                Value::Seq(items) | Value::Slip(items) => items.to_vec(),
                 range @ (Value::Range(..)
                 | Value::RangeExcl(..)
                 | Value::RangeExclStart(..)
                 | Value::RangeExclBoth(..)
-                | Value::GenericRange { .. }) => elems.extend(Self::value_to_list(&range)),
-                other => elems.push(other),
+                | Value::GenericRange { .. }) => Self::value_to_list(&range),
+                other => vec![other],
             }
-        }
+        } else {
+            args
+        };
         Ok(Value::junction(kind, elems))
     }
 

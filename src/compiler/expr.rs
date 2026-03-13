@@ -320,9 +320,12 @@ impl Compiler {
                     return;
                 }
                 // Detect `funcname |capture` pattern (listop call with capture slip)
+                // Exclude names starting with uppercase — they are likely type
+                // names, and `TypeName|OtherType` should compile as a junction.
                 if *op == TokenKind::Pipe
                     && matches!(right.as_ref(), Expr::BareWord(_))
                     && let Expr::BareWord(name) = left.as_ref()
+                    && !name.starts_with(char::is_uppercase)
                 {
                     // Compile the slip arg (the capture variable)
                     self.compile_expr(right);
