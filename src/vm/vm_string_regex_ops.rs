@@ -957,6 +957,22 @@ impl VM {
         infix_name: Option<&str>,
         call_args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // When an infix operator is called with a single Iterable argument,
+        // flatten it into elements (like a +@foo slurpy) and reduce over them.
+        let call_args = if call_args.len() == 1 {
+            match &call_args[0] {
+                Value::Hash(map) => {
+                    // Break Hash into Pairs
+                    map.iter()
+                        .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                        .collect::<Vec<_>>()
+                }
+                Value::Array(items, ..) => items.iter().cloned().collect(),
+                _ => call_args,
+            }
+        } else {
+            call_args
+        };
         if call_args.len() >= 2 {
             let mut acc = call_args[0].clone();
             let mut reduced = true;

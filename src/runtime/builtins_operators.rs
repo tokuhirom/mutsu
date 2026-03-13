@@ -426,7 +426,7 @@ impl Interpreter {
         let args: Vec<Value> = if args.len() == 1 && !is_set_op {
             match &args[0] {
                 Value::Array(items, ..) => items.to_vec(),
-                Value::Hash(map) if matches!(op, "andthen" | "notandthen") => map
+                Value::Hash(map) if matches!(op, "andthen" | "notandthen" | "orelse") => map
                     .iter()
                     .map(|(k, v)| {
                         Value::ValuePair(Box::new(Value::str(k.clone())), Box::new(v.clone()))
@@ -578,6 +578,16 @@ impl Interpreter {
                 for rhs in &args[1..] {
                     if crate::runtime::types::value_is_defined(&acc) {
                         return Ok(Value::Nil);
+                    }
+                    acc = rhs.clone();
+                }
+                return Ok(acc);
+            }
+            "orelse" => {
+                let mut acc = args[0].clone();
+                for rhs in &args[1..] {
+                    if crate::runtime::types::value_is_defined(&acc) {
+                        return Ok(acc);
                     }
                     acc = rhs.clone();
                 }
