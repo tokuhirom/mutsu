@@ -1194,9 +1194,12 @@ impl Compiler {
             let source_idx = self.code.add_constant(Value::str(source_name));
             self.code.emit(OpCode::TagContainerRef(source_idx));
         }
+        let param_local = param
+            .as_ref()
+            .and_then(|p| self.local_map.get(p.as_str()).copied());
         let loop_idx = self.code.emit(OpCode::ForLoop {
             param_idx,
-            param_local: None,
+            param_local,
             body_end: 0,
             label: label.clone(),
             arity,
