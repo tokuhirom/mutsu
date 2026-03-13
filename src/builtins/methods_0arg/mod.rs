@@ -929,6 +929,16 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
 
+    // .resume on exception objects — signal the CATCH handler to resume after die
+    if method == "resume"
+        && let Value::Instance { class_name, .. } = target
+    {
+        let cn = class_name.resolve();
+        if cn == "Exception" || cn.starts_with("X::") || cn == "Failure" || cn == "CX::Warn" {
+            return Some(Err(RuntimeError::resume_signal()));
+        }
+    }
+
     // Array of Match objects: .to returns last element's .to, .from returns first element's .from
     if let Value::Array(arr, _) = target {
         match method {

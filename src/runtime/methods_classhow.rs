@@ -245,11 +245,11 @@ impl Interpreter {
             }
             "can" if args.len() >= 2 => {
                 let invocant = &args[0];
-                let method_name = args[1].to_string_value();
-                if let Some(value) = self.classhow_find_method(invocant, &method_name) {
-                    return Ok(Value::array(vec![value]));
-                }
-                Ok(Value::array(Vec::new()))
+                // The method name is always the last argument. When called via ^can,
+                // the args may be [Package, target, method_name] due to Package insertion.
+                let method_name = args.last().unwrap().to_string_value();
+                let results = self.collect_can_methods(invocant, &method_name);
+                Ok(Value::array(results))
             }
             "lookup" if args.len() >= 2 => {
                 let invocant = &args[0];
@@ -1192,5 +1192,93 @@ impl Interpreter {
         }
 
         Ok(Value::array(result))
+    }
+
+    /// Collect all methods named `method_name` across the MRO of `target`.
+    /// Returns a list of callable Sub values, one per class in the MRO that
+    /// defines the method. This implements `.can(method-name)`.
+    pub(super) fn collect_can_methods(&mut self, target: &Value, method_name: &str) -> Vec<Value> {
+        let class_name = match target {
+            Value::Instance { class_name, .. } => class_name.resolve(),
+            Value::Package(name) => name.resolve(),
+            _ => utils::value_type_name(target).to_string(),
+        };
+        let mro = self.classhow_mro_unhidden_names(target);
+        let mut results = Vec::new();
+        for cn in &mro {
+            if let Some(class_def) = self.classes.get(cn)
+                && let Some(defs) = class_def.methods.get(method_name)
+            {
+                for def in defs {
+                    // Prepend "self" to params so the method can be called
+                    // as $meth($invocant) — the first argument binds as self.
+                    let mut params = vec!["self".to_string()];
+                    params.extend(def.params.iter().filter(|p| p.as_str() != "self").cloned());
+                    let mut param_defs = vec![crate::ast::ParamDef {
+                        name: "self".to_string(),
+                        default: None,
+                        multi_invocant: true,
+                        required: false,
+                        named: false,
+                        slurpy: false,
+                        double_slurpy: false,
+                        sigilless: false,
+                        type_constraint: None,
+                        literal_value: None,
+                        sub_signature: None,
+                        where_constraint: None,
+                        is_invocant: true,
+                        traits: Vec::new(),
+                        optional_marker: false,
+                        outer_sub_signature: None,
+                        code_signature: None,
+                        shape_constraints: None,
+                    }];
+                    param_defs.extend(
+                        def.param_defs
+                            .iter()
+                            .filter(|p| p.name.as_str() != "self")
+                            .cloned(),
+                    );
+                    results.push(Value::make_sub(
+                        Symbol::intern(cn),
+                        Symbol::intern(method_name),
+                        params,
+                        param_defs,
+                        def.body.clone(),
+                        def.is_rw,
+                        crate::env::Env::new(),
+                    ));
+                }
+            }
+        }
+        // Also check for native/builtin methods if no user-defined methods found.
+        // For built-in types, probe the native method dispatch to see if the method exists.
+        if results.is_empty() {
+            let method_sym = Symbol::intern(method_name);
+            let has_native =
+                // Check 0-arg builtins
+                crate::builtins::native_method_0arg(target, method_sym).is_some()
+                // Check 1-arg builtins with a dummy arg
+                || crate::builtins::native_method_1arg(
+                    target,
+                    method_sym,
+                    &Value::Nil,
+                )
+                .is_some()
+                // Check user-defined classes and their native_methods set
+                || {
+                    let pkg = Value::Package(Symbol::intern(&class_name));
+                    self.classhow_find_method(&pkg, method_name).is_some()
+                };
+            if has_native {
+                results.push(Value::Routine {
+                    package: Symbol::intern(&class_name),
+                    name: Symbol::intern(method_name),
+                    is_regex: false,
+                });
+            }
+        }
+        results
     }
 }

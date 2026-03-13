@@ -48,6 +48,7 @@ pub struct RuntimeError {
     pub is_fail: bool,
     pub is_warn: bool,
     pub is_leave: bool,
+    pub is_resume: bool,
     pub is_react_done: bool,
     pub label: Option<String>,
     pub leave_callable_id: Option<u64>,
@@ -76,6 +77,7 @@ impl RuntimeError {
             is_fail: false,
             is_warn: false,
             is_leave: false,
+            is_resume: false,
             is_react_done: false,
             label: None,
             leave_callable_id: None,
@@ -107,6 +109,7 @@ impl RuntimeError {
             is_fail: false,
             is_warn: false,
             is_leave: false,
+            is_resume: false,
             is_react_done: false,
             label: None,
             leave_callable_id: None,
@@ -159,6 +162,13 @@ impl RuntimeError {
     pub(crate) fn succeed_signal() -> Self {
         Self {
             is_succeed: true,
+            ..Self::new("")
+        }
+    }
+
+    pub(crate) fn resume_signal() -> Self {
+        Self {
+            is_resume: true,
             ..Self::new("")
         }
     }

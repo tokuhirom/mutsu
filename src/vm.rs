@@ -57,6 +57,9 @@ pub(crate) struct VM {
     /// When true, env may be stale relative to locals (simple local SetLocal skipped env write).
     /// Cleared after ensure_env_synced or sync_env_from_locals.
     locals_dirty: bool,
+    /// The instruction pointer to resume at after a .resume call in a CATCH block.
+    /// Set when Die/Fail creates an exception, used by exec_try_catch_op.
+    resume_ip: Option<usize>,
 }
 
 impl VM {
@@ -141,6 +144,7 @@ impl VM {
             call_frames: Vec::new(),
             env_dirty: false,
             locals_dirty: false,
+            resume_ip: None,
         }
     }
 
@@ -1506,6 +1510,8 @@ impl VM {
             // -- Error handling --
             OpCode::Die => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
+                // Store the resume point (instruction after Die) for .resume support
+                self.resume_ip = Some(*ip + 1);
                 return Err(self.runtime_error_from_exception_value(val, "Died", false));
             }
             OpCode::Fail => {
