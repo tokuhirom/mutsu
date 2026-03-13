@@ -9,15 +9,43 @@ impl Interpreter {
         op_assoc: &HashMap<String, String>,
         imported_names: &[String],
     ) -> Result<Value, RuntimeError> {
-        crate::parser::parse_program_with_operators(src, op_names, op_assoc, imported_names)
-            .and_then(|(stmts, _)| {
+        match crate::parser::parse_program_with_operators(src, op_names, op_assoc, imported_names) {
+            Ok((stmts, _)) => {
                 self.check_eval_class_redeclarations(&stmts)?;
                 let value = self.eval_block_value(&stmts)?;
                 if self.eval_result_is_unresolved_bareword(&stmts, &value) {
                     return Err(RuntimeError::new("X::Undeclared::Symbols"));
                 }
                 Ok(value)
-            })
+            }
+            Err(parse_err) => {
+                // BEGIN blocks should execute even when a later parse error occurs.
+                // Do a partial parse to find any BEGIN phasers and execute them
+                // before returning the parse error.
+                let (partial_stmts, _) = crate::parser::parse_program_partial_with_operators(
+                    src,
+                    op_names,
+                    op_assoc,
+                    imported_names,
+                );
+                self.execute_begin_phasers(&partial_stmts);
+                Err(parse_err)
+            }
+        }
+    }
+
+    /// Execute BEGIN phasers found in a list of statements (used for partial
+    /// parse results where a later parse error prevents full evaluation).
+    fn execute_begin_phasers(&mut self, stmts: &[Stmt]) {
+        for stmt in stmts {
+            if let Stmt::Phaser {
+                kind: PhaserKind::Begin,
+                body,
+            } = stmt
+            {
+                let _ = self.eval_block_value(body);
+            }
+        }
     }
 
     fn check_eval_class_redeclarations(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
