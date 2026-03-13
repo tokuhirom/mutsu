@@ -263,7 +263,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         && !is_stmt_modifier_keyword(rest)
         && starts_with_unambiguous_term(rest)
     {
-        return Err(PError::fatal("Two terms in a row".to_string()));
+        return Err(PError::fatal("Confused. Two terms in a row".to_string()));
     }
     if let Some(stripped) = rest
         .strip_prefix("\u{00BB}.=")
