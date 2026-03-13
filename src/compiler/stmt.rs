@@ -427,9 +427,16 @@ impl Compiler {
                     let source_idx = self.code.add_constant(Value::str(source_name));
                     self.code.emit(OpCode::TagContainerRef(source_idx));
                 }
+                // If the for-loop parameter name already has a local slot
+                // (e.g. from a prior `my $i` in an enclosing scope), we must
+                // tell the VM so it can keep the local in sync with the env
+                // on each iteration and on redo.
+                let param_local = param
+                    .as_ref()
+                    .and_then(|p| self.local_map.get(p.as_str()).copied());
                 let loop_idx = self.code.emit(OpCode::ForLoop {
                     param_idx,
-                    param_local: None,
+                    param_local,
                     body_end: 0,
                     label: label.clone(),
                     arity,
