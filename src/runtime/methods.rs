@@ -691,24 +691,40 @@ impl Interpreter {
             }
             if method == "can" && args.len() == 1 {
                 let method_name = args[0].to_string_value();
-                if mixins.contains_key(&method_name)
-                    || mixins.contains_key(&format!("__mutsu_attr__{}", method_name))
+                // First collect from the inner value's MRO
+                let mut results = self.collect_can_methods(inner, &method_name);
+                // Also check mixin-specific methods
+                if (mixins.contains_key(&method_name)
+                    || mixins.contains_key(&format!("__mutsu_attr__{}", method_name)))
+                    && results.is_empty()
                 {
-                    return Ok(Value::Bool(true));
+                    results.push(Value::Routine {
+                        package: Symbol::intern("Mixin"),
+                        name: Symbol::intern(&method_name),
+                        is_regex: false,
+                    });
                 }
                 for role_name in mixins.keys().filter_map(|key| {
                     key.strip_prefix("__mutsu_role__")
                         .map(|name| name.to_string())
                 }) {
-                    if self
-                        .roles
-                        .get(&role_name)
-                        .is_some_and(|role| role.methods.contains_key(&method_name))
+                    if let Some(role) = self.roles.get(&role_name)
+                        && let Some(defs) = role.methods.get(&method_name)
                     {
-                        return Ok(Value::Bool(true));
+                        for def in defs {
+                            results.push(Value::make_sub(
+                                Symbol::intern(&role_name),
+                                Symbol::intern(&method_name),
+                                def.params.clone(),
+                                def.param_defs.clone(),
+                                def.body.clone(),
+                                def.is_rw,
+                                crate::env::Env::new(),
+                            ));
+                        }
                     }
                 }
-                return self.call_method_with_values((**inner).clone(), method, args);
+                return Ok(Value::array(results));
             }
             if method == "does" && args.len() == 1 {
                 let does = match &args[0] {
@@ -1615,6 +1631,11 @@ impl Interpreter {
                 // Non-container .VAR is identity. Container variables are handled in
                 // call_method_mut_with_values via target variable metadata.
                 return Ok(target);
+            }
+            "can" if args.len() == 1 => {
+                let method_name = args[0].to_string_value();
+                let results = self.collect_can_methods(&target, &method_name);
+                return Ok(Value::array(results));
             }
             "does" if args.len() == 1 => {
                 let role_name = match &args[0] {

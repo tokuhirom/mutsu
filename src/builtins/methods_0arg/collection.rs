@@ -453,6 +453,42 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 Some(Ok(Value::array(result)))
             }
+            Value::Bag(items) => {
+                let mut result = Vec::new();
+                for (k, count) in items.iter() {
+                    result.push(Value::ValuePair(
+                        Box::new(Value::Int(*count)),
+                        Box::new(Value::str(k.to_string())),
+                    ));
+                }
+                Some(Ok(Value::array(result)))
+            }
+            Value::Set(items) => {
+                let mut result = Vec::new();
+                for k in items.iter() {
+                    result.push(Value::ValuePair(
+                        Box::new(Value::Bool(true)),
+                        Box::new(Value::str(k.to_string())),
+                    ));
+                }
+                Some(Ok(Value::array(result)))
+            }
+            Value::Mix(items) => {
+                let mut result = Vec::new();
+                for (k, weight) in items.iter() {
+                    let (n, d) = f64_to_rat(*weight);
+                    let weight_val = if d == 1 {
+                        Value::Int(n)
+                    } else {
+                        Value::Rat(n, d)
+                    };
+                    result.push(Value::ValuePair(
+                        Box::new(weight_val),
+                        Box::new(Value::str(k.to_string())),
+                    ));
+                }
+                Some(Ok(Value::array(result)))
+            }
             _ => None,
         },
         "total" => match target {

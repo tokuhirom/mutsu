@@ -909,6 +909,27 @@ impl VM {
                             self.stack.push(Value::Nil);
                             true
                         }
+                        // .resume called inside CATCH: resume execution after the die
+                        Err(catch_err) if catch_err.is_resume => {
+                            self.stack.truncate(catch_stack_base);
+                            self.interpreter.set_when_matched(saved_when);
+                            if let Some(v) = saved_topic {
+                                self.interpreter.env_mut().insert("_".to_string(), v);
+                            } else {
+                                self.interpreter.env_mut().remove("_");
+                            }
+                            // Resume from the instruction after die
+                            if let Some(resume_point) = self.resume_ip.take() {
+                                // Run from the resume point to the end of the try body
+                                match self.run_range(code, resume_point, catch_begin, compiled_fns)
+                                {
+                                    Ok(()) => {}
+                                    Err(resume_err) => return Err(resume_err),
+                                }
+                            }
+                            *ip = end;
+                            return Ok(());
+                        }
                         Err(catch_err) => return Err(catch_err),
                     };
                 self.interpreter.set_when_matched(saved_when);
