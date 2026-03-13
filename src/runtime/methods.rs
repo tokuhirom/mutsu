@@ -2154,7 +2154,14 @@ impl Interpreter {
                 };
                 let pat: String = match &pattern {
                     Value::Regex(p) => p.to_string(),
-                    Value::Str(p) => p.to_string(),
+                    // Str patterns are treated as literal strings in Raku regex,
+                    // so wrap them in quotes to prevent regex metachar interpretation
+                    // (e.g., spaces are insignificant in Raku regex but significant in literals)
+                    Value::Str(p) => {
+                        // Escape any single quotes in the pattern, then wrap in quotes
+                        let escaped = p.replace('\'', "\\'");
+                        format!("'{}'", escaped)
+                    }
                     _ => return Ok(Value::Nil),
                 };
                 return {

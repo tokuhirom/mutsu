@@ -45,7 +45,11 @@ impl VM {
     fn preserve_empty_slip_arg(name: &str) -> bool {
         matches!(
             name,
-            "infix:<andthen>" | "infix:<notandthen>" | "andthen" | "notandthen"
+            "infix:<andthen>"
+                | "infix:<notandthen>"
+                | "andthen"
+                | "notandthen"
+                | "__mutsu_andthen_finalize"
         )
     }
 

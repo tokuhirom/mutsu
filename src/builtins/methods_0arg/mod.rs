@@ -2349,6 +2349,21 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 class_name,
                 attributes,
                 ..
+            } if class_name == "Failure" => {
+                let msg = attributes
+                    .get("exception")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_else(|| "Failed".to_string());
+                if method == "gist" {
+                    Some(Ok(Value::str(msg)))
+                } else {
+                    Some(Ok(Value::str(format!("Failure.new(\"{}\")", msg))))
+                }
+            }
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
             } if class_name == "CallFrame" => {
                 if method == "gist" {
                     let file = attributes

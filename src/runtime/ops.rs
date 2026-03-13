@@ -987,6 +987,13 @@ impl Interpreter {
                     Ok(right.clone())
                 }
             }
+            "orelse" => {
+                if crate::runtime::types::value_is_defined(left) {
+                    Ok(left.clone())
+                } else {
+                    Ok(right.clone())
+                }
+            }
             "min" => {
                 if to_num(left) <= to_num(right) {
                     Ok(left.clone())
