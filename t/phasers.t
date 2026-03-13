@@ -1,7 +1,7 @@
 use Test;
 plan 3;
 
-my $x = 0;
+my $x;
 BEGIN { $x = 2; }
 is $x, 2, 'BEGIN runs immediately';
 

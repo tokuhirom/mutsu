@@ -402,7 +402,9 @@ enum VMColor <Red Green Blue>;
 is Red.key, "Red", 'enum declaration compiled';
 
 # BEGIN phaser (compiled inline)
-my $begin_val = 0;
+# In Raku, `my $begin_val = 0` re-initializes at runtime, overwriting
+# the BEGIN-time assignment. So the final value is 0, not 42.
+my $begin_val;
 BEGIN { $begin_val = 42; }
 is $begin_val, 42, 'BEGIN phaser compiled inline';
 

@@ -1458,6 +1458,13 @@ impl Compiler {
                 let op_idx = self.code.add_constant(Value::str(op.clone()));
                 self.code.emit(OpCode::Reduction(op_idx));
             }
+            // Phaser expression (INIT/CHECK as rvalue) — by the time the
+            // compiler sees this, the phaser should have been extracted and
+            // replaced with a Var reference. If it somehow remains, compile
+            // the body inline as a fallback (evaluates eagerly).
+            Expr::PhaserExpr { body, .. } => {
+                self.compile_block_inline(body);
+            }
             // __ROUTINE__ magic
             Expr::RoutineMagic => {
                 self.code.emit(OpCode::RoutineMagic);
