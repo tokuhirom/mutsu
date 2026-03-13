@@ -525,10 +525,22 @@ fn reorder_at_level(stmts: &mut Vec<Stmt>, extra_check: Vec<Stmt>, extra_init: V
             continue;
         }
 
-        // Hoist HasDecl (class attribute declarations) before BEGIN,
-        // because in Raku `has` is a compile-time construct and BEGIN
-        // blocks may reference attributes via `::?CLASS.^attributes`.
-        if matches!(&stmt, Stmt::HasDecl { .. }) {
+        // Hoist compile-time declarations before BEGIN blocks.
+        // In Raku, `use`, `sub`, `class`, `role`, `module`, `has`, and
+        // other declarations are compile-time constructs visible to BEGIN.
+        if matches!(
+            &stmt,
+            Stmt::HasDecl { .. }
+                | Stmt::Use { .. }
+                | Stmt::SubDecl { .. }
+                | Stmt::TokenDecl { .. }
+                | Stmt::RuleDecl { .. }
+                | Stmt::ProtoToken { .. }
+                | Stmt::Package { .. }
+                | Stmt::ClassDecl { .. }
+                | Stmt::RoleDecl { .. }
+                | Stmt::EnumDecl { .. }
+        ) {
             var_decls.push(stmt);
             continue;
         }
