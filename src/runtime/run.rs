@@ -575,6 +575,10 @@ impl Interpreter {
                 }
             })
             .collect();
+        // Reorder phasers: BEGIN (forward), CHECK (reverse), INIT (forward)
+        // are moved before the main body within each block scope.
+        let mut body_main = body_main;
+        crate::runtime::phasers::reorder_phasers(&mut body_main);
         self.preregister_top_level_subs(&body_main)?;
         self.run_block_raw(&enter_ph)?;
         let mut compiler = crate::compiler::Compiler::new();

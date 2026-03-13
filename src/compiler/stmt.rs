@@ -873,12 +873,14 @@ impl Compiler {
                 }
             }
 
-            // --- Phaser (BEGIN/END) ---
+            // --- Phaser (BEGIN/CHECK/INIT) ---
+            // These are extracted before compilation by extract_check_init_phasers()
+            // and run in the correct order. If one remains (e.g. inside a sub body),
+            // compile it inline as a fallback.
             Stmt::Phaser {
                 kind: PhaserKind::Begin | PhaserKind::Check | PhaserKind::Init,
                 body,
             } => {
-                // BEGIN: compile body inline (runs immediately)
                 for s in body {
                     self.compile_stmt(s);
                 }

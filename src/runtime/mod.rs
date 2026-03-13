@@ -119,6 +119,7 @@ mod native_proc_async;
 mod native_supply_methods;
 pub(crate) mod native_types;
 mod ops;
+pub(crate) mod phasers;
 mod regex;
 mod regex_parse;
 mod registration;

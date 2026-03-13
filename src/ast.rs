@@ -161,6 +161,13 @@ pub(crate) enum Expr {
     /// Zen slice: `@a[]` — represents all indices of an array.
     ZenSlice(Box<Expr>),
     RoutineMagic,
+    /// Phaser used as an rvalue expression: `my $x = INIT { 42 }`
+    /// The body is evaluated once at the appropriate phaser time and its result
+    /// is stored in a temporary variable for later retrieval.
+    PhaserExpr {
+        kind: PhaserKind,
+        body: Vec<Stmt>,
+    },
     BlockMagic,
     Block(Vec<Stmt>),
     AnonSub {
@@ -905,6 +912,11 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
                 for s in c {
                     collect_ph_stmt(s, out);
                 }
+            }
+        }
+        Expr::PhaserExpr { body, .. } => {
+            for s in body {
+                collect_ph_stmt(s, out);
             }
         }
         Expr::CodeVar(_) => {}

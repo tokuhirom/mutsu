@@ -497,16 +497,35 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    // INIT expr — statement prefix phaser, evaluates expr at init time
-    // In an interpreter, INIT time ≈ run time, so just evaluate the expression.
-    if input.starts_with("INIT")
-        && !input[4..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
-    {
-        let r = &input[4..];
-        let (r, _) = super::super::helpers::ws(r)?;
-        if !r.starts_with('{') {
-            let (r, expr) = super::super::expr::expression_no_sequence(r)?;
-            return Ok((r, expr));
+    // INIT/CHECK as expression prefix phasers
+    for (kw, kw_len, phaser_kind) in [
+        ("INIT", 4, crate::ast::PhaserKind::Init),
+        ("CHECK", 5, crate::ast::PhaserKind::Check),
+    ] {
+        if input.starts_with(kw)
+            && !input[kw_len..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
+        {
+            let r = &input[kw_len..];
+            let (r, _) = super::super::helpers::ws(r)?;
+            if r.starts_with('{') {
+                let (r, body) = super::misc::parse_block_body(r)?;
+                return Ok((
+                    r,
+                    Expr::PhaserExpr {
+                        kind: phaser_kind,
+                        body,
+                    },
+                ));
+            } else {
+                let (r, expr) = super::super::expr::expression_no_sequence(r)?;
+                return Ok((
+                    r,
+                    Expr::PhaserExpr {
+                        kind: phaser_kind,
+                        body: vec![crate::ast::Stmt::Expr(expr)],
+                    },
+                ));
+            }
         }
     }
     if let Ok(r) = try_kw("pi", Value::Num(std::f64::consts::PI)) {
