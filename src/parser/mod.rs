@@ -252,6 +252,25 @@ pub(crate) fn parse_program_with_operators(
     result
 }
 
+/// Like `parse_program_partial`, but pre-registers operator sub names so the
+/// parser recognizes them during EVAL.  Used to extract BEGIN phasers from
+/// code that fails to parse completely.
+pub(crate) fn parse_program_partial_with_operators(
+    input: &str,
+    operator_names: &[String],
+    operator_assoc: &std::collections::HashMap<String, String>,
+    imported_function_names: &[String],
+) -> (Vec<Stmt>, Option<String>) {
+    stmt::set_eval_operator_preseed(operator_names.to_vec());
+    stmt::set_eval_operator_assoc_preseed(operator_assoc.clone());
+    stmt::set_eval_imported_function_preseed(imported_function_names.to_vec());
+    let result = parse_program_partial(input);
+    stmt::set_eval_operator_preseed(Vec::new());
+    stmt::set_eval_operator_assoc_preseed(std::collections::HashMap::new());
+    stmt::set_eval_imported_function_preseed(Vec::new());
+    result
+}
+
 /// Best-effort parse: returns all statements that could be parsed before the
 /// first error.  Used for loading `.rakumod` modules that may contain syntax
 /// mutsu does not yet support.

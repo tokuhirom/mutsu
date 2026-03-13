@@ -25,6 +25,36 @@ fn starts_with_term_token(input: &str) -> bool {
         )
 }
 
+/// Returns true if the input starts with a token that is unambiguously a new
+/// term (not an infix operator or statement modifier).  More conservative than
+/// `starts_with_term_token`: only digits and quote characters, which can never
+/// be the start of an operator.
+fn starts_with_unambiguous_term(input: &str) -> bool {
+    let Some(ch) = input.chars().next() else {
+        return false;
+    };
+    ch.is_ascii_digit()
+        || matches!(
+            ch,
+            '\'' | '"' | '\u{2018}' | '\u{2019}' | '\u{201C}' | '\u{201D}'
+        )
+}
+
+/// Returns true if the expression is a pure value that cannot take arguments
+/// (i.e., a literal or variable, not a function call or bareword that might
+/// be a function name).  Used to detect "two terms in a row" parse errors.
+fn is_pure_value_expr(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Literal(_)
+            | Expr::Var(_)
+            | Expr::ArrayVar(_)
+            | Expr::HashVar(_)
+            | Expr::StringInterpolation(_)
+            | Expr::ArrayLiteral(_)
+    )
+}
+
 fn method_lvalue_assign_expr(
     target: Expr,
     target_var_name: Option<String>,
@@ -218,6 +248,22 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         && starts_with_term_token(rest)
     {
         return Err(PError::expected("statement end"));
+    }
+    // Detect "two terms in a row" errors: a literal value followed by another
+    // unambiguous term token on the same line without an infix operator.
+    // Only flag cases that cannot be valid syntax (e.g., `1 1`, `"a" "b"`).
+    if !separated_by_newline
+        && is_pure_value_expr(&expr)
+        && !rest.is_empty()
+        && !rest.starts_with(';')
+        && !rest.starts_with('}')
+        && !rest.starts_with(')')
+        && !rest.starts_with(']')
+        && !rest.starts_with(',')
+        && !is_stmt_modifier_keyword(rest)
+        && starts_with_unambiguous_term(rest)
+    {
+        return Err(PError::fatal("Confused. Two terms in a row".to_string()));
     }
     if let Some(stripped) = rest
         .strip_prefix("\u{00BB}.=")

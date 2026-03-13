@@ -166,6 +166,7 @@ roast/S03-smartmatch/signature-signature.t
 roast/S04-blocks-and-statements/let.t
 roast/S04-exception-handlers/top-level.t
 roast/S04-exceptions/control_across_runloop.t
+roast/S04-phasers/begin.t
 roast/S04-phasers/end.t
 roast/S04-phasers/first.t
 roast/S04-statement-modifiers/for.t
