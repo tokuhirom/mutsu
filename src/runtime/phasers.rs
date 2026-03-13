@@ -525,6 +525,14 @@ fn reorder_at_level(stmts: &mut Vec<Stmt>, extra_check: Vec<Stmt>, extra_init: V
             continue;
         }
 
+        // Hoist HasDecl (class attribute declarations) before BEGIN,
+        // because in Raku `has` is a compile-time construct and BEGIN
+        // blocks may reference attributes via `::?CLASS.^attributes`.
+        if matches!(&stmt, Stmt::HasDecl { .. }) {
+            var_decls.push(stmt);
+            continue;
+        }
+
         let mut stmt = stmt;
         extract_begin_from_stmt(&mut stmt, &mut begin_expr);
         rest.push(stmt);
