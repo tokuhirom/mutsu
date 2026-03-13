@@ -445,17 +445,15 @@ fn lift_phasers_from_closure_stmt(stmt: &mut Stmt, check: &mut Vec<Stmt>, init: 
 /// Hoists VarDecls, then BEGIN (forward), CHECK (reverse), INIT (forward), rest.
 fn reorder_at_level(stmts: &mut Vec<Stmt>, extra_check: Vec<Stmt>, extra_init: Vec<Stmt>) {
     let mut var_decls: Vec<Stmt> = Vec::new();
-    let mut begin: Vec<Vec<Stmt>> = Vec::new();
     let mut check: Vec<Vec<Stmt>> = Vec::new();
     let mut init: Vec<Vec<Stmt>> = Vec::new();
-    let mut begin_expr: Vec<Stmt> = Vec::new();
     let mut rest: Vec<Stmt> = Vec::new();
 
     let has_phasers = stmts.iter().any(|s| {
         matches!(
             s,
             Stmt::Phaser {
-                kind: PhaserKind::Begin | PhaserKind::Check | PhaserKind::Init,
+                kind: PhaserKind::Check | PhaserKind::Init,
                 ..
             }
         )
@@ -471,7 +469,12 @@ fn reorder_at_level(stmts: &mut Vec<Stmt>, extra_check: Vec<Stmt>, extra_init: V
         if let Stmt::Phaser { kind, body } = &stmt {
             match kind {
                 PhaserKind::Begin => {
-                    begin.push(body.clone());
+                    // BEGIN phasers are kept in-place (not extracted).
+                    // They are already compiled inline by the compiler and
+                    // run at the correct time. Extracting them breaks array/hash
+                    // container assignments because the compiler allocates
+                    // different local slots for the inlined body vs the rest.
+                    rest.push(stmt);
                     continue;
                 }
                 PhaserKind::Check => {
@@ -486,7 +489,8 @@ fn reorder_at_level(stmts: &mut Vec<Stmt>, extra_check: Vec<Stmt>, extra_init: V
             }
         }
 
-        // Hoist VarDecl
+        // Hoist VarDecl (bare declarations) so that CHECK/INIT blocks
+        // can reference variables declared later in source order.
         if let Stmt::VarDecl {
             name,
             expr: init_expr,
@@ -514,48 +518,21 @@ fn reorder_at_level(stmts: &mut Vec<Stmt>, extra_check: Vec<Stmt>, extra_init: V
                 where_constraint: where_constraint.clone(),
             });
             if has_init {
-                let mut assign = Stmt::Assign {
+                rest.push(Stmt::Assign {
                     name: name.clone(),
                     expr: init_expr.clone(),
                     op: AssignOp::Assign,
-                };
-                extract_begin_from_stmt(&mut assign, &mut begin_expr);
-                rest.push(assign);
+                });
             }
             continue;
         }
 
-        // Hoist compile-time declarations before BEGIN blocks.
-        // In Raku, `use`, `sub`, `class`, `role`, `module`, `has`, and
-        // other declarations are compile-time constructs visible to BEGIN.
-        if matches!(
-            &stmt,
-            Stmt::HasDecl { .. }
-                | Stmt::Use { .. }
-                | Stmt::SubDecl { .. }
-                | Stmt::TokenDecl { .. }
-                | Stmt::RuleDecl { .. }
-                | Stmt::ProtoToken { .. }
-                | Stmt::Package { .. }
-                | Stmt::ClassDecl { .. }
-                | Stmt::RoleDecl { .. }
-                | Stmt::EnumDecl { .. }
-        ) {
-            var_decls.push(stmt);
-            continue;
-        }
-
-        let mut stmt = stmt;
-        extract_begin_from_stmt(&mut stmt, &mut begin_expr);
         rest.push(stmt);
     }
 
-    // Reconstruct
+    // Reconstruct: VarDecls first, then CHECK (reverse), INIT (forward),
+    // then rest (which includes BEGIN phasers in their original order).
     stmts.extend(var_decls);
-    for body in &begin {
-        stmts.extend(body.iter().cloned());
-    }
-    stmts.extend(begin_expr);
     for body in check.iter().rev() {
         stmts.extend(body.iter().cloned());
     }
@@ -583,97 +560,6 @@ fn stmt_has_phaser_expr(stmt: &Stmt) -> bool {
 
 fn expr_has_phaser_expr(expr: &Expr) -> bool {
     matches!(expr, Expr::PhaserExpr { .. })
-}
-
-/// Extract BEGIN PhaserExpr from a statement.
-fn extract_begin_from_stmt(stmt: &mut Stmt, begin: &mut Vec<Stmt>) {
-    match stmt {
-        Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
-            extract_begin_from_expr(e, begin)
-        }
-        Stmt::VarDecl { expr: e, .. } | Stmt::Assign { expr: e, .. } => {
-            extract_begin_from_expr(e, begin)
-        }
-        Stmt::Say(es) | Stmt::Print(es) | Stmt::Note(es) => {
-            for e in es.iter_mut() {
-                extract_begin_from_expr(e, begin);
-            }
-        }
-        _ => {}
-    }
-}
-
-/// Extract BEGIN PhaserExpr from an expression, replacing with temp var.
-fn extract_begin_from_expr(expr: &mut Expr, begin: &mut Vec<Stmt>) {
-    if matches!(
-        expr,
-        Expr::PhaserExpr {
-            kind: PhaserKind::Begin,
-            ..
-        }
-    ) {
-        let temp_name = next_temp_name();
-        let old = std::mem::replace(expr, Expr::Var(temp_name.clone()));
-        if let Expr::PhaserExpr { body, .. } = old {
-            begin.push(Stmt::VarDecl {
-                name: temp_name.clone(),
-                expr: Expr::Literal(crate::value::Value::Nil),
-                type_constraint: None,
-                is_state: false,
-                is_our: false,
-                is_dynamic: false,
-                is_export: false,
-                export_tags: vec![],
-                custom_traits: vec![],
-                where_constraint: None,
-            });
-            begin.push(Stmt::Assign {
-                name: temp_name,
-                expr: Expr::DoBlock { body, label: None },
-                op: AssignOp::Assign,
-            });
-        }
-        return;
-    }
-    // Recurse
-    match expr {
-        Expr::Binary { left, right, .. } => {
-            extract_begin_from_expr(left, begin);
-            extract_begin_from_expr(right, begin);
-        }
-        Expr::Unary { expr: inner, .. } | Expr::PostfixOp { expr: inner, .. } => {
-            extract_begin_from_expr(inner, begin);
-        }
-        Expr::MethodCall { target, args, .. } => {
-            extract_begin_from_expr(target, begin);
-            for a in args.iter_mut() {
-                extract_begin_from_expr(a, begin);
-            }
-        }
-        Expr::Call { args, .. } => {
-            for a in args.iter_mut() {
-                extract_begin_from_expr(a, begin);
-            }
-        }
-        Expr::Ternary {
-            cond,
-            then_expr,
-            else_expr,
-        } => {
-            extract_begin_from_expr(cond, begin);
-            extract_begin_from_expr(then_expr, begin);
-            extract_begin_from_expr(else_expr, begin);
-        }
-        Expr::AssignExpr { expr: inner, .. } => {
-            extract_begin_from_expr(inner, begin);
-        }
-        Expr::ArrayLiteral(es) | Expr::BracketArray(es) | Expr::StringInterpolation(es) => {
-            for e in es.iter_mut() {
-                extract_begin_from_expr(e, begin);
-            }
-        }
-        _ => {}
-    }
 }
 
 // ── Recursion into child blocks ────────────────────────────────────
