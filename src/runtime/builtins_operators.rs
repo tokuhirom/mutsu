@@ -411,6 +411,8 @@ impl Interpreter {
                 | "⊇"
                 | "⊈"
                 | "⊉"
+                | "⊄"
+                | "⊅"
                 | "(<)"
                 | "⊂"
                 | "(>)"
@@ -1056,6 +1058,18 @@ impl Interpreter {
             return Expr::Unary {
                 op: TokenKind::Bang,
                 expr: Box::new(Self::build_infix_expr("⊇", left, right)),
+            };
+        }
+        if op == "⊄" {
+            return Expr::Unary {
+                op: TokenKind::Bang,
+                expr: Box::new(Self::build_infix_expr("⊂", left, right)),
+            };
+        }
+        if op == "⊅" {
+            return Expr::Unary {
+                op: TokenKind::Bang,
+                expr: Box::new(Self::build_infix_expr("⊃", left, right)),
             };
         }
         Expr::Binary {
