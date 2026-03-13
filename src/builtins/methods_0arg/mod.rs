@@ -1088,6 +1088,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
                 return Some(Ok(Value::array(kv)));
             }
+            "elems" => {
+                // Return the number of positional captures
+                let count = match attributes.get("list") {
+                    Some(Value::Array(list, _)) => list.len(),
+                    _ => 0,
+                };
+                return Some(Ok(Value::Int(count as i64)));
+            }
             "ast" | "made" => {
                 return Some(Ok(attributes.get("ast").cloned().unwrap_or(Value::Nil)));
             }
