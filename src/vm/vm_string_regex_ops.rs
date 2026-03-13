@@ -74,86 +74,6 @@ fn normalize_subst_replacement(template: &str) -> String {
     out
 }
 
-/// Expand `$N` capture variable placeholders in a replacement template.
-/// `$0` is the first capture group (Raku numbering).
-/// Also evaluates simple closure patterns like `{uc $N}` and top-level `uc $N`.
-fn expand_capture_vars(template: &str, captures: &[String]) -> String {
-    // First, expand $N references
-    let expanded = expand_dollar_vars(template, captures);
-    // Then evaluate {func arg} closures
-    evaluate_closures(&expanded)
-}
-
-fn expand_dollar_vars(template: &str, captures: &[String]) -> String {
-    let mut out = String::new();
-    let mut chars = template.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '$' {
-            let mut digits = String::new();
-            while let Some(&d) = chars.peek() {
-                if d.is_ascii_digit() {
-                    digits.push(d);
-                    chars.next();
-                } else {
-                    break;
-                }
-            }
-            if !digits.is_empty() {
-                if let Ok(idx) = digits.parse::<usize>()
-                    && let Some(val) = captures.get(idx)
-                {
-                    out.push_str(val);
-                }
-            } else {
-                out.push('$');
-            }
-        } else {
-            out.push(ch);
-        }
-    }
-    out
-}
-
-/// Evaluate simple closure patterns in a string:
-/// `{uc text}` → uppercase, `{lc text}` → lowercase, etc.
-/// Also handles top-level `uc text` / `lc text` without braces.
-fn evaluate_closures(input: &str) -> String {
-    let trimmed = input.trim();
-    // Top-level: "uc text" or "lc text" (no braces)
-    if let Some(rest) = trimmed.strip_prefix("uc ") {
-        return rest.to_uppercase();
-    }
-    if let Some(rest) = trimmed.strip_prefix("lc ") {
-        return rest.to_lowercase();
-    }
-    // Process {uc ...} and {lc ...} closures within the string
-    let mut out = String::new();
-    let mut rest = input;
-    while let Some(brace_start) = rest.find('{') {
-        out.push_str(&rest[..brace_start]);
-        let after_brace = &rest[brace_start + 1..];
-        if let Some(brace_end) = after_brace.find('}') {
-            let inner = after_brace[..brace_end].trim();
-            if let Some(arg) = inner.strip_prefix("uc ") {
-                out.push_str(&arg.trim().to_uppercase());
-            } else if let Some(arg) = inner.strip_prefix("lc ") {
-                out.push_str(&arg.trim().to_lowercase());
-            } else {
-                // Unknown closure, keep as-is
-                out.push('{');
-                out.push_str(&after_brace[..brace_end]);
-                out.push('}');
-            }
-            rest = &after_brace[brace_end + 1..];
-        } else {
-            out.push_str(&rest[brace_start..]);
-            rest = "";
-        }
-    }
-    out.push_str(rest);
-    out
-}
-
 impl VM {
     fn canonical_infix_lookup_name(name: &str) -> std::borrow::Cow<'_, str> {
         if name == "(+)" {
@@ -169,7 +89,6 @@ impl VM {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_subst_op(
         &mut self,
         code: &CompiledCode,
@@ -178,8 +97,6 @@ impl VM {
         samemark: bool,
         nth_idx: Option<u32>,
         x_count: Option<u32>,
-        global: bool,
-        perl5: bool,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
         let replacement = normalize_subst_replacement(Self::const_str(code, replacement_idx));
@@ -192,51 +109,9 @@ impl VM {
             .cloned()
             .unwrap_or(Value::Nil);
         let text = target.to_string_value();
-        let has_capture_vars = replacement.contains('$');
 
-        // P5 path with capture-aware matching
-        #[cfg(feature = "pcre2")]
-        if perl5 && has_capture_vars {
-            let out = if global {
-                let caps = self
-                    .interpreter
-                    .regex_match_all_with_captures_p5(&pattern, &text);
-                if caps.is_empty() {
-                    self.stack.push(Value::Nil);
-                    return Ok(());
-                }
-                Self::apply_capture_substitutions(&text, &caps, &replacement)
-            } else {
-                let cap = self
-                    .interpreter
-                    .regex_match_with_captures_p5(&pattern, &text);
-                if let Some(cap) = cap {
-                    Self::apply_capture_substitutions(&text, &[cap], &replacement)
-                } else {
-                    self.stack.push(Value::Nil);
-                    return Ok(());
-                }
-            };
-            let result = Value::str(out);
-            self.interpreter.env_mut().insert("_".to_string(), result);
-            self.stack.push(Value::Bool(true));
-            return Ok(());
-        }
-
-        if !global && nth_spec.is_none() && x_count.is_none() {
-            let found = if perl5 {
-                #[cfg(feature = "pcre2")]
-                {
-                    self.interpreter.regex_find_first_p5_bridge(&pattern, &text)
-                }
-                #[cfg(not(feature = "pcre2"))]
-                {
-                    self.interpreter.regex_find_first_bridge(&pattern, &text)
-                }
-            } else {
-                self.interpreter.regex_find_first_bridge(&pattern, &text)
-            };
-            if let Some((start, end)) = found {
+        if nth_spec.is_none() && x_count.is_none() {
+            if let Some((start, end)) = self.interpreter.regex_find_first_bridge(&pattern, &text) {
                 let out = Self::apply_substitutions(&text, &[(start, end)], &replacement, samemark);
                 let result = Value::str(out);
                 self.interpreter.env_mut().insert("_".to_string(), result);
@@ -247,23 +122,8 @@ impl VM {
             return Ok(());
         }
 
-        let all_matches = if perl5 {
-            #[cfg(feature = "pcre2")]
-            {
-                self.interpreter.regex_find_all_p5_bridge(&pattern, &text)
-            }
-            #[cfg(not(feature = "pcre2"))]
-            {
-                self.interpreter.regex_find_all_bridge(&pattern, &text)
-            }
-        } else {
-            self.interpreter.regex_find_all_bridge(&pattern, &text)
-        };
-        let ranges = if global {
-            all_matches
-        } else {
-            Self::select_substitution_ranges(&all_matches, nth_spec.as_deref(), x_count)?
-        };
+        let all_matches = self.interpreter.regex_find_all_bridge(&pattern, &text);
+        let ranges = Self::select_substitution_ranges(&all_matches, nth_spec.as_deref(), x_count)?;
         if ranges.is_empty() {
             self.stack.push(Value::Nil);
             return Ok(());
@@ -277,7 +137,6 @@ impl VM {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_non_destructive_subst_op(
         &mut self,
         code: &CompiledCode,
@@ -286,8 +145,6 @@ impl VM {
         samemark: bool,
         nth_idx: Option<u32>,
         x_count: Option<u32>,
-        global: bool,
-        perl5: bool,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
         let replacement = normalize_subst_replacement(Self::const_str(code, replacement_idx));
@@ -301,20 +158,8 @@ impl VM {
             .unwrap_or(Value::Nil);
         let text = target.to_string_value();
 
-        if !global && nth_spec.is_none() && x_count.is_none() {
-            let found = if perl5 {
-                #[cfg(feature = "pcre2")]
-                {
-                    self.interpreter.regex_find_first_p5_bridge(&pattern, &text)
-                }
-                #[cfg(not(feature = "pcre2"))]
-                {
-                    self.interpreter.regex_find_first_bridge(&pattern, &text)
-                }
-            } else {
-                self.interpreter.regex_find_first_bridge(&pattern, &text)
-            };
-            if let Some((start, end)) = found {
+        if nth_spec.is_none() && x_count.is_none() {
+            if let Some((start, end)) = self.interpreter.regex_find_first_bridge(&pattern, &text) {
                 let out = Self::apply_substitutions(&text, &[(start, end)], &replacement, samemark);
                 self.stack.push(Value::str(out));
             } else {
@@ -323,23 +168,8 @@ impl VM {
             return Ok(());
         }
 
-        let all_matches = if perl5 {
-            #[cfg(feature = "pcre2")]
-            {
-                self.interpreter.regex_find_all_p5_bridge(&pattern, &text)
-            }
-            #[cfg(not(feature = "pcre2"))]
-            {
-                self.interpreter.regex_find_all_bridge(&pattern, &text)
-            }
-        } else {
-            self.interpreter.regex_find_all_bridge(&pattern, &text)
-        };
-        let ranges = if global {
-            all_matches
-        } else {
-            Self::select_substitution_ranges(&all_matches, nth_spec.as_deref(), x_count)?
-        };
+        let all_matches = self.interpreter.regex_find_all_bridge(&pattern, &text);
+        let ranges = Self::select_substitution_ranges(&all_matches, nth_spec.as_deref(), x_count)?;
         if ranges.is_empty() {
             self.stack.push(Value::str(text));
             return Ok(());
@@ -418,30 +248,6 @@ impl VM {
             prev_end_b = end_b;
         }
         out.push_str(&text[prev_end_b..]);
-        out
-    }
-
-    /// Apply substitutions with capture variable expansion.
-    /// Each match has its own captures, so the replacement template is expanded
-    /// per-match with the corresponding capture groups.
-    /// Note: RegexCaptures from P5 matching uses byte offsets.
-    fn apply_capture_substitutions(
-        text: &str,
-        captures: &[runtime::RegexCaptures],
-        replacement_template: &str,
-    ) -> String {
-        let mut out = String::new();
-        let mut prev_end = 0usize; // byte offset
-        for cap in captures {
-            // cap.from and cap.to are byte offsets for P5 captures
-            let start = cap.from;
-            let end = cap.to;
-            out.push_str(&text[prev_end..start]);
-            let expanded = expand_capture_vars(replacement_template, &cap.positional);
-            out.push_str(&expanded);
-            prev_end = end;
-        }
-        out.push_str(&text[prev_end..]);
         out
     }
 

@@ -2,173 +2,194 @@
 
 Goal: Build a practical Raku (Perl 6) runtime in Rust that is faster than MoarVM.
 
-Current status (2026-03): roast 580/1463 passing (39.6%). Hybrid bytecode VM + tree-walker.
+Current status (2026-03-13): roast 675/1463 whitelisted (46%), 662 passing in latest run.
+Hybrid architecture: bytecode VM with interpreter bridge fully eliminated.
 
 ---
 
-## Completed milestones
+## Completed
 
-Phase 1-4 (language core, OOP, regex/grammar basics, advanced features) are largely done.
-See `docs/vm-compilation-history.md` for detailed VM compilation progress log.
+Phase 1-4 (language core, OOP, regex/grammar basics, advanced features) are done.
+See `docs/vm-compilation-history.md` for VM compilation history.
 
-Key completed items:
-- All basic types (Int, Num, Str, Bool, Rat, Complex, Array, Hash, Set/Bag/Mix, Enum, Junction, Range, Pair)
-- Full operator set (arithmetic, string, comparison, logical, bitwise, meta, hyper, reduction)
-- Control flow (if/unless/while/for/loop/given/when/gather/take/try/CATCH)
-- OOP (class, role, inheritance with C3 MRO, multi method, BUILD/TWEAK, enum, subset)
-- Basic regex/grammar (rx/m/s, character classes, quantifiers, anchors, named captures, token/rule/grammar, proto token, make/made)
-- Phasers (BEGIN, END, ENTER, LEAVE, FIRST, NEXT, LAST)
-- Concurrency scaffolding (Promise, Supply, Channel, react/whenever, Proc::Async)
-- Bytecode VM with native dispatch for ~50 binary ops, ~40 functions, ~50 methods
-- Scalar container model
-- Symbol table
+- All basic types, full operator set, control flow, OOP (class/role/enum/subset), basic regex/grammar
+- Phasers (BEGIN, END, ENTER, LEAVE, FIRST, NEXT, LAST), concurrency scaffolding
+- Bytecode VM with native dispatch, interpreter bridge fully removed
+- Signature system (where clauses, destructuring, capture params, is copy/rw, sub-signatures, introspection, callframe/caller/wrap)
+- Container model (Proxy, auto-vivification, typed containers, temp/let, .VAR)
+- Type system (allomorphs, type objects, coercion types, subset where, typed assignment)
+- Module system (export, import, require, unit, EXPORT convention, CompUnit, precompilation)
+- Grammar/regex (action classes, inheritance, protoregex, LTM, closures in regex, named captures)
+- Class system (re-dispatch, anonymous classes, parameterized roles, trusts, augment, MOP, FALLBACK, handles, is required/built)
+- Concurrency (non-blocking await, scheduler, Lock/Lock::Async, atomics, Supply combinators, Supplier::Preserving, hyper/race)
+- Memory: Arc-wrapped heap types, WeakSub cycle-breaking, scoped call frames
 
 ---
 
-## Architectural milestones (roast grinding alone won't surface these)
+## High-impact blockers (blocker analysis 2026-03-13)
 
-These are systemic improvements that unlock large batches of roast tests at once.
-Priority order reflects dependency and impact.
+Remaining 545 failing tests cluster around a few systemic gaps.
+Fixing these unlocks tests across many synopses at once.
 
-### A1. Signature/parameter system overhaul (S06: 2/94 passing)
+### B1. Phasers: INIT, CHECK, and phaser ordering (~20+ tests)
 
-The single largest blocker. Many S06 tests require features beyond basic positional/named params.
+14 S04-phasers tests fail. INIT/CHECK are almost completely broken.
+Phasers also appear in S06, S12, S04-statements tests as prerequisites.
 
-- [x] `where` clauses on parameters (`Int $x where * > 0`)
-- [x] Destructuring signatures (`sub foo([$a, $b]) { }`, `@a [$x, *@rest]`)
-- [x] Capture parameters (`|c`)
-- [x] `is copy` / `is rw` parameter traits
-- [x] Sub-signatures (`sub foo(Int :x($val)) { }`)
-- [x] Proper `Signature` / `Parameter` introspection objects
-- [x] `callframe` / `caller` / `callwith` / `nextsame` / `nextwith`
-- [x] `wrap` / `unwrap`
+- [ ] INIT phaser (run at beginning of runtime, after all CHECK/BEGIN)
+- [ ] CHECK phaser (run at end of compile time, reverse order)
+- [ ] Correct phaser ordering (BEGIN forward, CHECK reverse, INIT forward)
+- [ ] Phaser rvalue semantics (`my $x = BEGIN { 42 }`)
+- [ ] KEEP/UNDO phasers
+- [ ] `once` phaser
+
+### B2. Type constraints and signature strictness (~25+ tests)
+
+S06-signature (15 fail), S02-types (32 fail), S09-typed-arrays (13 fail).
+
+- [ ] Smiley parameters (`:D` / `:U` type constraints)
+- [ ] Type capture (`::T` in signatures)
+- [ ] Signature type-checking enforcement (reject wrong-type args with proper X::TypeCheck)
+- [ ] Native int/uint overflow and bounds checking
+- [ ] `is copy` trait on non-scalar parameters
+- [ ] Multiple signatures on a single sub
 - [ ] Proper `return` as control exception (currently uses Rust panic-like flow)
-- [ ] Tail call optimization (deep recursion crashes)
 
-### A2. Container model completion
+### B3. Missing methods on core types (~30+ tests)
 
-Scalar containers are done. Array/Hash container semantics need work.
+27 tests hit `Unknown method` and stop mid-execution.
+These are individually small but collectively a large blocker.
 
-- [x] `Proxy` container (for `is rw` accessor return values)
-- [x] Array auto-vivification (`@a[5] = 42` on empty array)
-- [x] Hash auto-vivification (`%h<a><b> = 1`)
-- [x] `temp` / `let` variable save/restore (dynamic scope)
-- [x] Typed containers (`my Int @a`, `my Str %h`)
-- [x] Container `.VAR` introspection
+- [ ] `.can` (introspection)
+- [ ] `.does` (role checking)
+- [ ] `.resume` (exception resumption)
+- [ ] `.pending` (Promise)
+- [ ] `.dynamic` (variable introspection)
+- [ ] `.decode` (Buf)
+- [ ] `.push` on shaped/multi-dimensional arrays
+- [ ] `.invert` (Bag/Set/Hash)
+- [ ] `.count-only` (iterator protocol)
+- [ ] `.AT-POS` / `.EXISTS-POS` (custom subscript protocol)
 
-### A3. Type system deepening (S02: 27/146 passing)
+### B4. OOP completeness (~55 tests across S12, S14)
 
-- [x] Allomorphic types (`IntStr`, `NumStr`, `RatStr`, `ComplexStr`)
-- [x] Type objects vs instances (proper undefined-ness: `Int` is a type object)
-- [x] `where` clauses on `subset` (partially done)
-- [x] Coercion types (`Int(Str)` as type constraint, not just explicit coercion)
-- [x] `is` trait on variables (`my $x is default(42)`)
-- [x] Typed variable assignment enforcement at runtime
+S12 (55 fail), S14 (16 fail). Many subtests pass but runtime errors stop execution.
 
-### A4. Module/package system (S10: 0/9, S11: 3/22 passing)
+- [ ] Class-level `is rw` (all attributes writable)
+- [ ] Namespaced class construction (`A::B.new`)
+- [ ] Attribute introspection completeness (`.^attributes` listing)
+- [ ] `augment class` improvements (augmenting with new attributes)
+- [ ] Role conflict detection and error reporting
+- [ ] Parameterized role mixin
+- [ ] Destruction/GC hooks (DESTROY)
 
-- [x] `export` / `is export` trait with tag support
-- [x] `import` with selective import (`use Foo :bar`)
-- [x] `require` at runtime (dynamic module loading)
-- [x] `unit module` / `unit class` / `unit role`
-- [x] Proper `EXPORT` sub convention (`EXPORT::TAG::symbol` namespace population)
-- [x] `CompUnit` / repository API — `CompUnit::DependencySpecification`, `CompUnit::Repository` role, `$*REPO`, `$*REPO.need()` returning CompUnit with `.precompiled`
-  - Remaining: `.handle.globalish-package`, dependency-aware invalidation
-- [x] Precompilation — serde-based AST cache, mtime + version invalidation, `--no-precomp` flag, `no precompilation` pragma
-  - Remaining: dependency-aware invalidation (recompile when transitive deps change)
+### B5. Supply/react/whenever completeness (~27 tests)
 
-### A5. Grammar/regex completion (S05: 10/98 passing)
+S17-supply has 27 failures. Basic supply works but many combinators and edge cases fail.
 
-- [x] Action classes (method dispatch on grammar rule match)
-- [x] Grammar inheritance (`is Grammar`)
-- [x] Full protoregex with longest-token matching
-- [ ] Regex modifiers (`:g`, `:i`, `:ii`, `:s`, `:ss`, `:ratchet`, `:overlap`, `:exhaustive`)
-- [x] Interpolating closures in regex (`/ { code } /`)
-- [x] `$/` proper binding after match
-- [ ] Match object full API (`.caps`, `.chunks` missing; positional captures done)
-- [x] Named capture alias (`$<name>=<rule>`)
-- [ ] Lookbehind (`<!before>`, `<!after>`)
+- [ ] Supply error propagation and done semantics
+- [ ] Supply backpressure
+- [ ] `supply`/`react` block scoping issues
+- [ ] Tap management (close, drain)
 
-### A6. Class system completion (S12: 5/101 passing)
+### B6. IO and process (~32 tests)
 
-- [x] `nextsame` / `nextwith` / `callsame` / `callwith` re-dispatch
-- [x] Anonymous classes (`class { }`)
-- [x] Parameterized roles (`role Foo[Type] { }`)
-- [x] `trusts` declarator
-- [x] `augment class` (monkey-patching)
-- [x] Meta-object protocol (`.^methods`, `.^attributes`, `.^mro` etc.)
-  - Remaining: `.^attributes` not fully listing all attributes
-- [x] `FALLBACK` method
-- [x] Full `handles` delegation (with rename, exclude)
-- [x] Attribute `is required` / `is built` traits
+S32-io has 32 failures. File/directory operations and process management.
 
-### A7. Concurrency overhaul (S17: 5/99 passing)
+- [ ] IO::Path methods completeness (`.resolve`, `.cleanup`, `.parts`)
+- [ ] IO::Handle read modes (binary, encodings)
+- [ ] Proc and Proc::Async completeness
+- [ ] File test operators (`-e`, `-f`, `-d` etc.)
 
-Current implementation uses blocking OS threads. Raku's concurrency model needs:
+### B7. Regex/grammar remaining gaps (~41 tests)
 
-- [x] Non-blocking `await` (green threads or async runtime integration)
-- [x] Scheduler (`Promise.in`, `Promise.at`, `Supply.interval`)
-- [x] `Lock` / `Lock::Async`
-- [x] Atomic operations (`cas`, `⚛++`)
-- [x] `Supply` combinators (`.batch`, `.grep`, `.map`, `.zip`, `.merge`, `.throttle`)
-- [x] `Supplier` / `Supplier::Preserving` (basic)
-- [x] `hyper` / `race` (basic) (parallel iteration)
+S05 has 41 failures. Core regex works but advanced features missing.
+
+- [ ] Match object `.caps` / `.chunks`
+- [ ] Lookbehind assertions (`<!after>`)
+- [ ] `~` tilde goal matching in regex
+- [ ] Grammar rule arguments
+- [ ] Regex interpolation of arrays/variables
+- [ ] Remaining `:Perl5` modifier edge cases
+
+---
+
+## Low-hanging fruit (quick wins)
+
+### Near-passing tests (1 subtest away)
+
+| Test | Status | Blocker |
+|------|--------|---------|
+| S04-phasers/begin.t | 12/13 | BEGIN before parse error |
+| S04-statements/redo.t | 11/12 | edge case |
+| S03-junctions/misc.t | 108/155 | 1 failing subtest |
+| S05-capture/named.t | 10/11 | 1 failing subtest |
+| S02-literals/fmt-interpolation.t | 10/11 | 1 failing subtest |
+| S03-operators/orelse.t | 11/16 | 1 failing subtest |
+| S06-signature/unpack-array.t | 10/15 | 1 failing subtest |
+
+### Single-fix unlocks (0 failing subtests, runtime error stops execution)
+
+| Test | Status | Fix needed |
+|------|--------|------------|
+| S03-operators/set_proper_subset.t | 1160/1742 | Add `⊄` operator |
+| S03-operators/buf.t | 174/194 | X::Assignment::RO edge case |
+| S03-operators/relational.t | 60/179 | Numeric(Sub:D) coercion |
+| S03-junctions/misc.t | 108/155 | junction autothread in smartmatch |
+| S06-multi/redispatch.t | 10/14 | `samewith` function |
+| S06-multi/positional-vs-named.t | 28/31 | proto sub matching |
+| S06-traits/native-is-rw.t | 30/48 | method dispatch with native params |
+| S11-modules/export.t | 38/59 | missing method `.b` |
+| S02-types/mixed_multi_dimensional.t | 43/80 | `.push` on shaped arrays |
+
+---
+
+## Roast per-synopsis status (2026-03-13)
+
+| Synopsis | Domain              | Pass | Fail | Total | Rate |
+|----------|---------------------|------|------|-------|------|
+| S02      | Literals, types     |   69 |   58 |   127 |  54% |
+| S03      | Operators           |   74 |   41 |   115 |  64% |
+| S04      | Control, phasers    |   32 |   39 |    71 |  45% |
+| S05      | Regex, grammar      |   52 |   41 |    93 |  56% |
+| S06      | Subs, signatures    |   49 |   36 |    85 |  58% |
+| S07      | Iterators           |    4 |    2 |     6 |  67% |
+| S09      | Arrays, subscripts  |    2 |   13 |    15 |  13% |
+| S10      | Packages            |    3 |    6 |     9 |  33% |
+| S11      | Modules             |   12 |   10 |    22 |  55% |
+| S12      | Classes, roles      |   39 |   56 |    95 |  41% |
+| S14      | Roles               |    7 |   16 |    23 |  30% |
+| S15      | Unicode/NFG         |   63 |   16 |    79 |  80% |
+| S16      | IO                  |   19 |   18 |    37 |  51% |
+| S17      | Concurrency         |   49 |   50 |    99 |  49% |
+| S19      | CLI                 |    4 |    4 |     8 |  50% |
+| S24      | Testing             |   12 |    5 |    17 |  71% |
+| S26      | Pod                 |    9 |   18 |    27 |  33% |
+| S29      | Functions           |    8 |    6 |    14 |  57% |
+| S32      | Built-in types      |  131 |  127 |   258 |  51% |
 
 ---
 
 ## Performance roadmap
 
-### P1. Memory management / GC
+### P1. Memory — remaining
 
-Design doc: `docs/gc.md`
+- [ ] Cycle collector (for circular object references; trial deletion or epoch-based on top of Arc)
 
-#### Phase 1: Arc-wrap heap types (cheap clone via refcount bump)
-
-- [x] Phase 1a: Env (CoW `Arc<HashMap>` wrapper — `src/env.rs`)
-- [x] Array (`Arc<Vec<Value>>`)
-- [x] Hash (`Arc<HashMap<String, Value>>`)
-- [x] Sub (`Arc<SubData>`)
-- [x] Instance attributes (`Arc<HashMap<String, Value>>`)
-- [x] Set / Bag / Mix (`Arc<HashSet>` / `Arc<HashMap>`)
-- [x] Seq / Slip / Junction values (`Arc<Vec<Value>>`)
-- [x] Str (`Arc<String>`) — PR #748
-- [x] BigInt (`Arc<NumBigInt>`)
-- [x] GenericRange (`Arc<Value>`)
-- [x] Mixin (`Arc<Value>, Arc<HashMap>`)
-- [x] Regex / RegexWithAdverbs (pattern `Arc<String>`)
-
-#### Phase 2: WeakSub for cycle-breaking
-
-- [x] `WeakSub(Weak<SubData>)` for `&?BLOCK` self-references
-
-#### Phase 3: Remaining memory issues
-
-- [x] Scoped call frames — locals authoritative for simple vars with lazy env sync; `SetLocal` fast path skips env writes, `locals_dirty` flag triggers deferred flush before closure captures and interpreter bridge calls (#762)
-- [ ] Cycle collector — for user-created circular object references (e.g. two instances pointing to each other); trial deletion or epoch-based approach on top of Arc
-
-### P2. Interpreter bridge elimination
-
-Remove remaining tree-walker fallbacks in the VM:
-- [x] Closure compilation infrastructure (Lambda, AnonSub, AnonSubParams, BlockClosure bodies compiled to bytecode and stored in `SubData.compiled_code`)
-- [x] Closure execution fast path (`call_compiled_closure` enabled for VM-internal closure calls; leave targeting fixed, `.assuming()` support added)
-- [x] Class/role declaration compilation
-- [x] Full method dispatch compilation
-- [x] Remove `InterpretExpr` / `InterpretStmt` opcodes entirely
-
-### P3. Optimization pipeline
+### P2. Optimization pipeline (future)
 
 - [ ] Constant folding
 - [ ] Dead code elimination
 - [ ] Inlining (small subs)
 - [ ] Native int/num (avoid boxing for hot paths)
-- [ ] String rope / CoW (reduce clone overhead)
+- [ ] String rope / CoW
 - [ ] Type inference (speculative optimization)
 - [ ] Escape analysis
 - [ ] Register-based VM or native code generation
 
 ---
 
-## Practicality
+## Practicality (future)
 
 - [ ] REPL
 - [ ] Improved error messages (with source location, suggestions)
@@ -178,31 +199,10 @@ Remove remaining tree-walker fallbacks in the VM:
 
 ---
 
-## Ongoing: Roast test coverage
-
-The primary day-to-day work. Use `pick-next-roast.sh` to select tests.
-Current per-synopsis status (pass/total with known failures):
-
-| Synopsis | Domain                    | Pass | Fail | Notes |
-|----------|---------------------------|------|------|-------|
-| S02      | Literals, types           |   27 |  119 | Allomorphs, type objects |
-| S03      | Operators                 |   16 |  109 | Operator overloading, edge cases |
-| S04      | Control, phasers          |    9 |   68 | `state`, full CATCH, phasers |
-| S05      | Regex, grammar            |   10 |   88 | Action classes, modifiers |
-| S06      | Subs, signatures          |    2 |   92 | Biggest gap — see A1 |
-| S09      | Arrays, subscripts        |    0 |   22 | Subscript adverbs |
-| S10      | Packages                  |    0 |    9 | See A4 |
-| S12      | Classes, roles            |    5 |   96 | See A6 |
-| S15      | Unicode/NFG               |   54 |   27 | Strongest area |
-| S17      | Concurrency               |    5 |   94 | See A7 |
-| S32      | Built-in types            |   16 |  261 | Largest absolute gap |
-
----
-
 ## Design principles
 
 1. **Correctness first, performance second** — pass roast, then optimize
-2. **Gradual migration** from tree-walking interpreter to full bytecode VM
+2. **Top-down feature implementation** — identify high-impact blockers, implement systematically
 3. **Learn from MoarVM** while leveraging Rust's ownership model
 4. **Prioritize startup speed** (a weakness of MoarVM)
 5. **No stubs or hacks** — every feature must be a genuine, general-purpose implementation
