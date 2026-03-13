@@ -299,10 +299,12 @@ impl VM {
             self.interpreter
                 .set_pending_call_arg_sources(arg_sources.clone());
             let pushed_dispatch = self.interpreter.push_multi_dispatch_frame(&name, &args);
+            self.interpreter.push_samewith_context(&name, None);
             let pkg = self.interpreter.current_package().to_string();
             let cf_auto_fetch = !cf.is_raw;
             let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name);
             self.interpreter.set_pending_call_arg_sources(None);
+            self.interpreter.pop_samewith_context();
             if pushed_dispatch {
                 self.interpreter.pop_multi_dispatch();
             }
@@ -710,6 +712,7 @@ impl VM {
                         if pushed_dispatch {
                             self.interpreter.pop_method_dispatch();
                         }
+                        self.interpreter.pop_method_samewith_context();
                         let (result, new_attrs) = method_result?;
                         if let Some(id) = target_id {
                             self.interpreter.overwrite_instance_bindings_by_identity(
@@ -779,6 +782,7 @@ impl VM {
             if pushed_dispatch {
                 self.interpreter.pop_method_dispatch();
             }
+            self.interpreter.pop_method_samewith_context();
             let (result, new_attrs) = method_result?;
             // Propagate attribute mutations to all bindings of this instance
             if let Some(id) = target_id {
@@ -877,6 +881,7 @@ impl VM {
                         if pushed_dispatch {
                             self.interpreter.pop_method_dispatch();
                         }
+                        self.interpreter.pop_method_samewith_context();
                         let (result, new_attrs) = method_result?;
                         if let Some(id) = target_id {
                             self.interpreter.overwrite_instance_bindings_by_identity(
@@ -942,6 +947,7 @@ impl VM {
             if pushed_dispatch {
                 self.interpreter.pop_method_dispatch();
             }
+            self.interpreter.pop_method_samewith_context();
             let (result, new_attrs) = method_result?;
             if let Some(id) = target_id {
                 self.interpreter.overwrite_instance_bindings_by_identity(

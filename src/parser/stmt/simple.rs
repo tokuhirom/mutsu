@@ -1551,8 +1551,17 @@ pub(super) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     let (rest, body) = block(input)?;
     let (r_ws, _) = ws(rest)?;
-    if r_ws.starts_with('.') && !r_ws.starts_with("..") {
-        // Use AnonSub so the block compiles as a closure value, not inline code
+    // Check for postfix operators on the block:
+    // - `.method(...)` after optional whitespace
+    // - `()` immediately after the block (no newline between `}` and `(`)
+    let has_postfix_dot = r_ws.starts_with('.') && !r_ws.starts_with("..");
+    let has_immediate_call = rest.starts_with('(')
+        || (rest.starts_with([' ', '\t'])
+            && rest.trim_start_matches([' ', '\t']).starts_with('(')
+            && !rest.contains('\n'));
+    if has_postfix_dot || has_immediate_call {
+        // Use AnonSub so the block compiles as a closure value, not inline code.
+        // Handles `{ ... }.method(...)` and `{ ... }()` (immediate closure call).
         let block_expr = Expr::AnonSub { body, is_rw: false };
         let (rest, expr) = super::super::expr::postfix_expr_continue(rest, block_expr)?;
         return parse_statement_modifier(rest, Stmt::Expr(expr));
