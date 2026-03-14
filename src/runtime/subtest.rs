@@ -11,6 +11,8 @@ pub(crate) struct ReactSubscription {
     pub supplier_next_index: usize,
     pub callback: Value,
     pub close_callbacks: Vec<Value>,
+    pub last_callbacks: Vec<Value>,
+    pub quit_callbacks: Vec<Value>,
     pub done: bool,
     /// When true, split incoming chunks into lines before calling the callback.
     pub is_lines: bool,
@@ -19,6 +21,24 @@ pub(crate) struct ReactSubscription {
 }
 
 impl Interpreter {
+    fn split_whenever_body_phasers(body: &[Stmt]) -> (Vec<Stmt>, Vec<Vec<Stmt>>, Vec<Vec<Stmt>>) {
+        let mut main = Vec::new();
+        let mut last = Vec::new();
+        let mut quit = Vec::new();
+        for stmt in body {
+            if let Stmt::Phaser { kind, body } = stmt {
+                match kind {
+                    PhaserKind::Last => last.push(body.clone()),
+                    PhaserKind::Quit => quit.push(body.clone()),
+                    _ => main.push(stmt.clone()),
+                }
+            } else {
+                main.push(stmt.clone());
+            }
+        }
+        (main, last, quit)
+    }
+
     pub(crate) fn begin_subtest(&mut self) -> SubtestContext {
         let parent_test_state = self.test_state.take();
         let parent_output = std::mem::take(&mut self.output);
@@ -159,6 +179,14 @@ impl Interpreter {
                         if let Some(sid) = supply_id
                             && let Some(rx) = take_supply_channel(sid)
                         {
+                            let last_callbacks = items
+                                .get(2)
+                                .and_then(Self::value_array_items)
+                                .unwrap_or_default();
+                            let quit_callbacks = items
+                                .get(3)
+                                .and_then(Self::value_array_items)
+                                .unwrap_or_default();
                             react_subs.push(ReactSubscription {
                                 receiver: Some(rx),
                                 supplier_id: None,
@@ -167,6 +195,8 @@ impl Interpreter {
                                 close_callbacks: Self::extract_supply_on_close_callbacks(
                                     attributes,
                                 ),
+                                last_callbacks,
+                                quit_callbacks,
                                 done: false,
                                 is_lines,
                                 line_buffer: String::new(),
@@ -174,6 +204,14 @@ impl Interpreter {
                             continue;
                         }
                         if let Some(Value::Int(supplier_id)) = attributes.get("supplier_id") {
+                            let last_callbacks = items
+                                .get(2)
+                                .and_then(Self::value_array_items)
+                                .unwrap_or_default();
+                            let quit_callbacks = items
+                                .get(3)
+                                .and_then(Self::value_array_items)
+                                .unwrap_or_default();
                             react_subs.push(ReactSubscription {
                                 receiver: None,
                                 supplier_id: Some(*supplier_id as u64),
@@ -182,6 +220,8 @@ impl Interpreter {
                                 close_callbacks: Self::extract_supply_on_close_callbacks(
                                     attributes,
                                 ),
+                                last_callbacks,
+                                quit_callbacks,
                                 done: false,
                                 is_lines,
                                 line_buffer: String::new(),
@@ -224,6 +264,8 @@ impl Interpreter {
                             supplier_next_index: 0,
                             callback,
                             close_callbacks: Vec::new(),
+                            last_callbacks: Vec::new(),
+                            quit_callbacks: Vec::new(),
                             done: false,
                             is_lines: false,
                             line_buffer: String::new(),
@@ -279,11 +321,17 @@ impl Interpreter {
                         }
                     }
                     if let Some(error) = quit {
+                        let mut handled = false;
+                        for quit_cb in &sub.quit_callbacks {
+                            self.call_supply_quit_handler(quit_cb.clone(), error.clone())?;
+                            handled = true;
+                        }
+                        if handled {
+                            sub.done = true;
+                            continue;
+                        }
                         Self::run_react_close_callbacks(self, &react_subs);
-                        let msg = error.to_string_value();
-                        let mut err = RuntimeError::new(msg);
-                        err.exception = Some(Box::new(error));
-                        return Err(err);
+                        return Err(Self::runtime_error_from_supply_reason(error));
                     }
                     if done {
                         if sub.is_lines && !sub.line_buffer.is_empty() {
@@ -298,6 +346,9 @@ impl Interpreter {
                                     other?;
                                 }
                             }
+                        }
+                        for callback in &sub.last_callbacks {
+                            self.call_sub_value(callback.clone(), Vec::new(), true)?;
                         }
                         sub.done = true;
                     }
@@ -350,14 +401,21 @@ impl Interpreter {
                                 }
                             }
                         }
+                        for callback in &sub.last_callbacks {
+                            self.call_sub_value(callback.clone(), Vec::new(), true)?;
+                        }
                         sub.done = true;
                     }
                     Ok(SupplyEvent::Quit(error)) => {
+                        let mut handled = false;
+                        for quit_cb in &sub.quit_callbacks {
+                            self.call_supply_quit_handler(quit_cb.clone(), error.clone())?;
+                            handled = true;
+                        }
                         sub.done = true;
-                        let msg = error.to_string_value();
-                        let mut err = RuntimeError::new(msg);
-                        err.exception = Some(Box::new(error));
-                        return Err(err);
+                        if !handled {
+                            return Err(Self::runtime_error_from_supply_reason(error));
+                        }
                     }
                     Err(mpsc::RecvTimeoutError::Timeout) => {}
                     Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -379,6 +437,14 @@ impl Interpreter {
             callbacks.to_vec()
         } else {
             Vec::new()
+        }
+    }
+
+    fn value_array_items(value: &Value) -> Option<Vec<Value>> {
+        if let Value::Array(items, ..) = value {
+            Some(items.to_vec())
+        } else {
+            None
         }
     }
 
@@ -425,15 +491,44 @@ impl Interpreter {
         param: &Option<String>,
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
+        let (main_body, last_bodies, quit_bodies) = Self::split_whenever_body_phasers(body);
         let callback = Value::make_sub(
             Symbol::intern(&self.current_package),
             Symbol::intern(""),
             param.iter().cloned().collect(),
             Vec::new(),
-            body.to_vec(),
+            main_body,
             false,
             self.env.clone(),
         );
+        let last_callbacks: Vec<Value> = last_bodies
+            .into_iter()
+            .map(|body| {
+                Value::make_sub(
+                    Symbol::intern(&self.current_package),
+                    Symbol::intern(""),
+                    Vec::new(),
+                    Vec::new(),
+                    body,
+                    false,
+                    self.env.clone(),
+                )
+            })
+            .collect();
+        let quit_callbacks: Vec<Value> = quit_bodies
+            .into_iter()
+            .map(|body| {
+                Value::make_sub(
+                    Symbol::intern(&self.current_package),
+                    Symbol::intern(""),
+                    vec!["_".to_string()],
+                    Vec::new(),
+                    body,
+                    false,
+                    self.env.clone(),
+                )
+            })
+            .collect();
 
         // Check if we're in a react block (supply_emit_buffer has an entry)
         if !self.supply_emit_buffer.is_empty() {
@@ -451,7 +546,12 @@ impl Interpreter {
                 return Ok(());
             }
             // In react mode: register the subscription for the event loop
-            let sub = Value::array(vec![supply_val.clone(), callback.clone()]);
+            let sub = Value::array(vec![
+                supply_val.clone(),
+                callback.clone(),
+                Value::array(last_callbacks.clone()),
+                Value::array(quit_callbacks.clone()),
+            ]);
             if let Some(last) = self.supply_emit_buffer.last_mut() {
                 last.push(sub);
             }
@@ -488,25 +588,19 @@ impl Interpreter {
         // Not in react mode: original behavior
         if let Value::Instance {
             class_name,
-            attributes,
+            attributes: _,
             ..
         } = &supply_val
             && class_name == "Supply"
         {
-            let mut attrs = (**attributes).clone();
-            if let Some(Value::Array(items, ..)) = attrs.get("taps") {
-                let mut new_items = items.to_vec();
-                new_items.push(callback.clone());
-                attrs.insert("taps".to_string(), Value::array(new_items));
-            } else {
-                attrs.insert("taps".to_string(), Value::array(vec![callback.clone()]));
+            let mut tap_args = vec![callback.clone()];
+            if let Some(done_cb) = last_callbacks.first().cloned() {
+                tap_args.push(Value::Pair("done".to_string(), Box::new(done_cb)));
             }
-            if let Some(Value::Array(values, ..)) = attrs.get("values") {
-                for v in values.iter() {
-                    let _ = self.call_sub_value(callback.clone(), vec![v.clone()], true);
-                }
+            if let Some(quit_cb) = quit_callbacks.first().cloned() {
+                tap_args.push(Value::Pair("quit".to_string(), Box::new(quit_cb)));
             }
-            let updated = Value::make_instance(*class_name, attrs);
+            let updated = self.call_method_with_values(supply_val.clone(), "tap", tap_args)?;
             if let Some(name) = target_var {
                 self.env.insert(name.to_string(), updated);
             }

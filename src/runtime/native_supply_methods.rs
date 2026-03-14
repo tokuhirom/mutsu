@@ -4,6 +4,52 @@ use crate::symbol::Symbol;
 use unicode_segmentation::UnicodeSegmentation;
 
 impl Interpreter {
+    fn supply_has_active_callback(callback: &Value) -> bool {
+        !matches!(callback, Value::Nil)
+    }
+
+    pub(super) fn runtime_error_from_supply_reason(reason: Value) -> RuntimeError {
+        let message = reason.to_string_value();
+        let mut err = RuntimeError::new(message);
+        err.exception = Some(Box::new(reason));
+        err
+    }
+
+    fn supply_is_terminated(attributes: &HashMap<String, Value>) -> bool {
+        supplier_id_from_attrs(attributes)
+            .map(|supplier_id| {
+                let (_, done, quit_reason) = supplier_snapshot(supplier_id);
+                done || quit_reason.is_some()
+            })
+            .unwrap_or_else(|| {
+                attributes.get("done").map(Value::truthy).unwrap_or(false)
+                    || attributes.contains_key("quit_reason")
+            })
+    }
+
+    pub(super) fn call_supply_quit_handler(
+        &mut self,
+        quit_cb: Value,
+        reason: Value,
+    ) -> Result<(), RuntimeError> {
+        let saved_when = self.when_matched();
+        self.set_when_matched(false);
+        let handled = match self.call_sub_value(quit_cb, vec![reason.clone()], true) {
+            Ok(_) => true,
+            Err(err) if err.is_succeed => true,
+            Err(err) => {
+                self.set_when_matched(saved_when);
+                return Err(err);
+            }
+        };
+        self.set_when_matched(saved_when);
+        if handled {
+            Ok(())
+        } else {
+            Err(Self::runtime_error_from_supply_reason(reason))
+        }
+    }
+
     pub(super) fn native_supply(
         &mut self,
         attributes: &HashMap<String, Value>,
@@ -323,7 +369,9 @@ impl Interpreter {
             }
             "tap" | "act" => {
                 // Immutable tap: emit all values and return a Tap instance
-                let tap_cb = args.first().cloned().unwrap_or(Value::Nil);
+                let tap_cb = Self::positional_value(&args, 0)
+                    .cloned()
+                    .unwrap_or(Value::Nil);
                 let done_cb = Self::named_value(&args, "done");
                 let quit_cb = Self::named_value(&args, "quit");
                 let delay_seconds = Self::supply_delay_seconds(attributes);
@@ -334,7 +382,9 @@ impl Interpreter {
                     let is_lines = matches!(attributes.get("is_lines"), Some(Value::Bool(true)));
                     let is_elems =
                         matches!(attributes.get("elems_filter"), Some(Value::Bool(true)));
-                    if is_lines {
+                    if !Self::supply_has_active_callback(&tap_cb) {
+                        // done/quit-only taps do not register a value callback
+                    } else if is_lines {
                         let chomp = attributes
                             .get("line_chomp")
                             .map(Value::truthy)
@@ -383,7 +433,9 @@ impl Interpreter {
 
                 // If this Supply has a supply_id, register the tap globally
                 // so that .start (Proc::Async) can find and call it later
-                if let Some(Value::Int(sid)) = attributes.get("supply_id") {
+                if let Some(Value::Int(sid)) = attributes.get("supply_id")
+                    && Self::supply_has_active_callback(&tap_cb)
+                {
                     register_supply_tap(*sid as u64, tap_cb.clone());
                 }
 
@@ -404,7 +456,10 @@ impl Interpreter {
                     && let Some(collected) = get_supply_collected_output(*sid as u64)
                     && !collected.is_empty()
                 {
-                    let _ = self.call_sub_value(tap_cb.clone(), vec![Value::str(collected)], true);
+                    if Self::supply_has_active_callback(&tap_cb) {
+                        let _ =
+                            self.call_sub_value(tap_cb.clone(), vec![Value::str(collected)], true);
+                    }
                     return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
                 }
 
@@ -459,15 +514,19 @@ impl Interpreter {
                     Self::sleep_for_supply_delay(delay_seconds);
                     if let Some(ref cbs) = do_cbs {
                         for cb in cbs {
-                            let _ = self.call_sub_value(cb.clone(), vec![v.clone()], true);
+                            self.call_sub_value(cb.clone(), vec![v.clone()], true)?;
                         }
                     }
-                    let _ = self.call_sub_value(tap_cb.clone(), vec![v.clone()], true);
+                    if Self::supply_has_active_callback(&tap_cb) {
+                        self.call_sub_value(tap_cb.clone(), vec![v.clone()], true)?;
+                    }
                 }
 
                 if let Some(quit_reason) = on_demand_quit {
                     if let Some(quit_fn) = quit_cb {
-                        let _ = self.call_sub_value(quit_fn, vec![quit_reason], true);
+                        self.call_supply_quit_handler(quit_fn, quit_reason)?;
+                    } else {
+                        return Err(Self::runtime_error_from_supply_reason(quit_reason));
                     }
                     return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
                 }
@@ -489,12 +548,12 @@ impl Interpreter {
                     if let Some(Value::Int(supplier_id)) = attributes.get("supplier_id") {
                         let (_, _, quit_reason) = supplier_snapshot(*supplier_id as u64);
                         if let Some(reason) = quit_reason {
-                            let _ = self.call_sub_value(quit_fn, vec![reason], true);
+                            self.call_supply_quit_handler(quit_fn, reason)?;
                         } else {
                             register_supplier_quit_callback(*supplier_id as u64, quit_fn);
                         }
                     } else if let Some(reason) = attributes.get("quit_reason").cloned() {
-                        let _ = self.call_sub_value(quit_fn, vec![reason], true);
+                        self.call_supply_quit_handler(quit_fn, reason)?;
                     }
                 }
                 Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()))
@@ -676,6 +735,9 @@ impl Interpreter {
             "emit" => {
                 // Push to supply_emit_buffer (works for on-demand callbacks)
                 let value = args.first().cloned().unwrap_or(Value::Nil);
+                if Self::supply_is_terminated(attributes) {
+                    return Ok(Value::Nil);
+                }
                 if let Some(buf) = self.supply_emit_buffer.last_mut() {
                     buf.push(value.clone());
                 }
@@ -702,12 +764,18 @@ impl Interpreter {
                     .cloned()
                     .unwrap_or_else(|| Value::str_from("Died"));
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
-                    supplier_quit(supplier_id, reason);
+                    supplier_quit(supplier_id, reason.clone());
                     for (tap, emitted) in flush_supplier_line_taps(supplier_id) {
-                        let _ = self.call_sub_value(tap, vec![emitted], true);
+                        self.call_sub_value(tap, vec![emitted], true)?;
+                    }
+                    let (_, _, quit_reason) = supplier_snapshot(supplier_id);
+                    if let Some(reason) = quit_reason {
+                        for quit_cb in take_supplier_quit_callbacks(supplier_id) {
+                            self.call_supply_quit_handler(quit_cb, reason.clone())?;
+                        }
                     }
                     for done_cb in take_supplier_done_callbacks(supplier_id) {
-                        let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                        self.call_sub_value(done_cb, Vec::new(), true)?;
                     }
                 }
                 Ok(Value::Nil)
@@ -730,6 +798,9 @@ impl Interpreter {
         match method {
             "emit" => {
                 let value = args.first().cloned().unwrap_or(Value::Nil);
+                if Self::supply_is_terminated(&attrs) {
+                    return Ok((Value::Nil, attrs));
+                }
                 // Push to supply_emit_buffer if active
                 if let Some(buf) = self.supply_emit_buffer.last_mut() {
                     buf.push(value.clone());
@@ -755,7 +826,7 @@ impl Interpreter {
                         match action {
                             SupplierEmitAction::Call(tap, emitted, delay_seconds) => {
                                 Self::sleep_for_supply_delay(delay_seconds);
-                                let _ = self.call_sub_value(tap, vec![emitted], true);
+                                self.call_sub_value(tap, vec![emitted], true)?;
                             }
                             SupplierEmitAction::UniqueCheck {
                                 callback,
@@ -776,7 +847,7 @@ impl Interpreter {
                                 if !is_dup {
                                     supplier_unique_mark_seen(sid, tap_index, key);
                                     Self::sleep_for_supply_delay(delay_seconds);
-                                    let _ = self.call_sub_value(callback, vec![val], true);
+                                    self.call_sub_value(callback, vec![val], true)?;
                                 }
                             }
                             SupplierEmitAction::ClassifyCheck {
@@ -806,10 +877,10 @@ impl Interpreter {
                         }
                     }
                     for (tap, emitted) in flush_supplier_line_taps(sid) {
-                        let _ = self.call_sub_value(tap, vec![emitted], true);
+                        self.call_sub_value(tap, vec![emitted], true)?;
                     }
                     for done_cb in take_supplier_done_callbacks(sid) {
-                        let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                        self.call_sub_value(done_cb, Vec::new(), true)?;
                     }
                 }
                 Ok((Value::Nil, attrs))
@@ -822,14 +893,18 @@ impl Interpreter {
                 attrs.insert("done".to_string(), Value::Bool(true));
                 attrs.insert("quit_reason".to_string(), reason.clone());
                 if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {
-                    supplier_quit(supplier_id, reason);
+                    supplier_quit(supplier_id, reason.clone());
                 }
                 if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
-                    for (tap, emitted) in flush_supplier_line_taps(*supplier_id as u64) {
-                        let _ = self.call_sub_value(tap, vec![emitted], true);
+                    let sid = *supplier_id as u64;
+                    for (tap, emitted) in flush_supplier_line_taps(sid) {
+                        self.call_sub_value(tap, vec![emitted], true)?;
                     }
-                    for done_cb in take_supplier_done_callbacks(*supplier_id as u64) {
-                        let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                    for quit_cb in take_supplier_quit_callbacks(sid) {
+                        self.call_supply_quit_handler(quit_cb, reason.clone())?;
+                    }
+                    for done_cb in take_supplier_done_callbacks(sid) {
+                        self.call_sub_value(done_cb, Vec::new(), true)?;
                     }
                 }
                 Ok((Value::Nil, attrs))
@@ -859,13 +934,17 @@ impl Interpreter {
                 }
                 if let Some(Value::Array(taps, ..)) = attrs.get_mut("taps") {
                     for tap in taps.iter().cloned().collect::<Vec<_>>() {
-                        let _ = self.call_sub_value(tap, vec![value.clone()], true);
+                        if Self::supply_has_active_callback(&tap) {
+                            let _ = self.call_sub_value(tap, vec![value.clone()], true);
+                        }
                     }
                 }
                 Ok((Value::Nil, attrs))
             }
             "tap" | "act" => {
-                let tap_cb = args.first().cloned().unwrap_or(Value::Nil);
+                let tap_cb = Self::positional_value(&args, 0)
+                    .cloned()
+                    .unwrap_or(Value::Nil);
                 let done_cb = Self::named_value(&args, "done");
                 let quit_cb = Self::named_value(&args, "quit");
                 let delay_seconds = Self::supply_delay_seconds(&attrs);
@@ -874,7 +953,9 @@ impl Interpreter {
                     let has_unique = matches!(attrs.get("unique_filter"), Some(Value::Bool(true)));
                     let is_lines = matches!(attrs.get("is_lines"), Some(Value::Bool(true)));
                     let is_elems = matches!(attrs.get("elems_filter"), Some(Value::Bool(true)));
-                    if is_lines {
+                    if !Self::supply_has_active_callback(&tap_cb) {
+                        // done/quit-only taps do not register a value callback
+                    } else if is_lines {
                         let chomp = attrs.get("line_chomp").map(Value::truthy).unwrap_or(true);
                         register_supplier_lines_tap(
                             *supplier_id as u64,
@@ -920,7 +1001,9 @@ impl Interpreter {
 
                 // If this Supply has a supply_id (belongs to Proc::Async),
                 // register tap in the global registry so .start can find it
-                if let Some(Value::Int(sid)) = attrs.get("supply_id") {
+                if let Some(Value::Int(sid)) = attrs.get("supply_id")
+                    && Self::supply_has_active_callback(&tap_cb)
+                {
                     register_supply_tap(*sid as u64, tap_cb.clone());
                 }
 
@@ -942,7 +1025,10 @@ impl Interpreter {
                     && let Some(collected) = get_supply_collected_output(*sid as u64)
                     && !collected.is_empty()
                 {
-                    let _ = self.call_sub_value(tap_cb.clone(), vec![Value::str(collected)], true);
+                    if Self::supply_has_active_callback(&tap_cb) {
+                        let _ =
+                            self.call_sub_value(tap_cb.clone(), vec![Value::str(collected)], true);
+                    }
                     let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
                     return Ok((tap_instance, attrs));
                 }
@@ -970,10 +1056,12 @@ impl Interpreter {
                     }
                     emitted
                 } else if has_unique {
-                    if let Some(Value::Array(items, ..)) = attrs.get_mut("taps") {
-                        Arc::make_mut(items).push(tap_cb.clone());
-                    } else {
-                        attrs.insert("taps".to_string(), Value::array(vec![tap_cb.clone()]));
+                    if Self::supply_has_active_callback(&tap_cb) {
+                        if let Some(Value::Array(items, ..)) = attrs.get_mut("taps") {
+                            Arc::make_mut(items).push(tap_cb.clone());
+                        } else {
+                            attrs.insert("taps".to_string(), Value::array(vec![tap_cb.clone()]));
+                        }
                     }
                     // For unique supplier-backed supplies, replay already-emitted
                     // values through the unique filter at tap-time. This handles
@@ -1033,10 +1121,12 @@ impl Interpreter {
                         Vec::new()
                     }
                 } else {
-                    if let Some(Value::Array(items, ..)) = attrs.get_mut("taps") {
-                        Arc::make_mut(items).push(tap_cb.clone());
-                    } else {
-                        attrs.insert("taps".to_string(), Value::array(vec![tap_cb.clone()]));
+                    if Self::supply_has_active_callback(&tap_cb) {
+                        if let Some(Value::Array(items, ..)) = attrs.get_mut("taps") {
+                            Arc::make_mut(items).push(tap_cb.clone());
+                        } else {
+                            attrs.insert("taps".to_string(), Value::array(vec![tap_cb.clone()]));
+                        }
                     }
                     if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
                         let (snap_values, _, _) = supplier_snapshot(*supplier_id as u64);
@@ -1066,15 +1156,19 @@ impl Interpreter {
                     Self::sleep_for_supply_delay(delay_seconds);
                     if let Some(ref cbs) = do_cbs {
                         for cb in cbs {
-                            let _ = self.call_sub_value(cb.clone(), vec![v.clone()], true);
+                            self.call_sub_value(cb.clone(), vec![v.clone()], true)?;
                         }
                     }
-                    let _ = self.call_sub_value(tap_cb.clone(), vec![v.clone()], true);
+                    if Self::supply_has_active_callback(&tap_cb) {
+                        self.call_sub_value(tap_cb.clone(), vec![v.clone()], true)?;
+                    }
                 }
 
                 if let Some(quit_reason) = on_demand_quit {
                     if let Some(quit_fn) = quit_cb {
-                        let _ = self.call_sub_value(quit_fn, vec![quit_reason], true);
+                        self.call_supply_quit_handler(quit_fn, quit_reason)?;
+                    } else {
+                        return Err(Self::runtime_error_from_supply_reason(quit_reason));
                     }
                     let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
                     return Ok((tap_instance, attrs));
@@ -1105,12 +1199,12 @@ impl Interpreter {
                     if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
                         let (_, _, quit_reason) = supplier_snapshot(*supplier_id as u64);
                         if let Some(reason) = quit_reason {
-                            let _ = self.call_sub_value(quit_fn, vec![reason], true);
+                            self.call_supply_quit_handler(quit_fn, reason)?;
                         } else {
                             register_supplier_quit_callback(*supplier_id as u64, quit_fn);
                         }
                     } else if let Some(reason) = attrs.get("quit_reason").cloned() {
-                        let _ = self.call_sub_value(quit_fn, vec![reason], true);
+                        self.call_supply_quit_handler(quit_fn, reason)?;
                     }
                 }
                 let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
