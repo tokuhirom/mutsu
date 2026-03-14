@@ -748,6 +748,24 @@ impl Interpreter {
         }
     }
 
+    fn type_capture_marker_key(name: &str) -> String {
+        format!("__type_capture__{}", name)
+    }
+
+    pub(crate) fn bind_type_capture(&mut self, name: &str, value: &Value) {
+        self.env
+            .insert(name.to_string(), Self::captured_type_object(value));
+        self.env
+            .insert(Self::type_capture_marker_key(name), Value::Bool(true));
+    }
+
+    pub(crate) fn has_type_capture_binding(&self, name: &str) -> bool {
+        matches!(
+            self.env.get(&Self::type_capture_marker_key(name)),
+            Some(Value::Bool(true))
+        )
+    }
+
     fn optional_type_object_name(constraint: &str) -> String {
         let mut end = constraint.len();
         for (idx, ch) in constraint.char_indices() {
@@ -778,12 +796,38 @@ impl Interpreter {
             return self.nominal_type_object_name_for_constraint(target);
         }
         let base_name = Self::optional_type_object_name(base);
+        if let Some(captured_name) = base_name.strip_prefix("::")
+            && let Some(Value::Package(bound)) = self.env.get(captured_name)
+        {
+            let resolved = bound.resolve();
+            if resolved != captured_name {
+                return self.nominal_type_object_name_for_constraint(&resolved);
+            }
+        }
+        if let Some(Value::Package(bound)) = self.env.get(&base_name) {
+            let resolved = bound.resolve();
+            if resolved != base_name {
+                return self.nominal_type_object_name_for_constraint(&resolved);
+            }
+        }
         if let Some(subset) = self.subsets.get(&base_name)
             && subset.base != base_name
         {
             return self.nominal_type_object_name_for_constraint(&subset.base);
         }
         base_name
+    }
+
+    fn resolve_constraint_alias(&self, constraint: &str) -> String {
+        if let Some(captured) = constraint.strip_prefix("::")
+            && let Some(Value::Package(name)) = self.env.get(captured)
+        {
+            return name.resolve();
+        }
+        if let Some(Value::Package(name)) = self.env.get(constraint) {
+            return name.resolve();
+        }
+        constraint.to_string()
     }
 
     fn checked_default_param_value(
@@ -1798,8 +1842,7 @@ impl Interpreter {
                     && let Some(arg) = arg_for_checks.as_ref()
                 {
                     if let Some(captured_name) = constraint.strip_prefix("::") {
-                        self.env
-                            .insert(captured_name.to_string(), Self::captured_type_object(arg));
+                        self.bind_type_capture(captured_name, arg);
                     } else if pd.name == "__type_only__" {
                         // Bare identifier param (e.g., enum value) — resolve from env and compare
                         if let Some(expected_val) = self.env.get(constraint).cloned() {
@@ -2543,10 +2586,7 @@ impl Interpreter {
                     {
                         let type_error_kind = "X::TypeCheck::Binding::Parameter";
                         if let Some(captured_name) = constraint.strip_prefix("::") {
-                            self.env.insert(
-                                captured_name.to_string(),
-                                Self::captured_type_object(&value),
-                            );
+                            self.bind_type_capture(captured_name, &value);
                         } else if let Some((target, source)) = parse_coercion_type(constraint) {
                             // Coercion type: check source type if specified, then coerce
                             if let Some(src) = source
@@ -2949,10 +2989,15 @@ impl Interpreter {
             } else {
                 value
             };
-            return self.try_coerce_value_with_method(target, intermediate);
+            let resolved_target = self.resolve_constraint_alias(target);
+            return self.try_coerce_value_with_method(&resolved_target, intermediate);
         }
-        if let Some(subset) = self.subsets.get(constraint).cloned()
-            && subset.base != constraint
+        let resolved_constraint = self.resolve_constraint_alias(constraint);
+        if resolved_constraint != constraint {
+            return self.try_coerce_value_for_constraint(&resolved_constraint, value);
+        }
+        if let Some(subset) = self.subsets.get(resolved_constraint.as_str()).cloned()
+            && subset.base != resolved_constraint
         {
             return self.try_coerce_value_for_constraint(&subset.base, value);
         }

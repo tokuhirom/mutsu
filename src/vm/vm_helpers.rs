@@ -1800,10 +1800,7 @@ impl VM {
                     && let Some(constraint) = &pd.type_constraint
                 {
                     if let Some(captured_name) = constraint.strip_prefix("::") {
-                        self.interpreter.env_mut().insert(
-                            captured_name.to_string(),
-                            crate::runtime::Interpreter::captured_type_object(&base),
-                        );
+                        self.interpreter.bind_type_capture(captured_name, &base);
                     } else {
                         let coercion_target = if let Some(open) = constraint.find('(') {
                             if constraint.ends_with(')') && open > 0 {
