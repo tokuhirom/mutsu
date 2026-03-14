@@ -293,7 +293,8 @@ fn match_value_from(val: &Value) -> i64 {
 }
 
 /// Collect all captures from a Match object sorted by position.
-/// Returns a list of Pair(key, match_value) where key is Int for positional, Str for named.
+/// Positional captures use `ValuePair(Int => Match)` and named captures use
+/// `Pair(Str => Match)` to preserve the Raku-visible key types.
 fn match_caps(attributes: &HashMap<String, Value>) -> Value {
     let mut pairs: Vec<(i64, Value)> = Vec::new();
 
@@ -314,7 +315,10 @@ fn match_caps(attributes: &HashMap<String, Value>) -> Value {
                 .iter()
                 .any(|(nf, nt)| *nf == from && *nt == to);
             if !shadowed {
-                pairs.push((from, Value::Pair(i.to_string(), Box::new(val.clone()))));
+                pairs.push((
+                    from,
+                    Value::ValuePair(Box::new(Value::Int(i as i64)), Box::new(val.clone())),
+                ));
             }
         }
     }
@@ -354,7 +358,11 @@ fn match_chunks(attributes: &HashMap<String, Value>) -> Value {
                 .iter()
                 .any(|(nf, nt)| *nf == from && *nt == to);
             if !shadowed {
-                captures.push((from, to, Value::Pair(i.to_string(), Box::new(val.clone()))));
+                captures.push((
+                    from,
+                    to,
+                    Value::ValuePair(Box::new(Value::Int(i as i64)), Box::new(val.clone())),
+                ));
             }
         }
     }
