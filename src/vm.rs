@@ -1528,10 +1528,7 @@ impl VM {
             }
             OpCode::Return => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
-                return Err(RuntimeError {
-                    return_value: Some(val),
-                    ..RuntimeError::new("")
-                });
+                return Err(RuntimeError::return_signal(val));
             }
             OpCode::ReturnFromNonRoutine => {
                 let _val = self.stack.pop().unwrap_or(Value::Nil);

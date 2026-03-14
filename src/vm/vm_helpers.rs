@@ -580,6 +580,7 @@ impl VM {
                 | "Endian"
                 | "Kernel"
                 | "CX::Warn"
+                | "CX::Return"
                 | "X::AdHoc"
                 | "CompUnit::DependencySpecification"
                 | "CompUnit::Repository"
