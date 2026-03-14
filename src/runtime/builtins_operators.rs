@@ -200,9 +200,12 @@ impl Interpreter {
                 .collect();
             let pushed_dispatch = !remaining.is_empty();
             if pushed_dispatch {
-                self.multi_dispatch_stack.push((remaining, args.to_vec()));
+                self.multi_dispatch_stack
+                    .push((name.to_string(), remaining, args.to_vec()));
             }
+            self.samewith_context_stack.push((name.to_string(), None));
             if def.empty_sig && !args.is_empty() {
+                self.samewith_context_stack.pop();
                 return Err(Self::reject_args_for_empty_sig(args));
             }
             let routine_is_rw = !def.is_raw;
@@ -220,6 +223,7 @@ impl Interpreter {
                         self.pop_caller_env();
                         self.env = saved_env;
                         self.restore_readonly_vars(saved_readonly);
+                        self.samewith_context_stack.pop();
                         return Err(e);
                     }
                 };
@@ -274,6 +278,7 @@ impl Interpreter {
             self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
             self.env = restored_env;
             self.restore_readonly_vars(saved_readonly);
+            self.samewith_context_stack.pop();
             if pushed_dispatch {
                 self.multi_dispatch_stack.pop();
             }

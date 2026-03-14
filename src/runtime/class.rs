@@ -170,6 +170,8 @@ impl Interpreter {
             })
             .collect();
         let pushed_dispatch = !remaining.is_empty();
+        self.samewith_context_stack
+            .push((method_name.to_string(), Some(invocant_for_dispatch.clone())));
         if pushed_dispatch {
             self.method_dispatch_stack.push(MethodDispatchFrame {
                 receiver_class: receiver_class_name.to_string(),
@@ -186,6 +188,7 @@ impl Interpreter {
             args,
             invocant,
         );
+        self.samewith_context_stack.pop();
         if pushed_dispatch {
             self.method_dispatch_stack.pop();
         }

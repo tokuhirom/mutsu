@@ -538,9 +538,13 @@ pub struct Interpreter {
     /// Set when reading a Proxy subclass attribute; consumed by subsequent .push/.pop etc.
     pub(crate) pending_proxy_subclass_attr: Option<(crate::value::ProxySubclassAttrs, String)>,
     /// Stack of remaining multi dispatch candidates for callsame/nextsame/nextcallee.
-    /// Each entry is (remaining_candidates, original_args).
-    multi_dispatch_stack: Vec<(Vec<FunctionDef>, Vec<Value>)>,
+    /// Each entry is (function_name, remaining_candidates, original_args).
+    multi_dispatch_stack: Vec<(String, Vec<FunctionDef>, Vec<Value>)>,
     method_dispatch_stack: Vec<MethodDispatchFrame>,
+    /// Stack of samewith dispatch contexts.
+    /// Each entry is (function_or_method_name, optional_invocant).
+    /// Pushed whenever a multi sub or multi method is entered, popped on exit.
+    samewith_context_stack: Vec<(String, Option<Value>)>,
     /// Wrap chains: sub_id -> stack of (handle_id, wrapper_sub). Outermost is last.
     wrap_chains: HashMap<u64, Vec<(u64, Value)>>,
     /// Maps sub_id to function name for named call wrap chain lookup.
@@ -1813,6 +1817,7 @@ impl Interpreter {
             pending_proxy_subclass_attr: None,
             multi_dispatch_stack: Vec::new(),
             method_dispatch_stack: Vec::new(),
+            samewith_context_stack: Vec::new(),
             wrap_chains: HashMap::new(),
             wrap_sub_names: HashMap::new(),
             wrap_name_to_sub: HashMap::new(),
@@ -3030,6 +3035,7 @@ impl Interpreter {
             pending_proxy_subclass_attr: None,
             multi_dispatch_stack: Vec::new(),
             method_dispatch_stack: Vec::new(),
+            samewith_context_stack: Vec::new(),
             wrap_chains: self.wrap_chains.clone(),
             wrap_sub_names: self.wrap_sub_names.clone(),
             wrap_name_to_sub: self.wrap_name_to_sub.clone(),

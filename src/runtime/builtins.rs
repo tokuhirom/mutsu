@@ -451,6 +451,7 @@ impl Interpreter {
             "nextsame" => self.builtin_nextsame(),
             "callwith" => self.builtin_callwith(&args),
             "nextwith" => self.builtin_nextwith(&args),
+            "samewith" => self.builtin_samewith(&args),
             "nextcallee" => self.builtin_nextcallee(),
             // Type coercion
             "Int" | "Num" | "Str" | "Bool" => self.builtin_coerce(name, &args),
@@ -2890,6 +2891,23 @@ impl Interpreter {
         self.dispatch_next_candidate("nextwith", Some(args.to_vec()), true)
     }
 
+    /// Re-dispatch to the same multi/method from the top with new arguments.
+    fn builtin_samewith(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // Use the samewith context stack to find the enclosing multi sub/method.
+        if let Some((name, invocant)) = self.samewith_context_stack.last().cloned() {
+            if let Some(inv) = invocant {
+                // Method dispatch: re-call the method on the same invocant
+                return self.call_method_with_values(inv, &name, args.to_vec());
+            } else {
+                // Sub dispatch: re-call the function by name
+                return self.call_function(&name, args.to_vec());
+            }
+        }
+        Err(RuntimeError::new(
+            "samewith called outside of a dispatch context",
+        ))
+    }
+
     /// Shared implementation for callsame/nextsame/callwith/nextwith.
     /// `override_args`: if Some, use these args instead of the original.
     /// `tail_call`: if true, raise a return-control exception with the result.
@@ -2994,14 +3012,14 @@ impl Interpreter {
             return Ok(result);
         }
         // Try multi dispatch stack
-        if let Some((candidates, orig_args)) = self.multi_dispatch_stack.last().cloned() {
+        if let Some((_name, candidates, orig_args)) = self.multi_dispatch_stack.last().cloned() {
             let Some(next_def) = candidates.first().cloned() else {
                 return Ok(Value::Nil);
             };
             let remaining = candidates[1..].to_vec();
             let call_args = override_args.unwrap_or(orig_args);
             let stack_len = self.multi_dispatch_stack.len();
-            self.multi_dispatch_stack[stack_len - 1] = (remaining, call_args.clone());
+            self.multi_dispatch_stack[stack_len - 1] = (_name, remaining, call_args.clone());
             let result = self.call_function_def(&next_def, &call_args)?;
             if tail_call {
                 return Err(RuntimeError {
@@ -3016,7 +3034,8 @@ impl Interpreter {
     }
 
     fn builtin_nextcallee(&mut self) -> Result<Value, RuntimeError> {
-        let Some((candidates, _orig_args)) = self.multi_dispatch_stack.last().cloned() else {
+        let Some((_name, candidates, _orig_args)) = self.multi_dispatch_stack.last().cloned()
+        else {
             return Ok(Value::Nil);
         };
         let Some(next_def) = candidates.first().cloned() else {
@@ -3025,7 +3044,7 @@ impl Interpreter {
         // Remove this candidate from the remaining list
         let remaining = candidates[1..].to_vec();
         let stack_len = self.multi_dispatch_stack.len();
-        self.multi_dispatch_stack[stack_len - 1] = (remaining, Vec::new());
+        self.multi_dispatch_stack[stack_len - 1] = (_name, remaining, Vec::new());
         // Return as a callable Sub value
         Ok(Value::make_sub(
             next_def.package,

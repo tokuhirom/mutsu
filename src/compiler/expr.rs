@@ -2006,6 +2006,16 @@ impl Compiler {
                     self.code.emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx)));
                 } else {
                     let placeholders = crate::ast::collect_placeholders(body);
+                    // Immediate block calls (`{ ... }(...)`) are parsed as AnonSub.
+                    // Apply the same placeholder conflict checks as block/sub declarations.
+                    if let Some(err_val) =
+                        self.check_placeholder_conflicts(&placeholders, body, None)
+                    {
+                        let idx = self.code.add_constant(err_val);
+                        self.code.emit(OpCode::LoadConst(idx));
+                        self.code.emit(OpCode::Die);
+                        return;
+                    }
                     let compiled = self.compile_routine_closure_body(&placeholders, &[], body);
                     let cc_idx = self.code.add_closure_code(compiled);
                     let idx = self.code.add_stmt(Stmt::Block(body.clone()));

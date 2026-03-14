@@ -582,6 +582,7 @@ impl Interpreter {
 
     /// Set up a method dispatch frame for nextsame/callsame support.
     /// Returns true if a frame was pushed (caller must call pop_method_dispatch).
+    /// Also pushes a samewith context unconditionally for samewith() support.
     pub(crate) fn push_method_dispatch_frame(
         &mut self,
         receiver_class: &str,
@@ -589,6 +590,9 @@ impl Interpreter {
         args: &[Value],
         invocant: Value,
     ) -> bool {
+        // Always push samewith context so samewith() can find the method name/invocant
+        self.samewith_context_stack
+            .push((method_name.to_string(), Some(invocant.clone())));
         let all_candidates = self.resolve_all_methods_with_owner(receiver_class, method_name, args);
         let remaining: Vec<(String, super::MethodDef)> = all_candidates
             .into_iter()
@@ -614,6 +618,12 @@ impl Interpreter {
         self.method_dispatch_stack.pop();
     }
 
+    /// Pop the samewith context pushed by push_method_dispatch_frame.
+    /// Must always be called after push_method_dispatch_frame, regardless of its return value.
+    pub(crate) fn pop_method_samewith_context(&mut self) {
+        self.samewith_context_stack.pop();
+    }
+
     /// Push a multi dispatch frame for callsame/nextsame/callwith/nextwith support.
     /// Returns true if a frame was pushed (i.e. there are remaining candidates).
     pub(crate) fn push_multi_dispatch_frame(&mut self, name: &str, args: &[Value]) -> bool {
@@ -632,7 +642,8 @@ impl Interpreter {
             .collect();
         let pushed = !remaining.is_empty();
         if pushed {
-            self.multi_dispatch_stack.push((remaining, args.to_vec()));
+            self.multi_dispatch_stack
+                .push((name.to_string(), remaining, args.to_vec()));
         }
         pushed
     }
@@ -640,6 +651,17 @@ impl Interpreter {
     /// Pop a multi dispatch frame (must only be called if push returned true).
     pub(crate) fn pop_multi_dispatch(&mut self) {
         self.multi_dispatch_stack.pop();
+    }
+
+    /// Push a samewith context for a multi sub dispatch.
+    pub(crate) fn push_samewith_context(&mut self, name: &str, invocant: Option<Value>) {
+        self.samewith_context_stack
+            .push((name.to_string(), invocant));
+    }
+
+    /// Pop a samewith context.
+    pub(crate) fn pop_samewith_context(&mut self) {
+        self.samewith_context_stack.pop();
     }
 
     pub(crate) fn class_composed_roles(&self, class_name: &str) -> Option<&Vec<String>> {
