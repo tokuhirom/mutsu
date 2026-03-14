@@ -1209,6 +1209,9 @@ impl VM {
             }
         } else if !self.interpreter.has_type(declared_constraint)
             && !is_core_raku_type(declared_constraint)
+            && !self
+                .interpreter
+                .has_type_capture_binding(declared_constraint)
         {
             // Unknown user-defined type — reject it
             return Err(RuntimeError::new(format!(
