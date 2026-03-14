@@ -334,6 +334,7 @@ roast/S12-construction/named-params-in-BUILD.t
 roast/S12-enums/anonymous.t
 roast/S12-enums/pseudo-functional.t
 roast/S12-introspection/WHAT.t
+roast/S12-introspection/can.t
 roast/S12-introspection/definite.t
 roast/S12-introspection/methods.t
 roast/S12-meta/grammarhow.t

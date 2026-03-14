@@ -918,8 +918,10 @@ impl Interpreter {
             return true;
         }
         // For instances, check class methods
-        if let Value::Instance { class_name, .. } = value {
-            return self.class_has_method(&class_name.resolve(), method);
+        if let Value::Instance { class_name, .. } = value
+            && self.class_has_method(&class_name.resolve(), method)
+        {
+            return true;
         }
         // Universal methods available on all values
         matches!(
@@ -939,6 +941,7 @@ impl Interpreter {
                 | "not"
                 | "defined"
                 | "isa"
+                | "can"
                 | "does"
                 | "ACCEPTS"
                 | "raku"
