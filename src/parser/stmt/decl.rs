@@ -877,7 +877,10 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
 
     // Parse variable traits. Builtins are handled directly; unknown/custom
     // traits are recorded for trait_mod:<is> dispatch at runtime.
-    let mut has_dynamic_trait = false;
+    let mut has_dynamic_trait = name.starts_with('*')
+        || name.starts_with("@*")
+        || name.starts_with("%*")
+        || name.starts_with("&*");
     let mut has_export_trait = false;
     let mut export_tags: Vec<String> = Vec::new();
     let mut custom_traits: Vec<(String, Option<Expr>)> = Vec::new();

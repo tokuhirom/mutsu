@@ -251,6 +251,27 @@ enum OpAssoc {
 }
 
 impl Interpreter {
+    fn builtin_index_var_meta(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let source_name = args.first().map(Value::to_string_value).unwrap_or_default();
+        let mut attributes = std::collections::HashMap::new();
+        attributes.insert("name".to_string(), Value::str(format!("{source_name}[]")));
+        attributes.insert(
+            "__mutsu_var_target".to_string(),
+            Value::str(source_name.clone()),
+        );
+        attributes.insert(
+            "dynamic".to_string(),
+            Value::Bool(self.is_var_dynamic(&source_name)),
+        );
+        let default_val = if let Some(tc) = self.var_type_constraint(&source_name) {
+            Value::Package(Symbol::intern(&tc))
+        } else {
+            Value::Package(Symbol::intern("Any"))
+        };
+        attributes.insert("default".to_string(), default_val);
+        Ok(Value::make_instance(Symbol::intern("Scalar"), attributes))
+    }
+
     fn has_invalid_anonymous_rw_trait(code: &str) -> bool {
         let bytes = code.as_bytes();
         let mut i = 0usize;
@@ -444,6 +465,7 @@ impl Interpreter {
             "__mutsu_stub_die" => self.builtin_stub_die(&args),
             "__mutsu_stub_warn" => self.builtin_stub_warn(&args),
             "__mutsu_incdec_nomatch" => self.builtin_incdec_nomatch(&args),
+            "__mutsu_index_var_meta" => self.builtin_index_var_meta(&args),
             "exit" => self.builtin_exit(&args),
             "__PROTO_DISPATCH__" => self.call_proto_dispatch(),
             // Multi dispatch control flow

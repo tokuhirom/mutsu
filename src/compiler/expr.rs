@@ -940,6 +940,42 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
+            } if name == "VAR"
+                && args.is_empty()
+                && modifier.is_none()
+                && !quoted
+                && matches!(target.as_ref(), Expr::Index { .. }) =>
+            {
+                if let Expr::Index {
+                    target: index_target,
+                    index,
+                } = target.as_ref()
+                    && let Some(source_name) = Self::index_assign_target_name(index_target)
+                {
+                    // Preserve side effects of the indexed expression before producing
+                    // element variable metadata for .VAR on @a[0] / %h<k>.
+                    self.compile_expr(index_target);
+                    self.code.emit(OpCode::Pop);
+                    self.compile_expr(index);
+                    self.code.emit(OpCode::Pop);
+                    let name_idx = self.code.add_constant(Value::str(source_name));
+                    self.code.emit(OpCode::LoadConst(name_idx));
+                    let builtin_idx = self
+                        .code
+                        .add_constant(Value::str("__mutsu_index_var_meta".to_string()));
+                    self.code.emit(OpCode::CallFunc {
+                        name_idx: builtin_idx,
+                        arity: 1,
+                        arg_sources_idx: None,
+                    });
+                }
+            }
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                modifier,
+                quoted,
             } if matches!(
                 target.as_ref(),
                 Expr::Var(_)
