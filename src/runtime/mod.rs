@@ -1076,6 +1076,7 @@ impl Interpreter {
                     "basename",
                     "dirname",
                     "cleanup",
+                    "parts",
                     "parent",
                     "sibling",
                     "child",

@@ -1,6 +1,7 @@
 use super::*;
 use crate::symbol::Symbol;
 use num_traits::ToPrimitive;
+use std::path::Component;
 
 enum IoPathExtensionPartsSpec {
     Exact(i64),
@@ -95,7 +96,15 @@ impl Interpreter {
             }
             "cleanup" => {
                 let normalized = Self::cleanup_io_path_lexical(&p);
-                Ok(self.make_io_path_instance(&normalized))
+                Ok(Self::clone_io_path_with_path(attributes, normalized))
+            }
+            "parts" => {
+                let (volume, dirname, basename) = Self::io_path_parts(&p);
+                let mut parts = HashMap::new();
+                parts.insert("volume".to_string(), Value::str(volume));
+                parts.insert("dirname".to_string(), Value::str(dirname));
+                parts.insert("basename".to_string(), Value::str(basename));
+                Ok(Value::hash(parts))
             }
             "parent" => {
                 let mut levels = 1i64;
@@ -222,12 +231,9 @@ impl Interpreter {
                 Ok(Value::Bool(p.starts_with(&prefix)))
             }
             "resolve" => {
-                // Try to canonicalize; if the path doesn't exist, return as-is
-                let resolved = match fs::canonicalize(&path_buf) {
-                    Ok(canonical) => Self::stringify_path(&canonical),
-                    Err(_) => p.clone(),
-                };
-                Ok(self.make_io_path_instance(&resolved))
+                let completely = Self::named_bool(&args, "completely");
+                let resolved = Self::resolve_io_path(&path_buf, completely, &p)?;
+                Ok(Self::clone_io_path_with_path(attributes, resolved))
             }
             "volume" => {
                 let volume = path_buf
@@ -563,6 +569,53 @@ impl Interpreter {
         }
     }
 
+    fn clone_io_path_with_path(attributes: &HashMap<String, Value>, path: String) -> Value {
+        let mut new_attrs = attributes.clone();
+        new_attrs.insert("path".to_string(), Value::str(path));
+        Value::make_instance(Symbol::intern("IO::Path"), new_attrs)
+    }
+
+    fn io_path_parts(path: &str) -> (String, String, String) {
+        let mut volume = String::new();
+        let mut rest = path;
+        if path.len() >= 2 {
+            let bytes = path.as_bytes();
+            if bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
+                volume.push_str(&path[..2]);
+                rest = &path[2..];
+            }
+        }
+
+        if rest == "/" || rest == "\\" {
+            return (volume, rest.to_string(), rest.to_string());
+        }
+
+        let trimmed = rest.trim_end_matches(['/', '\\']);
+        if trimmed.is_empty() {
+            let root = if rest.contains('\\') && !rest.contains('/') {
+                "\\".to_string()
+            } else {
+                "/".to_string()
+            };
+            return (volume, root.clone(), root);
+        }
+
+        let (dirname, basename) = if let Some(idx) = trimmed.rfind(['/', '\\']) {
+            let dirname = &trimmed[..idx];
+            let basename = &trimmed[idx + 1..];
+            let dirname = if dirname.is_empty() {
+                trimmed[..=idx].to_string()
+            } else {
+                dirname.to_string()
+            };
+            (dirname, basename.to_string())
+        } else {
+            (".".to_string(), trimmed.to_string())
+        };
+
+        (volume, dirname, basename)
+    }
+
     fn io_path_extension_part_count(path: &str) -> i64 {
         let (_, basename) = Self::split_path_for_extension(path);
         basename.chars().filter(|&c| c == '.').count() as i64
@@ -593,13 +646,7 @@ impl Interpreter {
                 continue;
             }
             if seg == ".." {
-                if let Some(last) = stack.last().copied()
-                    && last != ".."
-                {
-                    stack.pop();
-                    continue;
-                }
-                if !is_absolute {
+                if !is_absolute || !stack.is_empty() {
                     stack.push(seg);
                 }
                 continue;
@@ -616,6 +663,78 @@ impl Interpreter {
             out.push_str(&joined);
         }
         if out.is_empty() { ".".to_string() } else { out }
+    }
+
+    fn resolve_io_path(
+        path: &Path,
+        completely: bool,
+        display_path: &str,
+    ) -> Result<String, RuntimeError> {
+        let mut resolved = PathBuf::new();
+        let mut unresolved = PathBuf::new();
+        let mut unresolved_started = false;
+        let component_count = path.components().count();
+
+        for (idx, component) in path.components().enumerate() {
+            match component {
+                Component::Prefix(prefix) => {
+                    resolved.push(prefix.as_os_str());
+                    if unresolved_started {
+                        unresolved.push(prefix.as_os_str());
+                    }
+                }
+                Component::RootDir => {
+                    resolved.push(component.as_os_str());
+                    if unresolved_started {
+                        unresolved.push(component.as_os_str());
+                    }
+                }
+                Component::CurDir => {}
+                Component::ParentDir => {
+                    if unresolved_started {
+                        unresolved.push("..");
+                    } else if !resolved.pop() && completely {
+                        return Err(RuntimeError::new(format!(
+                            "X::IO::Resolve: Failed to completely resolve {}",
+                            display_path
+                        )));
+                    }
+                }
+                Component::Normal(part) => {
+                    if unresolved_started {
+                        unresolved.push(part);
+                        continue;
+                    }
+
+                    let candidate = resolved.join(part);
+                    match fs::symlink_metadata(&candidate) {
+                        Ok(_) => {
+                            resolved = fs::canonicalize(&candidate).unwrap_or(candidate);
+                        }
+                        Err(_) => {
+                            let is_last = idx + 1 == component_count;
+                            if completely && !is_last {
+                                return Err(RuntimeError::new(format!(
+                                    "X::IO::Resolve: Failed to completely resolve {}",
+                                    display_path
+                                )));
+                            }
+                            unresolved_started = true;
+                            unresolved.push(part);
+                        }
+                    }
+                }
+            }
+        }
+
+        let combined = if unresolved_started {
+            resolved.join(unresolved)
+        } else {
+            resolved
+        };
+        Ok(Self::cleanup_io_path_lexical(&Self::stringify_path(
+            &combined,
+        )))
     }
 
     fn io_path_extension_dot_index_for_n_parts(basename: &str, parts: i64) -> Option<usize> {
