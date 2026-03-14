@@ -407,77 +407,94 @@ impl Interpreter {
         target: Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        fn sort_items(interp: &mut Interpreter, items: &mut [Value], args: &[Value]) {
+            if let Some(comparator @ Value::Routine { .. }) = args.first().cloned() {
+                items.sort_by(|a, b| {
+                    let call_args = vec![a.clone(), b.clone()];
+                    match interp.eval_call_on_value(comparator.clone(), call_args) {
+                        Ok(result) => match &result {
+                            Value::Int(n) => n.cmp(&0),
+                            Value::Enum {
+                                enum_type, value, ..
+                            } if enum_type == "Order" => value.cmp(&0),
+                            _ => std::cmp::Ordering::Equal,
+                        },
+                        Err(_) => std::cmp::Ordering::Equal,
+                    }
+                });
+            } else if let Some(Value::Sub(data)) = args.first().cloned() {
+                let is_key_extractor = data.params.len() <= 1;
+                if is_key_extractor {
+                    items.sort_by(|a, b| {
+                        let saved = interp.env.clone();
+                        for (k, v) in &data.env {
+                            interp.env.insert(k.clone(), v.clone());
+                        }
+                        if let Some(p) = data.params.first() {
+                            interp.env.insert(p.clone(), a.clone());
+                        }
+                        interp.env.insert("_".to_string(), a.clone());
+                        let key_a = interp.eval_block_value(&data.body).unwrap_or(Value::Nil);
+                        interp.env = saved.clone();
+                        for (k, v) in &data.env {
+                            interp.env.insert(k.clone(), v.clone());
+                        }
+                        if let Some(p) = data.params.first() {
+                            interp.env.insert(p.clone(), b.clone());
+                        }
+                        interp.env.insert("_".to_string(), b.clone());
+                        let key_b = interp.eval_block_value(&data.body).unwrap_or(Value::Nil);
+                        interp.env = saved;
+                        compare_values(&key_a, &key_b).cmp(&0)
+                    });
+                } else {
+                    items.sort_by(|a, b| {
+                        let saved = interp.env.clone();
+                        for (k, v) in &data.env {
+                            interp.env.insert(k.clone(), v.clone());
+                        }
+                        if data.params.len() >= 2 {
+                            interp.env.insert(data.params[0].clone(), a.clone());
+                            interp.env.insert(data.params[1].clone(), b.clone());
+                        } else if let Some(p) = data.params.first() {
+                            interp.env.insert(p.clone(), a.clone());
+                        }
+                        interp.env.insert("_".to_string(), a.clone());
+                        let result = interp.eval_block_value(&data.body).unwrap_or(Value::Int(0));
+                        interp.env = saved;
+                        match result {
+                            Value::Int(n) => n.cmp(&0),
+                            Value::Enum {
+                                enum_type, value, ..
+                            } if enum_type == "Order" => value.cmp(&0),
+                            _ => std::cmp::Ordering::Equal,
+                        }
+                    });
+                }
+            } else {
+                items.sort_by(|a, b| compare_values(a, b).cmp(&0));
+            }
+        }
+
         match target {
             Value::Array(mut items, ..) => {
                 let items_mut = Arc::make_mut(&mut items);
-                // Handle Routine comparator (e.g. &[<=>], &infix:<+>)
-                if let Some(comparator @ Value::Routine { .. }) = args.first().cloned() {
-                    items_mut.sort_by(|a, b| {
-                        let call_args = vec![a.clone(), b.clone()];
-                        match self.eval_call_on_value(comparator.clone(), call_args) {
-                            Ok(result) => match &result {
-                                Value::Int(n) => n.cmp(&0),
-                                Value::Enum {
-                                    enum_type, value, ..
-                                } if enum_type == "Order" => value.cmp(&0),
-                                _ => std::cmp::Ordering::Equal,
-                            },
-                            Err(_) => std::cmp::Ordering::Equal,
-                        }
-                    });
-                } else if let Some(Value::Sub(data)) = args.first().cloned() {
-                    let is_key_extractor = data.params.len() <= 1;
-                    if is_key_extractor {
-                        items_mut.sort_by(|a, b| {
-                            let saved = self.env.clone();
-                            for (k, v) in &data.env {
-                                self.env.insert(k.clone(), v.clone());
-                            }
-                            if let Some(p) = data.params.first() {
-                                self.env.insert(p.clone(), a.clone());
-                            }
-                            self.env.insert("_".to_string(), a.clone());
-                            let key_a = self.eval_block_value(&data.body).unwrap_or(Value::Nil);
-                            self.env = saved.clone();
-                            for (k, v) in &data.env {
-                                self.env.insert(k.clone(), v.clone());
-                            }
-                            if let Some(p) = data.params.first() {
-                                self.env.insert(p.clone(), b.clone());
-                            }
-                            self.env.insert("_".to_string(), b.clone());
-                            let key_b = self.eval_block_value(&data.body).unwrap_or(Value::Nil);
-                            self.env = saved;
-                            compare_values(&key_a, &key_b).cmp(&0)
-                        });
-                    } else {
-                        items_mut.sort_by(|a, b| {
-                            let saved = self.env.clone();
-                            for (k, v) in &data.env {
-                                self.env.insert(k.clone(), v.clone());
-                            }
-                            if data.params.len() >= 2 {
-                                self.env.insert(data.params[0].clone(), a.clone());
-                                self.env.insert(data.params[1].clone(), b.clone());
-                            } else if let Some(p) = data.params.first() {
-                                self.env.insert(p.clone(), a.clone());
-                            }
-                            self.env.insert("_".to_string(), a.clone());
-                            let result = self.eval_block_value(&data.body).unwrap_or(Value::Int(0));
-                            self.env = saved;
-                            match result {
-                                Value::Int(n) => n.cmp(&0),
-                                Value::Enum {
-                                    enum_type, value, ..
-                                } if enum_type == "Order" => value.cmp(&0),
-                                _ => std::cmp::Ordering::Equal,
-                            }
-                        });
-                    }
-                } else {
-                    items_mut.sort_by(|a, b| compare_values(a, b).cmp(&0));
-                }
+                sort_items(self, items_mut, args);
                 Ok(Value::Array(items, ArrayKind::List))
+            }
+            Value::Seq(items) | Value::Slip(items) => {
+                let mut sorted = items.as_ref().clone();
+                sort_items(self, &mut sorted, args);
+                Ok(Value::array(sorted))
+            }
+            Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. } => {
+                let mut sorted = Self::value_to_list(&target);
+                sort_items(self, &mut sorted, args);
+                Ok(Value::array(sorted))
             }
             Value::Hash(map) => {
                 // Convert hash to list of pairs, then sort

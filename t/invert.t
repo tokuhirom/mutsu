@@ -1,6 +1,6 @@
 use Test;
 
-plan 10;
+plan 11;
 
 sub pair-signatures($items) {
     $items.map({ .key.Str ~ "\t" ~ .value.Str }).sort.List
@@ -14,6 +14,9 @@ my $expanded = {a => (1, 2), b => 3..4}.invert;
 is $expanded.^name, 'Seq', 'Hash.invert with iterable values returns a Seq';
 is-deeply pair-signatures($expanded), ("1\ta", "2\ta", "3\tb", "4\tb"),
     'Hash.invert expands iterable values into separate pairs';
+is-deeply $expanded.sort.map({ .key.Str ~ "\t" ~ .value.Str }).List,
+    ("1\ta", "2\ta", "3\tb", "4\tb"),
+    'Seq.sort orders inverted pairs';
 
 my $list-invert = ((a => 1), (b => (2, 3))).invert;
 is $list-invert.^name, 'Seq', 'List.invert returns a Seq';
