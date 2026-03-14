@@ -2,6 +2,26 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    fn sync_eval_definition_state(&mut self, nested: &Interpreter) {
+        self.type_metadata = nested.type_metadata.clone();
+        self.classes = nested.classes.clone();
+        self.cunion_classes = nested.cunion_classes.clone();
+        self.hidden_classes = nested.hidden_classes.clone();
+        self.class_stubs = nested.class_stubs.clone();
+        self.hidden_defer_parents = nested.hidden_defer_parents.clone();
+        self.class_trusts = nested.class_trusts.clone();
+        self.class_composed_roles = nested.class_composed_roles.clone();
+        self.roles = nested.roles.clone();
+        self.role_candidates = nested.role_candidates.clone();
+        self.role_parents = nested.role_parents.clone();
+        self.role_hides = nested.role_hides.clone();
+        self.role_type_params = nested.role_type_params.clone();
+        self.class_role_param_bindings = nested.class_role_param_bindings.clone();
+        self.attribute_build_overrides = nested.attribute_build_overrides.clone();
+        self.subsets = nested.subsets.clone();
+        self.need_hidden_classes = nested.need_hidden_classes.clone();
+    }
+
     fn cmp_eqv_bool(left: &Value, right: &Value) -> bool {
         use crate::value::JunctionKind;
         match (left, right) {
@@ -894,6 +914,9 @@ impl Interpreter {
             nested.env.insert(k.clone(), v.clone());
         }
         let ok = nested.eval_eval_string(&code).is_ok();
+        if ok {
+            self.sync_eval_definition_state(&nested);
+        }
         for raw in nested.output.lines() {
             let line = raw.trim_start();
             let (assert_ok, rest) = if let Some(rest) = line.strip_prefix("ok ") {
