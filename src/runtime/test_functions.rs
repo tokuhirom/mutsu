@@ -1329,9 +1329,22 @@ impl Interpreter {
             Value::Nil => String::new(),
             _ => return Err(RuntimeError::new("is_run expects string code")),
         };
+        let (input, expectations_idx, desc_idx) =
+            if matches!(Self::positional_value(args, 1), Some(Value::Hash(_))) {
+                (String::new(), 1usize, 2usize)
+            } else {
+                (
+                    Self::positional_value(args, 1)
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default(),
+                    2usize,
+                    3usize,
+                )
+            };
         let expectations =
-            Self::positional_value_required(args, 1, "is_run expects expectations")?.clone();
-        let desc = Self::positional_string(args, 2);
+            Self::positional_value_required(args, expectations_idx, "is_run expects expectations")?
+                .clone();
+        let desc = Self::positional_string(args, desc_idx);
         let mut expected_out: Option<Value> = None;
         let mut expected_err: Option<Value> = None;
         let mut expected_status: Option<Value> = None;
@@ -1400,6 +1413,13 @@ impl Interpreter {
                 Ok(result) => (result.output, String::new(), result.status),
                 Err(err) => (String::new(), err.message, 1i64),
             }
+        } else if !input.is_empty() {
+            let run_args = run_args
+                .unwrap_or_default()
+                .into_iter()
+                .map(|v| v.to_string_value())
+                .collect::<Vec<_>>();
+            Self::run_test_code_subprocess(&program, &input, &run_args, &compiler_args)
         } else if needs_subprocess {
             // Spawn actual mutsu binary for CLI flag tests
             self.is_run_subprocess(&program, &run_args, &compiler_args)
@@ -2224,41 +2244,6 @@ impl Interpreter {
         }
     }
 
-    fn is_run_subprocess(
-        &self,
-        program: &str,
-        run_args: &Option<Vec<Value>>,
-        compiler_args: &[String],
-    ) -> (String, String, i64) {
-        // Find the mutsu executable
-        let exe = std::env::current_exe()
-            .unwrap_or_else(|_| std::path::PathBuf::from("target/debug/mutsu"));
-        let mut cmd = std::process::Command::new(&exe);
-        // Add compiler args first
-        for arg in compiler_args {
-            cmd.arg(arg);
-        }
-        // Add :args (command-line args for the subprocess)
-        if let Some(items) = run_args {
-            for item in items {
-                cmd.arg(item.to_string_value());
-            }
-        }
-        // Add -e with program code if non-empty
-        if !program.is_empty() {
-            cmd.arg("-e").arg(program);
-        }
-        match cmd.output() {
-            Ok(output) => {
-                let out = String::from_utf8_lossy(&output.stdout).to_string();
-                let err = String::from_utf8_lossy(&output.stderr).to_string();
-                let status = output.status.code().unwrap_or(1) as i64;
-                (out, err, status)
-            }
-            Err(e) => (String::new(), format!("Failed to run subprocess: {}", e), 1),
-        }
-    }
-
     fn run_test_code_subprocess(
         program: &str,
         input: &str,
@@ -2308,6 +2293,8 @@ impl Interpreter {
             && let Some(mut stdin) = child.stdin.take()
         {
             let _ = stdin.write_all(input.as_bytes());
+            let _ = stdin.flush();
+            drop(stdin);
         }
         let output = child.wait_with_output();
         let _ = std::fs::remove_file(&temp_code_path);
@@ -2323,6 +2310,37 @@ impl Interpreter {
                 format!("Failed to read subprocess output: {}", e),
                 1,
             ),
+        }
+    }
+
+    fn is_run_subprocess(
+        &self,
+        program: &str,
+        run_args: &Option<Vec<Value>>,
+        compiler_args: &[String],
+    ) -> (String, String, i64) {
+        let exe = std::env::current_exe()
+            .unwrap_or_else(|_| std::path::PathBuf::from("target/debug/mutsu"));
+        let mut cmd = std::process::Command::new(&exe);
+        for arg in compiler_args {
+            cmd.arg(arg);
+        }
+        if let Some(items) = run_args {
+            for item in items {
+                cmd.arg(item.to_string_value());
+            }
+        }
+        if !program.is_empty() {
+            cmd.arg("-e").arg(program);
+        }
+        match cmd.output() {
+            Ok(output) => {
+                let out = String::from_utf8_lossy(&output.stdout).to_string();
+                let err = String::from_utf8_lossy(&output.stderr).to_string();
+                let status = output.status.code().unwrap_or(1) as i64;
+                (out, err, status)
+            }
+            Err(e) => (String::new(), format!("Failed to run subprocess: {}", e), 1),
         }
     }
 

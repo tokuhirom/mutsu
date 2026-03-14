@@ -2,7 +2,7 @@ use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
 use Test;
 use Test::Util;
 
-plan 13;
+plan 14;
 
 # Basic stdout check
 is_run('say 42', { out => "42\n" }, 'basic stdout');
@@ -34,3 +34,7 @@ is_run('say "test"', { out => "test\n" });
 
 # Default status (when not specified and no err, defaults to 0)
 is_run('say "abc"; exit 2', { out => "abc\n", status => 2 }, 'exit 2 with output');
+
+is_run('say $*IN.words.unique', 'cat dog cat dog bird dog Snake snake Snake',
+    { out => "(cat dog bird Snake snake)\n", err => '', status => 0 },
+    'stdin without trailing newline does not hang in is_run');

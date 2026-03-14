@@ -664,12 +664,15 @@ impl VM {
             } else {
                 name.resolve()
             };
-            let qualified_name =
-                if resolved_name.contains("::") || self.interpreter.current_package() == "GLOBAL" {
-                    resolved_name
-                } else {
-                    format!("{}::{}", self.interpreter.current_package(), resolved_name)
-                };
+            let current_package = self.interpreter.current_package().to_string();
+            let qualified_name = if resolved_name.contains("::")
+                || current_package == "GLOBAL"
+                || resolved_name == current_package
+            {
+                resolved_name
+            } else {
+                format!("{current_package}::{resolved_name}")
+            };
             self.interpreter.register_class_decl(
                 &qualified_name,
                 parents,
