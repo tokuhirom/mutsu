@@ -2,11 +2,79 @@ use super::*;
 use crate::symbol::Symbol;
 use ::regex::Regex;
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 thread_local! {
     /// Thread-local storage for regex security errors that need to propagate
     /// from inside `parse_regex` (which takes `&self`) to callers that can throw.
     pub(super) static PENDING_REGEX_ERROR: RefCell<Option<RuntimeError>> = const { RefCell::new(None) };
+}
+
+fn single_token_pattern(token: RegexToken, ignore_case: bool, ignore_mark: bool) -> RegexPattern {
+    RegexPattern {
+        tokens: vec![token],
+        anchor_start: false,
+        anchor_end: false,
+        ignore_case,
+        ignore_mark,
+    }
+}
+
+fn goal_text_for_token(token: &RegexToken) -> String {
+    match &token.atom {
+        RegexAtom::Literal(ch) => format!("{ch:?}"),
+        RegexAtom::Named(name) => format!("<{name}>"),
+        _ => "goal".to_string(),
+    }
+}
+
+fn make_solitary_tilde_quantifier_error() -> RuntimeError {
+    let msg = "Quantifier quantifies nothing";
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.to_string()));
+    let ex = Value::make_instance(
+        Symbol::intern("X::Syntax::Regex::SolitaryQuantifier"),
+        attrs,
+    );
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
+fn rewrite_tilde_tokens(
+    tokens: Vec<RegexToken>,
+    ignore_case: bool,
+    ignore_mark: bool,
+) -> Result<Vec<RegexToken>, RuntimeError> {
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < tokens.len() {
+        if matches!(tokens[i].atom, RegexAtom::TildeMarker) {
+            if !matches!(tokens[i].quant, RegexQuant::One) {
+                return Err(make_solitary_tilde_quantifier_error());
+            }
+            if out.is_empty() || i + 2 >= tokens.len() {
+                return Ok(tokens);
+            }
+            let goal_token = tokens[i + 1].clone();
+            let inner_token = tokens[i + 2].clone();
+            out.push(RegexToken {
+                atom: RegexAtom::GoalMatch {
+                    goal: single_token_pattern(goal_token.clone(), ignore_case, ignore_mark),
+                    inner: single_token_pattern(inner_token, ignore_case, ignore_mark),
+                    goal_text: goal_text_for_token(&goal_token),
+                },
+                quant: RegexQuant::One,
+                named_capture: None,
+                ratchet: false,
+            });
+            i += 3;
+            continue;
+        }
+        out.push(tokens[i].clone());
+        i += 1;
+    }
+    Ok(out)
 }
 
 /// Optimize an Alternation: if all branches are single-token CharClass or Literal
@@ -1472,6 +1540,7 @@ impl Interpreter {
                         is_assertion: false,
                     }
                 }
+                '~' => RegexAtom::TildeMarker,
                 other => RegexAtom::Literal(other),
             };
             let mut quant = RegexQuant::One;
@@ -1514,6 +1583,15 @@ impl Interpreter {
                 ratchet: token_ratchet,
             });
         }
+        let tokens = match rewrite_tilde_tokens(tokens, ignore_case, ignore_mark) {
+            Ok(tokens) => tokens,
+            Err(err) => {
+                PENDING_REGEX_ERROR.with(|e| {
+                    *e.borrow_mut() = Some(err);
+                });
+                return None;
+            }
+        };
         Some(RegexPattern {
             tokens,
             anchor_start,

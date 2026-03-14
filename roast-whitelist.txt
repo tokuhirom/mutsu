@@ -213,6 +213,7 @@ roast/S05-match/non-capturing.t
 roast/S05-match/raku.t
 roast/S05-metachars/closure.t
 roast/S05-metachars/newline.t
+roast/S05-metachars/tilde.t
 roast/S05-metasyntax/assertions.t
 roast/S05-metasyntax/delimiters.t
 roast/S05-metasyntax/interpolating-closure.t
