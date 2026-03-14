@@ -649,6 +649,7 @@ impl VM {
             name,
             name_expr,
             parents,
+            class_is_rw,
             is_hidden,
             hidden_parents,
             does_parents,
@@ -666,9 +667,12 @@ impl VM {
             self.interpreter.register_class_decl(
                 &resolved_name,
                 parents,
-                *is_hidden,
-                hidden_parents,
-                does_parents,
+                crate::runtime::ClassDeclModifiers {
+                    class_is_rw: *class_is_rw,
+                    is_hidden: *is_hidden,
+                    hidden_parents,
+                    does_parents,
+                },
                 body,
             )?;
             // Compile method bodies to bytecode for the fast path

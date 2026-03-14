@@ -3,6 +3,13 @@ use crate::symbol::Symbol;
 
 type ResolvedRoleCandidate = (RoleDef, Vec<String>, Vec<Value>);
 
+pub(crate) struct ClassDeclModifiers<'a> {
+    pub(crate) class_is_rw: bool,
+    pub(crate) is_hidden: bool,
+    pub(crate) hidden_parents: &'a [String],
+    pub(crate) does_parents: &'a [String],
+}
+
 fn parse_role_type_args(input: &str) -> Vec<String> {
     split_balanced_comma_list(input)
 }
@@ -244,11 +251,15 @@ impl Interpreter {
         &mut self,
         name: &str,
         parents: &[String],
-        is_hidden: bool,
-        hidden_parents: &[String],
-        does_parents: &[String],
+        modifiers: ClassDeclModifiers<'_>,
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
+        let ClassDeclModifiers {
+            class_is_rw,
+            is_hidden,
+            hidden_parents,
+            does_parents,
+        } = modifiers;
         let prev_class = self.classes.get(name).cloned();
         let prev_hidden = self.hidden_classes.contains(name);
         let prev_hidden_defer = self.hidden_defer_parents.get(name).cloned();
@@ -781,17 +792,19 @@ impl Interpreter {
                     default,
                     handles,
                     is_rw,
+                    is_readonly,
                     type_constraint,
                     is_required,
                     sigil,
                     where_constraint,
                 } => {
                     let attr_name_str = attr_name.resolve();
+                    let effective_is_rw = !*is_readonly && (*is_rw || (class_is_rw && *is_public));
                     class_def.attributes.push((
                         attr_name_str.clone(),
                         *is_public,
                         default.clone(),
-                        *is_rw,
+                        effective_is_rw,
                         is_required.clone(),
                         *sigil,
                         where_constraint.as_ref().map(|wc| wc.as_ref().clone()),
@@ -1194,6 +1207,7 @@ impl Interpreter {
                     is_public,
                     default,
                     is_rw,
+                    is_readonly: _,
                     type_constraint,
                     is_required,
                     sigil,
@@ -1289,6 +1303,7 @@ impl Interpreter {
                     default,
                     handles,
                     is_rw,
+                    is_readonly: _,
                     type_constraint: _,
                     is_required,
                     sigil,

@@ -137,6 +137,7 @@ mod test_functions;
 pub(crate) mod types;
 mod unicode;
 pub(crate) mod utils;
+pub(crate) use self::registration_class::ClassDeclModifiers;
 
 pub(crate) use utils::*;
 

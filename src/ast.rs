@@ -523,6 +523,7 @@ pub(crate) enum Stmt {
         name: Symbol,
         name_expr: Option<Expr>,
         parents: Vec<String>,
+        class_is_rw: bool,
         is_hidden: bool,
         hidden_parents: Vec<String>,
         does_parents: Vec<String>,
@@ -536,6 +537,7 @@ pub(crate) enum Stmt {
         handles: Vec<String>,
         #[allow(dead_code)]
         is_rw: bool,
+        is_readonly: bool,
         type_constraint: Option<String>,
         /// `is required` trait: None = not required, Some(None) = required,
         /// Some(Some(reason)) = required with reason string

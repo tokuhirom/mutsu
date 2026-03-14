@@ -1963,6 +1963,22 @@ mod tests {
     }
 
     #[test]
+    fn parse_dot_method_name_then_postfix_decrement() {
+        let (rest, expr) = expression("$obj.b--").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::PostfixOp {
+                op: TokenKind::MinusMinus,
+                expr,
+            } => match *expr {
+                Expr::MethodCall { name, .. } => assert_eq!(name.resolve(), "b"),
+                _ => panic!("expected MethodCall inside postfix decrement"),
+            },
+            _ => panic!("expected postfix decrement on method call"),
+        }
+    }
+
+    #[test]
     fn parse_ascii_minus_on_angle_complex_literal() {
         let (rest, expr) = expression("-<42+2i>").unwrap();
         assert_eq!(rest, "");
