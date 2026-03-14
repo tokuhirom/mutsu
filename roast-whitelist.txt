@@ -125,6 +125,7 @@ roast/S03-operators/scalar-assign.t
 roast/S03-operators/set_elem.t
 roast/S03-operators/set_equality.t
 roast/S03-operators/set_multiply.t
+roast/S03-operators/set_proper_subset.t
 roast/S03-operators/set_subset.t
 roast/S03-operators/set_union.t
 roast/S03-operators/short-circuit.t

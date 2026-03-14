@@ -1,6 +1,6 @@
 use Test;
 
-plan 47;
+plan 49;
 
 # --- (elem) membership ---
 ok "a" (elem) set(<a b c>), "(elem) true for present element";
@@ -74,6 +74,8 @@ nok set(<a b>) (>=) set(<a b c>), "subset is not superset";
 # --- (<) proper subset ---
 ok set(<a b>) (<) set(<a b c>), "proper subset";
 nok set(<a b c>) (<) set(<a b c>), "equal set is not proper subset";
+ok set(<a b c>) !(<) set(<a b c>), "!(<) negates proper subset";
+nok set(<a b>) !(<) set(<a b c>), "!(<) is false for a proper subset";
 
 # --- (>) proper superset ---
 ok set(<a b c>) (>) set(<a b>), "proper superset";

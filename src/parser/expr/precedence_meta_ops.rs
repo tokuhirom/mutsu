@@ -355,6 +355,8 @@ fn parse_set_op(input: &str) -> Option<(TokenKind, usize)> {
         Some((TokenKind::SetSuperset, 4))
     } else if input.starts_with('⊇') {
         Some((TokenKind::SetSuperset, '⊇'.len_utf8()))
+    } else if input.starts_with("!(<)") {
+        Some((TokenKind::Ident("⊄".to_string()), 4))
     } else if input.starts_with("(<)") {
         Some((TokenKind::SetStrictSubset, 3))
     } else if input.starts_with('⊂') {
