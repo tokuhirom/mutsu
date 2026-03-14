@@ -1045,16 +1045,25 @@ impl Interpreter {
                         // Check for lookaround assertions: <?before ...>, <!before ...>,
                         // <?after ...>, <!after ...>
                         let peek_str: String = chars.clone().collect();
-                        if peek_str.starts_with("?before ")
+                        if peek_str.starts_with("before ")
+                            || peek_str.starts_with("?before ")
                             || peek_str.starts_with("!before ")
+                            || peek_str.starts_with("after ")
                             || peek_str.starts_with("?after ")
                             || peek_str.starts_with("!after ")
                         {
-                            let negated = peek_str.starts_with('!');
-                            // Skip '?' or '!'
-                            chars.next();
-                            let is_behind = peek_str[1..].starts_with("after ");
-                            let keyword = if is_behind { "after " } else { "before " };
+                            let (negated, is_behind, keyword) = if peek_str.starts_with("before ") {
+                                (false, false, "before ")
+                            } else if peek_str.starts_with("after ") {
+                                (false, true, "after ")
+                            } else {
+                                let negated = peek_str.starts_with('!');
+                                // Skip '?' or '!'
+                                chars.next();
+                                let is_behind = peek_str[1..].starts_with("after ");
+                                let keyword = if is_behind { "after " } else { "before " };
+                                (negated, is_behind, keyword)
+                            };
                             // Skip keyword
                             for _ in 0..keyword.len() {
                                 chars.next();
