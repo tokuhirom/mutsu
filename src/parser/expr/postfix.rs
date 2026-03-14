@@ -1109,12 +1109,23 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 continue;
             }
             // Parse method name
-            if let Ok((r, name)) =
+            if let Ok((r, parsed_name)) =
                 take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
             {
+                let mut method_name = parsed_name.to_string();
+                let mut trailing_postfix: Option<TokenKind> = None;
+                if !r.starts_with('(') {
+                    if method_name.ends_with("++") && method_name.len() > 2 {
+                        method_name.truncate(method_name.len() - 2);
+                        trailing_postfix = Some(TokenKind::PlusPlus);
+                    } else if method_name.ends_with("--") && method_name.len() > 2 {
+                        method_name.truncate(method_name.len() - 2);
+                        trailing_postfix = Some(TokenKind::MinusMinus);
+                    }
+                }
                 // Check for qualified method name: C::x (e.g., .Parent::x)
                 let (r, name) = if r.starts_with("::") {
-                    let mut qualified = name.to_string();
+                    let mut qualified = method_name;
                     let mut r = r;
                     while let Some(after_colons) = r.strip_prefix("::") {
                         if let Ok((r2, part)) = take_while1(after_colons, |c: char| {
@@ -1129,7 +1140,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     }
                     (r, Symbol::intern(&qualified))
                 } else {
-                    (r, Symbol::intern(name))
+                    (r, Symbol::intern(&method_name))
                 };
                 // Detect illegal space between method name and parens
                 if (r.starts_with(' ') || r.starts_with('\t')) && !r.starts_with('\\') {
@@ -1198,13 +1209,20 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     continue;
                 }
                 // No-arg method call
-                expr = Expr::MethodCall {
+                let mut method_expr = Expr::MethodCall {
                     target: Box::new(expr),
                     name,
                     args: Vec::new(),
                     modifier,
                     quoted: false,
                 };
+                if let Some(op) = trailing_postfix {
+                    method_expr = Expr::PostfixOp {
+                        op,
+                        expr: Box::new(method_expr),
+                    };
+                }
+                expr = method_expr;
                 rest = r;
                 continue;
             }

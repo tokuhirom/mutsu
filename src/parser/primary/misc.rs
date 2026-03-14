@@ -1322,6 +1322,7 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             name: Symbol::intern(&name),
             name_expr: None,
             parents,
+            class_is_rw: false,
             is_hidden: false,
             hidden_parents: Vec::new(),
             does_parents: Vec::new(),

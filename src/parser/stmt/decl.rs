@@ -1626,12 +1626,15 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // `is` traits (may have multiple: `is rw is required`)
     // Traits come before default value: `has $.x is rw = 42`
     let mut is_rw = false;
+    let mut is_readonly = false;
     let mut is_required: Option<Option<String>> = None;
     while let Some(r) = keyword("is", rest) {
         let (r, _) = ws1(r)?;
         let (r, trait_name) = ident(r)?;
         if trait_name == "rw" {
             is_rw = true;
+        } else if trait_name == "readonly" {
+            is_readonly = true;
         } else if trait_name == "required" {
             // Check for optional reason: `is required("reason")`
             let (r_ws, _) = ws(r)?;
@@ -1834,6 +1837,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             default,
             handles,
             is_rw,
+            is_readonly,
             type_constraint,
             is_required,
             sigil: sigil as char,

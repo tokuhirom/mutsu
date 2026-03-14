@@ -625,6 +625,7 @@ const STMT_PARSERS: &[StmtParser] = &[
     control::react_stmt,
     control::whenever_stmt,
     class::package_decl,
+    class::also_trait_stmt,
     simple::let_stmt,
     simple::temp_stmt,
     simple::known_call_stmt,
@@ -1364,6 +1365,58 @@ mod tests {
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
         assert!(matches!(&stmts[0], Stmt::ClassDecl { name, .. } if name == "Foo"));
+    }
+
+    #[test]
+    fn parse_class_decl_with_is_rw_trait() {
+        let (rest, stmts) = program("class Foo is rw { has $.x }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(
+            &stmts[0],
+            Stmt::ClassDecl {
+                name,
+                class_is_rw: true,
+                ..
+            } if name == "Foo"
+        ));
+    }
+
+    #[test]
+    fn parse_class_decl_with_also_is_rw_trait() {
+        let (rest, stmts) = program("class Foo { has $.x; also is rw; has $.y }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        if let Stmt::ClassDecl {
+            name,
+            class_is_rw,
+            body,
+            ..
+        } = &stmts[0]
+        {
+            assert_eq!(name.resolve(), "Foo");
+            assert!(*class_is_rw);
+            assert_eq!(body.len(), 2);
+        } else {
+            panic!("expected ClassDecl");
+        }
+    }
+
+    #[test]
+    fn parse_class_has_decl_is_readonly_trait() {
+        let (rest, stmts) = program("class Foo { has $.x is readonly }").unwrap();
+        assert_eq!(rest, "");
+        if let Stmt::ClassDecl { body, .. } = &stmts[0] {
+            assert!(matches!(
+                &body[0],
+                Stmt::HasDecl {
+                    is_readonly: true,
+                    ..
+                }
+            ));
+        } else {
+            panic!("expected ClassDecl");
+        }
     }
 
     #[test]

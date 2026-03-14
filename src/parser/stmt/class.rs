@@ -4,6 +4,7 @@ use super::super::primary::regex::scan_to_delim;
 
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::symbol::Symbol;
+use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 use super::{block, ident, keyword, qualified_ident};
@@ -195,6 +196,29 @@ fn no_self_error() -> PError {
     attrs.insert("message".to_string(), Value::str(msg.clone()));
     let ex = Value::make_instance(Symbol::intern("X::Syntax::NoSelf"), attrs);
     PError::fatal_with_exception(msg, Box::new(ex))
+}
+
+fn expr_is_bare_ident(expr: &Expr, ident: &str) -> bool {
+    matches!(expr, Expr::Var(name) | Expr::BareWord(name) if name == ident)
+}
+
+fn stmt_is_also_is_rw(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Expr(Expr::InfixFunc {
+            name, left, right, ..
+        }) => {
+            name == "is"
+                && expr_is_bare_ident(left, "also")
+                && right.len() == 1
+                && expr_is_bare_ident(&right[0], "rw")
+        }
+        Stmt::Expr(Expr::Binary { left, op, right }) => {
+            matches!(op, TokenKind::Ident(name) if name == "is")
+                && expr_is_bare_ident(left, "also")
+                && expr_is_bare_ident(right, "rw")
+        }
+        _ => false,
+    }
 }
 
 fn reject_no_self_in_subs(body: &[Stmt]) -> Result<(), PError> {
@@ -492,6 +516,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         name: Symbol::intern(&user_name),
         name_expr: None,
         parents,
+        class_is_rw: false,
         is_hidden: false,
         hidden_parents: Vec::new(),
         does_parents: Vec::new(),
@@ -520,6 +545,7 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
 
     // Parent clauses in any order: `is Parent`, `does Role[...]`, `hides Parent`.
     let mut is_hidden = false;
+    let mut class_is_rw = false;
     let mut hidden_parents = Vec::new();
     let mut parents = Vec::new();
     let mut does_parents = Vec::new();
@@ -531,6 +557,8 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
             let (r2, parent) = qualified_ident(r2)?;
             if parent == "hidden" {
                 is_hidden = true;
+            } else if parent == "rw" {
+                class_is_rw = true;
             } else if parent == "repr" {
                 // Extract repr value from `is repr('CUnion')` etc.
                 if let Some(inner) = r2.strip_prefix('(') {
@@ -582,8 +610,16 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
         break;
     }
 
-    let (rest, body) = block(r)?;
+    let (rest, mut body) = block(r)?;
     reject_no_self_in_subs(&body)?;
+    body.retain(|stmt| {
+        if stmt_is_also_is_rw(stmt) {
+            class_is_rw = true;
+            false
+        } else {
+            true
+        }
+    });
     // Extract repr from `is repr(...)` or from declarator traits
     let repr = is_repr.or_else(|| {
         traits.iter().find_map(|(k, v)| {
@@ -602,6 +638,7 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
         name: Symbol::intern(&name),
         name_expr,
         parents,
+        class_is_rw,
         is_hidden,
         hidden_parents,
         does_parents,
@@ -619,6 +656,29 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
     }
     stmts.push(class_stmt);
     Ok((rest, Stmt::Block(stmts)))
+}
+
+/// Parse `also is <trait>;` statement.
+///
+/// This is primarily used inside class bodies (e.g. `also is rw;`) and is
+/// represented as a small infix expression statement for later lowering.
+pub(super) fn also_trait_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("also", input).ok_or_else(|| PError::expected("also trait statement"))?;
+    let (rest, _) = ws1(rest)?;
+    let rest = keyword("is", rest).ok_or_else(|| PError::expected("is after also"))?;
+    let (rest, _) = ws1(rest)?;
+    let (rest, trait_name) = ident(rest)?;
+    let (rest, _) = ws(rest)?;
+    let (rest, _) = opt_char(rest, ';');
+    Ok((
+        rest,
+        Stmt::Expr(Expr::InfixFunc {
+            name: "is".to_string(),
+            left: Box::new(Expr::BareWord("also".to_string())),
+            right: vec![Expr::BareWord(trait_name)],
+            modifier: None,
+        }),
+    ))
 }
 
 /// Parse optional role type parameters like `[::T]`, `[Str $x]`, or
@@ -961,6 +1021,7 @@ pub(super) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
             name: Symbol::intern(&name),
             name_expr: None,
             parents,
+            class_is_rw: false,
             is_hidden: false,
             hidden_parents: vec![],
             does_parents,
@@ -1011,6 +1072,7 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 name: Symbol::intern(&name),
                 name_expr: None,
                 parents: Vec::new(),
+                class_is_rw: false,
                 is_hidden: false,
                 hidden_parents: Vec::new(),
                 does_parents: Vec::new(),
