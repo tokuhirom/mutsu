@@ -110,6 +110,98 @@ impl Interpreter {
         )
     }
 
+    pub(super) fn iterator_supports_predictive_methods(
+        attributes: &HashMap<String, Value>,
+    ) -> bool {
+        matches!(attributes.get("items"), Some(Value::Array(..)))
+            || matches!(attributes.get("squish_source"), Some(Value::Array(..)))
+    }
+
+    pub(super) fn iterator_count_only_from_attrs(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+    ) -> Result<Option<Value>, RuntimeError> {
+        if let Some(Value::Array(items, ..)) = attributes.get("items") {
+            let index = match attributes.get("index") {
+                Some(Value::Int(i)) if *i >= 0 => *i as usize,
+                _ => 0,
+            };
+            return Ok(Some(Value::Int(items.len().saturating_sub(index) as i64)));
+        }
+
+        let Some(Value::Array(source, ..)) = attributes.get("squish_source") else {
+            return Ok(None);
+        };
+
+        let mut scan_index = match attributes.get("squish_scan_index") {
+            Some(Value::Int(i)) if *i >= 0 => *i as usize,
+            _ => 0,
+        };
+        let mut prev_key = attributes
+            .get("squish_prev_key")
+            .cloned()
+            .unwrap_or(Value::Nil);
+        let initialized = matches!(
+            attributes.get("squish_initialized"),
+            Some(Value::Bool(true))
+        );
+        let as_func = attributes
+            .get("squish_as")
+            .cloned()
+            .filter(|v| !matches!(v, Value::Nil));
+        let with_func = attributes
+            .get("squish_with")
+            .cloned()
+            .filter(|v| !matches!(v, Value::Nil));
+
+        let mut remaining = 0usize;
+
+        if !initialized {
+            let Some(first) = source.first().cloned() else {
+                return Ok(Some(Value::Int(0)));
+            };
+            prev_key = if let Some(func) = as_func.clone() {
+                self.call_sub_value(func, vec![first], true)?
+            } else {
+                first
+            };
+            scan_index = 1;
+            remaining += 1;
+        }
+
+        while scan_index < source.len() {
+            let item = source[scan_index].clone();
+            let key = if let Some(func) = as_func.clone() {
+                self.call_sub_value(func, vec![item.clone()], true)?
+            } else {
+                item
+            };
+            let duplicate = if let Some(func) = with_func.clone() {
+                self.call_sub_value(func, vec![prev_key.clone(), key.clone()], true)?
+                    .truthy()
+            } else {
+                crate::runtime::values_identical(&prev_key, &key)
+            };
+            prev_key = key;
+            scan_index += 1;
+            if !duplicate {
+                remaining += 1;
+            }
+        }
+
+        Ok(Some(Value::Int(remaining as i64)))
+    }
+
+    pub(super) fn iterator_bool_only_from_attrs(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let Some(count) = self.iterator_count_only_from_attrs(attributes)? else {
+            return Ok(None);
+        };
+        Ok(Some(Value::Bool(super::to_int(&count) > 0)))
+    }
+
     pub(crate) fn call_method_with_values(
         &mut self,
         target: Value,
@@ -188,6 +280,36 @@ impl Interpreter {
             )
         {
             return self.dispatch_instance_and_fallback(target, method, args);
+        }
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &target
+            && class_name == "Iterator"
+        {
+            match method {
+                "count-only" if args.is_empty() => {
+                    if let Some(value) = self.iterator_count_only_from_attrs(attributes.as_ref())? {
+                        return Ok(value);
+                    }
+                }
+                "bool-only" if args.is_empty() => {
+                    if let Some(value) = self.iterator_bool_only_from_attrs(attributes.as_ref())? {
+                        return Ok(value);
+                    }
+                }
+                "can"
+                    if args.len() == 1
+                        && Self::iterator_supports_predictive_methods(attributes.as_ref()) =>
+                {
+                    let method_name = args[0].to_string_value();
+                    if matches!(method_name.as_str(), "count-only" | "bool-only") {
+                        return Ok(Value::array(vec![Value::str(method_name)]));
+                    }
+                }
+                _ => {}
+            }
         }
         if args.is_empty()
             && matches!(method, "Str" | "gist")

@@ -1596,6 +1596,12 @@ impl Interpreter {
                     };
 
                     let ret = match method {
+                        "count-only" => self
+                            .iterator_count_only_from_attrs(&updated)?
+                            .unwrap_or_else(|| Value::Int(0)),
+                        "bool-only" => self
+                            .iterator_bool_only_from_attrs(&updated)?
+                            .unwrap_or(Value::Bool(false)),
                         "pull-one" => pull_one_squish(self)?,
                         "push-all" | "push-until-lazy" => {
                             let mut collected = Vec::new();
@@ -1706,6 +1712,8 @@ impl Interpreter {
                             let supported = matches!(
                                 method_name.as_str(),
                                 "pull-one"
+                                    | "count-only"
+                                    | "bool-only"
                                     | "push-exactly"
                                     | "push-at-least"
                                     | "push-all"
@@ -1768,6 +1776,8 @@ impl Interpreter {
                 };
 
                 let ret = match method {
+                    "count-only" => Value::Int(len.saturating_sub(index) as i64),
+                    "bool-only" => Value::Bool(index < len),
                     "pull-one" => {
                         if index < len {
                             let out = items[index].clone();
@@ -1846,6 +1856,8 @@ impl Interpreter {
                         let supported = matches!(
                             method_name.as_str(),
                             "pull-one"
+                                | "count-only"
+                                | "bool-only"
                                 | "push-exactly"
                                 | "push-at-least"
                                 | "push-all"
