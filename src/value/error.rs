@@ -39,6 +39,7 @@ pub struct RuntimeError {
     pub column: Option<usize>,
     pub hint: Option<String>,
     pub return_value: Option<Value>,
+    pub is_return: bool,
     pub is_last: bool,
     pub is_next: bool,
     pub is_redo: bool,
@@ -68,6 +69,7 @@ impl RuntimeError {
             column: None,
             hint: None,
             return_value: None,
+            is_return: false,
             is_last: false,
             is_next: false,
             is_redo: false,
@@ -100,6 +102,7 @@ impl RuntimeError {
             column: Some(column),
             hint: None,
             return_value: None,
+            is_return: false,
             is_last: false,
             is_next: false,
             is_redo: false,
@@ -176,6 +179,15 @@ impl RuntimeError {
     pub(crate) fn react_done_signal() -> Self {
         Self {
             is_react_done: true,
+            ..Self::new("")
+        }
+    }
+
+    pub(crate) fn return_signal(value: Value) -> Self {
+        Self {
+            message: "CX::Return".to_string(),
+            return_value: Some(value),
+            is_return: true,
             ..Self::new("")
         }
     }
