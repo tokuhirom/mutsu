@@ -74,6 +74,93 @@ fn positional_antipairs(values: &[Value]) -> Vec<Value> {
         .collect()
 }
 
+fn make_inverted_pair(key: Value, value: Value) -> Value {
+    match key {
+        Value::Str(s) => Value::Pair((*s).clone(), Box::new(value)),
+        other => Value::ValuePair(Box::new(other), Box::new(value)),
+    }
+}
+
+fn should_expand_invert_value(value: &Value) -> bool {
+    matches!(
+        value,
+        Value::Array(_, _)
+            | Value::Seq(_)
+            | Value::Slip(_)
+            | Value::Hash(_)
+            | Value::Set(_)
+            | Value::Bag(_)
+            | Value::Mix(_)
+    ) || value.is_range()
+}
+
+fn extend_inverted_pairs(out: &mut Vec<Value>, key: Value, value: &Value) {
+    let values = match value {
+        Value::Str(_) => vec![value.clone()],
+        other if should_expand_invert_value(other) => crate::runtime::utils::value_to_list(other),
+        other => vec![other.clone()],
+    };
+    for item in values {
+        out.push(make_inverted_pair(item, key.clone()));
+    }
+}
+
+fn invert_value(target: &Value) -> Option<Value> {
+    let mut result = Vec::new();
+    match target {
+        Value::Hash(items) => {
+            for (k, v) in items.iter() {
+                extend_inverted_pairs(&mut result, Value::str(k.clone()), v);
+            }
+        }
+        Value::Bag(items) => {
+            for (k, count) in items.iter() {
+                result.push(make_inverted_pair(
+                    Value::Int(*count),
+                    Value::str(k.clone()),
+                ));
+            }
+        }
+        Value::Set(items) => {
+            for k in items.iter() {
+                result.push(make_inverted_pair(Value::Bool(true), Value::str(k.clone())));
+            }
+        }
+        Value::Mix(items) => {
+            for (k, weight) in items.iter() {
+                let (n, d) = f64_to_rat(*weight);
+                let weight_val = if d == 1 {
+                    Value::Int(n)
+                } else {
+                    Value::Rat(n, d)
+                };
+                result.push(make_inverted_pair(weight_val, Value::str(k.clone())));
+            }
+        }
+        Value::Pair(key, value) => {
+            extend_inverted_pairs(&mut result, Value::str(key.clone()), value);
+        }
+        Value::ValuePair(key, value) => {
+            extend_inverted_pairs(&mut result, *key.clone(), value);
+        }
+        Value::Array(_, _) | Value::Seq(_) | Value::Slip(_) => {
+            for item in crate::runtime::utils::value_to_list(target) {
+                match item {
+                    Value::Pair(key, value) => {
+                        extend_inverted_pairs(&mut result, Value::str(key), &value);
+                    }
+                    Value::ValuePair(key, value) => {
+                        extend_inverted_pairs(&mut result, *key, &value);
+                    }
+                    _ => return None,
+                }
+            }
+        }
+        _ => return None,
+    }
+    Some(Value::Seq(result.into()))
+}
+
 fn push_permutations(
     items: &[Value],
     used: &mut [bool],
@@ -425,72 +512,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Some(Ok(Value::array(positional_antipairs(&values))))
             }
         },
-        "invert" => match target {
-            Value::Hash(items) => {
-                let mut result = Vec::new();
-                let make_inverted_pair = |val: &Value, key: &str| -> Value {
-                    match val {
-                        Value::Str(s) => {
-                            Value::Pair(s.to_string(), Box::new(Value::str(key.to_string())))
-                        }
-                        _ => Value::ValuePair(
-                            Box::new(val.clone()),
-                            Box::new(Value::str(key.to_string())),
-                        ),
-                    }
-                };
-                for (k, v) in items.iter() {
-                    match v {
-                        Value::Array(arr, ..) => {
-                            for item in arr.iter() {
-                                result.push(make_inverted_pair(item, k));
-                            }
-                        }
-                        _ => {
-                            result.push(make_inverted_pair(v, k));
-                        }
-                    }
-                }
-                Some(Ok(Value::array(result)))
-            }
-            Value::Bag(items) => {
-                let mut result = Vec::new();
-                for (k, count) in items.iter() {
-                    result.push(Value::ValuePair(
-                        Box::new(Value::Int(*count)),
-                        Box::new(Value::str(k.to_string())),
-                    ));
-                }
-                Some(Ok(Value::array(result)))
-            }
-            Value::Set(items) => {
-                let mut result = Vec::new();
-                for k in items.iter() {
-                    result.push(Value::ValuePair(
-                        Box::new(Value::Bool(true)),
-                        Box::new(Value::str(k.to_string())),
-                    ));
-                }
-                Some(Ok(Value::array(result)))
-            }
-            Value::Mix(items) => {
-                let mut result = Vec::new();
-                for (k, weight) in items.iter() {
-                    let (n, d) = f64_to_rat(*weight);
-                    let weight_val = if d == 1 {
-                        Value::Int(n)
-                    } else {
-                        Value::Rat(n, d)
-                    };
-                    result.push(Value::ValuePair(
-                        Box::new(weight_val),
-                        Box::new(Value::str(k.to_string())),
-                    ));
-                }
-                Some(Ok(Value::array(result)))
-            }
-            _ => None,
-        },
+        "invert" => invert_value(target).map(Ok),
         "total" => match target {
             Value::Set(s) => Some(Ok(Value::Int(s.len() as i64))),
             Value::Bag(b) => Some(Ok(Value::Int(b.values().sum::<i64>()))),
