@@ -273,6 +273,10 @@ pub(crate) enum OpCode {
         label: Option<String>,
         scope_isolate: bool,
     },
+    OnceExpr {
+        key_idx: u32,
+        body_end: u32,
+    },
     DoGivenExpr {
         body_end: u32,
     },
@@ -785,6 +789,7 @@ impl CompiledCode {
             OpCode::Default { body_end, .. } => *body_end = target,
             OpCode::PackageScope { body_end, .. } => *body_end = target,
             OpCode::DoBlockExpr { body_end, .. } => *body_end = target,
+            OpCode::OnceExpr { body_end, .. } => *body_end = target,
             OpCode::DoGivenExpr { body_end, .. } => *body_end = target,
             OpCode::SubtestScope { body_end, .. } => *body_end = target,
             OpCode::ReactScope { body_end, .. } => *body_end = target,

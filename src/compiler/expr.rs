@@ -1549,6 +1549,20 @@ impl Compiler {
             Expr::PhaserExpr { body, .. } => {
                 self.compile_block_inline(body);
             }
+            Expr::Once { body } => {
+                let key = format!(
+                    "__once_{}::{}",
+                    self.current_package,
+                    STATE_COUNTER.fetch_add(1, Ordering::Relaxed)
+                );
+                let key_idx = self.code.add_constant(Value::str(key));
+                let once_idx = self.code.emit(OpCode::OnceExpr {
+                    key_idx,
+                    body_end: 0,
+                });
+                self.compile_block_inline(body);
+                self.code.patch_body_end(once_idx);
+            }
             // __ROUTINE__ magic
             Expr::RoutineMagic => {
                 self.code.emit(OpCode::RoutineMagic);

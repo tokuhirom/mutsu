@@ -528,6 +528,24 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             }
         }
     }
+    if input.starts_with("once")
+        && !input[4..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
+    {
+        let r = &input[4..];
+        let (r, _) = super::super::helpers::ws(r)?;
+        if r.starts_with('{') {
+            let (r, body) = super::misc::parse_block_body(r)?;
+            return Ok((r, Expr::Once { body }));
+        } else {
+            let (r, expr) = super::super::expr::expression_no_sequence(r)?;
+            return Ok((
+                r,
+                Expr::Once {
+                    body: vec![crate::ast::Stmt::Expr(expr)],
+                },
+            ));
+        }
+    }
     if let Ok(r) = try_kw("pi", Value::Num(std::f64::consts::PI)) {
         return Ok(r);
     }

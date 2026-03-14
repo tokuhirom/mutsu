@@ -560,6 +560,38 @@ impl Interpreter {
         self.state_vars.insert(key, value);
     }
 
+    pub(crate) fn current_once_scope(&self) -> Option<u64> {
+        if self.once_scope_stack.len() > 1 {
+            return self.once_scope_stack.last().copied();
+        }
+        match self.env.get("__mutsu_callable_id") {
+            Some(Value::Int(id)) if *id >= 0 => Some(*id as u64),
+            _ => self.once_scope_stack.last().copied(),
+        }
+    }
+
+    pub(crate) fn push_once_scope(&mut self, scope: u64) {
+        self.once_scope_stack.push(scope);
+    }
+
+    pub(crate) fn pop_once_scope(&mut self) {
+        self.once_scope_stack.pop();
+    }
+
+    pub(crate) fn next_once_scope_id(&mut self) -> u64 {
+        let scope = self.next_once_scope_id;
+        self.next_once_scope_id += 1;
+        scope
+    }
+
+    pub(crate) fn get_once_value(&self, key: &str) -> Option<&Value> {
+        self.once_values.get(key)
+    }
+
+    pub(crate) fn set_once_value(&mut self, key: String, value: Value) {
+        self.once_values.insert(key, value);
+    }
+
     pub(crate) fn when_matched(&self) -> bool {
         self.when_matched
     }
