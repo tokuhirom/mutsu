@@ -534,69 +534,60 @@ impl Compiler {
                 let nil_idx = sub_compiler.code.add_constant(Value::Nil);
                 sub_compiler.code.emit(OpCode::LoadConst(nil_idx));
             }
-        } else if sink_last_expr {
+        } else if Self::has_block_enter_leave_phasers(body) {
+            let idx = sub_compiler.code.emit(OpCode::BlockScope {
+                enter_end: 0,
+                body_end: 0,
+                keep_start: 0,
+                undo_start: 0,
+                end: 0,
+            });
+            let mut body_main: Vec<Stmt> = Vec::new();
             for stmt in body {
-                sub_compiler.compile_stmt(stmt);
+                match stmt {
+                    Stmt::Phaser {
+                        kind: PhaserKind::Enter,
+                        body,
+                    } => {
+                        for inner in body {
+                            sub_compiler.compile_stmt(inner);
+                        }
+                    }
+                    Stmt::Phaser {
+                        kind: PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo,
+                        ..
+                    } => {}
+                    _ => body_main.push(stmt.clone()),
+                }
             }
-            let nil_idx = sub_compiler.code.add_constant(Value::Nil);
-            sub_compiler.code.emit(OpCode::LoadConst(nil_idx));
-        } else {
-            // Compile body statements; last Stmt::Expr should NOT emit Pop (implicit return)
-            for (i, stmt) in body.iter().enumerate() {
-                let is_last = i == body.len() - 1;
-                if is_last {
-                    match stmt {
-                        Stmt::Expr(expr) => {
-                            sub_compiler.compile_expr(expr);
-                            // Don't emit Pop — leave value on stack as implicit return
-                            continue;
-                        }
-                        Stmt::If {
-                            cond,
-                            then_branch,
-                            else_branch,
-                            ..
-                        } => {
-                            sub_compiler.compile_if_value(cond, then_branch, else_branch);
-                            continue;
-                        }
-                        Stmt::Block(stmts) | Stmt::SyntheticBlock(stmts) => {
-                            // Bare blocks in final statement position auto-execute and
-                            // produce their final value.
-                            sub_compiler.compile_block_inline(stmts);
-                            continue;
-                        }
-                        Stmt::VarDecl { name, .. } => {
-                            sub_compiler.compile_stmt(stmt);
-                            // VarDecl as last statement returns the variable value
-                            if let Some(&slot) = sub_compiler.local_map.get(name) {
-                                sub_compiler.code.emit(OpCode::GetLocal(slot));
-                            } else {
-                                sub_compiler.emit_nil_value();
-                            }
-                            continue;
-                        }
-                        Stmt::Call { name, args } => {
-                            let positional: Option<Vec<Expr>> = args
-                                .iter()
-                                .map(|arg| match arg {
-                                    crate::ast::CallArg::Positional(expr) => Some(expr.clone()),
-                                    _ => None,
-                                })
-                                .collect();
-                            if let Some(positional_args) = positional {
-                                sub_compiler.compile_expr(&Expr::Call {
-                                    name: *name,
-                                    args: positional_args,
-                                });
-                                continue;
-                            }
-                        }
-                        _ => {}
+            sub_compiler.code.patch_block_enter_end(idx);
+            Self::compile_routine_body_stmts(&mut sub_compiler, &body_main, sink_last_expr);
+            sub_compiler.code.patch_block_body_end(idx);
+            sub_compiler.code.patch_block_keep_start(idx);
+            for stmt in body.iter().rev() {
+                if let Stmt::Phaser { kind, body } = stmt
+                    && matches!(kind, PhaserKind::Leave | PhaserKind::Keep)
+                {
+                    for inner in body {
+                        sub_compiler.compile_stmt(inner);
                     }
                 }
-                sub_compiler.compile_stmt(stmt);
             }
+            sub_compiler.code.patch_block_undo_start(idx);
+            for stmt in body.iter().rev() {
+                if let Stmt::Phaser { kind, body } = stmt
+                    && matches!(kind, PhaserKind::Leave | PhaserKind::Undo)
+                {
+                    for inner in body {
+                        sub_compiler.compile_stmt(inner);
+                    }
+                }
+            }
+            sub_compiler.code.patch_loop_end(idx);
+        } else if sink_last_expr {
+            Self::compile_routine_body_stmts(&mut sub_compiler, body, true);
+        } else {
+            Self::compile_routine_body_stmts(&mut sub_compiler, body, false);
         }
 
         let key = if multi {
@@ -636,6 +627,77 @@ impl Compiler {
             is_raw,
         };
         self.compiled_functions.insert(key, cf);
+    }
+
+    fn compile_routine_body_stmts(
+        sub_compiler: &mut Compiler,
+        body: &[Stmt],
+        sink_last_expr: bool,
+    ) {
+        if sink_last_expr {
+            for stmt in body {
+                sub_compiler.compile_stmt(stmt);
+            }
+            let nil_idx = sub_compiler.code.add_constant(Value::Nil);
+            sub_compiler.code.emit(OpCode::LoadConst(nil_idx));
+            return;
+        }
+        // Compile body statements; last Stmt::Expr should NOT emit Pop (implicit return)
+        for (i, stmt) in body.iter().enumerate() {
+            let is_last = i == body.len() - 1;
+            if is_last {
+                match stmt {
+                    Stmt::Expr(expr) => {
+                        sub_compiler.compile_expr(expr);
+                        // Don't emit Pop — leave value on stack as implicit return
+                        continue;
+                    }
+                    Stmt::If {
+                        cond,
+                        then_branch,
+                        else_branch,
+                        ..
+                    } => {
+                        sub_compiler.compile_if_value(cond, then_branch, else_branch);
+                        continue;
+                    }
+                    Stmt::Block(stmts) | Stmt::SyntheticBlock(stmts) => {
+                        // Bare blocks in final statement position auto-execute and
+                        // produce their final value.
+                        sub_compiler.compile_block_inline(stmts);
+                        continue;
+                    }
+                    Stmt::VarDecl { name, .. } => {
+                        sub_compiler.compile_stmt(stmt);
+                        // VarDecl as last statement returns the variable value
+                        if let Some(&slot) = sub_compiler.local_map.get(name) {
+                            sub_compiler.code.emit(OpCode::GetLocal(slot));
+                        } else {
+                            sub_compiler.emit_nil_value();
+                        }
+                        continue;
+                    }
+                    Stmt::Call { name, args } => {
+                        let positional: Option<Vec<Expr>> = args
+                            .iter()
+                            .map(|arg| match arg {
+                                crate::ast::CallArg::Positional(expr) => Some(expr.clone()),
+                                _ => None,
+                            })
+                            .collect();
+                        if let Some(positional_args) = positional {
+                            sub_compiler.compile_expr(&Expr::Call {
+                                name: *name,
+                                args: positional_args,
+                            });
+                            continue;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            sub_compiler.compile_stmt(stmt);
+        }
     }
 
     /// Compile a closure body to a `CompiledCode` (not stored in compiled_functions).
@@ -925,123 +987,129 @@ impl Compiler {
         });
         // Compile main body (last Stmt::Expr/Call leaves value on stack)
         let mut main_leaves_value = false;
-        for (i, stmt) in main_stmts.iter().enumerate() {
-            let is_last = i == main_stmts.len() - 1;
-            if is_last {
-                if let Stmt::Expr(expr) = stmt {
-                    self.compile_expr(expr);
-                    main_leaves_value = true;
-                    continue;
-                } else if let Stmt::Call { name, args } = stmt {
-                    let rewritten_args = Self::rewrite_stmt_call_args(&name.resolve(), args);
-                    let positional_only = rewritten_args
-                        .iter()
-                        .all(|arg| matches!(arg, CallArg::Positional(_)));
-
-                    if positional_only {
-                        let expr_args: Vec<Expr> = rewritten_args
-                            .iter()
-                            .filter_map(|arg| match arg {
-                                CallArg::Positional(expr) => Some(expr.clone()),
-                                _ => None,
-                            })
-                            .collect();
-                        self.compile_expr(&Expr::Call {
-                            name: *name,
-                            args: expr_args,
-                        });
+        if Self::has_block_enter_leave_phasers(&main_stmts) {
+            self.compile_stmt(&Stmt::Block(main_stmts.clone()));
+            self.compile_expr(&Expr::Var("_".to_string()));
+            main_leaves_value = true;
+        } else {
+            for (i, stmt) in main_stmts.iter().enumerate() {
+                let is_last = i == main_stmts.len() - 1;
+                if is_last {
+                    if let Stmt::Expr(expr) = stmt {
+                        self.compile_expr(expr);
                         main_leaves_value = true;
                         continue;
-                    }
+                    } else if let Stmt::Call { name, args } = stmt {
+                        let rewritten_args = Self::rewrite_stmt_call_args(&name.resolve(), args);
+                        let positional_only = rewritten_args
+                            .iter()
+                            .all(|arg| matches!(arg, CallArg::Positional(_)));
 
-                    let has_slip = rewritten_args
-                        .iter()
-                        .any(|arg| matches!(arg, CallArg::Slip(_)));
-                    if has_slip {
-                        let mut regular_count = 0u32;
+                        if positional_only {
+                            let expr_args: Vec<Expr> = rewritten_args
+                                .iter()
+                                .filter_map(|arg| match arg {
+                                    CallArg::Positional(expr) => Some(expr.clone()),
+                                    _ => None,
+                                })
+                                .collect();
+                            self.compile_expr(&Expr::Call {
+                                name: *name,
+                                args: expr_args,
+                            });
+                            main_leaves_value = true;
+                            continue;
+                        }
+
+                        let has_slip = rewritten_args
+                            .iter()
+                            .any(|arg| matches!(arg, CallArg::Slip(_)));
+                        if has_slip {
+                            let mut regular_count = 0u32;
+                            for arg in &rewritten_args {
+                                match arg {
+                                    CallArg::Positional(expr) => {
+                                        self.compile_call_arg(expr);
+                                        regular_count += 1;
+                                    }
+                                    CallArg::Named {
+                                        name: n,
+                                        value: Some(expr),
+                                    } => {
+                                        self.compile_expr(&Expr::Literal(Value::str(n.clone())));
+                                        self.compile_expr(expr);
+                                        self.code.emit(OpCode::MakePair);
+                                        regular_count += 1;
+                                    }
+                                    CallArg::Named {
+                                        name: n,
+                                        value: None,
+                                    } => {
+                                        self.compile_expr(&Expr::Literal(Value::str(n.clone())));
+                                        self.compile_expr(&Expr::Literal(Value::Bool(true)));
+                                        self.code.emit(OpCode::MakePair);
+                                        regular_count += 1;
+                                    }
+                                    CallArg::Slip(_) | CallArg::Invocant(_) => {}
+                                }
+                            }
+                            for arg in &rewritten_args {
+                                if let CallArg::Slip(expr) = arg {
+                                    self.compile_expr(expr);
+                                }
+                            }
+                            let name_idx = self.code.add_constant(Value::str(name.resolve()));
+                            self.code.emit(OpCode::CallFuncSlip {
+                                name_idx,
+                                regular_arity: regular_count,
+                                arg_sources_idx: None,
+                            });
+                            main_leaves_value = true;
+                            continue;
+                        }
+
                         for arg in &rewritten_args {
                             match arg {
-                                CallArg::Positional(expr) => {
-                                    self.compile_call_arg(expr);
-                                    regular_count += 1;
-                                }
+                                CallArg::Positional(expr) => self.compile_call_arg(expr),
                                 CallArg::Named {
-                                    name: n,
+                                    name,
                                     value: Some(expr),
                                 } => {
-                                    self.compile_expr(&Expr::Literal(Value::str(n.clone())));
+                                    self.compile_expr(&Expr::Literal(Value::str(name.clone())));
                                     self.compile_expr(expr);
                                     self.code.emit(OpCode::MakePair);
-                                    regular_count += 1;
                                 }
-                                CallArg::Named {
-                                    name: n,
-                                    value: None,
-                                } => {
-                                    self.compile_expr(&Expr::Literal(Value::str(n.clone())));
+                                CallArg::Named { name, value: None } => {
+                                    self.compile_expr(&Expr::Literal(Value::str(name.clone())));
                                     self.compile_expr(&Expr::Literal(Value::Bool(true)));
                                     self.code.emit(OpCode::MakePair);
-                                    regular_count += 1;
                                 }
-                                CallArg::Slip(_) | CallArg::Invocant(_) => {}
-                            }
-                        }
-                        for arg in &rewritten_args {
-                            if let CallArg::Slip(expr) = arg {
-                                self.compile_expr(expr);
+                                CallArg::Slip(_) | CallArg::Invocant(_) => unreachable!(),
                             }
                         }
                         let name_idx = self.code.add_constant(Value::str(name.resolve()));
-                        self.code.emit(OpCode::CallFuncSlip {
+                        let arg_sources_idx = rewritten_args
+                            .iter()
+                            .map(|arg| match arg {
+                                CallArg::Positional(expr) => Some(expr),
+                                _ => None,
+                            })
+                            .collect::<Option<Vec<&Expr>>>()
+                            .and_then(|exprs| {
+                                let owned: Vec<Expr> = exprs.into_iter().cloned().collect();
+                                self.add_arg_sources_constant(&owned)
+                            });
+                        self.code.emit(OpCode::CallFunc {
                             name_idx,
-                            regular_arity: regular_count,
-                            arg_sources_idx: None,
+                            arity: rewritten_args.len() as u32,
+                            arg_sources_idx,
                         });
                         main_leaves_value = true;
                         continue;
                     }
-
-                    for arg in &rewritten_args {
-                        match arg {
-                            CallArg::Positional(expr) => self.compile_call_arg(expr),
-                            CallArg::Named {
-                                name,
-                                value: Some(expr),
-                            } => {
-                                self.compile_expr(&Expr::Literal(Value::str(name.clone())));
-                                self.compile_expr(expr);
-                                self.code.emit(OpCode::MakePair);
-                            }
-                            CallArg::Named { name, value: None } => {
-                                self.compile_expr(&Expr::Literal(Value::str(name.clone())));
-                                self.compile_expr(&Expr::Literal(Value::Bool(true)));
-                                self.code.emit(OpCode::MakePair);
-                            }
-                            CallArg::Slip(_) | CallArg::Invocant(_) => unreachable!(),
-                        }
-                    }
-                    let name_idx = self.code.add_constant(Value::str(name.resolve()));
-                    let arg_sources_idx = rewritten_args
-                        .iter()
-                        .map(|arg| match arg {
-                            CallArg::Positional(expr) => Some(expr),
-                            _ => None,
-                        })
-                        .collect::<Option<Vec<&Expr>>>()
-                        .and_then(|exprs| {
-                            let owned: Vec<Expr> = exprs.into_iter().cloned().collect();
-                            self.add_arg_sources_constant(&owned)
-                        });
-                    self.code.emit(OpCode::CallFunc {
-                        name_idx,
-                        arity: rewritten_args.len() as u32,
-                        arg_sources_idx,
-                    });
-                    main_leaves_value = true;
-                    continue;
                 }
+                self.compile_stmt(stmt);
             }
-            self.compile_stmt(stmt);
         }
         if !main_leaves_value {
             self.code.emit(OpCode::LoadNil);

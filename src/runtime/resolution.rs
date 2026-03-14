@@ -5,6 +5,7 @@ type CompiledFnMap = std::collections::HashMap<String, crate::opcode::CompiledFu
 type ProtectBlockCompiled = std::sync::Arc<crate::opcode::CompiledCode>;
 type ProtectBlockCompiledFns = std::sync::Arc<CompiledFnMap>;
 type ProtectBlockCapturedSlots = std::sync::Arc<Vec<usize>>;
+pub(super) type SplitPhasers = (Vec<Stmt>, Vec<Stmt>, Vec<Stmt>, Vec<Stmt>);
 
 impl Interpreter {
     const LAZY_GATHER_TAKE_LIMIT_SIGNAL: &str = "__mutsu_lazy_gather_take_limit_reached__";
@@ -466,24 +467,35 @@ impl Interpreter {
         self.force_lazy_list(list)
     }
 
-    pub(super) fn split_block_phasers(&self, stmts: &[Stmt]) -> (Vec<Stmt>, Vec<Stmt>, Vec<Stmt>) {
+    pub(super) fn split_block_phasers(&self, stmts: &[Stmt]) -> SplitPhasers {
         let mut enter_ph = Vec::new();
-        let mut leave_ph = Vec::new();
         let mut body_main = Vec::new();
+        let mut success_queue = Vec::new();
+        let mut failure_queue = Vec::new();
         for stmt in stmts {
             if let Stmt::Phaser { kind, body } = stmt {
                 match kind {
                     PhaserKind::Enter => enter_ph.push(Stmt::Block(body.clone())),
-                    PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo => {
-                        leave_ph.push(Stmt::Block(body.clone()))
-                    }
                     _ => body_main.push(stmt.clone()),
                 }
             } else {
                 body_main.push(stmt.clone());
             }
         }
-        (enter_ph, leave_ph, body_main)
+        for stmt in stmts.iter().rev() {
+            if let Stmt::Phaser { kind, body } = stmt {
+                match kind {
+                    PhaserKind::Leave => {
+                        success_queue.push(Stmt::Block(body.clone()));
+                        failure_queue.push(Stmt::Block(body.clone()));
+                    }
+                    PhaserKind::Keep => success_queue.push(Stmt::Block(body.clone())),
+                    PhaserKind::Undo => failure_queue.push(Stmt::Block(body.clone())),
+                    _ => {}
+                }
+            }
+        }
+        (enter_ph, success_queue, failure_queue, body_main)
     }
 
     pub(super) fn make_promise_instance(&self, status: &str, result: Value) -> Value {

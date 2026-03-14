@@ -555,7 +555,7 @@ impl Interpreter {
         if let Some(content) = finish_content {
             self.env.insert("=finish".to_string(), Value::str(content));
         }
-        let (enter_ph, leave_ph, body_main) = self.split_block_phasers(&stmts);
+        let (enter_ph, success_ph, failure_ph, body_main) = self.split_block_phasers(&stmts);
         // Register END phasers eagerly (before VM execution) so they run
         // even if the main body dies or throws an exception.
         // Also filter them out of the body so they don't get registered again
@@ -588,9 +588,13 @@ impl Interpreter {
         let vm = crate::vm::VM::new(interp);
         let (interp, body_result) = vm.run(&code, &compiled_fns);
         *self = interp;
-        let leave_result = self.run_block_raw(&leave_ph);
-        if leave_result.is_err() && body_result.is_ok() {
-            leave_result?;
+        let queue_result = if Self::should_run_success_queue_vm(&body_result, self.env.get("_")) {
+            self.run_block_raw(&success_ph)
+        } else {
+            self.run_block_raw(&failure_ph)
+        };
+        if queue_result.is_err() && body_result.is_ok() {
+            queue_result?;
         }
 
         // If the main body failed (e.g. die), run END phasers before propagating
@@ -646,14 +650,18 @@ impl Interpreter {
     }
 
     pub(super) fn run_block(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
-        let (enter_ph, leave_ph, body_main) = self.split_block_phasers(stmts);
+        let (enter_ph, success_ph, failure_ph, body_main) = self.split_block_phasers(stmts);
         self.run_block_raw(&enter_ph)?;
-        let result = self.run_block_raw(&body_main);
-        let leave_res = self.run_block_raw(&leave_ph);
-        if leave_res.is_err() && result.is_ok() {
-            return leave_res;
+        let body_result = self.run_block_raw(&body_main);
+        let queue_res = if Self::should_run_success_queue_raw(&body_result, self.env.get("_")) {
+            self.run_block_raw(&success_ph)
+        } else {
+            self.run_block_raw(&failure_ph)
+        };
+        if queue_res.is_err() && body_result.is_ok() {
+            return queue_res;
         }
-        result
+        body_result
     }
 
     pub(super) fn run_block_raw(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
@@ -700,6 +708,54 @@ impl Interpreter {
             }
         }
         Ok(())
+    }
+
+    fn is_exceptional_block_exit(err: &RuntimeError) -> bool {
+        if err.is_fail {
+            return true;
+        }
+        if err.return_value.is_some() {
+            return false;
+        }
+        !(err.is_last
+            || err.is_next
+            || err.is_redo
+            || err.is_goto
+            || err.is_proceed
+            || err.is_succeed
+            || err.is_leave
+            || err.is_resume
+            || err.is_react_done)
+    }
+
+    fn should_run_success_queue_raw(
+        body_result: &Result<(), RuntimeError>,
+        current_topic: Option<&Value>,
+    ) -> bool {
+        match body_result {
+            Ok(()) => current_topic.cloned().unwrap_or(Value::Nil).truthy(),
+            Err(e) if !Self::is_exceptional_block_exit(e) => {
+                e.return_value.clone().unwrap_or(Value::Nil).truthy()
+            }
+            Err(_) => false,
+        }
+    }
+
+    fn should_run_success_queue_vm(
+        body_result: &Result<Option<Value>, RuntimeError>,
+        current_topic: Option<&Value>,
+    ) -> bool {
+        match body_result {
+            Ok(value) => value
+                .clone()
+                .or_else(|| current_topic.cloned())
+                .unwrap_or(Value::Nil)
+                .truthy(),
+            Err(e) if !Self::is_exceptional_block_exit(e) => {
+                e.return_value.clone().unwrap_or(Value::Nil).truthy()
+            }
+            Err(_) => false,
+        }
     }
 
     /// Resolve a module name to a file path by searching lib paths and standard locations.

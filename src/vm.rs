@@ -1742,9 +1742,16 @@ impl VM {
             OpCode::BlockScope {
                 enter_end,
                 body_end,
+                keep_start,
+                undo_start,
                 end,
             } => {
-                self.exec_block_scope_op(code, *enter_end, *body_end, *end, ip, compiled_fns)?;
+                self.exec_block_scope_op(
+                    code,
+                    [*enter_end, *body_end, *keep_start, *undo_start, *end],
+                    ip,
+                    compiled_fns,
+                )?;
             }
             OpCode::DoBlockExpr {
                 body_end,

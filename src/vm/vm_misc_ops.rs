@@ -1257,15 +1257,16 @@ impl VM {
     pub(super) fn exec_block_scope_op(
         &mut self,
         code: &CompiledCode,
-        enter_end: u32,
-        body_end: u32,
-        end: u32,
+        bounds: [u32; 5],
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
+        let [enter_end, body_end, keep_start, undo_start, end] = bounds;
         let enter_start = *ip + 1;
         let body_start = enter_end as usize;
-        let leave_start = body_end as usize;
+        let queue_start = body_end as usize;
+        let keep_start = keep_start as usize;
+        let undo_start = undo_start as usize;
         let end = end as usize;
         let routine_snapshot = self.interpreter.snapshot_routine_registry();
         self.ensure_env_synced(code);
@@ -1274,11 +1275,21 @@ impl VM {
 
         self.run_range(code, enter_start, body_start, compiled_fns)?;
         self.interpreter.push_block_scope_depth();
-        let mut body_err = None;
-        if let Err(e) = self.run_range(code, body_start, leave_start, compiled_fns) {
-            body_err = Some(e);
-        }
-        let leave_res = self.run_range(code, leave_start, end, compiled_fns);
+        let stack_base = self.stack.len();
+        let topic_before = self.last_topic_value.clone();
+        let body_result = self.run_range(code, body_start, queue_start, compiled_fns);
+        let body_value = if self.stack.len() > stack_base {
+            self.stack.last().cloned()
+        } else if self.last_topic_value != topic_before {
+            self.last_topic_value.clone()
+        } else {
+            None
+        };
+        let queue_res = if Self::should_run_success_queue(&body_result, body_value) {
+            self.run_range(code, keep_start, undo_start, compiled_fns)
+        } else {
+            self.run_range(code, undo_start, end, compiled_fns)
+        };
         self.interpreter.restore_routine_registry(routine_snapshot);
 
         self.ensure_env_synced(code);
@@ -1308,16 +1319,45 @@ impl VM {
         *self.interpreter.env_mut() = restored_env;
         self.interpreter.pop_block_scope_depth();
 
-        if let Err(e) = leave_res
-            && body_err.is_none()
+        if let Err(e) = queue_res
+            && body_result.is_ok()
         {
             return Err(e);
         }
-        if let Some(e) = body_err {
-            return Err(e);
-        }
+        body_result?;
         *ip = end;
         Ok(())
+    }
+
+    fn is_exceptional_block_exit(err: &RuntimeError) -> bool {
+        if err.is_fail {
+            return true;
+        }
+        if err.return_value.is_some() {
+            return false;
+        }
+        !(err.is_last
+            || err.is_next
+            || err.is_redo
+            || err.is_goto
+            || err.is_proceed
+            || err.is_succeed
+            || err.is_leave
+            || err.is_resume
+            || err.is_react_done)
+    }
+
+    fn should_run_success_queue(
+        body_result: &Result<(), RuntimeError>,
+        current_value: Option<Value>,
+    ) -> bool {
+        match body_result {
+            Ok(()) => current_value.unwrap_or(Value::Nil).truthy(),
+            Err(e) if !Self::is_exceptional_block_exit(e) => {
+                e.return_value.clone().unwrap_or(Value::Nil).truthy()
+            }
+            Err(_) => false,
+        }
     }
 
     pub(super) fn exec_do_block_expr_op(

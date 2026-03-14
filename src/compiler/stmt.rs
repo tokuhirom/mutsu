@@ -72,6 +72,8 @@ impl Compiler {
                     let idx = self.code.emit(OpCode::BlockScope {
                         enter_end: 0,
                         body_end: 0,
+                        keep_start: 0,
+                        undo_start: 0,
                         end: 0,
                     });
                     for s in stmts {
@@ -86,25 +88,44 @@ impl Compiler {
                         }
                     }
                     self.code.patch_block_enter_end(idx);
-                    for s in stmts {
-                        match s {
-                            Stmt::Phaser {
-                                kind:
-                                    PhaserKind::Enter
-                                    | PhaserKind::Leave
-                                    | PhaserKind::Keep
-                                    | PhaserKind::Undo,
-                                ..
-                            } => {}
-                            _ => self.compile_stmt(s),
+                    let body_stmts: Vec<&Stmt> = stmts
+                        .iter()
+                        .filter(|s| {
+                            !matches!(
+                                s,
+                                Stmt::Phaser {
+                                    kind: PhaserKind::Enter
+                                        | PhaserKind::Leave
+                                        | PhaserKind::Keep
+                                        | PhaserKind::Undo,
+                                    ..
+                                }
+                            )
+                        })
+                        .collect();
+                    for (i, s) in body_stmts.iter().enumerate() {
+                        let is_last = i == body_stmts.len() - 1;
+                        if is_last {
+                            self.compile_last_stmt_as_topic(s);
+                        } else {
+                            self.compile_stmt(s);
                         }
                     }
                     self.code.patch_block_body_end(idx);
-                    for s in stmts {
-                        if let Stmt::Phaser {
-                            kind: PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo,
-                            body,
-                        } = s
+                    self.code.patch_block_keep_start(idx);
+                    for s in stmts.iter().rev() {
+                        if let Stmt::Phaser { kind, body } = s
+                            && matches!(kind, PhaserKind::Leave | PhaserKind::Keep)
+                        {
+                            for inner in body {
+                                self.compile_stmt(inner);
+                            }
+                        }
+                    }
+                    self.code.patch_block_undo_start(idx);
+                    for s in stmts.iter().rev() {
+                        if let Stmt::Phaser { kind, body } = s
+                            && matches!(kind, PhaserKind::Leave | PhaserKind::Undo)
                         {
                             for inner in body {
                                 self.compile_stmt(inner);
@@ -140,6 +161,8 @@ impl Compiler {
                     let idx = self.code.emit(OpCode::BlockScope {
                         enter_end: 0,
                         body_end: 0,
+                        keep_start: 0,
+                        undo_start: 0,
                         end: 0,
                     });
                     self.code.patch_block_enter_end(idx);
@@ -147,6 +170,8 @@ impl Compiler {
                         self.compile_stmt(s);
                     }
                     self.code.patch_block_body_end(idx);
+                    self.code.patch_block_keep_start(idx);
+                    self.code.patch_block_undo_start(idx);
                     self.code.patch_loop_end(idx);
                 }
                 self.pop_dynamic_scope_lexical(saved_dynamic_scope);
