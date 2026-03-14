@@ -117,6 +117,163 @@ impl VM {
         }
     }
 
+    fn is_method_not_found(err: &RuntimeError) -> bool {
+        matches!(
+            err.exception.as_deref(),
+            Some(Value::Instance { class_name, .. }) if class_name == "X::Method::NotFound"
+        )
+    }
+
+    fn call_exists_pos(&mut self, instance: &Value, idx: Value) -> Result<bool, RuntimeError> {
+        match self
+            .interpreter
+            .call_method_with_values(instance.clone(), "EXISTS-POS", vec![idx])
+        {
+            Ok(value) => Ok(value.truthy()),
+            Err(err) if Self::is_method_not_found(&err) => Ok(false),
+            Err(err) => Err(err),
+        }
+    }
+
+    fn instance_exists_pos_result(
+        &mut self,
+        instance: &Value,
+        idx: &Value,
+        effective_negated: bool,
+        adverb_bits: u32,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let pairs: Vec<(Value, bool)> = match idx {
+            Value::Array(items, ..) => {
+                if let [Value::Whatever] = items.as_slice() {
+                    let elems = self
+                        .interpreter
+                        .call_method_with_values(instance.clone(), "elems", vec![])
+                        .unwrap_or(Value::Int(0));
+                    let len = crate::runtime::to_int(&elems).max(0) as usize;
+                    let mut pairs = Vec::with_capacity(len);
+                    for i in 0..len {
+                        let key = Value::Int(i as i64);
+                        pairs.push((key.clone(), self.call_exists_pos(instance, key)?));
+                    }
+                    pairs
+                } else if let [Value::Num(f)] = items.as_slice() {
+                    if f.is_infinite() && f.is_sign_positive() {
+                        let elems = self
+                            .interpreter
+                            .call_method_with_values(instance.clone(), "elems", vec![])
+                            .unwrap_or(Value::Int(0));
+                        let len = crate::runtime::to_int(&elems).max(0) as usize;
+                        let mut pairs = Vec::with_capacity(len);
+                        for i in 0..len {
+                            let key = Value::Int(i as i64);
+                            pairs.push((key.clone(), self.call_exists_pos(instance, key)?));
+                        }
+                        pairs
+                    } else {
+                        let mut pairs = Vec::with_capacity(items.len());
+                        for key in items.iter() {
+                            pairs.push((key.clone(), self.call_exists_pos(instance, key.clone())?));
+                        }
+                        pairs
+                    }
+                } else {
+                    let mut pairs = Vec::with_capacity(items.len());
+                    for key in items.iter() {
+                        pairs.push((key.clone(), self.call_exists_pos(instance, key.clone())?));
+                    }
+                    pairs
+                }
+            }
+            Value::Whatever => {
+                let elems = self
+                    .interpreter
+                    .call_method_with_values(instance.clone(), "elems", vec![])
+                    .unwrap_or(Value::Int(0));
+                let len = crate::runtime::to_int(&elems).max(0) as usize;
+                let mut pairs = Vec::with_capacity(len);
+                for i in 0..len {
+                    let key = Value::Int(i as i64);
+                    pairs.push((key.clone(), self.call_exists_pos(instance, key)?));
+                }
+                pairs
+            }
+            Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
+                let elems = self
+                    .interpreter
+                    .call_method_with_values(instance.clone(), "elems", vec![])
+                    .unwrap_or(Value::Int(0));
+                let len = crate::runtime::to_int(&elems).max(0) as usize;
+                let mut pairs = Vec::with_capacity(len);
+                for i in 0..len {
+                    let key = Value::Int(i as i64);
+                    pairs.push((key.clone(), self.call_exists_pos(instance, key)?));
+                }
+                pairs
+            }
+            _ => vec![(idx.clone(), self.call_exists_pos(instance, idx.clone())?)],
+        };
+
+        let is_multi = pairs.len() != 1
+            || matches!(idx, Value::Array(..) | Value::Whatever)
+            || matches!(idx, Value::Num(f) if f.is_infinite() && f.is_sign_positive());
+
+        let result = if !is_multi {
+            Value::Bool(pairs[0].1 ^ effective_negated)
+        } else {
+            match adverb_bits {
+                0 | 5 => Value::array(
+                    pairs
+                        .iter()
+                        .map(|(_, exists)| Value::Bool(*exists ^ effective_negated))
+                        .collect(),
+                ),
+                1 => {
+                    let mut vals = Vec::new();
+                    for (key, exists) in &pairs {
+                        if *exists {
+                            vals.push(key.clone());
+                            vals.push(Value::Bool(*exists ^ effective_negated));
+                        }
+                    }
+                    Value::array(vals)
+                }
+                2 => {
+                    let mut vals = Vec::new();
+                    for (key, exists) in &pairs {
+                        vals.push(key.clone());
+                        vals.push(Value::Bool(*exists ^ effective_negated));
+                    }
+                    Value::array(vals)
+                }
+                3 => {
+                    let mut vals = Vec::new();
+                    for (key, exists) in &pairs {
+                        if *exists {
+                            vals.push(Value::ValuePair(
+                                Box::new(key.clone()),
+                                Box::new(Value::Bool(*exists ^ effective_negated)),
+                            ));
+                        }
+                    }
+                    Value::array(vals)
+                }
+                4 => {
+                    let mut vals = Vec::new();
+                    for (key, exists) in &pairs {
+                        vals.push(Value::ValuePair(
+                            Box::new(key.clone()),
+                            Box::new(Value::Bool(*exists ^ effective_negated)),
+                        ));
+                    }
+                    Value::array(vals)
+                }
+                _ => Value::Nil,
+            }
+        };
+
+        Ok(Some(result))
+    }
+
     pub(super) fn typed_container_default(&self, target: &Value) -> Value {
         // Check for explicit `is default(...)` on the container first.
         if let Some(def) = self.interpreter.container_default(target) {
@@ -2021,6 +2178,25 @@ impl VM {
                 };
                 self.stack.push(result);
                 return Ok(());
+            }
+            if let Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } = &target
+            {
+                let is_stash = class_name == "Stash" && attributes.contains_key("symbols");
+                if !is_stash
+                    && let Some(result) = self.instance_exists_pos_result(
+                        &target,
+                        &idx,
+                        effective_negated,
+                        adverb_bits,
+                    )?
+                {
+                    self.stack.push(result);
+                    return Ok(());
+                }
             }
             let idxs = match &idx {
                 Value::Int(i) => vec![*i],
