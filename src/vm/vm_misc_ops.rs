@@ -1275,8 +1275,10 @@ impl VM {
         self.ensure_env_synced(code);
         let saved_env = self.interpreter.env().clone();
         let saved_locals = self.locals.clone();
+        let once_scope = self.interpreter.next_once_scope_id();
 
         self.run_range(code, enter_start, body_start, compiled_fns)?;
+        self.interpreter.push_once_scope(once_scope);
         self.interpreter.push_block_scope_depth();
         let stack_base = self.stack.len();
         let topic_before = self.last_topic_value.clone();
@@ -1321,6 +1323,7 @@ impl VM {
         }
         *self.interpreter.env_mut() = restored_env;
         self.interpreter.pop_block_scope_depth();
+        self.interpreter.pop_once_scope();
 
         if let Err(e) = queue_res
             && body_result.is_ok()
@@ -1376,6 +1379,8 @@ impl VM {
         let end = body_end as usize;
         let label = label.clone();
         let stack_base = self.stack.len();
+        let once_scope = self.interpreter.next_once_scope_id();
+        self.interpreter.push_once_scope(once_scope);
         let saved_env = if scope_isolate {
             Some((self.interpreter.env().clone(), self.locals.clone()))
         } else {
@@ -1417,6 +1422,7 @@ impl VM {
                 Err(e) => break Err(e),
             }
         };
+        self.interpreter.pop_once_scope();
         // Restore scope if scope_isolate is true
         if let Some((saved_env, saved_locals)) = saved_env {
             let block_result = self.stack.pop().unwrap_or(Value::Nil);
@@ -1432,6 +1438,41 @@ impl VM {
         }
         *ip = end;
         result
+    }
+
+    pub(super) fn exec_once_expr_op(
+        &mut self,
+        code: &CompiledCode,
+        key_idx: u32,
+        body_end: u32,
+        ip: &mut usize,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
+        let scope = self
+            .interpreter
+            .current_once_scope()
+            .unwrap_or_else(|| self.interpreter.next_once_scope_id());
+        let site_key = Self::const_str(code, key_idx);
+        let cache_key = format!("{scope}::{site_key}");
+        if let Some(value) = self.interpreter.get_once_value(&cache_key).cloned() {
+            self.stack.push(value);
+            *ip = body_end as usize;
+            return Ok(());
+        }
+
+        let body_start = *ip + 1;
+        let end = body_end as usize;
+        let stack_base = self.stack.len();
+        self.run_range(code, body_start, end, compiled_fns)?;
+        let value = if self.stack.len() > stack_base {
+            self.stack.pop().unwrap_or(Value::Nil)
+        } else {
+            Value::Nil
+        };
+        self.interpreter.set_once_value(cache_key, value.clone());
+        self.stack.push(value);
+        *ip = end;
+        Ok(())
     }
 
     pub(super) fn exec_let_save_op(

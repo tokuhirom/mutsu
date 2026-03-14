@@ -779,7 +779,7 @@ impl Interpreter {
                 env: new_env.clone(),
                 assumed_positional: data.assumed_positional.clone(),
                 assumed_named: data.assumed_named.clone(),
-                id: crate::value::next_instance_id(),
+                id: data.id,
                 empty_sig: data.empty_sig,
                 compiled_code: data.compiled_code.clone(),
             });
@@ -787,7 +787,7 @@ impl Interpreter {
                 "&?BLOCK".to_string(),
                 Value::WeakSub(std::sync::Arc::downgrade(&block_arc)),
             );
-            let block_sub = Value::make_sub(
+            let block_sub = Value::make_sub_with_id(
                 data.package,
                 data.name,
                 vec![],
@@ -795,6 +795,7 @@ impl Interpreter {
                 data.body.clone(),
                 data.is_rw,
                 new_env.clone(),
+                data.id,
             );
             self.env = new_env;
             self.env.insert(

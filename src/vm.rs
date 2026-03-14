@@ -166,6 +166,8 @@ impl VM {
             }
         }
         self.load_state_locals(code);
+        let root_once_scope = self.interpreter.next_once_scope_id();
+        self.interpreter.push_once_scope(root_once_scope);
         let mut ip = 0;
         while ip < code.ops.len() {
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
@@ -184,6 +186,7 @@ impl VM {
                     continue;
                 }
                 self.sync_state_locals(code);
+                self.interpreter.pop_once_scope();
                 return (self.interpreter, Err(e));
             }
             if self.interpreter.is_halted() {
@@ -191,6 +194,7 @@ impl VM {
             }
         }
         self.sync_state_locals(code);
+        self.interpreter.pop_once_scope();
         // Sync local variables back to the interpreter's env so that
         // callers (e.g. eval_block_value) can observe side effects.
         self.sync_env_from_locals(code);
@@ -220,6 +224,8 @@ impl VM {
             }
         }
         self.load_state_locals(code);
+        let root_once_scope = self.interpreter.next_once_scope_id();
+        self.interpreter.push_once_scope(root_once_scope);
         let mut ip = 0;
         while ip < code.ops.len() {
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
@@ -238,6 +244,7 @@ impl VM {
                     continue;
                 }
                 self.sync_state_locals(code);
+                self.interpreter.pop_once_scope();
                 return Err(e);
             }
             if self.interpreter.is_halted() {
@@ -245,6 +252,7 @@ impl VM {
             }
         }
         self.sync_state_locals(code);
+        self.interpreter.pop_once_scope();
         Ok(())
     }
 
@@ -1766,6 +1774,9 @@ impl VM {
                     ip,
                     compiled_fns,
                 )?;
+            }
+            OpCode::OnceExpr { key_idx, body_end } => {
+                self.exec_once_expr_op(code, *key_idx, *body_end, ip, compiled_fns)?;
             }
             OpCode::DoGivenExpr { body_end } => {
                 self.exec_do_given_expr_op(code, *body_end, ip, compiled_fns)?;

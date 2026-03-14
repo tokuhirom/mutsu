@@ -164,6 +164,9 @@ pub(crate) enum Expr {
         kind: PhaserKind,
         body: Vec<Stmt>,
     },
+    Once {
+        body: Vec<Stmt>,
+    },
     BlockMagic,
     Block(Vec<Stmt>),
     AnonSub {
@@ -912,7 +915,7 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
                 }
             }
         }
-        Expr::PhaserExpr { body, .. } => {
+        Expr::PhaserExpr { body, .. } | Expr::Once { body } => {
             for s in body {
                 collect_ph_stmt(s, out);
             }
