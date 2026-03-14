@@ -1,7 +1,7 @@
 use Test;
 use MONKEY-TYPING;
 
-plan 9;
+plan 12;
 
 # Basic augment class
 {
@@ -75,4 +75,18 @@ plan 9;
         method second() { self[1] }
     }
     is [10, 20, 30].second, 20, 'can augment builtin Array';
+}
+
+# Augment attributes remain visible after eval-lives-ok
+{
+    class EvalAugment { }
+    eval-lives-ok q[
+        use MONKEY-TYPING;
+        augment class EvalAugment {
+            has $.extra = 'from-eval';
+            method get-extra() { $!extra }
+        }
+    ], 'augment in EVAL lives';
+    is EvalAugment.new.extra, 'from-eval', 'public augmented attribute survives eval';
+    is EvalAugment.new(extra => 'set').get-extra, 'set', 'private storage from eval augment works';
 }
