@@ -49,6 +49,8 @@ impl VM {
             Some("CX::Succeed")
         } else if signal.is_warn {
             Some("CX::Warn")
+        } else if signal.is_return {
+            Some("CX::Return")
         } else {
             None
         }?;
@@ -837,6 +839,41 @@ impl VM {
                 self.interpreter.discard_let_saves(let_mark);
                 *ip = end;
                 Ok(())
+            }
+            Err(e) if e.is_return => {
+                self.interpreter.discard_let_saves(let_mark);
+                if control_begin < end {
+                    self.stack.truncate(saved_depth);
+                    let saved_topic = self.interpreter.env().get("_").cloned();
+                    if let Some(signal_topic) = Self::control_signal_topic_value(&e) {
+                        self.interpreter
+                            .env_mut()
+                            .insert("_".to_string(), signal_topic);
+                    }
+                    let saved_when = self.interpreter.when_matched();
+                    self.interpreter.set_when_matched(false);
+                    match self.run_range(code, control_begin, end, compiled_fns) {
+                        Ok(()) => {
+                            self.stack.truncate(saved_depth);
+                            self.stack.push(Value::Nil);
+                        }
+                        Err(control_err) if control_err.is_succeed => {
+                            self.stack.truncate(saved_depth);
+                            self.stack.push(Value::Nil);
+                        }
+                        Err(control_err) => return Err(control_err),
+                    }
+                    self.interpreter.set_when_matched(saved_when);
+                    if let Some(v) = saved_topic {
+                        self.interpreter.env_mut().insert("_".to_string(), v);
+                    } else {
+                        self.interpreter.env_mut().remove("_");
+                    }
+                    *ip = end;
+                    Ok(())
+                } else {
+                    Err(e)
+                }
             }
             Err(e) if e.return_value.is_some() && !e.is_succeed => {
                 self.interpreter.discard_let_saves(let_mark);
