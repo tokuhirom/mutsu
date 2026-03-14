@@ -208,6 +208,37 @@ fn split_prop_args(s: &str) -> (&str, Option<&str>) {
 }
 
 impl Interpreter {
+    fn regex_alternation_separator(out: &str) -> Option<&'static str> {
+        let trimmed = out.trim_end_matches(char::is_whitespace);
+        if trimmed.ends_with("||") {
+            Some("||")
+        } else if trimmed.ends_with('|') {
+            Some("|")
+        } else {
+            None
+        }
+    }
+
+    fn push_regex_interpolated_alternation(out: &mut String, alts: &[String]) {
+        if alts.is_empty() {
+            out.push_str("[]");
+            return;
+        }
+        if alts.len() == 1 {
+            out.push_str(&alts[0]);
+            return;
+        }
+        if let Some(separator) = Self::regex_alternation_separator(out) {
+            out.push_str(&alts.join(separator));
+            return;
+        }
+        let mut ordered = alts.to_vec();
+        ordered.sort_by_key(|alt| alt.len());
+        out.push('[');
+        out.push_str(&ordered.into_iter().rev().collect::<Vec<_>>().join("|"));
+        out.push(']');
+    }
+
     /// Split a regex pattern on top-level `|` or `||` alternation operators.
     /// Respects grouping: `(...)`, `[...]`, `{...}`, `<...>` and escapes.
     fn split_top_level_alternation(pattern: &str) -> Vec<String> {
@@ -1788,20 +1819,18 @@ impl Interpreter {
                         Value::Array(arr, _) => arr.as_ref().clone(),
                         _ => vec![value],
                     };
-                    out.push('[');
-                    for (idx, elt) in elements.iter().enumerate() {
-                        if idx > 0 {
-                            out.push('|');
-                        }
+                    let mut alts = Vec::new();
+                    for elt in &elements {
                         match elt {
-                            Value::Regex(pat) => out.push_str(pat),
-                            Value::RegexWithAdverbs { pattern, .. } => out.push_str(pattern),
-                            other => out.push_str(&Self::escape_regex_scalar_literal(
-                                &other.to_string_value(),
-                            )),
+                            Value::Regex(pat) => alts.push(pat.to_string()),
+                            Value::RegexWithAdverbs { pattern, .. } => {
+                                alts.push(pattern.to_string())
+                            }
+                            other => alts
+                                .push(Self::escape_regex_scalar_literal(&other.to_string_value())),
                         }
                     }
-                    out.push(']');
+                    Self::push_regex_interpolated_alternation(&mut out, &alts);
                     i = j;
                     continue;
                 } else if j < chars.len() && chars[j] == '(' {
@@ -1836,7 +1865,7 @@ impl Interpreter {
                                 .push(Self::escape_regex_scalar_literal(&other.to_string_value())),
                         }
                     }
-                    out.push_str(&alts.join("||"));
+                    Self::push_regex_interpolated_alternation(&mut out, &alts);
                     i = j;
                     continue;
                 }
@@ -2264,7 +2293,7 @@ mod tests {
             ]),
         );
         let interpolated = interp.interpolate_regex_scalars(" ||@list ").unwrap();
-        assert_eq!(interpolated, " ||[x|xx|xxxx] ");
+        assert_eq!(interpolated, " ||x||xx||xxxx ");
     }
 
     #[test]
