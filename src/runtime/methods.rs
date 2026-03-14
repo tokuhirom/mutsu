@@ -740,14 +740,17 @@ impl Interpreter {
                         let n = name.resolve();
                         mixins.contains_key(&n)
                             || mixins.contains_key(&format!("__mutsu_role__{}", n))
-                            || inner.does_check(&n)
+                            || self.type_matches_value(&n, &target)
                     }
                     Value::Str(name) => {
                         mixins.contains_key(name.as_str())
                             || mixins.contains_key(&format!("__mutsu_role__{}", name))
-                            || inner.does_check(name)
+                            || self.type_matches_value(name, &target)
                     }
-                    other => inner.does_check(&other.to_string_value()),
+                    Value::Instance { class_name, .. } => {
+                        self.type_matches_value(&class_name.resolve(), &target)
+                    }
+                    other => self.type_matches_value(&other.to_string_value(), &target),
                 };
                 return Ok(Value::Bool(does));
             }
@@ -1151,6 +1154,7 @@ impl Interpreter {
             && matches!(
                 method,
                 "can"
+                    | "does"
                     | "isa"
                     | "lookup"
                     | "find_method"
@@ -1638,12 +1642,13 @@ impl Interpreter {
                 return Ok(Value::array(results));
             }
             "does" if args.len() == 1 => {
-                let role_name = match &args[0] {
+                let type_name = match &args[0] {
                     Value::Package(name) => name.resolve(),
                     Value::Str(name) => name.to_string(),
-                    _ => return Ok(Value::Bool(false)),
+                    Value::Instance { class_name, .. } => class_name.resolve(),
+                    other => other.to_string_value(),
                 };
-                return Ok(Value::Bool(target.does_check(&role_name)));
+                return Ok(Value::Bool(self.type_matches_value(&type_name, &target)));
             }
             "start" => {
                 if let Some(cls) = self.promise_class_name(&target) {

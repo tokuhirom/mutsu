@@ -410,15 +410,10 @@ impl Interpreter {
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
                 if method_name.is_empty() {
-                    return Ok(Value::Bool(false));
+                    return Ok(Value::array(Vec::new()));
                 }
-                let can = self.class_has_method(&class_name.resolve(), &method_name)
-                    || self.has_user_method(&class_name.resolve(), &method_name)
-                    || matches!(
-                        method_name.as_str(),
-                        "isa" | "gist" | "raku" | "perl" | "name" | "clone"
-                    );
-                return Ok(Value::Bool(can));
+                let results = self.collect_can_methods(&target, &method_name);
+                return Ok(Value::array(results));
             }
             if class_name == "Proc::Async" {
                 if matches!(

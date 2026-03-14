@@ -36,6 +36,7 @@ impl Interpreter {
                 | "archetypes"
                 | "isa"
                 | "can"
+                | "does"
                 | "lookup"
                 | "find_method"
                 | "add_method"
@@ -244,12 +245,22 @@ impl Interpreter {
                 }
             }
             "can" if args.len() >= 2 => {
-                let invocant = &args[0];
+                let invocant = &args[args.len() - 2];
                 // The method name is always the last argument. When called via ^can,
                 // the args may be [Package, target, method_name] due to Package insertion.
                 let method_name = args.last().unwrap().to_string_value();
                 let results = self.collect_can_methods(invocant, &method_name);
                 Ok(Value::array(results))
+            }
+            "does" if args.len() >= 2 => {
+                let invocant = &args[args.len() - 2];
+                let type_name = match args.last().unwrap() {
+                    Value::Package(name) => name.resolve(),
+                    Value::Str(name) => name.to_string(),
+                    Value::Instance { class_name, .. } => class_name.resolve(),
+                    other => other.to_string_value(),
+                };
+                Ok(Value::Bool(self.type_matches_value(&type_name, invocant)))
             }
             "lookup" if args.len() >= 2 => {
                 let invocant = &args[0];
@@ -1209,7 +1220,7 @@ impl Interpreter {
             if let Some(class_def) = self.classes.get(cn)
                 && let Some(defs) = class_def.methods.get(method_name)
             {
-                for def in defs {
+                for def in defs.iter().filter(|def| !def.is_my || cn == &class_name) {
                     // Prepend "self" to params so the method can be called
                     // as $meth($invocant) — the first argument binds as self.
                     let mut params = vec!["self".to_string()];

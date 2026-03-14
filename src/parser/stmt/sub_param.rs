@@ -1256,7 +1256,7 @@ pub(super) fn method_decl(input: &str) -> PResult<'_, Stmt> {
 pub(super) fn submethod_decl(input: &str) -> PResult<'_, Stmt> {
     let r = keyword("submethod", input).ok_or_else(|| PError::expected("submethod declaration"))?;
     let (r, _) = ws1(r)?;
-    method_decl_body(r, false, false)
+    method_decl_body_with_my(r, false, false, true)
 }
 
 pub(super) fn method_decl_body(input: &str, multi: bool, is_our: bool) -> PResult<'_, Stmt> {
