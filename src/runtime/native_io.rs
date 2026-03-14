@@ -8,6 +8,48 @@ enum IoPathExtensionPartsSpec {
     Range { low: i64, high: i64 },
 }
 
+fn io_path_missing_error(path: &str, method: &str) -> RuntimeError {
+    let message = format!("Failed to find '{}' while trying to do '.{}'", path, method);
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message.clone()));
+    attrs.insert("path".to_string(), Value::str(path.to_string()));
+    attrs.insert("trying".to_string(), Value::str(method.to_string()));
+    let mut err = RuntimeError::new(message);
+    err.exception = Some(Box::new(Value::make_instance(
+        Symbol::intern("X::IO::DoesNotExist"),
+        attrs,
+    )));
+    err
+}
+
+fn io_path_metadata(
+    path: &Path,
+    display_path: &str,
+    method: &str,
+) -> Result<fs::Metadata, RuntimeError> {
+    fs::metadata(path).map_err(|_| io_path_missing_error(display_path, method))
+}
+
+#[cfg(unix)]
+fn metadata_is_readable(metadata: &fs::Metadata) -> bool {
+    metadata.permissions().mode() & 0o444 != 0
+}
+
+#[cfg(not(unix))]
+fn metadata_is_readable(_metadata: &fs::Metadata) -> bool {
+    true
+}
+
+#[cfg(unix)]
+fn metadata_is_writable(metadata: &fs::Metadata) -> bool {
+    metadata.permissions().mode() & 0o222 != 0
+}
+
+#[cfg(not(unix))]
+fn metadata_is_writable(metadata: &fs::Metadata) -> bool {
+    !metadata.permissions().readonly()
+}
+
 impl IoPathExtensionPartsSpec {
     fn select(&self, available: i64) -> Option<i64> {
         match self {
@@ -246,25 +288,27 @@ impl Interpreter {
             "is-absolute" => Ok(Value::Bool(original.is_absolute())),
             "is-relative" => Ok(Value::Bool(!original.is_absolute())),
             "e" => Ok(Value::Bool(path_buf.exists())),
-            "f" => Ok(Value::Bool(path_buf.is_file())),
-            "d" => Ok(Value::Bool(path_buf.is_dir())),
+            "f" => Ok(Value::Bool(
+                io_path_metadata(&path_buf, &p, method)?.is_file(),
+            )),
+            "d" => Ok(Value::Bool(
+                io_path_metadata(&path_buf, &p, method)?.is_dir(),
+            )),
             "l" => {
                 let linked = fs::symlink_metadata(&path_buf)
                     .map(|meta| meta.file_type().is_symlink())
-                    .unwrap_or(false);
+                    .map_err(|_| io_path_missing_error(&p, method))?;
                 Ok(Value::Bool(linked))
             }
-            "r" => Ok(Value::Bool(fs::metadata(&path_buf).is_ok())),
-            "w" => {
-                let writable = fs::metadata(&path_buf)
-                    .map(|meta| !meta.permissions().readonly())
-                    .unwrap_or(false);
-                Ok(Value::Bool(writable))
-            }
+            "r" => Ok(Value::Bool(metadata_is_readable(&io_path_metadata(
+                &path_buf, &p, method,
+            )?))),
+            "w" => Ok(Value::Bool(metadata_is_writable(&io_path_metadata(
+                &path_buf, &p, method,
+            )?))),
             "x" => {
-                let executable = fs::metadata(&path_buf)
-                    .map(|meta| Self::metadata_is_executable(&meta))
-                    .unwrap_or(false);
+                let executable =
+                    Self::metadata_is_executable(&io_path_metadata(&path_buf, &p, method)?);
                 Ok(Value::Bool(executable))
             }
             "mode" => {
@@ -286,15 +330,11 @@ impl Interpreter {
                 }
             }
             "s" => {
-                let size = fs::metadata(&path_buf)
-                    .map(|meta| meta.len())
-                    .map_err(|err| RuntimeError::new(format!("Failed to stat '{}': {}", p, err)))?;
+                let size = io_path_metadata(&path_buf, &p, method)?.len();
                 Ok(Value::Int(size as i64))
             }
             "z" => {
-                let zero = fs::metadata(&path_buf)
-                    .map(|meta| meta.len() == 0)
-                    .unwrap_or(false);
+                let zero = io_path_metadata(&path_buf, &p, method)?.len() == 0;
                 Ok(Value::Bool(zero))
             }
             "modified" => {

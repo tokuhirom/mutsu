@@ -17,7 +17,7 @@ my $base = "tmp/io-path-methods-regression".IO;
 my $real = $base.add("real");
 my $link = $base.add("link");
 
-if $link.l || $link.e {
+if try { $link.l } || $link.e {
     $link.unlink;
 }
 if $real.e {
