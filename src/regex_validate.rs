@@ -12,6 +12,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
     let source = skip_inline_adverbs(source);
     let mut chars = source.chars().peekable();
     let mut prev_was_quantifier = false;
+    let mut prev_was_tilde = false;
 
     while let Some(c) = chars.next() {
         match c {
@@ -24,6 +25,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             // Valid metacharacters (includes word boundary markers «»)
             '.' | '^' | '|' | '&' | '~' | '=' | ',' | '«' | '»' => {
                 prev_was_quantifier = false;
+                prev_was_tilde = c == '~';
             }
             // % is a separator quantifier modifier, but %var is a hash interpolation (reserved)
             '%' => {
@@ -74,10 +76,23 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             }
             // Quantifiers
             '*' | '+' | '?' => {
+                if prev_was_tilde {
+                    let msg = "Quantifier quantifies nothing";
+                    let mut attrs = HashMap::new();
+                    attrs.insert("message".to_string(), Value::str(msg.to_string()));
+                    let ex = Value::make_instance(
+                        Symbol::intern("X::Syntax::Regex::SolitaryQuantifier"),
+                        attrs,
+                    );
+                    let mut err = RuntimeError::new(msg);
+                    err.exception = Some(Box::new(ex));
+                    return Err(err);
+                }
                 if prev_was_quantifier {
                     return Err(make_quantifier_error(c));
                 }
                 prev_was_quantifier = true;
+                prev_was_tilde = false;
                 // ** is the general quantifier (e.g., ** 2, ** 2..5)
                 if c == '*' && chars.peek() == Some(&'*') {
                     chars.next(); // consume second *
@@ -107,6 +122,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             // Escape sequences
             '\\' => {
                 prev_was_quantifier = false;
+                prev_was_tilde = false;
                 if let Some(&esc) = chars.peek() {
                     chars.next();
                     if esc.is_ascii_alphabetic() {
@@ -118,6 +134,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             // Quoted strings — skip content
             '\'' | '"' | '\u{2018}' | '\u{201A}' | '\u{201C}' | '\u{201E}' | '\u{FF62}' => {
                 prev_was_quantifier = false;
+                prev_was_tilde = false;
                 let close = match c {
                     '\'' => '\'',
                     '"' => '"',
@@ -142,15 +159,18 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             // << and >> are word boundaries, not angle bracket pairs
             '<' if chars.peek() == Some(&'<') => {
                 prev_was_quantifier = false;
+                prev_was_tilde = false;
                 chars.next(); // consume second <
             }
             '>' if chars.peek() == Some(&'>') => {
                 prev_was_quantifier = false;
+                prev_was_tilde = false;
                 chars.next(); // consume second >
             }
             // Assertions/named rules — skip balanced <...>
             '<' => {
                 prev_was_quantifier = false;
+                prev_was_tilde = false;
                 // Collect the content to check for longname aliases
                 let mut content = String::new();
                 let mut depth = 1u32;
@@ -198,14 +218,17 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             // Grouping — skip balanced content
             '[' => {
                 prev_was_quantifier = false;
+                prev_was_tilde = false;
                 skip_balanced(&mut chars, '[', ']');
             }
             '(' => {
                 prev_was_quantifier = false;
+                prev_was_tilde = false;
                 skip_balanced(&mut chars, '(', ')');
             }
             '{' => {
                 prev_was_quantifier = false;
+                prev_was_tilde = false;
                 // Collect content inside braces to check for $!attr
                 let mut content = String::new();
                 let mut depth = 1u32;
@@ -250,10 +273,12 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             // Closing brackets — just skip
             ']' | ')' | '}' | '>' => {
                 prev_was_quantifier = false;
+                prev_was_tilde = false;
             }
             // Comment
             '#' => {
                 prev_was_quantifier = false;
+                prev_was_tilde = false;
                 for ch in chars.by_ref() {
                     if ch == '\n' {
                         break;
@@ -324,6 +349,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             // Alphanumeric and underscore are valid as literals
             _ if c.is_alphanumeric() || c == '_' => {
                 prev_was_quantifier = false;
+                prev_was_tilde = false;
             }
             // Bare '-' is not valid as a literal in regex
             '-' => {

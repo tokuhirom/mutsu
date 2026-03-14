@@ -373,6 +373,15 @@ enum RegexAtom {
     EndOfLine,
     /// `$0`, `$1`, etc. — backreference to positional capture group
     Backref(usize),
+    /// Internal marker used while rewriting `left ~ goal inner`.
+    TildeMarker,
+    /// Goal matching produced by `~`: match `inner` first, then `goal`,
+    /// but preserve capture order as written (`goal` before `inner`).
+    GoalMatch {
+        goal: RegexPattern,
+        inner: RegexPattern,
+        goal_text: String,
+    },
 }
 
 #[derive(Clone)]

@@ -2,6 +2,70 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    fn first_goal_name(pattern: &RegexPattern) -> Option<String> {
+        for token in &pattern.tokens {
+            match &token.atom {
+                RegexAtom::GoalMatch { goal_text, .. } => return Some(goal_text.clone()),
+                RegexAtom::Group(inner) | RegexAtom::CaptureGroup(inner) => {
+                    if let Some(goal) = Self::first_goal_name(inner) {
+                        return Some(goal);
+                    }
+                }
+                RegexAtom::Alternation(alts) => {
+                    for alt in alts {
+                        if let Some(goal) = Self::first_goal_name(alt) {
+                            return Some(goal);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    fn extract_tilde_goal_from_source(pattern: &str) -> Option<String> {
+        let mut chars = pattern.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch != '~' {
+                continue;
+            }
+            while chars.peek().is_some_and(|c| c.is_whitespace()) {
+                chars.next();
+            }
+            let open = chars.next()?;
+            let close = match open {
+                '\'' => '\'',
+                '"' => '"',
+                '\u{2018}' | '\u{201A}' => '\u{2019}',
+                '\u{201C}' | '\u{201E}' => '\u{201D}',
+                '\u{FF62}' => '\u{FF63}',
+                other => return Some(other.to_string()),
+            };
+            let mut body = String::new();
+            for ch in chars.by_ref() {
+                if ch == close {
+                    break;
+                }
+                body.push(ch);
+            }
+            return Some(format!("{body:?}"));
+        }
+        None
+    }
+
+    fn make_goal_failure_value(&self, goal: &str, pos: usize) -> Value {
+        let msg = format!("Cannot find {goal} near position {pos}");
+        let mut ex_attrs = HashMap::new();
+        ex_attrs.insert("message".to_string(), Value::str(msg));
+        let exception = Value::make_instance(Symbol::intern("X::AdHoc"), ex_attrs);
+
+        let mut failure_attrs = HashMap::new();
+        failure_attrs.insert("exception".to_string(), exception);
+        failure_attrs.insert("handled".to_string(), Value::Bool(true));
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+    }
+
     pub(super) fn dispatch_package_parse(
         &mut self,
         package_name: &str,
@@ -75,6 +139,7 @@ impl Interpreter {
             )));
         }
         self.env.insert("_".to_string(), Value::str(text.clone()));
+        Self::clear_pending_goal_failure();
         let result = (|| -> Result<Value, RuntimeError> {
             let pattern = match self.eval_token_call_values(&start_rule, &rule_args) {
                 Ok(Some(pattern)) => pattern,
@@ -108,6 +173,27 @@ impl Interpreter {
                 self.regex_match_with_captures(&pattern, &text)
             };
             let Some(captures) = captures else {
+                let goal = Self::take_pending_goal_failure().or_else(|| {
+                    self.parse_regex(&pattern)
+                        .and_then(|p| Self::first_goal_name(&p))
+                        .map(|goal| (goal, text.chars().count()))
+                });
+                if let Some((goal, pos)) = goal {
+                    match self.call_method_with_values(
+                        Value::Package(Symbol::intern(package_name)),
+                        "FAILGOAL",
+                        vec![Value::str(goal.clone())],
+                    ) {
+                        Ok(_) => {
+                            self.env.insert("/".to_string(), Value::Nil);
+                            return Ok(self.make_goal_failure_value(&goal, pos));
+                        }
+                        Err(err) if err.message.contains("X::Method::NotFound") => {}
+                        Err(err) => return Err(err),
+                    }
+                    self.env.insert("/".to_string(), Value::Nil);
+                    return Ok(self.make_goal_failure_value(&goal, pos));
+                }
                 self.env.insert("/".to_string(), Value::Nil);
                 return Ok(self.parse_failure_for_pattern(&text, Some(&pattern)));
             };
@@ -351,6 +437,9 @@ impl Interpreter {
     }
 
     pub(super) fn parse_failure_for_pattern(&mut self, text: &str, pattern: Option<&str>) -> Value {
+        if let Some(goal) = pattern.and_then(Self::extract_tilde_goal_from_source) {
+            return self.make_goal_failure_value(&goal, text.chars().count());
+        }
         let best_end = pattern
             .map(|pat| self.longest_complete_prefix_end(pat, text))
             .unwrap_or(0);

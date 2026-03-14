@@ -1,5 +1,10 @@
 use super::*;
 use crate::symbol::Symbol;
+use std::cell::RefCell;
+
+thread_local! {
+    static PENDING_REGEX_GOAL_FAILURE: RefCell<Option<(String, usize)>> = const { RefCell::new(None) };
+}
 
 struct NamedRegexLookupSpec {
     silent: bool,
@@ -31,7 +36,40 @@ fn is_simple_atom(atom: &RegexAtom) -> bool {
     )
 }
 
+fn merge_regex_captures(mut dst: RegexCaptures, mut src: RegexCaptures) -> RegexCaptures {
+    for (k, v) in src.named.drain() {
+        dst.named.entry(k).or_default().extend(v);
+    }
+    dst.positional.append(&mut src.positional);
+    dst.positional_subcaps.append(&mut src.positional_subcaps);
+    dst.code_blocks.append(&mut src.code_blocks);
+    dst
+}
+
 impl Interpreter {
+    pub(super) fn clear_pending_goal_failure() {
+        PENDING_REGEX_GOAL_FAILURE.with(|slot| {
+            *slot.borrow_mut() = None;
+        });
+    }
+
+    pub(super) fn take_pending_goal_failure() -> Option<(String, usize)> {
+        PENDING_REGEX_GOAL_FAILURE.with(|slot| slot.borrow_mut().take())
+    }
+
+    fn record_goal_failure(goal: &str, pos: usize) {
+        PENDING_REGEX_GOAL_FAILURE.with(|slot| {
+            let mut slot = slot.borrow_mut();
+            let replace = slot
+                .as_ref()
+                .map(|(_, best_pos)| pos >= *best_pos)
+                .unwrap_or(true);
+            if replace {
+                *slot = Some((goal.to_string(), pos));
+            }
+        });
+    }
+
     fn regex_escape_literal(text: &str) -> String {
         let mut out = String::new();
         for ch in text.chars() {
@@ -1543,6 +1581,32 @@ impl Interpreter {
             }
             return out;
         }
+        if let RegexAtom::GoalMatch {
+            goal,
+            inner,
+            goal_text,
+        } = atom
+        {
+            let mut out = Vec::new();
+            for (inner_end, inner_caps) in
+                self.regex_match_ends_from_caps_in_pkg(inner, chars, pos, pkg)
+            {
+                let goal_matches =
+                    self.regex_match_ends_from_caps_in_pkg(goal, chars, inner_end, pkg);
+                if goal_matches.is_empty() {
+                    Self::record_goal_failure(goal_text, inner_end);
+                    continue;
+                }
+                for (goal_end, goal_caps) in goal_matches {
+                    let new_caps = merge_regex_captures(
+                        current_caps.clone(),
+                        merge_regex_captures(goal_caps, inner_caps.clone()),
+                    );
+                    out.push((goal_end, new_caps));
+                }
+            }
+            return out;
+        }
         if let RegexAtom::CaptureGroup(pattern) = atom {
             let mut out = Vec::new();
             for (end, inner_caps) in
@@ -1832,6 +1896,21 @@ impl Interpreter {
             RegexAtom::CaptureGroup(pattern) => {
                 return self.regex_match_end_from_in_pkg(pattern, chars, pos, pkg);
             }
+            RegexAtom::GoalMatch {
+                goal,
+                inner,
+                goal_text,
+            } => {
+                if let Some(inner_end) = self.regex_match_end_from_in_pkg(inner, chars, pos, pkg) {
+                    if let Some(goal_end) =
+                        self.regex_match_end_from_in_pkg(goal, chars, inner_end, pkg)
+                    {
+                        return Some(goal_end);
+                    }
+                    Self::record_goal_failure(goal_text, inner_end);
+                }
+                return None;
+            }
             RegexAtom::Alternation(alternatives) => {
                 for alt in alternatives {
                     if let Some(end) = self.regex_match_end_from_in_pkg(alt, chars, pos, pkg) {
@@ -2085,6 +2164,7 @@ impl Interpreter {
             RegexAtom::Group(_)
             | RegexAtom::CaptureGroup(_)
             | RegexAtom::Alternation(_)
+            | RegexAtom::GoalMatch { .. }
             | RegexAtom::Newline
             | RegexAtom::NotNewline
             | RegexAtom::ZeroWidth
@@ -2099,6 +2179,7 @@ impl Interpreter {
             | RegexAtom::LeftWordBoundary
             | RegexAtom::RightWordBoundary
             | RegexAtom::StartOfLine
+            | RegexAtom::TildeMarker
             | RegexAtom::EndOfLine => unreachable!(),
         };
         if matched {
@@ -2140,6 +2221,27 @@ impl Interpreter {
                             .append(&mut inner_caps.positional_subcaps);
                         (next, new_caps)
                     });
+            }
+            RegexAtom::GoalMatch {
+                goal,
+                inner,
+                goal_text,
+            } => {
+                if let Some((inner_end, inner_caps)) =
+                    self.regex_match_end_from_caps_in_pkg(inner, chars, pos, pkg)
+                {
+                    if let Some((goal_end, goal_caps)) =
+                        self.regex_match_end_from_caps_in_pkg(goal, chars, inner_end, pkg)
+                    {
+                        let new_caps = merge_regex_captures(
+                            current_caps.clone(),
+                            merge_regex_captures(goal_caps, inner_caps),
+                        );
+                        return Some((goal_end, new_caps));
+                    }
+                    Self::record_goal_failure(goal_text, inner_end);
+                }
+                return None;
             }
             RegexAtom::Alternation(alternatives) => {
                 // Explore all alternatives and keep the longest successful one.
