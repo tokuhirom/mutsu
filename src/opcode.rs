@@ -264,6 +264,8 @@ pub(crate) enum OpCode {
     BlockScope {
         enter_end: u32,
         body_end: u32,
+        keep_start: u32,
+        undo_start: u32,
         end: u32,
     },
     DoBlockExpr {
@@ -748,6 +750,22 @@ impl CompiledCode {
         match &mut self.ops[idx] {
             OpCode::BlockScope { body_end, .. } => *body_end = target,
             _ => panic!("patch_block_body_end on non-BlockScope opcode"),
+        }
+    }
+
+    pub(crate) fn patch_block_keep_start(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::BlockScope { keep_start, .. } => *keep_start = target,
+            _ => panic!("patch_block_keep_start on non-BlockScope opcode"),
+        }
+    }
+
+    pub(crate) fn patch_block_undo_start(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::BlockScope { undo_start, .. } => *undo_start = target,
+            _ => panic!("patch_block_undo_start on non-BlockScope opcode"),
         }
     }
 
