@@ -2,6 +2,44 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    pub(super) fn detect_unresolved_role_method_conflicts(
+        &self,
+        class_name: &str,
+        class_def: &ClassDef,
+    ) -> Result<(), RuntimeError> {
+        for (method_name, defs) in &class_def.methods {
+            let class_defined = defs.iter().any(|def| def.role_origin.is_none());
+            if class_defined {
+                continue;
+            }
+
+            let mut conflicting_roles = Vec::new();
+            for def in defs {
+                if def.is_multi || Self::is_stub_routine_body(&def.body) {
+                    continue;
+                }
+                let Some(role_name) = &def.role_origin else {
+                    continue;
+                };
+                if !conflicting_roles.contains(role_name) {
+                    conflicting_roles.push(role_name.clone());
+                }
+            }
+
+            if conflicting_roles.len() > 1 {
+                conflicting_roles.reverse();
+                return Err(RuntimeError::new(format!(
+                    "X::Role::Composition::Conflict: Method '{}' must be resolved by class {} because it exists in multiple roles ({})",
+                    method_name,
+                    class_name,
+                    conflicting_roles.join(", "),
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
     pub(super) fn compute_class_mro(
         &mut self,
         class_name: &str,

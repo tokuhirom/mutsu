@@ -1068,6 +1068,10 @@ impl Interpreter {
             restore_previous_state(self);
             return Err(err);
         }
+        if let Err(err) = self.detect_unresolved_role_method_conflicts(name, &class_def) {
+            restore_previous_state(self);
+            return Err(err);
+        }
         self.classes.insert(name.to_string(), class_def);
         let mut stack = Vec::new();
         if let Err(err) = self.compute_class_mro(name, &mut stack) {
