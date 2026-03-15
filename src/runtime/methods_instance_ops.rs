@@ -568,6 +568,11 @@ impl Interpreter {
                     Value::Instance { class_name, .. } => class_name.resolve(),
                     other => other.to_string_value(),
                 };
+                // isa only matches classes, not roles. If the target is a role,
+                // return False (use .does for role checking).
+                if self.roles.contains_key(&target_name) {
+                    return Ok(Value::Bool(false));
+                }
                 return Ok(Value::Bool(
                     self.class_mro(&class_name.resolve()).contains(&target_name),
                 ));

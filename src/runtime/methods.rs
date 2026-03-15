@@ -1020,6 +1020,27 @@ impl Interpreter {
                 };
                 return Ok(Value::Bool(does));
             }
+            if method == "isa" && args.len() == 1 {
+                let target_name = match args.first().cloned().unwrap_or(Value::Nil) {
+                    Value::Package(name) => name.resolve(),
+                    Value::Str(name) => name.to_string(),
+                    Value::Instance { class_name, .. } => class_name.resolve(),
+                    other => other.to_string_value(),
+                };
+                // Roles are excluded from isa checks
+                let role_key = format!("__mutsu_role__{}", target_name);
+                if mixins.contains_key(&role_key) {
+                    return Ok(Value::Bool(false));
+                }
+                // Delegate to inner value's isa check using class MRO
+                let result = match inner.as_ref() {
+                    Value::Instance { class_name, .. } => {
+                        self.class_mro(&class_name.resolve()).contains(&target_name)
+                    }
+                    _ => inner.isa_check(&target_name),
+                };
+                return Ok(Value::Bool(result));
+            }
         }
 
         // Role type-object method punning: calling a role method on the type object
@@ -1625,6 +1646,30 @@ impl Interpreter {
 
         if method == "leave" {
             return self.builtin_leave_method(target, &args);
+        }
+
+        // Bool/True/False.new should throw X::Constructor::BadType
+        if method == "new" {
+            let is_bool_like = match &target {
+                Value::Package(name) if name == "Bool" => true,
+                Value::Bool(_) => true,
+                _ => false,
+            };
+            if is_bool_like {
+                let mut attrs = HashMap::new();
+                attrs.insert(
+                    "message".to_string(),
+                    Value::str(
+                        "Enum 'Bool' is insufficiently type-like to be instantiated.  Did you mean 'class'?".to_string(),
+                    ),
+                );
+                let ex = Value::make_instance(Symbol::intern("X::Constructor::BadType"), attrs);
+                let mut err = RuntimeError::new(
+                    "Enum 'Bool' is insufficiently type-like to be instantiated.  Did you mean 'class'?",
+                );
+                err.exception = Some(Box::new(ex));
+                return Err(err);
+            }
         }
 
         // Primary method dispatch by name
