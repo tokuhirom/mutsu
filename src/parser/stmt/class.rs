@@ -221,6 +221,34 @@ fn stmt_is_also_is_rw(stmt: &Stmt) -> bool {
     }
 }
 
+/// Extract the parent class name from `also is <ClassName>` statements
+/// (where ClassName is not `rw`).
+fn stmt_also_is_parent(stmt: &Stmt) -> Option<String> {
+    match stmt {
+        Stmt::Expr(Expr::InfixFunc {
+            name, left, right, ..
+        }) if name == "is" && expr_is_bare_ident(left, "also") && right.len() == 1 => {
+            if let Expr::BareWord(parent) = &right[0]
+                && parent != "rw"
+            {
+                return Some(parent.clone());
+            }
+            None
+        }
+        Stmt::Expr(Expr::Binary { left, op, right }) => {
+            if matches!(op, TokenKind::Ident(name) if name == "is")
+                && expr_is_bare_ident(left, "also")
+                && let Expr::BareWord(parent) = right.as_ref()
+                && parent != "rw"
+            {
+                return Some(parent.clone());
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
 fn reject_no_self_in_subs(body: &[Stmt]) -> Result<(), PError> {
     for stmt in body {
         if let Stmt::SubDecl { body: sub_body, .. } = stmt
@@ -615,6 +643,9 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
     body.retain(|stmt| {
         if stmt_is_also_is_rw(stmt) {
             class_is_rw = true;
+            false
+        } else if let Some(parent_name) = stmt_also_is_parent(stmt) {
+            parents.push(parent_name);
             false
         } else {
             true
@@ -1048,6 +1079,7 @@ pub(super) fn module_decl(input: &str) -> PResult<'_, Stmt> {
     let package_stmt = Stmt::Package {
         name: Symbol::intern(&name),
         body,
+        is_unit: false,
     };
     if stmts.is_empty() {
         return Ok((rest, package_stmt));
@@ -1091,6 +1123,7 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         Stmt::Package {
             name: Symbol::intern(&name),
             body: Vec::new(),
+            is_unit: true,
         },
     ))
 }
@@ -1108,6 +1141,7 @@ pub(super) fn package_decl(input: &str) -> PResult<'_, Stmt> {
         Stmt::Package {
             name: Symbol::intern(&name),
             body,
+            is_unit: false,
         },
     ))
 }

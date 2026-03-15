@@ -23,8 +23,8 @@ is $p.gist, "Point()", ".gist";
 is $p.Str, "Point()", ".Str";
 
 # .raku / .perl
-is $p.raku, "Point.new()", ".raku";
-is $p.perl, "Point.new()", ".perl";
+is $p.raku, "Point.new(x => 3, y => 4)", ".raku";
+is $p.perl, "Point.new(x => 3, y => 4)", ".perl";
 
 # Attribute defaults
 class WithDefault {

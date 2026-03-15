@@ -896,9 +896,13 @@ impl Compiler {
             }
 
             // --- Package scope ---
-            Stmt::Package { name, body } => {
+            Stmt::Package {
+                name,
+                body,
+                is_unit,
+            } => {
                 let qualified_name = self.qualify_package_name(&name.resolve());
-                if body.is_empty() {
+                if *is_unit {
                     // unit module/package — set package for the rest of the scope
                     self.current_package = qualified_name.clone();
                     // Register the package name so it's accessible as a value
