@@ -567,6 +567,8 @@ pub(crate) fn what_type_name(val: &Value) -> String {
         Value::Regex(_) => "Regex".to_string(),
         Value::Junction { .. } => "Junction".to_string(),
         Value::Slip(_) => "Slip".to_string(),
+        Value::Uni { form, .. } if !form.is_empty() => form.clone(),
+        Value::Uni { .. } => "Uni".to_string(),
         Value::Mixin(inner, mixins) => {
             allomorph_type_name(inner, mixins).unwrap_or_else(|| what_type_name(inner))
         }

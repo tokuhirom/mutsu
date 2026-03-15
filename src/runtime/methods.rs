@@ -641,13 +641,124 @@ impl Interpreter {
         }
         if matches!(
             method,
-            "max" | "min" | "lines" | "delayed" | "reduce" | "classify"
+            "max"
+                | "min"
+                | "lines"
+                | "delayed"
+                | "reduce"
+                | "classify"
+                | "start"
+                | "squish"
+                | "produce"
+                | "map"
+                | "flat"
+                | "batch"
+                | "rotor"
+                | "rotate"
+                | "comb"
+                | "words"
+                | "snip"
+                | "minmax"
+                | "wait"
         ) && matches!(&target, Value::Package(name) if name == "Supply")
         {
             return Err(RuntimeError::new(format!(
                 "Cannot call .{} on a Supply type object",
                 method
             )));
+        }
+        // Supply.merge(...) as a class method
+        if method == "merge" && matches!(&target, Value::Package(name) if name == "Supply") {
+            // Validate all args are Supply instances
+            for arg in &args {
+                if !matches!(arg, Value::Instance { class_name, .. } if class_name == "Supply") {
+                    let mut ex_attrs = HashMap::new();
+                    ex_attrs.insert("combinator".to_string(), Value::str("merge".to_string()));
+                    ex_attrs.insert(
+                        "message".to_string(),
+                        Value::str(format!(
+                            "Can only merge Supply objects, got {}",
+                            crate::value::types::what_type_name(arg)
+                        )),
+                    );
+                    let ex = Value::make_instance(
+                        crate::symbol::Symbol::intern("X::Supply::Combinator"),
+                        ex_attrs,
+                    );
+                    let mut err = RuntimeError::new(format!(
+                        "Can only merge Supply objects, got {}",
+                        crate::value::types::what_type_name(arg)
+                    ));
+                    err.exception = Some(Box::new(ex));
+                    return Err(err);
+                }
+            }
+            if args.len() == 1 {
+                // Merging one supply is a noop — return the same supply
+                return Ok(args.into_iter().next().unwrap());
+            }
+            let mut all_values = Vec::new();
+            for arg in &args {
+                if let Value::Instance { attributes, .. } = arg
+                    && let Some(Value::Array(items, ..)) = attributes.get("values")
+                {
+                    all_values.extend(items.iter().cloned());
+                }
+            }
+            let mut new_attrs = HashMap::new();
+            new_attrs.insert("values".to_string(), Value::array(all_values));
+            new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+            new_attrs.insert("live".to_string(), Value::Bool(false));
+            return Ok(Value::make_instance(
+                crate::symbol::Symbol::intern("Supply"),
+                new_attrs,
+            ));
+        }
+        // Supply.zip(...) as a class method
+        if method == "zip" && matches!(&target, Value::Package(name) if name == "Supply") {
+            if args.is_empty() {
+                return Ok(Value::make_instance(
+                    crate::symbol::Symbol::intern("Supply"),
+                    {
+                        let mut a = HashMap::new();
+                        a.insert("values".to_string(), Value::array(Vec::new()));
+                        a.insert("taps".to_string(), Value::array(Vec::new()));
+                        a.insert("live".to_string(), Value::Bool(false));
+                        a
+                    },
+                ));
+            }
+            // Collect values from all supplies
+            let mut supply_values: Vec<Vec<Value>> = Vec::new();
+            for arg in &args {
+                if let Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } = arg
+                    && class_name == "Supply"
+                {
+                    let vals = match attributes.get("values") {
+                        Some(Value::Array(items, ..)) => items.to_vec(),
+                        _ => Vec::new(),
+                    };
+                    supply_values.push(vals);
+                }
+            }
+            let min_len = supply_values.iter().map(|v| v.len()).min().unwrap_or(0);
+            let mut zipped = Vec::new();
+            for i in 0..min_len {
+                let tuple: Vec<Value> = supply_values.iter().map(|v| v[i].clone()).collect();
+                zipped.push(Value::array(tuple));
+            }
+            let mut new_attrs = HashMap::new();
+            new_attrs.insert("values".to_string(), Value::array(zipped));
+            new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+            new_attrs.insert("live".to_string(), Value::Bool(false));
+            return Ok(Value::make_instance(
+                crate::symbol::Symbol::intern("Supply"),
+                new_attrs,
+            ));
         }
         if method == "delayed"
             && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply")
@@ -1112,8 +1223,26 @@ impl Interpreter {
         );
         let bypass_native_fastpath = skip_pseudo
             || method == "squish"
-            || (matches!(method, "max" | "min")
-                && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
+            || (matches!(
+                method,
+                "max"
+                    | "min"
+                    | "head"
+                    | "flat"
+                    | "sort"
+                    | "comb"
+                    | "words"
+                    | "batch"
+                    | "rotor"
+                    | "rotate"
+                    | "produce"
+                    | "snip"
+                    | "minmax"
+                    | "start"
+                    | "wait"
+                    | "zip"
+                    | "zip-latest"
+            ) && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
             || (method == "elems" && matches!(&target, Value::Instance { .. }))
             || (matches!(method, "list" | "Array" | "Seq")
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
@@ -1784,6 +1913,11 @@ impl Interpreter {
                 return Ok(Value::Bool(self.type_matches_value(&type_name, &target)));
             }
             "start" => {
+                if let Value::Instance { class_name, .. } = &target
+                    && class_name == "Supply"
+                {
+                    return self.dispatch_supply_transform(target, "start", &args);
+                }
                 if let Some(cls) = self.promise_class_name(&target) {
                     let block = args.into_iter().next().unwrap_or(Value::Nil);
                     let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
@@ -2017,7 +2151,13 @@ impl Interpreter {
                     Value::Whatever => "Whatever",
                     Value::HyperWhatever => "HyperWhatever",
                     Value::Capture { .. } => "Capture",
-                    Value::Uni { form, .. } => form.as_str(),
+                    Value::Uni { form, .. } => {
+                        if form.is_empty() {
+                            "Uni"
+                        } else {
+                            form.as_str()
+                        }
+                    }
                     Value::Mixin(inner, mixins) => {
                         if let Some(allo) = crate::value::types::allomorph_type_name(inner, mixins)
                         {
@@ -2780,6 +2920,11 @@ impl Interpreter {
                 return Ok(Value::make_instance(Symbol::intern("Iterator"), attrs));
             }
             "produce" => {
+                if let Value::Instance { class_name, .. } = &target
+                    && class_name == "Supply"
+                {
+                    return self.dispatch_supply_transform(target, "produce", &args);
+                }
                 let callable = args
                     .first()
                     .cloned()
@@ -2997,6 +3142,17 @@ impl Interpreter {
                 }
             }
             "sort" => {
+                if let Value::Instance { class_name, .. } = &target
+                    && class_name == "Supply"
+                {
+                    return self.dispatch_supply_transform(target, "sort", &args);
+                }
+                if let Value::Package(name) = &target
+                    && name == "Supply"
+                {
+                    // Supply.sort on type object: return a Seq containing the type object
+                    return Ok(Value::Seq(std::sync::Arc::new(vec![target])));
+                }
                 return self.dispatch_sort(target, &args);
             }
             "unique" => {
@@ -3007,7 +3163,20 @@ impl Interpreter {
                 }
             }
             "squish" => {
+                if let Value::Instance { class_name, .. } = &target
+                    && class_name == "Supply"
+                {
+                    return self.dispatch_supply_transform(target, "squish", &args);
+                }
                 return self.dispatch_squish(target, &args);
+            }
+            "head" | "flat" | "batch" | "comb" | "words" | "snip" | "minmax" | "wait" | "zip"
+            | "zip-latest" => {
+                if let Value::Instance { class_name, .. } = &target
+                    && class_name == "Supply"
+                {
+                    return self.dispatch_supply_transform(target, method, &args);
+                }
             }
             "collate" if args.is_empty() => {
                 return self.dispatch_collate(target);
@@ -3017,31 +3186,43 @@ impl Interpreter {
                 return Ok(target);
             }
             "rotor" => {
+                if let Value::Instance { class_name, .. } = &target
+                    && class_name == "Supply"
+                {
+                    return self.dispatch_supply_transform(target, "rotor", &args);
+                }
                 return self.dispatch_rotor(target, &args);
             }
             "from-list" => {
                 if let Value::Package(ref class_name) = target
                     && class_name == "Supply"
                 {
-                    let mut values = Vec::new();
-                    for arg in &args {
-                        match arg {
-                            Value::Array(items, kind) if !kind.is_itemized() => {
-                                values.extend(items.iter().cloned());
-                            }
+                    // Implement +@ single-arg rule:
+                    // - Single array/list arg: iterate its elements
+                    // - Multiple args: each arg is one value
+                    let values = if args.len() == 1 {
+                        match &args[0] {
+                            Value::Array(items, ..) => items.to_vec(),
+                            Value::Slip(items) | Value::Seq(items) => items.to_vec(),
                             Value::Range(..)
                             | Value::RangeExcl(..)
                             | Value::RangeExclStart(..)
                             | Value::RangeExclBoth(..)
-                            | Value::GenericRange { .. } => {
-                                values.extend(Self::value_to_list(arg));
-                            }
-                            Value::Slip(items) | Value::Seq(items) => {
-                                values.extend(items.iter().cloned());
-                            }
-                            other => values.push(other.clone()),
+                            | Value::GenericRange { .. } => Self::value_to_list(&args[0]),
+                            other => vec![other.clone()],
                         }
-                    }
+                    } else {
+                        let mut values = Vec::new();
+                        for arg in &args {
+                            match arg {
+                                Value::Slip(items) => {
+                                    values.extend(items.iter().cloned());
+                                }
+                                other => values.push(other.clone()),
+                            }
+                        }
+                        values
+                    };
                     let mut attrs = HashMap::new();
                     attrs.insert("values".to_string(), Value::array(values));
                     attrs.insert("taps".to_string(), Value::array(Vec::new()));
@@ -3547,6 +3728,11 @@ impl Interpreter {
                 _ => {}
             },
             "rotate" => {
+                if let Value::Instance { class_name, .. } = &target
+                    && class_name == "Supply"
+                {
+                    return self.dispatch_supply_transform(target, "rotate", &args);
+                }
                 return self.dispatch_rotate(target, &args);
             }
             _ => {}

@@ -1601,6 +1601,18 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "X::Supply::Combinator".to_string(),
+            ClassDef {
+                parents: vec!["Exception".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["X::Supply::Combinator".to_string(), "Exception".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+            },
+        );
+        classes.insert(
             "X::TypeCheck::Argument".to_string(),
             ClassDef {
                 parents: vec!["X::TypeCheck".to_string()],

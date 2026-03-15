@@ -1333,19 +1333,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "Str" | "Stringy" => match target {
             Value::Package(_) | Value::Instance { .. } => None,
             Value::Str(s) if s.as_str() == "IO::Special" => Some(Ok(Value::str_from(""))),
-            Value::Array(items, ArrayKind::Array)
-                if items.iter().all(|v| matches!(v, Value::Int(_))) =>
-            {
-                // Uni array: convert codepoints to a string
-                let s: String = items
-                    .iter()
-                    .filter_map(|v| match v {
-                        Value::Int(cp) => char::from_u32(*cp as u32),
-                        _ => None,
-                    })
-                    .collect();
-                Some(Ok(Value::str(s)))
-            }
             _ => Some(Ok(Value::str(target.to_string_value()))),
         },
         "Int" => {
