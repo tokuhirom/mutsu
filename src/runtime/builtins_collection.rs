@@ -739,13 +739,23 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_reverse(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // If multiple args, reverse the list of args
+        if args.len() > 1 {
+            let mut items: Vec<Value> = args.to_vec();
+            items.reverse();
+            return Ok(Value::array(items));
+        }
         let val = args.first().cloned();
         Ok(match val {
             Some(Value::Array(mut items, ..)) => {
                 Arc::make_mut(&mut items).reverse();
                 Value::Array(items, ArrayKind::List)
             }
-            Some(Value::Str(s)) => Value::str(s.chars().rev().collect::<String>()),
+            Some(Value::Str(s)) => {
+                // reverse() on a string in list context returns the string as-is
+                // (unlike flip() which reverses characters)
+                Value::str(s.to_string())
+            }
             _ => Value::Nil,
         })
     }

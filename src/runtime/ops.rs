@@ -1327,9 +1327,11 @@ impl Interpreter {
                     ));
                 };
                 let n = n_raw.max(0) as usize;
-                Ok(Value::str(
-                    crate::runtime::utils::coerce_to_str(left).repeat(n),
-                ))
+                {
+                    let repeated = crate::runtime::utils::coerce_to_str(left).repeat(n);
+                    use unicode_normalization::UnicodeNormalization;
+                    Ok(Value::str(repeated.nfc().collect::<String>()))
+                }
             }
             "X" => {
                 let left_list = Self::value_to_list(left);

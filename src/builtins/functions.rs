@@ -3,6 +3,7 @@
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{ArrayKind, RuntimeError, Value};
+use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::rng::{builtin_rand, builtin_srand, builtin_srand_auto};
@@ -161,7 +162,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
         "trim-trailing" => Some(Ok(Value::str(arg.to_string_value().trim_end().to_string()))),
         "flip" => {
             let s = arg.to_string_value();
-            let reversed: String = s.graphemes(true).rev().collect();
+            let reversed: String = s.graphemes(true).rev().collect::<String>().nfc().collect();
             Some(Ok(Value::str(reversed)))
         }
         "words" => {
@@ -188,7 +189,9 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 ))));
             }
             if let Some(ch) = std::char::from_u32(code as u32) {
-                Some(Ok(Value::str(ch.to_string())))
+                // NFC-normalize: some codepoints decompose in NFC
+                let s: String = ch.to_string().nfc().collect();
+                Some(Ok(Value::str(s)))
             } else {
                 Some(Err(RuntimeError::new(format!(
                     "chr({}) does not map to a valid Unicode character",
@@ -476,8 +479,8 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                     reversed.reverse();
                     Value::array(reversed)
                 }
-                Value::Str(s) => Value::str(s.chars().rev().collect()),
-                _ => Value::Nil,
+                // reverse() on a string returns a single-element list (not a flip)
+                other => Value::array(vec![other.clone()]),
             }))
         }
         "sort" => {

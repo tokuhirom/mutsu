@@ -1583,11 +1583,25 @@ fn rat_to_base(n: i64, d: i64, radix: u32, max_digits: Option<u32>) -> String {
         return result;
     }
 
-    let limit = max_digits.unwrap_or(256);
+    let limit = max_digits.unwrap_or_else(|| {
+        // For Rat without explicit digits, scale to denominator size with minimum of 6
+        // (per Raku spec: "For Rational, the number of places is scaled to the size
+        // of the denominator, with a minimum of 6")
+        let log_den = (den as f64).log(radix as f64).ceil() as u32;
+        std::cmp::max(6, log_den)
+    });
     if limit == 0 {
-        // Round integer part
+        // Round integer part: if fractional part >= 0.5, round up
         if num * 2 >= den {
-            // Would need carry propagation; for now just return as-is
+            // Increment the integer part and rebuild
+            let rounded_int = int_part + 1;
+            let mut rounded_result = if negative {
+                "-".to_string()
+            } else {
+                String::new()
+            };
+            rounded_result.push_str(&int_to_base(rounded_int as u64, radix as u32));
+            return rounded_result;
         }
         return result;
     }
@@ -1605,6 +1619,7 @@ fn rat_to_base(n: i64, d: i64, radix: u32, max_digits: Option<u32>) -> String {
         }
     }
     // Round last digit if we have a remainder
+    let mut int_carry = false;
     if num > 0 && !frac_digits.is_empty() && num * 2 >= den {
         let mut carry = true;
         for d in frac_digits.iter_mut().rev() {
@@ -1617,9 +1632,27 @@ fn rat_to_base(n: i64, d: i64, radix: u32, max_digits: Option<u32>) -> String {
                 }
             }
         }
+        if carry {
+            // Carry propagated past all fractional digits (e.g., 0.9 -> 1.0)
+            int_carry = true;
+        }
     }
-    for d in &frac_digits {
-        result.push(digit_chars[*d as usize] as char);
+    if int_carry {
+        // Rebuild result with incremented integer part
+        let rounded_int = int_part + 1;
+        result.clear();
+        if negative {
+            result.push('-');
+        }
+        result.push_str(&int_to_base(rounded_int as u64, radix as u32));
+        result.push('.');
+        for _ in 0..frac_digits.len() {
+            result.push('0');
+        }
+    } else {
+        for d in &frac_digits {
+            result.push(digit_chars[*d as usize] as char);
+        }
     }
     result
 }

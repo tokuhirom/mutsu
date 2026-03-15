@@ -650,11 +650,13 @@ roast/S32-num/unpolar.t
 roast/S32-scalar/defined.t
 roast/S32-str/append.t
 roast/S32-str/bool.t
+roast/S32-str/capitalize.t
 roast/S32-str/chomp.t
 roast/S32-str/chop.t
 roast/S32-str/contains.t
 roast/S32-str/ends-with.t
 roast/S32-str/fc.t
+roast/S32-str/flip.t
 roast/S32-str/index.t
 roast/S32-str/lc.t
 roast/S32-str/length.t
@@ -663,6 +665,7 @@ roast/S32-str/ords.t
 roast/S32-str/pos.t
 roast/S32-str/samecase.t
 roast/S32-str/samemark.t
+roast/S32-str/space-chars.t
 roast/S32-str/sprintf-b.t
 roast/S32-str/sprintf-c.t
 roast/S32-str/sprintf-e.t
