@@ -122,6 +122,7 @@ roast/S03-operators/numeric-shift.t
 roast/S03-operators/orelse.t
 roast/S03-operators/overflow.t
 roast/S03-operators/reduce-le1arg.t
+roast/S03-operators/relational.t
 roast/S03-operators/repeat.t
 roast/S03-operators/scalar-assign.t
 roast/S03-operators/set_elem.t

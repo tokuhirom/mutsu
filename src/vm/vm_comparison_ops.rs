@@ -20,6 +20,11 @@ fn is_rationalish(v: &Value) -> bool {
     )
 }
 
+/// Check if a value is NaN (for numeric comparison semantics).
+fn is_nan_value(v: &Value) -> bool {
+    matches!(v, Value::Num(n) if n.is_nan())
+}
+
 impl VM {
     fn parse_numeric_string_for_spaceship(s: &str) -> Result<f64, RuntimeError> {
         s.trim().parse::<f64>().map_err(|_| {
@@ -59,6 +64,10 @@ impl VM {
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            // NaN is unordered: NaN == anything is always False
+            if is_nan_value(&l) || is_nan_value(&r) {
+                return Ok(Value::Bool(false));
+            }
             if let (Some(a), Some(b)) =
                 (runtime::to_big_rat_parts(&l), runtime::to_big_rat_parts(&r))
                 && (is_rationalish(&l) || is_rationalish(&r))
@@ -85,6 +94,10 @@ impl VM {
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            // NaN is unordered: NaN != anything is always True
+            if is_nan_value(&l) || is_nan_value(&r) {
+                return Ok(Value::Bool(true));
+            }
             if let (Some(a), Some(b)) =
                 (runtime::to_big_rat_parts(&l), runtime::to_big_rat_parts(&r))
                 && (is_rationalish(&l) || is_rationalish(&r))
@@ -152,10 +165,12 @@ impl VM {
         let (left, right) = self.coerce_numeric_bridge_pair(left, right)?;
         let tolerance = self
             .interpreter
-            .env()
-            .get("*TOLERANCE")
+            .get_dynamic_var("*TOLERANCE")
+            .ok()
             .and_then(|v| match v {
-                Value::Num(n) => Some(*n),
+                Value::Num(n) => Some(n),
+                Value::Rat(n, d) => Some(n as f64 / d as f64),
+                Value::Int(n) => Some(n as f64),
                 _ => None,
             })
             .unwrap_or(1e-15);
@@ -163,18 +178,22 @@ impl VM {
         let (lr, li) = complex_parts(&left);
         let (rr, ri) = complex_parts(&right);
         let approx_f64 = |a: f64, b: f64| -> bool {
-            let diff = (a - b).abs();
-            // Absolute tolerance: if the difference itself is below tolerance, consider equal.
-            // This handles comparisons with zero (e.g. 1e-16 ≅ 0 with tolerance 1e-15).
-            if diff < tolerance {
+            // Equal values (including Inf == Inf, -Inf == -Inf) are always approximately equal
+            if a == b {
                 return true;
             }
-            let max_abs = a.abs().max(b.abs());
-            if max_abs == 0.0 {
-                true
-            } else {
-                diff / max_abs <= tolerance
+            // NaN is never approximately equal to anything
+            if a.is_nan() || b.is_nan() {
+                return false;
             }
+            let diff = (a - b).abs();
+            // Per Raku spec: if either side is zero, use absolute tolerance;
+            // otherwise use relative percentage difference.
+            if a == 0.0 || b == 0.0 {
+                return diff < tolerance;
+            }
+            let max_abs = a.abs().max(b.abs());
+            diff / max_abs <= tolerance
         };
         let result = approx_f64(lr, rr) && approx_f64(li, ri);
         self.stack.push(Value::Bool(result));
