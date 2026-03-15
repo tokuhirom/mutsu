@@ -26,6 +26,7 @@ roast/S02-lists/tree.t
 roast/S02-literals/adverbs.t
 roast/S02-literals/autoref.t
 roast/S02-literals/char-by-name.t
+roast/S02-literals/fmt-interpolation.t
 roast/S02-literals/format.t
 roast/S02-literals/hex_chars.t
 roast/S02-literals/listquote-whitespace.t
@@ -118,6 +119,7 @@ roast/S03-operators/nesting.t
 roast/S03-operators/not.t
 roast/S03-operators/notandthen.t
 roast/S03-operators/numeric-shift.t
+roast/S03-operators/orelse.t
 roast/S03-operators/overflow.t
 roast/S03-operators/reduce-le1arg.t
 roast/S03-operators/repeat.t
@@ -162,6 +164,7 @@ roast/S03-smartmatch/signature-signature.t
 roast/S04-blocks-and-statements/let.t
 roast/S04-exception-handlers/top-level.t
 roast/S04-exceptions/control_across_runloop.t
+roast/S04-phasers/begin.t
 roast/S04-phasers/end.t
 roast/S04-phasers/first.t
 roast/S04-statement-modifiers/for.t
@@ -185,12 +188,14 @@ roast/S04-statements/map-and-sort-in-for.t
 roast/S04-statements/next.t
 roast/S04-statements/no-implicit-block.t
 roast/S04-statements/quietly.t
+roast/S04-statements/redo.t
 roast/S04-statements/repeat.t
 roast/S04-statements/sink.t
 roast/S04-statements/unless.t
 roast/S04-statements/until.t
 roast/S04-statements/when.t
 roast/S04-statements/while.t
+roast/S05-capture/named.t
 roast/S05-capture/subrule.t
 roast/S05-grammar/example.t
 roast/S05-grammar/namespace-6e.t

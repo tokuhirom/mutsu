@@ -4,13 +4,57 @@ use super::super::helpers::{
 use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 use super::super::primary::{colonpair_expr, parse_block_body, parse_call_arg_list, primary};
 
-use crate::ast::{ExistsAdverb, Expr, HyperSliceAdverb};
+use crate::ast::{ExistsAdverb, Expr, HyperSliceAdverb, Stmt};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 use super::expression;
 use super::operators::{parse_postfix_update_op, parse_prefix_unary_op};
+
+
+/// When a prefix operator is applied to a WhateverCode (Lambda or AnonSubParams),
+/// compose the prefix into the body so that `+(* + 1)` becomes `-> $_ { +($_ + 1) }`
+/// instead of trying to numify the closure itself.
+fn compose_prefix_into_whatevercode(op: TokenKind, expr: Expr) -> Expr {
+    match expr {
+        Expr::Lambda { param, mut body } => {
+            wrap_last_stmt_with_unary(&mut body, op.clone());
+            Expr::Lambda { param, body }
+        }
+        Expr::AnonSubParams {
+            params,
+            param_defs,
+            return_type,
+            mut body,
+            is_rw,
+        } => {
+            wrap_last_stmt_with_unary(&mut body, op.clone());
+            Expr::AnonSubParams {
+                params,
+                param_defs,
+                return_type,
+                body,
+                is_rw,
+            }
+        }
+        other => Expr::Unary {
+            op,
+            expr: Box::new(other),
+        },
+    }
+}
+
+/// Wrap the last expression statement in a list of statements with a unary operator.
+fn wrap_last_stmt_with_unary(stmts: &mut [Stmt], op: TokenKind) {
+    if let Some(Stmt::Expr(expr)) = stmts.last_mut() {
+        let inner = std::mem::replace(expr, Expr::Literal(Value::Nil));
+        *expr = Expr::Unary {
+            op,
+            expr: Box::new(inner),
+        };
+    }
+}
 
 /// Try to parse a secondary adverb after :exists/:!exists.
 /// Returns (remaining_input, adverb).
@@ -706,13 +750,10 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         } else {
             prefix_expr(rest)?
         };
-        return Ok((
-            rest,
-            Expr::Unary {
-                op: op.token_kind(),
-                expr: Box::new(expr),
-            },
-        ));
+        // If the operand is a WhateverCode (Lambda or AnonSubParams), compose
+        // the prefix operator into its body instead of wrapping it.
+        let result = compose_prefix_into_whatevercode(op.token_kind(), expr);
+        return Ok((rest, result));
     }
     // not(expr) — tight-binding form: not followed by ( without space
     if input.starts_with("not(") {
