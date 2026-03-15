@@ -150,6 +150,65 @@ impl Interpreter {
                 values: std::sync::Arc::new(signatures),
             }));
         }
+        if matches!(method, "raku" | "perl" | "gist" | "Str") && args.is_empty() {
+            // For Routine handles, render using the first candidate's signature
+            let candidates = self.routine_candidate_subs(package, name);
+            let sig_gist = if !candidates.is_empty() {
+                if let Ok(Value::Instance { attributes, .. }) =
+                    self.call_method_with_values(candidates[0].clone(), "signature", Vec::new())
+                {
+                    attributes
+                        .get("gist")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|| "()".to_string())
+                } else {
+                    "()".to_string()
+                }
+            } else {
+                let (params, param_defs) = self.callable_signature(target);
+                let defs = if !param_defs.is_empty() {
+                    param_defs
+                } else {
+                    params
+                        .into_iter()
+                        .map(|name| ParamDef {
+                            name,
+                            default: None,
+                            multi_invocant: true,
+                            required: false,
+                            named: false,
+                            slurpy: false,
+                            double_slurpy: false,
+                            sigilless: false,
+                            type_constraint: None,
+                            literal_value: None,
+                            sub_signature: None,
+                            where_constraint: None,
+                            traits: Vec::new(),
+                            optional_marker: false,
+                            outer_sub_signature: None,
+                            code_signature: None,
+                            is_invocant: false,
+                            shape_constraints: None,
+                        })
+                        .collect()
+                };
+                let info = param_defs_to_sig_info(&defs, None);
+                let sig = make_signature_value(info);
+                if let Value::Instance { attributes, .. } = &sig {
+                    attributes
+                        .get("gist")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|| "()".to_string())
+                } else {
+                    "()".to_string()
+                }
+            };
+            return Some(Ok(Value::str(format!(
+                "sub {} {} {{ #`(Sub|0) ... }}",
+                name, sig_gist
+            ))));
+        }
         if method == "can" {
             let method_name = args
                 .first()
@@ -341,6 +400,42 @@ impl Interpreter {
         }
         if method == "signature" && args.is_empty() {
             return Some(Ok(self.sub_signature_value(data)));
+        }
+        if matches!(method, "raku" | "perl" | "gist" | "Str") && args.is_empty() {
+            let sig = self.sub_signature_value(data);
+            let sig_gist = if let Value::Instance { attributes, .. } = &sig {
+                attributes
+                    .get("gist")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_else(|| "()".to_string())
+            } else {
+                "()".to_string()
+            };
+            let name = data.name.resolve();
+            let id = data.id;
+            if method == "gist" || method == "Str" {
+                if name.is_empty() || name == "<anon>" {
+                    return Some(Ok(Value::str(format!(
+                        "-> {} {{ #`(Block|{}) ... }}",
+                        sig_gist, id
+                    ))));
+                }
+                return Some(Ok(Value::str(format!(
+                    "sub {} {} {{ #`(Sub|{}) ... }}",
+                    name, sig_gist, id
+                ))));
+            }
+            // .raku / .perl
+            if name.is_empty() || name == "<anon>" {
+                return Some(Ok(Value::str(format!(
+                    "-> {} {{ #`(Block|{}) ... }}",
+                    sig_gist, id
+                ))));
+            }
+            return Some(Ok(Value::str(format!(
+                "sub {} {} {{ #`(Sub|{}) ... }}",
+                name, sig_gist, id
+            ))));
         }
         if method == "of" && args.is_empty() {
             let type_name = self

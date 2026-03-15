@@ -112,6 +112,18 @@ pub(super) fn parse_type_constraint_expr(input: &str) -> Option<(&str, String)> 
         rest = &rest[2..];
     }
 
+    // Handle "of" keyword: `Array of Callable` → `Array[Callable]`
+    {
+        let (r_ws, _) = ws(rest).ok()?;
+        if let Some(after_of) = keyword("of", r_ws) {
+            let (after_of, _) = ws(after_of).ok()?;
+            if let Some((r_elem, elem_type)) = parse_type_constraint_expr(after_of) {
+                type_name = format!("{}[{}]", type_name, elem_type);
+                rest = r_elem;
+            }
+        }
+    }
+
     let (r2, _) = ws(rest).ok()?;
     if let Some(after_open) = r2.strip_prefix('(') {
         let (after_ws, _) = ws(after_open).ok()?;
@@ -731,9 +743,12 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((after_lit, p));
     }
 
-    // Sigilless parameter: \name
+    // Sigilless parameter: \name or anonymous \
     if let Some(r) = rest.strip_prefix('\\') {
-        let (r, name) = ident(r)?;
+        let (r, name) = match ident(r) {
+            Ok((r, name)) => (r, name),
+            Err(_) => (r, String::new()),
+        };
         let (r, _) = ws(r)?;
         // `is copy`, `is rw`, `is readonly`, `is raw` traits
         let (mut r, _) = ws(r)?;
