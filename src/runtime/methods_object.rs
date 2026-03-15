@@ -1875,6 +1875,35 @@ impl Interpreter {
                     "Str" => Ok(Value::str(String::new())),
                     "Num" => Ok(Value::Num(0.0)),
                     "Bool" => Ok(Value::Bool(false)),
+                    "Attribute" => {
+                        // Attribute.new(:name<...>, :type(Int), :package<Foo>)
+                        let mut attrs = HashMap::new();
+                        for arg in &args {
+                            if let Value::Pair(key, value) = arg {
+                                match key.as_str() {
+                                    "name" => {
+                                        let n = value.to_string_value();
+                                        attrs.insert("name".to_string(), (**value).clone());
+                                        attrs
+                                            .insert("__mutsu_attr_name".to_string(), Value::str(n));
+                                    }
+                                    "type" => {
+                                        attrs.insert("type".to_string(), (**value).clone());
+                                    }
+                                    "package" => {
+                                        attrs.insert(
+                                            "__mutsu_attr_owner".to_string(),
+                                            (**value).clone(),
+                                        );
+                                    }
+                                    other => {
+                                        attrs.insert(other.to_string(), (**value).clone());
+                                    }
+                                }
+                            }
+                        }
+                        Ok(Value::make_instance(Symbol::intern("Attribute"), attrs))
+                    }
                     "Semaphore" => {
                         let permits = args
                             .first()
