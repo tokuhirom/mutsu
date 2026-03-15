@@ -1497,25 +1497,38 @@ impl Interpreter {
                 Ok(Value::Bool(f(ord)))
             }
             (Value::Num(a), Value::Num(b)) => {
-                let ord = a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal) as i32;
-                Ok(Value::Bool(f(ord)))
+                // NaN is unordered: all comparisons except != return False
+                if let Some(ord) = a.partial_cmp(&b) {
+                    Ok(Value::Bool(f(ord as i32)))
+                } else {
+                    Ok(Value::Bool(false))
+                }
             }
             (Value::Int(a), Value::Num(b)) => {
                 let a = a as f64;
-                let ord = a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal) as i32;
-                Ok(Value::Bool(f(ord)))
+                if let Some(ord) = a.partial_cmp(&b) {
+                    Ok(Value::Bool(f(ord as i32)))
+                } else {
+                    Ok(Value::Bool(false))
+                }
             }
             (Value::Num(a), Value::Int(b)) => {
                 let b = b as f64;
-                let ord = a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal) as i32;
-                Ok(Value::Bool(f(ord)))
+                if let Some(ord) = a.partial_cmp(&b) {
+                    Ok(Value::Bool(f(ord as i32)))
+                } else {
+                    Ok(Value::Bool(false))
+                }
             }
             (ref left_val, ref right_val) => {
                 // Fallback: convert both to f64 for cross-type comparisons (e.g. Num vs Rat)
                 let a = super::to_float_value(left_val).unwrap_or(0.0);
                 let b = super::to_float_value(right_val).unwrap_or(0.0);
-                let ord = a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal) as i32;
-                Ok(Value::Bool(f(ord)))
+                if let Some(ord) = a.partial_cmp(&b) {
+                    Ok(Value::Bool(f(ord as i32)))
+                } else {
+                    Ok(Value::Bool(false))
+                }
             }
         }
     }
