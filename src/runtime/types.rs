@@ -90,7 +90,7 @@ fn coerce_value(target: &str, value: Value) -> Value {
         "Int" => match &value {
             Value::Int(_) => value,
             Value::Num(n) => Value::Int(*n as i64),
-            Value::Rat(n, d) => Value::Int(n / d),
+            Value::Rat(n, d) => Value::Int(if *d != 0 { n / d } else { 0 }),
             Value::Str(s) => Value::Int(s.parse::<i64>().unwrap_or(0)),
             Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
             _ => value,
