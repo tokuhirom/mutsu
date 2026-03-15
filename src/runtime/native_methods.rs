@@ -2499,6 +2499,7 @@ impl Interpreter {
                     out_buffer_pending: Vec::new(),
                     bin: false,
                     nl_out: "\n".to_string(),
+                    bytes_written: 0,
                 };
                 self.handles.insert(new_id, state);
                 let mut attrs = HashMap::new();
@@ -3106,7 +3107,7 @@ impl Interpreter {
     }
 
     /// Create a Buf instance from raw bytes
-    fn make_buf(bytes: Vec<u8>) -> Value {
+    pub(super) fn make_buf(bytes: Vec<u8>) -> Value {
         let byte_vals: Vec<Value> = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
         let mut attrs = HashMap::new();
         attrs.insert("bytes".to_string(), Value::array(byte_vals));

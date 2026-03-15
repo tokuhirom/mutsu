@@ -96,6 +96,7 @@ impl Interpreter {
         if newline {
             payload.push_str(&state.nl_out.clone());
         }
+        state.bytes_written += payload.len() as i64;
         match state.target {
             IoHandleTarget::Stdout => {
                 self.emit_output(&payload);
@@ -424,6 +425,7 @@ impl Interpreter {
         &mut self,
         handle_value: &Value,
         pos: i64,
+        mode: i32,
     ) -> Result<i64, RuntimeError> {
         let state = self.handle_state_mut(handle_value)?;
         if state.closed {
@@ -433,8 +435,42 @@ impl Interpreter {
             .file
             .as_mut()
             .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
+        let seek_from = match mode {
+            1 => SeekFrom::Current(pos),
+            2 => SeekFrom::End(pos),
+            _ => {
+                if pos < 0 {
+                    return Err(RuntimeError::new(
+                        "X::IO::Seek: Cannot seek to a negative position",
+                    ));
+                }
+                SeekFrom::Start(pos as u64)
+            }
+        };
+        if mode == 1 || mode == 2 {
+            let current = file
+                .stream_position()
+                .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
+            let target_pos = match mode {
+                1 => current as i64 + pos,
+                2 => {
+                    let end = file
+                        .seek(SeekFrom::End(0))
+                        .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
+                    file.seek(SeekFrom::Start(current))
+                        .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
+                    end as i64 + pos
+                }
+                _ => unreachable!(),
+            };
+            if target_pos < 0 {
+                return Err(RuntimeError::new(
+                    "X::IO::Seek: Cannot seek to a negative position",
+                ));
+            }
+        }
         let new_pos = file
-            .seek(SeekFrom::Start(pos.max(0) as u64))
+            .seek(seek_from)
             .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
         Ok(new_pos as i64)
     }
@@ -444,14 +480,19 @@ impl Interpreter {
         if state.closed {
             return Err(RuntimeError::new("X::IO::Closed: IO::Handle is closed"));
         }
-        let file = state
-            .file
-            .as_mut()
-            .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
-        let pos = file
-            .stream_position()
-            .map_err(|err| RuntimeError::new(format!("Failed to query position: {}", err)))?;
-        Ok(pos as i64)
+        match state.target {
+            IoHandleTarget::File => {
+                let file = state
+                    .file
+                    .as_mut()
+                    .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
+                let pos = file.stream_position().map_err(|err| {
+                    RuntimeError::new(format!("Failed to query position: {}", err))
+                })?;
+                Ok(pos as i64)
+            }
+            _ => Ok(state.bytes_written),
+        }
     }
 
     pub(super) fn handle_eof_value(&mut self, handle_value: &Value) -> Result<bool, RuntimeError> {
@@ -624,6 +665,7 @@ impl Interpreter {
             out_buffer_pending: Vec::new(),
             bin,
             nl_out: nl_out.unwrap_or_else(|| "\n".to_string()),
+            bytes_written: 0,
         };
         self.handles.insert(id, state);
         Ok(self.make_handle_instance_with_bin(id, bin))
