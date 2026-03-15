@@ -58,9 +58,14 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         },
         "conj" => match target {
             Value::Complex(r, i) => Some(Ok(Value::Complex(*r, -i))),
-            Value::Int(i) => Some(Ok(Value::Complex(*i as f64, 0.0))),
-            Value::Num(f) => Some(Ok(Value::Complex(*f, 0.0))),
-            _ => Some(Ok(Value::Complex(0.0, 0.0))),
+            Value::Int(_)
+            | Value::BigInt(_)
+            | Value::Num(_)
+            | Value::Rat(_, _)
+            | Value::FatRat(_, _)
+            | Value::Bool(_) => Some(Ok(target.clone())),
+            // Str is handled by the Cool numeric coercion in native_method_0arg
+            _ => None,
         },
         "reals" => match target {
             Value::Complex(r, i) => Some(Ok(Value::array(vec![Value::Num(*r), Value::Num(*i)]))),
@@ -94,6 +99,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Rat(n, d) if *d != 0 => {
                 let x = *n as f64 / *d as f64;
                 Some(Ok(Value::Complex(x.cos(), x.sin())))
+            }
+            Value::Complex(re, im) => {
+                // cis(a+bi) = e^(i*(a+bi)) = e^(-b) * (cos(a) + i*sin(a))
+                let scale = (-im).exp();
+                Some(Ok(Value::Complex(scale * re.cos(), scale * re.sin())))
             }
             _ => None,
         },

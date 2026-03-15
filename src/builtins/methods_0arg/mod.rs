@@ -487,6 +487,28 @@ pub(crate) fn native_method_0arg(
         }
         return native_method_0arg(inner, method_sym);
     }
+    // Cool numeric coercion: when a Str calls a numeric method, coerce to numeric first.
+    // In Raku, Cool types (including Str) coerce to Numeric for numeric operations.
+    if let Value::Str(s) = target {
+        match method {
+            "abs" | "sign" | "exp" | "log" | "log2" | "log10" | "sqrt" | "ceiling" | "floor"
+            | "truncate" | "round" | "conj" | "cis" | "rand" | "sin" | "cos" | "tan" | "asin"
+            | "acos" | "atan" | "sinh" | "cosh" | "tanh" | "sec" | "cosec" | "cotan" | "asec"
+            | "acosec" | "acotan" | "sech" | "cosech" | "cotanh" | "asech" | "acosech"
+            | "acotanh" | "atan2" | "narrow" | "polymod" | "base" | "chr" | "expmod" | "lsb"
+            | "msb" | "is-int" | "i" | "Complex-i" => {
+                let coerced = if let Ok(i) = s.parse::<i64>() {
+                    Value::Int(i)
+                } else if let Ok(f) = s.parse::<f64>() {
+                    Value::Num(f)
+                } else {
+                    return None;
+                };
+                return native_method_0arg(&coerced, method_sym);
+            }
+            _ => {}
+        }
+    }
     // Native int coercer methods (.byte(), .int8(), .uint16(), etc.)
     if runtime::native_types::is_native_int_type(method) {
         return Some(native_int_coerce_method(target, method));
@@ -1721,7 +1743,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)
                 }
                 Value::Complex(r, i) => return Some(Ok(Value::Complex(-*i, *r))),
-                _ => 0.0,
+                _ => return None,
             };
             Some(Ok(Value::Complex(0.0, imag)))
         }
@@ -1731,7 +1753,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Value::BigInt(n) => Value::bigint(n.as_ref().abs()),
                 Value::Num(f) => Value::Num(f.abs()),
                 Value::Rat(n, d) => Value::Rat(n.abs(), *d),
+                Value::FatRat(n, d) => Value::FatRat(n.abs(), *d),
                 Value::Complex(r, i) => Value::Num((r * r + i * i).sqrt()),
+                Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
                 _ => return None,
             };
             Some(Ok(result))
@@ -2846,7 +2870,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 let arg = i.atan2(*r);
                 Some(Ok(Value::Complex(mag, arg)))
             }
-            _ => Some(Ok(Value::Num(f64::NAN))),
+            _ => None,
         },
         "log2" => match target {
             Value::Int(i) => Some(Ok(Value::Num((*i as f64).log2()))),
@@ -2862,7 +2886,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 let ln2 = 2.0f64.ln();
                 Some(Ok(Value::Complex(mag / ln2, arg / ln2)))
             }
-            _ => Some(Ok(Value::Num(f64::NAN))),
+            _ => None,
         },
         "log10" => match target {
             Value::Int(i) => Some(Ok(Value::Num((*i as f64).log10()))),
@@ -2878,7 +2902,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 let ln10 = 10.0f64.ln();
                 Some(Ok(Value::Complex(mag / ln10, arg / ln10)))
             }
-            _ => Some(Ok(Value::Num(f64::NAN))),
+            _ => None,
         },
         "exp" => match target {
             Value::Int(i) => Some(Ok(Value::Num((*i as f64).exp()))),
@@ -2893,7 +2917,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 let ea = r.exp();
                 Some(Ok(Value::Complex(ea * i.cos(), ea * i.sin())))
             }
-            _ => Some(Ok(Value::Num(f64::NAN))),
+            _ => None,
         },
         "atan2" => {
             // .atan2 with no args defaults to x=1

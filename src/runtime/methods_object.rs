@@ -1274,11 +1274,15 @@ impl Interpreter {
                     let re = match args.first() {
                         Some(Value::Int(i)) => *i as f64,
                         Some(Value::Num(f)) => *f,
+                        Some(Value::Rat(n, d)) if *d != 0 => *n as f64 / *d as f64,
+                        Some(v) => to_float_value(v).unwrap_or(0.0),
                         _ => 0.0,
                     };
                     let im = match args.get(1) {
                         Some(Value::Int(i)) => *i as f64,
                         Some(Value::Num(f)) => *f,
+                        Some(Value::Rat(n, d)) if *d != 0 => *n as f64 / *d as f64,
+                        Some(v) => to_float_value(v).unwrap_or(0.0),
                         _ => 0.0,
                     };
                     return Ok(Value::Complex(re, im));

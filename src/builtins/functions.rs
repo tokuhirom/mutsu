@@ -444,15 +444,22 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             if matches!(arg, Value::Instance { .. }) {
                 return None;
             }
-            if let Some(num) = runtime::to_float_value(arg) {
-                if num.is_nan() || num.is_infinite() {
-                    Some(Ok(Value::Num(num)))
-                } else {
-                    Some(Ok(Value::Int(num.trunc() as i64)))
-                }
-            } else {
-                Some(Ok(Value::Int(runtime::to_int(arg))))
+            // Bool.truncate preserves Bool type
+            if let Value::Bool(b) = arg {
+                return Some(Ok(Value::Bool(*b)));
             }
+            // Delegate to the .truncate method for proper type handling
+            super::methods_0arg::native_method_0arg(arg, Symbol::intern("truncate")).or_else(|| {
+                if let Some(num) = runtime::to_float_value(arg) {
+                    if num.is_nan() || num.is_infinite() {
+                        Some(Ok(Value::Num(num)))
+                    } else {
+                        Some(Ok(Value::Int(num.trunc() as i64)))
+                    }
+                } else {
+                    Some(Ok(Value::Int(runtime::to_int(arg))))
+                }
+            })
         }
         "defined" => Some(Ok(Value::Bool(match arg {
             Value::Nil | Value::Package(_) => false,

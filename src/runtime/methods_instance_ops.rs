@@ -710,7 +710,8 @@ impl Interpreter {
         // their coercion bridge so default Real behavior is available.
         if matches!(target, Value::Instance { ref class_name, .. }
             if (target.does_check("Real") || target.does_check("Numeric"))
-                || self.has_user_method(&class_name.resolve(), "Bridge"))
+                || self.has_user_method(&class_name.resolve(), "Bridge")
+                || self.has_user_method(&class_name.resolve(), "Numeric"))
         {
             if matches!(method, "Bridge" | "Real")
                 && let Ok(coerced) = self.call_method_with_values(target.clone(), "Numeric", vec![])
