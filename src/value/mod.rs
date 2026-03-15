@@ -1,5 +1,8 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Condvar, Mutex, OnceLock, Weak};
 
 use crate::ast::{ParamDef, Stmt};
 use crate::env::Env;
@@ -8,8 +11,6 @@ use crate::symbol::Symbol;
 use num_bigint::BigInt as NumBigInt;
 use num_integer::Integer;
 use num_traits::{Signed, ToPrimitive, Zero};
-use std::sync::{Arc, Condvar, Mutex, Weak};
-
 /// Shared mutable attribute storage for Proxy subclasses.
 pub(crate) type ProxySubclassAttrs = Arc<Mutex<HashMap<String, Value>>>;
 
@@ -42,8 +43,110 @@ pub use error::{RuntimeError, RuntimeErrorCode};
 
 static INSTANCE_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
+#[derive(Debug, Clone)]
+pub(crate) struct PendingInstanceDestroy {
+    pub(crate) class_name: Symbol,
+    pub(crate) attributes: HashMap<String, Value>,
+}
+
+thread_local! {
+    static PENDING_INSTANCE_DESTROYS: RefCell<Vec<PendingInstanceDestroy>> = const { RefCell::new(Vec::new()) };
+}
+
+fn live_instance_refcounts() -> &'static Mutex<HashMap<u64, usize>> {
+    static LIVE_INSTANCE_REFCOUNTS: OnceLock<Mutex<HashMap<u64, usize>>> = OnceLock::new();
+    LIVE_INSTANCE_REFCOUNTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct InstanceAttrs {
+    class_name: Symbol,
+    attributes: HashMap<String, Value>,
+    id: u64,
+    queue_destroy: bool,
+}
+
+impl InstanceAttrs {
+    pub(crate) fn new(
+        class_name: Symbol,
+        attributes: HashMap<String, Value>,
+        id: u64,
+        queue_destroy: bool,
+    ) -> Self {
+        if queue_destroy && let Ok(mut counts) = live_instance_refcounts().lock() {
+            *counts.entry(id).or_insert(0) += 1;
+        }
+        Self {
+            class_name,
+            attributes,
+            id,
+            queue_destroy,
+        }
+    }
+
+    pub(crate) fn clone(&self) -> HashMap<String, Value> {
+        self.attributes.clone()
+    }
+}
+
+impl Deref for InstanceAttrs {
+    type Target = HashMap<String, Value>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.attributes
+    }
+}
+
+impl DerefMut for InstanceAttrs {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.attributes
+    }
+}
+
+impl PartialEq for InstanceAttrs {
+    fn eq(&self, other: &Self) -> bool {
+        self.attributes == other.attributes
+    }
+}
+
+impl Drop for InstanceAttrs {
+    fn drop(&mut self) {
+        if !self.queue_destroy {
+            return;
+        }
+        let should_queue = if let Ok(mut counts) = live_instance_refcounts().lock() {
+            match counts.get_mut(&self.id) {
+                Some(count) if *count > 1 => {
+                    *count -= 1;
+                    false
+                }
+                Some(_) => {
+                    counts.remove(&self.id);
+                    true
+                }
+                None => true,
+            }
+        } else {
+            true
+        };
+        if !should_queue {
+            return;
+        }
+        let _ = PENDING_INSTANCE_DESTROYS.try_with(|pending| {
+            pending.borrow_mut().push(PendingInstanceDestroy {
+                class_name: self.class_name,
+                attributes: self.attributes.clone(),
+            });
+        });
+    }
+}
+
 pub(crate) fn next_instance_id() -> u64 {
     INSTANCE_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+pub(crate) fn take_pending_instance_destroys() -> Vec<PendingInstanceDestroy> {
+    PENDING_INSTANCE_DESTROYS.with(|pending| std::mem::take(&mut *pending.borrow_mut()))
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -245,7 +348,7 @@ pub enum Value {
     WeakSub(Weak<SubData>),
     Instance {
         class_name: Symbol,
-        attributes: Arc<HashMap<String, Value>>,
+        attributes: Arc<InstanceAttrs>,
         id: u64,
     },
     Junction {
@@ -602,19 +705,18 @@ impl PartialEq for SharedChannel {
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
-        let match_equals_pair_array =
-            |attrs: &Arc<HashMap<String, Value>>, arr: &Arc<Vec<Value>>| {
-                if arr.len() != 2 {
-                    return false;
-                }
-                let Some(from) = attrs.get("from") else {
-                    return false;
-                };
-                let Some(matched) = attrs.get("str") else {
-                    return false;
-                };
-                arr[0] == *from && arr[1] == *matched
+        let match_equals_pair_array = |attrs: &Arc<InstanceAttrs>, arr: &Arc<Vec<Value>>| {
+            if arr.len() != 2 {
+                return false;
+            }
+            let Some(from) = attrs.get("from") else {
+                return false;
             };
+            let Some(matched) = attrs.get("str") else {
+                return false;
+            };
+            arr[0] == *from && arr[1] == *matched
+        };
         match (self, other) {
             (Value::Int(a), Value::Int(b)) => a == b,
             (Value::BigInt(a), Value::BigInt(b)) => a == b,
@@ -1044,10 +1146,44 @@ impl Value {
     }
 
     pub(crate) fn make_instance(class_name: Symbol, attributes: HashMap<String, Value>) -> Self {
+        let id = next_instance_id();
+        Self::make_instance_with_id(class_name, attributes, id)
+    }
+
+    pub(crate) fn make_instance_without_destroy(
+        class_name: Symbol,
+        attributes: HashMap<String, Value>,
+    ) -> Self {
+        Self::make_instance_with_destroy(class_name, attributes, false)
+    }
+
+    pub(crate) fn make_instance_with_id(
+        class_name: Symbol,
+        attributes: HashMap<String, Value>,
+        id: u64,
+    ) -> Self {
         Value::Instance {
             class_name,
-            attributes: Arc::new(attributes),
-            id: next_instance_id(),
+            attributes: Arc::new(InstanceAttrs::new(class_name, attributes, id, true)),
+            id,
+        }
+    }
+
+    fn make_instance_with_destroy(
+        class_name: Symbol,
+        attributes: HashMap<String, Value>,
+        queue_destroy: bool,
+    ) -> Self {
+        let id = next_instance_id();
+        Value::Instance {
+            class_name,
+            attributes: Arc::new(InstanceAttrs::new(
+                class_name,
+                attributes,
+                id,
+                queue_destroy,
+            )),
+            id,
         }
     }
 

@@ -996,6 +996,7 @@ impl Interpreter {
         }
         // Blocks are scope boundaries for temp/let saves.
         self.restore_let_saves(let_mark);
+        self.run_pending_instance_destroys()?;
         result.map(|value| {
             let missing_value = matches!(value, Value::Nil)
                 || matches!(&value, Value::Package(name) if name == "Any");

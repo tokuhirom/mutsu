@@ -131,11 +131,7 @@ impl Interpreter {
                         *target_id,
                         updated_attrs.clone(),
                     );
-                    Value::Instance {
-                        class_name: *class_name,
-                        attributes: std::sync::Arc::new(updated_attrs),
-                        id: *target_id,
-                    }
+                    Value::make_instance_with_id(*class_name, updated_attrs, *target_id)
                 };
                 match method {
                     "elems" if args.is_empty() => return Ok(Value::Int(items.len() as i64)),

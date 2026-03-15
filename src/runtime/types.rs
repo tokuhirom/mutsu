@@ -716,11 +716,7 @@ impl Interpreter {
             updated_attrs.insert(attr_name.to_string(), value.clone());
             self.env.insert(
                 "self".to_string(),
-                Value::Instance {
-                    class_name,
-                    attributes: std::sync::Arc::new(updated_attrs),
-                    id,
-                },
+                Value::make_instance_with_id(class_name, updated_attrs, id),
             );
         }
         if matches!(

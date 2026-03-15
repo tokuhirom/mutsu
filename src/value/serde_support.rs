@@ -419,12 +419,15 @@ fn ser_to_value(sv: SerValue) -> Value {
             id,
         } => Value::Instance {
             class_name,
-            attributes: Arc::new(
+            attributes: Arc::new(crate::value::InstanceAttrs::new(
+                class_name,
                 attributes
                     .into_iter()
                     .map(|(k, v)| (k, ser_to_value(v)))
                     .collect(),
-            ),
+                id,
+                true,
+            )),
             id,
         },
         SerValue::Mixin(inner, overrides) => Value::Mixin(

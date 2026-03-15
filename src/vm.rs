@@ -189,6 +189,11 @@ impl VM {
                 self.interpreter.pop_once_scope();
                 return (self.interpreter, Err(e));
             }
+            if let Err(e) = self.interpreter.run_pending_instance_destroys() {
+                self.sync_state_locals(code);
+                self.interpreter.pop_once_scope();
+                return (self.interpreter, Err(e));
+            }
             if self.interpreter.is_halted() {
                 break;
             }
@@ -247,6 +252,7 @@ impl VM {
                 self.interpreter.pop_once_scope();
                 return Err(e);
             }
+            self.interpreter.run_pending_instance_destroys()?;
             if self.interpreter.is_halted() {
                 break;
             }

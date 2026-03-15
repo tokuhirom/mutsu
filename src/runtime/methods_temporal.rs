@@ -2,16 +2,15 @@
 
 use crate::builtins::methods_0arg::temporal;
 use crate::value::{RuntimeError, Value};
-use std::collections::HashMap;
 use std::sync::Arc;
 
-fn has_date_attrs(attributes: &Arc<HashMap<String, Value>>) -> bool {
+fn has_date_attrs(attributes: &Arc<crate::value::InstanceAttrs>) -> bool {
     attributes.contains_key("year")
         && attributes.contains_key("month")
         && attributes.contains_key("day")
 }
 
-fn has_datetime_attrs(attributes: &Arc<HashMap<String, Value>>) -> bool {
+fn has_datetime_attrs(attributes: &Arc<crate::value::InstanceAttrs>) -> bool {
     has_date_attrs(attributes)
         && attributes.contains_key("hour")
         && attributes.contains_key("minute")
@@ -22,7 +21,7 @@ fn has_datetime_attrs(attributes: &Arc<HashMap<String, Value>>) -> bool {
 fn rebless_datetime_result(
     result: Value,
     target_class_name: crate::symbol::Symbol,
-    original_attrs: &Arc<HashMap<String, Value>>,
+    original_attrs: &Arc<crate::value::InstanceAttrs>,
 ) -> Value {
     if target_class_name == "DateTime" {
         return result;
@@ -30,6 +29,7 @@ fn rebless_datetime_result(
     let Value::Instance {
         class_name,
         attributes,
+        id,
         ..
     } = &result
     else {
@@ -48,15 +48,20 @@ fn rebless_datetime_result(
     }
     Value::Instance {
         class_name: target_class_name,
-        attributes: Arc::new(merged),
-        id: crate::value::next_instance_id(),
+        attributes: Arc::new(crate::value::InstanceAttrs::new(
+            target_class_name,
+            merged,
+            *id,
+            true,
+        )),
+        id: *id,
     }
 }
 
 fn rebless_date_result(
     result: Value,
     target_class_name: crate::symbol::Symbol,
-    original_attrs: &Arc<HashMap<String, Value>>,
+    original_attrs: &Arc<crate::value::InstanceAttrs>,
 ) -> Value {
     if target_class_name == "Date" {
         return result;
@@ -64,6 +69,7 @@ fn rebless_date_result(
     let Value::Instance {
         class_name,
         attributes,
+        id,
         ..
     } = &result
     else {
@@ -80,8 +86,13 @@ fn rebless_date_result(
     }
     Value::Instance {
         class_name: target_class_name,
-        attributes: Arc::new(merged),
-        id: crate::value::next_instance_id(),
+        attributes: Arc::new(crate::value::InstanceAttrs::new(
+            target_class_name,
+            merged,
+            *id,
+            true,
+        )),
+        id: *id,
     }
 }
 

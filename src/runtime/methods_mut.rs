@@ -346,11 +346,8 @@ impl Interpreter {
                 _ => false,
             };
             if should_replace {
-                *bound = Value::Instance {
-                    class_name: Symbol::intern(class_name),
-                    attributes: std::sync::Arc::new(updated.clone()),
-                    id,
-                };
+                *bound =
+                    Value::make_instance_with_id(Symbol::intern(class_name), updated.clone(), id);
             }
         }
     }
@@ -461,11 +458,7 @@ impl Interpreter {
             self.overwrite_instance_bindings_by_identity(class_name, target_id, updated.clone());
             self.env.insert(
                 var_name.to_string(),
-                Value::Instance {
-                    class_name: Symbol::intern(class_name),
-                    attributes: std::sync::Arc::new(updated),
-                    id: target_id,
-                },
+                Value::make_instance_with_id(Symbol::intern(class_name), updated, target_id),
             );
         }
         Ok(result)
@@ -727,11 +720,7 @@ impl Interpreter {
                         );
                         self.env.insert(
                             var_name.to_string(),
-                            Value::Instance {
-                                class_name: cn,
-                                attributes: std::sync::Arc::new(updated),
-                                id: target_id,
-                            },
+                            Value::make_instance_with_id(cn, updated, target_id),
                         );
                     }
                     return Ok(assigned_value);
@@ -775,11 +764,7 @@ impl Interpreter {
                         );
                         self.env.insert(
                             var_name.to_string(),
-                            Value::Instance {
-                                class_name: cn,
-                                attributes: std::sync::Arc::new(updated),
-                                id: target_id,
-                            },
+                            Value::make_instance_with_id(cn, updated, target_id),
                         );
                     }
                     return Ok(assigned_value);
@@ -871,11 +856,7 @@ impl Interpreter {
                     );
                     self.env.insert(
                         var_name.to_string(),
-                        Value::Instance {
-                            class_name,
-                            attributes: std::sync::Arc::new(updated),
-                            id: target_id,
-                        },
+                        Value::make_instance_with_id(class_name, updated, target_id),
                     );
                 }
                 return Ok(assigned_value);
@@ -920,11 +901,7 @@ impl Interpreter {
                 );
                 self.env.insert(
                     var_name.to_string(),
-                    Value::Instance {
-                        class_name,
-                        attributes: std::sync::Arc::new(updated),
-                        id: target_id,
-                    },
+                    Value::make_instance_with_id(class_name, updated, target_id),
                 );
             }
             return Ok(assigned_value);
@@ -1143,11 +1120,11 @@ impl Interpreter {
                     *id,
                     updated_attrs.clone(),
                 );
-                return Ok(Value::Instance {
-                    class_name: *class_name,
-                    attributes: std::sync::Arc::new(updated_attrs),
-                    id: *id,
-                });
+                return Ok(Value::make_instance_with_id(
+                    *class_name,
+                    updated_attrs,
+                    *id,
+                ));
             }
         }
 
@@ -1521,11 +1498,7 @@ impl Interpreter {
                     target_id,
                     updated.clone(),
                 );
-                let updated_instance = Value::Instance {
-                    class_name,
-                    attributes: std::sync::Arc::new(updated),
-                    id: target_id,
-                };
+                let updated_instance = Value::make_instance_with_id(class_name, updated, target_id);
                 self.env
                     .insert(target_var.to_string(), updated_instance.clone());
                 return Ok(updated_instance);
@@ -1743,11 +1716,8 @@ impl Interpreter {
                         target_id,
                         updated.clone(),
                     );
-                    let updated_instance = Value::Instance {
-                        class_name,
-                        attributes: std::sync::Arc::new(updated),
-                        id: target_id,
-                    };
+                    let updated_instance =
+                        Value::make_instance_with_id(class_name, updated, target_id);
                     self.env
                         .insert(target_var.to_string(), updated_instance.clone());
                     return Ok(ret);
@@ -1884,11 +1854,7 @@ impl Interpreter {
                 );
                 self.env.insert(
                     target_var.to_string(),
-                    Value::Instance {
-                        class_name,
-                        attributes: std::sync::Arc::new(updated),
-                        id: target_id,
-                    },
+                    Value::make_instance_with_id(class_name, updated, target_id),
                 );
                 return Ok(ret);
             }
@@ -1920,11 +1886,7 @@ impl Interpreter {
                         );
                         self.env.insert(
                             target_var.to_string(),
-                            Value::Instance {
-                                class_name,
-                                attributes: std::sync::Arc::new(updated),
-                                id: target_id,
-                            },
+                            Value::make_instance_with_id(class_name, updated, target_id),
                         );
                         return Ok(assigned);
                     }
@@ -1974,11 +1936,7 @@ impl Interpreter {
                         );
                         self.env.insert(
                             target_var.to_string(),
-                            Value::Instance {
-                                class_name,
-                                attributes: std::sync::Arc::new(updated),
-                                id: target_id,
-                            },
+                            Value::make_instance_with_id(class_name, updated, target_id),
                         );
                         return Ok(result);
                     }
@@ -2024,11 +1982,7 @@ impl Interpreter {
                 let updated_clone = updated.clone();
                 self.env.insert(
                     target_var.to_string(),
-                    Value::Instance {
-                        class_name,
-                        attributes: std::sync::Arc::new(updated),
-                        id: target_id,
-                    },
+                    Value::make_instance_with_id(class_name, updated, target_id),
                 );
                 // Auto-FETCH if the method returned a Proxy
                 if let Value::Proxy { ref fetcher, .. } = result {
@@ -2212,11 +2166,7 @@ impl Interpreter {
         bytes.resize(new_size, Value::Int(0));
         let mut attrs = HashMap::new();
         attrs.insert("bytes".to_string(), Value::array(bytes));
-        let updated = Value::Instance {
-            class_name: class_name_sym,
-            attributes: std::sync::Arc::new(attrs),
-            id: orig_id,
-        };
+        let updated = Value::make_instance_with_id(class_name_sym, attrs, orig_id);
         self.env.insert(target_var.to_string(), updated.clone());
         Ok(updated)
     }
@@ -2287,11 +2237,7 @@ impl Interpreter {
 
         let mut attrs = HashMap::new();
         attrs.insert("bytes".to_string(), Value::array(bytes));
-        let updated = Value::Instance {
-            class_name: class_name_sym,
-            attributes: std::sync::Arc::new(attrs),
-            id: orig_id,
-        };
+        let updated = Value::make_instance_with_id(class_name_sym, attrs, orig_id);
         self.env.insert(target_var.to_string(), updated.clone());
         Ok(updated)
     }

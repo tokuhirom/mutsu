@@ -897,11 +897,8 @@ impl Interpreter {
                         {
                             let mut attrs = (**attributes).clone();
                             attrs.insert("formatter".to_string(), formatter_value.clone());
-                            let dt_with_formatter = Value::Instance {
-                                class_name,
-                                attributes: std::sync::Arc::new(attrs),
-                                id,
-                            };
+                            let dt_with_formatter =
+                                Value::make_instance_with_id(class_name, attrs, id);
                             let saved_env = self.env().clone();
                             let saved_readonly = self.save_readonly_vars();
                             let rendered = self
@@ -923,11 +920,7 @@ impl Interpreter {
                                     "__formatter_rendered".to_string(),
                                     Value::str(rendered),
                                 );
-                                return Ok(Value::Instance {
-                                    class_name,
-                                    attributes: std::sync::Arc::new(updated),
-                                    id,
-                                });
+                                return Ok(Value::make_instance_with_id(class_name, updated, id));
                             }
                         }
                         return Ok(dt);

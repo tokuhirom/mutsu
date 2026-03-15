@@ -2102,11 +2102,9 @@ impl VM {
                         ..
                     },
                     Value::Instance { id: ret_id, .. },
-                ) if base_id == ret_id => Value::Instance {
-                    class_name: *class_name,
-                    attributes: std::sync::Arc::new(attributes.clone()),
-                    id: *base_id,
-                },
+                ) if base_id == ret_id => {
+                    Value::make_instance_with_id(*class_name, attributes.clone(), *base_id)
+                }
                 _ => v,
             };
             (adjusted, attributes)

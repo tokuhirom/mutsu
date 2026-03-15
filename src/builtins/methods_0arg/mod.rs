@@ -864,12 +864,12 @@ fn hash_pick_item(key: &str, value: &Value) -> Value {
 }
 
 fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
-    fn has_date_attrs(attributes: &std::sync::Arc<HashMap<String, Value>>) -> bool {
+    fn has_date_attrs(attributes: &std::sync::Arc<crate::value::InstanceAttrs>) -> bool {
         attributes.contains_key("year")
             && attributes.contains_key("month")
             && attributes.contains_key("day")
     }
-    fn has_datetime_attrs(attributes: &std::sync::Arc<HashMap<String, Value>>) -> bool {
+    fn has_datetime_attrs(attributes: &std::sync::Arc<crate::value::InstanceAttrs>) -> bool {
         has_date_attrs(attributes)
             && attributes.contains_key("hour")
             && attributes.contains_key("minute")
