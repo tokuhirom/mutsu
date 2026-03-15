@@ -283,6 +283,15 @@ struct RegexPattern {
     ignore_mark: bool,
 }
 
+/// Context stored for each code block encountered during regex matching.
+#[derive(Clone)]
+pub(crate) struct CodeBlockContext {
+    pub(crate) code: String,
+    pub(crate) named: HashMap<String, Vec<String>>,
+    pub(crate) matched_so_far: String,
+    pub(crate) positional: Vec<String>,
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct RegexCaptures {
     pub(crate) named: HashMap<String, Vec<String>>,
@@ -303,9 +312,14 @@ pub(crate) struct RegexCaptures {
     pub(crate) to: usize,
     pub(crate) capture_start: Option<usize>,
     pub(crate) capture_end: Option<usize>,
+    /// Starting position of the match in the input (character index).
+    /// Set at the beginning of regex matching to allow code blocks to compute
+    /// the matched-so-far text.
+    pub(crate) match_from: usize,
     /// Code blocks encountered during matching (code + captures at that point).
     /// Executed after match for side effects.
-    pub(crate) code_blocks: Vec<(String, HashMap<String, Vec<String>>)>,
+    /// Each entry: (code, named_captures, matched_so_far, positional_captures)
+    pub(crate) code_blocks: Vec<CodeBlockContext>,
     /// Variables declared via `:my $var = expr;` inside regex.
     /// These are made available to `<{ code }>` closures.
     pub(crate) regex_vars: HashMap<String, Value>,

@@ -433,6 +433,7 @@ impl Interpreter {
                     role_origin: None,
                     return_type: None,
                     compiled_code: None,
+                    original_role: None,
                 };
                 if let Some(class_def) = self.classes.get_mut(&class_name) {
                     class_def.methods.entry(method_name).or_default().push(def);

@@ -76,6 +76,10 @@ impl Compiler {
         if matches!(first, '_' | '/' | '!' | '?' | '*' | '.' | '=') {
             return name.to_string();
         }
+        // Positional capture variables ($0, $1, ...) are never qualified
+        if first.is_ascii_digit() && name.chars().all(|c| c.is_ascii_digit()) {
+            return name.to_string();
+        }
         if let Some(sigil) = name.chars().next()
             && matches!(sigil, '$' | '@' | '%' | '&')
             && name.len() > 1
