@@ -89,12 +89,14 @@ impl VM {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_subst_op(
         &mut self,
         code: &CompiledCode,
         pattern_idx: u32,
         replacement_idx: u32,
         samemark: bool,
+        global: bool,
         nth_idx: Option<u32>,
         x_count: Option<u32>,
     ) -> Result<(), RuntimeError> {
@@ -110,11 +112,14 @@ impl VM {
             .unwrap_or(Value::Nil);
         let text = target.to_string_value();
 
-        if nth_spec.is_none() && x_count.is_none() {
+        if nth_spec.is_none() && x_count.is_none() && !global {
             if let Some((start, end)) = self.interpreter.regex_find_first_bridge(&pattern, &text) {
                 let out = Self::apply_substitutions(&text, &[(start, end)], &replacement, samemark);
                 let result = Value::str(out);
-                self.interpreter.env_mut().insert("_".to_string(), result);
+                self.interpreter
+                    .env_mut()
+                    .insert("_".to_string(), result.clone());
+                self.interpreter.env_mut().insert("$_".to_string(), result);
                 self.stack.push(Value::Bool(true));
             } else {
                 self.stack.push(Value::Nil);
@@ -123,7 +128,11 @@ impl VM {
         }
 
         let all_matches = self.interpreter.regex_find_all_bridge(&pattern, &text);
-        let ranges = Self::select_substitution_ranges(&all_matches, nth_spec.as_deref(), x_count)?;
+        let ranges = if global && nth_spec.is_none() && x_count.is_none() {
+            all_matches
+        } else {
+            Self::select_substitution_ranges(&all_matches, nth_spec.as_deref(), x_count)?
+        };
         if ranges.is_empty() {
             self.stack.push(Value::Nil);
             return Ok(());
@@ -131,18 +140,23 @@ impl VM {
 
         let out = Self::apply_substitutions(&text, &ranges, &replacement, samemark);
         let result = Value::str(out);
-        self.interpreter.env_mut().insert("_".to_string(), result);
+        self.interpreter
+            .env_mut()
+            .insert("_".to_string(), result.clone());
+        self.interpreter.env_mut().insert("$_".to_string(), result);
         // Push Bool::True so `$x ~~ s///` returns True on match
         self.stack.push(Value::Bool(true));
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_non_destructive_subst_op(
         &mut self,
         code: &CompiledCode,
         pattern_idx: u32,
         replacement_idx: u32,
         samemark: bool,
+        global: bool,
         nth_idx: Option<u32>,
         x_count: Option<u32>,
     ) -> Result<(), RuntimeError> {
@@ -158,7 +172,7 @@ impl VM {
             .unwrap_or(Value::Nil);
         let text = target.to_string_value();
 
-        if nth_spec.is_none() && x_count.is_none() {
+        if nth_spec.is_none() && x_count.is_none() && !global {
             if let Some((start, end)) = self.interpreter.regex_find_first_bridge(&pattern, &text) {
                 let out = Self::apply_substitutions(&text, &[(start, end)], &replacement, samemark);
                 self.stack.push(Value::str(out));
@@ -169,7 +183,11 @@ impl VM {
         }
 
         let all_matches = self.interpreter.regex_find_all_bridge(&pattern, &text);
-        let ranges = Self::select_substitution_ranges(&all_matches, nth_spec.as_deref(), x_count)?;
+        let ranges = if global && nth_spec.is_none() && x_count.is_none() {
+            all_matches
+        } else {
+            Self::select_substitution_ranges(&all_matches, nth_spec.as_deref(), x_count)?
+        };
         if ranges.is_empty() {
             self.stack.push(Value::str(text));
             return Ok(());

@@ -167,46 +167,46 @@ impl Interpreter {
 
         match pattern {
             Value::Regex(pat) => {
-                let matches = self.regex_find_all(pat, &text);
-                if matches.is_empty() {
+                let all_captures = self.regex_match_all_with_captures(pat, &text);
+                if all_captures.is_empty() {
                     return Ok(Value::str(text));
                 }
                 let chars: Vec<char> = text.chars().collect();
                 if global {
+                    let selected = self.select_non_overlapping_matches(all_captures);
                     let mut result = String::new();
                     let mut last_end = 0;
-                    for (start, end) in &matches {
-                        let prefix: String = chars[last_end..*start].iter().collect();
+                    for captures in &selected {
+                        let prefix: String = chars[last_end..captures.from].iter().collect();
                         result.push_str(&prefix);
-                        let matched_text: String = chars[*start..*end].iter().collect();
                         let repl = self.eval_subst_replacement(
                             &replacement_val,
                             is_closure,
                             &replacement_str,
-                            &matched_text,
+                            &captures.matched,
+                            Some(captures),
+                            Some(&text),
                         )?;
                         result.push_str(&repl);
-                        last_end = *end;
+                        last_end = captures.to;
                     }
                     let suffix: String = chars[last_end..].iter().collect();
                     result.push_str(&suffix);
                     Ok(Value::str(result))
+                } else if let Some(captures) = self.regex_match_with_captures(pat, &text) {
+                    let prefix: String = chars[..captures.from].iter().collect();
+                    let suffix: String = chars[captures.to..].iter().collect();
+                    let repl = self.eval_subst_replacement(
+                        &replacement_val,
+                        is_closure,
+                        &replacement_str,
+                        &captures.matched,
+                        Some(&captures),
+                        Some(&text),
+                    )?;
+                    Ok(Value::str(format!("{}{}{}", prefix, repl, suffix)))
                 } else {
-                    // Replace first match only
-                    if let Some((start, end)) = matches.first() {
-                        let prefix: String = chars[..*start].iter().collect();
-                        let suffix: String = chars[*end..].iter().collect();
-                        let matched_text: String = chars[*start..*end].iter().collect();
-                        let repl = self.eval_subst_replacement(
-                            &replacement_val,
-                            is_closure,
-                            &replacement_str,
-                            &matched_text,
-                        )?;
-                        Ok(Value::str(format!("{}{}{}", prefix, repl, suffix)))
-                    } else {
-                        Ok(Value::str(text))
-                    }
+                    Ok(Value::str(text))
                 }
             }
             Value::Str(pat) => {
@@ -234,6 +234,8 @@ impl Interpreter {
         is_closure: bool,
         replacement_str: &str,
         matched_text: &str,
+        captures: Option<&RegexCaptures>,
+        orig_text: Option<&str>,
     ) -> Result<String, RuntimeError> {
         if !is_closure {
             return Ok(replacement_str.to_string());
@@ -250,10 +252,48 @@ impl Interpreter {
         for (k, v) in &sub_data.env {
             self.env.insert(k.clone(), v.clone());
         }
-        // Set $/ to the matched text
-        let match_val = Value::str(matched_text.to_string());
-        self.env.insert("/".to_string(), match_val.clone());
-        self.env.insert("$_".to_string(), match_val);
+        if let Some(captures) = captures {
+            let match_obj = Value::make_match_object_full(
+                captures.matched.clone(),
+                captures.from as i64,
+                captures.to as i64,
+                &captures.positional,
+                &captures.named,
+                &captures.named_subcaps,
+                &captures.positional_subcaps,
+                orig_text,
+            );
+            self.env.insert("/".to_string(), match_obj.clone());
+            self.env.insert("$_".to_string(), match_obj.clone());
+            let positional_len = captures
+                .positional_slots
+                .len()
+                .max(captures.positional.len());
+            for i in 0..positional_len {
+                let value = if let Some(Some((capture, _, _))) = captures.positional_slots.get(i) {
+                    Value::str(capture.clone())
+                } else if let Some(capture) = captures.positional.get(i) {
+                    Value::str(capture.clone())
+                } else {
+                    Value::Nil
+                };
+                self.env.insert(i.to_string(), value);
+            }
+            if positional_len == 0 {
+                self.env.insert("0".to_string(), Value::Nil);
+            }
+            if let Value::Instance { ref attributes, .. } = match_obj
+                && let Some(Value::Hash(named_hash)) = attributes.get("named")
+            {
+                for (k, v) in named_hash.iter() {
+                    self.env.insert(format!("<{}>", k), v.clone());
+                }
+            }
+        } else {
+            let match_val = Value::str(matched_text.to_string());
+            self.env.insert("/".to_string(), match_val.clone());
+            self.env.insert("$_".to_string(), match_val);
+        }
         let result = self.eval_block_value(&sub_data.body).unwrap_or(Value::Nil);
         self.env = saved;
         Ok(result.to_string_value())

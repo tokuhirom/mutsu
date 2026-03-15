@@ -664,8 +664,17 @@ impl VM {
             } else {
                 name.resolve()
             };
+            let current_package = self.interpreter.current_package().to_string();
+            let qualified_name = if resolved_name.contains("::")
+                || current_package == "GLOBAL"
+                || resolved_name == current_package
+            {
+                resolved_name
+            } else {
+                format!("{current_package}::{resolved_name}")
+            };
             self.interpreter.register_class_decl(
-                &resolved_name,
+                &qualified_name,
                 parents,
                 crate::runtime::ClassDeclModifiers {
                     class_is_rw: *class_is_rw,
@@ -676,22 +685,22 @@ impl VM {
                 body,
             )?;
             // Compile method bodies to bytecode for the fast path
-            self.interpreter.compile_class_methods(&resolved_name);
+            self.interpreter.compile_class_methods(&qualified_name);
             // Register CUnion repr if present
             if let Some(repr_name) = repr
                 && repr_name == "CUnion"
             {
-                self.interpreter.register_cunion_class(&resolved_name);
+                self.interpreter.register_cunion_class(&qualified_name);
             }
             // Register the class name in the lexical env so that
             // ::("ClassName") indirect lookups can find it in the current scope.
             let env = self.interpreter.env_mut();
             env.insert(
                 "_".to_string(),
-                Value::Package(Symbol::intern(&resolved_name)),
+                Value::Package(Symbol::intern(&qualified_name)),
             );
-            env.entry(resolved_name.clone())
-                .or_insert(Value::Package(Symbol::intern(&resolved_name)));
+            env.entry(qualified_name.clone())
+                .or_insert(Value::Package(Symbol::intern(&qualified_name)));
             self.env_dirty = true;
             Ok(())
         } else {
