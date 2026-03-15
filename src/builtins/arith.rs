@@ -558,13 +558,26 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
                 || matches!(r, Value::Rat(_, _) | Value::FatRat(_, _));
             let has_fat_rat = matches!(l, Value::FatRat(_, _)) || matches!(r, Value::FatRat(_, _));
             if has_rat || matches!((&l, &r), (Value::Int(_), Value::Int(_))) {
-                let n = an * bd;
-                let d = ad * bn;
-                return Ok(if has_fat_rat {
-                    make_fat_rat(n, d)
+                if let (Some(n), Some(d)) = (an.checked_mul(bd), ad.checked_mul(bn)) {
+                    return Ok(if has_fat_rat {
+                        make_fat_rat(n, d)
+                    } else {
+                        make_rat(n, d)
+                    });
                 } else {
-                    make_rat(n, d)
-                });
+                    // Overflow: promote to BigRat
+                    let n = NumBigInt::from(an) * NumBigInt::from(bd);
+                    let d = NumBigInt::from(ad) * NumBigInt::from(bn);
+                    let result = make_big_rat(n, d);
+                    return Ok(if has_fat_rat {
+                        match result {
+                            Value::Rat(n, d) => Value::FatRat(n, d),
+                            other => other,
+                        }
+                    } else {
+                        result
+                    });
+                }
             }
         }
         Ok(match (&l, &r) {
