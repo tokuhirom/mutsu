@@ -656,8 +656,8 @@ impl Compiler {
                         cond,
                         then_branch,
                         else_branch,
-                        ..
-                    } => {
+                        binding_var,
+                    } if binding_var.is_none() => {
                         sub_compiler.compile_if_value(cond, then_branch, else_branch);
                         continue;
                     }
@@ -759,8 +759,8 @@ impl Compiler {
                             cond,
                             then_branch,
                             else_branch,
-                            ..
-                        } => {
+                            binding_var,
+                        } if binding_var.is_none() => {
                             sub_compiler.compile_if_value(cond, then_branch, else_branch);
                             continue;
                         }
@@ -839,8 +839,10 @@ impl Compiler {
                         cond,
                         then_branch,
                         else_branch,
-                        ..
-                    } => self.compile_if_value(cond, then_branch, else_branch),
+                        binding_var,
+                    } if binding_var.is_none() => {
+                        self.compile_if_value(cond, then_branch, else_branch)
+                    }
                     Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
                         self.compile_block_inline(inner)
                     }

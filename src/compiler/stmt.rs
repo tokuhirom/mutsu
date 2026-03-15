@@ -355,9 +355,10 @@ impl Compiler {
                 if let Some(var_name) = binding_var {
                     // Desugar: if EXPR -> $var { BODY } else { ELSE }
                     // into: { my $var = EXPR; if $var { BODY } else { ELSE } }
-                    let desugared_cond = Expr::Var(var_name.trim_start_matches('$').to_string());
+                    let bare_name = var_name.trim_start_matches('$').to_string();
+                    let desugared_cond = Expr::Var(bare_name.clone());
                     let var_decl = Stmt::VarDecl {
-                        name: var_name.clone(),
+                        name: bare_name,
                         expr: cond.clone(),
                         type_constraint: None,
                         is_state: false,

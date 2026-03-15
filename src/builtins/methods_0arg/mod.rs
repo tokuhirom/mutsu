@@ -702,21 +702,21 @@ fn range_gist_string(value: &Value) -> String {
     match value {
         Value::Range(a, b) => format!("{}..{}", a, b),
         Value::RangeExcl(a, b) => format!("{}..^{}", a, b),
-        Value::RangeExclStart(a, b) => format!("^{}..{}", a, b),
-        Value::RangeExclBoth(a, b) => format!("^{}..^{}", a, b),
+        Value::RangeExclStart(a, b) => format!("{}^..{}", a, b),
+        Value::RangeExclBoth(a, b) => format!("{}^..^{}", a, b),
         Value::GenericRange {
             start,
             end,
             excl_start,
             excl_end,
         } => {
-            let prefix = if *excl_start { "^" } else { "" };
-            let sep = if *excl_end { "..^" } else { ".." };
+            let start_sep = if *excl_start { "^.." } else { ".." };
+            let end_sep = if *excl_end { "^" } else { "" };
             format!(
                 "{}{}{}{}",
-                prefix,
                 start.to_string_value(),
-                sep,
+                start_sep,
+                end_sep,
                 end.to_string_value()
             )
         }
@@ -874,6 +874,22 @@ fn raku_value(v: &Value) -> String {
         }
         Value::Nil => "Nil".to_string(),
         Value::Package(name) => name.resolve().to_string(),
+        Value::Range(a, b) => format!("{}..{}", a, b),
+        Value::RangeExcl(a, b) => format!("{}..^{}", a, b),
+        Value::RangeExclStart(a, b) => format!("{}^..{}", a, b),
+        Value::RangeExclBoth(a, b) => format!("{}^..^{}", a, b),
+        Value::GenericRange {
+            start,
+            end,
+            excl_start,
+            excl_end,
+        } => {
+            let start_repr = raku_value(start);
+            let end_repr = raku_value(end);
+            let start_sep = if *excl_start { "^.." } else { ".." };
+            let end_sep = if *excl_end { "^" } else { "" };
+            format!("{}{}{}{}", start_repr, start_sep, end_sep, end_repr)
+        }
         other => other.to_string_value(),
     }
 }
@@ -2707,8 +2723,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     Some(Ok(Value::str(format!("{{{}}}", parts.join(", ")))))
                 }
             }
-            _ if target.is_range() && method == "gist" => {
-                Some(Ok(Value::str(range_gist_string(target))))
+            _ if target.is_range()
+                && (method == "gist" || method == "raku" || method == "perl") =>
+            {
+                Some(Ok(Value::str(if method == "gist" {
+                    range_gist_string(target)
+                } else {
+                    raku_value(target)
+                })))
             }
             _ => Some(Ok(Value::str(target.to_string_value()))),
         },
