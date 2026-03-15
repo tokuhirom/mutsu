@@ -23,6 +23,9 @@ impl Interpreter {
             if let Some(def) = self.resolve_function_with_alias(name, args) {
                 return self.call_function_def(&def, args);
             }
+            if let Some(err) = self.take_pending_dispatch_error() {
+                return Err(err);
+            }
             if let Some(callable) = self.env.get(&format!("&{}", name)).cloned() {
                 return self.call_sub_value(callable, args.to_vec(), false);
             }
@@ -313,6 +316,9 @@ impl Interpreter {
                 };
                 self.maybe_fetch_rw_proxy(v, routine_is_rw)
             });
+        }
+        if let Some(err) = self.take_pending_dispatch_error() {
+            return Err(err);
         }
         // Check for callable in env (e.g. &name) before proto dispatch failure.
         // This handles subs with CALL-ME mixed in via trait_mod.

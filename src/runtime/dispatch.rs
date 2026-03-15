@@ -1,6 +1,8 @@
 use super::*;
 use crate::symbol::Symbol;
 
+type DispatchShape = (Option<String>, bool, bool, bool, bool, bool, bool);
+
 impl Interpreter {
     fn constraint_base_name(constraint: &str) -> &str {
         let mut end = constraint.len();
@@ -13,15 +15,141 @@ impl Interpreter {
         &constraint[..end]
     }
 
-    fn candidate_specificity_rank(&self, def: &FunctionDef) -> (usize, usize, usize, usize, usize) {
-        let where_count = def
-            .param_defs
+    fn clear_pending_dispatch_error(&mut self) {
+        self.pending_dispatch_error = None;
+    }
+
+    pub(crate) fn take_pending_dispatch_error(&mut self) -> Option<RuntimeError> {
+        self.pending_dispatch_error.take()
+    }
+
+    fn dispatch_visible_params<'a>(
+        def: &'a FunctionDef,
+    ) -> impl Iterator<Item = &'a ParamDef> + 'a {
+        def.param_defs.iter().filter(|p| p.multi_invocant)
+    }
+
+    fn candidate_uses_order_sensitive_dispatch(&self, def: &FunctionDef) -> bool {
+        Self::dispatch_visible_params(def).any(|p| {
+            p.where_constraint.is_some()
+                || p.type_constraint
+                    .as_deref()
+                    .map(Self::constraint_base_name)
+                    .map(|base| self.subsets.contains_key(base))
+                    .unwrap_or(false)
+        })
+    }
+
+    fn candidate_dispatch_shape(&self, def: &FunctionDef) -> Vec<DispatchShape> {
+        Self::dispatch_visible_params(def)
+            .map(|p| {
+                (
+                    p.type_constraint.clone(),
+                    p.named,
+                    p.sub_signature.is_some(),
+                    p.literal_value.is_some(),
+                    p.traits.iter().any(|t| t == "rw"),
+                    p.traits.iter().any(|t| t == "raw"),
+                    p.traits.iter().any(|t| t == "copy"),
+                )
+            })
+            .collect()
+    }
+
+    fn ambiguous_multi_dispatch_error(
+        &self,
+        name: &str,
+        args: &[Value],
+        defs: &[FunctionDef],
+    ) -> RuntimeError {
+        let arg_types = args
             .iter()
+            .filter(|v| !matches!(v, Value::Pair(..)))
+            .map(super::value_type_name)
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut err = RuntimeError::new(format!("Ambiguous call to '{}({})'", name, arg_types));
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert(
+            "message".to_string(),
+            Value::str(format!(
+                "Ambiguous call to {}({}); these signatures all match: {}",
+                name,
+                arg_types,
+                defs.iter()
+                    .map(|def| {
+                        crate::value::signature::make_signature_value(
+                            crate::value::signature::param_defs_to_sig_info(
+                                &def.param_defs,
+                                def.return_type.clone(),
+                            ),
+                        )
+                        .to_string_value()
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+        );
+        err.exception = Some(Box::new(Value::make_instance(
+            Symbol::intern("X::Multi::Ambiguous"),
+            attrs,
+        )));
+        err
+    }
+
+    fn choose_best_matching_candidate(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        candidates: Vec<(String, FunctionDef)>,
+    ) -> Option<FunctionDef> {
+        let mut matches = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for (_, def) in candidates {
+            if self.args_match_param_types(args, &def.param_defs) {
+                let fingerprint =
+                    crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+                if !seen.insert(fingerprint) {
+                    continue;
+                }
+                matches.push(def);
+            }
+        }
+        if matches.len() <= 1 {
+            return matches.into_iter().next();
+        }
+
+        let best_rank = self.candidate_specificity_rank(&matches[0]);
+        let best_shape = self.candidate_dispatch_shape(&matches[0]);
+        let tied: Vec<FunctionDef> = matches
+            .iter()
+            .take_while(|def| self.candidate_specificity_rank(def) == best_rank)
+            .cloned()
+            .collect();
+        if tied.len() > 1
+            && tied
+                .iter()
+                .all(|def| !self.candidate_uses_order_sensitive_dispatch(def))
+            && tied
+                .iter()
+                .all(|def| self.candidate_dispatch_shape(def) == best_shape)
+        {
+            self.pending_dispatch_error =
+                Some(self.ambiguous_multi_dispatch_error(name, args, &tied));
+            return None;
+        }
+
+        Some(matches.remove(0))
+    }
+
+    fn candidate_specificity_rank(
+        &self,
+        def: &FunctionDef,
+    ) -> (usize, usize, usize, usize, usize, usize) {
+        let where_count = Self::dispatch_visible_params(def)
             .filter(|p| p.where_constraint.is_some())
             .count();
-        let subset_type_count = def
-            .param_defs
-            .iter()
+        let subset_type_count = Self::dispatch_visible_params(def)
             .filter(|p| {
                 p.type_constraint
                     .as_deref()
@@ -30,23 +158,29 @@ impl Interpreter {
                     .unwrap_or(false)
             })
             .count();
-        let typed_param_count = def
-            .param_defs
-            .iter()
+        let typed_param_count = Self::dispatch_visible_params(def)
             .filter(|p| p.type_constraint.is_some())
             .count();
-        let subsig_count = def
-            .param_defs
-            .iter()
+        let subsig_count = Self::dispatch_visible_params(def)
             .filter(|p| p.sub_signature.is_some())
             .count();
-        let named_count = def.param_defs.iter().filter(|p| p.named).count();
+        let named_count = Self::dispatch_visible_params(def)
+            .filter(|p| p.named)
+            .count();
+        let trait_count = Self::dispatch_visible_params(def)
+            .filter(|p| {
+                p.traits
+                    .iter()
+                    .any(|t| matches!(t.as_str(), "rw" | "raw" | "copy"))
+            })
+            .count();
         (
             where_count,
             subset_type_count,
             typed_param_count,
             subsig_count,
             named_count,
+            trait_count,
         )
     }
 
@@ -58,20 +192,17 @@ impl Interpreter {
         });
     }
 
-    fn has_other_typed_candidates_with_prefix(&self, prefix: &str, typed_key: &str) -> bool {
-        self.functions
-            .keys()
-            .map(|key| key.resolve())
-            .any(|key| key.starts_with(prefix) && key != typed_key)
-    }
-
     pub(super) fn resolve_function_with_alias(
         &mut self,
         name: &str,
         arg_values: &[Value],
     ) -> Option<FunctionDef> {
+        self.clear_pending_dispatch_error();
         if let Some(def) = self.resolve_function_with_types(name, arg_values) {
             return Some(def);
+        }
+        if self.pending_dispatch_error.is_some() {
+            return None;
         }
         if name.contains(':') || name.contains("::") {
             return None;
@@ -120,114 +251,34 @@ impl Interpreter {
             .filter(|v| !matches!(v, Value::Pair(..)))
             .count();
         if name.contains("::") {
-            let type_sig: Vec<&str> = arg_values
-                .iter()
-                .map(|v| {
-                    let unwrapped = if let Value::Capture { positional, named } = v {
-                        if positional.is_empty() {
-                            named
-                                .get("__mutsu_varref_value")
-                                .cloned()
-                                .unwrap_or_else(|| v.clone())
-                        } else {
-                            v.clone()
-                        }
-                    } else {
-                        v.clone()
-                    };
-                    super::value_type_name(&unwrapped)
-                })
-                .collect();
-            let typed_key = format!("{}/{}:{}", name, arity, type_sig.join(","));
-            if let Some(def) = self.functions.get(&Symbol::intern(&typed_key)) {
-                // Skip fast-path if candidate has where constraints — need full matching
-                let prefix = format!("{}/{arity}:", name);
-                if def.param_defs.iter().all(|p| p.where_constraint.is_none())
-                    && !self.has_other_typed_candidates_with_prefix(&prefix, &typed_key)
-                {
-                    return Some(def.clone());
-                }
-            }
             let prefix = format!("{}/{arity}:", name);
-            let mut candidates: Vec<(String, FunctionDef)> = self
-                .functions
-                .iter()
-                .filter(|(key, _)| key.resolve().starts_with(&prefix))
-                .map(|(key, def)| (key.resolve(), def.clone()))
-                .collect();
-            self.sort_candidates_by_specificity(&mut candidates);
-            for (_, def) in candidates {
-                if self.args_match_param_types(arg_values, &def.param_defs) {
-                    return Some(def);
-                }
-            }
             let untyped_key = format!("{}/{}", name, arity);
             let untyped_key_sym = Symbol::intern(&untyped_key);
             let untyped_m_prefix = format!("{}__m", untyped_key);
-            let mut untyped_candidates: Vec<(String, FunctionDef)> = self
+            let mut candidates: Vec<(String, FunctionDef)> = self
                 .functions
                 .iter()
                 .filter(|(key, _)| {
-                    **key == untyped_key_sym || key.resolve().starts_with(&untyped_m_prefix)
+                    let ks = key.resolve();
+                    ks.starts_with(&prefix)
+                        || **key == untyped_key_sym
+                        || ks.starts_with(&untyped_m_prefix)
                 })
                 .map(|(key, def)| (key.resolve(), def.clone()))
                 .collect();
-            untyped_candidates.sort_by(|a, b| a.0.cmp(&b.0));
-            for (_, def) in untyped_candidates {
-                if self.args_match_param_types(arg_values, &def.param_defs) {
-                    return Some(def);
-                }
+            self.sort_candidates_by_specificity(&mut candidates);
+            if let Some(def) = self.choose_best_matching_candidate(name, arg_values, candidates) {
+                return Some(def);
             }
             return self.functions.get(&Symbol::intern(name)).cloned();
         }
-        let type_sig: Vec<&str> = arg_values
-            .iter()
-            .filter(|v| !matches!(v, Value::Pair(..)))
-            .map(|v| {
-                let unwrapped = if let Value::Capture { positional, named } = v {
-                    if positional.is_empty() {
-                        named
-                            .get("__mutsu_varref_value")
-                            .cloned()
-                            .unwrap_or_else(|| v.clone())
-                    } else {
-                        v.clone()
-                    }
-                } else {
-                    v.clone()
-                };
-                super::value_type_name(&unwrapped)
-            })
-            .collect();
-        let typed_key = format!(
-            "{}::{}/{}:{}",
-            self.current_package,
-            name,
-            arity,
-            type_sig.join(",")
-        );
-        if let Some(def) = self.functions.get(&Symbol::intern(&typed_key)) {
-            // Skip fast-path if candidate has where constraints — need full matching
-            let prefix = format!("{}::{}/{}:", self.current_package, name, arity);
-            if def.param_defs.iter().all(|p| p.where_constraint.is_none())
-                && !self.has_other_typed_candidates_with_prefix(&prefix, &typed_key)
-            {
-                return Some(def.clone());
-            }
-        }
-        let typed_global = format!("GLOBAL::{}/{}:{}", name, arity, type_sig.join(","));
-        if let Some(def) = self.functions.get(&Symbol::intern(&typed_global))
-            && def.param_defs.iter().all(|p| p.where_constraint.is_none())
-            && !self.has_other_typed_candidates_with_prefix(
-                &format!("GLOBAL::{}/{}:", name, arity),
-                &typed_global,
-            )
-        {
-            return Some(def.clone());
-        }
-        // Try matching against all typed candidates for this name/arity
         let prefix_local = format!("{}::{}/{}:", self.current_package, name, arity);
         let prefix_global = format!("GLOBAL::{}/{}:", name, arity);
+        let generic_keys = [
+            format!("{}::{}/{}", self.current_package, name, arity),
+            format!("GLOBAL::{}/{}", name, arity),
+        ];
+        let mut found_multi_candidates = false;
         let mut candidates: Vec<(String, FunctionDef)> = self
             .functions
             .iter()
@@ -237,37 +288,23 @@ impl Interpreter {
             })
             .map(|(key, def)| (key.resolve(), def.clone()))
             .collect();
-        self.sort_candidates_by_specificity(&mut candidates);
-        for (_, def) in candidates {
-            if self.args_match_param_types(arg_values, &def.param_defs) {
-                return Some(def);
-            }
-        }
-        let mut found_multi_candidates = false;
-        // If there is an untyped-arity slot candidate for this arity, check it too.
-        // This covers catch-all multis and where-constrained captures.
-        let generic_keys = [
-            format!("{}::{}/{}", self.current_package, name, arity),
-            format!("GLOBAL::{}/{}", name, arity),
-        ];
         for key in &generic_keys {
             let key_sym = Symbol::intern(key);
             let m_prefix = format!("{}__m", key);
-            let mut candidates: Vec<(String, FunctionDef)> = self
+            let more: Vec<(String, FunctionDef)> = self
                 .functions
                 .iter()
                 .filter(|(k, _)| **k == key_sym || k.resolve().starts_with(&m_prefix))
                 .map(|(k, def)| (k.resolve(), def.clone()))
                 .collect();
-            if candidates.len() > 1 {
+            if !more.is_empty() {
                 found_multi_candidates = true;
             }
-            self.sort_candidates_by_specificity(&mut candidates);
-            for (_, def) in candidates {
-                if self.args_match_param_types(arg_values, &def.param_defs) {
-                    return Some(def);
-                }
-            }
+            candidates.extend(more);
+        }
+        self.sort_candidates_by_specificity(&mut candidates);
+        if let Some(def) = self.choose_best_matching_candidate(name, arg_values, candidates) {
+            return Some(def);
         }
         // Try optional/default candidates with different arities.
         // These can match calls with fewer positional arguments.
@@ -303,10 +340,10 @@ impl Interpreter {
                 .then(b_has_subsig.cmp(&a_has_subsig))
                 .then(a.0.cmp(&b.0))
         });
-        for (_, def) in optional_candidates {
-            if self.args_match_param_types(arg_values, &def.param_defs) {
-                return Some(def);
-            }
+        if let Some(def) =
+            self.choose_best_matching_candidate(name, arg_values, optional_candidates)
+        {
+            return Some(def);
         }
         // Try slurpy candidates with different arities (slurpy params accept
         // variable number of args, so the registered arity may differ from call arity).
@@ -328,10 +365,9 @@ impl Interpreter {
             found_multi_candidates = true;
         }
         slurpy_candidates.sort_by(|a, b| a.0.cmp(&b.0));
-        for (_, def) in slurpy_candidates {
-            if self.args_match_param_types(arg_values, &def.param_defs) {
-                return Some(def);
-            }
+        if let Some(def) = self.choose_best_matching_candidate(name, arg_values, slurpy_candidates)
+        {
+            return Some(def);
         }
         // Try candidates from other arities (e.g., optional/default positional params).
         // This allows calls with fewer args to match signatures like `$x = ...`.
@@ -354,10 +390,10 @@ impl Interpreter {
             found_multi_candidates = true;
         }
         self.sort_candidates_by_specificity(&mut any_arity_candidates);
-        for (_, def) in any_arity_candidates {
-            if self.args_match_param_types(arg_values, &def.param_defs) {
-                return Some(def);
-            }
+        if let Some(def) =
+            self.choose_best_matching_candidate(name, arg_values, any_arity_candidates)
+        {
+            return Some(def);
         }
         // Fall back to arity-only if no proto declared and no multi candidates were found.
         // When multi candidates exist but none matched (e.g., sub-signature arity mismatch),
@@ -683,7 +719,11 @@ impl Interpreter {
             .last()
             .cloned()
             .ok_or_else(|| RuntimeError::new("{*} used outside proto".to_string()))?;
+        self.clear_pending_dispatch_error();
         let Some(def) = self.resolve_proto_candidate_with_types(&proto_name, &args) else {
+            if let Some(err) = self.take_pending_dispatch_error() {
+                return Err(err);
+            }
             let mut err = RuntimeError::new(format!(
                 "No matching candidates for proto sub: {}",
                 proto_name
@@ -743,35 +783,19 @@ impl Interpreter {
     ) -> Option<FunctionDef> {
         let arity = arg_values.len();
         if name.contains("::") {
-            let type_sig: Vec<&str> = arg_values
-                .iter()
-                .map(|v| {
-                    let unwrapped = if let Value::Capture { positional, named } = v {
-                        if positional.is_empty() {
-                            named
-                                .get("__mutsu_varref_value")
-                                .cloned()
-                                .unwrap_or_else(|| v.clone())
-                        } else {
-                            v.clone()
-                        }
-                    } else {
-                        v.clone()
-                    };
-                    super::value_type_name(&unwrapped)
-                })
-                .collect();
-            let typed_key = format!("{}/{}:{}", name, arity, type_sig.join(","));
-            if let Some(def) = self.functions.get(&Symbol::intern(&typed_key))
-                && def.param_defs.iter().all(|p| p.where_constraint.is_none())
-            {
-                return Some(def.clone());
-            }
             let prefix = format!("{}/{arity}:", name);
+            let untyped_key = format!("{}/{}", name, arity);
+            let untyped_key_sym = Symbol::intern(&untyped_key);
+            let untyped_m_prefix = format!("{}__m", untyped_key);
             let mut candidates: Vec<(String, FunctionDef)> = self
                 .functions
                 .iter()
-                .filter(|(key, _)| key.resolve().starts_with(&prefix))
+                .filter(|(key, _)| {
+                    let ks = key.resolve();
+                    ks.starts_with(&prefix)
+                        || **key == untyped_key_sym
+                        || ks.starts_with(&untyped_m_prefix)
+                })
                 .map(|(key, def)| (key.resolve(), def.clone()))
                 .collect();
             candidates.sort_by(|a, b| {
@@ -779,15 +803,7 @@ impl Interpreter {
                 let b_has_where = b.1.param_defs.iter().any(|p| p.where_constraint.is_some());
                 b_has_where.cmp(&a_has_where).then(a.0.cmp(&b.0))
             });
-            for (_, def) in candidates {
-                if self.args_match_param_types(arg_values, &def.param_defs) {
-                    return Some(def);
-                }
-            }
-            let untyped_key = format!("{}/{}", name, arity);
-            if let Some(def) = self.functions.get(&Symbol::intern(&untyped_key)).cloned()
-                && self.args_match_param_types(arg_values, &def.param_defs)
-            {
+            if let Some(def) = self.choose_best_matching_candidate(name, arg_values, candidates) {
                 return Some(def);
             }
             return None;

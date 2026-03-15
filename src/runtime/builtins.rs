@@ -2267,6 +2267,9 @@ impl Interpreter {
                 name
             )));
         }
+        if let Some(err) = self.take_pending_dispatch_error() {
+            return Err(err);
+        }
 
         if let Some(callable) = self.env.get(&format!("&{}", name)).cloned() {
             return self.assign_callable_lvalue_with_values(callable, call_args, value);
