@@ -78,6 +78,8 @@ impl Interpreter {
         match sigil {
             '@' => match val {
                 // @-sigiled attributes always produce Array (not List)
+                // Preserve Shaped kind for shaped array attributes
+                Value::Array(items, ArrayKind::Shaped) => Value::Array(items, ArrayKind::Shaped),
                 Value::Array(items, kind) if kind.is_real_array() => {
                     Value::Array(items, ArrayKind::Array)
                 }

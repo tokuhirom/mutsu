@@ -409,6 +409,15 @@ impl Interpreter {
                             _ => None,
                         });
                         let shaped = Self::make_shaped_array(&dims);
+                        if let Some(ref data_val) = data
+                            && let Some(source_shape) =
+                                crate::runtime::utils::shaped_array_shape(data_val)
+                            && source_shape != dims
+                        {
+                            return Err(RuntimeError::new(
+                                "X::Assignment::ArrayShapeMismatch: Cannot assign a shaped array to another shaped array with a different shape",
+                            ));
+                        }
                         if let Some(data_val) = data {
                             // Populate the shaped array with data
                             let data_items = match data_val {
@@ -418,8 +427,39 @@ impl Interpreter {
                                 other => vec![other],
                             };
                             if let Value::Array(ref items, is_arr) = shaped {
+                                let dim_size = dims[0];
+                                // For multi-dim arrays, check if data has flat items
+                                // (X::Assignment::ToShaped) or too many items for the
+                                // first dimension.
+                                if dims.len() > 1
+                                    && data_items
+                                        .iter()
+                                        .any(|v| !matches!(v, Value::Array(..) | Value::Nil))
+                                {
+                                    return Err(RuntimeError::new(
+                                        "X::Assignment::ToShaped: Cannot assign a flat list to a shaped array",
+                                    ));
+                                }
+                                if data_items.len() > dim_size {
+                                    return Err(RuntimeError::new(format!(
+                                        "Index {} for dimension 1 out of range (must be 0..{})",
+                                        data_items.len() - 1,
+                                        dim_size - 1
+                                    )));
+                                }
                                 let mut new_items = items.as_ref().clone();
                                 for (i, val) in data_items.into_iter().enumerate() {
+                                    // For multi-dim: check sub-array size
+                                    if dims.len() > 1
+                                        && let Value::Array(sub_items, ..) = &val
+                                        && sub_items.len() > dims[1]
+                                    {
+                                        return Err(RuntimeError::new(format!(
+                                            "Index {} for dimension 2 out of range (must be 0..{})",
+                                            sub_items.len() - 1,
+                                            dims[1] - 1
+                                        )));
+                                    }
                                     if i < new_items.len() {
                                         new_items[i] = val;
                                     }

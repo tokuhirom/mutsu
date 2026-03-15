@@ -246,29 +246,13 @@ impl VM {
             && let Some(constraint) = self.interpreter.var_type_constraint(var_name)
             && let Value::Array(items, kind) = value
         {
-            let mut coerced_items = Vec::with_capacity(items.len());
-            for item in items.iter() {
-                if matches!(item, Value::Nil) {
-                    coerced_items.push(item.clone());
-                    continue;
-                }
-                let target_type =
-                    coercion_target(&constraint).unwrap_or_else(|| constraint.clone());
-                let coerced = if self.interpreter.type_matches_value(&target_type, item) {
-                    item.clone()
-                } else {
-                    self.interpreter
-                        .try_coerce_value_for_constraint(&constraint, item.clone())?
-                };
-                if !self.interpreter.type_matches_value(&target_type, &coerced) {
-                    return Err(RuntimeError::new(runtime::utils::type_check_element_error(
-                        var_name,
-                        &constraint,
-                        item,
-                    )));
-                }
-                coerced_items.push(coerced);
-            }
+            let coerced_items = self.coerce_typed_array_elements(
+                var_name,
+                &constraint,
+                &items,
+                kind,
+                &coercion_target,
+            )?;
             return Ok(Value::Array(Arc::new(coerced_items), kind));
         }
 
@@ -329,6 +313,52 @@ impl VM {
         }
 
         Ok(value)
+    }
+
+    /// Coerce/check elements of a typed array, recursing into shaped sub-arrays.
+    fn coerce_typed_array_elements(
+        &mut self,
+        var_name: &str,
+        constraint: &str,
+        items: &[Value],
+        kind: crate::value::ArrayKind,
+        coercion_target: &dyn Fn(&str) -> Option<String>,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let mut coerced_items = Vec::with_capacity(items.len());
+        for item in items.iter() {
+            if matches!(item, Value::Nil) {
+                coerced_items.push(item.clone());
+                continue;
+            }
+            // For shaped arrays, sub-arrays are structural — recurse into them
+            if kind == crate::value::ArrayKind::Shaped
+                && let Value::Array(sub_items, sub_kind) = item
+            {
+                let sub_coerced = self.coerce_typed_array_elements(
+                    var_name,
+                    constraint,
+                    sub_items,
+                    *sub_kind,
+                    coercion_target,
+                )?;
+                coerced_items.push(Value::Array(Arc::new(sub_coerced), *sub_kind));
+                continue;
+            }
+            let target_type = coercion_target(constraint).unwrap_or_else(|| constraint.to_string());
+            let coerced = if self.interpreter.type_matches_value(&target_type, item) {
+                item.clone()
+            } else {
+                self.interpreter
+                    .try_coerce_value_for_constraint(constraint, item.clone())?
+            };
+            if !self.interpreter.type_matches_value(&target_type, &coerced) {
+                return Err(RuntimeError::new(runtime::utils::type_check_element_error(
+                    var_name, constraint, item,
+                )));
+            }
+            coerced_items.push(coerced);
+        }
+        Ok(coerced_items)
     }
 
     fn slice_indices_from_index(idx: &Value) -> Option<Vec<usize>> {
