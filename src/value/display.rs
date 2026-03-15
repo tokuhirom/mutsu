@@ -344,6 +344,7 @@ impl Value {
                 .collect::<Vec<_>>()
                 .join(" "),
             Value::LazyList(_) => "LazyList".to_string(),
+            Value::Uni { text, .. } => text.clone(),
             Value::Hash(items) => {
                 let mut pairs: Vec<_> = items
                     .iter()
@@ -706,7 +707,6 @@ impl Value {
                 }
                 format!("\\({})", parts.join(", "))
             }
-            Value::Uni { text, .. } => text.clone(),
             Value::Mixin(inner, mixins) => {
                 if let Some(str_val) = mixins.get("Str") {
                     str_val.to_string_value()

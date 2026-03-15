@@ -526,17 +526,21 @@ impl Interpreter {
                     return Ok(result);
                 }
                 "Uni" => {
-                    let codepoints: Vec<Value> = args
+                    let text: String = args
                         .iter()
-                        .map(|a| match a {
-                            Value::Int(i) => Value::Int(*i),
-                            Value::Num(f) => Value::Int(*f as i64),
-                            other => {
-                                Value::Int(other.to_string_value().parse::<i64>().unwrap_or(0))
-                            }
+                        .filter_map(|a| {
+                            let cp = match a {
+                                Value::Int(i) => *i as u32,
+                                Value::Num(f) => *f as u32,
+                                other => other.to_string_value().parse::<u32>().unwrap_or(0),
+                            };
+                            char::from_u32(cp)
                         })
                         .collect();
-                    return Ok(Value::real_array(codepoints));
+                    return Ok(Value::Uni {
+                        form: String::new(),
+                        text,
+                    });
                 }
                 "Seq" => {
                     // Seq.new(iterator) — pull all items from the iterator

@@ -697,6 +697,315 @@ impl Interpreter {
             }
             "unique" => self.supply_unique(attributes, &args),
             "classify" => self.supply_classify(attributes, &args),
+            "sort" => {
+                let source_values = self.supply_get_values(attributes)?;
+                let mut sorted = source_values.clone();
+                if let Some(comparator) = args.first() {
+                    let comp = comparator.clone();
+                    let mut err: Option<RuntimeError> = None;
+                    sorted.sort_by(|a, b| {
+                        if err.is_some() {
+                            return std::cmp::Ordering::Equal;
+                        }
+                        match self.call_sub_value(comp.clone(), vec![a.clone(), b.clone()], false) {
+                            Ok(result) => {
+                                // Handle Order enum (Less=-1, Same=0, More=1)
+                                let n = match &result {
+                                    Value::Enum { value, .. } => *value as f64,
+                                    other => other.to_f64(),
+                                };
+                                if n < 0.0 {
+                                    std::cmp::Ordering::Less
+                                } else if n > 0.0 {
+                                    std::cmp::Ordering::Greater
+                                } else {
+                                    std::cmp::Ordering::Equal
+                                }
+                            }
+                            Err(e) => {
+                                err = Some(e);
+                                std::cmp::Ordering::Equal
+                            }
+                        }
+                    });
+                    if let Some(e) = err {
+                        return Err(e);
+                    }
+                } else {
+                    sorted.sort_by(|a, b| {
+                        let cmp = super::utils::compare_values(a, b);
+                        if cmp < 0 {
+                            std::cmp::Ordering::Less
+                        } else if cmp > 0 {
+                            std::cmp::Ordering::Greater
+                        } else {
+                            std::cmp::Ordering::Equal
+                        }
+                    });
+                }
+                Ok(self.make_supply_from_values(sorted, attributes))
+            }
+            "squish" => {
+                let source_values = self.supply_get_values(attributes)?;
+                let squished = self.dispatch_squish(Value::array(source_values), &args)?;
+                let items = match squished {
+                    Value::Seq(items) | Value::Array(items, ..) => items.to_vec(),
+                    other => vec![other],
+                };
+                Ok(self.make_supply_from_values(items, attributes))
+            }
+            "head" => {
+                let source_values = self.supply_get_values(attributes)?;
+                let count = if args.is_empty() {
+                    1
+                } else {
+                    match args.first() {
+                        Some(Value::Whatever) => source_values.len(),
+                        Some(Value::Num(f)) if f.is_infinite() => source_values.len(),
+                        Some(Value::Int(n)) => {
+                            if *n < 0 {
+                                0
+                            } else {
+                                *n as usize
+                            }
+                        }
+                        Some(val) => {
+                            // WhateverCode like *-3
+                            let total = source_values.len() as i64;
+                            let result =
+                                self.call_sub_value(val.clone(), vec![Value::Int(total)], true)?;
+                            let n = result.to_f64() as i64;
+                            if n < 0 { 0 } else { n as usize }
+                        }
+                        None => 1,
+                    }
+                };
+                let taken: Vec<Value> = source_values.into_iter().take(count).collect();
+                Ok(self.make_supply_from_values(taken, attributes))
+            }
+            "flat" => {
+                let source_values = self.supply_get_values(attributes)?;
+                let mut flattened = Vec::new();
+                for val in source_values {
+                    match val {
+                        Value::Array(items, kind) if !kind.is_itemized() => {
+                            flattened.extend(items.iter().cloned());
+                        }
+                        Value::Slip(items) | Value::Seq(items) => {
+                            flattened.extend(items.iter().cloned());
+                        }
+                        other => flattened.push(other),
+                    }
+                }
+                Ok(self.make_supply_from_values(flattened, attributes))
+            }
+            "produce" => {
+                let reducer = args.first().cloned().unwrap_or(Value::Nil);
+                if !matches!(
+                    reducer,
+                    Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                ) {
+                    return Err(RuntimeError::new("Supply.produce requires a code argument"));
+                }
+                let source_values = self.supply_get_values(attributes)?;
+                let mut produced = Vec::new();
+                if !source_values.is_empty() {
+                    let mut acc = source_values[0].clone();
+                    produced.push(acc.clone());
+                    for val in source_values.iter().skip(1) {
+                        acc =
+                            self.call_sub_value(reducer.clone(), vec![acc, val.clone()], false)?;
+                        produced.push(acc.clone());
+                    }
+                }
+                Ok(self.make_supply_from_values(produced, attributes))
+            }
+            "batch" => {
+                let source_values = self.supply_get_values(attributes)?;
+                let mut batch_size: Option<usize> = None;
+                for arg in &args {
+                    if let Value::Pair(key, value) = arg {
+                        if key == "elems" {
+                            batch_size = Some(value.to_f64() as usize);
+                        }
+                    } else {
+                        batch_size = Some(arg.to_f64() as usize);
+                    }
+                }
+                let size = batch_size.unwrap_or(source_values.len().max(1));
+                let mut batched = Vec::new();
+                for chunk in source_values.chunks(size) {
+                    batched.push(Value::array(chunk.to_vec()));
+                }
+                Ok(self.make_supply_from_values(batched, attributes))
+            }
+            "rotor" => {
+                let source_values = self.supply_get_values(attributes)?;
+                let rotored = self.dispatch_rotor(Value::array(source_values), &args)?;
+                let items = match rotored {
+                    Value::Seq(items) | Value::Array(items, ..) => items.to_vec(),
+                    other => vec![other],
+                };
+                Ok(self.make_supply_from_values(items, attributes))
+            }
+            "rotate" => {
+                let source_values = self.supply_get_values(attributes)?;
+                let n = args.first().map(|v| v.to_f64() as i64).unwrap_or(1);
+                let len = source_values.len();
+                if len == 0 {
+                    return Ok(self.make_supply_from_values(Vec::new(), attributes));
+                }
+                let n = ((n % len as i64) + len as i64) as usize % len;
+                let mut rotated = source_values[n..].to_vec();
+                rotated.extend_from_slice(&source_values[..n]);
+                Ok(self.make_supply_from_values(rotated, attributes))
+            }
+            "comb" => {
+                let source_values = self.supply_get_values(attributes)?;
+                let mut combed = Vec::new();
+                for val in source_values {
+                    let result = self.call_method_with_values(val, "comb", args.clone())?;
+                    match result {
+                        Value::Seq(items) | Value::Array(items, ..) => {
+                            combed.extend(items.iter().cloned());
+                        }
+                        other => combed.push(other),
+                    }
+                }
+                Ok(self.make_supply_from_values(combed, attributes))
+            }
+            "words" => {
+                let source_values = self.supply_get_values(attributes)?;
+                let mut words = Vec::new();
+                for val in source_values {
+                    let s = val.to_string_value();
+                    for word in s.split_whitespace() {
+                        words.push(Value::str(word.to_string()));
+                    }
+                }
+                Ok(self.make_supply_from_values(words, attributes))
+            }
+            "snip" => {
+                let source_values = self.supply_get_values(attributes)?;
+                // snip takes conditions and splits the supply at points where conditions match
+                let conditions: Vec<Value> = args;
+                let mut result: Vec<Value> = Vec::new();
+                let mut current_group: Vec<Value> = Vec::new();
+                let mut cond_idx = 0;
+                for val in source_values {
+                    if cond_idx < conditions.len() {
+                        let cond = &conditions[cond_idx];
+                        let sm_result = self
+                            .call_method_with_values(val.clone(), "ACCEPTS", vec![cond.clone()])
+                            .unwrap_or(Value::Bool(false));
+                        if sm_result.truthy() {
+                            current_group.push(val);
+                            result.push(Value::array(current_group));
+                            current_group = Vec::new();
+                            cond_idx += 1;
+                            continue;
+                        }
+                    }
+                    current_group.push(val);
+                }
+                if !current_group.is_empty() {
+                    result.push(Value::array(current_group));
+                }
+                Ok(self.make_supply_from_values(result, attributes))
+            }
+            "minmax" => {
+                let mapper = args.first().cloned();
+                if let Some(ref m) = mapper
+                    && !matches!(m, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. })
+                {
+                    return Err(RuntimeError::new(
+                        "Supply.minmax: mapper must be code if specified",
+                    ));
+                }
+                let source_values = self.supply_get_values(attributes)?;
+                let mut results: Vec<Value> = Vec::new();
+                let mut cur_min: Option<Value> = None;
+                let mut cur_max: Option<Value> = None;
+                let mut cur_min_key: Option<Value> = None;
+                let mut cur_max_key: Option<Value> = None;
+                for val in source_values {
+                    let key = if let Some(ref func) = mapper {
+                        self.call_sub_value(func.clone(), vec![val.clone()], true)?
+                    } else {
+                        val.clone()
+                    };
+                    let mut changed = false;
+                    if cur_min_key.is_none()
+                        || super::utils::compare_values(&key, cur_min_key.as_ref().unwrap()) < 0
+                    {
+                        cur_min = Some(val.clone());
+                        cur_min_key = Some(key.clone());
+                        changed = true;
+                    }
+                    if cur_max_key.is_none()
+                        || super::utils::compare_values(&key, cur_max_key.as_ref().unwrap()) > 0
+                    {
+                        cur_max = Some(val.clone());
+                        cur_max_key = Some(key.clone());
+                        changed = true;
+                    }
+                    if changed && let (Some(mn), Some(mx)) = (&cur_min, &cur_max) {
+                        results.push(Value::generic_range(mn.clone(), mx.clone(), false, false));
+                    }
+                }
+                Ok(self.make_supply_from_values(results, attributes))
+            }
+            "zip" | "zip-latest" => {
+                // Supply.zip(...) / Supply.zip-latest(...)
+                // Zip this supply with others
+                let source_values = self.supply_get_values(attributes)?;
+                let mut other_values: Vec<Vec<Value>> = Vec::new();
+                for arg in &args {
+                    if let Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } = arg
+                        && class_name == "Supply"
+                    {
+                        other_values.push(self.supply_get_values(attributes)?);
+                    }
+                }
+                let min_len = std::iter::once(source_values.len())
+                    .chain(other_values.iter().map(|v| v.len()))
+                    .min()
+                    .unwrap_or(0);
+                let mut zipped = Vec::new();
+                for i in 0..min_len {
+                    let mut tuple = vec![source_values[i].clone()];
+                    for other in &other_values {
+                        tuple.push(other[i].clone());
+                    }
+                    zipped.push(Value::array(tuple));
+                }
+                Ok(self.make_supply_from_values(zipped, attributes))
+            }
+            "start" => {
+                // Supply.start: map each value through a block, emitting the result as a Supply
+                let block = args.first().cloned().unwrap_or(Value::Nil);
+                let source_values = self.supply_get_values(attributes)?;
+                let mut results = Vec::new();
+                for val in source_values {
+                    let result = self.call_sub_value(block.clone(), vec![val], true)?;
+                    // Each result is wrapped in a one-element Supply
+                    let mut inner_attrs = HashMap::new();
+                    inner_attrs.insert("values".to_string(), Value::array(vec![result]));
+                    inner_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    inner_attrs.insert("live".to_string(), Value::Bool(false));
+                    results.push(Value::make_instance(Symbol::intern("Supply"), inner_attrs));
+                }
+                Ok(self.make_supply_from_values(results, attributes))
+            }
+            "wait" => {
+                // Supply.wait: collect all values and return a Seq
+                let source_values = self.supply_get_values(attributes)?;
+                Ok(Value::Seq(std::sync::Arc::new(source_values)))
+            }
             "Supply" | "supply" => {
                 // .Supply on a Supply is identity (noop) — return self
                 // Preserve the same id for === identity check
@@ -1528,6 +1837,67 @@ impl Interpreter {
         }
 
         Ok(())
+    }
+
+    /// Extract source values from a Supply's attributes.
+    fn supply_get_values(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
+            let emitter = Value::make_instance(Symbol::intern("Supplier"), {
+                let mut a = HashMap::new();
+                a.insert("emitted".to_string(), Value::array(Vec::new()));
+                a.insert("done".to_string(), Value::Bool(false));
+                a
+            });
+            self.supply_emit_buffer.push(Vec::new());
+            let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
+            Ok(self.supply_emit_buffer.pop().unwrap_or_default())
+        } else {
+            Ok(match attributes.get("values") {
+                Some(Value::Array(items, ..)) => items.to_vec(),
+                _ => Vec::new(),
+            })
+        }
+    }
+
+    /// Create a new non-live Supply from a list of values.
+    fn make_supply_from_values(
+        &self,
+        values: Vec<Value>,
+        _source_attrs: &HashMap<String, Value>,
+    ) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("values".to_string(), Value::array(values));
+        attrs.insert("taps".to_string(), Value::array(Vec::new()));
+        attrs.insert("live".to_string(), Value::Bool(false));
+        Value::make_instance(Symbol::intern("Supply"), attrs)
+    }
+
+    /// Dispatch a transform method on a Supply instance.
+    /// This is called from methods.rs for methods that need
+    /// special Supply handling but are dispatched there.
+    pub(crate) fn dispatch_supply_transform(
+        &mut self,
+        target: Value,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &target
+            && class_name == "Supply"
+        {
+            self.native_supply(attributes, method, args.to_vec())
+        } else {
+            Err(RuntimeError::new(format!(
+                "Cannot call .{} on non-Supply",
+                method
+            )))
+        }
     }
 
     /// Check if a key is already in the unique filter's seen list.

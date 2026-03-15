@@ -983,8 +983,22 @@ impl VM {
         let bypass_supply_extrema_fastpath = (method_sym == "max"
             || method_sym == "min"
             || method_sym == "lines"
-            || method_sym == "elems")
-            && args.len() <= 1
+            || method_sym == "elems"
+            || method_sym == "head"
+            || method_sym == "flat"
+            || method_sym == "sort"
+            || method_sym == "comb"
+            || method_sym == "words"
+            || method_sym == "batch"
+            || method_sym == "rotor"
+            || method_sym == "rotate"
+            || method_sym == "produce"
+            || method_sym == "snip"
+            || method_sym == "minmax"
+            || method_sym == "start"
+            || method_sym == "wait"
+            || method_sym == "zip"
+            || method_sym == "zip-latest")
             && (matches!(
                 target,
                 Value::Instance { class_name, .. } if class_name == "Supply"
