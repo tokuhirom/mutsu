@@ -217,10 +217,10 @@ pub(super) fn process_content_with_flags(content: &str, flags: &QuoteFlags) -> E
                     continue;
                 }
                 // Unknown escape in :b mode — keep literal
-                let c = rest.as_bytes()[1] as char;
+                let c = rest[1..].chars().next().unwrap();
                 current.push('\\');
                 current.push(c);
-                rest = &rest[2..];
+                rest = &rest[1 + c.len_utf8()..];
                 continue;
             } else if flags.q_mode {
                 // q-mode: handle \\, \', and \qq[]/\q:adverb{} escapes
@@ -231,10 +231,10 @@ pub(super) fn process_content_with_flags(content: &str, flags: &QuoteFlags) -> E
                     continue;
                 }
                 // Not a recognized q escape — keep literal
-                let c = rest.as_bytes()[1] as char;
+                let c = rest[1..].chars().next().unwrap();
                 current.push('\\');
                 current.push(c);
-                rest = &rest[2..];
+                rest = &rest[1 + c.len_utf8()..];
                 continue;
             }
         }
