@@ -558,7 +558,20 @@ impl Interpreter {
             // Array operations
             "shift" => self.builtin_shift(&args),
             "pop" => self.builtin_pop(&args),
-            "push" | "unshift" | "append" | "prepend" => Ok(Value::Nil),
+            "push" | "unshift" | "append" | "prepend" => {
+                if args.is_empty() {
+                    let msg = format!(
+                        "X::TypeCheck::Argument: Calling {name}(Any) will never work with declared signature ($, |)"
+                    );
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("message".to_string(), Value::str(msg.clone()));
+                    let ex = Value::make_instance(Symbol::intern("X::TypeCheck::Argument"), attrs);
+                    let mut err = RuntimeError::new(msg);
+                    err.exception = Some(Box::new(ex));
+                    return Err(err);
+                }
+                Ok(Value::Nil)
+            }
             // Introspection
             "callframe" => self.builtin_callframe(&args, 0),
             "caller" => self.builtin_callframe(&args, 1),
