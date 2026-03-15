@@ -1175,9 +1175,11 @@ impl VM {
         let idx = idx as usize;
         let raw_popped = self.stack.pop().unwrap_or(Value::Nil);
         let (raw_popped, bind_source) = Self::extract_varref_binding(raw_popped);
+        let is_bind = self.bind_context || bind_source.is_some();
+        self.bind_context = false;
 
         // Fast path for simple scalar variables — skip all metadata checks
-        if code.simple_locals[idx] && bind_source.is_none() {
+        if code.simple_locals[idx] && bind_source.is_none() && !is_bind {
             let mut val = raw_popped;
             let name = &code.locals[idx];
             if !name.starts_with('@') && !name.starts_with('%') {
@@ -1229,12 +1231,24 @@ impl VM {
         let mut val = if name.starts_with('%') {
             self.coerce_hash_var_value(name, raw_popped)?
         } else if name.starts_with('@') {
-            let mut assigned = match raw_popped {
-                Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
-                    Some(Value::Bool(true)) => Value::LazyList(list),
-                    _ => Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?),
-                },
-                other => runtime::coerce_to_array(other),
+            let mut assigned = if is_bind {
+                // `:=` binding preserves the container type (e.g. List stays List).
+                match raw_popped {
+                    Value::LazyList(list) => {
+                        Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?)
+                    }
+                    other => other,
+                }
+            } else {
+                match raw_popped {
+                    Value::LazyList(list) => {
+                        match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
+                            Some(Value::Bool(true)) => Value::LazyList(list),
+                            _ => Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?),
+                        }
+                    }
+                    other => runtime::coerce_to_array(other),
+                }
             };
             let class_name = match &self.locals[idx] {
                 Value::Instance { class_name, .. } => Some(*class_name),
@@ -1332,7 +1346,15 @@ impl VM {
             return Err(err);
         }
         self.locals[idx] = val.clone();
-        self.set_env_with_main_alias(name, val.clone());
+        if is_bind && name.starts_with('@') {
+            // For `:=` bind, bypass set_shared_var's List->Array normalization
+            // so the container type is preserved in the environment.
+            self.interpreter
+                .env_mut()
+                .insert(name.to_string(), val.clone());
+        } else {
+            self.set_env_with_main_alias(name, val.clone());
+        }
         if let Some(symbol) = Self::term_symbol_from_name(name) {
             self.interpreter
                 .env_mut()

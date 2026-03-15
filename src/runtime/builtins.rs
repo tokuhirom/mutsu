@@ -1076,13 +1076,13 @@ impl Interpreter {
 
         let (kind, keep_missing) = match mode.as_str() {
             "kv" => ("kv", false),
-            "not-kv" => ("kv", true),
+            "not-kv" | "kv0" => ("kv", true),
             "p" => ("p", false),
-            "not-p" => ("p", true),
+            "not-p" | "p0" => ("p", true),
             "k" => ("k", false),
-            "not-k" => ("k", true),
+            "not-k" | "k0" => ("k", true),
             "v" => ("v", false),
-            "not-v" => ("v", true),
+            "not-v" | "v0" => ("v", true),
             _ => return Ok(Value::Nil),
         };
 
