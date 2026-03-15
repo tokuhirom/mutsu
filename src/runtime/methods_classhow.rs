@@ -385,25 +385,72 @@ impl Interpreter {
                     Value::Instance { class_name, .. } => class_name.resolve(),
                     _ => value_type_name(&args[0]).to_string(),
                 };
-                let attrs = self.collect_class_attributes(&owner_class);
-                let values = attrs
-                    .into_iter()
-                    .map(
-                        |(attr_name, is_public, _default, is_rw, _is_required, sigil, _where)| {
-                            let mut meta = HashMap::new();
-                            meta.insert("name".to_string(), Value::str(attr_name.clone()));
-                            meta.insert("__mutsu_attr_name".to_string(), Value::str(attr_name));
-                            meta.insert(
-                                "__mutsu_attr_owner".to_string(),
-                                Value::str(owner_class.clone()),
-                            );
-                            meta.insert("is_public".to_string(), Value::Bool(is_public));
-                            meta.insert("is_rw".to_string(), Value::Bool(is_rw));
-                            meta.insert("sigil".to_string(), Value::str(sigil.to_string()));
-                            Value::make_instance(Symbol::intern("Attribute"), meta)
-                        },
-                    )
-                    .collect::<Vec<_>>();
+                // Check for :local named arg
+                let is_local = args.iter().skip(1).any(|a| {
+                    if let Value::Pair(k, v) = a {
+                        k == "local" && v.truthy()
+                    } else {
+                        false
+                    }
+                });
+                // Collect type constraints for the owner class and its MRO
+                let type_constraints = self.collect_attribute_type_constraints(&owner_class);
+                let attrs = if is_local {
+                    // :local — only attributes declared directly on this class
+                    if let Some(class_def) = self.classes.get(&owner_class) {
+                        class_def.attributes.clone()
+                    } else {
+                        Vec::new()
+                    }
+                } else {
+                    self.collect_class_attributes(&owner_class)
+                };
+                // Reverse to get derived-first order (collect_class_attributes
+                // iterates MRO in reverse, putting base-class attrs first)
+                let mut attrs = attrs;
+                if !is_local {
+                    attrs.reverse();
+                }
+                let mut values = Vec::with_capacity(attrs.len());
+                for (attr_name, is_public, default, is_rw, _is_required, sigil, _where) in attrs {
+                    let mut meta = HashMap::new();
+                    // Raku .name returns "$!attrname" format
+                    let full_name = format!("{}!{}", sigil, attr_name);
+                    meta.insert("name".to_string(), Value::str(full_name));
+                    meta.insert(
+                        "__mutsu_attr_name".to_string(),
+                        Value::str(attr_name.clone()),
+                    );
+                    meta.insert(
+                        "__mutsu_attr_owner".to_string(),
+                        Value::str(owner_class.clone()),
+                    );
+                    meta.insert(
+                        "__mutsu_attr_package".to_string(),
+                        Value::str(owner_class.clone()),
+                    );
+                    meta.insert("is_public".to_string(), Value::Bool(is_public));
+                    meta.insert("is_rw".to_string(), Value::Bool(is_rw));
+                    meta.insert("sigil".to_string(), Value::str(sigil.to_string()));
+                    // Store type constraint
+                    let type_name = type_constraints
+                        .get(&attr_name)
+                        .cloned()
+                        .unwrap_or_else(|| "Mu".to_string());
+                    meta.insert("__mutsu_type".to_string(), Value::str(type_name));
+                    // Evaluate default/build value
+                    if let Some(expr) = default {
+                        // Try to evaluate the default expression
+                        let build_val = self
+                            .eval_block_value(&[Stmt::Expr(expr)])
+                            .unwrap_or(Value::Bool(true));
+                        meta.insert("__mutsu_build".to_string(), build_val);
+                        meta.insert("__mutsu_has_build".to_string(), Value::Bool(true));
+                    } else {
+                        meta.insert("__mutsu_has_build".to_string(), Value::Bool(false));
+                    }
+                    values.push(Value::make_instance(Symbol::intern("Attribute"), meta));
+                }
                 Ok(Value::array(values))
             }
             "candidates" if !args.is_empty() => {

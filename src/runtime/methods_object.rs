@@ -1886,7 +1886,10 @@ impl Interpreter {
         }
     }
 
-    fn collect_attribute_type_constraints(&mut self, class_name: &str) -> HashMap<String, String> {
+    pub(super) fn collect_attribute_type_constraints(
+        &mut self,
+        class_name: &str,
+    ) -> HashMap<String, String> {
         let mut constraints = HashMap::new();
         for owner in self.class_mro(class_name) {
             if let Some(class_def) = self.classes.get(&owner) {

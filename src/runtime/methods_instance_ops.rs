@@ -217,6 +217,106 @@ impl Interpreter {
                     "name" => {
                         return Ok(attributes.get("name").cloned().unwrap_or(Value::Nil));
                     }
+                    "type" => {
+                        let type_name = attributes
+                            .get("__mutsu_type")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_else(|| "Mu".to_string());
+                        return Ok(Value::Package(Symbol::intern(&type_name)));
+                    }
+                    "has_accessor" => {
+                        let is_public = attributes
+                            .get("is_public")
+                            .map(|v| v.truthy())
+                            .unwrap_or(false);
+                        return Ok(Value::Bool(is_public));
+                    }
+                    "rw" => {
+                        let is_rw = attributes.get("is_rw").map(|v| v.truthy()).unwrap_or(false);
+                        return Ok(Value::Bool(is_rw));
+                    }
+                    "readonly" => {
+                        let is_rw = attributes.get("is_rw").map(|v| v.truthy()).unwrap_or(false);
+                        return Ok(Value::Bool(!is_rw));
+                    }
+                    "build" => {
+                        let has_build = attributes
+                            .get("__mutsu_has_build")
+                            .map(|v| v.truthy())
+                            .unwrap_or(false);
+                        if has_build {
+                            return Ok(attributes
+                                .get("__mutsu_build")
+                                .cloned()
+                                .unwrap_or(Value::Nil));
+                        }
+                        return Ok(Value::Nil);
+                    }
+                    "package" => {
+                        let pkg = attributes
+                            .get("__mutsu_attr_package")
+                            .or_else(|| attributes.get("__mutsu_attr_owner"))
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_else(|| "Mu".to_string());
+                        return Ok(Value::Package(Symbol::intern(&pkg)));
+                    }
+                    "get_value" => {
+                        let instance = args.first().ok_or_else(|| {
+                            RuntimeError::new("Attribute.get_value requires an instance argument")
+                        })?;
+                        let attr_name = attributes
+                            .get("__mutsu_attr_name")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        if let Value::Instance {
+                            attributes: inst_attrs,
+                            ..
+                        } = instance
+                        {
+                            return Ok(inst_attrs.get(&attr_name).cloned().unwrap_or(Value::Nil));
+                        }
+                        return Ok(Value::Nil);
+                    }
+                    "set_value" => {
+                        // Attribute.set_value modifies the instance's attribute
+                        // in-place via Arc::make_mut
+                        let instance = args.first().ok_or_else(|| {
+                            RuntimeError::new("Attribute.set_value requires an instance argument")
+                        })?;
+                        let new_val = args.get(1).cloned().unwrap_or(Value::Nil);
+                        let attr_name = attributes
+                            .get("__mutsu_attr_name")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        if let Value::Instance {
+                            attributes: inst_attrs,
+                            class_name: inst_class,
+                            ..
+                        } = instance
+                        {
+                            let mut new_map: HashMap<String, Value> = inst_attrs
+                                .iter()
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .collect();
+                            new_map.insert(attr_name, new_val);
+                            return Ok(Value::make_instance(*inst_class, new_map));
+                        }
+                        return Ok(Value::Nil);
+                    }
+                    "gist" | "Str" => {
+                        let type_name = attributes
+                            .get("__mutsu_type")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_else(|| "Mu".to_string());
+                        let name = attributes
+                            .get("name")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        if method == "Str" {
+                            return Ok(Value::str(name));
+                        }
+                        return Ok(Value::str(format!("{} {}", type_name, name)));
+                    }
                     _ => {}
                 }
             }
