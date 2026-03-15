@@ -2093,6 +2093,21 @@ impl Interpreter {
             (Value::Instance { id: id_a, .. }, Value::Instance { id: id_b, .. }) => id_a == id_b,
             // When RHS is a Bool, result is that Bool
             (_, Value::Bool(b)) => *b,
+            // X::AdHoc smartmatch: delegate to payload
+            (
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                },
+                _,
+            ) if class_name == "X::AdHoc" => {
+                if let Some(payload) = attributes.get("payload") {
+                    self.smart_match(payload, right)
+                } else {
+                    false
+                }
+            }
             // Instance identity
             (Value::Instance { .. }, _) | (_, Value::Instance { .. }) => false,
             // Range ~~ Range: LHS is subset of RHS.

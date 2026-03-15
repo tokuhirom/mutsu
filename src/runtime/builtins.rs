@@ -900,7 +900,25 @@ impl Interpreter {
                     .any(|p| p == "Exception" || p.starts_with("X::") || p.starts_with("CX::"));
             if is_exception {
                 err.exception = Some(Box::new(value.clone()));
+            } else {
+                // Non-exception instance: wrap in X::AdHoc with payload
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("payload".to_string(), value.clone());
+                attrs.insert("message".to_string(), Value::str(msg.clone()));
+                err.exception = Some(Box::new(Value::make_instance(
+                    Symbol::intern("X::AdHoc"),
+                    attrs,
+                )));
             }
+        } else {
+            // Non-instance value (Str, Int, etc.): wrap in X::AdHoc with payload
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("payload".to_string(), value.clone());
+            attrs.insert("message".to_string(), Value::str(msg.clone()));
+            err.exception = Some(Box::new(Value::make_instance(
+                Symbol::intern("X::AdHoc"),
+                attrs,
+            )));
         }
         err
     }
