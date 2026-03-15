@@ -604,6 +604,40 @@ impl Interpreter {
                 }
                 return Ok(acc);
             }
+            "//" => {
+                let mut acc = args[0].clone();
+                for rhs in &args[1..] {
+                    if crate::runtime::types::value_is_defined(&acc) {
+                        return Ok(acc);
+                    }
+                    // When RHS is a Sub, invoke it (thunking behavior)
+                    acc = if let Value::Sub(_) = rhs {
+                        self.call_sub_value(rhs.clone(), vec![], false)?
+                    } else {
+                        rhs.clone()
+                    };
+                }
+                return Ok(acc);
+            }
+            "^^" | "xor" => {
+                // XOR: exactly one operand must be truthy
+                let mut truthy_val: Option<Value> = None;
+                for arg in &args {
+                    // Invoke Sub operands (thunking behavior)
+                    let val = if let Value::Sub(_) = arg {
+                        self.call_sub_value(arg.clone(), vec![], false)?
+                    } else {
+                        arg.clone()
+                    };
+                    if val.truthy() {
+                        if truthy_val.is_some() {
+                            return Ok(Value::Nil);
+                        }
+                        truthy_val = Some(val);
+                    }
+                }
+                return Ok(truthy_val.unwrap_or(Value::Nil));
+            }
             _ => {}
         }
         // Set operators: check for Failure and lazy list values

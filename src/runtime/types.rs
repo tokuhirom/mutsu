@@ -1115,14 +1115,27 @@ impl Interpreter {
         }
         // Numeric hierarchy: Int is a Numeric, Num is a Numeric
         if constraint == "Numeric"
-            && matches!(value_type, "Int" | "Num" | "Rat" | "FatRat" | "Complex")
+            && matches!(
+                value_type,
+                "Int" | "Num" | "Rat" | "FatRat" | "Complex" | "Bool" | "UInt"
+            )
         {
             return true;
         }
-        if constraint == "Real" && matches!(value_type, "Int" | "Num" | "Rat" | "FatRat") {
+        if constraint == "Real"
+            && matches!(
+                value_type,
+                "Int" | "Num" | "Rat" | "FatRat" | "Bool" | "UInt"
+            )
+        {
             return true;
         }
         if constraint == "Dateish" && matches!(value_type, "Date" | "DateTime") {
+            return true;
+        }
+        // Bool is a subtype of Int in Raku's type hierarchy
+        // UInt is a subset of Int
+        if constraint == "Int" && matches!(value_type, "Bool" | "UInt") {
             return true;
         }
         if constraint == "Cool"

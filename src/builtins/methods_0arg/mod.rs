@@ -832,7 +832,13 @@ fn raku_value(v: &Value) -> String {
                     "-Inf".to_string()
                 }
             } else {
-                format!("{}", f)
+                // Num.raku must include 'e' so it round-trips as Num, not Rat
+                let s = format!("{}", f);
+                if s.contains('e') || s.contains('E') {
+                    s
+                } else {
+                    format!("{}e0", s)
+                }
             }
         }
         Value::Complex(r, i) => format!("<{}>", crate::value::format_complex(*r, *i)),
@@ -2588,6 +2594,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
             }
             Value::Int(i) => Some(Ok(Value::str(format!("{}", i)))),
+            Value::Num(f) => {
+                if method == "raku" || method == "perl" {
+                    Some(Ok(Value::str(raku_value(target))))
+                } else {
+                    // gist
+                    Some(Ok(Value::str(format!("{}", f))))
+                }
+            }
             Value::Complex(r, i) => {
                 if method == "raku" || method == "perl" {
                     Some(Ok(Value::str(format!(
