@@ -60,6 +60,8 @@ pub(crate) struct VM {
     /// The instruction pointer to resume at after a .resume call in a CATCH block.
     /// Set when Die/Fail creates an exception, used by exec_try_catch_op.
     resume_ip: Option<usize>,
+    /// When true, the next SetLocal is a `:=` bind (preserves container type for `@` vars).
+    bind_context: bool,
 }
 
 impl VM {
@@ -163,6 +165,7 @@ impl VM {
             env_dirty: false,
             locals_dirty: false,
             resume_ip: None,
+            bind_context: false,
         }
     }
 
@@ -468,6 +471,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::SetGlobal(name_idx) => {
+                self.bind_context = false;
                 let name = match &code.constants[*name_idx as usize] {
                     Value::Str(s) => s.to_string(),
                     _ => unreachable!("SetGlobal name must be a string constant"),
@@ -692,6 +696,10 @@ impl VM {
             }
             OpCode::WrapVarRef(name_idx) => {
                 self.exec_wrap_var_ref_op(code, *name_idx);
+                *ip += 1;
+            }
+            OpCode::MarkBindContext => {
+                self.bind_context = true;
                 *ip += 1;
             }
 

@@ -25,6 +25,8 @@ pub(crate) struct Compiler {
     /// Whether we are compiling inside a routine (sub/method). `return` outside
     /// a routine must throw X::ControlFlow::Return instead of normal return.
     pub(crate) is_routine: bool,
+    /// When true, the current VarDecl is from a `:=` bind declaration.
+    bind_vardecl: bool,
 }
 
 impl Compiler {
@@ -39,6 +41,7 @@ impl Compiler {
             dynamic_scope_names: None,
             accessed_dynamic_vars: std::collections::HashSet::new(),
             is_routine: false,
+            bind_vardecl: false,
         }
     }
 

@@ -385,7 +385,13 @@ impl Interpreter {
                     let mut proc_attrs = HashMap::new();
                     proc_attrs.insert("exitcode".to_string(), Value::Int(exit_code));
                     proc_attrs.insert("signal".to_string(), Value::Int(signal));
-                    proc_attrs.insert("command".to_string(), Value::real_array(cmd_arr_clone));
+                    proc_attrs.insert(
+                        "command".to_string(),
+                        Value::Array(
+                            std::sync::Arc::new(cmd_arr_clone),
+                            crate::value::ArrayKind::List,
+                        ),
+                    );
                     proc_attrs.insert("pid".to_string(), Value::Int(pid as i64));
                     if let Some(sid) = stdout_supply_id {
                         proc_attrs.insert("stdout_supply_id".to_string(), Value::Int(sid as i64));

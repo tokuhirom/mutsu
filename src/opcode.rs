@@ -45,6 +45,8 @@ pub(crate) enum OpCode {
     Not,
     BoolCoerce,
     WrapVarRef(u32),
+    /// Signal that the next SetLocal is a `:=` bind (preserve container type for `@` vars).
+    MarkBindContext,
 
     // -- String --
     Concat,
