@@ -1795,6 +1795,13 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         // Fall through to BareWord
     }
 
+    // BEGIN/CHECK/INIT as statement prefix without braces in expression context:
+    // e.g., `my $x = BEGIN uc 'moin'` should parse as `my $x = BEGIN(uc('moin'))`
+    if matches!(name.as_str(), "BEGIN" | "CHECK" | "INIT") && !r.starts_with('{') {
+        let (r2, expr) = expression(r)?;
+        return Ok((r2, make_call_expr(name, input, vec![expr])));
+    }
+
     // `supply { ... }` expression: lower to `Supply.on-demand(-> $emitter { ... })`.
     if name == "supply"
         && r.starts_with('{')

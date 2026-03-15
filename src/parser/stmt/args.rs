@@ -133,7 +133,11 @@ pub(super) fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
 /// Parse statement call args without treating leading `(` as function call parens.
 /// Used when there was whitespace between function name and args (listop form).
 pub(super) fn parse_stmt_call_args_no_paren(input: &str) -> PResult<'_, Vec<CallArg>> {
-    if input.starts_with(';') || input.is_empty() || input.starts_with('}') {
+    if input.starts_with(';')
+        || input.is_empty()
+        || input.starts_with('}')
+        || super::modifier::is_stmt_modifier_keyword(input)
+    {
         return Ok((input, Vec::new()));
     }
     parse_remaining_call_args(input)
