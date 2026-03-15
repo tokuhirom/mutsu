@@ -630,6 +630,7 @@ roast/S32-list/rotor.t
 roast/S32-list/tail.t
 roast/S32-list/unique.t
 roast/S32-num/abs.t
+roast/S32-num/base.t
 roast/S32-num/complex-logarithms.t
 roast/S32-num/exp.t
 roast/S32-num/expmod.t

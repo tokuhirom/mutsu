@@ -611,6 +611,18 @@ pub(crate) fn native_method_1arg(
                 Some(Ok(Value::str(String::from_utf8(buf).unwrap())))
             }
             Value::Num(f) => {
+                if f.is_infinite() || f.is_nan() {
+                    return Some(Err(RuntimeError::new(format!(
+                        "X::Numeric::CannotConvert: Cannot convert {} to base",
+                        if f.is_nan() {
+                            "NaN"
+                        } else if *f > 0.0 {
+                            "Inf"
+                        } else {
+                            "-Inf"
+                        },
+                    ))));
+                }
                 let radix = match arg {
                     Value::Int(r) if (2..=36).contains(r) => *r as u32,
                     Value::Int(_) => {
@@ -634,15 +646,59 @@ pub(crate) fn native_method_1arg(
                 };
                 // Convert Num to Rat for precise base conversion
                 let (n, d) = f64_to_rat(*f);
-                Some(Ok(Value::str(rat_to_base(n, d, radix, None))))
+                Some(Ok(Value::str(rat_to_base(n, d, radix, BaseDigits::Auto))))
             }
-            Value::Rat(n, d) => {
-                let radix = parse_radix(arg)?;
-                // For Rat, use rational arithmetic for precision
-                Some(Ok(Value::str(rat_to_base(*n, *d, radix, None))))
+            Value::Rat(n, d) | Value::FatRat(n, d) => {
+                let radix = match parse_radix_checked(arg)? {
+                    Ok(r) => r,
+                    Err(e) => return Some(Err(e)),
+                };
+                Some(Ok(Value::str(rat_to_base(*n, *d, radix, BaseDigits::Auto))))
+            }
+            // Handle Instance types (Duration, Instant, etc.) by
+            // extracting their numeric value
+            Value::Instance { attributes, .. } => {
+                let radix = match parse_radix_checked(arg)? {
+                    Ok(r) => r,
+                    Err(e) => return Some(Err(e)),
+                };
+                if let Some(val) = attributes.get("value") {
+                    match val {
+                        Value::Int(i) => {
+                            Some(Ok(Value::str(rat_to_base(*i, 1, radix, BaseDigits::Auto))))
+                        }
+                        Value::Rat(n, d) | Value::FatRat(n, d) => {
+                            Some(Ok(Value::str(rat_to_base(*n, *d, radix, BaseDigits::Auto))))
+                        }
+                        Value::Num(f) => {
+                            let (n, d) = f64_to_rat(*f);
+                            Some(Ok(Value::str(rat_to_base(n, d, radix, BaseDigits::Auto))))
+                        }
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
             }
             _ => None,
         },
+        "base-repeating" => {
+            let radix = match parse_radix_checked(arg)? {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
+            let (n, d) = match target {
+                Value::Int(i) => (*i, 1i64),
+                Value::Rat(n, d) => (*n, *d),
+                Value::Num(f) => f64_to_rat(*f),
+                _ => return None,
+            };
+            let (non_repeating, repeating) = rat_base_repeating(n, d, radix);
+            Some(Ok(Value::Array(
+                Arc::new(vec![Value::str(non_repeating), Value::str(repeating)]),
+                ArrayKind::List,
+            )))
+        }
         "round" => {
             // Unwrap allomorphic types (IntStr, NumStr, RatStr, ComplexStr)
             // to get the underlying numeric value for the scale
@@ -1407,19 +1463,44 @@ pub(crate) fn native_method_2arg(
                     )));
                 }
             };
-            let digits = match arg2 {
+            let digits_mode = match arg2 {
                 Value::Int(d) if *d < 0 => {
                     return Some(Err(RuntimeError::new(
                         "X::OutOfRange: digits must be non-negative",
                     )));
                 }
-                Value::Int(d) => *d as u32,
+                Value::Int(d) => BaseDigits::Fixed(*d as u32),
+                Value::Whatever => BaseDigits::Whatever,
                 _ => None?,
             };
             match target {
-                Value::Int(i) => Some(Ok(Value::str(rat_to_base(*i, 1, radix, Some(digits))))),
-                Value::Num(f) => Some(Ok(Value::str(format_base_with_digits(*f, radix, digits)))),
-                Value::Rat(n, d) => Some(Ok(Value::str(rat_to_base(*n, *d, radix, Some(digits))))),
+                Value::Int(i) => Some(Ok(Value::str(rat_to_base(*i, 1, radix, digits_mode)))),
+                Value::Num(f) => {
+                    let (n, d) = f64_to_rat(*f);
+                    Some(Ok(Value::str(rat_to_base(n, d, radix, digits_mode))))
+                }
+                Value::Rat(n, d) | Value::FatRat(n, d) => {
+                    Some(Ok(Value::str(rat_to_base(*n, *d, radix, digits_mode))))
+                }
+                Value::Instance { attributes, .. } => {
+                    if let Some(val) = attributes.get("value") {
+                        match val {
+                            Value::Int(i) => {
+                                Some(Ok(Value::str(rat_to_base(*i, 1, radix, digits_mode))))
+                            }
+                            Value::Rat(n, d) | Value::FatRat(n, d) => {
+                                Some(Ok(Value::str(rat_to_base(*n, *d, radix, digits_mode))))
+                            }
+                            Value::Num(f) => {
+                                let (n, d) = f64_to_rat(*f);
+                                Some(Ok(Value::str(rat_to_base(n, d, radix, digits_mode))))
+                            }
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    }
+                }
                 _ => None,
             }
         }
@@ -1536,17 +1617,40 @@ pub(crate) fn native_method_2arg(
     }
 }
 
-fn parse_radix(arg: &Value) -> Option<u32> {
+fn parse_radix_checked(arg: &Value) -> Option<Result<u32, RuntimeError>> {
     match arg {
-        Value::Int(r) if *r >= 2 && *r <= 36 => Some(*r as u32),
-        Value::Str(s) => s.parse::<u32>().ok().filter(|r| *r >= 2 && *r <= 36),
+        Value::Int(r) => {
+            if (2..=36).contains(r) {
+                Some(Ok(*r as u32))
+            } else {
+                Some(Err(RuntimeError::new(
+                    "X::OutOfRange: base requires radix 2..36",
+                )))
+            }
+        }
+        Value::Str(s) => match s.parse::<u32>() {
+            Ok(r) if (2..=36).contains(&r) => Some(Ok(r)),
+            Ok(_) => Some(Err(RuntimeError::new(
+                "X::OutOfRange: base requires radix 2..36",
+            ))),
+            _ => None,
+        },
         _ => None,
     }
 }
 
+/// Specifies how many fractional digits to produce in base conversion.
+enum BaseDigits {
+    /// Auto-detect: scale to denominator size, minimum 6 (default for 1-arg .base)
+    Auto,
+    /// Exact number of digits (from explicit integer argument)
+    Fixed(u32),
+    /// Whatever: produce digits until remainder is 0 (no rounding)
+    Whatever,
+}
+
 /// Convert a rational number n/d to a string in the given base.
-/// If `max_digits` is None, auto-detect precision (up to 256 digits).
-fn rat_to_base(n: i64, d: i64, radix: u32, max_digits: Option<u32>) -> String {
+fn rat_to_base(n: i64, d: i64, radix: u32, digits_mode: BaseDigits) -> String {
     if d == 0 {
         return if n > 0 {
             "Inf".to_string()
@@ -1572,7 +1676,7 @@ fn rat_to_base(n: i64, d: i64, radix: u32, max_digits: Option<u32>) -> String {
     result.push_str(&int_to_base(int_part as u64, radix as u32));
 
     if num == 0 {
-        if let Some(digits) = max_digits
+        if let BaseDigits::Fixed(digits) = digits_mode
             && digits > 0
         {
             result.push('.');
@@ -1583,13 +1687,32 @@ fn rat_to_base(n: i64, d: i64, radix: u32, max_digits: Option<u32>) -> String {
         return result;
     }
 
-    let limit = max_digits.unwrap_or_else(|| {
-        // For Rat without explicit digits, scale to denominator size with minimum of 6
-        // (per Raku spec: "For Rational, the number of places is scaled to the size
-        // of the denominator, with a minimum of 6")
-        let log_den = (den as f64).log(radix as f64).ceil() as u32;
-        std::cmp::max(6, log_den)
-    });
+    // Whatever mode: produce exact digits until remainder is 0
+    if matches!(digits_mode, BaseDigits::Whatever) {
+        result.push('.');
+        let digit_chars = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        // Safety limit to prevent infinite loops for non-terminating fractions
+        for _ in 0..100000 {
+            num *= radix;
+            let digit = num / den;
+            result.push(digit_chars[digit as usize] as char);
+            num %= den;
+            if num == 0 {
+                break;
+            }
+        }
+        return result;
+    }
+
+    let limit = match digits_mode {
+        BaseDigits::Fixed(d) => d,
+        BaseDigits::Auto => {
+            // For Rat without explicit digits, scale to denominator size with minimum of 6
+            let log_den = (den as f64).log(radix as f64).ceil() as u32;
+            std::cmp::max(6, log_den)
+        }
+        BaseDigits::Whatever => unreachable!(),
+    };
     if limit == 0 {
         // Round integer part: if fractional part >= 0.5, round up
         if num * 2 >= den {
@@ -1609,12 +1732,13 @@ fn rat_to_base(n: i64, d: i64, radix: u32, max_digits: Option<u32>) -> String {
     result.push('.');
     let digit_chars = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     let mut frac_digits = Vec::new();
+    let is_auto = matches!(digits_mode, BaseDigits::Auto);
     for _ in 0..limit {
         num *= radix;
         let digit = num / den;
         frac_digits.push(digit as u8);
         num %= den;
-        if num == 0 && max_digits.is_none() {
+        if num == 0 && is_auto {
             break;
         }
     }
@@ -1652,40 +1776,6 @@ fn rat_to_base(n: i64, d: i64, radix: u32, max_digits: Option<u32>) -> String {
     } else {
         for d in &frac_digits {
             result.push(digit_chars[*d as usize] as char);
-        }
-    }
-    result
-}
-
-fn format_base_with_digits(val: f64, radix: u32, digits: u32) -> String {
-    let negative = val < 0.0;
-    let val = val.abs();
-    let int_part = val.floor() as u64;
-    let frac_part = val - int_part as f64;
-    let mut result = if negative {
-        "-".to_string()
-    } else {
-        String::new()
-    };
-    result.push_str(&int_to_base(int_part, radix));
-    if digits > 0 {
-        result.push('.');
-        let mut frac = frac_part;
-        let digit_chars = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        for i in 0..digits {
-            frac *= radix as f64;
-            let mut d = frac.floor() as u64;
-            if i == digits - 1 {
-                let remainder = frac - d as f64;
-                if remainder >= 0.5 {
-                    d += 1;
-                }
-            }
-            if d >= radix as u64 {
-                d = 0;
-            }
-            result.push(digit_chars[d as usize] as char);
-            frac -= frac.floor();
         }
     }
     result
@@ -1740,4 +1830,76 @@ fn gcd_u64(mut a: u64, mut b: u64) -> u64 {
         a = t;
     }
     a
+}
+
+/// Compute base-repeating for a rational number.
+/// Returns (non_repeating_part, repeating_part) as strings.
+fn rat_base_repeating(n: i64, d: i64, radix: u32) -> (String, String) {
+    use std::collections::HashMap;
+
+    if d == 0 {
+        return (
+            if n > 0 {
+                "Inf".to_string()
+            } else if n < 0 {
+                "-Inf".to_string()
+            } else {
+                "NaN".to_string()
+            },
+            String::new(),
+        );
+    }
+    let negative = (n < 0) != (d < 0);
+    let mut num = (n as i128).unsigned_abs();
+    let den = (d as i128).unsigned_abs();
+    let radix128 = radix as u128;
+
+    let int_part = num / den;
+    num %= den;
+
+    let mut prefix = if negative {
+        "-".to_string()
+    } else {
+        String::new()
+    };
+    prefix.push_str(&int_to_base(int_part as u64, radix));
+
+    if num == 0 {
+        return (prefix, String::new());
+    }
+
+    prefix.push('.');
+    let digit_chars = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    // Track remainders to find the cycle
+    let mut remainder_positions: HashMap<u128, usize> = HashMap::new();
+    let mut frac_digits = Vec::new();
+
+    loop {
+        if num == 0 {
+            // Exact representation, no repeating part
+            let non_rep: String = frac_digits
+                .iter()
+                .map(|&d| digit_chars[d] as char)
+                .collect();
+            return (format!("{}{}", prefix, non_rep), String::new());
+        }
+        if let Some(&pos) = remainder_positions.get(&num) {
+            // Found a cycle
+            let non_rep: String = frac_digits[..pos]
+                .iter()
+                .map(|&d| digit_chars[d] as char)
+                .collect();
+            let rep: String = frac_digits[pos..]
+                .iter()
+                .map(|&d| digit_chars[d] as char)
+                .collect();
+            return (format!("{}{}", prefix, non_rep), rep);
+        }
+        remainder_positions.insert(num, frac_digits.len());
+        num *= radix128;
+        let digit = (num / den) as usize;
+        frac_digits.push(digit);
+        num %= den;
+    }
 }
