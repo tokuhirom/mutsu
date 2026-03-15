@@ -866,9 +866,22 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
             let (r, _) = ws(r)?;
             if trait_name == "hidden" {
                 is_hidden_role = true;
-            } else if trait_name.starts_with(|c: char| c.is_ascii_uppercase()) {
-                // Uppercase names are class/role parents (e.g. `is Cool`);
-                // lowercase names are traits (e.g. `is rw`, `is ok`) — skip them.
+            } else if !matches!(
+                trait_name.as_str(),
+                "rw" | "ok"
+                    | "export"
+                    | "required"
+                    | "readonly"
+                    | "repr"
+                    | "raw"
+                    | "copy"
+                    | "DEPRECATED"
+                    | "nodal"
+                    | "pure"
+            ) {
+                // Known lowercase trait keywords are skipped;
+                // everything else (including lowercase class/role names like irA)
+                // is treated as a parent.
                 parent_roles.push(trait_name);
             }
             rest = r;

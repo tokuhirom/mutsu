@@ -1333,6 +1333,19 @@ impl Interpreter {
         mixins.insert(format!("__mutsu_role__{}", role_name), Value::Bool(true));
 
         if let Some(role) = role {
+            // Temporarily merge captured environment from the role definition
+            // so that attribute defaults can reference closure variables.
+            let saved_env = if let Some(captured) = &role.captured_env {
+                let saved = self.env.clone();
+                for (k, v) in captured {
+                    if !self.env.contains_key(k) {
+                        self.env.insert(k.clone(), v.clone());
+                    }
+                }
+                Some(saved)
+            } else {
+                None
+            };
             for (idx, (attr_name, _is_public, default_expr, _, _, _, _)) in
                 role.attributes.iter().enumerate()
             {
@@ -1344,6 +1357,9 @@ impl Interpreter {
                     Value::Nil
                 };
                 mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
+            }
+            if let Some(saved) = saved_env {
+                self.env = saved;
             }
         }
 

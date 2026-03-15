@@ -95,6 +95,7 @@ fn substitute_type_params_in_method(
         is_multi: method.is_multi,
         is_my: method.is_my,
         role_origin: method.role_origin.clone(),
+        original_role: method.original_role.clone(),
         return_type: method.return_type.clone(),
         compiled_code: method.compiled_code.clone(),
     }
@@ -475,6 +476,9 @@ impl Interpreter {
                             .into_iter()
                             .map(|md| {
                                 let mut method = md.clone();
+                                if method.original_role.is_none() {
+                                    method.original_role = method.role_origin.clone();
+                                }
                                 method.role_origin = Some(base_role_name.to_string());
                                 method
                             })
@@ -484,6 +488,9 @@ impl Interpreter {
                             .into_iter()
                             .map(|md| {
                                 let mut method = substitute_type_params_in_method(md, &type_subs);
+                                if method.original_role.is_none() {
+                                    method.original_role = method.role_origin.clone();
+                                }
                                 method.role_origin = Some(base_role_name.to_string());
                                 method
                             })
@@ -575,6 +582,9 @@ impl Interpreter {
                                         .into_iter()
                                         .map(|md| {
                                             let mut method = md.clone();
+                                            if method.original_role.is_none() {
+                                                method.original_role = method.role_origin.clone();
+                                            }
                                             method.role_origin = Some(parent_base.to_string());
                                             method
                                         })
@@ -587,6 +597,9 @@ impl Interpreter {
                                                 md,
                                                 &parent_type_subs,
                                             );
+                                            if method.original_role.is_none() {
+                                                method.original_role = method.role_origin.clone();
+                                            }
                                             method.role_origin = Some(parent_base.to_string());
                                             method
                                         })
@@ -843,6 +856,7 @@ impl Interpreter {
                                     is_multi: false,
                                     is_my: false,
                                     role_origin: None,
+                                    original_role: None,
                                     return_type: None,
                                     compiled_code: None,
                                 });
@@ -884,6 +898,7 @@ impl Interpreter {
                         is_multi: *multi,
                         is_my: *is_my,
                         role_origin: None,
+                        original_role: None,
                         return_type: return_type.clone(),
                         compiled_code: None,
                     };
@@ -1001,6 +1016,9 @@ impl Interpreter {
                             .into_iter()
                             .filter(|md| !md.is_my)
                             .map(|mut md| {
+                                if md.original_role.is_none() {
+                                    md.original_role = md.role_origin.clone();
+                                }
                                 md.role_origin = Some(role_name_str.clone());
                                 md
                             })
@@ -1191,6 +1209,7 @@ impl Interpreter {
                         is_multi: *multi,
                         is_my: *is_my,
                         role_origin: None,
+                        original_role: None,
                         return_type: return_type.clone(),
                         compiled_code: None,
                     };
@@ -1262,6 +1281,7 @@ impl Interpreter {
                                         is_multi: false,
                                         is_my: false,
                                         role_origin: None,
+                                        original_role: None,
                                         return_type: None,
                                         compiled_code: None,
                                     });
@@ -1298,6 +1318,7 @@ impl Interpreter {
             methods: HashMap::new(),
             is_stub_role: false,
             is_hidden: false,
+            captured_env: None,
         };
         for stmt in body {
             match stmt {
@@ -1348,6 +1369,7 @@ impl Interpreter {
                                 is_multi: false,
                                 is_my: false,
                                 role_origin: None,
+                                original_role: None,
                                 return_type: None,
                                 compiled_code: None,
                             });
@@ -1432,6 +1454,9 @@ impl Interpreter {
                             non_my_overloads
                                 .into_iter()
                                 .map(|mut md| {
+                                    if md.original_role.is_none() {
+                                        md.original_role = md.role_origin.clone();
+                                    }
                                     md.role_origin = Some(base_role_name.to_string());
                                     md
                                 })
@@ -1442,6 +1467,9 @@ impl Interpreter {
                                 .map(|md| {
                                     let mut method =
                                         substitute_type_params_in_method(md, &type_subs);
+                                    if method.original_role.is_none() {
+                                        method.original_role = method.role_origin.clone();
+                                    }
                                     method.role_origin = Some(base_role_name.to_string());
                                     method
                                 })
@@ -1489,6 +1517,7 @@ impl Interpreter {
                         is_multi: *multi,
                         is_my: *is_my,
                         role_origin: None,
+                        original_role: None,
                         return_type: return_type.clone(),
                         compiled_code: None,
                     };
@@ -1511,6 +1540,15 @@ impl Interpreter {
                     self.run_block_raw(std::slice::from_ref(stmt))?;
                 }
             }
+        }
+        // Capture the current environment for anonymous roles so that attribute
+        // defaults referencing closure variables can be evaluated later.
+        let has_expr_default = role_def
+            .attributes
+            .iter()
+            .any(|(_, _, default, ..)| default.is_some());
+        if has_expr_default {
+            role_def.captured_env = Some((*self.env).clone());
         }
         self.role_candidates
             .entry(name.to_string())

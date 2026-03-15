@@ -43,6 +43,8 @@ impl Interpreter {
             }
 
             let mut conflicting_roles = Vec::new();
+            // Track the deepest origins to detect diamond composition
+            let mut seen_origins = Vec::new();
             for def in defs {
                 if def.is_multi || Self::is_stub_routine_body(&def.body) {
                     continue;
@@ -50,6 +52,13 @@ impl Interpreter {
                 let Some(role_name) = &def.role_origin else {
                     continue;
                 };
+                // Use original_role for diamond detection: if two methods
+                // trace back to the same original role, they are not in conflict.
+                let origin = def.original_role.as_ref().unwrap_or(role_name);
+                if seen_origins.contains(origin) {
+                    continue;
+                }
+                seen_origins.push(origin.clone());
                 if !conflicting_roles.contains(role_name) {
                     conflicting_roles.push(role_name.clone());
                 }

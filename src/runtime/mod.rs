@@ -173,6 +173,8 @@ pub(crate) struct RoleDef {
     pub(crate) methods: HashMap<String, Vec<MethodDef>>,
     pub(crate) is_stub_role: bool,
     pub(crate) is_hidden: bool,
+    /// Captured environment for evaluating attribute defaults in closures.
+    pub(crate) captured_env: Option<HashMap<String, Value>>,
 }
 
 #[derive(Debug, Clone)]
@@ -200,6 +202,8 @@ pub(crate) struct MethodDef {
     pub(crate) is_my: bool,
     /// Role where this method was originally declared when composed into a class.
     pub(crate) role_origin: Option<String>,
+    /// The deepest/original role where this method was first defined (for diamond detection).
+    pub(crate) original_role: Option<String>,
     pub(crate) return_type: Option<String>,
     pub(crate) compiled_code: Option<std::sync::Arc<crate::opcode::CompiledCode>>,
 }
@@ -1739,6 +1743,7 @@ impl Interpreter {
                         methods: HashMap::new(),
                         is_stub_role: false,
                         is_hidden: false,
+                        captured_env: None,
                     },
                 );
                 roles.insert(
@@ -1748,6 +1753,7 @@ impl Interpreter {
                         methods: HashMap::new(),
                         is_stub_role: false,
                         is_hidden: false,
+                        captured_env: None,
                     },
                 );
                 roles.insert(
@@ -1757,6 +1763,7 @@ impl Interpreter {
                         methods: HashMap::new(),
                         is_stub_role: false,
                         is_hidden: false,
+                        captured_env: None,
                     },
                 );
                 roles.insert(
@@ -1766,6 +1773,7 @@ impl Interpreter {
                         methods: HashMap::new(),
                         is_stub_role: false,
                         is_hidden: false,
+                        captured_env: None,
                     },
                 );
                 // CompUnit::Repository role with required stub methods
@@ -1783,6 +1791,7 @@ impl Interpreter {
                         is_multi: false,
                         is_my: false,
                         role_origin: None,
+                        original_role: None,
                         return_type: None,
                         compiled_code: None,
                     };
@@ -1797,6 +1806,7 @@ impl Interpreter {
                             methods,
                             is_stub_role: false,
                             is_hidden: false,
+                            captured_env: None,
                         },
                     );
                 }
