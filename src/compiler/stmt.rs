@@ -177,7 +177,24 @@ impl Compiler {
                 self.pop_dynamic_scope_lexical(saved_dynamic_scope);
             }
             Stmt::SyntheticBlock(stmts) => {
+                // Detect `:=` bind context for `@` variables: the parser wraps
+                // `my @a := expr` in a SyntheticBlock containing VarDecl followed
+                // by `__mutsu_record_bound_array_len`.  Set bind_vardecl so the
+                // VarDecl compilation emits MarkBindContext before SetLocal,
+                // making the VM preserve the container type (e.g. List stays List).
+                let has_bound_array_len = stmts.iter().any(|s| {
+                    matches!(s,
+                        Stmt::Expr(Expr::Call { name, .. })
+                        if name.resolve() == "__mutsu_record_bound_array_len"
+                    )
+                });
                 for s in stmts {
+                    if has_bound_array_len
+                        && let Stmt::VarDecl { name, .. } = s
+                        && name.starts_with('@')
+                    {
+                        self.bind_vardecl = true;
+                    }
                     self.compile_stmt(s);
                 }
             }
@@ -261,6 +278,10 @@ impl Compiler {
                     if *is_our {
                         self.code.emit(OpCode::Dup);
                     }
+                    if self.bind_vardecl && name.starts_with('@') {
+                        self.code.emit(OpCode::MarkBindContext);
+                        self.bind_vardecl = false;
+                    }
                     self.code.emit(OpCode::SetLocal(slot));
                     if *is_our {
                         let qualified = self.qualify_variable_name(name);
@@ -340,6 +361,9 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::CheckReadOnly(name_idx));
                 if matches!(op, AssignOp::Bind) {
+                    if name.starts_with('@') {
+                        self.code.emit(OpCode::MarkBindContext);
+                    }
                     self.compile_call_arg(expr);
                 } else {
                     self.compile_expr(expr);

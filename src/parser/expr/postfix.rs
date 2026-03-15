@@ -120,14 +120,38 @@ fn parse_subscript_adverb(input: &str) -> Option<(&str, &'static str)> {
     if input.starts_with(":!v") && !is_ident_char(input.as_bytes().get(3).copied()) {
         return Some((&input[3..], "not-v"));
     }
+    if let Some(rest) = input.strip_prefix(":kv(0)") {
+        return Some((rest, "kv0"));
+    }
+    if let Some(rest) = input.strip_prefix(":kv(1)") {
+        return Some((rest, "kv"));
+    }
     if input.starts_with(":kv") && !is_ident_char(input.as_bytes().get(3).copied()) {
         return Some((&input[3..], "kv"));
+    }
+    if let Some(rest) = input.strip_prefix(":p(0)") {
+        return Some((rest, "p0"));
+    }
+    if let Some(rest) = input.strip_prefix(":p(1)") {
+        return Some((rest, "p"));
     }
     if input.starts_with(":p") && !is_ident_char(input.as_bytes().get(2).copied()) {
         return Some((&input[2..], "p"));
     }
+    if let Some(rest) = input.strip_prefix(":k(0)") {
+        return Some((rest, "k0"));
+    }
+    if let Some(rest) = input.strip_prefix(":k(1)") {
+        return Some((rest, "k"));
+    }
     if input.starts_with(":k") && !is_ident_char(input.as_bytes().get(2).copied()) {
         return Some((&input[2..], "k"));
+    }
+    if let Some(rest) = input.strip_prefix(":v(0)") {
+        return Some((rest, "v0"));
+    }
+    if let Some(rest) = input.strip_prefix(":v(1)") {
+        return Some((rest, "v"));
     }
     if input.starts_with(":v") && !is_ident_char(input.as_bytes().get(2).copied()) {
         return Some((&input[2..], "v"));
