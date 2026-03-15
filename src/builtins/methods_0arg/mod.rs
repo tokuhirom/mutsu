@@ -1333,13 +1333,42 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "Str" | "Stringy" => match target {
             Value::Package(_) | Value::Instance { .. } => None,
             Value::Str(s) if s.as_str() == "IO::Special" => Some(Ok(Value::str_from(""))),
+            Value::Rat(_, 0) | Value::FatRat(_, 0) => {
+                // Zero-denominator Rat/FatRat .Str throws X::Numeric::DivideByZero
+                None // fall through to runtime for exception with proper context
+            }
             _ => Some(Ok(Value::str(target.to_string_value()))),
         },
         "Int" => {
             let result = match target {
                 Value::Int(i) => Value::Int(*i),
                 Value::BigInt(_) => target.clone(),
-                Value::Num(f) => Value::Int(*f as i64),
+                Value::Num(f) => {
+                    if f.is_nan() || f.is_infinite() {
+                        let msg = format!(
+                            "Cannot convert {} to Int: not a finite number",
+                            if f.is_nan() {
+                                "NaN".to_string()
+                            } else if f.is_sign_positive() {
+                                "Inf".to_string()
+                            } else {
+                                "-Inf".to_string()
+                            }
+                        );
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("message".to_string(), Value::str(msg.clone()));
+                        attrs.insert("source".to_string(), target.clone());
+                        attrs.insert("target".to_string(), Value::str_from("Int"));
+                        let ex = Value::make_instance(
+                            crate::symbol::Symbol::intern("X::Numeric::CannotConvert"),
+                            attrs,
+                        );
+                        let mut err = RuntimeError::new(msg);
+                        err.exception = Some(Box::new(ex));
+                        return Some(Err(err));
+                    }
+                    Value::Int(*f as i64)
+                }
                 Value::Instance {
                     class_name,
                     attributes,
@@ -1414,6 +1443,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .unwrap_or(0.0);
                     Value::Num(numeric)
                 }
+                Value::Rat(n, d) | Value::FatRat(n, d) if *d == 0 => Value::Num(if *n == 0 {
+                    f64::NAN
+                } else if *n > 0 {
+                    f64::INFINITY
+                } else {
+                    f64::NEG_INFINITY
+                }),
                 Value::Rat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
                 Value::FatRat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
                 Value::BigRat(n, d) if !d.is_zero() => {
@@ -1436,7 +1472,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     }
                 }
                 Value::Bool(b) => Value::Num(if *b { 1.0 } else { 0.0 }),
-                Value::Complex(r, _) => Value::Num(*r),
+                Value::Complex(_, _) => return None, // fall through to runtime for $*TOLERANCE check
                 _ => return None,
             };
             Some(Ok(result))
@@ -2330,7 +2366,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             Value::Rat(n, d) => {
                 if *d == 0 {
-                    if *n == 0 {
+                    if method == "raku" || method == "perl" {
+                        Some(Ok(Value::str(format!("<{}/0>", n))))
+                    } else if *n == 0 {
                         Some(Ok(Value::str_from("NaN")))
                     } else if *n > 0 {
                         Some(Ok(Value::str_from("Inf")))
@@ -2971,9 +3009,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::BigRat(_, _) => Some(Ok(target.clone())),
             Value::Int(i) => Some(Ok(make_rat(*i, 1))),
             Value::Num(f) => {
-                let denom = 1_000_000i64;
-                let numer = (f * denom as f64).round() as i64;
-                Some(Ok(make_rat(numer, denom)))
+                if f.is_nan() {
+                    Some(Ok(Value::Rat(0, 0)))
+                } else if f.is_infinite() {
+                    if f.is_sign_positive() {
+                        Some(Ok(Value::Rat(1, 0)))
+                    } else {
+                        Some(Ok(Value::Rat(-1, 0)))
+                    }
+                } else {
+                    Some(Ok(crate::builtins::num_to_rat_with_epsilon(*f, 1e-6)))
+                }
             }
             Value::FatRat(n, d) => Some(Ok(make_rat(*n, *d))),
             Value::Str(s) => {
@@ -3025,15 +3071,29 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Int(i) => Some(Ok(Value::FatRat(*i, 1))),
             Value::BigInt(i) => Some(Ok(make_big_rat((**i).clone(), num_bigint::BigInt::from(1)))),
             Value::Num(f) => {
-                let denom = 1_000_000i64;
-                let numer = (f * denom as f64).round() as i64;
-                Some(Ok(Value::FatRat(numer, denom)))
+                if f.is_nan() {
+                    Some(Ok(Value::FatRat(0, 0)))
+                } else if f.is_infinite() {
+                    if f.is_sign_positive() {
+                        Some(Ok(Value::FatRat(1, 0)))
+                    } else {
+                        Some(Ok(Value::FatRat(-1, 0)))
+                    }
+                } else {
+                    let rat = crate::builtins::num_to_rat_with_epsilon(*f, 1e-6);
+                    match rat {
+                        Value::Rat(n, d) => Some(Ok(Value::FatRat(n, d))),
+                        _ => Some(Ok(Value::FatRat(0, 1))),
+                    }
+                }
             }
             Value::Str(s) => {
                 if let Ok(f) = s.parse::<f64>() {
-                    let denom = 1_000_000i64;
-                    let numer = (f * denom as f64).round() as i64;
-                    Some(Ok(Value::FatRat(numer, denom)))
+                    let rat = crate::builtins::num_to_rat_with_epsilon(f, 1e-6);
+                    match rat {
+                        Value::Rat(n, d) => Some(Ok(Value::FatRat(n, d))),
+                        _ => Some(Ok(Value::FatRat(0, 1))),
+                    }
                 } else {
                     Some(Ok(Value::FatRat(0, 1)))
                 }

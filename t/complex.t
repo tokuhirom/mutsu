@@ -1,5 +1,5 @@
 use Test;
-plan 28;
+plan 29;
 
 # Imaginary literal
 is 2i, Complex.new(0, 2), "2i literal";
@@ -40,7 +40,8 @@ is (1+2i).reals.elems, 2, ".reals returns 2-element list";
 
 # Type conversions
 is (5+0i).Int, 5, "Complex.Int with zero im";
-ok (3+4i).Num == 3, "Complex.Num returns real part";
+dies-ok { (3+4i).Num }, "Complex.Num with non-zero im throws";
+ok (3+0i).Num == 3, "Complex.Num with zero im returns real part";
 isa-ok (3).Complex, Complex, "Int.Complex";
 
 # Truthiness

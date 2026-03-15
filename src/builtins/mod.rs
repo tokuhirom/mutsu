@@ -74,6 +74,50 @@ pub(crate) use methods_0arg::native_method_0arg;
 pub(crate) use methods_narg::{native_method_1arg, native_method_2arg};
 pub(crate) use unicode::{samecase_string, samemark_string, unicode_titlecase_first};
 
+/// Convert a floating-point number to a Rat using a continued fraction algorithm.
+/// `epsilon` controls the precision: smaller epsilon means a closer approximation
+/// (and typically larger numerator/denominator).
+pub(crate) fn num_to_rat_with_epsilon(f: f64, epsilon: f64) -> Value {
+    let negative = f < 0.0;
+    let f_abs = f.abs();
+
+    // Continued fraction algorithm (Stern-Brocot / mediants)
+    let mut p0: i64 = 0;
+    let mut q0: i64 = 1;
+    let mut p1: i64 = 1;
+    let mut q1: i64 = 0;
+    let mut x = f_abs;
+
+    for _ in 0..64 {
+        let a = x.floor() as i64;
+        let p2 = a.saturating_mul(p1).saturating_add(p0);
+        let q2 = a.saturating_mul(q1).saturating_add(q0);
+
+        if q2 == 0 {
+            break;
+        }
+
+        p0 = p1;
+        q0 = q1;
+        p1 = p2;
+        q1 = q2;
+
+        let approx = p1 as f64 / q1 as f64;
+        if (approx - f_abs).abs() <= epsilon {
+            break;
+        }
+
+        let frac = x - a as f64;
+        if frac.abs() < 1e-30 {
+            break;
+        }
+        x = 1.0 / frac;
+    }
+
+    let numer = if negative { -p1 } else { p1 };
+    crate::value::make_rat(numer, q1)
+}
+
 fn normalize_builtin_encoding_label(name: &str) -> Option<String> {
     let lowered = name.to_lowercase();
     let normalized = match lowered.as_str() {
