@@ -1061,9 +1061,14 @@ impl Interpreter {
                     || expected_normalized == "Exception"
                 {
                     true
-                } else if let Some(cls) = ex_class {
+                } else if let Some(cls) = &ex_class {
                     cls == expected_normalized
                         || cls.starts_with(&format!("{}::", expected_normalized))
+                        // X::AdHoc wrapping a die'd string that encodes a type name
+                        // (e.g., die "X::Syntax::UnlessElse: ..."): fall through to
+                        // message-based matching below.
+                        || (cls == "X::AdHoc"
+                            && err.message.contains(expected_normalized))
                 } else if expected_normalized == "X::Syntax::Confused" {
                     err.message.contains("Confused") || err.message.contains("parse error")
                 } else if expected_normalized.starts_with("X::Syntax") {
@@ -1091,9 +1096,12 @@ impl Interpreter {
         };
 
         // Only structured exception objects reliably expose arbitrary attribute matchers.
+        // X::AdHoc is excluded because it wraps ad-hoc die() values and doesn't
+        // carry the attributes of the expected exception type.
         let has_structured_exception = exception_val.as_ref().is_some_and(|ex| {
             if let Value::Instance { class_name, .. } = ex {
-                class_name.resolve().starts_with("X::")
+                let cn = class_name.resolve();
+                cn.starts_with("X::") && cn != "X::AdHoc"
             } else {
                 false
             }
@@ -1251,7 +1259,9 @@ impl Interpreter {
             if expected_normalized.is_empty() || expected_normalized == "Exception" {
                 true
             } else if let Some(cls) = ex_class {
-                cls == expected_normalized || cls.starts_with(&format!("{}::", expected_normalized))
+                cls == expected_normalized
+                    || cls.starts_with(&format!("{}::", expected_normalized))
+                    || (cls == "X::AdHoc" && err.message.contains(&expected_normalized))
             } else if expected_normalized == "X::AdHoc" {
                 true
             } else {
