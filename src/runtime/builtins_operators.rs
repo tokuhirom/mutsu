@@ -227,7 +227,12 @@ impl Interpreter {
                         self.env = saved_env;
                         self.restore_readonly_vars(saved_readonly);
                         self.samewith_context_stack.pop();
-                        return Err(e);
+                        return Err(Self::enhance_binding_error(
+                            e,
+                            &def.name.resolve(),
+                            &def.param_defs,
+                            args,
+                        ));
                     }
                 };
             let sub_val = Value::make_sub(

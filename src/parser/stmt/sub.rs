@@ -551,6 +551,7 @@ pub(super) fn sub_decl_body(
         let (r, _) = ws(r)?;
         let (r, (pd, rt)) = parse_param_list_with_return(r)?;
         validate_signature_params(&pd)?;
+        reject_invocant_in_sub(&pd)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
         let names: Vec<String> = pd.iter().map(|p| p.name.clone()).collect();
@@ -1044,8 +1045,79 @@ fn parse_export_trait_tags(input: &str) -> PResult<'_, Vec<String>> {
     Ok((rest, tags))
 }
 
+/// Reject invocant markers (':') in non-method signatures (sub, pointy block).
+fn reject_invocant_in_sub(params: &[ParamDef]) -> Result<(), PError> {
+    if params
+        .iter()
+        .any(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"))
+    {
+        let msg = "X::Syntax::Signature::InvocantNotAllowed: Invocant not allowed in sub signature"
+            .to_string();
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        let ex = Value::make_instance(
+            Symbol::intern("X::Syntax::Signature::InvocantNotAllowed"),
+            attrs,
+        );
+        return Err(PError::fatal_with_exception(msg, Box::new(ex)));
+    }
+    Ok(())
+}
+
+/// Check for duplicate parameter names in a signature.
+/// Anonymous parameters (e.g. `$`, `@`, `%`) are excluded.
+fn check_duplicate_params(params: &[ParamDef]) -> Result<(), PError> {
+    let mut seen = std::collections::HashSet::new();
+    for p in params {
+        let name = &p.name;
+        // Skip anonymous, type-only, and literal parameters
+        if name.is_empty()
+            || name.starts_with("__ANON_")
+            || name == "__type_only__"
+            || name == "__literal__"
+            || name == "__subsig__"
+        {
+            continue;
+        }
+        // Reconstruct the display name with sigil for error message
+        let display_name = if name.starts_with("__type_capture__") {
+            // Type capture like ::T
+            name.strip_prefix("__type_capture__")
+                .unwrap_or(name)
+                .to_string()
+        } else if name.starts_with('@')
+            || name.starts_with('%')
+            || name.starts_with('&')
+            || p.sigilless
+        {
+            name.clone()
+        } else {
+            format!("${}", name)
+        };
+        if !seen.insert(display_name.clone()) {
+            let msg = format!(
+                "X::Redeclaration: Redeclaration of symbol '{}'",
+                display_name
+            );
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("symbol".to_string(), Value::str(display_name.clone()));
+            attrs.insert("what".to_string(), Value::str("symbol".to_string()));
+            attrs.insert("message".to_string(), Value::str(msg.clone()));
+            let ex = Value::make_instance(Symbol::intern("X::Redeclaration"), attrs);
+            return Err(PError::fatal_with_exception(msg, Box::new(ex)));
+        }
+    }
+    Ok(())
+}
+
 /// Parse parameter list inside parens.
 pub(super) fn parse_param_list(input: &str) -> PResult<'_, Vec<ParamDef>> {
+    let (rest, params) = parse_param_list_inner(input)?;
+    check_duplicate_params(&params)?;
+    Ok((rest, params))
+}
+
+fn parse_param_list_inner(input: &str) -> PResult<'_, Vec<ParamDef>> {
     let mut params = Vec::new();
     let mut multi_invocant = true;
     let mut rest = input;
@@ -1260,6 +1332,12 @@ pub(super) fn parse_return_type_annotation(input: &str) -> PResult<'_, String> {
 pub(super) fn parse_param_list_with_return(
     input: &str,
 ) -> PResult<'_, (Vec<ParamDef>, Option<String>)> {
+    let (rest, (params, return_type)) = parse_param_list_with_return_inner(input)?;
+    check_duplicate_params(&params)?;
+    Ok((rest, (params, return_type)))
+}
+
+fn parse_param_list_with_return_inner(input: &str) -> PResult<'_, (Vec<ParamDef>, Option<String>)> {
     let mut params = Vec::new();
     let mut return_type = None;
     let mut multi_invocant = true;

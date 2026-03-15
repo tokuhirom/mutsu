@@ -60,7 +60,12 @@ impl Interpreter {
                 self.pop_caller_env();
                 self.env = saved_env;
                 self.restore_readonly_vars(saved_readonly);
-                return Err(e);
+                return Err(Self::enhance_binding_error(
+                    e,
+                    &def.name.resolve(),
+                    &def.param_defs,
+                    &args,
+                ));
             }
         };
         // Push Sub value to block_stack so callframe().code works for nested calls
@@ -176,7 +181,12 @@ impl Interpreter {
                                 self.pop_caller_env();
                                 self.env = saved_env;
                                 self.restore_readonly_vars(saved_readonly);
-                                return Err(e);
+                                return Err(Self::enhance_binding_error(
+                                    e,
+                                    &def.name.resolve(),
+                                    &def.param_defs,
+                                    &args,
+                                ));
                             }
                         };
                     let sub_val = Value::make_sub(
@@ -246,5 +256,74 @@ impl Interpreter {
             }
         }
         Ok(())
+    }
+
+    /// Enhance a binding error with function name, call profile, and signature info.
+    pub(crate) fn enhance_binding_error(
+        err: RuntimeError,
+        func_name: &str,
+        param_defs: &[crate::ast::ParamDef],
+        args: &[Value],
+    ) -> RuntimeError {
+        // Don't enhance errors that are already enhanced or are control flow
+        if err.is_return || err.is_last || err.is_next || func_name.is_empty() {
+            return err;
+        }
+        // Build call profile: func_name(Type1, Type2, ...)
+        let arg_types: Vec<String> = args
+            .iter()
+            .filter(|a| {
+                !matches!(
+                    a,
+                    Value::Pair(k, _) if k == "__mutsu_test_callsite_line"
+                )
+            })
+            .filter(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
+            .map(|a| super::value_type_name(a).to_string())
+            .collect();
+        let call_profile = format!("{}({})", func_name, arg_types.join(", "));
+
+        // Build signature string: (Type $name, ...)
+        let sig_parts: Vec<String> = param_defs
+            .iter()
+            .filter(|pd| !pd.traits.iter().any(|t| t == "invocant"))
+            .map(|pd| {
+                let sigil = if pd.name.starts_with('@')
+                    || pd.name.starts_with('%')
+                    || pd.name.starts_with('&')
+                {
+                    ""
+                } else if pd.sigilless {
+                    "\\"
+                } else {
+                    "$"
+                };
+                if pd.name == "__type_only__" {
+                    // Type-only param: show just the type constraint
+                    return pd.type_constraint.as_deref().unwrap_or("Any").to_string();
+                }
+                let name_part = if pd.name == "__ANON_STATE__" {
+                    "$".to_string()
+                } else {
+                    format!("{}{}", sigil, pd.name)
+                };
+                if let Some(tc) = &pd.type_constraint {
+                    format!("{} {}", tc, name_part)
+                } else {
+                    name_part
+                }
+            })
+            .collect();
+        let signature = format!("({})", sig_parts.join(", "));
+
+        // Enhance the error message, preserving the original for exception type matching
+        let enhanced_msg = format!(
+            "Calling {} will never work with declared signature {}\n  {}",
+            call_profile, signature, err.message
+        );
+        let mut enhanced = RuntimeError::new(enhanced_msg);
+        enhanced.exception = err.exception;
+        enhanced.hint = err.hint;
+        enhanced
     }
 }

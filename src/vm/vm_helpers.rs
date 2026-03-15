@@ -1232,7 +1232,12 @@ impl VM {
                     self.stack.truncate(saved_stack_depth);
                     let frame = self.pop_call_frame();
                     *self.interpreter.env_mut() = frame.saved_env;
-                    return Err(e);
+                    return Err(Interpreter::enhance_binding_error(
+                        e,
+                        fn_name,
+                        &cf.param_defs,
+                        &args,
+                    ));
                 }
             };
         self.interpreter
@@ -1498,7 +1503,12 @@ impl VM {
                     self.stack.truncate(saved_stack_depth);
                     let frame = self.pop_call_frame();
                     *self.interpreter.env_mut() = frame.saved_env;
-                    return Err(e);
+                    return Err(Interpreter::enhance_binding_error(
+                        e,
+                        &data.name.resolve(),
+                        &data.param_defs,
+                        &args,
+                    ));
                 }
             };
 
