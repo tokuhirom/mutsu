@@ -113,7 +113,7 @@ impl VM {
             value.to_string_value()
         };
 
-        let mut err = RuntimeError::new(message);
+        let mut err = RuntimeError::new(&message);
         err.is_fail = is_fail;
         if let Value::Instance { class_name, .. } = &value {
             let cn = class_name.resolve();
@@ -127,7 +127,25 @@ impl VM {
                     .any(|p| p == "Exception" || p.starts_with("X::") || p.starts_with("CX::"));
             if is_exception {
                 err.exception = Some(Box::new(value));
+            } else {
+                // Non-exception instance: wrap in X::AdHoc with payload
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("payload".to_string(), value);
+                attrs.insert("message".to_string(), Value::str(message));
+                err.exception = Some(Box::new(Value::make_instance(
+                    Symbol::intern("X::AdHoc"),
+                    attrs,
+                )));
             }
+        } else {
+            // Non-instance value (Str, Int, etc.): wrap in X::AdHoc with payload
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("payload".to_string(), value);
+            attrs.insert("message".to_string(), Value::str(message));
+            err.exception = Some(Box::new(Value::make_instance(
+                Symbol::intern("X::AdHoc"),
+                attrs,
+            )));
         }
         err
     }

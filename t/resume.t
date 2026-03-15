@@ -22,7 +22,7 @@ try {
     CATCH {
         default {
             my $ex = $_;
-            $caught = $ex.^name eq "Exception";
+            $caught = $ex.^name eq "X::AdHoc";
             $ex.resume;
         }
     }
