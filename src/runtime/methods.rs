@@ -1172,6 +1172,12 @@ impl Interpreter {
             return self.dispatch_tail(target, &args);
         }
         if let Some(result) = native_result {
+            if method == "decode" {
+                return result.map(|value| match value {
+                    Value::Str(decoded) => Value::str(self.translate_newlines_for_decode(&decoded)),
+                    other => other,
+                });
+            }
             return result;
         }
 

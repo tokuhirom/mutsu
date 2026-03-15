@@ -174,6 +174,10 @@ pub(crate) fn native_method_1arg(
                 &pattern_str,
             ))))
         }
+        "decode" => {
+            let encoding = arg.to_string_value();
+            super::decode_buf_method(target, Some(&encoding))
+        }
         "Rat" => {
             // .Rat(epsilon) — just ignore epsilon and convert like .Rat
             let result = match target {

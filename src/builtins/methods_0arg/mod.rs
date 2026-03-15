@@ -1605,6 +1605,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Str(s) => Some(Ok(Value::Int(s.len() as i64))),
             _ => Some(Ok(Value::Int(target.to_string_value().len() as i64))),
         },
+        "decode" => super::decode_buf_method(target, None),
         "chars" => Some(Ok(Value::Int(
             target.to_string_value().graphemes(true).count() as i64,
         ))),

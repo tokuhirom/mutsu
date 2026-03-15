@@ -74,6 +74,142 @@ pub(crate) use methods_0arg::native_method_0arg;
 pub(crate) use methods_narg::{native_method_1arg, native_method_2arg};
 pub(crate) use unicode::{samecase_string, samemark_string, unicode_titlecase_first};
 
+fn normalize_builtin_encoding_label(name: &str) -> Option<String> {
+    let lowered = name.to_lowercase();
+    let normalized = match lowered.as_str() {
+        "utf8" | "utf-8" => "utf-8",
+        "utf16" | "utf-16" | "utf16le" | "utf-16le" => "utf-16le",
+        "utf16be" | "utf-16be" => "utf-16be",
+        "ascii" => "ascii",
+        "latin-1" | "latin1" | "iso-8859-1" => "iso-8859-1",
+        "windows932" | "windows-932" => "windows-932",
+        "windows1251" | "windows-1251" => "windows-1251",
+        "windows1252" | "windows-1252" => "windows-1252",
+        other => {
+            if encoding_rs::Encoding::for_label(other.as_bytes()).is_some() {
+                other
+            } else {
+                return None;
+            }
+        }
+    };
+    Some(normalized.to_string())
+}
+
+fn decode_bytes_with_builtin_encoding(
+    bytes: &[u8],
+    encoding_name: &str,
+) -> Result<String, RuntimeError> {
+    match encoding_name {
+        "ascii" => Ok(bytes
+            .iter()
+            .map(|b| if *b <= 0x7F { *b as char } else { '\u{FFFD}' })
+            .collect()),
+        "iso-8859-1" => Ok(bytes.iter().map(|b| *b as char).collect()),
+        "utf-16le" => {
+            if !bytes.len().is_multiple_of(2) {
+                return Err(RuntimeError::new("Invalid utf-16 byte length"));
+            }
+            let units: Vec<u16> = bytes
+                .chunks_exact(2)
+                .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+                .collect();
+            Ok(String::from_utf16_lossy(&units))
+        }
+        "utf-16be" => {
+            if !bytes.len().is_multiple_of(2) {
+                return Err(RuntimeError::new("Invalid utf-16be byte length"));
+            }
+            let units: Vec<u16> = bytes
+                .chunks_exact(2)
+                .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+                .collect();
+            Ok(String::from_utf16_lossy(&units))
+        }
+        _ => {
+            let label = if encoding_name == "windows-932" {
+                "shift_jis"
+            } else {
+                encoding_name
+            };
+            let enc = encoding_rs::Encoding::for_label(label.as_bytes()).ok_or_else(|| {
+                RuntimeError::new(format!("Unknown encoding '{}'", encoding_name))
+            })?;
+            let (decoded, _used_encoding, _had_errors) = enc.decode(bytes);
+            Ok(decoded.into_owned())
+        }
+    }
+}
+
+fn decode_buf_target_bytes(target: &Value, encoding_name: &str) -> Option<Vec<u8>> {
+    let Value::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target
+    else {
+        return None;
+    };
+
+    if !crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) {
+        return None;
+    }
+
+    let Value::Array(items, ..) = attributes.get("bytes")? else {
+        return Some(Vec::new());
+    };
+
+    if class_name == "utf16" {
+        let use_be = encoding_name == "utf-16be";
+        let mut out = Vec::with_capacity(items.len() * 2);
+        for item in items.iter() {
+            let unit = match item {
+                Value::Int(i) => *i as u16,
+                _ => 0u16,
+            };
+            let pair = if use_be {
+                unit.to_be_bytes()
+            } else {
+                unit.to_le_bytes()
+            };
+            out.extend_from_slice(&pair);
+        }
+        Some(out)
+    } else {
+        Some(
+            items
+                .iter()
+                .map(|v| match v {
+                    Value::Int(i) => *i as u8,
+                    _ => 0,
+                })
+                .collect(),
+        )
+    }
+}
+
+pub(crate) fn decode_buf_method(
+    target: &Value,
+    encoding: Option<&str>,
+) -> Option<Result<Value, RuntimeError>> {
+    let Value::Instance { class_name, .. } = target else {
+        return None;
+    };
+    if !crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) {
+        return None;
+    }
+
+    let default_encoding = if class_name == "utf16" {
+        "utf-16"
+    } else {
+        "utf-8"
+    };
+    let encoding_name = encoding.unwrap_or(default_encoding);
+    let normalized = normalize_builtin_encoding_label(encoding_name)?;
+    let bytes = decode_buf_target_bytes(target, &normalized)?;
+    Some(decode_bytes_with_builtin_encoding(&bytes, &normalized).map(Value::str))
+}
+
 fn normalized_mod(value: BigInt, modulus: &BigInt) -> BigInt {
     let mut r = value % modulus;
     if r.is_negative() {
