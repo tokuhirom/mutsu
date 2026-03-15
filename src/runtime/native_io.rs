@@ -3,6 +3,15 @@ use crate::symbol::Symbol;
 use num_traits::ToPrimitive;
 use std::path::Component;
 
+fn io_exception(class_name: &str, message: String) -> RuntimeError {
+    let mut err = RuntimeError::new(message);
+    err.exception = Some(Box::new(Value::make_instance(
+        Symbol::intern(class_name),
+        HashMap::new(),
+    )));
+    err
+}
+
 enum IoPathExtensionPartsSpec {
     Exact(i64),
     Range { low: i64, high: i64 },
@@ -278,11 +287,7 @@ impl Interpreter {
                 Ok(Self::clone_io_path_with_path(attributes, resolved))
             }
             "volume" => {
-                let volume = path_buf
-                    .components()
-                    .next()
-                    .map(|comp| comp.as_os_str().to_string_lossy().to_string())
-                    .unwrap_or_default();
+                let (volume, _, _) = Self::io_path_parts(&p);
                 Ok(Value::str(volume))
             }
             "is-absolute" => Ok(Value::Bool(original.is_absolute())),
@@ -429,7 +434,28 @@ impl Interpreter {
                     .first()
                     .map(|v| v.to_string_value())
                     .ok_or_else(|| RuntimeError::new("copy requires destination"))?;
+                let createonly = Self::named_bool(&args, "createonly");
                 let dest_buf = self.resolve_path(&dest);
+                // Check if source and destination are the same file
+                if path_buf == dest_buf
+                    || (path_buf.exists()
+                        && dest_buf.exists()
+                        && fs::canonicalize(&path_buf).ok() == fs::canonicalize(&dest_buf).ok())
+                {
+                    return Err(io_exception(
+                        "X::IO::Copy",
+                        format!(
+                            "Failed to copy '{}': source and destination are the same file",
+                            p
+                        ),
+                    ));
+                }
+                if createonly && dest_buf.exists() {
+                    return Err(io_exception(
+                        "X::IO::Copy",
+                        format!("Failed to copy '{}': destination already exists", p),
+                    ));
+                }
                 fs::copy(&path_buf, &dest_buf)
                     .map_err(|err| RuntimeError::new(format!("Failed to copy '{}': {}", p, err)))?;
                 Ok(Value::Bool(true))

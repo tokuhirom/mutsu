@@ -138,7 +138,7 @@ impl Interpreter {
                         }
                     }
                 }
-                Stmt::Say(es) | Stmt::Print(es) | Stmt::Note(es) => {
+                Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
                     for e in es {
                         scan_expr(e, positional, named);
                     }

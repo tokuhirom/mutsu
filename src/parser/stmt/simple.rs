@@ -1241,7 +1241,7 @@ pub(super) fn put_stmt(input: &str) -> PResult<'_, Stmt> {
         return parse_statement_modifier(rest, stmt);
     }
     let (rest, args) = parse_expr_list(rest)?;
-    let stmt = Stmt::Say(args);
+    let stmt = Stmt::Put(args);
     parse_statement_modifier(rest, stmt)
 }
 

@@ -347,7 +347,7 @@ impl Compiler {
             Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
                 Self::expr_has_placeholder(expr)
             }
-            Stmt::Say(es) | Stmt::Print(es) | Stmt::Note(es) => {
+            Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
                 es.iter().any(Self::expr_has_placeholder)
             }
             Stmt::If {

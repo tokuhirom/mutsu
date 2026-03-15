@@ -1163,6 +1163,13 @@ impl VM {
                 self.env_dirty = true;
                 *ip += 1;
             }
+            OpCode::Put(n) => {
+                self.ensure_locals_synced(code);
+                self.sync_env_from_locals(code);
+                self.exec_put_op(*n)?;
+                self.env_dirty = true;
+                *ip += 1;
+            }
             OpCode::Print(n) => {
                 self.ensure_locals_synced(code);
                 self.sync_env_from_locals(code);
