@@ -260,11 +260,7 @@ impl Interpreter {
                 {
                     let mut attrs = attributes.as_ref().clone();
                     attrs.insert("actions".to_string(), actions.clone());
-                    Value::Instance {
-                        class_name: *class_name,
-                        attributes: std::sync::Arc::new(attrs),
-                        id: *id,
-                    }
+                    Value::make_instance_with_id(*class_name, attrs, *id)
                 } else {
                     result
                 }

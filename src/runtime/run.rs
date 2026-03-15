@@ -678,6 +678,7 @@ impl Interpreter {
         let vm = crate::vm::VM::new(interp);
         let (interp, result) = vm.run(&code, &compiled_fns);
         *self = interp;
+        self.run_pending_instance_destroys()?;
         result.map(|_| ())
     }
 
@@ -697,6 +698,7 @@ impl Interpreter {
                 self.env = saved_env;
             }
         }
+        self.run_pending_instance_destroys()?;
         if self.bailed_out {
             return Ok(());
         }

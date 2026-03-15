@@ -3004,11 +3004,11 @@ impl Interpreter {
                     );
                     (
                         result,
-                        Some(Value::Instance {
-                            class_name: *class_name,
-                            attributes: std::sync::Arc::new(updated),
-                            id: *target_id,
-                        }),
+                        Some(Value::make_instance_with_id(
+                            *class_name,
+                            updated,
+                            *target_id,
+                        )),
                     )
                 }
                 _ => {

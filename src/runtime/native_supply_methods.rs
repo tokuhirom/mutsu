@@ -141,11 +141,11 @@ impl Interpreter {
             "delayed" => {
                 let delay_seconds = self.resolve_supply_delay_seconds(args.first())?;
                 if delay_seconds <= 0.0 {
-                    return Ok(Value::Instance {
-                        class_name: Symbol::intern("Supply"),
-                        attributes: Arc::new(attributes.clone()),
-                        id: 0,
-                    });
+                    return Ok(Value::make_instance_with_id(
+                        Symbol::intern("Supply"),
+                        attributes.clone(),
+                        0,
+                    ));
                 }
                 let mut new_attrs = attributes.clone();
                 new_attrs.insert("delay_seconds".to_string(), Value::Num(delay_seconds));
@@ -692,11 +692,11 @@ impl Interpreter {
             "Supply" | "supply" => {
                 // .Supply on a Supply is identity (noop) — return self
                 // Preserve the same id for === identity check
-                Ok(Value::Instance {
-                    class_name: Symbol::intern("Supply"),
-                    attributes: Arc::new(attributes.clone()),
-                    id: 0, // placeholder — identity is checked via container, not id
-                })
+                Ok(Value::make_instance_with_id(
+                    Symbol::intern("Supply"),
+                    attributes.clone(),
+                    0,
+                ))
             }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on Supply",

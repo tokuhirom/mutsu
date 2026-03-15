@@ -21,6 +21,7 @@ use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
 use crate::parse_dispatch;
 use crate::value::{
     ArrayKind, JunctionKind, LazyList, RuntimeError, SharedChannel, SharedPromise, Value, make_rat,
+    take_pending_instance_destroys,
 };
 use num_traits::Signed;
 

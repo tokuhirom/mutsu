@@ -1854,7 +1854,7 @@ impl Interpreter {
 
     /// Replay deferred Proc::Async taps on the main thread.
     /// Called when a Proc result is retrieved via .result or await.
-    pub(super) fn replay_proc_taps(&mut self, attributes: &Arc<HashMap<String, Value>>) {
+    pub(super) fn replay_proc_taps(&mut self, attributes: &Arc<crate::value::InstanceAttrs>) {
         let mut stdout_taps = match attributes.get("stdout_taps") {
             Some(Value::Array(taps, ..)) => taps.to_vec(),
             _ => Vec::new(),
