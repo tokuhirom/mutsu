@@ -122,6 +122,42 @@ pub(crate) fn native_method_1arg(
     if let Value::Scalar(inner) = target {
         return native_method_1arg(inner, method_sym, arg);
     }
+    // Cool numeric coercion: when a Str calls a numeric 1-arg method, coerce to numeric first.
+    // Also coerce the arg if it's a Str for numeric methods.
+    {
+        let numeric_1arg_methods: &[&str] = &[
+            "exp", "log", "round", "roots", "unpolar", "base", "polymod", "expmod", "atan2",
+        ];
+        if numeric_1arg_methods.contains(&method) {
+            let coerced_target = if let Value::Str(s) = target {
+                if let Ok(i) = s.parse::<i64>() {
+                    Some(Value::Int(i))
+                } else if let Ok(f) = s.parse::<f64>() {
+                    Some(Value::Num(f))
+                } else {
+                    return None;
+                }
+            } else {
+                None
+            };
+            let coerced_arg = if let Value::Str(s) = arg {
+                if let Ok(i) = s.parse::<i64>() {
+                    Some(Value::Int(i))
+                } else if let Ok(f) = s.parse::<f64>() {
+                    Some(Value::Num(f))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            if coerced_target.is_some() || coerced_arg.is_some() {
+                let t = coerced_target.as_ref().unwrap_or(target);
+                let a = coerced_arg.as_ref().unwrap_or(arg);
+                return native_method_1arg(t, method_sym, a);
+            }
+        }
+    }
     match method {
         "chop" => {
             // Type objects (Package) should throw
