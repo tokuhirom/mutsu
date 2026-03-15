@@ -47,7 +47,10 @@ impl Compiler {
     }
 
     pub(crate) fn qualify_package_name(&self, name: &str) -> String {
-        if self.current_package == "GLOBAL" || name.contains("::") {
+        if self.current_package == "GLOBAL"
+            || name.contains("::")
+            || self.current_package.contains("::&")
+        {
             name.to_string()
         } else {
             format!("{}::{}", self.current_package, name)

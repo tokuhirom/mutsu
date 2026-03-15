@@ -1662,9 +1662,12 @@ impl VM {
             }
             OpCode::RegisterPackage { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
+                let pkg_val = Value::Package(Symbol::intern(&name));
                 self.interpreter
                     .env_mut()
-                    .insert(name.clone(), Value::Package(Symbol::intern(&name)));
+                    .insert(name.clone(), pkg_val.clone());
+                self.update_local_if_exists(code, &name, &pkg_val);
+                self.env_dirty = true;
                 *ip += 1;
             }
 

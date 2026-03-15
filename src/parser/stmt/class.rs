@@ -1053,7 +1053,7 @@ pub(super) fn module_decl(input: &str) -> PResult<'_, Stmt> {
         return Ok((rest, package_stmt));
     }
     stmts.push(package_stmt);
-    Ok((rest, Stmt::Block(stmts)))
+    Ok((rest, Stmt::SyntheticBlock(stmts)))
 }
 
 /// Parse `unit module` or `unit class` statement.
