@@ -1,5 +1,5 @@
 use Test;
-plan 14;
+plan 21;
 
 # Basic construction and start
 my $p = Proc::Async.new("echo", "hi");
@@ -81,3 +81,52 @@ throws-like {
     $ = $p9.stdout;
     $ = $p9.Supply;
 }, X::Proc::Async::SupplyOrStd, 'cannot call .Supply after .stdout';
+
+# bind stdout/stderr to handles
+{
+    my $in-file = 'proc-async-bind-in.txt';
+    my $out-file = 'proc-async-bind-out.txt';
+    my $err-file = 'proc-async-bind-err.txt';
+    spurt $in-file, "first line\nsecond line\n";
+
+    my $fh-in = open $in-file, :r;
+    my $fh-out = open $out-file, :w;
+    my $fh-err = open $err-file, :w;
+
+    my $p10 = Proc::Async.new($*EXECUTABLE, '-e', 'note $*IN.get; say $*IN.get');
+    $p10.bind-stdin($fh-in);
+    $p10.bind-stdout($fh-out);
+    $p10.bind-stderr($fh-err);
+    await $p10.start;
+    .close for $fh-in, $fh-out, $fh-err;
+
+    is slurp($out-file), "second line\n", 'bind-stdout writes captured stdout to handle';
+    is slurp($err-file), "first line\n", 'bind-stderr writes captured stderr to handle';
+}
+
+throws-like {
+    my $p11 = Proc::Async.new($*EXECUTABLE, '-e', 'say 1', :w);
+    $p11.bind-stdin($*IN);
+}, X::Proc::Async::BindOrUse, 'cannot bind stdin when :w is enabled';
+
+throws-like {
+    my $p12 = Proc::Async.new($*EXECUTABLE, '-e', 'say 1');
+    $ = $p12.stdout;
+    $p12.bind-stdout($*OUT);
+}, X::Proc::Async::BindOrUse, 'cannot bind stdout after selecting stdout stream';
+
+throws-like {
+    my $p13 = Proc::Async.new($*EXECUTABLE, '-e', 'say 1');
+    $p13.bind-stderr($*OUT);
+    $ = $p13.Supply;
+}, X::Proc::Async::BindOrUse, 'cannot select merged Supply after binding stderr';
+
+{
+    my $p14 = Proc::Async.new($*EXECUTABLE, '-e', 'say 1');
+    my $stdout = $p14.stdout(:bin);
+    my $stderr = $p14.stderr(:bin);
+    my $exit = $p14.start;
+    ok await($stdout.native-descriptor) > 0, 'stdout(:bin) exposes a native descriptor promise';
+    ok await($stderr.native-descriptor) > 0, 'stderr(:bin) exposes a native descriptor promise';
+    await $exit;
+}

@@ -418,9 +418,14 @@ impl Interpreter {
                         | "kill"
                         | "write"
                         | "close-stdin"
+                        | "bind-stdin"
+                        | "bind-stdout"
+                        | "bind-stderr"
                         | "ready"
                         | "print"
                         | "say"
+                        | "stdout"
+                        | "stderr"
                         | "Supply"
                 ) {
                     let (result, updated) = self.call_native_instance_method_mut(

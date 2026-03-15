@@ -815,6 +815,7 @@ impl Interpreter {
                     "Supply",
                     "Promise",
                     "schedule-on",
+                    "native-descriptor",
                 ]
                 .iter()
                 .map(|s| s.to_string())
@@ -919,6 +920,9 @@ impl Interpreter {
                     "stdout",
                     "stderr",
                     "Supply",
+                    "bind-stdin",
+                    "bind-stdout",
+                    "bind-stderr",
                     "kill",
                     "write",
                     "close-stdin",

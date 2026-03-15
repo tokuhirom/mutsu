@@ -1042,28 +1042,44 @@ impl Interpreter {
                 "Proc::Async" => {
                     let mut positional = Vec::new();
                     let mut w_flag = false;
+                    let mut enc = Value::str_from("utf-8");
                     for arg in &args {
                         match arg {
                             Value::Pair(key, value) if key == "w" => {
                                 w_flag = value.truthy();
                             }
                             Value::Pair(key, _value) if key == "out" => {}
+                            Value::Pair(key, value) if key == "enc" => {
+                                enc = Value::str(value.to_string_value());
+                            }
                             _ => positional.push(arg.clone()),
                         }
                     }
                     let stdout_id = super::native_methods::next_supply_id();
                     let stderr_id = super::native_methods::next_supply_id();
                     let supply_id = super::native_methods::next_supply_id();
+                    let stdout_descriptor = SharedPromise::new();
+                    let stderr_descriptor = SharedPromise::new();
                     let mut stdout_supply_attrs = HashMap::new();
                     stdout_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
                     stdout_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                     stdout_supply_attrs
                         .insert("supply_id".to_string(), Value::Int(stdout_id as i64));
+                    stdout_supply_attrs.insert("enc".to_string(), enc.clone());
+                    stdout_supply_attrs.insert(
+                        "native_descriptor_promise".to_string(),
+                        Value::Promise(stdout_descriptor),
+                    );
                     let mut stderr_supply_attrs = HashMap::new();
                     stderr_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
                     stderr_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                     stderr_supply_attrs
                         .insert("supply_id".to_string(), Value::Int(stderr_id as i64));
+                    stderr_supply_attrs.insert("enc".to_string(), enc.clone());
+                    stderr_supply_attrs.insert(
+                        "native_descriptor_promise".to_string(),
+                        Value::Promise(stderr_descriptor),
+                    );
                     let mut merged_supply_attrs = HashMap::new();
                     merged_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
                     merged_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
@@ -1073,6 +1089,7 @@ impl Interpreter {
                     let mut attrs = HashMap::new();
                     attrs.insert("cmd".to_string(), Value::array(positional));
                     attrs.insert("started".to_string(), Value::Bool(false));
+                    attrs.insert("enc".to_string(), enc);
                     attrs.insert(
                         "stdout".to_string(),
                         Value::make_instance(Symbol::intern("Supply"), stdout_supply_attrs),
