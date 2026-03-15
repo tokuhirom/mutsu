@@ -599,12 +599,12 @@ impl Interpreter {
         Ok(match args.first().cloned() {
             Some(Value::Array(mut items, ..)) => {
                 if items.is_empty() {
-                    Value::Nil
+                    make_empty_array_failure("shift")
                 } else {
                     Arc::make_mut(&mut items).remove(0)
                 }
             }
-            _ => Value::Nil,
+            _ => make_empty_array_failure("shift"),
         })
     }
 

@@ -1321,7 +1321,7 @@ impl Interpreter {
                 }
                 "shift" => {
                     return Ok(if items.is_empty() {
-                        Value::Nil
+                        make_empty_array_failure("shift")
                     } else {
                         items.remove(0)
                     });

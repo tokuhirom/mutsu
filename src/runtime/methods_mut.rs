@@ -1225,7 +1225,7 @@ impl Interpreter {
                     if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);
                         let out = if items.is_empty() {
-                            Value::Nil
+                            make_empty_array_failure("shift")
                         } else {
                             items.remove(0)
                         };
@@ -1236,7 +1236,7 @@ impl Interpreter {
                         _ => Vec::new(),
                     };
                     let out = if items.is_empty() {
-                        Value::Nil
+                        make_empty_array_failure("shift")
                     } else {
                         items.remove(0)
                     };
@@ -1423,7 +1423,7 @@ impl Interpreter {
                     if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);
                         let out = if items.is_empty() {
-                            Value::Nil
+                            make_empty_array_failure("shift")
                         } else {
                             items.remove(0)
                         };
@@ -1434,7 +1434,7 @@ impl Interpreter {
                         _ => Vec::new(),
                     };
                     let out = if items.is_empty() {
-                        Value::Nil
+                        make_empty_array_failure("shift")
                     } else {
                         items.remove(0)
                     };
