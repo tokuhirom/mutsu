@@ -942,6 +942,12 @@ pub(super) fn process_escape_sequence<'a>(
                             current.push(ch);
                         }
                     }
+                    // NFC-normalize: combining characters from \x[...] should
+                    // compose with the preceding character
+                    use unicode_normalization::UnicodeNormalization;
+                    let normalized: String = current.nfc().collect();
+                    current.clear();
+                    current.push_str(&normalized);
                     return Some((&r[end + 1..], true));
                 }
             } else {
@@ -987,6 +993,12 @@ pub(super) fn process_escape_sequence<'a>(
                 && let Some((s, after)) = parse_backslash_c_bracket(&r[1..])
             {
                 current.push_str(&s);
+                // NFC-normalize: combining characters from \c[...] should
+                // compose with the preceding character (e.g. "a\c[COMBINING DIAERESIS]" → "ä")
+                use unicode_normalization::UnicodeNormalization;
+                let normalized: String = current.nfc().collect();
+                current.clear();
+                current.push_str(&normalized);
                 return Some((after, true));
             }
             // \c followed by decimal digits → character by codepoint (e.g. \c10 = LF)

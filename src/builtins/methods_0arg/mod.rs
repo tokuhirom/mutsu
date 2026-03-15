@@ -1623,7 +1623,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
             };
             if let Some(ch) = char::from_u32(code as u32) {
-                Some(Ok(Value::str(ch.to_string())))
+                // NFC-normalize: some codepoints decompose in NFC
+                // (e.g., U+0F75 TIBETAN VOWEL SIGN UU -> U+0F71 + U+0F74)
+                let s: String = ch.to_string().nfc().collect();
+                Some(Ok(Value::str(s)))
             } else {
                 Some(Err(RuntimeError::new(format!(
                     "chr({}) does not map to a valid Unicode character",
@@ -1804,8 +1807,20 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             };
             Some(Ok(Value::Num(builtin_rand() * max)))
         }
-        "uc" => Some(Ok(Value::str(target.to_string_value().to_uppercase()))),
-        "lc" => Some(Ok(Value::str(target.to_string_value().to_lowercase()))),
+        "uc" => Some(Ok(Value::str(
+            target
+                .to_string_value()
+                .to_uppercase()
+                .nfc()
+                .collect::<String>(),
+        ))),
+        "lc" => Some(Ok(Value::str(
+            target
+                .to_string_value()
+                .to_lowercase()
+                .nfc()
+                .collect::<String>(),
+        ))),
         "fc" => Some(Ok(Value::str(unicode_foldcase(&target.to_string_value())))),
         "tc" => Some(Ok(Value::str(titlecase_string(&target.to_string_value())))),
         "sign" => {
@@ -2212,7 +2227,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         ))),
         "flip" => {
             let s = target.to_string_value();
-            let reversed: String = s.graphemes(true).rev().collect();
+            let reversed: String = s.graphemes(true).rev().collect::<String>().nfc().collect();
             Some(Ok(Value::str(reversed)))
         }
         "so" => Some(Ok(Value::Bool(target.truthy()))),
@@ -2621,6 +2636,27 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         },
         "head" => match target {
             Value::Array(items, ..) => Some(Ok(items.first().cloned().unwrap_or(Value::Nil))),
+            Value::Range(start, _)
+            | Value::RangeExcl(start, _)
+            | Value::RangeExclBoth(start, _) => Some(Ok(Value::Int(*start))),
+            Value::RangeExclStart(start, _) => Some(Ok(Value::Int(*start + 1))),
+            Value::GenericRange {
+                start, excl_start, ..
+            } => {
+                let s = (**start).clone();
+                if *excl_start {
+                    // For excluded start, we need the successor
+                    if let Value::Int(n) = &s {
+                        Some(Ok(Value::Int(n + 1)))
+                    } else {
+                        // Fallback: convert to list and take head
+                        let items = runtime::value_to_list(target);
+                        Some(Ok(items.first().cloned().unwrap_or(Value::Nil)))
+                    }
+                } else {
+                    Some(Ok(s))
+                }
+            }
             _ => {
                 let items = runtime::value_to_list(target);
                 Some(Ok(items.first().cloned().unwrap_or(Value::Nil)))

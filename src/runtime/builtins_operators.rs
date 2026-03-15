@@ -939,7 +939,11 @@ impl Interpreter {
                         ));
                     };
                     let n = n_raw.max(0) as usize;
-                    acc = Value::str(crate::runtime::utils::coerce_to_str(&acc).repeat(n));
+                    let repeated = crate::runtime::utils::coerce_to_str(&acc).repeat(n);
+                    // NFC-normalize after repetition: combining marks from the end
+                    // of one copy may interact with the start of the next copy
+                    use unicode_normalization::UnicodeNormalization;
+                    acc = Value::str(repeated.nfc().collect::<String>());
                 }
                 "xx" => {
                     const EAGER_LIMIT: usize = 10_000;
