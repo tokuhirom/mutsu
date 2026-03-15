@@ -981,7 +981,7 @@ impl Interpreter {
                 }
             }
             "//" => {
-                if !matches!(left, Value::Nil) {
+                if crate::runtime::types::value_is_defined(left) {
                     Ok(left.clone())
                 } else {
                     Ok(right.clone())
