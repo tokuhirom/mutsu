@@ -423,6 +423,10 @@ pub(crate) enum Stmt {
     Package {
         name: Symbol,
         body: Vec<Stmt>,
+        /// True for `unit module Foo;` / `unit package Foo;` where the scope
+        /// extends to the rest of the enclosing scope, false for brace-scoped
+        /// `package Foo { ... }`.
+        is_unit: bool,
     },
     Return(Expr),
     For {

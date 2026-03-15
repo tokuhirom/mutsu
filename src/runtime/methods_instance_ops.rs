@@ -592,7 +592,17 @@ impl Interpreter {
                         .unwrap_or_default();
                     return Ok(Value::str(format!("ObjAt.new(\"{}\")", which)));
                 }
-                return Ok(Value::str(format!("{}.new()", class_name)));
+                // Collect public attributes for .raku representation
+                let class_key = class_name.resolve();
+                let public_attrs = self.collect_public_raku_attrs(&class_key, attributes);
+                if public_attrs.is_empty() {
+                    return Ok(Value::str(format!("{}.new", class_name)));
+                }
+                return Ok(Value::str(format!(
+                    "{}.new({})",
+                    class_name,
+                    public_attrs.join(", ")
+                )));
             }
             if method == "name" && args.is_empty() {
                 return Ok(attributes.get("name").cloned().unwrap_or(Value::Nil));
@@ -1466,5 +1476,29 @@ impl Interpreter {
             Value::Instance { class_name, .. } => class_name.resolve(),
             _ => crate::runtime::utils::value_type_name(value).to_string(),
         }
+    }
+
+    /// Collect public attribute representations for `.raku` output.
+    /// Returns a list of `"name => value.raku"` strings for public attributes.
+    fn collect_public_raku_attrs(
+        &mut self,
+        class_name: &str,
+        attributes: &HashMap<String, Value>,
+    ) -> Vec<String> {
+        let class_attrs = self.collect_class_attributes(class_name);
+        let mut parts = Vec::new();
+        for (attr_name, is_public, _default, _is_rw, _is_required, _sigil, _where) in &class_attrs {
+            if !is_public {
+                continue;
+            }
+            if let Some(val) = attributes.get(attr_name) {
+                let rendered = self
+                    .call_method_with_values(val.clone(), "raku", vec![])
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_else(|_| val.to_string_value());
+                parts.push(format!("{} => {}", attr_name, rendered));
+            }
+        }
+        parts
     }
 }
