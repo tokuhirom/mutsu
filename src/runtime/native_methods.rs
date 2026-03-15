@@ -2077,7 +2077,12 @@ impl Interpreter {
                         _ => cmd,
                     };
                 }
-                Ok(cmd)
+                // .command returns a List in Raku
+                if let Value::Array(items, _) = cmd {
+                    Ok(Value::Array(items, ArrayKind::List))
+                } else {
+                    Ok(cmd)
+                }
             }
             "started" => Ok(attributes
                 .get("started")
@@ -2138,10 +2143,18 @@ impl Interpreter {
         match method {
             "exitcode" => attributes.get("exitcode").cloned().unwrap_or(Value::Nil),
             "signal" => attributes.get("signal").cloned().unwrap_or(Value::Int(0)),
-            "command" => attributes
-                .get("command")
-                .cloned()
-                .unwrap_or(Value::array(Vec::new())),
+            "command" => {
+                let cmd = attributes
+                    .get("command")
+                    .cloned()
+                    .unwrap_or(Value::array(Vec::new()));
+                // .command returns a List in Raku
+                if let Value::Array(items, _) = cmd {
+                    Value::Array(items, ArrayKind::List)
+                } else {
+                    cmd
+                }
+            }
             "pid" => attributes.get("pid").cloned().unwrap_or(Value::Nil),
             "err" => attributes.get("err").cloned().unwrap_or(Value::Nil),
             "out" => attributes.get("out").cloned().unwrap_or(Value::Nil),
