@@ -233,6 +233,8 @@ impl Interpreter {
                         Err(e) => Err(e),
                     };
                     self.finalize_return_with_spec(call_result, return_spec.as_deref())?;
+                } else if let Some(err) = self.take_pending_dispatch_error() {
+                    return Err(err);
                 } else if self.has_proto(name) {
                     return Err(RuntimeError::new(format!(
                         "No matching candidates for proto sub: {}",

@@ -476,6 +476,9 @@ impl Interpreter {
         if let Some(def) = self.resolve_function_with_alias(full_name, &args) {
             return self.call_function_def(&def, &args);
         }
+        if let Some(err) = self.take_pending_dispatch_error() {
+            return Err(err);
+        }
         let env_name = format!("&{}", full_name);
         if let Some(callable) = self.env.get(&env_name).cloned() {
             return self.eval_call_on_value(callable, args);
