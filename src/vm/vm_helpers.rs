@@ -1030,16 +1030,28 @@ impl VM {
         {
             return None;
         }
-        if args.len() == 2 {
-            return crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1]);
-        }
-        if args.len() == 1 {
-            return crate::builtins::native_method_1arg(target, method_sym, &args[0]);
-        }
-        if !args.is_empty() {
+        let result = if args.len() == 2 {
+            crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1])
+        } else if args.len() == 1 {
+            crate::builtins::native_method_1arg(target, method_sym, &args[0])
+        } else if args.is_empty() {
+            crate::builtins::native_method_0arg(target, method_sym)
+        } else {
             return None;
+        };
+
+        if method_name == "decode" {
+            return result.map(|res| {
+                res.map(|value| match value {
+                    Value::Str(decoded) => {
+                        Value::str(self.interpreter.translate_newlines_for_decode(&decoded))
+                    }
+                    other => other,
+                })
+            });
         }
-        crate::builtins::native_method_0arg(target, method_sym)
+
+        result
     }
 
     pub(super) fn try_native_function(
