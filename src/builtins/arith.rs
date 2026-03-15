@@ -580,6 +580,20 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
             (Value::Num(a), Value::Num(b)) => Value::Num(a / b),
             (Value::Int(a), Value::Num(b)) => Value::Num(*a as f64 / b),
             (Value::Num(a), Value::Int(b)) => Value::Num(a / *b as f64),
+            (Value::Num(a), Value::BigInt(b)) => {
+                let bf = runtime::to_float_value(&Value::BigInt(b.clone())).unwrap_or(1.0);
+                if bf == 0.0 {
+                    return Err(RuntimeError::numeric_divide_by_zero());
+                }
+                Value::Num(a / bf)
+            }
+            (Value::BigInt(a), Value::Num(b)) => {
+                if *b == 0.0 {
+                    return Err(RuntimeError::numeric_divide_by_zero());
+                }
+                let af = runtime::to_float_value(&Value::BigInt(a.clone())).unwrap_or(0.0);
+                Value::Num(af / b)
+            }
             _ => Value::Int(0),
         })
     }
