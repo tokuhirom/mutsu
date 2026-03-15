@@ -2280,6 +2280,12 @@ impl Interpreter {
                 while next < chars.len() && chars[next].is_whitespace() {
                     next += 1;
                 }
+                // Between two word characters, require at least one whitespace
+                let before_is_word = pos > 0 && is_word_char(chars[pos - 1]);
+                let after_is_word = next < chars.len() && is_word_char(chars[next]);
+                if before_is_word && after_is_word && next == pos {
+                    return None;
+                }
                 return Some(next);
             }
         }
@@ -2776,6 +2782,12 @@ impl Interpreter {
                 let mut end = pos;
                 while end < chars.len() && chars[end].is_whitespace() {
                     end += 1;
+                }
+                // Between two word characters, require at least one whitespace
+                let before_is_word = pos > 0 && is_word_char(chars[pos - 1]);
+                let after_is_word = end < chars.len() && is_word_char(chars[end]);
+                if before_is_word && after_is_word && end == pos {
+                    return None;
                 }
                 let mut new_caps = current_caps.clone();
                 if !spec.silent {

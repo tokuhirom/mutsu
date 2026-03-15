@@ -31,6 +31,7 @@ roast/S02-literals/format.t
 roast/S02-literals/hex_chars.t
 roast/S02-literals/listquote-whitespace.t
 roast/S02-literals/listquote.t
+roast/S02-literals/misc-interpolation.t
 roast/S02-literals/pair-boolean.t
 roast/S02-literals/subscript.t
 roast/S02-literals/types.t
@@ -92,6 +93,7 @@ roast/S03-buf/read-write-bits.t
 roast/S03-feeds/basic.t
 roast/S03-metaops/cross.t
 roast/S03-metaops/eager-hyper.t
+roast/S03-metaops/misc.t
 roast/S03-metaops/not.t
 roast/S03-metaops/reverse.t
 roast/S03-operators/also.t
@@ -222,6 +224,7 @@ roast/S05-metachars/tilde.t
 roast/S05-metasyntax/assertions.t
 roast/S05-metasyntax/delimiters.t
 roast/S05-metasyntax/interpolating-closure.t
+roast/S05-metasyntax/lookaround.t
 roast/S05-metasyntax/null.t
 roast/S05-metasyntax/proto-token-ltm.t
 roast/S05-metasyntax/sequential-alternation.t
@@ -280,6 +283,7 @@ roast/S06-signature/definite-return.t
 roast/S06-signature/mixed-placeholders.t
 roast/S06-signature/multi-invocant.t
 roast/S06-signature/multidimensional.t
+roast/S06-signature/named-placeholders.t
 roast/S06-signature/named-renaming.t
 roast/S06-signature/optional.t
 roast/S06-signature/passing-hashes.t
@@ -379,6 +383,7 @@ roast/S14-traits/variables.t
 roast/S15-literals/identifiers.t
 roast/S15-literals/numbers.t
 roast/S15-nfg/cgj.t
+roast/S15-nfg/crlf-encoding.t
 roast/S15-nfg/emoji-test.t
 roast/S15-nfg/from-file.t
 roast/S15-nfg/grapheme-break.t
@@ -472,6 +477,7 @@ roast/S17-procasync/print.t
 roast/S17-procasync/stress.t
 roast/S17-procasync/windows-arg-quoting.t
 roast/S17-promise/allof.t
+roast/S17-promise/anyof.t
 roast/S17-promise/at.t
 roast/S17-promise/in.t
 roast/S17-promise/lock-async-stress.t
@@ -661,6 +667,7 @@ roast/S32-str/tclc.t
 roast/S32-str/trim.t
 roast/S32-str/uc.t
 roast/S32-str/windows-1251-windows-1252-encode-decode.t
+roast/S32-temporal/DateTime.t
 roast/S32-temporal/calendar.t
 roast/S32-trig/atan2.t
 roast/S32-trig/cos.t
