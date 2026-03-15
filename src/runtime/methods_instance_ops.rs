@@ -217,6 +217,106 @@ impl Interpreter {
                     "name" => {
                         return Ok(attributes.get("name").cloned().unwrap_or(Value::Nil));
                     }
+                    "type" => {
+                        return Ok(attributes
+                            .get("type")
+                            .cloned()
+                            .unwrap_or(Value::Package(crate::symbol::Symbol::intern("Mu"))));
+                    }
+                    "has_accessor" => {
+                        return Ok(attributes
+                            .get("has_accessor")
+                            .cloned()
+                            .unwrap_or(Value::Bool(false)));
+                    }
+                    "rw" => {
+                        return Ok(attributes
+                            .get("is_rw")
+                            .cloned()
+                            .unwrap_or(Value::Bool(false)));
+                    }
+                    "readonly" => {
+                        let is_rw = attributes.get("is_rw").map(|v| v.truthy()).unwrap_or(false);
+                        return Ok(Value::Bool(!is_rw));
+                    }
+                    "build" => {
+                        if let Some(build_val) = attributes.get("build") {
+                            return Ok(build_val.clone());
+                        }
+                        if attributes
+                            .get("__mutsu_has_build")
+                            .map(|v| v.truthy())
+                            .unwrap_or(false)
+                        {
+                            return Ok(Value::Bool(true));
+                        }
+                        return Ok(Value::Nil);
+                    }
+                    "get_value" => {
+                        let obj = args.first().ok_or_else(|| {
+                            RuntimeError::new("Attribute.get_value expects an object argument")
+                        })?;
+                        let attr_name = attributes
+                            .get("__mutsu_attr_name")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        if let Value::Instance {
+                            attributes: obj_attrs,
+                            ..
+                        } = obj
+                        {
+                            return Ok(obj_attrs.get(&attr_name).cloned().unwrap_or(Value::Nil));
+                        }
+                        return Ok(Value::Nil);
+                    }
+                    "set_value" => {
+                        if args.len() < 2 {
+                            return Err(RuntimeError::new(
+                                "Attribute.set_value needs an object and a value",
+                            ));
+                        }
+                        let mut obj = args[0].clone();
+                        let new_val = args[1].clone();
+                        let attr_name = attributes
+                            .get("__mutsu_attr_name")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        if let Value::Instance {
+                            attributes: ref mut obj_attrs,
+                            ..
+                        } = obj
+                        {
+                            std::sync::Arc::make_mut(obj_attrs).insert(attr_name, new_val);
+                        }
+                        return Ok(Value::Nil);
+                    }
+                    "gist" | "Str" => {
+                        let type_name = attributes
+                            .get("type")
+                            .map(|v| match v {
+                                Value::Package(name) => name.resolve(),
+                                _ => v.to_string_value(),
+                            })
+                            .unwrap_or_else(|| "Mu".to_string());
+                        let name = attributes
+                            .get("name")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        if method == "gist" {
+                            return Ok(Value::str(format!("{} {}", type_name, name)));
+                        }
+                        return Ok(Value::str(name));
+                    }
+                    "raku" => {
+                        return Ok(Value::str("Attribute.new".to_string()));
+                    }
+                    "package" => {
+                        let owner = attributes
+                            .get("__mutsu_attr_owner")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_else(|| "Any".to_string());
+                        return Ok(Value::Package(crate::symbol::Symbol::intern(&owner)));
+                    }
                     _ => {}
                 }
             }
