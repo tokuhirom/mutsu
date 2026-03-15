@@ -133,10 +133,38 @@ pub(super) fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
 /// Parse statement call args without treating leading `(` as function call parens.
 /// Used when there was whitespace between function name and args (listop form).
 pub(super) fn parse_stmt_call_args_no_paren(input: &str) -> PResult<'_, Vec<CallArg>> {
-    if input.starts_with(';') || input.is_empty() || input.starts_with('}') {
+    if input.starts_with(';')
+        || input.is_empty()
+        || input.starts_with('}')
+        || is_bare_stmt_modifier(input)
+    {
         return Ok((input, Vec::new()));
     }
     parse_remaining_call_args(input)
+}
+
+/// Check if input starts with a statement modifier keyword followed by whitespace.
+/// Unlike `is_stmt_modifier_keyword`, this also requires a space/tab after the keyword
+/// to avoid false positives with identifiers that start with a keyword (e.g., `if'a`).
+fn is_bare_stmt_modifier(input: &str) -> bool {
+    for kw in &[
+        "if", "unless", "for", "while", "until", "given", "when", "with", "without",
+    ] {
+        if let Some(after) = input.strip_prefix(kw) {
+            // Ensure keyword is followed by whitespace or end-of-input,
+            // not by an identifier continuation character (apostrophe, hyphen, alphanumeric).
+            if after.is_empty()
+                || after.starts_with(' ')
+                || after.starts_with('\t')
+                || after.starts_with('\n')
+                || after.starts_with('\r')
+                || after.starts_with('(')
+            {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Parse remaining comma-separated call args.
