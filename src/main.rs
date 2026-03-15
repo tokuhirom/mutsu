@@ -133,9 +133,26 @@ fn main() {
             }
             let rest = filtered_args[2..].to_vec();
             (filtered_args[1].clone(), "-e".to_string(), rest)
+        } else if !filtered_args.is_empty() && filtered_args[0] == "-" {
+            // `-` means read from STDIN
+            let mut buf = String::new();
+            io::stdin().read_to_string(&mut buf).unwrap_or_else(|err| {
+                eprintln!("Failed to read stdin: {}", err);
+                std::process::exit(1);
+            });
+            let rest = filtered_args[1..].to_vec();
+            (buf, "-".to_string(), rest)
         } else if !filtered_args.is_empty() {
-            let content = fs::read_to_string(&filtered_args[0]).unwrap_or_else(|err| {
-                eprintln!("Failed to read {}: {}", filtered_args[0], err);
+            let path = std::path::Path::new(&filtered_args[0]);
+            if path.is_dir() {
+                eprintln!("Can not run directory {}: is a directory", filtered_args[0]);
+                std::process::exit(1);
+            }
+            let content = fs::read_to_string(&filtered_args[0]).unwrap_or_else(|_err| {
+                eprintln!(
+                    "Could not open {}. Failed to stat file: no such file or directory",
+                    filtered_args[0]
+                );
                 std::process::exit(1);
             });
             let rest = filtered_args[1..].to_vec();

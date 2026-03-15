@@ -877,8 +877,31 @@ impl Compiler {
             // --- No-ops: these statements are handled elsewhere ---
             // CATCH/CONTROL are extracted by compile_try/compile_body_with_implicit_try
             Stmt::Catch(_) | Stmt::Control(_) => {}
-            // HasDecl/DoesDecl/TrustsDecl outside class context are no-ops
-            Stmt::HasDecl { .. } | Stmt::DoesDecl { .. } | Stmt::TrustsDecl { .. } => {}
+            // HasDecl outside class context is an error
+            Stmt::HasDecl {
+                name,
+                sigil,
+                is_public,
+                ..
+            } => {
+                let twigil = if *is_public { "." } else { "!" };
+                let bare = name.resolve();
+                let bare = bare.trim_start_matches(['.', '!']);
+                let sigil_ch = if *sigil == '!' || *sigil == '.' {
+                    '$'
+                } else {
+                    *sigil
+                };
+                let full_name = format!("{}{}{}", sigil_ch, twigil, bare);
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("name".to_string(), Value::str(full_name));
+                let err = Value::make_instance(Symbol::intern("X::Attribute::NoPackage"), attrs);
+                let idx = self.code.add_constant(err);
+                self.code.emit(OpCode::LoadConst(idx));
+                self.code.emit(OpCode::Die);
+            }
+            // DoesDecl/TrustsDecl outside class context are no-ops
+            Stmt::DoesDecl { .. } | Stmt::TrustsDecl { .. } => {}
 
             // --- Take (gather/take) ---
             Stmt::Take(expr) => {

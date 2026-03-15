@@ -177,6 +177,14 @@ impl Interpreter {
         false
     }
 
+    /// Check if a class has a public attribute accessor for the given name.
+    pub(crate) fn has_public_accessor(&mut self, class_name: &str, method_name: &str) -> bool {
+        let attrs = self.collect_class_attributes(class_name);
+        attrs
+            .iter()
+            .any(|(attr_name, is_public, ..)| *is_public && attr_name == method_name)
+    }
+
     /// Collect wildcard-handles attribute var names from the class and its MRO.
     pub(super) fn collect_wildcard_handles(&mut self, class_name: &str) -> Vec<String> {
         let mro = self.class_mro(class_name);
