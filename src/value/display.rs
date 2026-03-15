@@ -343,7 +343,18 @@ impl Value {
                 .map(|v| v.to_str_context())
                 .collect::<Vec<_>>()
                 .join(" "),
-            Value::LazyList(_) => "LazyList".to_string(),
+            Value::LazyList(ll) => {
+                // Use cached items if available; otherwise fall back to "(...)"
+                if let Some(items) = ll.cache.lock().unwrap().clone() {
+                    items
+                        .iter()
+                        .map(|v| v.to_str_context())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                } else {
+                    "(...)".to_string()
+                }
+            }
             Value::Hash(items) => {
                 let mut pairs: Vec<_> = items
                     .iter()

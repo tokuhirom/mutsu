@@ -519,6 +519,14 @@ impl VM {
         if let Some(err) = self.interpreter.failure_to_runtime_error_if_unhandled(&val) {
             return Err(err);
         }
+        // Force LazyList before stringification
+        if let Value::LazyList(ref ll) = val {
+            let items = self.interpreter.force_lazy_list_bridge(ll)?;
+            let seq = Value::Seq(std::sync::Arc::new(items));
+            self.stack
+                .push(Value::str(crate::runtime::utils::coerce_to_str(&seq)));
+            return Ok(());
+        }
         // If the value is an Instance, try calling the Stringy method
         if let Value::Instance { .. } = &val
             && let Ok(result) =

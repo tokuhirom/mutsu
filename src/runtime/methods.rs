@@ -1218,13 +1218,31 @@ impl Interpreter {
                     | "reduce"
                     | "combinations"
                     | "permutations"
+                    | "Str"
+                    | "gist"
+                    | "raku"
+                    | "perl"
+                    | "values"
+                    | "keys"
+                    | "kv"
+                    | "pairs"
+                    | "antipairs"
+                    | "Seq"
+                    | "List"
+                    | "Bool"
+                    | "so"
+                    | "not"
+                    | "pick"
+                    | "roll"
+                    | "eager"
+                    | "cache"
+                    | "Slip"
             )
         {
-            let saved_env = self.env.clone();
+            // force_lazy_list already merges env changes back, so no need to
+            // save/restore env here — gather body side effects must be visible
+            // to the caller (e.g., `$i = 1` inside gather).
             let items = self.force_lazy_list_bridge(ll)?;
-            if !matches!(method, "elems" | "hyper" | "race") {
-                self.env = saved_env;
-            }
             let seq = Value::Seq(std::sync::Arc::new(items));
             return self.call_method_with_values(seq, method, args);
         }
@@ -3379,11 +3397,13 @@ impl Interpreter {
                         .first()
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
-                    let joined = Self::value_to_list(&target)
-                        .iter()
-                        .map(|v| v.to_string_value())
-                        .collect::<Vec<_>>()
-                        .join(&sep);
+                    let items = Self::value_to_list(&target);
+                    let mut parts = Vec::with_capacity(items.len());
+                    for v in &items {
+                        // Use render_str_value to call custom .Str methods on instances
+                        parts.push(self.render_str_value(v));
+                    }
+                    let joined = parts.join(&sep);
                     return Ok(Value::str(joined));
                 }
             }
