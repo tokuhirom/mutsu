@@ -267,6 +267,7 @@ struct IoHandleState {
     #[allow(dead_code)]
     bin: bool,
     nl_out: String,
+    bytes_written: i64,
 }
 
 #[derive(Clone)]
@@ -2415,6 +2416,14 @@ impl Interpreter {
     /// when not inside a subtest.
     pub(crate) fn emit_output(&mut self, text: &str) {
         self.output_emitted = true;
+        let byte_count = text.len() as i64;
+        if let Some(stdout_handle) = self
+            .handles
+            .values_mut()
+            .find(|h| matches!(h.target, IoHandleTarget::Stdout))
+        {
+            stdout_handle.bytes_written += byte_count;
+        }
         if self.subtest_depth == 0 && self.immediate_stdout {
             use std::io::Write;
             let _ = std::io::stdout().write_all(text.as_bytes());
@@ -2964,6 +2973,7 @@ impl Interpreter {
                 out_buffer_pending: handle.out_buffer_pending.clone(),
                 bin: handle.bin,
                 nl_out: handle.nl_out.clone(),
+                bytes_written: handle.bytes_written,
             };
             cloned_handles.insert(*id, cloned);
         }

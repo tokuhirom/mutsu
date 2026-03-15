@@ -1149,6 +1149,7 @@ impl Interpreter {
                 Ok(Value::array(words))
             }
             "read" => {
+                // .read() always returns a Buf (Buf[uint8]) in Raku
                 let count = args
                     .first()
                     .and_then(|v| match v {
@@ -1158,19 +1159,17 @@ impl Interpreter {
                     .unwrap_or(0);
                 if count > 0 {
                     let bytes = self.read_bytes_from_handle_value(&target_val, count)?;
-                    return Ok(Value::str(String::from_utf8_lossy(&bytes).to_string()));
+                    return Ok(Self::make_buf(bytes));
                 }
-                let path = {
-                    let state = self.handle_state_mut(&target_val)?;
-                    state.path.clone()
-                };
-                if let Some(path) = path {
-                    let content = fs::read_to_string(&path).map_err(|err| {
-                        RuntimeError::new(format!("Failed to read '{}': {}", path, err))
-                    })?;
-                    return Ok(Value::str(content));
+                let mut all_bytes = Vec::new();
+                loop {
+                    let chunk = self.read_bytes_from_handle_value(&target_val, 8192)?;
+                    if chunk.is_empty() {
+                        break;
+                    }
+                    all_bytes.extend(chunk);
                 }
-                Ok(Value::str(String::new()))
+                Ok(Self::make_buf(all_bytes))
             }
             "write" => {
                 let mut bytes = Vec::new();
@@ -1263,7 +1262,18 @@ impl Interpreter {
                         _ => None,
                     })
                     .unwrap_or(0);
-                let offset = self.seek_handle_value(&target_val, pos)?;
+                // Second argument: seek mode
+                let mode_str = args
+                    .get(1)
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_else(|| "SeekFromBeginning".to_string());
+                let seek_mode = match mode_str.as_str() {
+                    "SeekFromBeginning" => 0,
+                    "SeekFromCurrent" => 1,
+                    "SeekFromEnd" => 2,
+                    _ => 0,
+                };
+                let offset = self.seek_handle_value(&target_val, pos, seek_mode)?;
                 Ok(Value::Int(offset))
             }
             "tell" => {
@@ -1295,17 +1305,23 @@ impl Interpreter {
                 Ok(Value::Bool(!state.closed))
             }
             "slurp" => {
-                let path = {
+                let has_bin_arg = Self::named_bool(&args, "bin");
+                let is_bin = {
                     let state = self.handle_state_mut(&target_val)?;
-                    state.path.clone()
+                    has_bin_arg || state.bin || state.encoding == "bin"
                 };
-                if let Some(path) = path {
-                    let content = fs::read_to_string(&path).map_err(|err| {
-                        RuntimeError::new(format!("Failed to slurp '{}': {}", path, err))
-                    })?;
-                    return Ok(Value::str(content));
+                let mut all_bytes = Vec::new();
+                loop {
+                    let chunk = self.read_bytes_from_handle_value(&target_val, 8192)?;
+                    if chunk.is_empty() {
+                        break;
+                    }
+                    all_bytes.extend(chunk);
                 }
-                Ok(Value::str(String::new()))
+                if is_bin {
+                    return Ok(Self::make_buf(all_bytes));
+                }
+                Ok(Value::str(String::from_utf8_lossy(&all_bytes).to_string()))
             }
             "Supply" => self.handle_supply(target, &args),
             _ => Err(RuntimeError::new(format!(
