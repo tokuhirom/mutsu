@@ -1583,6 +1583,7 @@ impl VM {
                 pattern_idx,
                 replacement_idx,
                 samemark,
+                global,
                 nth_idx,
                 x_count,
             } => {
@@ -1591,6 +1592,7 @@ impl VM {
                     *pattern_idx,
                     *replacement_idx,
                     *samemark,
+                    *global,
                     *nth_idx,
                     *x_count,
                 )?;
@@ -1600,6 +1602,7 @@ impl VM {
                 pattern_idx,
                 replacement_idx,
                 samemark,
+                global,
                 nth_idx,
                 x_count,
             } => {
@@ -1608,6 +1611,7 @@ impl VM {
                     *pattern_idx,
                     *replacement_idx,
                     *samemark,
+                    *global,
                     *nth_idx,
                     *x_count,
                 )?;

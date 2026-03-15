@@ -633,7 +633,7 @@ impl Interpreter {
     }
 
     pub(crate) fn is_implicit_zero_arg_builtin(name: &str) -> bool {
-        matches!(name, "dir")
+        matches!(name, "dir" | "lines")
     }
 
     /// Check if a multi-dispatched function with the given name exists (any arity).

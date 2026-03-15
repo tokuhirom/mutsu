@@ -53,6 +53,7 @@ fn main() {
     let mut doc_mode = false;
     let mut repl_flag = false;
     let mut no_precomp = false;
+    let mut auto_print = false;
     let mut lib_paths: Vec<String> = Vec::new();
     let mut preload_modules: Vec<String> = Vec::new();
     let mut filtered_args: Vec<String> = Vec::new();
@@ -69,6 +70,8 @@ fn main() {
             repl_flag = true;
         } else if arg == "--no-precomp" {
             no_precomp = true;
+        } else if arg == "-p" {
+            auto_print = true;
         } else if arg.starts_with("--parser=") {
             eprintln!("--parser option is no longer supported");
             std::process::exit(1);
@@ -145,6 +148,12 @@ fn main() {
             });
             (buf, "<stdin>".to_string(), Vec::new())
         };
+
+    let input = if auto_print {
+        format!("for lines() {{ {};\n.say;\n}}", input)
+    } else {
+        input
+    };
 
     if dump_ast {
         match mutsu::dump_ast(&input) {

@@ -1,7 +1,36 @@
 use super::*;
 use crate::symbol::Symbol;
+use std::sync::Arc;
 
 impl Compiler {
+    fn topic_subst_pattern_from_index_with_groups(expr: &Expr, top_level: bool) -> Option<String> {
+        match expr {
+            Expr::CaptureLiteral(items) => {
+                if top_level
+                    && items.len() == 1
+                    && matches!(items.first(), Some(Expr::CaptureLiteral(_)))
+                {
+                    return Self::topic_subst_pattern_from_index_with_groups(&items[0], true);
+                }
+                let mut out = String::new();
+                for item in items {
+                    out.push_str(&Self::topic_subst_pattern_from_index_with_groups(
+                        item, false,
+                    )?);
+                }
+                Some(format!("({out})"))
+            }
+            Expr::BareWord(name) if name.len() == 1 => Some(format!("\\{name}")),
+            Expr::BareWord(name) => Some(name.clone()),
+            Expr::Literal(Value::Str(s)) => Some(s.as_ref().clone()),
+            _ => None,
+        }
+    }
+
+    fn topic_subst_pattern_from_index(expr: &Expr) -> Option<String> {
+        Self::topic_subst_pattern_from_index_with_groups(expr, true)
+    }
+
     fn atomic_target_name(expr: &Expr) -> Option<String> {
         match expr {
             Expr::Var(name) => Some(name.clone()),
@@ -1612,6 +1641,7 @@ impl Compiler {
                 pattern,
                 replacement,
                 samemark,
+                global,
                 nth,
                 x,
             } => {
@@ -1624,6 +1654,7 @@ impl Compiler {
                     pattern_idx,
                     replacement_idx,
                     samemark: *samemark,
+                    global: *global,
                     nth_idx,
                     x_count: x.map(|n| n as u32),
                 });
@@ -1633,6 +1664,7 @@ impl Compiler {
                 pattern,
                 replacement,
                 samemark,
+                global,
                 nth,
                 x,
             } => {
@@ -1645,6 +1677,7 @@ impl Compiler {
                     pattern_idx,
                     replacement_idx,
                     samemark: *samemark,
+                    global: *global,
                     nth_idx,
                     x_count: x.map(|n| n as u32),
                 });
@@ -2225,6 +2258,29 @@ impl Compiler {
                 index,
                 value,
             } => {
+                if let Expr::BareWord(name) = target.as_ref()
+                    && name == "s"
+                    && let Some(pattern) = Self::topic_subst_pattern_from_index(index)
+                {
+                    let rewritten = Expr::AssignExpr {
+                        name: "_".to_string(),
+                        expr: Box::new(Expr::MethodCall {
+                            target: Box::new(Expr::Var("_".to_string())),
+                            name: Symbol::intern("subst"),
+                            args: vec![
+                                Expr::Literal(Value::Regex(Arc::new(pattern))),
+                                Expr::AnonSub {
+                                    body: vec![Stmt::Expr((**value).clone())],
+                                    is_rw: false,
+                                },
+                            ],
+                            modifier: None,
+                            quoted: false,
+                        }),
+                    };
+                    self.compile_expr(&rewritten);
+                    return;
+                }
                 if let Some(name) = Self::index_assign_target_name(target) {
                     if Self::index_assign_target_requires_eval(target) {
                         self.compile_expr(target);

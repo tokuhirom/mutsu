@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use super::super::parse_result::{PError, PResult, parse_char, parse_tag, take_while1};
 
-use crate::ast::Expr;
+use crate::ast::{Expr, Stmt};
 use crate::regex_validate::validate_regex_syntax;
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
@@ -326,6 +326,46 @@ fn parse_subst_replacement_expr(input: &str) -> PResult<'_, String> {
         }
     };
     Ok((rest, replacement))
+}
+
+fn build_topic_subst_expr(
+    pattern: String,
+    replacement: Expr,
+    adverbs: &MatchAdverbs,
+) -> Result<Expr, PError> {
+    if adverbs.nth.is_some() || adverbs.repeat.is_some() {
+        return Err(PError::expected(
+            "s/// replacement expression without :nth or :x",
+        ));
+    }
+
+    let pattern = apply_inline_match_adverbs(pattern, adverbs);
+    validate_regex_pattern_or_perror(&pattern)?;
+
+    let mut args = vec![
+        Expr::Literal(Value::Regex(Arc::new(pattern))),
+        Expr::AnonSub {
+            body: vec![Stmt::Expr(replacement)],
+            is_rw: false,
+        },
+    ];
+    if adverbs.global {
+        args.push(Expr::Literal(Value::Pair(
+            "g".to_string(),
+            Box::new(Value::Bool(true)),
+        )));
+    }
+
+    Ok(Expr::AssignExpr {
+        name: "_".to_string(),
+        expr: Box::new(Expr::MethodCall {
+            target: Box::new(Expr::Var("_".to_string())),
+            name: Symbol::intern("subst"),
+            args,
+            modifier: None,
+            quoted: false,
+        }),
+    })
 }
 
 fn apply_inline_match_adverbs(mut pattern: String, adverbs: &MatchAdverbs) -> String {
@@ -836,6 +876,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 pattern,
                                 replacement: replacement.to_string(),
                                 samemark: adverbs.samemark,
+                                global: adverbs.global,
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
                             },
@@ -859,9 +900,18 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 pattern,
                                 replacement,
                                 samemark: adverbs.samemark,
+                                global: adverbs.global,
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
                             },
+                        ));
+                    }
+                    let (after_pat_ws, _) = ws(after_pat)?;
+                    if let Some(after_eq) = after_pat_ws.strip_prefix('=') {
+                        let (rest, replacement) = expression(after_eq)?;
+                        return Ok((
+                            rest,
+                            build_topic_subst_expr(pattern.to_string(), replacement, &adverbs)?,
                         ));
                     }
                 }
@@ -915,6 +965,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 pattern,
                                 replacement: replacement.to_string(),
                                 samemark: adverbs.samemark,
+                                global: adverbs.global,
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
                             },
@@ -937,6 +988,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 pattern,
                                 replacement,
                                 samemark: adverbs.samemark,
+                                global: adverbs.global,
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
                             },
@@ -987,6 +1039,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     pattern: pattern.to_string(),
                     replacement: replacement.to_string(),
                     samemark: false,
+                    global: false,
                     nth: None,
                     x: None,
                 },
