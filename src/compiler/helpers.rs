@@ -1248,9 +1248,9 @@ impl Compiler {
             merged.extend(loop_body);
             loop_body = merged;
         }
-        if let Some(writeback) = Self::for_rw_writeback_stmt(param, param_def, iterable) {
-            loop_body.push(writeback);
-        }
+        let has_rw = param_def
+            .as_ref()
+            .is_some_and(|def| def.traits.iter().any(|t| t == "rw"));
         let arity = if !params.is_empty() {
             params.len() as u32
         } else {
@@ -1274,6 +1274,10 @@ impl Compiler {
             collect: true,
             restore_topic: true,
             threaded: false,
+            is_rw: has_rw,
+            do_writeback: has_rw,
+            rw_param_names: Vec::new(),
+            kv_mode: false,
         });
         self.compile_collected_loop_body(&loop_body);
         self.code.patch_loop_end(loop_idx);
@@ -1593,6 +1597,7 @@ impl Compiler {
                 body,
                 label,
                 mode,
+                rw_block,
             } => Stmt::For {
                 iterable: iterable.clone(),
                 param: param.clone(),
@@ -1601,6 +1606,7 @@ impl Compiler {
                 body: Self::rewrite_next_targets_in_stmts(body, current_loop_label, next_ph, true),
                 label: label.clone(),
                 mode: *mode,
+                rw_block: *rw_block,
             },
             Stmt::Loop {
                 init,

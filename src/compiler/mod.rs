@@ -241,8 +241,23 @@ impl Compiler {
                 Expr::HashVar(name) => Some(format!("%{}", name)),
                 _ => None,
             },
+            // Handle @a.values and @a.kv → source is @a
+            Expr::MethodCall {
+                target, name, args, ..
+            } if args.is_empty() && (*name == "values" || *name == "kv") => {
+                Self::for_iterable_source_name(target)
+            }
             _ => None,
         }
+    }
+
+    /// Detect if the iterable is a `.kv` method call (key-value pairs).
+    fn for_iterable_is_kv(iterable: &Expr) -> bool {
+        matches!(
+            iterable,
+            Expr::MethodCall { name, args, .. }
+                if args.is_empty() && *name == "kv"
+        )
     }
 
     fn normalize_for_iterable(iterable: &Expr) -> Expr {
@@ -251,26 +266,6 @@ impl Compiler {
             Expr::Var(_) => Expr::ArrayLiteral(vec![iterable.clone()]),
             _ => iterable.clone(),
         }
-    }
-
-    fn for_rw_writeback_stmt(
-        param: &Option<String>,
-        param_def: &Option<crate::ast::ParamDef>,
-        iterable: &Expr,
-    ) -> Option<Stmt> {
-        let has_rw = param_def
-            .as_ref()
-            .is_some_and(|def| def.traits.iter().any(|t| t == "rw"));
-        if !has_rw {
-            return None;
-        }
-        let param_name = param.as_ref()?;
-        let source_name = Self::for_iterable_source_name(iterable)?;
-        Some(Stmt::Assign {
-            name: source_name,
-            expr: Expr::Var(param_name.clone()),
-            op: AssignOp::Assign,
-        })
     }
 
     pub(crate) fn compile(

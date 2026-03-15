@@ -397,6 +397,15 @@ pub(crate) enum OpCode {
         restore_topic: bool,
         /// When true, run the loop body in a spawned thread (race for / hyper for).
         threaded: bool,
+        /// When true, the named param is writable (via `<->`, `is rw`, or `is copy`).
+        is_rw: bool,
+        /// When true, write back modifications to the source container.
+        do_writeback: bool,
+        /// Param names for multi-param rw for loops (used for writeback).
+        rw_param_names: Vec<String>,
+        /// When true, the iterable is from .kv (key-value pairs).
+        /// Writeback only applies to value params (odd-indexed in the chunk).
+        kv_mode: bool,
     },
     /// C-style loop: [cond opcodes][body opcodes][step opcodes].
     /// Layout after CStyleLoop: cond at [ip+1..cond_end), body at [cond_end..step_start),

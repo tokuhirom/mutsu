@@ -898,6 +898,33 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             });
             return parse_statement_modifier(r, stmt);
         }
+        // Handle method call compound assignment: .key //= val, .key += val, etc.
+        if let Expr::MethodCall {
+            ref target,
+            ref name,
+            ref args,
+            ..
+        } = expr
+        {
+            let assigned_value = super::assign::compound_assigned_value_expr(expr.clone(), op, rhs);
+            // Determine the topic variable name for writeback
+            let topic_name = if let Expr::Var(ref v) = **target {
+                v.clone()
+            } else {
+                "_".to_string()
+            };
+            let stmt = Stmt::Expr(Expr::Call {
+                name: Symbol::intern("__mutsu_assign_method_lvalue"),
+                args: vec![
+                    (**target).clone(),
+                    Expr::Literal(crate::value::Value::str(name.resolve())),
+                    Expr::ArrayLiteral(args.clone()),
+                    assigned_value,
+                    Expr::Literal(crate::value::Value::str(topic_name)),
+                ],
+            });
+            return parse_statement_modifier(r, stmt);
+        }
         let stmt = if matches!(expr, Expr::BracketArray(_))
             && matches!(op, super::assign::CompoundAssignOp::Comma)
         {
