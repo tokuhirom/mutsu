@@ -1579,10 +1579,72 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, Stmt::SyntheticBlock(stmts)))
 }
 
+/// Parse parenthesized list form of `has`: `has ($a, $.b, $!c)`
+/// Desugars into a SyntheticBlock containing multiple HasDecl statements.
+fn has_decl_list(input: &str) -> PResult<'_, Stmt> {
+    let (mut rest, _) = parse_char(input, '(')?;
+    let mut stmts = Vec::new();
+    loop {
+        let (r, _) = ws(rest)?;
+        rest = r;
+        if rest.starts_with(')') {
+            rest = &rest[1..];
+            break;
+        }
+        // Parse sigil
+        let sigil = rest.as_bytes().first().copied().unwrap_or(0);
+        if sigil != b'$' && sigil != b'@' && sigil != b'%' {
+            return Err(PError::expected("sigil ($, @, %) in has list"));
+        }
+        rest = &rest[1..];
+        // Parse optional twigil (. or !)
+        let (r, is_public, is_alias) = if let Some(stripped) = rest.strip_prefix('.') {
+            (stripped, true, false)
+        } else if let Some(stripped) = rest.strip_prefix('!') {
+            (stripped, false, false)
+        } else {
+            (rest, false, true)
+        };
+        rest = r;
+        // Parse name
+        let (r, name) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+        let name = name.to_string();
+        rest = r;
+        stmts.push(Stmt::HasDecl {
+            name: Symbol::intern(&name),
+            is_public,
+            default: None,
+            handles: Vec::new(),
+            is_rw: false,
+            is_readonly: false,
+            type_constraint: None,
+            is_required: None,
+            sigil: sigil as char,
+            where_constraint: None,
+            is_alias,
+        });
+        let (r, _) = ws(rest)?;
+        rest = r;
+        // Expect comma or closing paren
+        if rest.starts_with(',') {
+            rest = &rest[1..];
+        }
+    }
+    let (rest, _) = ws(rest)?;
+    let (rest, _) = opt_char(rest, ';');
+    Ok((rest, Stmt::SyntheticBlock(stmts)))
+}
+
 /// Parse `has` attribute declaration.
 pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("has", input).ok_or_else(|| PError::expected("has declaration"))?;
     let (rest, _) = ws1(rest)?;
+
+    // Handle parenthesized list form: has ($a, $.b, $!c)
+    // This desugars into a Block containing multiple HasDecl statements.
+    if rest.starts_with('(') {
+        return has_decl_list(rest);
+    }
 
     // Optional type constraint.
     let (rest, mut type_constraint) = {
@@ -1614,12 +1676,13 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     };
 
     // Check for public accessor marker '.'
-    let (rest, is_public) = if let Some(stripped) = rest.strip_prefix('.') {
-        (stripped, true)
+    let (rest, is_public, is_alias) = if let Some(stripped) = rest.strip_prefix('.') {
+        (stripped, true, false)
     } else if let Some(stripped) = rest.strip_prefix('!') {
-        (stripped, false)
+        (stripped, false, false)
     } else {
-        (rest, false)
+        // No twigil: `has $x` creates a private attribute with an alias
+        (rest, false, true)
     };
 
     let (rest, name) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
@@ -1861,6 +1924,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             is_required,
             sigil: sigil as char,
             where_constraint,
+            is_alias,
         },
     ))
 }

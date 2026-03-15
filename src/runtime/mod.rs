@@ -160,6 +160,9 @@ struct ClassDef {
     // (name, is_public, default, is_rw, is_required, sigil, where_constraint)
     attributes: Vec<ClassAttributeDef>,
     attribute_types: HashMap<String, String>, // attr_name -> type constraint
+    /// Attributes declared with `has $x` (no twigil) — the bare name is an alias
+    /// for `$!x` inside class methods.
+    alias_attributes: HashSet<String>,
     methods: HashMap<String, Vec<MethodDef>>, // name -> overloads
     native_methods: HashSet<String>,
     mro: Vec<String>,
@@ -707,6 +710,7 @@ impl Interpreter {
                 mro: vec!["Mu".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -719,6 +723,7 @@ impl Interpreter {
                 mro: vec!["Any".to_string(), "Mu".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -735,6 +740,7 @@ impl Interpreter {
                 ],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -750,6 +756,7 @@ impl Interpreter {
                 mro: vec!["Promise".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -762,6 +769,7 @@ impl Interpreter {
                 mro: vec!["Promise::Vow".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -777,6 +785,7 @@ impl Interpreter {
                 mro: vec!["Channel".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -789,6 +798,7 @@ impl Interpreter {
                 mro: vec!["Thread".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -828,6 +838,7 @@ impl Interpreter {
                 mro: vec!["Supply".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -840,6 +851,7 @@ impl Interpreter {
                 mro: vec!["utf8".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -852,6 +864,7 @@ impl Interpreter {
                 mro: vec!["utf16".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -864,6 +877,7 @@ impl Interpreter {
                 mro: vec!["Blob".to_string(), "Any".to_string(), "Mu".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -881,6 +895,7 @@ impl Interpreter {
                 ],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -896,6 +911,7 @@ impl Interpreter {
                 mro: vec!["Supplier".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -908,6 +924,7 @@ impl Interpreter {
                 mro: vec!["Supplier::Preserving".to_string(), "Supplier".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -941,6 +958,7 @@ impl Interpreter {
                 mro: vec!["Proc::Async".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -959,6 +977,7 @@ impl Interpreter {
                 mro: vec!["Proc".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -974,6 +993,7 @@ impl Interpreter {
                 mro: vec!["Tap".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -986,6 +1006,7 @@ impl Interpreter {
                 mro: vec!["Scheduler".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -998,6 +1019,7 @@ impl Interpreter {
                 mro: vec!["ThreadPoolScheduler".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1010,6 +1032,7 @@ impl Interpreter {
                 mro: vec!["CurrentThreadScheduler".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1025,6 +1048,7 @@ impl Interpreter {
                 mro: vec!["FakeScheduler".to_string(), "Scheduler".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1037,6 +1061,7 @@ impl Interpreter {
                 mro: vec!["Cancellation".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1052,6 +1077,7 @@ impl Interpreter {
                 mro: vec!["Lock".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1064,6 +1090,7 @@ impl Interpreter {
                 mro: vec!["Lock::Async".to_string(), "Lock".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1079,6 +1106,7 @@ impl Interpreter {
                 mro: vec!["Lock::ConditionVariable".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1143,6 +1171,7 @@ impl Interpreter {
                 mro: vec!["IO::Path".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1188,6 +1217,7 @@ impl Interpreter {
                 mro: vec!["IO::Handle".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1200,6 +1230,7 @@ impl Interpreter {
                 mro: vec!["Backtrace".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1212,6 +1243,7 @@ impl Interpreter {
                 mro: vec!["CompUnit::Repository::FileSystem".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1227,6 +1259,7 @@ impl Interpreter {
                 mro: vec!["IO::Pipe".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1256,6 +1289,7 @@ impl Interpreter {
                 mro: vec!["IO::Socket::INET".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1280,6 +1314,7 @@ impl Interpreter {
                 mro: vec!["IO::Socket::Async".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1292,6 +1327,7 @@ impl Interpreter {
                 mro: vec!["IO::Socket::Async::Listener".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1320,6 +1356,7 @@ impl Interpreter {
                 mro: vec!["Distro".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1351,6 +1388,7 @@ impl Interpreter {
                 mro: vec!["Perl".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1382,6 +1420,7 @@ impl Interpreter {
                 mro: vec!["Kernel".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1410,6 +1449,7 @@ impl Interpreter {
                 mro: vec!["Compiler".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1425,6 +1465,7 @@ impl Interpreter {
                 mro: vec!["Encoding::Builtin".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1437,6 +1478,7 @@ impl Interpreter {
                 mro: vec!["Encoding::Encoder".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1449,6 +1491,7 @@ impl Interpreter {
                 mro: vec!["Encoding::Decoder".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1461,6 +1504,7 @@ impl Interpreter {
                 mro: vec!["Encoding::Registry".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1473,6 +1517,7 @@ impl Interpreter {
                 mro: vec!["Pod::Block".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1485,6 +1530,7 @@ impl Interpreter {
                 mro: vec!["Pod::Block::Comment".to_string(), "Pod::Block".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1497,6 +1543,7 @@ impl Interpreter {
                 mro: vec!["Pod::Block::Para".to_string(), "Pod::Block".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1509,6 +1556,7 @@ impl Interpreter {
                 mro: vec!["Pod::Block::Named".to_string(), "Pod::Block".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1521,6 +1569,7 @@ impl Interpreter {
                 mro: vec!["Pod::Heading".to_string(), "Pod::Block".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1533,6 +1582,7 @@ impl Interpreter {
                 mro: vec!["Pod::Block::Table".to_string(), "Pod::Block".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1545,6 +1595,7 @@ impl Interpreter {
                 mro: vec!["Pod::Item".to_string(), "Pod::Block".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1557,6 +1608,7 @@ impl Interpreter {
                 mro: vec!["X::AdHoc".to_string(), "Exception".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1569,6 +1621,7 @@ impl Interpreter {
                 mro: vec!["X::TypeCheck".to_string(), "Exception".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1585,6 +1638,7 @@ impl Interpreter {
                 ],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1602,6 +1656,7 @@ impl Interpreter {
                 ],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1614,6 +1669,7 @@ impl Interpreter {
                 mro: vec!["X::Supply::Combinator".to_string(), "Exception".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1630,6 +1686,7 @@ impl Interpreter {
                 ],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1646,6 +1703,7 @@ impl Interpreter {
                 ],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1658,6 +1716,7 @@ impl Interpreter {
                 mro: vec!["X::Numeric::Real".to_string(), "Exception".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1670,6 +1729,7 @@ impl Interpreter {
                 mro: vec!["X::TypeCheck::Return".to_string(), "Exception".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         classes.insert(
@@ -1682,6 +1742,7 @@ impl Interpreter {
                 mro: vec!["X::Coerce::Impossible".to_string(), "Exception".to_string()],
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
             },
         );
         let mut interpreter = Self {

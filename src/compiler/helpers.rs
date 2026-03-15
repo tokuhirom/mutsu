@@ -1872,6 +1872,14 @@ impl Compiler {
         matches!(target, Expr::AssignExpr { .. } | Expr::DoStmt(_))
     }
 
+    /// Extract the variable name from a method call target (e.g., `$foo.bar` → "foo").
+    pub(super) fn method_call_target_var_name(target: &Expr) -> Option<String> {
+        match target {
+            Expr::Var(name) => Some(name.clone()),
+            _ => None,
+        }
+    }
+
     pub(super) fn index_assign_nested_target(target: &Expr) -> Option<(String, &Expr)> {
         if let Expr::Index {
             target: inner_target,

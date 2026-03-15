@@ -2299,6 +2299,28 @@ impl Compiler {
                     self.compile_expr(inner_index);
                     let name_idx = self.code.add_constant(Value::str(name));
                     self.code.emit(OpCode::IndexAssignExprNested(name_idx));
+                } else if let Expr::MethodCall {
+                    target: method_target,
+                    name: method_name,
+                    args: method_args,
+                    ..
+                } = target.as_ref()
+                    && method_args.is_empty()
+                    && let Some(var_name) = Self::method_call_target_var_name(method_target)
+                {
+                    // $obj.attr<key> = value → get hash, modify, write back
+                    // Desugar: { my $__temp = $obj.attr; $__temp{key} = value; $obj.attr = $__temp }
+                    let rewritten = Expr::Call {
+                        name: Symbol::intern("__mutsu_index_assign_method_lvalue"),
+                        args: vec![
+                            (**method_target).clone(),
+                            Expr::Literal(Value::str(method_name.resolve().to_string())),
+                            (**index).clone(),
+                            (**value).clone(),
+                            Expr::Literal(Value::str(var_name)),
+                        ],
+                    };
+                    self.compile_expr(&rewritten);
                 } else {
                     // Generic fallback: compile target, then index, then value
                     // and emit IndexAssignGeneric to do runtime assignment.

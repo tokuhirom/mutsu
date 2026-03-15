@@ -402,6 +402,7 @@ impl Interpreter {
             native_methods: HashSet::new(),
             mro: Vec::new(),
             wildcard_handles: Vec::new(),
+            alias_attributes: HashSet::new(),
         };
         if is_hidden {
             self.hidden_classes.insert(name.to_string());
@@ -671,6 +672,7 @@ impl Interpreter {
                     native_methods: HashSet::new(),
                     mro: Vec::new(),
                     wildcard_handles: Vec::new(),
+                    alias_attributes: HashSet::new(),
                 };
                 self.classes.insert(base_role.to_string(), punned_class);
                 if !punned_composed_roles.is_empty() {
@@ -797,7 +799,16 @@ impl Interpreter {
         self.current_package = name.to_string();
         self.env
             .insert("?CLASS".to_string(), Value::Package(Symbol::intern(name)));
-        for stmt in body {
+        // Flatten SyntheticBlock (from `has ($a, $b)` list form) so inner
+        // HasDecl statements are processed at the top level.
+        let flattened_body: Vec<&Stmt> = body
+            .iter()
+            .flat_map(|s| match s {
+                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
+                other => vec![other],
+            })
+            .collect();
+        for stmt in flattened_body {
             match stmt {
                 Stmt::HasDecl {
                     name: attr_name,
@@ -810,6 +821,7 @@ impl Interpreter {
                     is_required,
                     sigil,
                     where_constraint,
+                    is_alias,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     let effective_is_rw = !*is_readonly && (*is_rw || (class_is_rw && *is_public));
@@ -822,6 +834,9 @@ impl Interpreter {
                         *sigil,
                         where_constraint.as_ref().map(|wc| wc.as_ref().clone()),
                     ));
+                    if *is_alias {
+                        class_def.alias_attributes.insert(attr_name_str.clone());
+                    }
                     if let Some(tc) = type_constraint {
                         class_def
                             .attribute_types
@@ -1175,7 +1190,14 @@ impl Interpreter {
         self.current_package = name.to_string();
 
         // Process body statements and add methods/attributes to the existing class
-        for stmt in body {
+        let flattened_body: Vec<&Stmt> = body
+            .iter()
+            .flat_map(|s| match s {
+                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
+                other => vec![other],
+            })
+            .collect();
+        for stmt in flattened_body {
             match stmt {
                 Stmt::MethodDecl {
                     name: method_name,
@@ -1236,6 +1258,7 @@ impl Interpreter {
                     sigil,
                     handles,
                     where_constraint,
+                    is_alias,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     if let Some(class_def) = self.classes.get_mut(name) {
@@ -1248,6 +1271,9 @@ impl Interpreter {
                             *sigil,
                             where_constraint.as_ref().map(|wc| wc.as_ref().clone()),
                         ));
+                        if *is_alias {
+                            class_def.alias_attributes.insert(attr_name_str.clone());
+                        }
                         if let Some(tc) = type_constraint {
                             class_def
                                 .attribute_types
@@ -1320,7 +1346,14 @@ impl Interpreter {
             is_hidden: false,
             captured_env: None,
         };
-        for stmt in body {
+        let flattened_body: Vec<&Stmt> = body
+            .iter()
+            .flat_map(|s| match s {
+                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
+                other => vec![other],
+            })
+            .collect();
+        for stmt in flattened_body {
             match stmt {
                 Stmt::HasDecl {
                     name: attr_name,
@@ -1333,6 +1366,7 @@ impl Interpreter {
                     is_required,
                     sigil,
                     where_constraint,
+                    is_alias: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     role_def.attributes.push((

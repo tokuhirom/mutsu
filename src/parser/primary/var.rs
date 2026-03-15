@@ -473,7 +473,7 @@ pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
     {
         let after_dot = &input[1..];
         let (rest, name) = parse_qualified_ident_with_hyphens(after_dot)?;
-        return Ok((rest, Expr::Var(format!(".{}", name))));
+        return Ok((rest, Expr::ArrayVar(format!(".{}", name))));
     }
     // Handle twigils
     let (rest, twigil) = if input.starts_with('*')
@@ -532,7 +532,7 @@ pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
     {
         let after_dot = &input[1..];
         let (rest, name) = parse_qualified_ident_with_hyphens(after_dot)?;
-        return Ok((rest, Expr::Var(format!(".{}", name))));
+        return Ok((rest, Expr::HashVar(format!(".{}", name))));
     }
     // Handle twigils
     let (rest, twigil) = if input.starts_with('*')

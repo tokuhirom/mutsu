@@ -1967,6 +1967,7 @@ impl VM {
         for (attr_name, attr_val) in &attributes {
             if let Some(actual_attr) = attr_name.strip_prefix(ATTR_ALIAS_META_PREFIX) {
                 if let Value::Str(source_name) = attr_val {
+                    // Set up bidirectional alias: !x ↔ alias_name
                     self.interpreter.env_mut().insert(
                         format!("__mutsu_sigilless_alias::!{}", actual_attr),
                         Value::str(source_name.to_string()),
@@ -1975,6 +1976,21 @@ impl VM {
                         format!("__mutsu_sigilless_readonly::!{}", actual_attr),
                         Value::Bool(false),
                     );
+                    // Reverse alias: alias_name → !attr so writing to $x updates $!x
+                    self.interpreter.env_mut().insert(
+                        format!("__mutsu_sigilless_alias::{}", source_name),
+                        Value::str(format!("!{}", actual_attr)),
+                    );
+                    self.interpreter.env_mut().insert(
+                        format!("__mutsu_sigilless_readonly::{}", source_name),
+                        Value::Bool(false),
+                    );
+                    // Also set up the alias name with the current attribute value
+                    if let Some(attr_value) = attributes.get(actual_attr) {
+                        self.interpreter
+                            .env_mut()
+                            .insert(source_name.to_string(), attr_value.clone());
+                    }
                 }
                 continue;
             }
@@ -2146,7 +2162,12 @@ impl VM {
             method_local_keys.insert(p.clone());
         }
         for attr_name in attributes.keys() {
-            if attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
+            if let Some(actual_attr) = attr_name.strip_prefix(ATTR_ALIAS_META_PREFIX) {
+                // Add the alias name itself to method_local_keys
+                if let Some(Value::Str(alias_name)) = attributes.get(attr_name) {
+                    method_local_keys.insert(alias_name.to_string());
+                    method_local_keys.insert(actual_attr.to_string());
+                }
                 continue;
             }
             method_local_keys.insert(format!("!{}", attr_name));

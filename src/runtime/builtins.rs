@@ -423,6 +423,7 @@ impl Interpreter {
             "leave" => self.builtin_leave(&args),
             "return-rw" => self.builtin_return_rw(&args),
             "__mutsu_assign_method_lvalue" => self.builtin_assign_method_lvalue(&args),
+            "__mutsu_index_assign_method_lvalue" => self.builtin_index_assign_method_lvalue(&args),
             "__mutsu_assign_named_sub_lvalue" => self.builtin_assign_named_sub_lvalue(&args),
             "__mutsu_assign_callable_lvalue" => self.builtin_assign_callable_lvalue(&args),
             "__mutsu_assignment_ro" => self.builtin_assignment_ro(&args),
@@ -1058,6 +1059,64 @@ impl Interpreter {
         }
 
         Err(sig)
+    }
+
+    /// Handle `$obj.method<key> = value` — index assignment through a method accessor.
+    /// Gets the current container (hash/array) via the accessor, modifies it, writes back.
+    fn builtin_index_assign_method_lvalue(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if args.len() < 5 {
+            return Err(RuntimeError::new(
+                "__mutsu_index_assign_method_lvalue expects target, method, index, value, var_name",
+            ));
+        }
+        let target = args[0].clone();
+        let method = args[1].to_string_value();
+        let index = args[2].clone();
+        let value = args[3].clone();
+        let var_name = args[4].to_string_value();
+
+        // Get the current container via the accessor
+        let current = self.call_method_with_values(target.clone(), &method, Vec::new())?;
+        let key = index.to_string_value();
+
+        // Modify the container
+        let updated = match current {
+            Value::Hash(ref h) => {
+                let mut new_hash = (**h).clone();
+                new_hash.insert(key, value.clone());
+                Value::hash(new_hash)
+            }
+            Value::Array(ref items, kind) => {
+                let idx = crate::runtime::to_int(&index) as usize;
+                let mut new_items = (**items).clone();
+                if idx >= new_items.len() {
+                    new_items.resize(
+                        idx + 1,
+                        Value::Package(crate::symbol::Symbol::intern("Any")),
+                    );
+                }
+                new_items[idx] = value.clone();
+                Value::Array(std::sync::Arc::new(new_items), kind)
+            }
+            _ => return Ok(value),
+        };
+
+        // Write back via the setter
+        self.assign_method_lvalue_with_values(
+            if var_name.is_empty() {
+                None
+            } else {
+                Some(var_name.as_str())
+            },
+            target,
+            &method,
+            Vec::new(),
+            updated,
+        )?;
+        Ok(value)
     }
 
     fn builtin_assign_method_lvalue(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
