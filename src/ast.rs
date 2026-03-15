@@ -435,6 +435,7 @@ pub(crate) enum Stmt {
         mode: ForMode,
     },
     Say(Vec<Expr>),
+    Put(Vec<Expr>),
     Print(Vec<Expr>),
     Note(Vec<Expr>),
     Call {
@@ -683,7 +684,7 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
                 }
             }
         }
-        Stmt::Say(es) | Stmt::Print(es) | Stmt::Note(es) => {
+        Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
             for e in es {
                 collect_ph_expr(e, out);
             }
@@ -1002,7 +1003,7 @@ fn check_bare_var_stmt(stmt: &Stmt, bare_name: &str, found: &mut bool) {
             check_bare_var_expr(e, bare_name, found);
         }
         Stmt::Assign { expr, .. } => check_bare_var_expr(expr, bare_name, found),
-        Stmt::Say(es) | Stmt::Print(es) | Stmt::Note(es) => {
+        Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
             for e in es {
                 check_bare_var_expr(e, bare_name, found);
             }

@@ -99,7 +99,7 @@ fn lift_phasers_from_stmt(stmt: &mut Stmt, check: &mut Vec<Stmt>, init: &mut Vec
         Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
             lift_phasers_from_expr(expr, check, init);
         }
-        Stmt::Say(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
+        Stmt::Say(exprs) | Stmt::Put(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
             for e in exprs.iter_mut() {
                 lift_phasers_from_expr(e, check, init);
             }
@@ -376,7 +376,7 @@ fn lift_phasers_from_closure_stmt(stmt: &mut Stmt, check: &mut Vec<Stmt>, init: 
         Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
             lift_phasers_from_expr(expr, check, init);
         }
-        Stmt::Say(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
+        Stmt::Say(exprs) | Stmt::Put(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
             for e in exprs.iter_mut() {
                 lift_phasers_from_expr(e, check, init);
             }

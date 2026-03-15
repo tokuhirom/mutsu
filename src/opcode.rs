@@ -195,6 +195,7 @@ pub(crate) enum OpCode {
 
     // -- I/O --
     Say(u32),
+    Put(u32),
     Print(u32),
     Note(u32),
 

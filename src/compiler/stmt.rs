@@ -189,6 +189,10 @@ impl Compiler {
                 self.compile_exprs(exprs);
                 self.code.emit(OpCode::Say(exprs.len() as u32));
             }
+            Stmt::Put(exprs) => {
+                self.compile_exprs(exprs);
+                self.code.emit(OpCode::Put(exprs.len() as u32));
+            }
             Stmt::Print(exprs) => {
                 self.compile_exprs(exprs);
                 self.code.emit(OpCode::Print(exprs.len() as u32));

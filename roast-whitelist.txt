@@ -444,7 +444,9 @@ roast/S16-filehandles/io_in_while_loops.t
 roast/S16-filehandles/misc.t
 roast/S16-filehandles/mkdir_rmdir.t
 roast/S16-filehandles/mode.t
+roast/S16-filehandles/open.t
 roast/S16-filehandles/unlink.t
+roast/S16-io/bare-say.t
 roast/S16-io/basic-open.t
 roast/S16-io/cwd.t
 roast/S16-io/home.t
@@ -578,6 +580,7 @@ roast/S32-hash/slice.t
 roast/S32-io/IO-Socket-Async.t
 roast/S32-io/IO-Socket-INET.t
 roast/S32-io/chdir-process.t
+roast/S32-io/copy.t
 roast/S32-io/dir.t
 roast/S32-io/io-path-extension.t
 roast/S32-io/io-path-subclasses.t

@@ -222,7 +222,7 @@ impl Interpreter {
             Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
                 self.validate_private_access_in_expr(caller_class, expr)?
             }
-            Stmt::Say(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
+            Stmt::Say(exprs) | Stmt::Put(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
                 for e in exprs {
                     self.validate_private_access_in_expr(caller_class, e)?;
                 }
@@ -483,7 +483,7 @@ impl Interpreter {
             Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
                 self.check_private_calls_exist_expr(class_name, class_def, expr)?;
             }
-            Stmt::Say(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
+            Stmt::Say(exprs) | Stmt::Put(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
                 for e in exprs {
                     self.check_private_calls_exist_expr(class_name, class_def, e)?;
                 }

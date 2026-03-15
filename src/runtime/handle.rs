@@ -626,6 +626,13 @@ impl Interpreter {
         out_buffer_capacity: Option<usize>,
         nl_out: Option<String>,
     ) -> Result<Value, RuntimeError> {
+        // Opening a directory as a file handle is an error in Raku
+        if path.is_dir() {
+            return Err(RuntimeError::new(format!(
+                "Failed to open '{}': Is a directory",
+                path.display()
+            )));
+        }
         let mut options = fs::OpenOptions::new();
         options.read(read);
         options.write(write || append);

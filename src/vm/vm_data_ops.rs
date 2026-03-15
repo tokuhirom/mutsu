@@ -110,6 +110,20 @@ impl VM {
         Ok(())
     }
 
+    pub(super) fn exec_put_op(&mut self, n: u32) -> Result<(), RuntimeError> {
+        let n = n as usize;
+        let start = self.stack.len() - n;
+        let values: Vec<Value> = self.stack.drain(start..).collect();
+        let mut content = String::new();
+        for v in &values {
+            let v = self.interpreter.auto_fetch_proxy(v)?;
+            content.push_str(&self.interpreter.render_str_value(&v));
+        }
+        self.interpreter
+            .write_to_named_handle("$*OUT", &content, true)?;
+        Ok(())
+    }
+
     pub(super) fn exec_print_op(&mut self, n: u32) -> Result<(), RuntimeError> {
         let n = n as usize;
         let start = self.stack.len() - n;
