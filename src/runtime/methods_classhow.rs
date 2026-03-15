@@ -42,6 +42,8 @@ impl Interpreter {
                 | "add_method"
                 | "methods"
                 | "attributes"
+                | "parents"
+                | "roles"
                 | "concretization"
                 | "curried_role"
         ) {
@@ -385,27 +387,14 @@ impl Interpreter {
                     Value::Instance { class_name, .. } => class_name.resolve(),
                     _ => value_type_name(&args[0]).to_string(),
                 };
-                let attrs = self.collect_class_attributes(&owner_class);
-                let values = attrs
-                    .into_iter()
-                    .map(
-                        |(attr_name, is_public, _default, is_rw, _is_required, sigil, _where)| {
-                            let mut meta = HashMap::new();
-                            meta.insert("name".to_string(), Value::str(attr_name.clone()));
-                            meta.insert("__mutsu_attr_name".to_string(), Value::str(attr_name));
-                            meta.insert(
-                                "__mutsu_attr_owner".to_string(),
-                                Value::str(owner_class.clone()),
-                            );
-                            meta.insert("is_public".to_string(), Value::Bool(is_public));
-                            meta.insert("is_rw".to_string(), Value::Bool(is_rw));
-                            meta.insert("sigil".to_string(), Value::str(sigil.to_string()));
-                            Value::make_instance(Symbol::intern("Attribute"), meta)
-                        },
-                    )
-                    .collect::<Vec<_>>();
+                let local_only = args[1..]
+                    .iter()
+                    .any(|a| matches!(a, Value::Pair(k, v) if k == "local" && v.truthy()));
+                let values = self.collect_attribute_objects(&owner_class, local_only);
                 Ok(Value::array(values))
             }
+            "parents" if !args.is_empty() => self.dispatch_classhow_parents(&args),
+            "roles" if !args.is_empty() => self.dispatch_classhow_roles(&args),
             "candidates" if !args.is_empty() => {
                 let base_name = match &args[0] {
                     Value::Package(name) => name.resolve(),
@@ -1291,5 +1280,234 @@ impl Interpreter {
             }
         }
         results
+    }
+
+    fn collect_attribute_objects(&self, class_name: &str, local_only: bool) -> Vec<Value> {
+        if local_only {
+            if let Some(class_def) = self.classes.get(class_name) {
+                class_def
+                    .attributes
+                    .iter()
+                    .map(|attr| self.make_attribute_object(attr, class_name))
+                    .collect()
+            } else {
+                Vec::new()
+            }
+        } else {
+            let mro = if let Some(class_def) = self.classes.get(class_name)
+                && !class_def.mro.is_empty()
+            {
+                class_def.mro.clone()
+            } else {
+                vec![class_name.to_string()]
+            };
+            let mut result = Vec::new();
+            let mut seen_names = std::collections::HashSet::new();
+            for cn in &mro {
+                if cn == "Any" || cn == "Mu" {
+                    continue;
+                }
+                if let Some(cd) = self.classes.get(cn) {
+                    for attr in &cd.attributes {
+                        if seen_names.insert(attr.0.clone()) {
+                            result.push(self.make_attribute_object(attr, cn));
+                        }
+                    }
+                }
+            }
+            result
+        }
+    }
+
+    fn make_attribute_object(&self, attr: &super::ClassAttributeDef, owner: &str) -> Value {
+        let (ref attr_name, is_public, ref default, is_rw, _, sigil, _) = *attr;
+        let full_name = format!("{}!{}", sigil, attr_name);
+        let type_name = self
+            .classes
+            .get(owner)
+            .and_then(|cd| cd.attribute_types.get(attr_name))
+            .cloned()
+            .unwrap_or_else(|| "Mu".to_string());
+        let mut meta = HashMap::new();
+        meta.insert("name".to_string(), Value::str(full_name));
+        meta.insert(
+            "__mutsu_attr_name".to_string(),
+            Value::str(attr_name.clone()),
+        );
+        meta.insert(
+            "__mutsu_attr_owner".to_string(),
+            Value::str(owner.to_string()),
+        );
+        meta.insert("is_public".to_string(), Value::Bool(is_public));
+        meta.insert("is_rw".to_string(), Value::Bool(is_rw));
+        meta.insert("sigil".to_string(), Value::str(sigil.to_string()));
+        meta.insert(
+            "type".to_string(),
+            Value::Package(Symbol::intern(&type_name)),
+        );
+        meta.insert("has_accessor".to_string(), Value::Bool(is_public));
+        if let Some(default_expr) = default {
+            meta.insert("__mutsu_has_build".to_string(), Value::Bool(true));
+            if let crate::ast::Expr::Literal(v) = default_expr {
+                meta.insert("build".to_string(), v.clone());
+            } else {
+                meta.insert("__mutsu_build_is_code".to_string(), Value::Bool(true));
+            }
+        }
+        Value::make_instance(Symbol::intern("Attribute"), meta)
+    }
+
+    fn dispatch_classhow_parents(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let has_flag = |name: &str| -> bool {
+            args[1..]
+                .iter()
+                .any(|a| matches!(a, Value::Pair(k, v) if k == name && v.truthy()))
+        };
+        let local = has_flag("local");
+        let all = has_flag("all");
+        let tree = has_flag("tree");
+        let class_name = match &args[0] {
+            Value::Package(name) => name.resolve(),
+            Value::Instance { class_name, .. } => class_name.resolve(),
+            _ => value_type_name(&args[0]).to_string(),
+        };
+        if tree {
+            let result = self.parents_tree(&class_name);
+            return Ok(Value::array(result));
+        }
+        let mro = self.classhow_mro_names(&args[0]);
+        let parents_iter = mro.into_iter().skip(1);
+        let parents: Vec<Value> = if local {
+            self.classes
+                .get(&class_name)
+                .map(|cd| cd.parents.clone())
+                .unwrap_or_default()
+                .iter()
+                .map(|p| Value::Package(Symbol::intern(p)))
+                .collect()
+        } else if all {
+            parents_iter
+                .map(|p| Value::Package(Symbol::intern(&p)))
+                .collect()
+        } else {
+            parents_iter
+                .filter(|p| p != "Any" && p != "Mu")
+                .map(|p| Value::Package(Symbol::intern(&p)))
+                .collect()
+        };
+        Ok(Value::array(parents))
+    }
+
+    fn parents_tree(&mut self, class_name: &str) -> Vec<Value> {
+        let direct = self
+            .classes
+            .get(class_name)
+            .map(|cd| cd.parents.clone())
+            .unwrap_or_default();
+        if direct.is_empty() {
+            return Vec::new();
+        }
+        direct
+            .iter()
+            .map(|parent| {
+                let subtree = self.parents_tree(parent);
+                let mut entry = vec![Value::Package(Symbol::intern(parent))];
+                if !subtree.is_empty() {
+                    entry.extend(subtree);
+                } else if parent != "Mu" {
+                    let any_subtree = self.parents_tree("Any");
+                    let mut any_entry = vec![Value::Package(Symbol::intern("Any"))];
+                    if !any_subtree.is_empty() {
+                        any_entry.extend(any_subtree);
+                    } else {
+                        any_entry.push(Value::array(vec![Value::Package(Symbol::intern("Mu"))]));
+                    }
+                    entry.push(Value::array(any_entry));
+                }
+                Value::array(entry)
+            })
+            .collect()
+    }
+
+    fn dispatch_classhow_roles(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let class_name = match &args[0] {
+            Value::Package(name) => name.resolve(),
+            Value::Instance { class_name, .. } => class_name.resolve(),
+            _ => value_type_name(&args[0]).to_string(),
+        };
+        let local = args[1..]
+            .iter()
+            .any(|a| matches!(a, Value::Pair(k, v) if k == "local" && v.truthy()));
+        let non_transitive = args[1..]
+            .iter()
+            .any(|a| matches!(a, Value::Pair(k, v) if k == "transitive" && !v.truthy()));
+        let roles = self.collect_roles_for_class(&class_name, local, non_transitive);
+        Ok(Value::array(
+            roles
+                .into_iter()
+                .map(|r| Value::Package(Symbol::intern(&r)))
+                .collect(),
+        ))
+    }
+
+    fn collect_roles_for_class(
+        &self,
+        class_name: &str,
+        local_only: bool,
+        non_transitive: bool,
+    ) -> Vec<String> {
+        let mut result = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        if local_only || non_transitive {
+            if let Some(roles) = self.class_composed_roles.get(class_name) {
+                for r in roles {
+                    if seen.insert(r.clone()) {
+                        result.push(r.clone());
+                    }
+                }
+            }
+        } else {
+            let mro = if let Some(cd) = self.classes.get(class_name)
+                && !cd.mro.is_empty()
+            {
+                cd.mro.clone()
+            } else {
+                vec![class_name.to_string()]
+            };
+            for cn in &mro {
+                if cn == "Any" || cn == "Mu" {
+                    continue;
+                }
+                if let Some(roles) = self.class_composed_roles.get(cn) {
+                    for r in roles {
+                        if seen.insert(r.clone()) {
+                            result.push(r.clone());
+                        }
+                        self.collect_transitive_roles(r, &mut result, &mut seen);
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    fn collect_transitive_roles(
+        &self,
+        role_name: &str,
+        result: &mut Vec<String>,
+        seen: &mut std::collections::HashSet<String>,
+    ) {
+        let base = role_name
+            .split_once('[')
+            .map(|(b, _)| b)
+            .unwrap_or(role_name);
+        if let Some(parents) = self.role_parents.get(base) {
+            for p in parents {
+                if seen.insert(p.clone()) {
+                    result.push(p.clone());
+                    self.collect_transitive_roles(p, result, seen);
+                }
+            }
+        }
     }
 }
