@@ -3177,26 +3177,47 @@ impl Interpreter {
                         attributes.insert(key.clone(), *value.clone());
                     }
                 }
-                // Run BUILD/TWEAK if defined
-                if self.class_has_method(&class_name.resolve(), "BUILD") {
-                    let (_v, updated) = self.run_instance_method(
-                        &class_name.resolve(),
-                        attributes.clone(),
-                        "BUILD",
-                        Vec::new(),
-                        Some(Value::make_instance(class_name, attributes.clone())),
-                    )?;
-                    attributes = updated;
+                // Run BUILD/TWEAK submethods in MRO order (base-first)
+                let mro = self.class_mro(&class_name.resolve());
+                for mro_class in mro.iter().rev() {
+                    if mro_class == "Any" || mro_class == "Mu" {
+                        continue;
+                    }
+                    let has_build = self
+                        .classes
+                        .get(mro_class)
+                        .and_then(|def| def.methods.get("BUILD"))
+                        .is_some();
+                    if has_build {
+                        let (_v, updated) = self.run_instance_method(
+                            mro_class,
+                            attributes.clone(),
+                            "BUILD",
+                            Vec::new(),
+                            Some(Value::make_instance(class_name, attributes.clone())),
+                        )?;
+                        attributes = updated;
+                    }
                 }
-                if self.class_has_method(&class_name.resolve(), "TWEAK") {
-                    let (_v, updated) = self.run_instance_method(
-                        &class_name.resolve(),
-                        attributes.clone(),
-                        "TWEAK",
-                        Vec::new(),
-                        Some(Value::make_instance(class_name, attributes.clone())),
-                    )?;
-                    attributes = updated;
+                for mro_class in mro.iter().rev() {
+                    if mro_class == "Any" || mro_class == "Mu" {
+                        continue;
+                    }
+                    let has_tweak = self
+                        .classes
+                        .get(mro_class)
+                        .and_then(|def| def.methods.get("TWEAK"))
+                        .is_some();
+                    if has_tweak {
+                        let (_v, updated) = self.run_instance_method(
+                            mro_class,
+                            attributes.clone(),
+                            "TWEAK",
+                            Vec::new(),
+                            Some(Value::make_instance(class_name, attributes.clone())),
+                        )?;
+                        attributes = updated;
+                    }
                 }
                 return Ok(Value::make_instance(class_name, attributes));
             }

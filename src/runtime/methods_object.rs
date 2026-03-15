@@ -1728,24 +1728,41 @@ impl Interpreter {
                     }
                 }
                 self.env = restored_env;
-                let class_def = self.classes.get(class_key);
-                let has_direct_build = class_def.and_then(|def| def.methods.get("BUILD")).is_some();
-                let has_direct_tweak = class_def.and_then(|def| def.methods.get("TWEAK")).is_some();
-                if self.class_has_method(&class_name.resolve(), "BUILD") {
-                    let build_args = if has_direct_build {
-                        args.clone()
-                    } else {
-                        Vec::new()
-                    };
-                    let (_v, updated) = self.run_instance_method(
-                        &class_name.resolve(),
-                        attrs.clone(),
-                        "BUILD",
-                        build_args,
-                        Some(Value::make_instance(*class_name, attrs.clone())),
-                    )?;
-                    attrs = updated;
-                    // After BUILD runs, check required attributes that BUILD didn't set
+                // Walk MRO in reverse (base-first) and call BUILD/TWEAK
+                // submethods defined directly on each class. Submethods are
+                // NOT inherited, so each class's own BUILD/TWEAK is called
+                // independently with the construction args.
+                let mro = self.class_mro(class_key);
+                for mro_class in mro.iter().rev() {
+                    if mro_class == "Any" || mro_class == "Mu" {
+                        continue;
+                    }
+                    let has_build = self
+                        .classes
+                        .get(mro_class)
+                        .and_then(|def| def.methods.get("BUILD"))
+                        .is_some();
+                    if has_build {
+                        let (_v, updated) = self.run_instance_method(
+                            mro_class,
+                            attrs.clone(),
+                            "BUILD",
+                            args.clone(),
+                            Some(Value::make_instance(*class_name, attrs.clone())),
+                        )?;
+                        attrs = updated;
+                    }
+                }
+                // Check required attributes after all BUILDs have run
+                if mro.iter().any(|cn| {
+                    cn != "Any"
+                        && cn != "Mu"
+                        && self
+                            .classes
+                            .get(cn)
+                            .and_then(|def| def.methods.get("BUILD"))
+                            .is_some()
+                }) {
                     for (attr_name, _is_public, _default, _is_rw, is_required, _sigil, _) in
                         &class_attrs_info
                     {
@@ -1763,21 +1780,31 @@ impl Interpreter {
                     }
                     self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
                 }
-                if self.class_has_method(&class_name.resolve(), "TWEAK") {
-                    let tweak_args = if has_direct_tweak {
-                        args.clone()
-                    } else {
-                        Vec::new()
-                    };
-                    let (_v, updated) = self.run_instance_method(
-                        &class_name.resolve(),
-                        attrs.clone(),
-                        "TWEAK",
-                        tweak_args,
-                        Some(Value::make_instance(*class_name, attrs.clone())),
-                    )?;
-                    attrs = updated;
-                    self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
+                // Walk MRO in reverse for TWEAK as well
+                for mro_class in mro.iter().rev() {
+                    if mro_class == "Any" || mro_class == "Mu" {
+                        continue;
+                    }
+                    let has_tweak = self
+                        .classes
+                        .get(mro_class)
+                        .and_then(|def| def.methods.get("TWEAK"))
+                        .is_some();
+                    if has_tweak {
+                        let (_v, updated) = self.run_instance_method(
+                            mro_class,
+                            attrs.clone(),
+                            "TWEAK",
+                            args.clone(),
+                            Some(Value::make_instance(*class_name, attrs.clone())),
+                        )?;
+                        attrs = updated;
+                        self.enforce_attribute_where_constraints(
+                            class_key,
+                            &class_attrs_info,
+                            &attrs,
+                        )?;
+                    }
                 }
                 let instance = Value::make_instance(*class_name, attrs);
                 if let Some(type_args) = type_args.as_ref() {
