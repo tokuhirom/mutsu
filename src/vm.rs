@@ -502,6 +502,8 @@ impl VM {
                 };
                 let mut val = if name.starts_with('%') {
                     runtime::coerce_to_hash(raw_val)
+                } else if name.starts_with('@') {
+                    runtime::coerce_to_array(raw_val)
                 } else {
                     raw_val
                 };

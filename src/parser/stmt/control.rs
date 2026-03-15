@@ -1447,6 +1447,72 @@ pub(super) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
     }
 }
 
+/// Parse a single init/step item for a C-style loop header.
+/// In loop headers, commas separate statements, so `my $a = 1, my $b = 2`
+/// must parse as two separate declarations, not one list assignment.
+/// This function parses `my`/`state` declarations using `expression()` (not
+/// `parse_assign_expr_or_comma()`) for the RHS, preventing comma consumption.
+fn loop_header_item(input: &str) -> PResult<'_, Stmt> {
+    let (input, _) = ws(input)?;
+    // Try simple my/state scalar declarations with non-comma-consuming RHS.
+    // For `loop (my $a = 1, my $b = 2; ...)`, commas must separate
+    // declarations, not be part of the assignment value.
+    if keyword("my", input).is_some() || keyword("state", input).is_some() {
+        let is_state = keyword("state", input).is_some();
+        let rest = keyword("my", input)
+            .or_else(|| keyword("state", input))
+            .unwrap();
+        let (rest, _) = ws1(rest)?;
+        // Only handle simple scalar declarations (no type constraint).
+        // Typed declarations like `my int $i` fall through to statement().
+        if let Ok((rest, name)) = var_name(rest) {
+            // var_name strips the sigil; VarDecl name does not include the sigil
+            let (rest, _) = ws(rest)?;
+            if rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>") {
+                let rest = &rest[1..];
+                let (rest, _) = ws(rest)?;
+                let (rest, expr) = expression(rest)?;
+                return Ok((
+                    rest,
+                    Stmt::VarDecl {
+                        name,
+                        expr,
+                        type_constraint: None,
+                        is_state,
+                        is_our: false,
+                        is_dynamic: false,
+                        is_export: false,
+                        export_tags: Vec::new(),
+                        custom_traits: Vec::new(),
+                        where_constraint: None,
+                    },
+                ));
+            }
+            return Ok((
+                rest,
+                Stmt::VarDecl {
+                    name,
+                    expr: Expr::Literal(crate::value::Value::Nil),
+                    type_constraint: None,
+                    is_state,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
+                    where_constraint: None,
+                },
+            ));
+        }
+        // Typed or complex declaration (e.g., my int $i = 0) — fall through
+        // to statement() which handles the full my_decl grammar.
+        return statement(input);
+    }
+    // Fall back to expression statement (also non-comma-consuming)
+    let (rest, expr) = expression(input)?;
+    Ok((rest, Stmt::Expr(expr)))
+}
+
 /// Parse C-style `loop` or infinite loop.
 pub(super) fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("loop", input).ok_or_else(|| PError::expected("loop statement"))?;
@@ -1458,13 +1524,13 @@ pub(super) fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
         let (rest, init) = if let Some(rest_after_semi) = rest.strip_prefix(';') {
             (rest_after_semi, None)
         } else {
-            let (mut r, first) = statement(rest)?;
+            let (mut r, first) = loop_header_item(rest)?;
             let mut stmts = vec![first];
             loop {
                 let (r2, _) = ws(r)?;
                 if let Some(r2_after_comma) = r2.strip_prefix(',') {
                     let (r2, _) = ws(r2_after_comma)?;
-                    let (r2, s) = statement(r2)?;
+                    let (r2, s) = loop_header_item(r2)?;
                     stmts.push(s);
                     r = r2;
                 } else {
@@ -1475,8 +1541,21 @@ pub(super) fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
             if stmts.len() == 1 {
                 (r, Some(Box::new(stmts.into_iter().next().unwrap())))
             } else {
-                (r, Some(Box::new(Stmt::Block(stmts))))
+                (r, Some(Box::new(Stmt::SyntheticBlock(stmts))))
             }
+        };
+        let (rest, _) = ws(rest)?;
+        // When init was parsed by loop_header_item, the semicolon separating
+        // init from cond is not yet consumed. Consume it now.
+        // When init is None, the semicolon was already consumed by strip_prefix(';').
+        let rest = if init.is_some() {
+            if let Some(r) = rest.strip_prefix(';') {
+                r
+            } else {
+                rest
+            }
+        } else {
+            rest
         };
         let (rest, _) = ws(rest)?;
         // cond
