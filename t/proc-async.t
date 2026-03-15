@@ -45,7 +45,7 @@ is $promise.result, 0, 'start returns exit code';
     my $proc = $pr.result;
     is $proc.exitcode, 0, 'Proc.exitcode is 0';
     is $proc.signal, 0, 'Proc.signal is 0';
-    ok $proc.command ~~ Array, 'Proc.command is an Array';
+    ok $proc.command ~~ List, 'Proc.command is a List';
 }
 
 # .write sends data to stdin
