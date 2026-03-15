@@ -424,6 +424,7 @@ impl Compiler {
                 body,
                 label,
                 mode,
+                rw_block,
             } => {
                 let (pre_stmts, mut loop_body, post_stmts) =
                     self.expand_loop_phasers(body, label.as_deref());
@@ -443,9 +444,15 @@ impl Compiler {
                     merged.extend(loop_body);
                     loop_body = merged;
                 }
-                if let Some(writeback) = Self::for_rw_writeback_stmt(param, param_def, iterable) {
-                    loop_body.push(writeback);
-                }
+                // Determine if this for-loop has rw params (via `<->` or `is rw` trait)
+                let has_rw = *rw_block
+                    || (**param_def)
+                        .as_ref()
+                        .is_some_and(|def| def.traits.iter().any(|t| t == "rw"));
+                // `is copy` also makes the param writable (but without writeback)
+                let has_copy = (**param_def)
+                    .as_ref()
+                    .is_some_and(|def| def.traits.iter().any(|t| t == "copy"));
                 let arity = if !params.is_empty() {
                     params.len() as u32
                 } else {
@@ -464,6 +471,12 @@ impl Compiler {
                 let param_local = param
                     .as_ref()
                     .and_then(|p| self.local_map.get(p.as_str()).copied());
+                let rw_param_names = if has_rw && !params.is_empty() {
+                    params.clone()
+                } else {
+                    Vec::new()
+                };
+                let kv_mode = has_rw && Self::for_iterable_is_kv(iterable);
                 let loop_idx = self.code.emit(OpCode::ForLoop {
                     param_idx,
                     param_local,
@@ -473,6 +486,12 @@ impl Compiler {
                     collect: false,
                     restore_topic,
                     threaded: *mode != crate::ast::ForMode::Normal,
+                    // is_rw: param is writable (don't mark readonly)
+                    is_rw: has_rw || has_copy,
+                    // do_writeback: actually write back modifications to source container
+                    do_writeback: has_rw && !has_copy,
+                    rw_param_names,
+                    kv_mode,
                 });
                 self.compile_body_with_implicit_try(&loop_body);
                 self.code.patch_loop_end(loop_idx);

@@ -433,6 +433,8 @@ pub(crate) enum Stmt {
         body: Vec<Stmt>,
         label: Option<String>,
         mode: ForMode,
+        /// True when `<->` is used, making all params rw.
+        rw_block: bool,
     },
     Say(Vec<Expr>),
     Put(Vec<Expr>),

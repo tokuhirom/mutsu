@@ -1478,6 +1478,10 @@ impl VM {
                 collect,
                 restore_topic,
                 threaded,
+                is_rw,
+                do_writeback,
+                rw_param_names,
+                kv_mode,
             } => {
                 let spec = vm_control_ops::ForLoopSpec {
                     param_idx: *param_idx,
@@ -1488,6 +1492,10 @@ impl VM {
                     collect: *collect,
                     restore_topic: *restore_topic,
                     threaded: *threaded,
+                    is_rw: *is_rw,
+                    do_writeback: *do_writeback,
+                    rw_param_names: rw_param_names.clone(),
+                    kv_mode: *kv_mode,
                 };
                 self.exec_for_loop_op(code, &spec, ip, compiled_fns)?;
             }

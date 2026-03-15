@@ -10,6 +10,10 @@ pub(super) struct ForLoopSpec {
     pub(super) collect: bool,
     pub(super) restore_topic: bool,
     pub(super) threaded: bool,
+    pub(super) is_rw: bool,
+    pub(super) do_writeback: bool,
+    pub(super) rw_param_names: Vec<String>,
+    pub(super) kv_mode: bool,
 }
 
 pub(super) struct WhileLoopSpec {
@@ -234,6 +238,7 @@ impl VM {
         let arity = spec.arity.max(1) as usize;
         let writes_back_topic =
             spec.param_idx.is_none() && spec.param_local.is_none() && spec.arity <= 1;
+        let rw_writeback = spec.do_writeback;
         let chunked_items: Vec<Value> = if arity > 1 {
             items
                 .chunks(arity)
@@ -255,6 +260,22 @@ impl VM {
             .flatten();
         let saved_topic_source = self.topic_source_var.take();
         let container_binding = self.container_ref_var.take();
+        // Capture hash key order before the loop so writeback uses the
+        // original key order even after the hash is mutated during iteration.
+        let hash_keys_for_writeback: Option<Vec<String>> = if rw_writeback {
+            container_binding
+                .as_ref()
+                .filter(|s| s.starts_with('%'))
+                .and_then(|source| {
+                    if let Some(Value::Hash(hash_items)) = self.get_env_with_main_alias(source) {
+                        Some(hash_items.keys().cloned().collect())
+                    } else {
+                        None
+                    }
+                })
+        } else {
+            None
+        };
         'for_loop: for (idx, item) in chunked_items.into_iter().enumerate() {
             self.topic_source_var = if writes_back_topic {
                 container_binding.clone()
@@ -286,11 +307,29 @@ impl VM {
             if let Some(slot) = spec.param_local {
                 self.locals[slot as usize] = item.clone();
             }
+            // Mark named params readonly when not in rw mode
+            if !spec.is_rw
+                && let Some(ref name) = param_name
+            {
+                self.interpreter.mark_readonly(name);
+            }
             'body_redo: loop {
                 match self.run_range(code, body_start, loop_end, compiled_fns) {
                     Ok(()) => {
                         if writes_back_topic {
                             self.write_back_for_topic_item(code, &container_binding, idx);
+                        }
+                        if rw_writeback {
+                            self.write_back_for_rw_param(
+                                code,
+                                &container_binding,
+                                &param_name,
+                                &spec.rw_param_names,
+                                idx,
+                                arity,
+                                spec.kv_mode,
+                                &hash_keys_for_writeback,
+                            );
                         }
                         if let Some(ref mut coll) = collected {
                             let base = stack_base.unwrap();
@@ -313,6 +352,18 @@ impl VM {
                     Err(e) if e.is_succeed => {
                         if writes_back_topic {
                             self.write_back_for_topic_item(code, &container_binding, idx);
+                        }
+                        if rw_writeback {
+                            self.write_back_for_rw_param(
+                                code,
+                                &container_binding,
+                                &param_name,
+                                &spec.rw_param_names,
+                                idx,
+                                arity,
+                                spec.kv_mode,
+                                &hash_keys_for_writeback,
+                            );
                         }
                         break 'body_redo;
                     }
@@ -341,6 +392,18 @@ impl VM {
                         if writes_back_topic {
                             self.write_back_for_topic_item(code, &container_binding, idx);
                         }
+                        if rw_writeback {
+                            self.write_back_for_rw_param(
+                                code,
+                                &container_binding,
+                                &param_name,
+                                &spec.rw_param_names,
+                                idx,
+                                arity,
+                                spec.kv_mode,
+                                &hash_keys_for_writeback,
+                            );
+                        }
                         if let Some(v) = e.return_value {
                             if let Some(ref mut coll) = collected {
                                 Self::collect_loop_value(coll, v.clone());
@@ -359,15 +422,45 @@ impl VM {
                         if writes_back_topic {
                             self.write_back_for_topic_item(code, &container_binding, idx);
                         }
+                        if rw_writeback {
+                            self.write_back_for_rw_param(
+                                code,
+                                &container_binding,
+                                &param_name,
+                                &spec.rw_param_names,
+                                idx,
+                                arity,
+                                spec.kv_mode,
+                                &hash_keys_for_writeback,
+                            );
+                        }
                         break 'for_loop;
                     }
                     Err(e) if e.is_next && Self::label_matches(&e.label, &spec.label) => {
                         if writes_back_topic {
                             self.write_back_for_topic_item(code, &container_binding, idx);
                         }
+                        if rw_writeback {
+                            self.write_back_for_rw_param(
+                                code,
+                                &container_binding,
+                                &param_name,
+                                &spec.rw_param_names,
+                                idx,
+                                arity,
+                                spec.kv_mode,
+                                &hash_keys_for_writeback,
+                            );
+                        }
                         break 'body_redo;
                     }
                     Err(e) => {
+                        // Unmark readonly before propagating error
+                        if !spec.is_rw
+                            && let Some(ref name) = param_name
+                        {
+                            self.interpreter.readonly_vars_mut().remove(name);
+                        }
                         if spec.restore_topic {
                             match saved_topic.clone() {
                                 Some(v) => {
@@ -385,6 +478,12 @@ impl VM {
             if self.interpreter.is_halted() {
                 break;
             }
+        }
+        // Unmark readonly params after loop completion
+        if !spec.is_rw
+            && let Some(ref name) = param_name
+        {
+            self.interpreter.readonly_vars_mut().remove(name);
         }
         self.topic_source_var = saved_topic_source;
         if spec.restore_topic {
@@ -437,6 +536,119 @@ impl VM {
         let updated_value = Value::Array(std::sync::Arc::new(updated), kind);
         self.set_env_with_main_alias(source, updated_value.clone());
         self.update_local_if_exists(code, source, &updated_value);
+    }
+
+    /// Write back the named rw param to the source container at the given index.
+    #[allow(clippy::too_many_arguments)]
+    fn write_back_for_rw_param(
+        &mut self,
+        code: &CompiledCode,
+        source_var: &Option<String>,
+        param_name: &Option<String>,
+        rw_param_names: &[String],
+        idx: usize,
+        arity: usize,
+        kv_mode: bool,
+        hash_keys: &Option<Vec<String>>,
+    ) {
+        let Some(source) = source_var else {
+            return;
+        };
+        if source.starts_with('@') || source.starts_with('%') {
+            // For hash sources, read as array for writeback
+            let source_val = self.get_env_with_main_alias(source);
+            let (items, kind) = if source.starts_with('@') {
+                if let Some(Value::Array(items, kind)) = source_val {
+                    (items, kind)
+                } else {
+                    return;
+                }
+            } else {
+                // Hash: can't do positional writeback easily; use hash-specific logic
+                if kv_mode && arity > 1 && rw_param_names.len() >= 2 {
+                    // For %hash.kv -> $key, $val is rw: read $key and $val, update hash
+                    let key_name = &rw_param_names[0];
+                    let val_name = &rw_param_names[1];
+                    if let Some(key) = self.interpreter.env().get(key_name).cloned()
+                        && let Some(val) = self.interpreter.env().get(val_name).cloned()
+                        && let Some(Value::Hash(hash_items)) = self.get_env_with_main_alias(source)
+                    {
+                        let mut updated = hash_items.as_ref().clone();
+                        let key_str = key.to_string_value();
+                        updated.insert(key_str, val);
+                        let updated_value = Value::Hash(std::sync::Arc::new(updated));
+                        self.set_env_with_main_alias(source, updated_value.clone());
+                        self.update_local_if_exists(code, source, &updated_value);
+                    }
+                } else if !kv_mode {
+                    // %hash.values -> $val is rw: positional writeback using pre-captured key order
+                    let var_name = param_name.as_deref().unwrap_or("_");
+                    if let Some(keys) = hash_keys
+                        && let Some(val) = self.interpreter.env().get(var_name).cloned()
+                        && let Some(Value::Hash(hash_items)) = self.get_env_with_main_alias(source)
+                        && idx < keys.len()
+                    {
+                        let mut updated = hash_items.as_ref().clone();
+                        updated.insert(keys[idx].clone(), val);
+                        let updated_value = Value::Hash(std::sync::Arc::new(updated));
+                        self.set_env_with_main_alias(source, updated_value.clone());
+                        self.update_local_if_exists(code, source, &updated_value);
+                    }
+                }
+                return;
+            };
+            if kv_mode && arity > 1 && rw_param_names.len() >= 2 {
+                // .kv mode: chunk is [key, val]. Write back val at key position.
+                let val_name = &rw_param_names[1];
+                if let Some(val) = self.interpreter.env().get(val_name).cloned()
+                    && idx < items.len()
+                {
+                    let mut updated = items.to_vec();
+                    updated[idx] = val;
+                    let updated_value = Value::Array(std::sync::Arc::new(updated), kind);
+                    self.set_env_with_main_alias(source, updated_value.clone());
+                    self.update_local_if_exists(code, source, &updated_value);
+                }
+            } else if arity > 1 && !rw_param_names.is_empty() {
+                // Multi-param rw: read each named param and write back to the array
+                let base = idx * arity;
+                let mut updated = items.to_vec();
+                for (j, pname) in rw_param_names.iter().enumerate() {
+                    if base + j < updated.len()
+                        && let Some(val) = self.interpreter.env().get(pname).cloned()
+                    {
+                        updated[base + j] = val;
+                    }
+                }
+                let updated_value = Value::Array(std::sync::Arc::new(updated), kind);
+                self.set_env_with_main_alias(source, updated_value.clone());
+                self.update_local_if_exists(code, source, &updated_value);
+            } else {
+                // Single-param rw: read the named param (or $_) and write back
+                let var_name = param_name.as_deref().unwrap_or("_");
+                let Some(current_val) = self.interpreter.env().get(var_name).cloned() else {
+                    return;
+                };
+                if idx >= items.len() {
+                    return;
+                }
+                let mut updated = items.to_vec();
+                updated[idx] = current_val;
+                let updated_value = Value::Array(std::sync::Arc::new(updated), kind);
+                self.set_env_with_main_alias(source, updated_value.clone());
+                self.update_local_if_exists(code, source, &updated_value);
+            }
+        } else if source.starts_with('%') {
+            // Hash writeback: not straightforward by index; skip for now
+        } else {
+            // Scalar binding: write back directly
+            let var_name = param_name.as_deref().unwrap_or("_");
+            let Some(current_val) = self.interpreter.env().get(var_name).cloned() else {
+                return;
+            };
+            self.set_env_with_main_alias(source, current_val.clone());
+            self.update_local_if_exists(code, source, &current_val);
+        }
     }
 
     pub(super) fn exec_cstyle_loop_op(

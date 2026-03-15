@@ -420,6 +420,8 @@ impl VM {
                     Value::str(Self::string_succ(s))
                 }
             }
+            // Mixin (allomorphic types like IntStr): increment the inner value
+            Value::Mixin(inner, _) => Self::increment_value(inner),
             _ => Value::Int(1),
         }
     }
@@ -451,6 +453,8 @@ impl VM {
                     Value::str(Self::string_pred(s))
                 }
             }
+            // Mixin (allomorphic types like IntStr): decrement the inner value
+            Value::Mixin(inner, _) => Self::decrement_value(inner),
             _ => Value::Int(-1),
         }
     }

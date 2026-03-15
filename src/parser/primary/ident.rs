@@ -142,6 +142,7 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
             body,
             label,
             mode,
+            rw_block,
         } => Stmt::For {
             iterable,
             param,
@@ -150,6 +151,7 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
             body: rewrite_supply_body(body, emitter_name),
             label,
             mode,
+            rw_block,
         },
         Stmt::Given { topic, body } => Stmt::Given {
             topic,

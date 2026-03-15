@@ -648,6 +648,11 @@ impl Interpreter {
         self.readonly_vars = saved;
     }
 
+    /// Get mutable access to readonly_vars set.
+    pub(crate) fn readonly_vars_mut(&mut self) -> &mut HashSet<String> {
+        &mut self.readonly_vars
+    }
+
     /// Mark a variable as readonly.
     pub(crate) fn mark_readonly(&mut self, name: &str) {
         self.readonly_vars.insert(name.to_string());

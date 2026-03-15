@@ -367,7 +367,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, iterable) = parse_comma_or_expr(r)?;
         let (r, _) = ws(r)?;
-        let (r, (param, param_def, params)) = parse_for_params(r)?;
+        let (r, (param, param_def, params, rw_block)) = parse_for_params(r)?;
         let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
         return Ok((
@@ -380,6 +380,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 body,
                 label: Some(label),
                 mode: crate::ast::ForMode::Normal,
+                rw_block,
             },
         ));
     }
@@ -448,6 +449,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 body,
                 label: Some(label),
                 mode: crate::ast::ForMode::Normal,
+                rw_block: false,
             },
         ));
     }
@@ -466,6 +468,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 body,
                 label: Some(label),
                 mode: crate::ast::ForMode::Normal,
+                rw_block: false,
             },
         ));
     }
@@ -481,10 +484,13 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
     ))
 }
 
+/// Parsed for-loop parameter info: `(param, param_def, params, rw_block)`.
+type ForParams = (Option<String>, Option<ParamDef>, Vec<String>, bool);
+
 /// Parse for loop parameters: -> $param or -> $a, $b
-pub(super) fn parse_for_params(
-    input: &str,
-) -> PResult<'_, (Option<String>, Option<ParamDef>, Vec<String>)> {
+/// Returns `(param, param_def, params, rw_block)`.
+/// `rw_block` is `true` when `<->` is used instead of `->`.
+pub(super) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
     fn skip_pointy_return_type<'a>(mut r: &'a str) -> PResult<'a, ()> {
         let (r2, _) = ws(r)?;
         r = r2;
@@ -497,11 +503,18 @@ pub(super) fn parse_for_params(
         }
     }
 
-    if let Some(stripped) = input.strip_prefix("->") {
+    // Check for `<->` (rw pointy block) — must check before `->`
+    let rw_block = input.starts_with("<->");
+    let pointy_stripped = if rw_block {
+        Some(&input[3..])
+    } else {
+        input.strip_prefix("->")
+    };
+    if let Some(stripped) = pointy_stripped {
         let (r, _) = ws(stripped)?;
         // Zero-parameter pointy block: for @a -> { ... }
         if r.starts_with('{') {
-            return Ok((r, (None, None, Vec::new())));
+            return Ok((r, (None, None, Vec::new(), rw_block)));
         }
         // Parenthesized destructuring pointy param:
         //   -> ($a, $b) { ... }
@@ -534,7 +547,10 @@ pub(super) fn parse_for_params(
                 is_invocant: false,
                 shape_constraints: None,
             };
-            return Ok((r, (Some(unpack_name), Some(unpack_def), Vec::new())));
+            return Ok((
+                r,
+                (Some(unpack_name), Some(unpack_def), Vec::new(), rw_block),
+            ));
         }
         // Parenthesized pointy parameter list: -> ($a, $b) { ... }
         if r.starts_with('(') {
@@ -545,7 +561,7 @@ pub(super) fn parse_for_params(
             let (r, _) = parse_char(r, ')')?;
             let (r, _) = skip_pointy_return_type(r)?;
             if sub_params.is_empty() {
-                return Ok((r, (None, None, Vec::new())));
+                return Ok((r, (None, None, Vec::new(), rw_block)));
             }
             let unpack_name = "__for_unpack".to_string();
             let unpack_def = ParamDef {
@@ -568,7 +584,10 @@ pub(super) fn parse_for_params(
                 is_invocant: false,
                 shape_constraints: None,
             };
-            return Ok((r, (Some(unpack_name), Some(unpack_def), Vec::new())));
+            return Ok((
+                r,
+                (Some(unpack_name), Some(unpack_def), Vec::new(), rw_block),
+            ));
         }
         // Positional destructuring pointy param: -> [$a, $b] { ... }
         if let Some(mut r) = r.strip_prefix('[') {
@@ -612,7 +631,10 @@ pub(super) fn parse_for_params(
                 is_invocant: false,
                 shape_constraints: None,
             };
-            return Ok((r, (Some(unpack_name), Some(unpack_def), Vec::new())));
+            return Ok((
+                r,
+                (Some(unpack_name), Some(unpack_def), Vec::new(), rw_block),
+            ));
         }
         let (r, mut first_def) = parse_for_pointy_param(r)?;
         let first = first_def.name.clone();
@@ -639,11 +661,15 @@ pub(super) fn parse_for_params(
         let (r, _) = ws(r)?;
         if r.starts_with(',') {
             let mut params = vec![first];
+            let mut any_rw = rw_block || first_def.traits.iter().any(|t| t == "rw");
             let mut r = r;
             loop {
                 let (r2, _) = parse_char(r, ',')?;
                 let (r2, _) = ws(r2)?;
                 let (r2, next) = parse_for_pointy_param(r2)?;
+                if next.traits.iter().any(|t| t == "rw") {
+                    any_rw = true;
+                }
                 params.push(next.name);
                 let (r2, _) = ws(r2)?;
                 if !r2.starts_with(',') {
@@ -653,13 +679,13 @@ pub(super) fn parse_for_params(
                 r = r2;
             }
             let (r, _) = skip_pointy_return_type(r)?;
-            Ok((r, (None, None, params)))
+            Ok((r, (None, None, params, any_rw)))
         } else {
             let (r, _) = skip_pointy_return_type(r)?;
-            Ok((r, (Some(first), Some(first_def), Vec::new())))
+            Ok((r, (Some(first), Some(first_def), Vec::new(), rw_block)))
         }
     } else {
-        Ok((input, (None, None, Vec::new())))
+        Ok((input, (None, None, Vec::new(), false)))
     }
 }
 
@@ -790,6 +816,15 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     ))
 }
 
+/// Reject `foreach` with X::Obsolete error (Perl 5 remnant).
+pub(super) fn foreach_stmt(input: &str) -> PResult<'_, Stmt> {
+    let _rest =
+        keyword("foreach", input).ok_or_else(|| PError::expected("foreach (obsolete) check"))?;
+    Err(PError::fatal(
+        "X::Obsolete: Unsupported use of 'foreach'. In Raku please use: 'for'.".to_string(),
+    ))
+}
+
 pub(super) fn for_stmt(input: &str) -> PResult<'_, Stmt> {
     for_stmt_with_mode(input, crate::ast::ForMode::Normal)
 }
@@ -808,12 +843,83 @@ pub(super) fn hyper_for_stmt(input: &str) -> PResult<'_, Stmt> {
     for_stmt_with_mode(rest, crate::ast::ForMode::Hyper)
 }
 
+/// Scan for `<->` (rw pointy block) in the input, returning its byte offset.
+/// This must handle nesting to avoid matching inside strings, brackets, etc.
+fn find_rw_pointy_block(input: &str) -> Option<usize> {
+    let bytes = input.as_bytes();
+    let mut depth_paren = 0i32;
+    let mut depth_bracket = 0i32;
+    let depth_angle = 0i32;
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_single_quote {
+            if b == b'\'' {
+                in_single_quote = false;
+            } else if b == b'\\' {
+                i += 1; // skip escaped char
+            }
+            i += 1;
+            continue;
+        }
+        if in_double_quote {
+            if b == b'"' {
+                in_double_quote = false;
+            } else if b == b'\\' {
+                i += 1;
+            }
+            i += 1;
+            continue;
+        }
+        match b {
+            b'\'' => in_single_quote = true,
+            b'"' => in_double_quote = true,
+            b'(' => depth_paren += 1,
+            b')' => depth_paren -= 1,
+            b'[' => depth_bracket += 1,
+            b']' => depth_bracket -= 1,
+            b'{' if depth_paren == 0 && depth_bracket == 0 && depth_angle == 0 => {
+                // Start of block — stop scanning
+                return None;
+            }
+            b'<' if depth_paren == 0 && depth_bracket == 0 && depth_angle == 0 => {
+                // Check for `<->`
+                if i + 2 < bytes.len() && bytes[i + 1] == b'-' && bytes[i + 2] == b'>' {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
 fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stmt> {
     let rest = keyword("for", input).ok_or_else(|| PError::expected("for statement"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, iterable) = parse_comma_or_expr(rest)?;
+    // Try to detect `<->` (rw pointy block) before the expression parser
+    // consumes the `<` as a comparison operator.
+    let (rest, iterable, rw_detected) = if let Some(rw_pos) = find_rw_pointy_block(rest) {
+        let expr_part = &rest[..rw_pos];
+        let (leftover, iterable) = parse_comma_or_expr(expr_part)?;
+        let (leftover, _) = ws(leftover)?;
+        if leftover.is_empty() {
+            (&rest[rw_pos..], iterable, true)
+        } else {
+            // Expression didn't consume everything before `<->`, fall back
+            let (r, iterable) = parse_comma_or_expr(rest)?;
+            (r, iterable, false)
+        }
+    } else {
+        let (r, iterable) = parse_comma_or_expr(rest)?;
+        (r, iterable, false)
+    };
     let (rest, _) = ws(rest)?;
-    let (rest, (param, param_def, params)) = parse_for_params(rest)?;
+    let (rest, (param, param_def, params, rw_block)) = parse_for_params(rest)?;
+    let rw_block = rw_block || rw_detected;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
     // When no explicit params, collect placeholder variables from the body
@@ -840,6 +946,7 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
             body,
             label: None,
             mode,
+            rw_block,
         },
     ))
 }
@@ -1237,7 +1344,7 @@ pub(super) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, param_binding) = if rest.starts_with("->") {
-        let (rest, (param, _param_def, params)) = parse_for_params(rest)?;
+        let (rest, (param, _param_def, params, _rw_block)) = parse_for_params(rest)?;
         if !params.is_empty() {
             return Err(PError::expected_at("single while pointy parameter", rest));
         }
@@ -1290,7 +1397,7 @@ pub(super) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, param_binding) = if rest.starts_with("->") {
-        let (rest, (param, _param_def, params)) = parse_for_params(rest)?;
+        let (rest, (param, _param_def, params, _rw_block)) = parse_for_params(rest)?;
         if !params.is_empty() {
             return Err(PError::expected_at("single until pointy parameter", rest));
         }
@@ -1456,7 +1563,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, cond) = condition_expr(r)?;
         let (r, _) = ws(r)?;
-        let (r, (param, _param_def, params)) = parse_for_params(r)?;
+        let (r, (param, _param_def, params, _rw_block)) = parse_for_params(r)?;
         let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
         let (r, _) = ws(r)?;
@@ -1496,7 +1603,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, cond) = condition_expr(r)?;
         let (r, _) = ws(r)?;
-        let (r, (param, _param_def, params)) = parse_for_params(r)?;
+        let (r, (param, _param_def, params, _rw_block)) = parse_for_params(r)?;
         let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
         let (r, _) = ws(r)?;
