@@ -1338,6 +1338,8 @@ impl Interpreter {
             || (!is_pseudo_method
                 && matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(&class_name.resolve(), method)))
             || (!is_pseudo_method
+                && matches!(&target, Value::Instance { class_name, .. } if self.has_public_accessor(&class_name.resolve(), method)))
+            || (!is_pseudo_method
                 && matches!(&target, Value::Package(class_name) if self.has_user_method(&class_name.resolve(), method)));
         let native_result = if bypass_native_fastpath {
             None
@@ -1353,6 +1355,7 @@ impl Interpreter {
             }
         };
         if method == "tail"
+            && !bypass_native_fastpath
             && !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply")
         {
             return self.dispatch_tail(target, &args);

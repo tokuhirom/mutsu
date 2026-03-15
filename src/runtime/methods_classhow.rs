@@ -1275,6 +1275,23 @@ impl Interpreter {
                 }
             }
         }
+        // Check for auto-generated attribute accessors (has $.x creates an accessor method).
+        if results.is_empty() {
+            let class_attrs = self.collect_class_attributes(&class_name);
+            for (attr_name, is_public, _, is_rw, ..) in &class_attrs {
+                if *is_public && attr_name == method_name {
+                    results.push(Value::Routine {
+                        package: Symbol::intern(&class_name),
+                        name: Symbol::intern(method_name),
+                        is_regex: false,
+                    });
+                    // Tag the routine with rw status if needed — currently Routine
+                    // doesn't carry rw info, but we at least return a truthy result.
+                    let _ = is_rw; // suppress unused warning
+                    break;
+                }
+            }
+        }
         // Also check for native/builtin methods if no user-defined methods found.
         // For built-in types, probe the native method dispatch to see if the method exists.
         if results.is_empty() {
