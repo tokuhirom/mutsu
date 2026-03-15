@@ -3,8 +3,25 @@ use unicode_normalization::UnicodeNormalization;
 
 /// Skip whitespace, line comments (`#` to end of line), and Pod blocks.
 pub(super) fn ws(input: &str) -> PResult<'_, ()> {
+    ws_inner_with_bol(input, false)
+}
+
+/// Like `ws()`, but assumes the input starts at the beginning of a line.
+/// Use this in contexts where we know we are at a line start (e.g. the top
+/// of `stmt_list`, after consuming a semicolon or closing brace).
+pub(super) fn ws_bol(input: &str) -> PResult<'_, ()> {
+    ws_inner_with_bol(input, true)
+}
+
+fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
     let mut rest = input;
-    let mut at_line_start = true; // conservatively true for start of input
+    // Pod directives (`=word ...`) are only valid at the start of a line.
+    // Default to false so that `ws()` called right after a token in the
+    // middle of a line (e.g. `my $x=map ...`) does not accidentally consume
+    // `=map` as a Pod block.  The flag becomes true once we consume
+    // whitespace that contains a newline, or when the caller explicitly
+    // indicates we are at a line start via `ws_bol`.
+    let mut at_line_start = bol;
     loop {
         // Try whitespace
         let (r, matched) = take_while_opt(rest, |c| c.is_whitespace());
@@ -130,9 +147,6 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
     } else {
         return Err(PError::expected("pod directive"));
     }
-
-    // In Raku, any =word at the start of a line is a Pod directive.
-    // We handle "begin" specially (paired with =end), all others skip to end of paragraph.
 
     if keyword == "begin" {
         // =begin IDENTIFIER ... =end IDENTIFIER
@@ -453,29 +467,37 @@ mod tests {
     #[test]
     fn test_pod_begin_end() {
         let input = "=begin pod\nsome docs\n=end pod\ncode";
-        let (rest, _) = ws(input).unwrap();
+        let (rest, _) = ws_bol(input).unwrap();
         assert_eq!(rest, "code");
     }
 
     #[test]
     fn test_pod_begin_end_ignores_inner_end_with_different_target() {
         let input = "=begin pod\n=begin item\nfoo\n=end item\nbar\n=end pod\ncode";
-        let (rest, _) = ws(input).unwrap();
+        let (rest, _) = ws_bol(input).unwrap();
         assert_eq!(rest, "code");
     }
 
     #[test]
     fn test_pod_begin_end_supports_nested_same_target() {
         let input = "=begin pod\n=begin pod\ninner\n=end pod\nouter\n=end pod\ncode";
-        let (rest, _) = ws(input).unwrap();
+        let (rest, _) = ws_bol(input).unwrap();
         assert_eq!(rest, "code");
     }
 
     #[test]
     fn test_pod_for() {
         let input = "=for comment\nsome comment\n\ncode";
-        let (rest, _) = ws(input).unwrap();
+        let (rest, _) = ws_bol(input).unwrap();
         assert_eq!(rest, "code");
+    }
+
+    #[test]
+    fn test_ws_does_not_consume_eq_as_pod() {
+        // `=map` after a variable name must NOT be consumed as a Pod block
+        let input = "=map 42";
+        let (rest, _) = ws(input).unwrap();
+        assert_eq!(rest, "=map 42");
     }
 
     #[test]
