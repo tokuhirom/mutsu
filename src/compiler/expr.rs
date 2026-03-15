@@ -716,12 +716,15 @@ impl Compiler {
                     };
                     self.compile_expr(&method_call);
                 }
-                // Rewrite push(@arr, val...)/unshift(@arr, val...)/append/prepend → @arr.push(val...)
-                else if matches!(
-                    name.resolve().as_str(),
-                    "push" | "unshift" | "append" | "prepend" | "splice"
-                ) && args.len() >= 2
+                // Rewrite push(@arr, val...)/unshift(@arr, val...)/append/prepend/splice → @arr.method(val...)
+                // splice needs only 1 arg (the array); others need at least 2
+                else if !args.is_empty()
                     && matches!(args[0], Expr::ArrayVar(_) | Expr::Var(_))
+                    && (matches!(
+                        name.resolve().as_str(),
+                        "push" | "unshift" | "append" | "prepend"
+                    ) && args.len() >= 2
+                        || name.resolve().as_str() == "splice")
                 {
                     let method_call = Expr::MethodCall {
                         target: Box::new(args[0].clone()),

@@ -1244,46 +1244,90 @@ impl Interpreter {
                     return Ok(out);
                 }
                 "splice" => {
+                    // Resolve a splice position argument to a usize.
+                    // Whatever => array length, Callable => call with length, etc.
+                    fn resolve_splice_pos(v: &Value, len: usize) -> Option<usize> {
+                        match v {
+                            Value::Int(i) => Some((*i).max(0) as usize),
+                            Value::Whatever => Some(len),
+                            Value::Str(s) => s.parse::<i64>().ok().map(|i| i.max(0) as usize),
+                            Value::Num(n) => Some((*n as i64).max(0) as usize),
+                            _ => None,
+                        }
+                    }
                     fn do_splice(items: &mut Vec<Value>, args: &[Value]) -> Vec<Value> {
+                        let len = items.len();
                         let start = args
                             .first()
-                            .and_then(|v| match v {
-                                Value::Int(i) => Some((*i).max(0) as usize),
-                                _ => None,
-                            })
+                            .and_then(|v| resolve_splice_pos(v, len))
                             .unwrap_or(0)
-                            .min(items.len());
+                            .min(len);
                         let count = args
                             .get(1)
-                            .and_then(|v| match v {
-                                Value::Int(i) => Some((*i).max(0) as usize),
-                                _ => None,
-                            })
-                            .unwrap_or(items.len().saturating_sub(start));
-                        let end = (start + count).min(items.len());
+                            .and_then(|v| resolve_splice_pos(v, len))
+                            .unwrap_or(len.saturating_sub(start));
+                        let end = (start + count).min(len);
                         let removed: Vec<Value> = items.drain(start..end).collect();
-                        if let Some(new_val) = args.get(2) {
-                            match new_val {
-                                Value::Array(new_items, ..) => {
-                                    for (i, item) in new_items.iter().enumerate() {
-                                        items.insert(start + i, item.clone());
-                                    }
+                        // Collect all replacement values from args[2..]
+                        let mut new_items: Vec<Value> = Vec::new();
+                        for arg in args.iter().skip(2) {
+                            match arg {
+                                Value::Array(arr, ..) => {
+                                    new_items.extend(arr.iter().cloned());
                                 }
-                                other => items.insert(start, other.clone()),
+                                other => new_items.push(other.clone()),
                             }
+                        }
+                        for (i, item) in new_items.into_iter().enumerate() {
+                            items.insert(start + i, item);
                         }
                         removed
                     }
+                    // Pre-resolve callable arguments (WhateverCode like *-3)
+                    // before borrowing the array mutably.
+                    let arr_len = match self.env.get(&key) {
+                        Some(Value::Array(v, ..)) => v.len(),
+                        _ => match &target {
+                            Value::Array(v, ..) => v.len(),
+                            _ => 0,
+                        },
+                    };
+                    let mut resolved_args = args.clone();
+                    // Resolve callable for offset (arg 0) with array length
+                    if let Some(arg @ (Value::Sub(..) | Value::WeakSub(..))) = args.first()
+                        && let Ok(result) =
+                            self.call_sub_value(arg.clone(), vec![Value::Int(arr_len as i64)], true)
+                    {
+                        resolved_args[0] = result;
+                    }
+                    // Resolve callable for count (arg 1) with (array_len - offset)
+                    if let Some(arg @ (Value::Sub(..) | Value::WeakSub(..))) = args.get(1) {
+                        let resolved_start = resolved_args
+                            .first()
+                            .and_then(|v| match v {
+                                Value::Int(i) => Some((*i).max(0) as usize),
+                                Value::Whatever => Some(arr_len),
+                                _ => None,
+                            })
+                            .unwrap_or(0)
+                            .min(arr_len);
+                        let remaining = arr_len.saturating_sub(resolved_start) as i64;
+                        if let Ok(result) =
+                            self.call_sub_value(arg.clone(), vec![Value::Int(remaining)], true)
+                        {
+                            resolved_args[1] = result;
+                        }
+                    }
                     if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);
-                        let removed = do_splice(items, &args);
+                        let removed = do_splice(items, &resolved_args);
                         return Ok(Value::real_array(removed));
                     }
                     let mut items = match target {
                         Value::Array(v, ..) => v.to_vec(),
                         _ => Vec::new(),
                     };
-                    let removed = do_splice(&mut items, &args);
+                    let removed = do_splice(&mut items, &resolved_args);
                     self.env.insert(key, Value::real_array(items));
                     return Ok(Value::real_array(removed));
                 }
