@@ -285,7 +285,7 @@ impl Value {
             }
             Value::RangeExclStart(a, b) => {
                 if b.saturating_sub(*a) > 1_000_000 || *b == i64::MAX || *a == i64::MIN {
-                    format!("^{}..{}", a, b)
+                    format!("{}^..{}", a, b)
                 } else {
                     (*a + 1..=*b)
                         .map(|i| i.to_string())
@@ -295,7 +295,7 @@ impl Value {
             }
             Value::RangeExclBoth(a, b) => {
                 if b.saturating_sub(*a) > 1_000_000 || *b == i64::MAX || *a == i64::MIN {
-                    format!("^{}..^{}", a, b)
+                    format!("{}^..^{}", a, b)
                 } else {
                     (*a + 1..*b)
                         .map(|i| i.to_string())
@@ -328,13 +328,13 @@ impl Value {
                             .join(" ");
                     }
                 }
-                let prefix = if *excl_start { "^" } else { "" };
-                let sep = if *excl_end { "..^" } else { ".." };
+                let start_sep = if *excl_start { "^.." } else { ".." };
+                let end_sep = if *excl_end { "^" } else { "" };
                 format!(
                     "{}{}{}{}",
-                    prefix,
                     start.to_string_value(),
-                    sep,
+                    start_sep,
+                    end_sep,
                     end.to_string_value()
                 )
             }
