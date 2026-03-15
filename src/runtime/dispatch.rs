@@ -566,22 +566,33 @@ impl Interpreter {
             .push((def.package.resolve(), def.name.resolve()));
         let result = self.eval_block_value(&def.body);
         self.routine_stack.pop();
+        let rendered = match result {
+            Ok(Value::Regex(pat)) => self
+                .instantiate_named_regex_arg_calls(&self.interpolate_bound_regex_scalars(&pat))
+                .map(Some),
+            Ok(Value::Str(s)) => self
+                .instantiate_named_regex_arg_calls(&self.interpolate_bound_regex_scalars(&s))
+                .map(Some),
+            Ok(Value::Nil) => Ok(None),
+            Ok(other) => Ok(Some(other.to_string_value())),
+            Err(e) if e.return_value.is_some() => match e.return_value.unwrap() {
+                Value::Regex(pat) => self
+                    .instantiate_named_regex_arg_calls(&self.interpolate_bound_regex_scalars(&pat))
+                    .map(Some),
+                Value::Str(s) => self
+                    .instantiate_named_regex_arg_calls(&self.interpolate_bound_regex_scalars(&s))
+                    .map(Some),
+                Value::Nil => Ok(None),
+                other => Ok(Some(other.to_string_value())),
+            },
+            Err(e) => Err(e),
+        };
         let mut restored_env = saved_env;
         self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
         self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
         self.env = restored_env;
         self.restore_readonly_vars(saved_readonly);
-        let value = match result {
-            Ok(v) => v,
-            Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
-            Err(e) => return Err(e),
-        };
-        match value {
-            Value::Regex(pat) => Ok(Some(pat.to_string())),
-            Value::Str(s) => Ok(Some(s.to_string())),
-            Value::Nil => Ok(None),
-            other => Ok(Some(other.to_string_value())),
-        }
+        rendered
     }
 
     pub(crate) fn has_proto(&self, name: &str) -> bool {

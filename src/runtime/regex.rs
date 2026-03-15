@@ -431,7 +431,21 @@ impl Interpreter {
         expr_src: &str,
         caps: &RegexCaptures,
     ) -> Option<Value> {
-        let source = format!("my $x = ({expr_src}); $x");
+        let trimmed = expr_src.trim();
+        if let Some(name) = trimmed.strip_prefix('$')
+            && !name.is_empty()
+            && name
+                .chars()
+                .all(|ch| ch.is_alphanumeric() || ch == '_' || ch == '-')
+        {
+            let env = self.make_regex_eval_env(caps);
+            return env
+                .get(name)
+                .cloned()
+                .or_else(|| env.get(trimmed).cloned())
+                .or(Some(Value::Nil));
+        }
+        let source = format!("({expr_src});");
         let (stmts, _) = crate::parse_dispatch::parse_source(&source).ok()?;
         let mut interp = Interpreter {
             env: self.make_regex_eval_env(caps),
@@ -538,7 +552,8 @@ impl Interpreter {
                         Value::Nil => String::new(),
                         other => other.to_string_value(),
                     };
-                    if let Ok(instantiated) = interp.interpolate_regex_scalars(&pattern) {
+                    let pattern = interp.interpolate_bound_regex_scalars(&pattern);
+                    if let Ok(instantiated) = interp.instantiate_named_regex_arg_calls(&pattern) {
                         let sym_val = Self::extract_sym_adverb(&def.name.resolve());
                         out.push((instantiated, def.package.resolve(), sym_val));
                     }
@@ -547,6 +562,206 @@ impl Interpreter {
             interp.env = saved_env;
         }
         out
+    }
+
+    fn resolve_named_regex_candidates_in_pkg(
+        &self,
+        spec: &NamedRegexLookupSpec,
+        pkg: &str,
+        arg_values: &[Value],
+    ) -> Vec<(String, String, Option<String>)> {
+        if arg_values.is_empty() {
+            self.resolve_token_patterns_static_in_pkg(&spec.lookup_name, pkg)
+        } else {
+            self.resolve_token_patterns_with_args_in_pkg(&spec.lookup_name, pkg, arg_values)
+        }
+    }
+
+    fn format_named_regex_arg_value(value: &Value) -> String {
+        match value {
+            Value::Str(s) => {
+                let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+                format!("\"{escaped}\"")
+            }
+            Value::Bool(true) => "True".to_string(),
+            Value::Bool(false) => "False".to_string(),
+            Value::Nil => "Nil".to_string(),
+            _ => value.to_string_value(),
+        }
+    }
+
+    pub(super) fn interpolate_bound_regex_scalars(&self, pattern: &str) -> String {
+        let chars: Vec<char> = pattern.chars().collect();
+        let mut out = String::new();
+        let mut i = 0usize;
+        while i < chars.len() {
+            let ch = chars[i];
+            if ch == '{' {
+                let mut depth = 1usize;
+                out.push(ch);
+                i += 1;
+                while i < chars.len() && depth > 0 {
+                    let c = chars[i];
+                    if c == '{' {
+                        depth += 1;
+                    } else if c == '}' {
+                        depth -= 1;
+                    }
+                    out.push(c);
+                    i += 1;
+                }
+                continue;
+            }
+            if ch == '<' {
+                let mut depth = 1usize;
+                out.push(ch);
+                i += 1;
+                while i < chars.len() && depth > 0 {
+                    let c = chars[i];
+                    if c == '<' {
+                        depth += 1;
+                    } else if c == '>' {
+                        depth -= 1;
+                    }
+                    out.push(c);
+                    i += 1;
+                }
+                continue;
+            }
+            if ch == '\\' {
+                out.push(ch);
+                i += 1;
+                if i < chars.len() {
+                    out.push(chars[i]);
+                    i += 1;
+                }
+                continue;
+            }
+            if ch == '$' {
+                let start = i;
+                let mut j = i + 1;
+                let parsed = if j < chars.len() && chars[j] == '{' {
+                    j += 1;
+                    let name_start = j;
+                    while j < chars.len() && chars[j] != '}' {
+                        j += 1;
+                    }
+                    if j < chars.len() && j > name_start {
+                        let name: String = chars[name_start..j].iter().collect();
+                        j += 1;
+                        Some((name, j))
+                    } else {
+                        None
+                    }
+                } else if j < chars.len() && (chars[j].is_alphabetic() || chars[j] == '_') {
+                    let name_start = j;
+                    while j < chars.len()
+                        && (chars[j].is_alphanumeric() || chars[j] == '_' || chars[j] == '-')
+                    {
+                        j += 1;
+                    }
+                    Some((chars[name_start..j].iter().collect::<String>(), j))
+                } else {
+                    None
+                };
+                if let Some((name, end)) = parsed {
+                    if let Some(value) = self
+                        .env
+                        .get(&name)
+                        .cloned()
+                        .or_else(|| self.env.get(&format!("${name}")).cloned())
+                    {
+                        match value {
+                            Value::Regex(pat) => out.push_str(&pat),
+                            other => {
+                                out.push_str(&Self::regex_escape_literal(&other.to_string_value()))
+                            }
+                        }
+                    } else {
+                        out.extend(chars[start..end].iter());
+                    }
+                    i = end;
+                    continue;
+                }
+            }
+            out.push(ch);
+            i += 1;
+        }
+        out
+    }
+
+    pub(super) fn instantiate_named_regex_arg_calls(
+        &self,
+        pattern: &str,
+    ) -> Result<String, RuntimeError> {
+        let chars: Vec<char> = pattern.chars().collect();
+        let mut out = String::new();
+        let default_caps = RegexCaptures::default();
+        let mut i = 0usize;
+        while i < chars.len() {
+            if chars[i] != '<' {
+                out.push(chars[i]);
+                i += 1;
+                continue;
+            }
+
+            let mut depth = 1usize;
+            let start = i + 1;
+            i += 1;
+            while i < chars.len() && depth > 0 {
+                match chars[i] {
+                    '<' => depth += 1,
+                    '>' => depth -= 1,
+                    _ => {}
+                }
+                i += 1;
+            }
+            if depth != 0 {
+                out.push('<');
+                out.extend(chars[start..].iter());
+                break;
+            }
+
+            let inner_end = i - 1;
+            let inner: String = chars[start..inner_end].iter().collect();
+            let spec = Self::parse_named_regex_lookup_spec(&inner);
+            if spec.arg_exprs.is_empty() {
+                out.push('<');
+                out.push_str(&inner);
+                out.push('>');
+                continue;
+            }
+
+            let Some(open_idx) = inner.find('(') else {
+                out.push('<');
+                out.push_str(&inner);
+                out.push('>');
+                continue;
+            };
+            let Some(close_idx) = inner.rfind(')') else {
+                out.push('<');
+                out.push_str(&inner);
+                out.push('>');
+                continue;
+            };
+
+            let mut rendered_args = Vec::new();
+            for arg in &spec.arg_exprs {
+                let Some(value) = self.eval_regex_expr_value(arg, &default_caps) else {
+                    return Err(RuntimeError::new(format!(
+                        "Failed to evaluate regex argument expression: {arg}"
+                    )));
+                };
+                rendered_args.push(Self::format_named_regex_arg_value(&value));
+            }
+
+            out.push('<');
+            out.push_str(&inner[..open_idx + 1]);
+            out.push_str(&rendered_args.join(", "));
+            out.push_str(&inner[close_idx..]);
+            out.push('>');
+        }
+        Ok(out)
     }
 
     fn restore_env_entries(&mut self, restore: HashMap<String, Option<Value>>) {
@@ -808,9 +1023,21 @@ impl Interpreter {
     ) -> Option<RegexCaptures> {
         if let Some(raw_name) = Self::parse_anchored_single_subrule(pattern) {
             let spec = Self::parse_named_regex_lookup_spec(&raw_name);
-            let candidates = self.resolve_token_patterns_static_in_pkg(
-                &spec.lookup_name,
+            let arg_values = if spec.arg_exprs.is_empty() {
+                Vec::new()
+            } else {
+                let default_caps = RegexCaptures::default();
+                let mut values = Vec::new();
+                for arg in &spec.arg_exprs {
+                    let v = self.eval_regex_expr_value(arg, &default_caps)?;
+                    values.push(v);
+                }
+                values
+            };
+            let candidates = self.resolve_named_regex_candidates_in_pkg(
+                &spec,
                 &self.current_package.clone(),
+                &arg_values,
             );
             // Use LTM: compute declarative prefix match length for each candidate
             let filtered: Vec<(String, String, Option<String>)> = candidates
@@ -1681,11 +1908,7 @@ impl Interpreter {
                 }
                 values
             };
-            let candidates = if spec.token_lookup && !arg_values.is_empty() {
-                self.resolve_token_patterns_with_args_in_pkg(&spec.lookup_name, pkg, &arg_values)
-            } else {
-                self.resolve_token_patterns_static_in_pkg(&spec.lookup_name, pkg)
-            };
+            let candidates = self.resolve_named_regex_candidates_in_pkg(&spec, pkg, &arg_values);
             if !candidates.is_empty() {
                 let tail: Vec<char> = chars[pos..].to_vec();
                 let mut out = Vec::new();
@@ -2036,11 +2259,7 @@ impl Interpreter {
                 }
                 values
             };
-            let candidates = if spec.token_lookup && !arg_values.is_empty() {
-                self.resolve_token_patterns_with_args_in_pkg(&spec.lookup_name, pkg, &arg_values)
-            } else {
-                self.resolve_token_patterns_static_in_pkg(&spec.lookup_name, pkg)
-            };
+            let candidates = self.resolve_named_regex_candidates_in_pkg(&spec, pkg, &arg_values);
             if !candidates.is_empty() {
                 let remaining: String = chars[pos..].iter().collect();
                 let mut best_len: Option<usize> = None;
@@ -2099,7 +2318,7 @@ impl Interpreter {
             }
             RegexAtom::Named(name) => {
                 let spec = Self::parse_named_regex_lookup_spec(name);
-                if spec.token_lookup {
+                if spec.token_lookup || !spec.arg_exprs.is_empty() {
                     return None;
                 }
                 let literal = spec.lookup_name;
@@ -2469,11 +2688,7 @@ impl Interpreter {
                 }
                 values
             };
-            let candidates = if spec.token_lookup && !arg_values.is_empty() {
-                self.resolve_token_patterns_with_args_in_pkg(&spec.lookup_name, pkg, &arg_values)
-            } else {
-                self.resolve_token_patterns_static_in_pkg(&spec.lookup_name, pkg)
-            };
+            let candidates = self.resolve_named_regex_candidates_in_pkg(&spec, pkg, &arg_values);
             if !candidates.is_empty() {
                 let tail: Vec<char> = chars[pos..].to_vec();
                 let mut best: Option<(usize, RegexCaptures)> = None;
