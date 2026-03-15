@@ -1543,6 +1543,8 @@ impl Interpreter {
                     | "lookup"
                     | "find_method"
                     | "add_method"
+                    | "add_multi_method"
+                    | "compose"
                     | "archetypes"
                     | "name"
                     | "ver"

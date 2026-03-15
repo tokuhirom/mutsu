@@ -63,6 +63,8 @@ impl Interpreter {
                 | "lookup"
                 | "find_method"
                 | "add_method"
+                | "add_multi_method"
+                | "compose"
                 | "methods"
                 | "attributes"
                 | "parents"
@@ -403,6 +405,57 @@ impl Interpreter {
                     "Unknown class for add_method: {}",
                     class_name
                 )))
+            }
+            "add_multi_method" if args.len() >= 3 => {
+                // Same as add_method but marks the method as multi
+                let class_name = match &args[0] {
+                    Value::Package(name) => name.resolve(),
+                    Value::Str(name) => name.to_string(),
+                    _ => {
+                        return Err(RuntimeError::new(
+                            "add_multi_method target must be a type object",
+                        ));
+                    }
+                };
+                let method_name = args[1].to_string_value();
+                let method_value = args[2].clone();
+                let Value::Sub(sub_data) = method_value else {
+                    return Ok(Value::Nil);
+                };
+                let def = MethodDef {
+                    params: sub_data.params.clone(),
+                    param_defs: sub_data.param_defs.clone(),
+                    body: sub_data.body.clone(),
+                    is_rw: sub_data.is_rw,
+                    is_private: false,
+                    is_multi: true,
+                    is_my: false,
+                    role_origin: None,
+                    return_type: None,
+                    compiled_code: None,
+                };
+                if let Some(class_def) = self.classes.get_mut(&class_name) {
+                    class_def.methods.entry(method_name).or_default().push(def);
+                    return Ok(Value::Nil);
+                }
+                Err(RuntimeError::new(format!(
+                    "Unknown class for add_multi_method: {}",
+                    class_name
+                )))
+            }
+            "compose" if !args.is_empty() => {
+                // ^compose recomposes the class (e.g. after add_method)
+                // Rebuild the MRO for the class
+                let class_name = match &args[0] {
+                    Value::Package(name) => name.resolve(),
+                    Value::Str(name) => name.to_string(),
+                    _ => return Ok(Value::Nil),
+                };
+                let mro = self.class_mro(&class_name);
+                if let Some(class_def) = self.classes.get_mut(&class_name) {
+                    class_def.mro = mro;
+                }
+                Ok(Value::Nil)
             }
             "methods" if !args.is_empty() => self.dispatch_classhow_methods(&args),
             "attributes" if !args.is_empty() => {
@@ -1324,6 +1377,10 @@ impl Interpreter {
     }
 
     fn collect_attribute_objects(&self, class_name: &str, local_only: bool) -> Vec<Value> {
+        // For Attribute itself, return BOOTSTRAPATTR instances for its well-known attributes
+        if class_name == "Attribute" && !self.classes.contains_key("Attribute") {
+            return Self::make_bootstrapattr_list();
+        }
         if local_only {
             if let Some(class_def) = self.classes.get(class_name) {
                 class_def
@@ -1360,15 +1417,78 @@ impl Interpreter {
         }
     }
 
+    /// Create a list of BOOTSTRAPATTR instances for the Attribute class's own attributes.
+    fn make_bootstrapattr_list() -> Vec<Value> {
+        // Raku's Attribute class has these well-known attributes (in order).
+        // We model a subset that matches what the roast tests check.
+        let bootstrapattrs: &[(&str, &str)] = &[
+            ("name", "str"),
+            ("type", "Mu"),
+            ("build", "Mu"),
+            ("package", "Mu"),
+            ("inlined", "int"),
+            ("has_accessor", "int"),
+            ("rw", "int"),
+            ("is_built", "int"),
+            ("is_bound", "int"),
+            ("required", "Mu"),
+            ("container_descriptor", "Mu"),
+            ("auto_viv_container", "Mu"),
+            ("positional_delegate", "int"),
+            ("associative_delegate", "int"),
+            ("why", "Mu"),
+            ("container_initializer", "Mu"),
+            ("original", "Mu"),
+            ("compose_order", "int"),
+            ("composed", "int"),
+            ("is_required", "int"),
+            ("dimensions", "Mu"),
+        ];
+        bootstrapattrs
+            .iter()
+            .map(|(attr_name, type_name)| {
+                let mut meta = HashMap::new();
+                meta.insert("name".to_string(), Value::str(format!("$!{}", attr_name)));
+                meta.insert(
+                    "type".to_string(),
+                    Value::Package(Symbol::intern(type_name)),
+                );
+                meta.insert(
+                    "__mutsu_attr_name".to_string(),
+                    Value::str(attr_name.to_string()),
+                );
+                meta.insert("__mutsu_is_bootstrapattr".to_string(), Value::Bool(true));
+                Value::make_instance(Symbol::intern("Attribute"), meta)
+            })
+            .collect()
+    }
+
     fn make_attribute_object(&self, attr: &super::ClassAttributeDef, owner: &str) -> Value {
         let (ref attr_name, is_public, ref default, is_rw, _, sigil, _) = *attr;
         let full_name = format!("{}!{}", sigil, attr_name);
-        let type_name = self
+        let raw_type_name = self
             .classes
             .get(owner)
             .and_then(|cd| cd.attribute_types.get(attr_name))
-            .cloned()
-            .unwrap_or_else(|| "Mu".to_string());
+            .cloned();
+        // For @ sigil, the exposed type is Positional[T]; for % it is Associative[T]
+        let type_name = match sigil {
+            '@' => {
+                if let Some(ref inner) = raw_type_name {
+                    format!("Positional[{}]", inner)
+                } else {
+                    "Positional".to_string()
+                }
+            }
+            '%' => {
+                if let Some(ref inner) = raw_type_name {
+                    format!("Associative[{}]", inner)
+                } else {
+                    "Associative".to_string()
+                }
+            }
+            _ => raw_type_name.unwrap_or_else(|| "Mu".to_string()),
+        };
         let mut meta = HashMap::new();
         meta.insert("name".to_string(), Value::str(full_name));
         meta.insert(
@@ -1392,7 +1512,26 @@ impl Interpreter {
             if let crate::ast::Expr::Literal(v) = default_expr {
                 meta.insert("build".to_string(), v.clone());
             } else {
-                meta.insert("__mutsu_build_is_code".to_string(), Value::Bool(true));
+                // Wrap the default expression in a Sub closure so .build returns Code
+                let sub_data = crate::value::SubData {
+                    package: Symbol::intern("GLOBAL"),
+                    name: Symbol::intern("<attribute-build>"),
+                    params: Vec::new(),
+                    param_defs: Vec::new(),
+                    body: vec![crate::ast::Stmt::Expr(default_expr.clone())],
+                    is_rw: false,
+                    is_raw: false,
+                    env: self.env().clone(),
+                    assumed_positional: Vec::new(),
+                    assumed_named: HashMap::new(),
+                    id: crate::value::next_instance_id(),
+                    empty_sig: false,
+                    compiled_code: None,
+                };
+                meta.insert(
+                    "build".to_string(),
+                    Value::Sub(std::sync::Arc::new(sub_data)),
+                );
             }
         }
         Value::make_instance(Symbol::intern("Attribute"), meta)

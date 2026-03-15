@@ -275,18 +275,24 @@ impl Interpreter {
                                 "Attribute.set_value needs an object and a value",
                             ));
                         }
-                        let mut obj = args[0].clone();
                         let new_val = args[1].clone();
                         let attr_name = attributes
                             .get("__mutsu_attr_name")
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
                         if let Value::Instance {
-                            attributes: ref mut obj_attrs,
-                            ..
-                        } = obj
+                            class_name: obj_class,
+                            attributes: obj_attrs,
+                            id: obj_id,
+                        } = &args[0]
                         {
-                            std::sync::Arc::make_mut(obj_attrs).insert(attr_name, new_val);
+                            let mut updated = (**obj_attrs).clone();
+                            updated.insert(attr_name, new_val);
+                            self.overwrite_instance_bindings_by_identity(
+                                &obj_class.resolve(),
+                                *obj_id,
+                                updated,
+                            );
                         }
                         return Ok(Value::Nil);
                     }
@@ -308,6 +314,12 @@ impl Interpreter {
                         return Ok(Value::str(name));
                     }
                     "raku" => {
+                        let is_bootstrap = attributes
+                            .get("__mutsu_is_bootstrapattr")
+                            .is_some_and(|v| v.truthy());
+                        if is_bootstrap {
+                            return Ok(Value::str("BOOTSTRAPATTR.new".to_string()));
+                        }
                         return Ok(Value::str("Attribute.new".to_string()));
                     }
                     "package" => {
@@ -316,6 +328,19 @@ impl Interpreter {
                             .map(|v| v.to_string_value())
                             .unwrap_or_else(|| "Any".to_string());
                         return Ok(Value::Package(crate::symbol::Symbol::intern(&owner)));
+                    }
+                    "container" => {
+                        // TODO: Return the actual container descriptor
+                        // For now, return a basic array/hash container or Nil
+                        let sigil = attributes
+                            .get("sigil")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_else(|| "$".to_string());
+                        return match sigil.as_str() {
+                            "@" => Ok(Value::array(Vec::new())),
+                            "%" => Ok(Value::hash(std::collections::HashMap::new())),
+                            _ => Ok(Value::Nil),
+                        };
                     }
                     _ => {}
                 }
