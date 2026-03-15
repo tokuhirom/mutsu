@@ -407,6 +407,13 @@ impl VM {
                 result.push_str(&str_result.to_string_value());
                 continue;
             }
+            // Force LazyList before stringification
+            if let Value::LazyList(ref ll) = v {
+                let items = self.interpreter.force_lazy_list_bridge(ll)?;
+                let seq = Value::Seq(std::sync::Arc::new(items));
+                result.push_str(&crate::runtime::utils::coerce_to_str(&seq));
+                continue;
+            }
             result.push_str(&crate::runtime::utils::coerce_to_str(&v));
         }
         self.stack.push(Value::str(result));

@@ -444,6 +444,65 @@ pub(crate) fn native_method_0arg(
     let method = method_sym.resolve();
     let method = method.as_str();
 
+    // LazyList needs interpreter access to force; defer to the slow path for methods
+    // that require element access, stringification, or other forcing.
+    if matches!(target, Value::LazyList(_))
+        && matches!(
+            method,
+            "list"
+                | "Array"
+                | "Numeric"
+                | "Int"
+                | "elems"
+                | "hyper"
+                | "race"
+                | "first"
+                | "grep"
+                | "map"
+                | "sort"
+                | "reverse"
+                | "join"
+                | "head"
+                | "tail"
+                | "min"
+                | "max"
+                | "minmax"
+                | "sum"
+                | "flat"
+                | "unique"
+                | "squish"
+                | "classify"
+                | "categorize"
+                | "produce"
+                | "rotor"
+                | "batch"
+                | "reduce"
+                | "combinations"
+                | "permutations"
+                | "Str"
+                | "gist"
+                | "raku"
+                | "perl"
+                | "values"
+                | "keys"
+                | "kv"
+                | "pairs"
+                | "antipairs"
+                | "Seq"
+                | "List"
+                | "Bool"
+                | "so"
+                | "not"
+                | "pick"
+                | "roll"
+                | "eager"
+                | "cache"
+                | "Slip"
+        )
+    {
+        return None;
+    }
+
     // Scalar containers are transparent for method dispatch.
     if let Value::Scalar(inner) = target {
         return native_method_0arg(inner, method_sym);
