@@ -125,6 +125,14 @@ impl Interpreter {
                 );
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
+            "native-descriptor" => Ok(attributes
+                .get("native_descriptor_promise")
+                .cloned()
+                .unwrap_or_else(|| {
+                    let promise = SharedPromise::new();
+                    promise.keep(Value::Int(1), String::new(), String::new());
+                    Value::Promise(promise)
+                })),
             "tail" => {
                 let values = match attributes.get("values") {
                     Some(Value::Array(items, ..)) => items.to_vec(),

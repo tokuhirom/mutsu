@@ -1,6 +1,7 @@
 use super::native_methods::*;
 use super::*;
 use crate::symbol::Symbol;
+use std::io::{Read, Write};
 use std::sync::mpsc;
 
 impl Interpreter {
@@ -87,13 +88,27 @@ impl Interpreter {
 
                 // Check if :w flag is set (stdin should be piped)
                 let w_flag = attrs.get("w").map(|v| v.truthy()).unwrap_or(false);
+                let bound_stdin = attrs.get("stdin_bind").cloned();
+                let bound_stdout = attrs.get("stdout_bind").cloned();
+                let bound_stderr = attrs.get("stderr_bind").cloned();
+                let stdin_bytes = match bound_stdin.as_ref() {
+                    Some(value) => self.proc_async_bound_handle_bytes(value)?,
+                    None => None,
+                };
+                let stdin_supply_id = bound_stdin
+                    .as_ref()
+                    .and_then(Self::proc_async_supply_id_from_value);
+                let mut bound_stdout_file =
+                    self.proc_async_bound_output_file(bound_stdout.as_ref())?;
+                let mut bound_stderr_file =
+                    self.proc_async_bound_output_file(bound_stderr.as_ref())?;
 
                 // Spawn child process synchronously so we get the PID immediately
                 let mut cmd = Command::new(&program);
                 cmd.args(&cmd_args)
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped());
-                if w_flag {
+                if w_flag || bound_stdin.is_some() {
                     cmd.stdin(Stdio::piped());
                 }
 
@@ -143,6 +158,25 @@ impl Interpreter {
                 let pid = child.id();
                 attrs.insert("pid".to_string(), Value::Int(pid as i64));
 
+                if let Some(Value::Instance {
+                    attributes: stdout_attrs,
+                    ..
+                }) = attrs.get("stdout")
+                    && let Some(Value::Promise(promise)) =
+                        stdout_attrs.get("native_descriptor_promise")
+                {
+                    promise.try_keep(Value::Int(1)).ok();
+                }
+                if let Some(Value::Instance {
+                    attributes: stderr_attrs,
+                    ..
+                }) = attrs.get("stderr")
+                    && let Some(Value::Promise(promise)) =
+                        stderr_attrs.get("native_descriptor_promise")
+                {
+                    promise.try_keep(Value::Int(2)).ok();
+                }
+
                 // Resolve ready promise if set
                 if let Some(Value::Promise(ready)) = attrs.get("ready_promise") {
                     ready.try_keep(Value::Int(pid as i64)).ok();
@@ -151,8 +185,60 @@ impl Interpreter {
                 // Store stdin in global registry if piped
                 if let Some(stdin) = child.stdin.take() {
                     let stdin_arc = Arc::new(std::sync::Mutex::new(Some(stdin)));
-                    if let Ok(mut map) = proc_stdin_map().lock() {
-                        map.insert(pid, stdin_arc);
+                    if w_flag && let Ok(mut map) = proc_stdin_map().lock() {
+                        map.insert(pid, stdin_arc.clone());
+                    }
+                    if let Some(bytes) = stdin_bytes {
+                        let stdin_arc = stdin_arc.clone();
+                        std::thread::spawn(move || {
+                            if let Ok(mut guard) = stdin_arc.lock()
+                                && let Some(ref mut stdin) = *guard
+                            {
+                                let _ = stdin.write_all(&bytes);
+                                let _ = stdin.flush();
+                            }
+                            if let Ok(mut guard) = stdin_arc.lock() {
+                                *guard = None;
+                            }
+                        });
+                    } else if let Some(source_supply_id) = stdin_supply_id {
+                        let stdin_arc = stdin_arc.clone();
+                        std::thread::spawn(move || {
+                            if let Some(rx) = take_supply_channel(source_supply_id) {
+                                while let Ok(event) = rx.recv() {
+                                    match event {
+                                        SupplyEvent::Emit(value) => {
+                                            if let Ok(mut guard) = stdin_arc.lock()
+                                                && let Some(ref mut stdin) = *guard
+                                            {
+                                                let _ = stdin
+                                                    .write_all(value.to_string_value().as_bytes());
+                                                let _ = stdin.flush();
+                                            }
+                                        }
+                                        SupplyEvent::Done | SupplyEvent::Quit(_) => break,
+                                    }
+                                }
+                            } else {
+                                loop {
+                                    if let Some(collected) =
+                                        get_supply_collected_output(source_supply_id)
+                                    {
+                                        if let Ok(mut guard) = stdin_arc.lock()
+                                            && let Some(ref mut stdin) = *guard
+                                        {
+                                            let _ = stdin.write_all(collected.as_bytes());
+                                            let _ = stdin.flush();
+                                        }
+                                        break;
+                                    }
+                                    std::thread::sleep(std::time::Duration::from_millis(10));
+                                }
+                            }
+                            if let Ok(mut guard) = stdin_arc.lock() {
+                                *guard = None;
+                            }
+                        });
                     }
                 }
 
@@ -273,6 +359,14 @@ impl Interpreter {
                     // Clean up stdin registry
                     if let Ok(mut map) = proc_stdin_map().lock() {
                         map.remove(&pid);
+                    }
+                    if let Some(file) = bound_stdout_file.as_mut() {
+                        let _ = file.write_all(collected_stdout.as_bytes());
+                        let _ = file.flush();
+                    }
+                    if let Some(file) = bound_stderr_file.as_mut() {
+                        let _ = file.write_all(collected_stderr.as_bytes());
+                        let _ = file.flush();
                     }
                     if let Some(sid) = stdout_supply_id {
                         set_supply_collected_output(sid, collected_stdout.clone());
@@ -456,6 +550,37 @@ impl Interpreter {
                 }
                 Ok((Value::Bool(true), attrs))
             }
+            "bind-stdin" => {
+                if attrs.get("w").is_some_and(|v| v.truthy()) {
+                    return Err(proc_async_error(
+                        "X::Proc::Async::BindOrUse",
+                        &[("handle", Value::str_from("stdin"))],
+                    ));
+                }
+                let bound = args.first().cloned().unwrap_or(Value::Nil);
+                attrs.insert("stdin_bind".to_string(), bound);
+                Ok((Value::Nil, attrs))
+            }
+            "bind-stdout" | "bind-stderr" => {
+                let handle_name = if method == "bind-stdout" {
+                    "stdout"
+                } else {
+                    "stderr"
+                };
+                if attrs.get("supply_selected").is_some_and(|v| v.truthy())
+                    || attrs
+                        .get(&format!("{}_selected", handle_name))
+                        .is_some_and(|v| v.truthy())
+                {
+                    return Err(proc_async_error(
+                        "X::Proc::Async::BindOrUse",
+                        &[("handle", Value::str_from(handle_name))],
+                    ));
+                }
+                let bound = args.first().cloned().unwrap_or(Value::Nil);
+                attrs.insert(format!("{}_bind", handle_name), bound);
+                Ok((Value::Nil, attrs))
+            }
             "ready" => {
                 // If spawn failed, return a broken promise with the error
                 if let Some(err) = attrs.get("spawn_error").cloned() {
@@ -474,21 +599,53 @@ impl Interpreter {
                 Ok((Value::Promise(promise), attrs))
             }
             "stdout" | "stderr" => {
+                if attrs
+                    .get(&format!("{}_bind", method))
+                    .is_some_and(|v| !matches!(v, Value::Nil))
+                {
+                    return Err(proc_async_error(
+                        "X::Proc::Async::BindOrUse",
+                        &[("handle", Value::str_from(method))],
+                    ));
+                }
                 if attrs.get("supply_selected").is_some_and(|v| v.truthy()) {
                     return Err(proc_async_error("X::Proc::Async::SupplyOrStd", &[]));
+                }
+                let requested_bin = args.iter().any(
+                    |arg| matches!(arg, Value::Pair(key, value) if key == "bin" && value.truthy()),
+                );
+                let mode_key = format!("{}_mode", method);
+                if let Some(prev) = attrs.get(&mode_key).and_then(|v| match v {
+                    Value::Str(s) => Some(s.as_str()),
+                    _ => None,
+                }) {
+                    let requested = if requested_bin { "bin" } else { "text" };
+                    if prev != requested {
+                        return Err(proc_async_error(
+                            "X::Proc::Async::CharsOrBytes",
+                            &[("handle", Value::str_from(method))],
+                        ));
+                    }
                 }
                 if method == "stdout" {
                     attrs.insert("stdout_selected".to_string(), Value::Bool(true));
                 } else {
                     attrs.insert("stderr_selected".to_string(), Value::Bool(true));
                 }
+                attrs.insert(
+                    mode_key,
+                    Value::str_from(if requested_bin { "bin" } else { "text" }),
+                );
                 if attrs.get("started").is_some_and(|v| v.truthy()) {
                     return Err(proc_async_error(
                         "X::Proc::Async::TapBeforeSpawn",
                         &[("handle", Value::str_from(method))],
                     ));
                 }
-                if !args.is_empty() {
+                if args
+                    .iter()
+                    .any(|arg| !matches!(arg, Value::Pair(key, _) if key == "bin" || key == "enc"))
+                {
                     return Err(proc_async_error(
                         "X::Proc::Async::CharsOrBytes",
                         &[("handle", Value::str_from(method))],
@@ -498,6 +655,24 @@ impl Interpreter {
                 Ok((value, attrs))
             }
             "Supply" => {
+                if attrs
+                    .get("stdout_bind")
+                    .is_some_and(|v| !matches!(v, Value::Nil))
+                {
+                    return Err(proc_async_error(
+                        "X::Proc::Async::BindOrUse",
+                        &[("handle", Value::str_from("stdout"))],
+                    ));
+                }
+                if attrs
+                    .get("stderr_bind")
+                    .is_some_and(|v| !matches!(v, Value::Nil))
+                {
+                    return Err(proc_async_error(
+                        "X::Proc::Async::BindOrUse",
+                        &[("handle", Value::str_from("stderr"))],
+                    ));
+                }
                 if attrs.get("stdout_selected").is_some_and(|v| v.truthy())
                     || attrs.get("stderr_selected").is_some_and(|v| v.truthy())
                 {
@@ -557,5 +732,62 @@ impl Interpreter {
                 method
             ))),
         }
+    }
+}
+
+impl Interpreter {
+    fn proc_async_bound_handle_bytes(
+        &mut self,
+        value: &Value,
+    ) -> Result<Option<Vec<u8>>, RuntimeError> {
+        let Some(handle_id) = Self::handle_id_from_value(value) else {
+            return Ok(None);
+        };
+        let Some(state) = self.handles.get_mut(&handle_id) else {
+            return Err(RuntimeError::new("Invalid IO::Handle"));
+        };
+        let Some(file) = state.file.as_mut() else {
+            return Ok(None);
+        };
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)
+            .map_err(|err| RuntimeError::new(format!("Failed to read bound handle: {}", err)))?;
+        Ok(Some(bytes))
+    }
+
+    fn proc_async_bound_output_file(
+        &mut self,
+        value: Option<&Value>,
+    ) -> Result<Option<std::fs::File>, RuntimeError> {
+        let Some(value) = value else {
+            return Ok(None);
+        };
+        let Some(handle_id) = Self::handle_id_from_value(value) else {
+            return Ok(None);
+        };
+        let Some(state) = self.handles.get_mut(&handle_id) else {
+            return Err(RuntimeError::new("Invalid IO::Handle"));
+        };
+        let Some(file) = state.file.as_mut() else {
+            return Ok(None);
+        };
+        file.try_clone()
+            .map(Some)
+            .map_err(|err| RuntimeError::new(format!("Failed to clone bound handle: {}", err)))
+    }
+
+    fn proc_async_supply_id_from_value(value: &Value) -> Option<u64> {
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = value
+            && class_name == "Supply"
+            && let Some(Value::Int(sid)) = attributes.get("supply_id")
+            && *sid >= 0
+        {
+            return Some(*sid as u64);
+        }
+        None
     }
 }
