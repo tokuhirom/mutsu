@@ -344,6 +344,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 v if v.is_range() => {
                     Some(Ok(Value::array(crate::runtime::utils::value_to_list(v))))
                 }
+                Value::LazyList(_) => None, // fall through to runtime to force
                 other => Some(Ok(Value::array(crate::runtime::utils::value_to_list(
                     other,
                 )))),

@@ -613,7 +613,15 @@ impl Interpreter {
             "flat" => self.builtin_flat(&args),
             "slip" | "Slip" => self.builtin_slip(&args),
             "take" => {
-                let value = args.first().cloned().unwrap_or(Value::Nil);
+                let value = if args.len() <= 1 {
+                    args.first().cloned().unwrap_or(Value::Nil)
+                } else {
+                    // take with multiple args creates a single list element
+                    Value::Array(
+                        std::sync::Arc::new(args.clone()),
+                        crate::value::ArrayKind::List,
+                    )
+                };
                 self.take_value(value.clone())?;
                 Ok(value)
             }

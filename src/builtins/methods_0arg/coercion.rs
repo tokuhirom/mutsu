@@ -281,6 +281,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(Value::array((*a + 1..*b).map(Value::Int).collect())))
                 }
             }
+            Value::LazyList(_) => None, // fall through to runtime to force
             _ => Some(Ok(Value::array(vec![target.clone()]))),
         },
         "__mutsu_zen_angle" => match target {

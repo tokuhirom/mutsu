@@ -1376,6 +1376,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
         "Str" | "Stringy" => match target {
             Value::Package(_) | Value::Instance { .. } => None,
+            Value::LazyList(_) => None, // fall through to runtime to force the list
             Value::Str(s) if s.as_str() == "IO::Special" => Some(Ok(Value::str_from(""))),
             Value::Rat(_, 0) | Value::FatRat(_, 0) => {
                 // Zero-denominator Rat/FatRat .Str throws X::Numeric::DivideByZero
@@ -2013,6 +2014,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Some(Ok(Value::Seq(Arc::new(result))))
             }
             other if is_infinite_range(other) => Some(Ok(other.clone())),
+            Value::LazyList(_) => None, // fall through to runtime to force
             _ => {
                 let mut result = Vec::new();
                 flatten_deep_value(target, &mut result, false);
@@ -2372,6 +2374,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Some(Ok(Value::array(parts)))
         }
         "join" => {
+            if matches!(target, Value::LazyList(_)) {
+                return None; // fall through to runtime to force
+            }
             if let Some(items) = target.as_list_items() {
                 let joined = items
                     .iter()
@@ -2732,6 +2737,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     raku_value(target)
                 })))
             }
+            Value::LazyList(_) => None, // fall through to runtime to force
             _ => Some(Ok(Value::str(target.to_string_value()))),
         },
         "head" => match target {
@@ -3192,6 +3198,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         },
         "item" => match target {
             Value::Array(items, kind) => Some(Ok(Value::Array(items.clone(), kind.itemize()))),
+            Value::LazyList(_) => None, // fall through to runtime to force
             other => Some(Ok(Value::Scalar(Box::new(other.clone())))),
         },
         "race" | "hyper" => {
