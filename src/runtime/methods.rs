@@ -1802,10 +1802,16 @@ impl Interpreter {
                 return Ok(Value::Bool(true));
             }
             "shape" if args.is_empty() => {
-                if let Some(shape) = Self::infer_array_shape(&target) {
-                    return Ok(Value::array(
-                        shape.into_iter().map(|n| Value::Int(n as i64)).collect(),
-                    ));
+                if let Value::Array(_, kind) = &target {
+                    if *kind == crate::value::ArrayKind::Shaped
+                        && let Some(shape) = Self::infer_array_shape(&target)
+                    {
+                        return Ok(Value::array(
+                            shape.into_iter().map(|n| Value::Int(n as i64)).collect(),
+                        ));
+                    }
+                    // Unshaped arrays return (*,)
+                    return Ok(Value::array(vec![Value::Whatever]));
                 }
             }
             "default" if args.is_empty() => {

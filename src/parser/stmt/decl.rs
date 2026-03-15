@@ -1624,6 +1624,15 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
 
     let (rest, name) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
     let name = name.to_string();
+
+    // Optional shaped-array declaration suffix: has @.a[3, 3]
+    let (rest, shape_dims) = if sigil == b'@' && rest.starts_with('[') {
+        let (r, dims) = parse_array_shape_suffix(rest)?;
+        (r, Some(dims))
+    } else {
+        (rest, None)
+    };
+
     let (mut rest, _) = ws(rest)?;
 
     // `is` traits (may have multiple: `is rw is required`)
@@ -1817,17 +1826,24 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     } else {
         (rest, None)
     };
-    if sigil == b'@'
-        && let Some(expr) = default.take()
-    {
-        default = Some(match expr {
-            Expr::ArrayLiteral(_)
-            | Expr::BracketArray(_)
-            | Expr::ArrayVar(_)
-            | Expr::Var(_)
-            | Expr::Index { .. } => expr,
-            other => Expr::ArrayLiteral(vec![other]),
-        });
+    if sigil == b'@' {
+        if let Some(dims) = shape_dims {
+            // Shaped array attribute: has @.a[3, 3]
+            if let Some(data_expr) = default.take() {
+                default = Some(shaped_array_new_with_data_expr(dims, data_expr));
+            } else {
+                default = Some(shaped_array_new_expr(dims));
+            }
+        } else if let Some(expr) = default.take() {
+            default = Some(match expr {
+                Expr::ArrayLiteral(_)
+                | Expr::BracketArray(_)
+                | Expr::ArrayVar(_)
+                | Expr::Var(_)
+                | Expr::Index { .. } => expr,
+                other => Expr::ArrayLiteral(vec![other]),
+            });
+        }
     }
     let (rest, _) = ws(rest)?;
 
