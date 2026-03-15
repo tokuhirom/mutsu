@@ -179,21 +179,33 @@ pub(crate) fn native_method_1arg(
             super::decode_buf_method(target, Some(&encoding))
         }
         "Rat" => {
-            // .Rat(epsilon) — just ignore epsilon and convert like .Rat
+            // .Rat(epsilon) — use continued fraction algorithm with given epsilon
+            let epsilon = match arg {
+                Value::Num(f) => *f,
+                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                Value::Int(i) => *i as f64,
+                _ => 1e-6,
+            };
             let result = match target {
                 Value::Rat(_, _) => target.clone(),
                 Value::Int(i) => Value::Rat(*i, 1),
                 Value::Num(f) => {
-                    let denom = 1_000_000i64;
-                    let numer = (f * denom as f64).round() as i64;
-                    Value::Rat(numer, denom)
+                    if f.is_nan() {
+                        Value::Rat(0, 0)
+                    } else if f.is_infinite() {
+                        if f.is_sign_positive() {
+                            Value::Rat(1, 0)
+                        } else {
+                            Value::Rat(-1, 0)
+                        }
+                    } else {
+                        super::num_to_rat_with_epsilon(*f, epsilon)
+                    }
                 }
                 Value::FatRat(n, d) => Value::Rat(*n, *d),
                 Value::Str(s) => {
                     if let Ok(f) = s.parse::<f64>() {
-                        let denom = 1_000_000i64;
-                        let numer = (f * denom as f64).round() as i64;
-                        Value::Rat(numer, denom)
+                        super::num_to_rat_with_epsilon(f, epsilon)
                     } else {
                         Value::Rat(0, 1)
                     }

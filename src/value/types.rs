@@ -69,11 +69,12 @@ impl Value {
             // Cross-representation Int/BigInt: compare numerically
             (Value::Int(a), Value::BigInt(b)) => NumBigInt::from(*a) == **b,
             (Value::BigInt(a), Value::Int(b)) => **a == NumBigInt::from(*b),
+            // Rat/FatRat: structural equality (n == n, d == d), including NaN (0/0)
+            (Value::Rat(n1, d1), Value::Rat(n2, d2))
+            | (Value::FatRat(n1, d1), Value::FatRat(n2, d2)) => n1 == n2 && d1 == d2,
             (Value::Int(_), Value::Int(_))
             | (Value::Str(_), Value::Str(_))
             | (Value::Bool(_), Value::Bool(_))
-            | (Value::Rat(_, _), Value::Rat(_, _))
-            | (Value::FatRat(_, _), Value::FatRat(_, _))
             | (Value::BigRat(_, _), Value::BigRat(_, _))
             | (Value::Set(_), Value::Set(_))
             | (Value::Bag(_), Value::Bag(_))

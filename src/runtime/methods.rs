@@ -1313,6 +1313,57 @@ impl Interpreter {
             return result;
         }
 
+        // Complex→Num conversion needs $*TOLERANCE from dynamic scope
+        if method == "Num"
+            && args.is_empty()
+            && let Value::Complex(r, im) = &target
+        {
+            let tolerance = self
+                .get_dynamic_var("*TOLERANCE")
+                .ok()
+                .and_then(|v| match v {
+                    Value::Num(n) => Some(n),
+                    Value::Rat(n, d) if d != 0 => Some(n as f64 / d as f64),
+                    Value::Int(n) => Some(n as f64),
+                    _ => None,
+                })
+                .unwrap_or(1e-15);
+            if im.abs() > tolerance {
+                let msg = format!(
+                    "Cannot convert {}{}{}i to Num: imaginary part not zero",
+                    r,
+                    if *im >= 0.0 { "+" } else { "" },
+                    im
+                );
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("message".to_string(), Value::str(msg.clone()));
+                attrs.insert("target".to_string(), Value::str_from("Num"));
+                attrs.insert("source".to_string(), target.clone());
+                let ex = Value::make_instance(Symbol::intern("X::Numeric::Real"), attrs);
+                let mut err = RuntimeError::new(msg);
+                err.exception = Some(Box::new(ex));
+                return Err(err);
+            }
+            return Ok(Value::Num(*r));
+        }
+
+        // Zero-denominator Rat/FatRat .Str should throw X::Numeric::DivideByZero
+        if matches!(method, "Str" | "gist")
+            && args.is_empty()
+            && matches!(&target, Value::Rat(_, 0) | Value::FatRat(_, 0))
+        {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert(
+                "message".to_string(),
+                Value::str_from("Attempt to divide by zero when coercing Rational to Str"),
+            );
+            let ex = Value::make_instance(Symbol::intern("X::Numeric::DivideByZero"), attrs);
+            let mut err =
+                RuntimeError::new("Attempt to divide by zero when coercing Rational to Str");
+            err.exception = Some(Box::new(ex));
+            return Err(err);
+        }
+
         // Force LazyList and re-dispatch as Seq for methods that need element access.
         if let Value::LazyList(ll) = &target
             && matches!(
