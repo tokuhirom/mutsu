@@ -910,7 +910,10 @@ pub(super) fn capture_literal(input: &str) -> PResult<'_, Expr> {
     }
     let r = &input[1..]; // skip backslash
     if !r.starts_with('(') {
-        let (r, item) = super::super::expr::expression(r)?;
+        // `\` as a capture prefix binds tightly — only capture the next
+        // primary term (variable, literal, etc.), not a full expression.
+        // This ensures `\3 eqv \4` parses as `(\3) eqv (\4)`.
+        let (r, item) = super::primary(r)?;
         return Ok((r, Expr::CaptureLiteral(vec![item])));
     }
     // Parenthesized capture literal: \(a, b, :c)

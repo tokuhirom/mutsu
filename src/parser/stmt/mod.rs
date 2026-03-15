@@ -18,7 +18,7 @@ use crate::ast::Stmt;
 
 use super::helpers::{
     is_ident_char, is_raku_identifier_continue, is_raku_identifier_start,
-    normalize_raku_identifier, ws, ws1,
+    normalize_raku_identifier, ws, ws_bol, ws1,
 };
 
 // Re-export submodule items used across submodules
@@ -359,9 +359,9 @@ pub(super) fn labeled_loop_stmt_pub(input: &str) -> PResult<'_, Stmt> {
 pub(super) fn stmt_list_partial(input: &str) -> (Vec<Stmt>, Option<String>) {
     let mut stmts = Vec::new();
     let mut rest = input;
-    while let Ok((r, _)) = ws(rest) {
+    while let Ok((r, _)) = ws_bol(rest) {
         let r = consume_semicolons(r);
-        let Ok((r, _)) = ws(r) else { break };
+        let Ok((r, _)) = ws_bol(r) else { break };
         if r.is_empty() || r.starts_with('}') {
             break;
         }
@@ -475,10 +475,13 @@ fn stmt_list_with_mode(input: &str, allow_mainline_capture: bool) -> PResult<'_,
     let mut rest = input;
     let mut saw_compunit_declarator = false;
     loop {
-        let (r, _) = ws(rest)?;
+        // Use ws_bol (beginning-of-line) so that Pod blocks at the start of
+        // the file or after newlines are consumed.  The regular ws() defaults
+        // to at_line_start=false, which is correct for mid-line positions.
+        let (r, _) = ws_bol(rest)?;
         // Consume any standalone semicolons
         let r = consume_semicolons(r);
-        let (r, _) = ws(r)?;
+        let (r, _) = ws_bol(r)?;
         // End of block or input
         if r.is_empty() || r.starts_with('}') {
             return Ok((r, stmts));
