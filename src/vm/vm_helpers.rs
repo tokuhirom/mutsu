@@ -638,6 +638,59 @@ impl VM {
         error_label.as_deref() == loop_label.as_deref() || error_label.is_none()
     }
 
+    /// Check if a method on LazyList requires forcing the list first.
+    pub(super) fn lazy_list_needs_forcing(method: &str) -> bool {
+        matches!(
+            method,
+            "list"
+                | "Array"
+                | "Numeric"
+                | "Int"
+                | "elems"
+                | "hyper"
+                | "race"
+                | "first"
+                | "grep"
+                | "map"
+                | "sort"
+                | "reverse"
+                | "join"
+                | "head"
+                | "tail"
+                | "min"
+                | "max"
+                | "minmax"
+                | "sum"
+                | "flat"
+                | "unique"
+                | "squish"
+                | "classify"
+                | "categorize"
+                | "produce"
+                | "rotor"
+                | "batch"
+                | "reduce"
+                | "combinations"
+                | "permutations"
+                | "values"
+                | "List"
+                | "Str"
+                | "Stringy"
+                | "gist"
+                | "raku"
+                | "perl"
+                | "Seq"
+                | "item"
+                | "cache"
+                | "pick"
+                | "roll"
+                | "keys"
+                | "kv"
+                | "pairs"
+                | "antipairs"
+        )
+    }
+
     /// Force a LazyList into a Seq by evaluating the gather body.
     fn force_lazy_if_needed(&mut self, val: Value) -> Result<Value, RuntimeError> {
         if let Value::LazyList(ll) = &val {

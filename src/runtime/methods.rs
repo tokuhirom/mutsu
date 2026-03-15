@@ -1431,6 +1431,22 @@ impl Interpreter {
                     | "reduce"
                     | "combinations"
                     | "permutations"
+                    | "values"
+                    | "List"
+                    | "Str"
+                    | "Stringy"
+                    | "gist"
+                    | "raku"
+                    | "perl"
+                    | "Seq"
+                    | "item"
+                    | "cache"
+                    | "pick"
+                    | "roll"
+                    | "keys"
+                    | "kv"
+                    | "pairs"
+                    | "antipairs"
             )
         {
             let saved_env = self.env.clone();
@@ -2803,7 +2819,7 @@ impl Interpreter {
                         Value::Seq(std::sync::Arc::new(values))
                     }
                     Value::LazyList(ll) => {
-                        let items = Self::value_to_list(&Value::LazyList(ll));
+                        let items = self.force_lazy_list_bridge(&ll)?;
                         Value::Seq(std::sync::Arc::new(items))
                     }
                     other @ (Value::Range(..)

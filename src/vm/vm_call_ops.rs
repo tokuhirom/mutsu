@@ -591,6 +591,27 @@ impl VM {
         } else {
             target
         };
+        // Force gather-sourced LazyList before method dispatch for methods that need
+        // element access. This must happen before the native method fast path, because
+        // builtins don't have access to the interpreter for forcing.
+        // Non-gather LazyLists (e.g. from infinite ranges) are NOT forced here — they
+        // go through builtins which may return Failure for methods like .elems.
+        let target = if let Value::LazyList(ref ll) = target
+            && matches!(
+                ll.env.get("__mutsu_lazylist_from_gather"),
+                Some(crate::value::Value::Bool(true))
+            )
+            && Self::lazy_list_needs_forcing(&method)
+        {
+            let saved_env = self.interpreter.env().clone();
+            let items = self.interpreter.force_lazy_list_bridge(ll)?;
+            if !matches!(method.as_str(), "elems" | "hyper" | "race") {
+                *self.interpreter.env_mut() = saved_env;
+            }
+            Value::Seq(std::sync::Arc::new(items))
+        } else {
+            target
+        };
         let target_for_mod = target.clone();
         let args_for_mod = args.clone();
         let call_result = if !skip_native {

@@ -528,6 +528,14 @@ impl VM {
             self.stack.push(result);
             return Ok(());
         }
+        // Force LazyList before stringification
+        if let Value::LazyList(_) = &val {
+            let result = self
+                .interpreter
+                .call_method_with_values(val, "Str", vec![])?;
+            self.stack.push(result);
+            return Ok(());
+        }
         self.stack
             .push(Value::str(crate::runtime::utils::coerce_to_str(&val)));
         Ok(())
