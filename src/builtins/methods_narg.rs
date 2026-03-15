@@ -1215,6 +1215,26 @@ pub(crate) fn native_method_1arg(
             }
             Some(Ok(make_buf_from_int_items(&cn, &items[start as usize..])))
         }
+        "isa" => {
+            // Instance, Mixin(Instance), and Package values need interpreter
+            // access for user-defined class hierarchies, role checks, and
+            // subset type resolution, so fall through to the runtime handler.
+            let needs_interpreter = match target {
+                Value::Instance { .. } | Value::Package(_) => true,
+                Value::Mixin(inner, _) => matches!(inner.as_ref(), Value::Instance { .. }),
+                _ => false,
+            };
+            if needs_interpreter {
+                return None;
+            }
+            let type_name = match arg {
+                Value::Package(name) => name.resolve(),
+                Value::Str(name) => name.to_string(),
+                Value::Instance { class_name, .. } => class_name.resolve(),
+                other => other.to_string_value(),
+            };
+            Some(Ok(Value::Bool(target.isa_check(&type_name))))
+        }
         _ => None,
     }
 }

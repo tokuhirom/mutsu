@@ -201,9 +201,15 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
     }
     let r = &input[end + 1..];
     let call_style_operand = r.starts_with('(');
-    // Must be followed by whitespace and an expression (not just `]`)
+    // Zero-argument reduction: [op] with no operands → identity element
     if r.is_empty() || r.starts_with(';') || r.starts_with('}') || r.starts_with(')') {
-        return Err(PError::expected("expression after reduction operator"));
+        return Ok((
+            r,
+            Expr::Reduction {
+                op,
+                expr: Box::new(Expr::ArrayLiteral(vec![])),
+            },
+        ));
     }
     let (r, _) = ws(r)?;
     // Parse comma-separated list as the operand
