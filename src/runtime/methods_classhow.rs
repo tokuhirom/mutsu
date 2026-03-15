@@ -10,11 +10,34 @@ impl Interpreter {
         let class_def = self.classes.get(&class_name.resolve())?;
         let defs = class_def.methods.get(method_name)?;
         let def = defs.first()?;
+        // Prepend an invocant parameter (self) to the param_defs
+        let mut full_param_defs = Vec::with_capacity(def.param_defs.len() + 1);
+        full_param_defs.push(crate::ast::ParamDef {
+            name: String::new(),
+            default: None,
+            multi_invocant: true,
+            required: false,
+            named: false,
+            slurpy: false,
+            double_slurpy: false,
+            sigilless: false,
+            type_constraint: Some(class_name.resolve()),
+            literal_value: None,
+            sub_signature: None,
+            where_constraint: None,
+            traits: Vec::new(),
+            optional_marker: false,
+            outer_sub_signature: None,
+            code_signature: None,
+            is_invocant: true,
+            shape_constraints: None,
+        });
+        full_param_defs.extend(def.param_defs.iter().cloned());
         Some(Value::make_sub(
             *class_name,
             Symbol::intern(method_name),
             def.params.clone(),
-            def.param_defs.clone(),
+            full_param_defs,
             def.body.clone(),
             def.is_rw,
             crate::env::Env::new(),

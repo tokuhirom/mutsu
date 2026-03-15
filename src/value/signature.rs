@@ -460,6 +460,15 @@ fn render_signature(info: &SigInfo) -> String {
 fn render_param(p: &SigParam) -> String {
     let mut result = String::new();
 
+    // Invocant parameter: rendered as `TypeName:` (e.g., `B:`)
+    if p.is_invocant {
+        if let Some(ref tc) = p.type_constraint {
+            result.push_str(tc);
+        }
+        result.push(':');
+        return result;
+    }
+
     if p.is_capture {
         result.push('|');
         if !p.name.is_empty() {

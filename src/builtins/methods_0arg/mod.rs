@@ -2543,6 +2543,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Some(Ok(Value::str(format!("slip({})", inner))))
             }
             Value::Junction { .. } if method == "raku" || method == "perl" => None,
+            // Sub/Routine/WeakSub: delegate to interpreter for proper raku/gist/Str
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => None,
             Value::Pair(k, v) => {
                 if method == "raku" || method == "perl" {
                     Some(Ok(Value::str(raku_value(target))))
