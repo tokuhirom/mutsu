@@ -185,12 +185,14 @@ roast/S04-statements/map-and-sort-in-for.t
 roast/S04-statements/next.t
 roast/S04-statements/no-implicit-block.t
 roast/S04-statements/quietly.t
+roast/S04-statements/redo.t
 roast/S04-statements/repeat.t
 roast/S04-statements/sink.t
 roast/S04-statements/unless.t
 roast/S04-statements/until.t
 roast/S04-statements/when.t
 roast/S04-statements/while.t
+roast/S05-capture/named.t
 roast/S05-capture/subrule.t
 roast/S05-grammar/example.t
 roast/S05-grammar/namespace-6e.t

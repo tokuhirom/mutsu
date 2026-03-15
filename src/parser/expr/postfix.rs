@@ -4,13 +4,13 @@ use super::super::helpers::{
 use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 use super::super::primary::{colonpair_expr, parse_block_body, parse_call_arg_list, primary};
 
-use crate::ast::{ExistsAdverb, Expr, HyperSliceAdverb};
+use crate::ast::{ExistsAdverb, Expr, HyperSliceAdverb, Stmt};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 use super::expression;
-use super::operators::{parse_postfix_update_op, parse_prefix_unary_op};
+use super::operators::{PrefixUnaryOp, parse_postfix_update_op, parse_prefix_unary_op};
 
 /// Try to parse a secondary adverb after :exists/:!exists.
 /// Returns (remaining_input, adverb).
@@ -706,13 +706,59 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         } else {
             prefix_expr(rest)?
         };
-        return Ok((
-            rest,
-            Expr::Unary {
+        // When a prefix unary op is applied to a WhateverCode (Lambda),
+        // fold the op into the lambda body to produce a new WhateverCode.
+        // e.g. +('a' le *) should produce { +('a' le $_) } not +(WhateverCode)
+        // Note: ! (Not) does NOT curry in Raku -- it calls .not on the value.
+        // ++/-- also should not curry as they modify in place.
+        let should_curry = matches!(
+            op,
+            PrefixUnaryOp::Positive
+                | PrefixUnaryOp::Negate
+                | PrefixUnaryOp::Stringify
+                | PrefixUnaryOp::Boolify
+                | PrefixUnaryOp::IntBitNeg
+                | PrefixUnaryOp::BoolBitNeg
+                | PrefixUnaryOp::StrBitNeg
+        );
+        let result = match expr {
+            Expr::Lambda { param, body } if should_curry => {
+                let inner = if body.len() == 1 {
+                    match &body[0] {
+                        Stmt::Expr(e) => e.clone(),
+                        _ => {
+                            return Ok((
+                                rest,
+                                Expr::Unary {
+                                    op: op.token_kind(),
+                                    expr: Box::new(Expr::Lambda { param, body }),
+                                },
+                            ));
+                        }
+                    }
+                } else {
+                    return Ok((
+                        rest,
+                        Expr::Unary {
+                            op: op.token_kind(),
+                            expr: Box::new(Expr::Lambda { param, body }),
+                        },
+                    ));
+                };
+                Expr::Lambda {
+                    param,
+                    body: vec![Stmt::Expr(Expr::Unary {
+                        op: op.token_kind(),
+                        expr: Box::new(inner),
+                    })],
+                }
+            }
+            _ => Expr::Unary {
                 op: op.token_kind(),
                 expr: Box::new(expr),
             },
-        ));
+        };
+        return Ok((rest, result));
     }
     // not(expr) — tight-binding form: not followed by ( without space
     if input.starts_with("not(") {
