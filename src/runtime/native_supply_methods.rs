@@ -1120,7 +1120,63 @@ impl Interpreter {
                     buf.push(value.clone());
                 }
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
-                    supplier_emit(supplier_id, value);
+                    supplier_emit(supplier_id, value.clone());
+                    // Dispatch tap callbacks (head_limit, unique, produce, etc.)
+                    let actions = supplier_emit_callbacks(supplier_id, &value);
+                    for action in actions {
+                        match action {
+                            SupplierEmitAction::Call(tap, emitted, delay_seconds) => {
+                                Self::sleep_for_supply_delay(delay_seconds);
+                                let _ = self.call_sub_value(tap, vec![emitted], true);
+                            }
+                            SupplierEmitAction::UniqueCheck {
+                                callback,
+                                value: val,
+                                delay_seconds,
+                                ..
+                            } => {
+                                Self::sleep_for_supply_delay(delay_seconds);
+                                let _ = self.call_sub_value(callback, vec![val], true);
+                            }
+                            SupplierEmitAction::ClassifyCheck {
+                                value: val,
+                                tap_index,
+                            } => {
+                                let _ = self.handle_classify_emit(supplier_id, tap_index, val);
+                            }
+                            SupplierEmitAction::HeadLimitReached { supplier_id: sid2 } => {
+                                let deferred_promises = supplier_done_deferred(sid2);
+                                for done_cb in take_supplier_done_callbacks(sid2) {
+                                    let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                                }
+                                for (promise, result) in deferred_promises {
+                                    promise.keep(result, String::new(), String::new());
+                                }
+                            }
+                            SupplierEmitAction::ProduceCall {
+                                callback,
+                                callable,
+                                value: val,
+                                accumulator,
+                                delay_seconds,
+                                tap_index,
+                            } => {
+                                let new_acc = if let Some(acc) = accumulator {
+                                    self.call_sub_value(callable, vec![acc, val], false)
+                                        .unwrap_or(Value::Nil)
+                                } else {
+                                    val
+                                };
+                                supplier_produce_update_acc(
+                                    supplier_id,
+                                    tap_index,
+                                    new_acc.clone(),
+                                );
+                                Self::sleep_for_supply_delay(delay_seconds);
+                                let _ = self.call_sub_value(callback, vec![new_acc], true);
+                            }
+                        }
+                    }
                 }
                 Ok(Value::Nil)
             }
@@ -1235,9 +1291,12 @@ impl Interpreter {
                                 self.handle_classify_emit(sid, tap_index, val)?;
                             }
                             SupplierEmitAction::HeadLimitReached { supplier_id: sid2 } => {
-                                supplier_done(sid2);
+                                let deferred_promises = supplier_done_deferred(sid2);
                                 for done_cb in take_supplier_done_callbacks(sid2) {
                                     let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                                }
+                                for (promise, result) in deferred_promises {
+                                    promise.keep(result, String::new(), String::new());
                                 }
                             }
                             SupplierEmitAction::ProduceCall {
@@ -1922,9 +1981,12 @@ impl Interpreter {
                         let _ = self.call_sub_value(tap, vec![emitted], true);
                     }
                     SupplierEmitAction::HeadLimitReached { supplier_id: sid2 } => {
-                        supplier_done(sid2);
+                        let deferred_promises = supplier_done_deferred(sid2);
                         for done_cb in take_supplier_done_callbacks(sid2) {
                             let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                        }
+                        for (promise, result) in deferred_promises {
+                            promise.keep(result, String::new(), String::new());
                         }
                     }
                     _ => {}
@@ -1944,9 +2006,12 @@ impl Interpreter {
                     let _ = self.call_sub_value(tap, vec![emitted], true);
                 }
                 SupplierEmitAction::HeadLimitReached { supplier_id: sid2 } => {
-                    supplier_done(sid2);
+                    let deferred_promises = supplier_done_deferred(sid2);
                     for done_cb in take_supplier_done_callbacks(sid2) {
                         let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                    }
+                    for (promise, result) in deferred_promises {
+                        promise.keep(result, String::new(), String::new());
                     }
                 }
                 _ => {}
