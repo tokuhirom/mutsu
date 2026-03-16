@@ -1692,6 +1692,7 @@ impl Interpreter {
             bin: false,
             nl_out: "\n".to_string(),
             bytes_written: 0,
+            read_attempted: false,
         };
         self.handles.insert(id, state);
         let mut attrs = HashMap::new();
@@ -2010,6 +2011,7 @@ impl Interpreter {
                 bin: false,
                 nl_out: "\n".to_string(),
                 bytes_written: 0,
+                read_attempted: false,
             };
             self.handles.insert(id, state);
             let mut attrs = HashMap::new();

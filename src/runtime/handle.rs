@@ -240,6 +240,7 @@ impl Interpreter {
         if state.closed {
             return Err(RuntimeError::io_closed("handle operation"));
         }
+        state.read_attempted = true;
         match state.target {
             IoHandleTarget::Stdout | IoHandleTarget::Stderr => {
                 Err(RuntimeError::new("Handle not readable"))
@@ -276,6 +277,7 @@ impl Interpreter {
         if state.closed {
             return Err(RuntimeError::io_closed("handle operation"));
         }
+        state.read_attempted = true;
         match state.target {
             IoHandleTarget::Stdout | IoHandleTarget::Stderr => {
                 Err(RuntimeError::new("Handle not readable"))
@@ -353,6 +355,7 @@ impl Interpreter {
         if state.closed {
             return Err(RuntimeError::io_closed("handle operation"));
         }
+        state.read_attempted = true;
         match state.target {
             IoHandleTarget::Stdout | IoHandleTarget::Stderr => {
                 Err(RuntimeError::new("Handle not readable"))
@@ -441,6 +444,7 @@ impl Interpreter {
         if state.closed {
             return Err(RuntimeError::io_closed("handle operation"));
         }
+        state.read_attempted = true;
         let file = state
             .file
             .as_mut()
@@ -523,6 +527,13 @@ impl Interpreter {
                     .metadata()
                     .map_err(|err| RuntimeError::new(format!("Failed to stat file: {}", err)))?
                     .len();
+                // Raku semantics: a freshly opened file where pos == 0 and
+                // the reported size is 0 returns False for .eof until a read
+                // or seek has been performed. This handles both truly empty
+                // files and /proc virtual files that report size 0.
+                if pos == 0 && end == 0 && !state.read_attempted {
+                    return Ok(false);
+                }
                 Ok(pos >= end)
             }
             IoHandleTarget::Stdin | IoHandleTarget::ArgFiles => Ok(false),
@@ -683,6 +694,7 @@ impl Interpreter {
             bin,
             nl_out: nl_out.unwrap_or_else(|| "\n".to_string()),
             bytes_written: 0,
+            read_attempted: false,
         };
         self.handles.insert(id, state);
         Ok(self.make_handle_instance_with_bin(id, bin))
