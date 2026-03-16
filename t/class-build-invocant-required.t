@@ -4,7 +4,7 @@ plan 3;
 
 my class Box {
     has Any:D $.value is required;
-    submethod BUILD(::?CLASS:D:) {
+    submethod BUILD(::?CLASS:D: :$!value) {
         $!value
     }
 }
