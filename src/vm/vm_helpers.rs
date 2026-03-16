@@ -937,9 +937,17 @@ impl VM {
             }
             return Ok(Value::Int(0));
         }
-        if !(self.interpreter.type_matches_value("Real", &value)
-            || self.interpreter.type_matches_value("Numeric", &value))
-        {
+        // Check if type is known to be Real/Numeric, OR if the class has a
+        // user-defined Numeric method (for classes like `class Blue { method Numeric { 3 } }`)
+        let known_numeric = self.interpreter.type_matches_value("Real", &value)
+            || self.interpreter.type_matches_value("Numeric", &value);
+        let has_numeric_method = if let Value::Instance { ref class_name, .. } = value {
+            let cn = class_name.to_string();
+            self.interpreter.has_user_method(&cn, "Numeric")
+        } else {
+            false
+        };
+        if !known_numeric && !has_numeric_method {
             return Ok(value);
         }
         self.interpreter

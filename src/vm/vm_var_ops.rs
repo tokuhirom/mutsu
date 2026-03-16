@@ -1388,6 +1388,83 @@ impl VM {
         Ok(())
     }
 
+    /// Resolve WhateverCode indices for array deletion.
+    /// Converts `*-N` style closures to concrete integer indices.
+    fn resolve_delete_index_for_array(&mut self, idx: Value, container: &Value) -> Value {
+        let arr_len = match container {
+            Value::Array(items, ..) => items.len(),
+            _ => return idx,
+        };
+        match &idx {
+            Value::Sub(data) => {
+                let len = arr_len as i64;
+                let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
+                let mut sub_env = data.env.clone();
+                sub_env.insert(param.to_string(), Value::Int(len));
+                let saved_env = std::mem::take(self.interpreter.env_mut());
+                *self.interpreter.env_mut() = sub_env;
+                let resolved = self
+                    .interpreter
+                    .eval_block_value(&data.body)
+                    .unwrap_or(Value::Nil);
+                *self.interpreter.env_mut() = saved_env;
+                resolved
+            }
+            Value::Array(items, ..) => {
+                // Array of indices: resolve each element
+                let resolved: Vec<Value> = items
+                    .iter()
+                    .map(|v| self.resolve_delete_index_for_array(v.clone(), container))
+                    .collect();
+                Value::array(resolved)
+            }
+            _ => idx,
+        }
+    }
+
+    /// Trim trailing "holes" from a named array variable after deletion.
+    /// A hole is either `Value::Nil` (deleted slot) or an uninitialized
+    /// `Value::Package("Any")` slot (auto-vivified gap).  Explicitly
+    /// assigned slots are tracked via `__mutsu_initialized_index::` metadata
+    /// and are NOT trimmed.
+    fn trim_trailing_array_holes(&mut self, var_name: &str) {
+        let init_key = format!("__mutsu_initialized_index::{}", var_name);
+        // Clone the initialized set to avoid borrow conflicts
+        let initialized: std::collections::HashSet<String> = self
+            .interpreter
+            .env()
+            .get(&init_key)
+            .and_then(|v| {
+                if let Value::Hash(map) = v {
+                    Some(map.keys().cloned().collect())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        let env = self.interpreter.env_mut();
+        let Some(container) = env.get_mut(var_name) else {
+            return;
+        };
+        let Value::Array(items, ..) = container else {
+            return;
+        };
+        let arr = Arc::make_mut(items);
+        while let Some(last) = arr.last() {
+            let idx_str = (arr.len() - 1).to_string();
+            let is_hole = match last {
+                Value::Nil => true,
+                Value::Package(name) if name == "Any" => !initialized.contains(&idx_str),
+                _ => false,
+            };
+            if is_hole {
+                arr.pop();
+            } else {
+                break;
+            }
+        }
+    }
+
     pub(super) fn exec_delete_index_named_op(
         &mut self,
         code: &CompiledCode,
@@ -1443,6 +1520,12 @@ impl VM {
             .env()
             .get(&var_name)
             .and_then(|v| self.interpreter.container_type_metadata(v));
+        // Resolve WhateverCode indices (e.g. *-1) for array targets
+        let idx = if let Some(container) = self.interpreter.env().get(&var_name).cloned() {
+            self.resolve_delete_index_for_array(idx, &container)
+        } else {
+            idx
+        };
         let result = if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
             if matches!(container, Value::Mix(_)) && !target_is_mixhash {
                 return Err(RuntimeError::new("X::Immutable"));
@@ -1451,6 +1534,9 @@ impl VM {
         } else {
             Self::delete_from_missing_container(idx)
         };
+        // Trim trailing holes from arrays after deletion.
+        // A "hole" is either Nil (deleted) or an uninitialized Package("Any") slot.
+        self.trim_trailing_array_holes(&var_name);
         // Re-register type metadata if it was lost due to Arc::make_mut
         if let Some(info) = saved_meta
             && let Some(container) = self.interpreter.env().get(&var_name)
@@ -2382,6 +2468,47 @@ impl VM {
         Ok(())
     }
 
+    /// Delete element(s) from an array container.
+    /// When idx is a single value, delete that one element.
+    /// When idx is an Array, delete each element (slice delete).
+    /// When idx is a Range, expand to indices and delete each.
+    /// Delete element(s) from an array container.
+    /// When idx is a single value, delete that one element.
+    /// When idx is an Array, delete each element (slice delete).
+    /// When idx is a Range, expand to indices and delete each.
+    fn delete_from_array(container: &mut Value, idx: Value) -> Result<Value, RuntimeError> {
+        match idx {
+            Value::Array(indices, ..) => {
+                let indices_vec: Vec<Value> = indices.to_vec();
+                let mut results = Vec::with_capacity(indices_vec.len());
+                for i in indices_vec {
+                    let r = Self::delete_array_multidim(container, std::slice::from_ref(&i))
+                        .unwrap_or(Value::Nil);
+                    results.push(r);
+                }
+                Ok(Value::array(results))
+            }
+            Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. } => {
+                let expanded = crate::runtime::utils::value_to_list(&idx);
+                let mut results = Vec::with_capacity(expanded.len());
+                for i in expanded {
+                    let r = Self::delete_array_multidim(container, std::slice::from_ref(&i))
+                        .unwrap_or(Value::Nil);
+                    results.push(r);
+                }
+                Ok(Value::array(results))
+            }
+            _ => {
+                let r = Self::delete_array_multidim(container, std::slice::from_ref(&idx))?;
+                Ok(r)
+            }
+        }
+    }
+
     fn delete_from_missing_container(idx: Value) -> Value {
         match idx {
             Value::Array(keys, ..) => Value::array(vec![Value::Nil; keys.len()]),
@@ -2422,12 +2549,7 @@ impl VM {
                     _ => Value::Nil,
                 }
             }
-            Value::Array(..) => match idx {
-                Value::Array(indices, ..) => {
-                    Self::delete_array_multidim(container, indices.as_ref())?
-                }
-                _ => Self::delete_array_multidim(container, std::slice::from_ref(&idx))?,
-            },
+            Value::Array(..) => Self::delete_from_array(container, idx)?,
             Value::Set(set) => match idx {
                 Value::Array(keys, ..) => {
                     let s = Arc::make_mut(set);

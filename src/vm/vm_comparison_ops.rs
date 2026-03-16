@@ -464,6 +464,11 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let (left, right) = self.coerce_numeric_bridge_pair(left, right)?;
+        // NaN <=> anything produces Nil (unordered)
+        if is_nan_value(&left) || is_nan_value(&right) {
+            self.stack.push(Value::Nil);
+            return Ok(());
+        }
         let ord = Self::numeric_spaceship_ordering(&left, &right)?;
         self.stack.push(runtime::make_order(ord));
         Ok(())
@@ -489,6 +494,12 @@ impl VM {
         let left = self.stack.pop().unwrap();
         if Self::is_buf_value(&left) && Self::is_buf_value(&right) {
             let ord = Self::buf_cmp_bytes(&left, &right);
+            self.stack.push(runtime::make_order(ord));
+            return;
+        }
+        // NaN in cmp context: compare as string "NaN"
+        if is_nan_value(&left) || is_nan_value(&right) {
+            let ord = left.to_string_value().cmp(&right.to_string_value());
             self.stack.push(runtime::make_order(ord));
             return;
         }
