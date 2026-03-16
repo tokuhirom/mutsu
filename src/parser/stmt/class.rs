@@ -493,6 +493,23 @@ pub(crate) fn augment_class_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("class", rest).ok_or_else(|| PError::expected("'class' after 'augment'"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
+    // Check for type adverbs (:D, :U, :auth, :ver, :api) which are not allowed on augment
+    if rest.starts_with(':') && !rest.starts_with("::") {
+        let adverb_rest = &rest[1..];
+        // Check for known type adverbs
+        let is_adverb = adverb_rest.starts_with('D')
+            || adverb_rest.starts_with('U')
+            || adverb_rest.starts_with("auth")
+            || adverb_rest.starts_with("ver")
+            || adverb_rest.starts_with("api");
+        if is_adverb {
+            let msg = "Cannot put adverbs on a typename when augmenting".to_string();
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), Value::str(msg.clone()));
+            let ex = Value::make_instance(Symbol::intern("X::Syntax::Augment::Adverb"), attrs);
+            return Err(PError::fatal_with_exception(msg, Box::new(ex)));
+        }
+    }
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
     Ok((
