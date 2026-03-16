@@ -1262,6 +1262,45 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             custom_traits: custom_traits.clone(),
             where_constraint: where_constraint.clone(),
         };
+        // Handle trailing comma list: `my Type $x .= method(), expr, ...`
+        // In Raku, the comma creates a sink list — the declaration is evaluated,
+        // then the remaining expressions are evaluated and discarded.
+        let (rest, _) = ws(rest)?;
+        if rest.starts_with(',') && !rest.starts_with(",,") {
+            let (r, _) = parse_char(rest, ',')?;
+            let (r, _) = ws(r)?;
+            let mut sink_stmts = vec![stmt];
+            if !r.starts_with(';') && !r.is_empty() && !r.starts_with('}') {
+                let (mut r_inner, first_sink) = expression(r)?;
+                sink_stmts.push(Stmt::Expr(first_sink));
+                loop {
+                    let (r2, _) = ws(r_inner)?;
+                    if !r2.starts_with(',') || r2.starts_with(",,") {
+                        r_inner = r2;
+                        break;
+                    }
+                    let (r2, _) = parse_char(r2, ',')?;
+                    let (r2, _) = ws(r2)?;
+                    if r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') {
+                        r_inner = r2;
+                        break;
+                    }
+                    let (r2, next_sink) = expression(r2)?;
+                    sink_stmts.push(Stmt::Expr(next_sink));
+                    r_inner = r2;
+                }
+                let combined = Stmt::SyntheticBlock(sink_stmts);
+                if apply_modifier {
+                    return parse_statement_modifier(r_inner, combined);
+                }
+                return Ok((r_inner, combined));
+            }
+            let combined = Stmt::SyntheticBlock(sink_stmts);
+            if apply_modifier {
+                return parse_statement_modifier(r, combined);
+            }
+            return Ok((r, combined));
+        }
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
         }
