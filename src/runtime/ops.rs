@@ -646,38 +646,39 @@ impl Interpreter {
     fn str_bitwise_op(
         left: &Value,
         right: &Value,
-        op: fn(u8, u8) -> u8,
+        op: fn(u32, u32) -> u32,
         pad_to_max: bool,
     ) -> Result<Value, RuntimeError> {
         let left_is_buf = Self::is_buf_value(left);
         let right_is_buf = Self::is_buf_value(right);
         let any_buf = left_is_buf || right_is_buf;
-        let lb = if left_is_buf {
-            Self::extract_buf_bytes(left)
-        } else {
-            crate::runtime::utils::coerce_to_str(left)
-                .as_bytes()
-                .to_vec()
-        };
-        let rb = if right_is_buf {
-            Self::extract_buf_bytes(right)
-        } else {
-            crate::runtime::utils::coerce_to_str(right)
-                .as_bytes()
-                .to_vec()
-        };
-        let len = if pad_to_max {
-            lb.len().max(rb.len())
-        } else {
-            lb.len().min(rb.len())
-        };
-        let mut out = Vec::with_capacity(len);
-        for i in 0..len {
-            let a = lb.get(i).copied().unwrap_or(0);
-            let b = rb.get(i).copied().unwrap_or(0);
-            out.push(op(a, b));
-        }
         if any_buf {
+            // For Buf values, operate on bytes
+            let lb = if left_is_buf {
+                Self::extract_buf_bytes(left)
+            } else {
+                crate::runtime::utils::coerce_to_str(left)
+                    .as_bytes()
+                    .to_vec()
+            };
+            let rb = if right_is_buf {
+                Self::extract_buf_bytes(right)
+            } else {
+                crate::runtime::utils::coerce_to_str(right)
+                    .as_bytes()
+                    .to_vec()
+            };
+            let len = if pad_to_max {
+                lb.len().max(rb.len())
+            } else {
+                lb.len().min(rb.len())
+            };
+            let mut out = Vec::with_capacity(len);
+            for i in 0..len {
+                let a = lb.get(i).copied().unwrap_or(0) as u32;
+                let b = rb.get(i).copied().unwrap_or(0) as u32;
+                out.push(op(a, b) as u8);
+            }
             let byte_vals: Vec<Value> = out.into_iter().map(|b| Value::Int(b as i64)).collect();
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("bytes".to_string(), Value::array(byte_vals));
@@ -690,7 +691,28 @@ impl Interpreter {
                 attrs,
             ))
         } else {
-            Ok(Value::str(String::from_utf8_lossy(&out).into_owned()))
+            // For strings, operate on Unicode codepoints (ordinal values)
+            let ls = crate::runtime::utils::coerce_to_str(left);
+            let rs = crate::runtime::utils::coerce_to_str(right);
+            let lc: Vec<u32> = ls.chars().map(|c| c as u32).collect();
+            let rc: Vec<u32> = rs.chars().map(|c| c as u32).collect();
+            let len = if pad_to_max {
+                lc.len().max(rc.len())
+            } else {
+                lc.len().min(rc.len())
+            };
+            let mut out = String::with_capacity(len);
+            for i in 0..len {
+                let a = lc.get(i).copied().unwrap_or(0);
+                let b = rc.get(i).copied().unwrap_or(0);
+                let result_cp = op(a, b);
+                if let Some(ch) = char::from_u32(result_cp) {
+                    out.push(ch);
+                }
+            }
+            // Apply NFC normalization to the result
+            use unicode_normalization::UnicodeNormalization;
+            Ok(Value::str(out.nfc().collect::<String>()))
         }
     }
 
@@ -1288,7 +1310,7 @@ impl Interpreter {
             }
             "~|" => Self::str_bitwise_op(left, right, |a, b| a | b, true),
             "~^" => Self::str_bitwise_op(left, right, |a, b| a ^ b, true),
-            "~&" => Self::str_bitwise_op(left, right, |a, b| a & b, true),
+            "~&" => Self::str_bitwise_op(left, right, |a, b| a & b, false),
             "+<" => match (left, right) {
                 (Value::Int(a), Value::Int(b)) => Ok(Self::shift_left_i64(*a, *b)),
                 _ => Ok(Self::shift_left_bigint(&left.to_bigint(), to_int(right))),
