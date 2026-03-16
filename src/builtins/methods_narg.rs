@@ -442,7 +442,7 @@ pub(crate) fn native_method_1arg(
                 let sep = arg.to_string_value();
                 let joined = items
                     .iter()
-                    .map(|v| v.to_string_value())
+                    .map(|v| v.to_str_context())
                     .collect::<Vec<_>>()
                     .join(&sep);
                 return Some(Ok(Value::str(joined)));

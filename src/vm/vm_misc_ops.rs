@@ -1183,6 +1183,40 @@ impl VM {
             }
             return Ok(());
         }
+        // For finite Range values assigned to typed arrays (my Int @a = ^5),
+        // check if the range elements match the element type constraint.
+        // Integer ranges always contain Int elements.
+        {
+            let is_finite_int_range = matches!(
+                &value,
+                Value::Range(a, b) | Value::RangeExcl(a, b) |
+                Value::RangeExclStart(a, b) | Value::RangeExclBoth(a, b)
+                if *b != i64::MAX && *a != i64::MIN
+            );
+            let is_finite_generic_range = matches!(
+                &value,
+                Value::GenericRange { end, .. }
+                if !matches!(end.as_ref(), Value::Num(n) if n.is_infinite())
+                    && !matches!(end.as_ref(), Value::Whatever | Value::HyperWhatever)
+            );
+            if is_finite_int_range {
+                if self
+                    .interpreter
+                    .type_matches_value(constraint, &Value::Int(0))
+                {
+                    return Ok(());
+                }
+            } else if is_finite_generic_range
+                && let Value::GenericRange { start, end, .. } = &value
+            {
+                let start_ok = self.interpreter.type_matches_value(constraint, start);
+                let end_ok = self.interpreter.type_matches_value(constraint, end);
+                if start_ok && end_ok {
+                    return Ok(());
+                }
+            }
+            // Infinite ranges and non-matching types fall through to normal check
+        }
         if matches!(value, Value::Nil) && self.interpreter.is_definite_constraint(constraint) {
             return Err(RuntimeError::new(format!(
                 "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",

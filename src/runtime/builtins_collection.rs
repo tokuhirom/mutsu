@@ -644,11 +644,15 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .unwrap_or_default();
         if args.len() == 2
-            && let Some(Value::Array(items, ..)) = args.get(1)
+            && let Some(Value::Array(items, kind)) = args.get(1)
         {
+            if kind.is_itemized() {
+                // Itemized array: treat as single item, stringify
+                return Ok(Value::str(args[1].to_string_value()));
+            }
             let joined = items
                 .iter()
-                .map(|v| v.to_string_value())
+                .map(|v| v.to_str_context())
                 .collect::<Vec<_>>()
                 .join(&sep);
             return Ok(Value::str(joined));
@@ -671,21 +675,21 @@ impl Interpreter {
                     }
                     Value::GenericRange { .. } => {
                         for item in crate::runtime::utils::value_to_list(v) {
-                            parts.push(item.to_string_value());
+                            parts.push(item.to_str_context());
                         }
                     }
-                    Value::Array(items, ..) => {
+                    Value::Array(items, kind) if !kind.is_itemized() => {
                         for item in items.iter() {
-                            parts.push(item.to_string_value());
+                            parts.push(item.to_str_context());
                         }
                     }
                     Value::Seq(items) | Value::Slip(items) => {
                         for item in items.as_ref() {
-                            parts.push(item.to_string_value());
+                            parts.push(item.to_str_context());
                         }
                     }
                     _ => {
-                        parts.push(v.to_string_value());
+                        parts.push(v.to_str_context());
                     }
                 }
             }

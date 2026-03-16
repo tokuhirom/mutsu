@@ -763,15 +763,18 @@ fn native_function_2arg(
                 return Some(Ok(Value::str(joined)));
             }
             match arg2 {
-                Value::Array(items, ..) => {
+                Value::Array(items, kind) if !kind.is_itemized() => {
                     let joined = items
                         .iter()
-                        .map(|v| v.to_string_value())
+                        .map(|v| v.to_str_context())
                         .collect::<Vec<_>>()
                         .join(&sep);
                     Some(Ok(Value::str(joined)))
                 }
-                _ => Some(Ok(Value::str(String::new()))),
+                _ => {
+                    // Treat as single-element list (includes itemized arrays)
+                    Some(Ok(Value::str(arg2.to_str_context())))
+                }
             }
         }
         "rotate" => {
