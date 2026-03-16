@@ -1005,7 +1005,6 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                     _ => return vec![val.clone()],
                 };
                 if start_num.to_f64().is_infinite()
-                    || end_num.to_f64().is_infinite()
                     || start_num.to_f64().is_nan()
                     || end_num.to_f64().is_nan()
                 {

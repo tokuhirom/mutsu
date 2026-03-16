@@ -353,7 +353,7 @@ impl Interpreter {
                 return Err(make_x_immutable_error(method, typename));
             }
         }
-        // Non-container definite values: push/pop/shift/unshift/etc. must throw X::Multi::NoMatch
+        // Non-container definite values: push/pop/shift/unshift/etc. must throw X::Method::NotFound
         if matches!(
             method,
             "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
@@ -367,24 +367,7 @@ impl Interpreter {
                 | Value::Complex(..)
         ) {
             let type_name = crate::runtime::utils::value_type_name(&target);
-            let arg_types: Vec<String> = args
-                .iter()
-                .map(|a| crate::runtime::utils::value_type_name(a).to_string())
-                .collect();
-            let invocant_type = format!("{type_name}:D");
-            let all_types = std::iter::once(invocant_type)
-                .chain(arg_types.iter().map(|t| format!("{t}:D")))
-                .collect::<Vec<_>>()
-                .join(", ");
-            let msg = format!(
-                "Cannot resolve caller {method}({all_types}); none of these signatures matches:\n    (Any:U \\SELF: |values)"
-            );
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert("message".to_string(), Value::str(msg.clone()));
-            let ex = Value::make_instance(Symbol::intern("X::Multi::NoMatch"), attrs);
-            let mut err = RuntimeError::new(msg);
-            err.exception = Some(Box::new(ex));
-            return Err(err);
+            return Err(make_method_not_found_error(method, type_name, false));
         }
         // Buf/Blob.allocate(size, fill?)
         if method == "allocate"
@@ -2165,7 +2148,13 @@ impl Interpreter {
             "minpairs" | "maxpairs" if args.is_empty() => {
                 return self.dispatch_minmaxpairs(target, method);
             }
-            "pop" if args.is_empty() => {
+            "pop" => {
+                if !args.is_empty() {
+                    return Err(RuntimeError::new(format!(
+                        "Too many positionals passed; expected 1 argument but got {}",
+                        args.len() + 1
+                    )));
+                }
                 // pop on a non-variable array value (e.g. [1,2,3].pop)
                 match target {
                     Value::Array(mut items, ..) => {
