@@ -1213,6 +1213,23 @@ fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, &str) {
     (expr, rest)
 }
 
+/// Parse shell-word content from `<<...>>` or `«...»` subscripts.
+/// Handles variable interpolation ($var) and bare words.
+fn parse_shell_words_index(content: &str) -> Expr {
+    let trimmed = content.trim();
+    // Check for variable interpolation ($var)
+    if let Some(var_name) = trimmed.strip_prefix('$')
+        && !var_name.is_empty()
+        && var_name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+    {
+        return Expr::Var(var_name.to_string());
+    }
+    // Otherwise treat as literal string key
+    Expr::Literal(Value::str(trimmed.to_string()))
+}
+
 /// Try to interpolate a `$var` or `@var` at the current position.
 /// Returns `Some(remaining_input)` if interpolation was performed, `None` otherwise.
 pub(super) fn try_interpolate_var<'a>(
@@ -1221,6 +1238,34 @@ pub(super) fn try_interpolate_var<'a>(
     current: &mut String,
 ) -> Option<&'a str> {
     let parse_postcircumfix_index = |input: &'a str, target: Expr| -> (Expr, &'a str) {
+        // Double angle bracket indexing: $var<<key>> (must be checked before single <)
+        if let Some(after_dlt) = input.strip_prefix("<<")
+            && let Some(end) = after_dlt.find(">>")
+        {
+            let content = &after_dlt[..end];
+            let index = parse_shell_words_index(content);
+            return (
+                Expr::Index {
+                    target: Box::new(target),
+                    index: Box::new(index),
+                },
+                &after_dlt[end + 2..],
+            );
+        }
+        // French guillemet indexing: $var«key»
+        if let Some(after_guillemet) = input.strip_prefix('\u{00AB}')
+            && let Some(end) = after_guillemet.find('\u{00BB}')
+        {
+            let content = &after_guillemet[..end];
+            let index = parse_shell_words_index(content);
+            return (
+                Expr::Index {
+                    target: Box::new(target),
+                    index: Box::new(index),
+                },
+                &after_guillemet[end + '\u{00BB}'.len_utf8()..],
+            );
+        }
         // Angle bracket indexing: $var<key>
         if let Some(after_lt) = input.strip_prefix('<')
             && let Some(end) = after_lt.find('>')
@@ -1268,6 +1313,37 @@ pub(super) fn try_interpolate_var<'a>(
                 },
                 &after_bracket[end + 1..],
             );
+        }
+        // Curly brace indexing: %hash{expr}
+        if let Some(after_brace) = input.strip_prefix('{') {
+            // Find matching closing brace respecting nesting
+            let mut depth = 1usize;
+            let mut brace_end = None;
+            for (idx, ch) in after_brace.char_indices() {
+                if ch == '{' {
+                    depth += 1;
+                } else if ch == '}' {
+                    depth -= 1;
+                    if depth == 0 {
+                        brace_end = Some(idx);
+                        break;
+                    }
+                }
+            }
+            if let Some(end) = brace_end {
+                let content = after_brace[..end].trim();
+                if !content.is_empty()
+                    && let Ok((_, expr)) = crate::parser::expr::expression(content)
+                {
+                    return (
+                        Expr::Index {
+                            target: Box::new(target),
+                            index: Box::new(expr),
+                        },
+                        &after_brace[end + 1..],
+                    );
+                }
+            }
         }
         (target, input)
     };
@@ -1454,6 +1530,14 @@ pub(super) fn try_interpolate_var<'a>(
                 }
                 parts.push(expr);
                 return Some(after_zen);
+            }
+            // Zen-slice: %hash[] should stringify the whole hash
+            if let Some(r) = tail.strip_prefix("[]") {
+                if !current.is_empty() {
+                    parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                }
+                parts.push(expr);
+                return Some(r);
             }
             let (expr, remainder) = parse_postcircumfix_index(tail, expr);
             // In qq-like strings, `%hash` without a postcircumfix remains literal.
