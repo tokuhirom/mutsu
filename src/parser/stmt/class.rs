@@ -723,7 +723,20 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
 pub(super) fn also_trait_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("also", input).ok_or_else(|| PError::expected("also trait statement"))?;
     let (rest, _) = ws1(rest)?;
-    let rest = keyword("is", rest).ok_or_else(|| PError::expected("is after also"))?;
+    // Handle `also does RoleName;`
+    if let Some(r) = keyword("does", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, name) = parse_token_like_name(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = opt_char(r, ';');
+        return Ok((
+            r,
+            Stmt::DoesDecl {
+                name: Symbol::intern(&name),
+            },
+        ));
+    }
+    let rest = keyword("is", rest).ok_or_else(|| PError::expected("is or does after also"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, trait_name) = ident(rest)?;
     let (rest, _) = ws(rest)?;
