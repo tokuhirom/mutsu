@@ -936,6 +936,23 @@ impl Interpreter {
 
     fn builtin_fail(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         if let Some(v) = args.first() {
+            // When fail() receives a Failure:D, extract the inner exception
+            // and re-arm it (Raku behavior: fail(Failure:D) re-arms)
+            let v = if let Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } = v
+            {
+                if class_name.resolve() == "Failure"
+                    && let Some(exc) = attributes.get("exception")
+                {
+                    return Err(self.runtime_error_from_die_value(exc, "Failed", true));
+                }
+                v
+            } else {
+                v
+            };
             return Err(self.runtime_error_from_die_value(v, "Failed", true));
         }
         if let Some(current) = self.env.get("!")

@@ -1309,6 +1309,14 @@ impl VM {
                 if let Some(new_val) = coerced {
                     *self.stack.last_mut().unwrap() = new_val;
                 } else {
+                    // When assigning an unhandled Failure to a typed variable,
+                    // explode the Failure first (Raku behavior)
+                    if let Some(err) = self
+                        .interpreter
+                        .failure_to_runtime_error_if_unhandled(&value)
+                    {
+                        return Err(err);
+                    }
                     return Err(RuntimeError::typecheck_assignment(
                         base_constraint,
                         crate::runtime::utils::value_type_name(&value),
