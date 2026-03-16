@@ -1226,14 +1226,21 @@ impl VM {
                     .eval_block_value(&data.body)
                     .unwrap_or(Value::Nil);
                 *self.interpreter.env_mut() = saved_env;
-                match idx {
-                    Value::Int(i) => {
-                        if i < 0 {
-                            Value::Nil
+                let i = match &idx {
+                    Value::Int(i) => Some(*i),
+                    Value::Num(n) => Some(*n as i64),
+                    Value::Rat(n, d) => {
+                        if *d != 0 {
+                            Some((*n as f64 / *d as f64).floor() as i64)
                         } else {
-                            items.get(i as usize).cloned().unwrap_or(Value::Nil)
+                            None
                         }
                     }
+                    _ => None,
+                };
+                match i {
+                    Some(i) if i >= 0 => items.get(i as usize).cloned().unwrap_or(Value::Nil),
+                    Some(i) if i < 0 => Self::make_out_of_range_failure(i),
                     _ => Value::Nil,
                 }
             }
@@ -1266,11 +1273,21 @@ impl VM {
                     .eval_block_value(&data.body)
                     .unwrap_or(Value::Nil);
                 *self.interpreter.env_mut() = saved_env;
-                match idx {
-                    Value::Int(i) => {
-                        if i < 0 {
-                            Value::Nil
-                        } else if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                let i = match &idx {
+                    Value::Int(i) => Some(*i),
+                    Value::Num(n) => Some(*n as i64),
+                    Value::Rat(n, d) => {
+                        if *d != 0 {
+                            Some((*n as f64 / *d as f64).floor() as i64)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                };
+                match i {
+                    Some(i) if i >= 0 => {
+                        if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
                             bytes.get(i as usize).cloned().unwrap_or(Value::Nil)
                         } else {
                             Value::Nil
@@ -1402,6 +1419,51 @@ impl VM {
                 let type_name = crate::value::types::what_type_name(target);
                 Self::make_assoc_indexing_failure(&type_name)
             }
+            // Scalar value with integer index: treat as single-element list
+            (ref val, Value::Int(0))
+                if !matches!(val, Value::Array(..) | Value::Hash(_) | Value::Nil) =>
+            {
+                val.clone()
+            }
+            (ref val, Value::Int(i))
+                if !matches!(val, Value::Array(..) | Value::Hash(_)) && i > 0 =>
+            {
+                Value::Nil
+            }
+            // Scalar value with WhateverCode index: treat as single-element list
+            (ref val, Value::Sub(ref data))
+                if !matches!(
+                    val,
+                    Value::Array(..) | Value::Hash(_) | Value::Instance { .. }
+                ) =>
+            {
+                let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
+                let mut sub_env = data.env.clone();
+                sub_env.insert(param.to_string(), Value::Int(1)); // elems = 1
+                let saved_env = std::mem::take(self.interpreter.env_mut());
+                *self.interpreter.env_mut() = sub_env;
+                let idx = self
+                    .interpreter
+                    .eval_block_value(&data.body)
+                    .unwrap_or(Value::Nil);
+                *self.interpreter.env_mut() = saved_env;
+                let i = match &idx {
+                    Value::Int(i) => Some(*i),
+                    Value::Num(n) => Some(*n as i64),
+                    Value::Rat(n, d) => {
+                        if *d != 0 {
+                            Some((*n as f64 / *d as f64).floor() as i64)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                };
+                match i {
+                    Some(0) => val.clone(),
+                    _ => Value::Nil,
+                }
+            }
             _ => Value::Nil,
         };
         self.stack.push(result);
@@ -1419,6 +1481,24 @@ impl VM {
             )),
         );
         let ex = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
+        let mut failure_attrs = std::collections::HashMap::new();
+        failure_attrs.insert("exception".to_string(), ex);
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+    }
+
+    /// Create a Failure wrapping X::OutOfRange for effective negative indices.
+    fn make_out_of_range_failure(effective_index: i64) -> Value {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert(
+            "message".to_string(),
+            Value::str_from(&format!(
+                "Effective index out of range. Is: {}, should be in 0..^Inf",
+                effective_index
+            )),
+        );
+        attrs.insert("got".to_string(), Value::Int(effective_index));
+        attrs.insert("range".to_string(), Value::str_from("0..^Inf"));
+        let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
         let mut failure_attrs = std::collections::HashMap::new();
         failure_attrs.insert("exception".to_string(), ex);
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
