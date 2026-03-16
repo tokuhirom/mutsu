@@ -1573,27 +1573,79 @@ impl VM {
                     // Raku's >> descends into Iterable structures, but stops
                     // if the method is natively defined on the list type
                     // (e.g., .join, .elems, .sort, .reverse, .unique, .squish).
-                    let is_iterable_item = matches!(
-                        item,
-                        Value::Array(..) | Value::Seq(..) | Value::Slip(..)
-                    );
+                    let is_iterable_item =
+                        matches!(item, Value::Array(..) | Value::Seq(..) | Value::Slip(..));
                     let is_list_native_method = matches!(
                         method.as_str(),
-                        "join" | "elems" | "end" | "sort" | "reverse" | "unique"
-                            | "squish" | "pick" | "roll" | "head" | "tail"
-                            | "first" | "min" | "max" | "minmax" | "sum"
-                            | "flat" | "eager" | "lazy" | "sink" | "cache"
-                            | "List" | "Array" | "Seq" | "Slip" | "Supply"
-                            | "Set" | "SetHash" | "Bag" | "BagHash"
-                            | "Mix" | "MixHash" | "Str" | "gist" | "raku"
-                            | "perl" | "WHAT" | "WHO" | "HOW" | "so"
-                            | "Bool" | "Numeric" | "Int" | "Rat" | "Real"
-                            | "hash" | "Hash" | "kv" | "keys" | "values"
-                            | "pairs" | "antipairs" | "classify" | "categorize"
-                            | "map" | "grep" | "reduce" | "produce"
-                            | "combinations" | "permutations" | "rotate"
-                            | "batch" | "rotor" | "repeated" | "snip"
-                            | "defined" | "DEFINITE" | "item" | "list"
+                        "join"
+                            | "elems"
+                            | "end"
+                            | "sort"
+                            | "reverse"
+                            | "unique"
+                            | "squish"
+                            | "pick"
+                            | "roll"
+                            | "head"
+                            | "tail"
+                            | "first"
+                            | "min"
+                            | "max"
+                            | "minmax"
+                            | "sum"
+                            | "flat"
+                            | "eager"
+                            | "lazy"
+                            | "sink"
+                            | "cache"
+                            | "List"
+                            | "Array"
+                            | "Seq"
+                            | "Slip"
+                            | "Supply"
+                            | "Set"
+                            | "SetHash"
+                            | "Bag"
+                            | "BagHash"
+                            | "Mix"
+                            | "MixHash"
+                            | "Str"
+                            | "gist"
+                            | "raku"
+                            | "perl"
+                            | "WHAT"
+                            | "WHO"
+                            | "HOW"
+                            | "so"
+                            | "Bool"
+                            | "Numeric"
+                            | "Int"
+                            | "Rat"
+                            | "Real"
+                            | "hash"
+                            | "Hash"
+                            | "kv"
+                            | "keys"
+                            | "values"
+                            | "pairs"
+                            | "antipairs"
+                            | "classify"
+                            | "categorize"
+                            | "map"
+                            | "grep"
+                            | "reduce"
+                            | "produce"
+                            | "combinations"
+                            | "permutations"
+                            | "rotate"
+                            | "batch"
+                            | "rotor"
+                            | "repeated"
+                            | "snip"
+                            | "defined"
+                            | "DEFINITE"
+                            | "item"
+                            | "list"
                     );
                     if is_iterable_item && !is_list_native_method {
                         let sub_items = crate::runtime::value_to_list(item);
@@ -1607,23 +1659,21 @@ impl VM {
                                 ) {
                                     native_result?
                                 } else {
-                                    let (v, _updated) = self
-                                        .call_method_mut_with_temp_target(
-                                            &mut sub_item,
-                                            &method,
-                                            item_args.clone(),
-                                            idx,
-                                        )?;
-                                    v
-                                }
-                            } else {
-                                let (v, _updated) = self
-                                    .call_method_mut_with_temp_target(
+                                    let (v, _updated) = self.call_method_mut_with_temp_target(
                                         &mut sub_item,
                                         &method,
                                         item_args.clone(),
                                         idx,
                                     )?;
+                                    v
+                                }
+                            } else {
+                                let (v, _updated) = self.call_method_mut_with_temp_target(
+                                    &mut sub_item,
+                                    &method,
+                                    item_args.clone(),
+                                    idx,
+                                )?;
                                 v
                             };
                             sub_results.push(sub_val);
@@ -1632,10 +1682,7 @@ impl VM {
                             Value::Array(_, kind) => *kind,
                             _ => ArrayKind::List,
                         };
-                        results.push(Value::Array(
-                            std::sync::Arc::new(sub_results),
-                            sub_kind,
-                        ));
+                        results.push(Value::Array(std::sync::Arc::new(sub_results), sub_kind));
                     } else {
                         let val = if !skip_native {
                             if let Some(native_result) =
@@ -1650,9 +1697,8 @@ impl VM {
                                 v
                             }
                         } else {
-                            let (v, updated) = self.call_method_mut_with_temp_target(
-                                item, &method, item_args, idx,
-                            )?;
+                            let (v, updated) = self
+                                .call_method_mut_with_temp_target(item, &method, item_args, idx)?;
                             *item = updated;
                             v
                         };

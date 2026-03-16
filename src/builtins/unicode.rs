@@ -346,9 +346,8 @@ pub(crate) fn unicode_general_category(ch: char) -> String {
         // Note: "Cs" (surrogates) is omitted because the regex crate does not support it,
         // and Rust chars cannot be surrogates anyway.
         let cats_list: &[&str] = &[
-            "Lu", "Ll", "Lt", "Lm", "Lo", "Mn", "Mc", "Me", "Nd", "Nl", "No", "Pc", "Pd",
-            "Ps", "Pe", "Pi", "Pf", "Po", "Sm", "Sc", "Sk", "So", "Zs", "Zl", "Zp", "Cc",
-            "Cf", "Co",
+            "Lu", "Ll", "Lt", "Lm", "Lo", "Mn", "Mc", "Me", "Nd", "Nl", "No", "Pc", "Pd", "Ps",
+            "Pe", "Pi", "Pf", "Po", "Sm", "Sc", "Sk", "So", "Zs", "Zl", "Zp", "Cc", "Cf", "Co",
         ];
         cats_list
             .iter()

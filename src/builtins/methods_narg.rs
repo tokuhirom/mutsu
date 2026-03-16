@@ -206,14 +206,10 @@ pub(crate) fn native_method_1arg(
                     if let Some(n) = int_val {
                         match key.as_str() {
                             "superscript" => {
-                                return Some(Ok(Value::str(
-                                    int_to_superscript(n),
-                                )));
+                                return Some(Ok(Value::str(int_to_superscript(n))));
                             }
                             "subscript" => {
-                                return Some(Ok(Value::str(
-                                    int_to_subscript(n),
-                                )));
+                                return Some(Ok(Value::str(int_to_subscript(n))));
                             }
                             _ => {}
                         }
