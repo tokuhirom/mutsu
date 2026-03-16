@@ -710,19 +710,33 @@ impl Interpreter {
 
     fn bind_param_value(&mut self, name: &str, value: Value) {
         self.env.insert(name.to_string(), value.clone());
-        if let Some(attr_name) = name.strip_prefix('!')
-            && let Some(Value::Instance {
+        // Extract attribute name from twigil params: $!x → "x", @!types → "types", %!h → "h"
+        let attr_name = if let Some(a) = name.strip_prefix('!') {
+            Some(a)
+        } else {
+            // Handle sigil+twigil: @!types, %!h, @.items, %.pairs
+            name.strip_prefix("@!")
+                .or_else(|| name.strip_prefix("%!"))
+                .or_else(|| name.strip_prefix("@."))
+                .or_else(|| name.strip_prefix("%."))
+        };
+        if let Some(attr_name) = attr_name {
+            // Also set the canonical !attr env key so write-back finds it
+            self.env.insert(format!("!{}", attr_name), value.clone());
+            self.env.insert(format!(".{}", attr_name), value.clone());
+            if let Some(Value::Instance {
                 class_name,
                 attributes,
                 id,
             }) = self.env.get("self").cloned()
-        {
-            let mut updated_attrs = (*attributes).clone();
-            updated_attrs.insert(attr_name.to_string(), value.clone());
-            self.env.insert(
-                "self".to_string(),
-                Value::make_instance_with_id(class_name, updated_attrs, id),
-            );
+            {
+                let mut updated_attrs = (*attributes).clone();
+                updated_attrs.insert(attr_name.to_string(), value.clone());
+                self.env.insert(
+                    "self".to_string(),
+                    Value::make_instance_with_id(class_name, updated_attrs, id),
+                );
+            }
         }
         if matches!(
             value,
@@ -2444,10 +2458,18 @@ impl Interpreter {
                 } else if pd.named {
                     // Named params like :@l or :%h have name "@l" or "%h";
                     // strip the sigil to match the Pair key "l" or "h".
-                    pd.name
+                    // Also strip twigil prefixes: :$!x has name "!x", :$.x has name ".x",
+                    // :@!types has name "@!types" — match against Pair key "types".
+                    // First strip sigil (@, %), then strip twigil (!, .).
+                    let after_sigil = pd
+                        .name
                         .strip_prefix('@')
                         .or_else(|| pd.name.strip_prefix('%'))
-                        .unwrap_or(&pd.name)
+                        .unwrap_or(&pd.name);
+                    after_sigil
+                        .strip_prefix('!')
+                        .or_else(|| after_sigil.strip_prefix('.'))
+                        .unwrap_or(after_sigil)
                 } else {
                     &pd.name
                 };

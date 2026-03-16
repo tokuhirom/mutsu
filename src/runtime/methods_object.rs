@@ -1683,14 +1683,29 @@ impl Interpreter {
                 // First, collect constructor args into attrs
                 self.env = saved_default_env.clone();
                 let class_mro = self.class_mro(class_key);
+                // When BUILD is defined, it controls attribute initialization,
+                // so we skip automatic named-arg-to-attribute mapping.
+                let any_build = class_mro.iter().any(|cn| {
+                    cn != "Any"
+                        && cn != "Mu"
+                        && self
+                            .classes
+                            .get(cn)
+                            .and_then(|def| def.methods.get("BUILD"))
+                            .is_some()
+                });
                 for val in &args {
                     match val {
                         Value::Pair(k, v) => {
-                            let coerced = Self::coerce_attr_value_by_sigil(
-                                *v.clone(),
-                                sigil_map.get(k).copied().unwrap_or('$'),
-                            );
-                            attrs.insert(k.clone(), coerced);
+                            if !any_build {
+                                let coerced = Self::coerce_attr_value_by_sigil(
+                                    *v.clone(),
+                                    sigil_map.get(k).copied().unwrap_or('$'),
+                                );
+                                attrs.insert(k.clone(), coerced);
+                            }
+                            // When BUILD exists, named args are passed to BUILD
+                            // which controls attribute initialization directly
                         }
                         Value::Instance {
                             class_name: src_class,
