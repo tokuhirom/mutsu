@@ -1095,6 +1095,49 @@ impl Compiler {
                     quoted: *quoted,
                 });
             }
+            // Method call on indexed target with mutating method — needs writeback.
+            // e.g., %hash<key>.push(4) or @array[0].push(5)
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                modifier,
+                quoted,
+            } if Self::is_mutating_method_on_index(target, name) => {
+                if let Expr::Index {
+                    target: idx_target,
+                    index: idx_key,
+                } = target.as_ref()
+                {
+                    let var_name = Self::postfix_index_name(idx_target).unwrap_or_default();
+                    // 1. Compile the index expression to get the element value
+                    self.compile_expr(target);
+                    // 2. Compile method arguments
+                    let arity = args.len() as u32;
+                    for arg in args {
+                        self.compile_method_arg(arg);
+                    }
+                    // 3. Emit CallMethod to invoke the method (non-mutating,
+                    //    returns a modified copy of the array)
+                    let name_idx = self.code.add_constant(Value::str(name.resolve()));
+                    let modifier_idx =
+                        modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
+                    self.code.emit(OpCode::CallMethod {
+                        name_idx,
+                        arity,
+                        modifier_idx,
+                        quoted: *quoted,
+                    });
+                    // 4. Emit writeback: write the modified value back to the
+                    //    container at the same index.
+                    //    IndexAssignExprNamed expects stack: [val, idx] with idx on top.
+                    self.compile_expr(idx_key);
+                    let var_name_idx = self.code.add_constant(Value::str(var_name));
+                    self.code.emit(OpCode::IndexAssignExprNamed(var_name_idx));
+                } else {
+                    unreachable!()
+                }
+            }
             // Method call on non-variable target (no writeback needed)
             Expr::MethodCall {
                 target,
