@@ -1646,11 +1646,28 @@ impl VM {
                             | "DEFINITE"
                             | "item"
                             | "list"
+                            | "AT-POS"
+                            | "AT-KEY"
+                            | "EXISTS-POS"
+                            | "EXISTS-KEY"
+                            | "DELETE-POS"
+                            | "DELETE-KEY"
+                            | "ASSIGN-POS"
+                            | "ASSIGN-KEY"
+                            | "BIND-POS"
+                            | "BIND-KEY"
+                            | "push"
+                            | "pop"
+                            | "shift"
+                            | "unshift"
+                            | "append"
+                            | "prepend"
+                            | "splice"
                     );
                     if is_iterable_item && !is_list_native_method {
                         let sub_items = crate::runtime::value_to_list(item);
                         let mut sub_results = Vec::with_capacity(sub_items.len());
-                        for mut sub_item in sub_items {
+                        for sub_item in sub_items {
                             let sub_val = if !skip_native {
                                 if let Some(native_result) = self.try_native_method(
                                     &sub_item,
@@ -1660,7 +1677,7 @@ impl VM {
                                     native_result?
                                 } else {
                                     let (v, _updated) = self.call_method_mut_with_temp_target(
-                                        &mut sub_item,
+                                        &sub_item,
                                         &method,
                                         item_args.clone(),
                                         idx,
@@ -1669,7 +1686,7 @@ impl VM {
                                 }
                             } else {
                                 let (v, _updated) = self.call_method_mut_with_temp_target(
-                                    &mut sub_item,
+                                    &sub_item,
                                     &method,
                                     item_args.clone(),
                                     idx,

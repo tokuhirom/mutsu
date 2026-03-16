@@ -191,33 +191,33 @@ pub(crate) fn native_method_1arg(
     match method {
         "Str" => {
             // Int.Str(:superscript) and Int.Str(:subscript)
-            if let Value::Pair(key, val) = arg {
-                if val.truthy() {
-                    let int_val = match target {
-                        Value::Int(i) => Some(*i),
-                        Value::BigInt(bi) => bi.to_i64(),
-                        Value::Num(f) => Some(*f as i64),
-                        Value::Bool(b) => Some(if *b { 1 } else { 0 }),
-                        _ => {
-                            let s = target.to_string_value();
-                            s.parse::<i64>().ok()
+            if let Value::Pair(key, val) = arg
+                && val.truthy()
+            {
+                let int_val = match target {
+                    Value::Int(i) => Some(*i),
+                    Value::BigInt(bi) => bi.to_i64(),
+                    Value::Num(f) => Some(*f as i64),
+                    Value::Bool(b) => Some(if *b { 1 } else { 0 }),
+                    _ => {
+                        let s = target.to_string_value();
+                        s.parse::<i64>().ok()
+                    }
+                };
+                if let Some(n) = int_val {
+                    match key.as_str() {
+                        "superscript" => {
+                            return Some(Ok(Value::str(int_to_superscript(n))));
                         }
-                    };
-                    if let Some(n) = int_val {
-                        match key.as_str() {
-                            "superscript" => {
-                                return Some(Ok(Value::str(int_to_superscript(n))));
-                            }
-                            "subscript" => {
-                                return Some(Ok(Value::str(int_to_subscript(n))));
-                            }
-                            _ => {}
+                        "subscript" => {
+                            return Some(Ok(Value::str(int_to_subscript(n))));
                         }
+                        _ => {}
                     }
                 }
             }
             // Default: just stringify
-            return Some(Ok(Value::str(target.to_string_value())));
+            Some(Ok(Value::str(target.to_string_value())))
         }
         "chop" => {
             // Type objects (Package) should throw
