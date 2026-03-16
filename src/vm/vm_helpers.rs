@@ -2257,6 +2257,47 @@ impl VM {
             .map(Value::Int)
             .unwrap_or_else(|| Value::bigint(wrapped))
     }
+
+    /// Evaluate truthiness of a value, including dispatch to user-defined Bool methods.
+    /// For Package (type objects) and Instance values, checks if the class defines
+    /// a custom Bool method and calls it. Falls back to Value::truthy() otherwise.
+    pub(super) fn eval_truthy(&mut self, val: &Value) -> bool {
+        match val {
+            Value::Package(name) => {
+                let class_name = name.resolve().to_string();
+                if self
+                    .interpreter
+                    .resolve_method_with_owner(&class_name, "Bool", &[])
+                    .is_some()
+                {
+                    if let Ok(result) =
+                        self.interpreter
+                            .call_method_with_values(val.clone(), "Bool", vec![])
+                    {
+                        return result.truthy();
+                    }
+                }
+                val.truthy()
+            }
+            Value::Instance { class_name, .. } => {
+                let cn = class_name.resolve().to_string();
+                if self
+                    .interpreter
+                    .resolve_method_with_owner(&cn, "Bool", &[])
+                    .is_some()
+                {
+                    if let Ok(result) =
+                        self.interpreter
+                            .call_method_with_values(val.clone(), "Bool", vec![])
+                    {
+                        return result.truthy();
+                    }
+                }
+                val.truthy()
+            }
+            _ => val.truthy(),
+        }
+    }
 }
 
 /// Write back attribute values from env after method execution.
