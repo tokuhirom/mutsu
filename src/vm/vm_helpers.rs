@@ -2269,13 +2269,11 @@ impl VM {
                     .interpreter
                     .resolve_method_with_owner(&class_name, "Bool", &[])
                     .is_some()
+                    && let Ok(result) = self
+                        .interpreter
+                        .call_method_with_values(val.clone(), "Bool", vec![])
                 {
-                    if let Ok(result) =
-                        self.interpreter
-                            .call_method_with_values(val.clone(), "Bool", vec![])
-                    {
-                        return result.truthy();
-                    }
+                    return result.truthy();
                 }
                 val.truthy()
             }
@@ -2285,13 +2283,11 @@ impl VM {
                     .interpreter
                     .resolve_method_with_owner(&cn, "Bool", &[])
                     .is_some()
+                    && let Ok(result) = self
+                        .interpreter
+                        .call_method_with_values(val.clone(), "Bool", vec![])
                 {
-                    if let Ok(result) =
-                        self.interpreter
-                            .call_method_with_values(val.clone(), "Bool", vec![])
-                    {
-                        return result.truthy();
-                    }
+                    return result.truthy();
                 }
                 val.truthy()
             }
