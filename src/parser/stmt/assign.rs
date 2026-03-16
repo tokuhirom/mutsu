@@ -658,8 +658,8 @@ fn build_compound_assign_expr(lhs: Expr, op: CompoundAssignOp, rhs: Expr) -> Res
                 assigned_value,
             )
         }
-        Expr::BracketArray(items) => Expr::Binary {
-            left: Box::new(Expr::BracketArray(items)),
+        Expr::BracketArray(items, tc) => Expr::Binary {
+            left: Box::new(Expr::BracketArray(items, tc)),
             op: op.token_kind(),
             right: Box::new(rhs),
         },

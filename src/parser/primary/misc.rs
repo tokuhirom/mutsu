@@ -770,7 +770,7 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Binary {
                 left: Box::new(Expr::Literal(Value::str(name.to_string()))),
                 op: crate::token_kind::TokenKind::FatArrow,
-                right: Box::new(Expr::BracketArray(items)),
+                right: Box::new(Expr::BracketArray(items, false)),
             },
         ));
     }

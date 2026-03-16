@@ -388,7 +388,7 @@ impl Interpreter {
             }
             Expr::Call { args, .. }
             | Expr::ArrayLiteral(args)
-            | Expr::BracketArray(args)
+            | Expr::BracketArray(args, _)
             | Expr::CaptureLiteral(args)
             | Expr::StringInterpolation(args) => {
                 for arg in args {
@@ -618,7 +618,7 @@ impl Interpreter {
             }
             Expr::Call { args, .. }
             | Expr::ArrayLiteral(args)
-            | Expr::BracketArray(args)
+            | Expr::BracketArray(args, _)
             | Expr::StringInterpolation(args) => {
                 for arg in args {
                     self.check_private_calls_exist_expr(class_name, class_def, arg)?;

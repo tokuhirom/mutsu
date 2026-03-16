@@ -201,7 +201,7 @@ fn expr_contains_whatever(expr: &Expr) -> bool {
         Expr::Whatever | Expr::HyperWhatever => true,
         Expr::StringInterpolation(parts)
         | Expr::ArrayLiteral(parts)
-        | Expr::BracketArray(parts)
+        | Expr::BracketArray(parts, _)
         | Expr::CaptureLiteral(parts) => parts.iter().any(expr_contains_whatever),
         Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
             expr_contains_whatever(target) || args.iter().any(expr_contains_whatever)

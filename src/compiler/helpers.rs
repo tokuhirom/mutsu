@@ -397,7 +397,7 @@ impl Compiler {
             }
             Expr::StringInterpolation(parts)
             | Expr::ArrayLiteral(parts)
-            | Expr::BracketArray(parts)
+            | Expr::BracketArray(parts, _)
             | Expr::CaptureLiteral(parts) => parts.iter().any(Self::expr_has_placeholder),
             _ => false,
         }

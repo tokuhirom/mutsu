@@ -1174,6 +1174,10 @@ impl VM {
                 self.exec_make_array_op(*n, true);
                 *ip += 1;
             }
+            OpCode::MakeRealArrayNoFlatten(n) => {
+                self.exec_make_array_no_flatten_op(*n);
+                *ip += 1;
+            }
             OpCode::MakeHash(n) => {
                 self.exec_make_hash_op(*n);
                 *ip += 1;

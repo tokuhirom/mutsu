@@ -628,11 +628,16 @@ impl Compiler {
                 }
                 self.code.emit(OpCode::MakeArray(elems.len() as u32));
             }
-            Expr::BracketArray(elems) => {
+            Expr::BracketArray(elems, trailing_comma) => {
                 // When a single ArrayLiteral is the sole element (e.g., [<a b c>]
                 // or [(1,2,3)]), flatten it so items become direct array elements.
                 // Multiple comma-separated items stay as-is: [(0,1),(2,3)] → 2 Lists.
-                if elems.len() == 1 {
+                // A trailing comma with a nested BracketArray (e.g. `[[2],]`) prevents
+                // single-element flattening so the inner array stays nested.
+                let nested_array_with_comma = *trailing_comma
+                    && elems.len() == 1
+                    && matches!(elems[0], Expr::BracketArray(..));
+                if elems.len() == 1 && !nested_array_with_comma {
                     if let Expr::ArrayLiteral(items) = &elems[0] {
                         for item in items {
                             self.compile_expr(item);
@@ -646,7 +651,12 @@ impl Compiler {
                     for elem in elems {
                         self.compile_expr(elem);
                     }
-                    self.code.emit(OpCode::MakeRealArray(elems.len() as u32));
+                    if nested_array_with_comma {
+                        self.code
+                            .emit(OpCode::MakeRealArrayNoFlatten(elems.len() as u32));
+                    } else {
+                        self.code.emit(OpCode::MakeRealArray(elems.len() as u32));
+                    }
                 }
             }
             Expr::CaptureLiteral(items) => {

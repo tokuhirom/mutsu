@@ -95,7 +95,7 @@ fn expr_uses_attr_twigil(expr: &Expr) -> bool {
         }
         Expr::Call { args, .. }
         | Expr::ArrayLiteral(args)
-        | Expr::BracketArray(args)
+        | Expr::BracketArray(args, _)
         | Expr::CaptureLiteral(args)
         | Expr::StringInterpolation(args) => args.iter().any(expr_uses_attr_twigil),
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } | Expr::Reduction { expr, .. } => {

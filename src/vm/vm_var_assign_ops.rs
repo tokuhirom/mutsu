@@ -1061,6 +1061,32 @@ impl VM {
                 Value::hash(std::collections::HashMap::new()),
             );
         }
+
+        // Handle Array-in-Array: $a[outer][inner] = val
+        if let Some(Value::Array(outer_arr, _kind)) = self.interpreter.env_mut().get_mut(&var_name)
+            && let Ok(outer_i) = outer_key.parse::<usize>()
+        {
+            let arr = Arc::make_mut(outer_arr);
+            if outer_i < arr.len()
+                && let Value::Array(ref mut inner_arr, _) = arr[outer_i]
+                && let Ok(inner_i) = inner_key.parse::<usize>()
+            {
+                let inner = Arc::make_mut(inner_arr);
+                if inner_i < inner.len() {
+                    inner[inner_i] = val.clone();
+                } else {
+                    inner.resize(inner_i + 1, Value::Nil);
+                    inner[inner_i] = val.clone();
+                }
+                if let Some(updated) = self.get_env_with_main_alias(&var_name) {
+                    self.update_local_if_exists(code, &var_name, &updated);
+                }
+                self.stack.push(val);
+                return;
+            }
+        }
+
+        // Hash-in-Hash auto-vivification (original behavior)
         if let Some(Value::Hash(outer_hash)) = self.interpreter.env_mut().get_mut(&var_name) {
             let oh = Arc::make_mut(outer_hash);
             let inner_hash = oh

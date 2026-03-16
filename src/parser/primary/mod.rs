@@ -365,7 +365,7 @@ mod tests {
             } => {
                 assert_eq!(name, "item");
                 assert!(args.is_empty());
-                assert!(matches!(*target, Expr::BracketArray(ref elems) if elems.len() == 2));
+                assert!(matches!(*target, Expr::BracketArray(ref elems, _) if elems.len() == 2));
             }
             _ => panic!("expected itemized bracket method call"),
         }

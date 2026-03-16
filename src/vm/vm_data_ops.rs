@@ -47,6 +47,22 @@ impl VM {
         }
     }
 
+    /// Like `exec_make_array_op` with `is_real_array=true` but never flattens
+    /// single elements. Used for bracket arrays with trailing comma (`[x,]`).
+    pub(super) fn exec_make_array_no_flatten_op(&mut self, n: u32) {
+        let n = n as usize;
+        let start = self.stack.len() - n;
+        let raw: Vec<Value> = self.stack.drain(start..).collect();
+        let mut elems = Vec::with_capacity(raw.len());
+        for val in raw {
+            match val {
+                Value::Slip(items) => elems.extend(items.iter().cloned()),
+                other => elems.push(other),
+            }
+        }
+        self.stack.push(Value::real_array(elems));
+    }
+
     pub(super) fn exec_make_hash_op(&mut self, n: u32) {
         let n = n as usize;
         let start = self.stack.len() - n * 2;
