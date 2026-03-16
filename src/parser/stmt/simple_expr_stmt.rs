@@ -925,7 +925,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             });
             return parse_statement_modifier(r, stmt);
         }
-        let stmt = if matches!(expr, Expr::BracketArray(_))
+        let stmt = if matches!(expr, Expr::BracketArray(..))
             && matches!(op, super::assign::CompoundAssignOp::Comma)
         {
             Stmt::Expr(Expr::Binary {

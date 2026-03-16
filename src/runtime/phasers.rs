@@ -314,7 +314,7 @@ fn lift_phasers_from_expr(expr: &mut Expr, check: &mut Vec<Stmt>, init: &mut Vec
             }
         }
         Expr::ArrayLiteral(es)
-        | Expr::BracketArray(es)
+        | Expr::BracketArray(es, _)
         | Expr::StringInterpolation(es)
         | Expr::CaptureLiteral(es) => {
             for e in es.iter_mut() {

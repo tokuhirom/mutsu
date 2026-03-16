@@ -190,6 +190,8 @@ pub(crate) enum OpCode {
     MakeArray(u32),
     /// Like MakeArray but creates a true Array (from [...] literals) instead of a List.
     MakeRealArray(u32),
+    /// Like MakeRealArray but never flattens a single element (from `[x,]` trailing comma).
+    MakeRealArrayNoFlatten(u32),
     MakeHash(u32),
     /// Create a Capture from `count` items on stack. Pair values become named args,
     /// non-Pair values become positional args. Slip values are flattened.

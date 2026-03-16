@@ -2824,7 +2824,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                             } else if let Value::Bool(false) = v {
                                 format!(":!{}", k)
                             } else {
-                                format!(":{}({})", k, raku_value(v))
+                                // Hash values are containerized; Nil in a container
+                                // resets to the container default (Any).
+                                let repr = if matches!(v, Value::Nil) {
+                                    "Any".to_string()
+                                } else {
+                                    raku_value(v)
+                                };
+                                format!(":{}({})", k, repr)
                             }
                         })
                         .collect();

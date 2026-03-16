@@ -1141,7 +1141,7 @@ impl Interpreter {
                 Expr::Call { args, .. } => args.iter().any(expr_contains_last),
                 Expr::StringInterpolation(items)
                 | Expr::ArrayLiteral(items)
-                | Expr::BracketArray(items)
+                | Expr::BracketArray(items, _)
                 | Expr::CaptureLiteral(items) => items.iter().any(expr_contains_last),
                 Expr::Hash(items) => items
                     .iter()

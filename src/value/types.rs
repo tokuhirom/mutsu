@@ -146,6 +146,13 @@ impl Value {
             }
             // Other Instance types: use identity comparison
             (Value::Instance { .. }, Value::Instance { .. }) => self == other,
+            // Nil and Package("Any") are eqv: both represent the undefined type object Any.
+            // This matters for containerized contexts (e.g. hash values).
+            (Value::Nil, Value::Package(name)) | (Value::Package(name), Value::Nil)
+                if name == "Any" =>
+            {
+                true
+            }
             (Value::Range(_, _), Value::Range(_, _))
             | (Value::RangeExcl(_, _), Value::RangeExcl(_, _))
             | (Value::RangeExclStart(_, _), Value::RangeExclStart(_, _))

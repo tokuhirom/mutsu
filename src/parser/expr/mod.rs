@@ -211,7 +211,7 @@ fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
             contains_xx_with_bare_whatever(target)
                 || args.iter().any(contains_xx_with_bare_whatever)
         }
-        Expr::ArrayLiteral(items) | Expr::BracketArray(items) => {
+        Expr::ArrayLiteral(items) | Expr::BracketArray(items, _) => {
             items.iter().any(contains_xx_with_bare_whatever)
         }
         Expr::CaptureLiteral(items) => items.iter().any(contains_xx_with_bare_whatever),

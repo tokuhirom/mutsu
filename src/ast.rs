@@ -195,7 +195,9 @@ pub(crate) enum Expr {
     /// At runtime this becomes a ValuePair so it is treated as a positional argument.
     PositionalPair(Box<Expr>),
     /// Array constructed with [...] (reports as "Array" type vs "List" for comma lists).
-    BracketArray(Vec<Expr>),
+    /// The bool flag is `true` when a trailing comma was present (e.g. `[x,]`),
+    /// which prevents single-element flattening.
+    BracketArray(Vec<Expr>, bool),
     /// Capture literal: \(positional..., named...) — mixed exprs separated at compile time
     CaptureLiteral(Vec<Expr>),
     Index {
@@ -890,7 +892,7 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
             }
         }
         Expr::ArrayLiteral(es)
-        | Expr::BracketArray(es)
+        | Expr::BracketArray(es, _)
         | Expr::StringInterpolation(es)
         | Expr::CaptureLiteral(es) => {
             for e in es {

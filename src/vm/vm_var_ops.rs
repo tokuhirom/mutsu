@@ -1387,10 +1387,41 @@ impl VM {
                     Value::Nil
                 }
             }
+            // Associative indexing on non-hash types returns a Failure
+            (ref target, Value::Str(_))
+                if matches!(
+                    target,
+                    Value::Array(..)
+                        | Value::Int(_)
+                        | Value::BigInt(_)
+                        | Value::Num(_)
+                        | Value::Rat(..)
+                        | Value::Bool(_)
+                ) =>
+            {
+                let type_name = crate::value::types::what_type_name(target);
+                Self::make_assoc_indexing_failure(&type_name)
+            }
             _ => Value::Nil,
         };
         self.stack.push(result);
         Ok(())
+    }
+
+    /// Create a Failure for "Type X does not support associative indexing."
+    fn make_assoc_indexing_failure(type_name: &str) -> Value {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert(
+            "message".to_string(),
+            Value::str_from(&format!(
+                "Type {} does not support associative indexing.",
+                type_name
+            )),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
+        let mut failure_attrs = std::collections::HashMap::new();
+        failure_attrs.insert("exception".to_string(), ex);
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
     /// Resolve WhateverCode indices for array deletion.

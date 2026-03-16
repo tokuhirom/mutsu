@@ -1918,7 +1918,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         } else if let Some(expr) = default.take() {
             default = Some(match expr {
                 Expr::ArrayLiteral(_)
-                | Expr::BracketArray(_)
+                | Expr::BracketArray(..)
                 | Expr::ArrayVar(_)
                 | Expr::Var(_)
                 | Expr::Index { .. } => expr,

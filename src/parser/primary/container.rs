@@ -486,7 +486,22 @@ pub(super) fn itemized_brace_expr(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("itemized brace expression"));
     }
     let (rest, inner) = super::misc::block_or_hash_expr(rest)?;
-    Ok((rest, Expr::CaptureLiteral(vec![inner])))
+    // When the inner expression is a Hash literal, ${ } creates an itemized hash
+    // (wrapped in a Scalar container), not a Capture.
+    if matches!(inner, Expr::Hash(_)) {
+        Ok((
+            rest,
+            Expr::MethodCall {
+                target: Box::new(inner),
+                name: Symbol::intern("item"),
+                args: vec![],
+                modifier: None,
+                quoted: false,
+            },
+        ))
+    } else {
+        Ok((rest, Expr::CaptureLiteral(vec![inner])))
+    }
 }
 
 /// Parse itemized bracket expression: `$[...]`.
@@ -644,7 +659,7 @@ pub(super) fn array_literal(input: &str) -> PResult<'_, Expr> {
     let (input, _) = ws(input)?;
     let mut items = Vec::new();
     if let Ok((input, _)) = parse_char(input, ']') {
-        return Ok((input, Expr::BracketArray(items)));
+        return Ok((input, Expr::BracketArray(items, false)));
     }
     let (mut rest, first) = expression(input)?;
     items.push(first);
@@ -653,7 +668,7 @@ pub(super) fn array_literal(input: &str) -> PResult<'_, Expr> {
         if let Ok((r, _)) = parse_char(r, ',') {
             let (r, _) = ws(r)?;
             if let Ok((r, _)) = parse_char(r, ']') {
-                return Ok((r, Expr::BracketArray(merge_sequence_seeds(items))));
+                return Ok((r, Expr::BracketArray(merge_sequence_seeds(items), true)));
             }
             let (r, next) = expression(r)?;
             items.push(next);
@@ -661,7 +676,7 @@ pub(super) fn array_literal(input: &str) -> PResult<'_, Expr> {
         } else {
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ']')?;
-            return Ok((r, Expr::BracketArray(merge_sequence_seeds(items))));
+            return Ok((r, Expr::BracketArray(merge_sequence_seeds(items), false)));
         }
     }
 }

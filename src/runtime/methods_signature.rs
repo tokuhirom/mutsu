@@ -297,7 +297,7 @@ impl Interpreter {
                     scan_expr(else_expr, positional, named);
                 }
                 Expr::ArrayLiteral(es)
-                | Expr::BracketArray(es)
+                | Expr::BracketArray(es, _)
                 | Expr::StringInterpolation(es)
                 | Expr::CaptureLiteral(es) => {
                     for e in es {
