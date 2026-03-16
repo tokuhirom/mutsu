@@ -847,7 +847,7 @@ impl Interpreter {
                 let mut updated = (*attributes).clone();
                 let assigned_value =
                     Self::normalize_rw_accessor_assignment(updated.get(&attr_key).cloned(), value);
-                updated.insert(attr_key, assigned_value.clone());
+                updated.insert(attr_key.clone(), assigned_value.clone());
                 if let Some(var_name) = target_var {
                     self.overwrite_instance_bindings_by_identity(
                         &class_name.resolve(),
@@ -858,6 +858,12 @@ impl Interpreter {
                         var_name.to_string(),
                         Value::make_instance_with_id(class_name, updated, target_id),
                     );
+                    // Also update attribute env variables so compiled method
+                    // writeback picks up the change (e.g. $.cnt += 4 inside a method)
+                    self.env
+                        .insert(format!("!{}", attr_key), assigned_value.clone());
+                    self.env
+                        .insert(format!(".{}", attr_key), assigned_value.clone());
                 }
                 return Ok(assigned_value);
             }

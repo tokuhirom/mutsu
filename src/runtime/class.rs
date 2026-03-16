@@ -400,6 +400,8 @@ impl Interpreter {
             self.env.remove("?ROLE");
         }
         self.env.insert("self".to_string(), base.clone());
+        // Also set __ANON_STATE__ for `$.foo` compound-assignment desugaring
+        self.env.insert("__ANON_STATE__".to_string(), base.clone());
         if let Some(role_bindings) = self.class_role_param_bindings.get(owner_class) {
             for (name, value) in role_bindings {
                 self.env.insert(name.clone(), value.clone());
