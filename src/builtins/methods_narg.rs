@@ -441,6 +441,29 @@ pub(crate) fn native_method_1arg(
             let lines: Vec<Value> = lines.into_iter().map(Value::str).collect();
             Some(Ok(Value::array(lines)))
         }
+        "words" => {
+            let s = target.to_string_value();
+            let limit = match arg {
+                Value::Int(i) => Some((*i).max(0) as usize),
+                Value::BigInt(bi) => {
+                    use num_traits::ToPrimitive;
+                    Some(bi.to_usize().unwrap_or(usize::MAX))
+                }
+                Value::Whatever => None,
+                Value::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
+                Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+                Value::Rat(n, d) if *d == 0 && *n > 0 => None,
+                _ => return None,
+            };
+            let mut words: Vec<Value> = s
+                .split_whitespace()
+                .map(|w| Value::str(w.to_string()))
+                .collect();
+            if let Some(n) = limit {
+                words.truncate(n);
+            }
+            Some(Ok(Value::Seq(std::sync::Arc::new(words))))
+        }
         "join" => {
             if let Some(items) = target.as_list_items() {
                 let sep = arg.to_string_value();

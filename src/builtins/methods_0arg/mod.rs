@@ -2418,7 +2418,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 .split_whitespace()
                 .map(|w| Value::str(w.to_string()))
                 .collect();
-            Some(Ok(Value::array(words)))
+            Some(Ok(Value::Seq(std::sync::Arc::new(words))))
         }
         "codes" => {
             let s = target.to_string_value();
