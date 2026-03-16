@@ -323,6 +323,7 @@ roast/S10-packages/require-and-use.t
 roast/S10-packages/use-with-class.t
 roast/S11-compunit/compunit-dependencyspecification.t
 roast/S11-compunit/rt126904.t
+roast/S11-modules/export.t
 roast/S11-modules/gh2979.t
 roast/S11-modules/import.t
 roast/S11-modules/lexical.t

@@ -68,6 +68,44 @@ impl Interpreter {
                 ));
             }
         };
+        // When the function's package is not GLOBAL, the Compiler qualifies
+        // bare variable references as $Package::name.  Ensure parameter bindings
+        // are also reachable via those qualified names.
+        let cur_pkg = self.current_package().to_string();
+        if cur_pkg != "GLOBAL" {
+            let qualified_aliases: Vec<(String, Value)> = def
+                .param_defs
+                .iter()
+                .filter_map(|pd| {
+                    let bare = pd
+                        .name
+                        .strip_prefix('$')
+                        .or_else(|| pd.name.strip_prefix('@'))
+                        .or_else(|| pd.name.strip_prefix('%'))
+                        .or_else(|| pd.name.strip_prefix('&'));
+                    if let Some(bare) = bare {
+                        self.env.get(&pd.name).cloned().map(|v| {
+                            let sigil = &pd.name[..pd.name.len() - bare.len()];
+                            (format!("{}{}::{}", sigil, cur_pkg, bare), v)
+                        })
+                    } else if !pd.name.is_empty()
+                        && !pd.name.starts_with('_')
+                        && !pd.name.starts_with('!')
+                        && !pd.name.contains("::")
+                    {
+                        self.env
+                            .get(&pd.name)
+                            .cloned()
+                            .map(|v| (format!("{}::{}", cur_pkg, pd.name), v))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            for (key, val) in qualified_aliases {
+                self.env.insert(key, val);
+            }
+        }
         // Push Sub value to block_stack so callframe().code works for nested calls
         let sub_val = Value::make_sub(
             def.package,
