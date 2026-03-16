@@ -2822,9 +2822,7 @@ impl Interpreter {
                     .samewith_context_stack
                     .last()
                     .is_some_and(|(name, _)| name == "new");
-            if in_new
-                && let Some(invocant) = self.env.get("self").cloned()
-            {
+            if in_new && let Some(invocant) = self.env.get("self").cloned() {
                 let call_args = override_args.unwrap_or_default();
                 let result = self.call_method_with_values(invocant, "bless", call_args)?;
                 if tail_call {
