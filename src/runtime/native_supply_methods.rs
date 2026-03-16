@@ -928,11 +928,37 @@ impl Interpreter {
             "words" => {
                 let source_values = self.supply_get_values(attributes)?;
                 let mut words = Vec::new();
+                let mut buffer = String::new();
                 for val in source_values {
                     let s = val.to_string_value();
-                    for word in s.split_whitespace() {
-                        words.push(Value::str(word.to_string()));
+                    buffer.push_str(&s);
+                    // Extract complete words from the buffer, keeping any
+                    // trailing partial word (text not followed by whitespace)
+                    // in the buffer for the next iteration.
+                    loop {
+                        let trimmed = buffer.trim_start();
+                        if trimmed.is_empty() {
+                            buffer.clear();
+                            break;
+                        }
+                        // Find end of word
+                        if let Some(ws_pos) = trimmed.find(char::is_whitespace) {
+                            let word = &trimmed[..ws_pos];
+                            words.push(Value::str(word.to_string()));
+                            let consumed = buffer.len() - trimmed.len() + ws_pos;
+                            buffer = buffer[consumed..].to_string();
+                        } else {
+                            // No whitespace found after word - it may be partial
+                            let leading_ws = buffer.len() - trimmed.len();
+                            buffer = buffer[leading_ws..].to_string();
+                            break;
+                        }
                     }
+                }
+                // Flush any remaining buffered word
+                let remaining = buffer.trim();
+                if !remaining.is_empty() {
+                    words.push(Value::str(remaining.to_string()));
                 }
                 Ok(self.make_supply_from_values(words, attributes))
             }
@@ -946,13 +972,12 @@ impl Interpreter {
                 for val in source_values {
                     if cond_idx < conditions.len() {
                         let cond = &conditions[cond_idx];
-                        let sm_result = self
-                            .call_method_with_values(val.clone(), "ACCEPTS", vec![cond.clone()])
-                            .unwrap_or(Value::Bool(false));
-                        if sm_result.truthy() {
-                            current_group.push(val);
+                        // Use smartmatch (val ~~ cond) to check if the condition matches
+                        let matched = self.smart_match(&val, cond);
+                        if matched {
+                            // Emit the current group and start a new one with this value
                             result.push(Value::array(current_group));
-                            current_group = Vec::new();
+                            current_group = vec![val];
                             cond_idx += 1;
                             continue;
                         }
