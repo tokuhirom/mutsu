@@ -109,6 +109,36 @@ fn sample_weighted_mix_key(items: &HashMap<String, f64>) -> Option<Value> {
         .find_map(|(key, weight)| (*weight > 0.0).then(|| Value::str(key.clone())))
 }
 
+fn int_to_superscript(n: i64) -> String {
+    const SUPER_DIGITS: [char; 10] = [
+        '\u{2070}', '\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}', '\u{2076}',
+        '\u{2077}', '\u{2078}', '\u{2079}',
+    ];
+    let s = n.to_string();
+    s.chars()
+        .map(|c| match c {
+            '-' => '\u{207B}', // superscript minus
+            d if d.is_ascii_digit() => SUPER_DIGITS[(d as u8 - b'0') as usize],
+            _ => c,
+        })
+        .collect()
+}
+
+fn int_to_subscript(n: i64) -> String {
+    const SUB_DIGITS: [char; 10] = [
+        '\u{2080}', '\u{2081}', '\u{2082}', '\u{2083}', '\u{2084}', '\u{2085}', '\u{2086}',
+        '\u{2087}', '\u{2088}', '\u{2089}',
+    ];
+    let s = n.to_string();
+    s.chars()
+        .map(|c| match c {
+            '-' => '\u{208B}', // subscript minus
+            d if d.is_ascii_digit() => SUB_DIGITS[(d as u8 - b'0') as usize],
+            _ => c,
+        })
+        .collect()
+}
+
 // ── 1-arg method dispatch ────────────────────────────────────────────
 /// Try to dispatch a 1-argument method call on a Value.
 pub(crate) fn native_method_1arg(
@@ -159,6 +189,36 @@ pub(crate) fn native_method_1arg(
         }
     }
     match method {
+        "Str" => {
+            // Int.Str(:superscript) and Int.Str(:subscript)
+            if let Value::Pair(key, val) = arg
+                && val.truthy()
+            {
+                let int_val = match target {
+                    Value::Int(i) => Some(*i),
+                    Value::BigInt(bi) => bi.to_i64(),
+                    Value::Num(f) => Some(*f as i64),
+                    Value::Bool(b) => Some(if *b { 1 } else { 0 }),
+                    _ => {
+                        let s = target.to_string_value();
+                        s.parse::<i64>().ok()
+                    }
+                };
+                if let Some(n) = int_val {
+                    match key.as_str() {
+                        "superscript" => {
+                            return Some(Ok(Value::str(int_to_superscript(n))));
+                        }
+                        "subscript" => {
+                            return Some(Ok(Value::str(int_to_subscript(n))));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            // Default: just stringify
+            Some(Ok(Value::str(target.to_string_value())))
+        }
         "chop" => {
             // Type objects (Package) should throw
             if let Value::Package(type_name) = target {

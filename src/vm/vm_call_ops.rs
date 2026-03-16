@@ -1580,24 +1580,158 @@ impl VM {
                     }
                 }
                 _ => {
-                    let val = if !skip_native {
-                        if let Some(native_result) =
-                            self.try_native_method(item, Symbol::intern(&method), &item_args)
-                        {
-                            native_result?
+                    // Hyper method dispatch on nested list/array/seq items.
+                    // Raku's >> descends into Iterable structures, but stops
+                    // if the method is natively defined on the list type
+                    // (e.g., .join, .elems, .sort, .reverse, .unique, .squish).
+                    let is_iterable_item =
+                        matches!(item, Value::Array(..) | Value::Seq(..) | Value::Slip(..));
+                    let is_list_native_method = matches!(
+                        method.as_str(),
+                        "join"
+                            | "elems"
+                            | "end"
+                            | "sort"
+                            | "reverse"
+                            | "unique"
+                            | "squish"
+                            | "pick"
+                            | "roll"
+                            | "head"
+                            | "tail"
+                            | "first"
+                            | "min"
+                            | "max"
+                            | "minmax"
+                            | "sum"
+                            | "flat"
+                            | "eager"
+                            | "lazy"
+                            | "sink"
+                            | "cache"
+                            | "List"
+                            | "Array"
+                            | "Seq"
+                            | "Slip"
+                            | "Supply"
+                            | "Set"
+                            | "SetHash"
+                            | "Bag"
+                            | "BagHash"
+                            | "Mix"
+                            | "MixHash"
+                            | "Str"
+                            | "gist"
+                            | "raku"
+                            | "perl"
+                            | "WHAT"
+                            | "WHO"
+                            | "HOW"
+                            | "so"
+                            | "Bool"
+                            | "Numeric"
+                            | "Int"
+                            | "Rat"
+                            | "Real"
+                            | "hash"
+                            | "Hash"
+                            | "kv"
+                            | "keys"
+                            | "values"
+                            | "pairs"
+                            | "antipairs"
+                            | "classify"
+                            | "categorize"
+                            | "map"
+                            | "grep"
+                            | "reduce"
+                            | "produce"
+                            | "combinations"
+                            | "permutations"
+                            | "rotate"
+                            | "batch"
+                            | "rotor"
+                            | "repeated"
+                            | "snip"
+                            | "defined"
+                            | "DEFINITE"
+                            | "item"
+                            | "list"
+                            | "AT-POS"
+                            | "AT-KEY"
+                            | "EXISTS-POS"
+                            | "EXISTS-KEY"
+                            | "DELETE-POS"
+                            | "DELETE-KEY"
+                            | "ASSIGN-POS"
+                            | "ASSIGN-KEY"
+                            | "BIND-POS"
+                            | "BIND-KEY"
+                            | "push"
+                            | "pop"
+                            | "shift"
+                            | "unshift"
+                            | "append"
+                            | "prepend"
+                            | "splice"
+                    );
+                    if is_iterable_item && !is_list_native_method {
+                        let sub_items = crate::runtime::value_to_list(item);
+                        let mut sub_results = Vec::with_capacity(sub_items.len());
+                        for sub_item in sub_items {
+                            let sub_val = if !skip_native {
+                                if let Some(native_result) = self.try_native_method(
+                                    &sub_item,
+                                    Symbol::intern(&method),
+                                    &item_args,
+                                ) {
+                                    native_result?
+                                } else {
+                                    let (v, _updated) = self.call_method_mut_with_temp_target(
+                                        &sub_item,
+                                        &method,
+                                        item_args.clone(),
+                                        idx,
+                                    )?;
+                                    v
+                                }
+                            } else {
+                                let (v, _updated) = self.call_method_mut_with_temp_target(
+                                    &sub_item,
+                                    &method,
+                                    item_args.clone(),
+                                    idx,
+                                )?;
+                                v
+                            };
+                            sub_results.push(sub_val);
+                        }
+                        let sub_kind = match item {
+                            Value::Array(_, kind) => *kind,
+                            _ => ArrayKind::List,
+                        };
+                        results.push(Value::Array(std::sync::Arc::new(sub_results), sub_kind));
+                    } else {
+                        let val = if !skip_native {
+                            if let Some(native_result) =
+                                self.try_native_method(item, Symbol::intern(&method), &item_args)
+                            {
+                                native_result?
+                            } else {
+                                let (v, updated) = self.call_method_mut_with_temp_target(
+                                    item, &method, item_args, idx,
+                                )?;
+                                *item = updated;
+                                v
+                            }
                         } else {
                             let (v, updated) = self
                                 .call_method_mut_with_temp_target(item, &method, item_args, idx)?;
                             *item = updated;
                             v
-                        }
-                    } else {
-                        let (v, updated) =
-                            self.call_method_mut_with_temp_target(item, &method, item_args, idx)?;
-                        *item = updated;
-                        v
-                    };
-                    results.push(val);
+                        };
+                        results.push(val);
+                    }
                 }
             }
         }

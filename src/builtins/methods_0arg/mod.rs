@@ -69,10 +69,35 @@ fn sample_weighted_mix_key(items: &HashMap<String, f64>) -> Option<Value> {
         .find_map(|(key, weight)| (*weight > 0.0).then(|| Value::str(key.clone())))
 }
 
+/// Normalize Unicode Nd (decimal digit) characters to their ASCII equivalents.
+/// Returns `None` if any non-sign, non-digit character is found.
+fn normalize_unicode_digits(s: &str) -> Option<String> {
+    let mut result = String::with_capacity(s.len());
+    let mut has_unicode = false;
+    for ch in s.chars() {
+        if ch.is_ascii_digit() || ch == '-' || ch == '+' || ch == '_' || ch == '.' {
+            result.push(ch);
+        } else if ch == '\u{2212}' {
+            result.push('-');
+            has_unicode = true;
+        } else if let Some(d) = crate::builtins::unicode::unicode_decimal_digit_value(ch) {
+            result.push(char::from_digit(d, 10).unwrap());
+            has_unicode = true;
+        } else {
+            return None;
+        }
+    }
+    if has_unicode { Some(result) } else { None }
+}
+
 fn parse_raku_int_from_str(s: &str) -> Option<Value> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
         return None;
+    }
+    // Try normalizing Unicode digits to ASCII before parsing
+    if let Some(ascii) = normalize_unicode_digits(trimmed) {
+        return parse_raku_int_from_str(&ascii);
     }
     let normalized = trimmed.replace('\u{2212}', "-");
     let (sign, body) = if let Some(rest) = normalized.strip_prefix('-') {
@@ -1584,10 +1609,22 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
                 Value::Rat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
                 Value::Str(s) => {
-                    if let Ok(i) = s.trim().parse::<i64>() {
+                    let trimmed = s.trim();
+                    if let Ok(i) = trimmed.parse::<i64>() {
                         Value::Int(i)
-                    } else if let Ok(f) = s.trim().parse::<f64>() {
+                    } else if let Ok(f) = trimmed.parse::<f64>() {
                         Value::Num(f)
+                    } else if let Some(normalized) = normalize_unicode_digits(trimmed) {
+                        if let Ok(i) = normalized.parse::<i64>() {
+                            Value::Int(i)
+                        } else if let Ok(f) = normalized.parse::<f64>() {
+                            Value::Num(f)
+                        } else {
+                            return Some(Err(RuntimeError::new(format!(
+                                "X::Str::Numeric: Cannot convert string '{}' to a number",
+                                s
+                            ))));
+                        }
                     } else {
                         return Some(Err(RuntimeError::new(format!(
                             "X::Str::Numeric: Cannot convert string '{}' to a number",
@@ -1693,6 +1730,43 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 .map(|c| Value::Int(c as u32 as i64))
                 .collect();
             Some(Ok(Value::array(ords)))
+        }
+        "uniprop" => {
+            let ch = match target {
+                Value::Int(i) => char::from_u32(*i as u32),
+                _ => {
+                    let s = target.to_string_value();
+                    s.chars().next()
+                }
+            };
+            let Some(ch) = ch else {
+                return Some(Ok(Value::str_from("Cn")));
+            };
+            Some(Ok(Value::str(
+                crate::builtins::unicode::unicode_general_category(ch),
+            )))
+        }
+        "unival" => {
+            let ch = match target {
+                Value::Int(i) => char::from_u32(*i as u32),
+                _ => {
+                    let s = target.to_string_value();
+                    s.chars().next()
+                }
+            };
+            let Some(ch) = ch else {
+                return Some(Ok(Value::Num(f64::NAN)));
+            };
+            if let Some((n, d)) = crate::builtins::unicode::unicode_rat_value(ch) {
+                return Some(Ok(crate::value::make_rat(n, d)));
+            }
+            if let Some(n) = crate::builtins::unicode::unicode_numeric_int_value(ch) {
+                return Some(Ok(Value::Int(n)));
+            }
+            if let Some(n) = crate::builtins::unicode::unicode_decimal_digit_value(ch) {
+                return Some(Ok(Value::Int(n as i64)));
+            }
+            Some(Ok(Value::Num(f64::NAN)))
         }
         "chr" => {
             let code = match target {
