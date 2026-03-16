@@ -1350,6 +1350,25 @@ impl Interpreter {
                 Ok(Value::str(String::from_utf8_lossy(&all_bytes).to_string()))
             }
             "Supply" => self.handle_supply(target, &args),
+            "native-descriptor" => {
+                let state = self.handle_state_mut(&target_val)?;
+                let fd = match state.target {
+                    IoHandleTarget::Stdin => 0i64,
+                    IoHandleTarget::Stdout => 1i64,
+                    IoHandleTarget::Stderr => 2i64,
+                    _ => {
+                        if let Some(ref file) = state.file {
+                            use std::os::unix::io::AsRawFd;
+                            file.as_raw_fd() as i64
+                        } else {
+                            return Err(RuntimeError::new(
+                                "native-descriptor: handle has no file descriptor",
+                            ));
+                        }
+                    }
+                };
+                Ok(Value::Int(fd))
+            }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on IO::Handle",
                 method

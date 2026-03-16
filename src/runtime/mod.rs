@@ -1241,6 +1241,7 @@ impl Interpreter {
                     "nl-out",
                     "nl-in",
                     "print-nl",
+                    "native-descriptor",
                 ]
                 .iter()
                 .map(|s| s.to_string())
