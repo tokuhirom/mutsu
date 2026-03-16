@@ -147,7 +147,25 @@ impl Interpreter {
         let mut delete = false;
         let mut complement = false;
 
+        // Flatten top-level array args that contain pairs.
+        // e.g. .trans: (/\@/ => "-",), :c  passes (pair,) as an Array arg.
+        let mut flat_args: Vec<Value> = Vec::new();
         for arg in args {
+            if let Value::Array(items, ..) = arg {
+                let all_pairs = items
+                    .iter()
+                    .all(|v| matches!(v, Value::Pair(..) | Value::ValuePair(..)));
+                if all_pairs && !items.is_empty() {
+                    for item in items.iter() {
+                        flat_args.push(item.clone());
+                    }
+                    continue;
+                }
+            }
+            flat_args.push(arg.clone());
+        }
+
+        for arg in &flat_args {
             if let Value::Pair(key, value) = arg {
                 match key.as_str() {
                     "s" | "squash" => {
@@ -204,25 +222,63 @@ impl Interpreter {
                         | Value::RangeExclBoth(..)
                         | Value::GenericRange { .. }
                 ) {
-                    let from_list = value_to_string_list(key);
-                    let to_list = value_to_string_list(value);
-                    // Decide CharMap vs TokenMap based on element lengths
-                    let has_multichar = from_list.iter().any(|s| s.chars().count() > 1)
-                        || to_list.iter().any(|s| s.chars().count() > 1);
-                    if has_multichar {
-                        rules.push(TransRule::TokenMap {
-                            from_tokens: from_list,
-                            to_tokens: to_list,
-                        });
+                    // Check if the from-side array contains any Regex values.
+                    // If so, create per-element rules to preserve regex semantics.
+                    let has_regex = if let Value::Array(items, ..) = key.as_ref() {
+                        items.iter().any(|v| matches!(v, Value::Regex(..)))
                     } else {
-                        let from_chars: Vec<char> =
-                            from_list.iter().filter_map(|s| s.chars().next()).collect();
-                        let to_chars: Vec<char> =
-                            to_list.iter().filter_map(|s| s.chars().next()).collect();
-                        rules.push(TransRule::CharMap {
-                            from_chars,
-                            to_chars,
-                        });
+                        false
+                    };
+                    if has_regex {
+                        let to_list = value_to_string_list(value);
+                        if let Value::Array(items, ..) = key.as_ref() {
+                            for (idx, item) in items.iter().enumerate() {
+                                let replacement = to_list.get(idx).cloned().unwrap_or_default();
+                                if let Value::Regex(pattern) = item {
+                                    rules.push(TransRule::Regex {
+                                        pattern: pattern.to_string(),
+                                        replacement,
+                                    });
+                                } else {
+                                    let s = item.to_string_value();
+                                    // Treat multi-char strings as tokens, not individual chars
+                                    if s.chars().count() > 1 {
+                                        rules.push(TransRule::TokenMap {
+                                            from_tokens: vec![s],
+                                            to_tokens: vec![replacement],
+                                        });
+                                    } else {
+                                        let from_chars = expand_trans_spec(&s);
+                                        let to_chars: Vec<char> = expand_trans_spec(&replacement);
+                                        rules.push(TransRule::CharMap {
+                                            from_chars,
+                                            to_chars,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        let from_list = value_to_string_list(key);
+                        let to_list = value_to_string_list(value);
+                        // Decide CharMap vs TokenMap based on element lengths
+                        let has_multichar = from_list.iter().any(|s| s.chars().count() > 1)
+                            || to_list.iter().any(|s| s.chars().count() > 1);
+                        if has_multichar {
+                            rules.push(TransRule::TokenMap {
+                                from_tokens: from_list,
+                                to_tokens: to_list,
+                            });
+                        } else {
+                            let from_chars: Vec<char> =
+                                from_list.iter().filter_map(|s| s.chars().next()).collect();
+                            let to_chars: Vec<char> =
+                                to_list.iter().filter_map(|s| s.chars().next()).collect();
+                            rules.push(TransRule::CharMap {
+                                from_chars,
+                                to_chars,
+                            });
+                        }
                     }
                 } else if is_closure(value) {
                     // String key + closure value

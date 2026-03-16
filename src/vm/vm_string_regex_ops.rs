@@ -308,6 +308,11 @@ impl VM {
                 .env_mut()
                 .insert("_".to_string(), result.clone());
         }
+        // Signal to the smartmatch handler that this is a transliterate result
+        // so it returns the result directly (as StrDistance) instead of comparing.
+        if self.in_smartmatch_rhs {
+            self.transliterate_in_smartmatch = true;
+        }
         self.stack.push(result);
         Ok(())
     }
