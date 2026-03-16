@@ -18,6 +18,10 @@ pub(crate) struct ReactSubscription {
     pub is_lines: bool,
     /// Buffer for incomplete lines (when is_lines is true).
     pub line_buffer: String,
+    /// Optional limit on number of emissions (from .head(N))
+    pub head_limit: Option<usize>,
+    /// Count of emissions so far (used with head_limit)
+    pub emit_count: usize,
 }
 
 impl Interpreter {
@@ -176,6 +180,7 @@ impl Interpreter {
                         let supply_id = self.resolve_supply_channel_id(attributes);
                         let is_lines =
                             matches!(attributes.get("is_lines"), Some(Value::Bool(true)));
+                        let head_limit = Self::extract_head_limit(attributes);
                         if let Some(sid) = supply_id
                             && let Some(rx) = take_supply_channel(sid)
                         {
@@ -200,6 +205,8 @@ impl Interpreter {
                                 done: false,
                                 is_lines,
                                 line_buffer: String::new(),
+                                head_limit,
+                                emit_count: 0,
                             });
                             continue;
                         }
@@ -225,6 +232,8 @@ impl Interpreter {
                                 done: false,
                                 is_lines,
                                 line_buffer: String::new(),
+                                head_limit,
+                                emit_count: 0,
                             });
                             continue;
                         }
@@ -269,6 +278,8 @@ impl Interpreter {
                             done: false,
                             is_lines: false,
                             line_buffer: String::new(),
+                            head_limit: None,
+                            emit_count: 0,
                         });
                     }
                     _ => {}
@@ -292,6 +303,17 @@ impl Interpreter {
                 if let Some(supplier_id) = sub.supplier_id {
                     let (values, done, quit) = supplier_snapshot(supplier_id);
                     while sub.supplier_next_index < values.len() {
+                        // Check head_limit before processing more values
+                        if let Some(limit) = sub.head_limit
+                            && sub.emit_count >= limit
+                        {
+                            // Reached the head limit — mark as done
+                            for callback in &sub.last_callbacks {
+                                self.call_sub_value(callback.clone(), Vec::new(), true)?;
+                            }
+                            sub.done = true;
+                            break;
+                        }
                         let value = values[sub.supplier_next_index].clone();
                         sub.supplier_next_index += 1;
                         if sub.is_lines {
@@ -310,6 +332,16 @@ impl Interpreter {
                                         other?;
                                     }
                                 }
+                                sub.emit_count += 1;
+                                if let Some(limit) = sub.head_limit
+                                    && sub.emit_count >= limit
+                                {
+                                    for callback in &sub.last_callbacks {
+                                        self.call_sub_value(callback.clone(), Vec::new(), true)?;
+                                    }
+                                    sub.done = true;
+                                    break;
+                                }
                             }
                         } else {
                             match self.call_sub_value(sub.callback.clone(), vec![value], true) {
@@ -317,6 +349,16 @@ impl Interpreter {
                                 other => {
                                     other?;
                                 }
+                            }
+                            sub.emit_count += 1;
+                            if let Some(limit) = sub.head_limit
+                                && sub.emit_count >= limit
+                            {
+                                for callback in &sub.last_callbacks {
+                                    self.call_sub_value(callback.clone(), Vec::new(), true)?;
+                                }
+                                sub.done = true;
+                                break;
                             }
                         }
                     }
@@ -430,6 +472,14 @@ impl Interpreter {
 
         Self::run_react_close_callbacks(self, &react_subs);
         Ok(())
+    }
+
+    fn extract_head_limit(attributes: &HashMap<String, Value>) -> Option<usize> {
+        if let Some(Value::Int(n)) = attributes.get("head_limit") {
+            Some(*n as usize)
+        } else {
+            None
+        }
     }
 
     fn extract_supply_on_close_callbacks(attributes: &HashMap<String, Value>) -> Vec<Value> {

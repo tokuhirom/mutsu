@@ -421,6 +421,10 @@ struct SupplierTapSubscription {
     unique_filter: Option<UniqueFilterState>,
     classify_state: Option<ClassifyState>,
     elems_trace: Option<ElemsTraceState>,
+    /// Optional limit on how many values to emit (from .head(N))
+    head_limit: Option<usize>,
+    /// Count of values emitted so far (used with head_limit)
+    head_count: usize,
 }
 
 #[derive(Clone, Default)]
@@ -744,6 +748,33 @@ pub(super) fn register_supplier_tap(supplier_id: u64, tap: Value, delay_seconds:
                 unique_filter: None,
                 classify_state: None,
                 elems_trace: None,
+                head_limit: None,
+                head_count: 0,
+            });
+    }
+}
+
+pub(super) fn register_supplier_tap_with_head_limit(
+    supplier_id: u64,
+    tap: Value,
+    delay_seconds: f64,
+    limit: usize,
+) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        map.entry(supplier_id)
+            .or_default()
+            .taps
+            .push(SupplierTapSubscription {
+                callback: tap,
+                line_mode: false,
+                line_chomp: true,
+                line_buffer: String::new(),
+                delay_seconds,
+                unique_filter: None,
+                classify_state: None,
+                elems_trace: None,
+                head_limit: Some(limit),
+                head_count: 0,
             });
     }
 }
@@ -767,6 +798,8 @@ pub(super) fn register_supplier_lines_tap(
                 unique_filter: None,
                 classify_state: None,
                 elems_trace: None,
+                head_limit: None,
+                head_count: 0,
             });
     }
 }
@@ -796,6 +829,8 @@ pub(super) fn register_supplier_elems_tap(
                     emitted_count: initial_count.max(0),
                     last_reported_count: initial_count.max(0),
                 }),
+                head_limit: None,
+                head_count: 0,
             });
     }
 }
@@ -817,6 +852,10 @@ pub(super) enum SupplierEmitAction {
         value: Value,
         tap_index: usize,
     },
+    /// Signal that a head-limited tap has reached its limit; fire done callbacks.
+    HeadLimitReached {
+        supplier_id: u64,
+    },
 }
 
 pub(super) fn supplier_emit_callbacks(
@@ -828,6 +867,12 @@ pub(super) fn supplier_emit_callbacks(
         && let Some(subs) = map.get_mut(&supplier_id)
     {
         for (idx, tap) in subs.taps.iter_mut().enumerate() {
+            // Check head_limit: skip emissions once the limit is reached
+            if let Some(limit) = tap.head_limit
+                && tap.head_count >= limit
+            {
+                continue;
+            }
             if tap.line_mode {
                 tap.line_buffer.push_str(&emitted_value.to_string_value());
                 for line in
@@ -904,6 +949,13 @@ pub(super) fn supplier_emit_callbacks(
                     tap.delay_seconds,
                 ));
             }
+            // Track head_limit emissions
+            if let Some(limit) = tap.head_limit {
+                tap.head_count += 1;
+                if tap.head_count >= limit {
+                    actions.push(SupplierEmitAction::HeadLimitReached { supplier_id });
+                }
+            }
         }
     }
     actions
@@ -961,6 +1013,8 @@ pub(super) fn register_supplier_unique_tap(
                 }),
                 classify_state: None,
                 elems_trace: None,
+                head_limit: None,
+                head_count: 0,
             });
     }
 }
@@ -999,6 +1053,8 @@ pub(super) fn register_supplier_classify_tap(
                     key_supplier_ids: Vec::new(),
                 }),
                 elems_trace: None,
+                head_limit: None,
+                head_count: 0,
             });
     }
 }
@@ -2685,6 +2741,12 @@ impl Interpreter {
                     tap_index,
                 } => {
                     let _ = self.handle_classify_emit(supplier_id, tap_index, val);
+                }
+                SupplierEmitAction::HeadLimitReached { supplier_id: sid2 } => {
+                    supplier_done(sid2);
+                    for done_cb in take_supplier_done_callbacks(sid2) {
+                        let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                    }
                 }
             }
         }
