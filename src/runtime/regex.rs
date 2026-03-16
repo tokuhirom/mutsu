@@ -42,8 +42,100 @@ fn merge_regex_captures(mut dst: RegexCaptures, mut src: RegexCaptures) -> Regex
     }
     dst.positional.append(&mut src.positional);
     dst.positional_subcaps.append(&mut src.positional_subcaps);
+    dst.positional_quantified
+        .append(&mut src.positional_quantified);
     dst.code_blocks.append(&mut src.code_blocks);
     dst
+}
+
+/// Count how many positional capture groups the given atom will produce.
+fn count_capture_groups(atom: &RegexAtom) -> usize {
+    match atom {
+        RegexAtom::CaptureGroup(_) => 1,
+        RegexAtom::Group(pat) => count_pattern_capture_groups(pat),
+        RegexAtom::Alternation(alts) => {
+            // All alternatives should produce the same number of captures
+            alts.iter()
+                .map(count_pattern_capture_groups)
+                .max()
+                .unwrap_or(0)
+        }
+        _ => 0,
+    }
+}
+
+/// Count positional capture groups in a pattern (non-recursive into nested groups).
+fn count_pattern_capture_groups(pat: &RegexPattern) -> usize {
+    let mut count = 0;
+    for token in &pat.tokens {
+        count += count_capture_groups(&token.atom);
+    }
+    count
+}
+
+/// Fold quantified captures. After a quantifier loop, positional entries from
+/// `base_len` onward may contain repeated captures from multiple iterations.
+/// If `stride` > 0 (captures per iteration), fold them into quantified lists.
+fn fold_quantified_captures(caps: &mut RegexCaptures, base_len: usize, stride: usize) {
+    if stride == 0 {
+        return;
+    }
+    let new_entries = caps.positional.len() - base_len;
+    if new_entries <= stride {
+        // Only one iteration or fewer — nothing to fold
+        return;
+    }
+    let iterations = new_entries / stride;
+    if iterations * stride != new_entries {
+        // Uneven — don't fold (shouldn't happen with well-formed captures)
+        return;
+    }
+
+    // Collect entries per group
+    let mut folded_positional = Vec::with_capacity(stride);
+    let mut folded_subcaps = Vec::with_capacity(stride);
+    let mut folded_quantified: Vec<Option<Vec<QuantifiedCaptureEntry>>> =
+        Vec::with_capacity(stride);
+
+    for group in 0..stride {
+        let mut list: Vec<QuantifiedCaptureEntry> = Vec::with_capacity(iterations);
+        for iter in 0..iterations {
+            let idx = base_len + iter * stride + group;
+            let text = caps.positional[idx].clone();
+            let subcap = if idx < caps.positional_subcaps.len() {
+                caps.positional_subcaps[idx].clone()
+            } else {
+                None
+            };
+            let (from, to) = if idx < caps.positional_offsets.len() {
+                caps.positional_offsets[idx]
+            } else {
+                (0, text.chars().count())
+            };
+            list.push((text, from, to, subcap));
+        }
+        // Use the last iteration's values as the "representative" for backref purposes
+        let last = list.last().unwrap();
+        folded_positional.push(last.0.clone());
+        folded_subcaps.push(last.3.clone());
+        folded_quantified.push(Some(list));
+    }
+
+    // Replace entries from base_len onward
+    caps.positional.truncate(base_len);
+    caps.positional.extend(folded_positional);
+    caps.positional_subcaps.truncate(base_len);
+    caps.positional_subcaps.extend(folded_subcaps);
+    // Ensure positional_quantified is the right length
+    while caps.positional_quantified.len() < base_len {
+        caps.positional_quantified.push(None);
+    }
+    caps.positional_quantified.truncate(base_len);
+    caps.positional_quantified.extend(folded_quantified);
+    // Also truncate offsets if present
+    if caps.positional_offsets.len() > base_len {
+        caps.positional_offsets.truncate(base_len);
+    }
 }
 
 impl Interpreter {
@@ -1625,6 +1717,8 @@ impl Interpreter {
                         }
                         stack.push((idx + 1, current, caps));
                     } else {
+                        let base_len = caps.positional.len();
+                        let stride = count_capture_groups(&token.atom);
                         let mut positions = Vec::new();
                         positions.push((pos, caps.clone()));
                         let mut current = pos;
@@ -1652,8 +1746,16 @@ impl Interpreter {
                         {
                             positions = vec![last];
                         }
-                        for (p, c) in positions {
-                            stack.push((idx + 1, p, c));
+                        if stride > 0 {
+                            for (p, c) in positions {
+                                let mut c = c;
+                                fold_quantified_captures(&mut c, base_len, stride);
+                                stack.push((idx + 1, p, c));
+                            }
+                        } else {
+                            for (p, c) in positions {
+                                stack.push((idx + 1, p, c));
+                            }
                         }
                     }
                 }
@@ -1711,6 +1813,8 @@ impl Interpreter {
                         }
                         stack.push((idx + 1, current, caps));
                     } else {
+                        let base_len = caps.positional.len();
+                        let stride = count_capture_groups(&token.atom);
                         let (mut current, mut current_caps) = match self
                             .regex_match_atom_with_capture_in_pkg(
                                 &token.atom,
@@ -1751,8 +1855,17 @@ impl Interpreter {
                         {
                             positions = vec![last];
                         }
-                        for (p, c) in positions {
-                            stack.push((idx + 1, p, c));
+                        // Fold quantified captures for each position
+                        if stride > 0 {
+                            for (p, c) in positions {
+                                let mut c = c;
+                                fold_quantified_captures(&mut c, base_len, stride);
+                                stack.push((idx + 1, p, c));
+                            }
+                        } else {
+                            for (p, c) in positions {
+                                stack.push((idx + 1, p, c));
+                            }
                         }
                     }
                 }
@@ -1784,6 +1897,9 @@ impl Interpreter {
                     new_caps
                         .positional_subcaps
                         .append(&mut inner_caps.positional_subcaps);
+                    new_caps
+                        .positional_quantified
+                        .append(&mut inner_caps.positional_quantified);
                     new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                     out.push((next, new_caps));
                 }
@@ -1807,6 +1923,9 @@ impl Interpreter {
                 new_caps
                     .positional_subcaps
                     .append(&mut inner_caps.positional_subcaps);
+                new_caps
+                    .positional_quantified
+                    .append(&mut inner_caps.positional_quantified);
                 new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                 out.push((end, new_caps));
             }
@@ -1858,6 +1977,7 @@ impl Interpreter {
                 subcap.to = end;
                 new_caps.positional.push(captured);
                 new_caps.positional_subcaps.push(Some(subcap));
+                new_caps.positional_quantified.push(None);
                 out.push((end, new_caps));
             }
             out.sort_by_key(|(end, caps)| {
@@ -1893,6 +2013,9 @@ impl Interpreter {
                     new_caps
                         .positional_subcaps
                         .append(&mut inner_caps.positional_subcaps);
+                    new_caps
+                        .positional_quantified
+                        .append(&mut inner_caps.positional_quantified);
                     new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                     out.push((end, new_caps));
                 }
@@ -2448,6 +2571,9 @@ impl Interpreter {
                         new_caps
                             .positional_subcaps
                             .append(&mut inner_caps.positional_subcaps);
+                        new_caps
+                            .positional_quantified
+                            .append(&mut inner_caps.positional_quantified);
                         (next, new_caps)
                     });
             }
@@ -2489,6 +2615,9 @@ impl Interpreter {
                         new_caps
                             .positional_subcaps
                             .append(&mut inner_caps.positional_subcaps);
+                        new_caps
+                            .positional_quantified
+                            .append(&mut inner_caps.positional_quantified);
                         new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                         let replace = best
                             .as_ref()
@@ -2565,6 +2694,7 @@ impl Interpreter {
                     subcap.to = end;
                     new_caps.positional.push(captured);
                     new_caps.positional_subcaps.push(Some(subcap));
+                    new_caps.positional_quantified.push(None);
                     return Some((end, new_caps));
                 }
                 return None;
@@ -2634,6 +2764,9 @@ impl Interpreter {
                         new_caps
                             .positional_subcaps
                             .extend(inner_caps.positional_subcaps.clone());
+                        new_caps
+                            .positional_quantified
+                            .extend(inner_caps.positional_quantified.clone());
                         for (k, v) in &inner_caps.named {
                             new_caps
                                 .named
@@ -2658,12 +2791,20 @@ impl Interpreter {
             }
             RegexAtom::Backref(idx) => {
                 // Match the text previously captured by positional group $idx.
-                // TODO: With quantified captures, $0 should reference the most
-                // recent capture of the idx-th group. Currently, this uses a
-                // simple positional index which doesn't track group identity
-                // across multiple iterations of a quantified capture group.
-                let captured = current_caps.positional.get(*idx).cloned();
-                if let Some(ref_text) = captured {
+                // When the capture is quantified (e.g. (\w)+$0), the backref
+                // matches the concatenation of all captured texts.
+                let ref_text =
+                    if let Some(Some(qlist)) = current_caps.positional_quantified.get(*idx) {
+                        // Quantified capture: concatenate all captured texts
+                        let mut s = String::new();
+                        for (text, _, _, _) in qlist {
+                            s.push_str(text);
+                        }
+                        Some(s)
+                    } else {
+                        current_caps.positional.get(*idx).cloned()
+                    };
+                if let Some(ref_text) = ref_text {
                     let ref_chars: Vec<char> = ref_text.chars().collect();
                     if pos + ref_chars.len() <= chars.len()
                         && chars[pos..pos + ref_chars.len()] == ref_chars[..]
@@ -2791,6 +2932,9 @@ impl Interpreter {
                         new_caps
                             .positional_subcaps
                             .append(&mut inner_caps.positional_subcaps);
+                        new_caps
+                            .positional_quantified
+                            .append(&mut inner_caps.positional_quantified);
                         new_caps.code_blocks.extend(inner_caps.code_blocks);
                     }
                     return Some((end, new_caps));
