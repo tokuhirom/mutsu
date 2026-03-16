@@ -178,6 +178,8 @@ pub(crate) struct RoleDef {
     pub(crate) is_hidden: bool,
     /// Captured environment for evaluating attribute defaults in closures.
     pub(crate) captured_env: Option<HashMap<String, Value>>,
+    /// Attribute var names (e.g. "!foo") that have `handles *` wildcard delegation.
+    pub(crate) wildcard_handles: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -1819,6 +1821,7 @@ impl Interpreter {
                         is_stub_role: false,
                         is_hidden: false,
                         captured_env: None,
+                        wildcard_handles: Vec::new(),
                     },
                 );
                 roles.insert(
@@ -1829,6 +1832,7 @@ impl Interpreter {
                         is_stub_role: false,
                         is_hidden: false,
                         captured_env: None,
+                        wildcard_handles: Vec::new(),
                     },
                 );
                 roles.insert(
@@ -1839,6 +1843,7 @@ impl Interpreter {
                         is_stub_role: false,
                         is_hidden: false,
                         captured_env: None,
+                        wildcard_handles: Vec::new(),
                     },
                 );
                 roles.insert(
@@ -1849,6 +1854,7 @@ impl Interpreter {
                         is_stub_role: false,
                         is_hidden: false,
                         captured_env: None,
+                        wildcard_handles: Vec::new(),
                     },
                 );
                 // CompUnit::Repository role with required stub methods
@@ -1882,6 +1888,7 @@ impl Interpreter {
                             is_stub_role: false,
                             is_hidden: false,
                             captured_env: None,
+                            wildcard_handles: Vec::new(),
                         },
                     );
                 }

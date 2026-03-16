@@ -1777,6 +1777,17 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             // handles * — wildcard delegation
             handles.push("*".to_string());
             rest = after_star;
+        } else if r.starts_with('\'') || r.starts_with('"') {
+            // handles 'method' or handles "method"
+            let quote = r.as_bytes()[0] as char;
+            let after_open = &r[1..];
+            if let Some(end) = after_open.find(quote) {
+                let method_name = &after_open[..end];
+                handles.push(method_name.to_string());
+                rest = &after_open[end + 1..];
+            } else {
+                return Err(PError::expected("closing quote in handles"));
+            }
         } else {
             let (r_name, method_name) = ident(r)?;
             handles.push(method_name.to_string());

@@ -503,6 +503,12 @@ impl Interpreter {
                         .or_default()
                         .extend(composed);
                 }
+                // Transfer wildcard handles from role to class
+                for wh in &role.wildcard_handles {
+                    if !class_def.wildcard_handles.contains(wh) {
+                        class_def.wildcard_handles.push(wh.clone());
+                    }
+                }
                 let role_param_values: HashMap<String, Value> = role_param_names
                     .iter()
                     .cloned()
@@ -824,6 +830,19 @@ impl Interpreter {
                     is_alias,
                 } => {
                     let attr_name_str = attr_name.resolve();
+                    // Check for duplicate attribute from role composition
+                    if class_def
+                        .attributes
+                        .iter()
+                        .any(|(n, ..)| n == &attr_name_str)
+                    {
+                        self.current_package = saved_package;
+                        self.env = saved_env;
+                        return Err(RuntimeError::new(format!(
+                            "X::Comp::Trait::Duplicate: attribute '{}' already exists in class '{}' (possibly from role composition)",
+                            attr_name_str, name,
+                        )));
+                    }
                     let effective_is_rw = !*is_readonly && (*is_rw || (class_is_rw && *is_public));
                     class_def.attributes.push((
                         attr_name_str.clone(),
@@ -1043,10 +1062,28 @@ impl Interpreter {
                         }
                         class_def.methods.entry(mname).or_default().extend(composed);
                     }
+                    // Transfer wildcard handles from role to class
+                    for wh in &role.wildcard_handles {
+                        if !class_def.wildcard_handles.contains(wh) {
+                            class_def.wildcard_handles.push(wh.clone());
+                        }
+                    }
                     if !class_def.parents.iter().any(|p| p == &role_name_str) {
                         // Keep role composition visible in MRO introspection.
-                        class_def.parents.insert(0, role_name_str);
+                        class_def.parents.insert(0, role_name_str.clone());
                         class_def.mro.clear();
+                    }
+                    // Transfer role's own parents (from `is` declarations) to the class
+                    if let Some(rparents) = self.role_parents.get(&role_name_str).cloned() {
+                        for rp in rparents {
+                            let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
+                            if self.classes.contains_key(rp_base)
+                                && !class_def.parents.iter().any(|p| p == &rp)
+                            {
+                                class_def.parents.push(rp.clone());
+                                class_def.mro.clear();
+                            }
+                        }
                     }
                 }
                 Stmt::TrustsDecl {
@@ -1345,6 +1382,7 @@ impl Interpreter {
             is_stub_role: false,
             is_hidden: false,
             captured_env: None,
+            wildcard_handles: Vec::new(),
         };
         let flattened_body: Vec<&Stmt> = body
             .iter()
@@ -1384,29 +1422,33 @@ impl Interpreter {
                         format!("!{}", attr_name_str)
                     };
                     for handle_name in handles {
-                        role_def
-                            .methods
-                            .entry(handle_name.clone())
-                            .or_default()
-                            .push(MethodDef {
-                                params: Vec::new(),
-                                param_defs: Vec::new(),
-                                body: vec![Stmt::Expr(Expr::MethodCall {
-                                    target: Box::new(Expr::Var(attr_var_name.clone())),
-                                    name: Symbol::intern(handle_name),
-                                    args: Vec::new(),
-                                    modifier: None,
-                                    quoted: false,
-                                })],
-                                is_rw: false,
-                                is_private: false,
-                                is_multi: false,
-                                is_my: false,
-                                role_origin: None,
-                                original_role: None,
-                                return_type: None,
-                                compiled_code: None,
-                            });
+                        if handle_name == "*" {
+                            role_def.wildcard_handles.push(attr_var_name.clone());
+                        } else {
+                            role_def
+                                .methods
+                                .entry(handle_name.clone())
+                                .or_default()
+                                .push(MethodDef {
+                                    params: Vec::new(),
+                                    param_defs: Vec::new(),
+                                    body: vec![Stmt::Expr(Expr::MethodCall {
+                                        target: Box::new(Expr::Var(attr_var_name.clone())),
+                                        name: Symbol::intern(handle_name),
+                                        args: Vec::new(),
+                                        modifier: None,
+                                        quoted: false,
+                                    })],
+                                    is_rw: false,
+                                    is_private: false,
+                                    is_multi: false,
+                                    is_my: false,
+                                    role_origin: None,
+                                    original_role: None,
+                                    return_type: None,
+                                    compiled_code: None,
+                                });
+                        }
                     }
                 }
                 Stmt::DoesDecl { name: role_name } => {
