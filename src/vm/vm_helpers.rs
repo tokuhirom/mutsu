@@ -882,6 +882,24 @@ impl VM {
         {
             return self.eval_reduction_operator_values(inner_op, right, left);
         }
+        // Bare Z: zip two lists into tuples (used by [Z] reduction).
+        // When left elements are already lists (from a prior Z fold), flatten them
+        // so that [Z] (a,b,c),(d,e,f),(g,h,i) produces (a d g), (b e h), (c f i).
+        if op == "Z" {
+            let left_list = runtime::value_to_list(left);
+            let right_list = runtime::value_to_list(right);
+            let len = left_list.len().min(right_list.len());
+            let mut results = Vec::new();
+            for i in 0..len {
+                let mut tuple = match &left_list[i] {
+                    Value::Array(items, kind) if !kind.is_itemized() => items.to_vec(),
+                    other => vec![other.clone()],
+                };
+                tuple.push(right_list[i].clone());
+                results.push(Value::array(tuple));
+            }
+            return Ok(Value::array(results));
+        }
         // Z-prefixed meta-operator: zip two lists element-wise with the inner op.
         if let Some(inner_op) = op.strip_prefix('Z')
             && !inner_op.is_empty()

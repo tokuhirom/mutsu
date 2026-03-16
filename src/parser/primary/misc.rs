@@ -211,12 +211,32 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    // Call-style: [op](args) — use parse_call_arg_list to handle semicolons
+    if call_style_operand {
+        let (r, _) = parse_char(r, '(')?;
+        let (r, _) = ws(r)?;
+        let (r, args) = super::regex::parse_call_arg_list(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ')')?;
+        let expr = if args.len() == 1 {
+            args.into_iter().next().unwrap()
+        } else {
+            Expr::ArrayLiteral(args)
+        };
+        return Ok((
+            r,
+            Expr::Reduction {
+                op,
+                expr: Box::new(expr),
+            },
+        ));
+    }
     let (r, _) = ws(r)?;
     // Parse comma-separated list as the operand
     let (r, first) = parse_reduction_operand(r)?;
     let mut items = vec![first];
     let mut rest = r;
-    if !call_style_operand {
+    if true {
         loop {
             let (r, _) = ws_inner(rest);
             if !r.starts_with(',') {
@@ -345,7 +365,9 @@ pub(in crate::parser) fn reduction_call_style_expr(input: &str) -> PResult<'_, E
         return Err(PError::expected("known reduction operator"));
     }
     let r = &input[end + 1..];
-    let (r, _) = ws(r)?;
+    // Call-style reduction requires `(` immediately after `]` (no whitespace).
+    // `[Z+](args)` is call-style; `[Z+] (a, b), (c, d)` is listop-style
+    // and should be handled by `reduction_op` instead.
     if !r.starts_with('(') {
         return Err(PError::expected("call-style reduction operand"));
     }
