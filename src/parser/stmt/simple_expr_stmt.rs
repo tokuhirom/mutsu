@@ -452,6 +452,17 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 });
                 return parse_statement_modifier(r, stmt);
             }
+            Expr::BareWord(ref name) => {
+                // BareWord .= method: e.g. `Foo .= new` tries to assign to a type object,
+                // which is immutable. Emit an assignment so the runtime can throw the
+                // appropriate "Cannot modify an immutable type object" error.
+                let stmt = Stmt::Assign {
+                    name: name.clone(),
+                    expr: make_rhs(expr.clone()),
+                    op: AssignOp::Assign,
+                };
+                return parse_statement_modifier(r, stmt);
+            }
             _ => {
                 // Non-lvalue targets still support `.=` dispatch in statement position,
                 // but must not sink the returned value.

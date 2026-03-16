@@ -1626,14 +1626,26 @@ impl Interpreter {
                 // Check for user-defined .new method first
                 if self.has_user_method(class_key, "new") {
                     let empty_attrs = HashMap::new();
-                    let (result, _updated) = self.run_instance_method(
+                    match self.run_instance_method(
                         &class_name.resolve(),
                         empty_attrs,
                         "new",
-                        args,
+                        args.clone(),
                         None,
-                    )?;
-                    return Ok(result);
+                    ) {
+                        Ok((result, _updated)) => return Ok(result),
+                        Err(e) => {
+                            // If multi dispatch failed (no matching candidate),
+                            // fall through to the built-in Mu.new default constructor.
+                            // This matches Raku's behavior where Mu.new(*%attrinit) is
+                            // always available as a fallback multi candidate.
+                            let msg = e.message.to_lowercase();
+                            if !msg.contains("no matching candidates") {
+                                return Err(e);
+                            }
+                            // Fall through to default constructor below
+                        }
+                    }
                 }
                 let mut attrs = HashMap::new();
                 let mut positional_ctor_args: Vec<Value> = Vec::new();
