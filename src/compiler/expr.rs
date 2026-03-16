@@ -288,6 +288,42 @@ impl Compiler {
                 }
             },
             Expr::Binary { left, op, right } => {
+                // Iteratively flatten left-recursive Binary chains for simple opcodes
+                // to avoid stack overflow on deeply nested expressions like
+                // "a" ~ "b" ~ "c" ~ ... (300+ operands).
+                if let Some(opcode) = Self::binary_opcode(op) {
+                    // Check if this is a left-recursive chain of the same operator
+                    // that can be compiled with a simple opcode (no special handling).
+                    if let Expr::Binary { op: left_op, .. } = left.as_ref()
+                        && left_op == op
+                        && !matches!(op, TokenKind::Ident(name) if name == "does")
+                    {
+                        // Collect all operands from the left-recursive chain
+                        let mut operands = Vec::new();
+                        let mut current: &Expr = expr;
+                        while let Expr::Binary {
+                            left: inner_left,
+                            op: inner_op,
+                            right: inner_right,
+                        } = current
+                        {
+                            if inner_op != op {
+                                break;
+                            }
+                            operands.push(inner_right.as_ref());
+                            current = inner_left.as_ref();
+                        }
+                        // `current` is the leftmost non-matching operand
+                        self.compile_expr(current);
+                        // Operands were collected right-to-left, reverse to emit
+                        // left-to-right
+                        for operand in operands.into_iter().rev() {
+                            self.compile_expr(operand);
+                            self.code.emit(opcode.clone());
+                        }
+                        return;
+                    }
+                }
                 if matches!(op, TokenKind::Ident(name) if name == "xx")
                     && let Expr::Literal(Value::Int(n)) = right.as_ref()
                     && let Expr::Call { name, .. } = left.as_ref()
