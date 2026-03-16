@@ -4,44 +4,76 @@ use crate::value::signature::make_params_value_from_param_defs;
 
 impl Interpreter {
     pub(super) fn classhow_lookup(&self, invocant: &Value, method_name: &str) -> Option<Value> {
-        let Value::Package(class_name) = invocant else {
-            return None;
+        let (class_name, class_name_str) = match invocant {
+            Value::Package(name) => (*name, name.resolve()),
+            other => {
+                // For concrete values, derive the type name
+                let type_name = crate::runtime::utils::value_type_name(other).to_string();
+                (Symbol::intern(&type_name), type_name)
+            }
         };
-        let class_def = self.classes.get(&class_name.resolve())?;
-        let defs = class_def.methods.get(method_name)?;
-        let def = defs.first()?;
-        // Prepend an invocant parameter (self) to the param_defs
-        let mut full_param_defs = Vec::with_capacity(def.param_defs.len() + 1);
-        full_param_defs.push(crate::ast::ParamDef {
-            name: String::new(),
-            default: None,
-            multi_invocant: true,
-            required: false,
-            named: false,
-            slurpy: false,
-            double_slurpy: false,
-            sigilless: false,
-            type_constraint: Some(class_name.resolve()),
-            literal_value: None,
-            sub_signature: None,
-            where_constraint: None,
-            traits: Vec::new(),
-            optional_marker: false,
-            outer_sub_signature: None,
-            code_signature: None,
-            is_invocant: true,
-            shape_constraints: None,
-        });
-        full_param_defs.extend(def.param_defs.iter().cloned());
-        Some(Value::make_sub(
-            *class_name,
-            Symbol::intern(method_name),
-            def.params.clone(),
-            full_param_defs,
-            def.body.clone(),
-            def.is_rw,
-            crate::env::Env::new(),
-        ))
+        // Check user-defined class methods first
+        if let Some(class_def) = self.classes.get(&class_name_str)
+            && let Some(defs) = class_def.methods.get(method_name)
+            && let Some(def) = defs.first()
+        {
+            // Prepend an invocant parameter (self) to the param_defs
+            let mut full_param_defs = Vec::with_capacity(def.param_defs.len() + 1);
+            full_param_defs.push(crate::ast::ParamDef {
+                name: String::new(),
+                default: None,
+                multi_invocant: true,
+                required: false,
+                named: false,
+                slurpy: false,
+                double_slurpy: false,
+                sigilless: false,
+                type_constraint: Some(class_name_str.clone()),
+                literal_value: None,
+                sub_signature: None,
+                where_constraint: None,
+                traits: Vec::new(),
+                optional_marker: false,
+                outer_sub_signature: None,
+                code_signature: None,
+                is_invocant: true,
+                shape_constraints: None,
+            });
+            full_param_defs.extend(def.param_defs.iter().cloned());
+            return Some(Value::make_sub(
+                class_name,
+                Symbol::intern(method_name),
+                def.params.clone(),
+                full_param_defs,
+                def.body.clone(),
+                def.is_rw,
+                crate::env::Env::new(),
+            ));
+        }
+        // Check built-in type methods — return a Routine marker that the
+        // runtime can dispatch when called.
+        if self.is_builtin_type_method(&class_name_str, method_name) {
+            return Some(Value::Routine {
+                package: class_name,
+                name: Symbol::intern(method_name),
+                is_regex: false,
+            });
+        }
+        None
+    }
+
+    /// Check if a method name belongs to a built-in type (Str, Int, etc.)
+    /// by checking the hardcoded method lists for the type and its ancestors.
+    fn is_builtin_type_method(&self, type_name: &str, method_name: &str) -> bool {
+        // Check the type itself and common ancestors (Cool, Any, Mu)
+        for tn in &[type_name, "Cool", "Any", "Mu"] {
+            let mut methods = Vec::new();
+            self.collect_builtin_type_methods(tn, &mut methods);
+            if methods.iter().any(|m| m.to_string_value() == method_name) {
+                return true;
+            }
+        }
+        false
     }
 
     pub(super) fn classhow_find_method(
@@ -291,7 +323,10 @@ impl Interpreter {
             }
             "lookup" if args.len() >= 2 => {
                 let invocant = &args[0];
-                let method_name = args[1].to_string_value();
+                // Method name is always the last argument; when ^lookup is called on
+                // a concrete value the Package is prepended and the original value
+                // sits in between.
+                let method_name = args.last().unwrap().to_string_value();
                 Ok(self
                     .classhow_lookup(invocant, &method_name)
                     .unwrap_or(Value::Nil))
@@ -1082,6 +1117,58 @@ impl Interpreter {
             ],
             "Signature" => &[
                 "params", "arity", "count", "returns", "Bool", "Str", "gist", "raku",
+            ],
+            "Cool" => &[
+                "substr",
+                "chars",
+                "codes",
+                "chomp",
+                "chop",
+                "contains",
+                "comb",
+                "ends-with",
+                "fc",
+                "flip",
+                "index",
+                "indices",
+                "lc",
+                "lines",
+                "match",
+                "ords",
+                "pred",
+                "rindex",
+                "samecase",
+                "split",
+                "starts-with",
+                "succ",
+                "tc",
+                "trim",
+                "trim-leading",
+                "trim-trailing",
+                "uc",
+                "words",
+                "wordcase",
+                "abs",
+                "ceiling",
+                "floor",
+                "round",
+                "sign",
+                "sqrt",
+                "log",
+                "log10",
+                "exp",
+                "is-prime",
+                "chr",
+                "base",
+                "polymod",
+                "Numeric",
+                "Int",
+                "Num",
+                "Rat",
+                "Bool",
+                "Str",
+                "gist",
+                "raku",
             ],
             "Any" => &[
                 "say",

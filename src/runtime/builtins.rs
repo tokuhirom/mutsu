@@ -3018,6 +3018,7 @@ impl Interpreter {
                 | "not"
                 | "truncate"
                 | "atan2"
+                | "substr"
         )
     }
 
