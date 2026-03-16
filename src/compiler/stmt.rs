@@ -70,12 +70,17 @@ impl Compiler {
                     self.code.emit(OpCode::Pop);
                 } else if Self::has_block_enter_leave_phasers(stmts) {
                     let idx = self.code.emit(OpCode::BlockScope {
+                        pre_end: 0,
                         enter_end: 0,
                         body_end: 0,
                         keep_start: 0,
                         undo_start: 0,
+                        post_start: 0,
                         end: 0,
                     });
+                    // PRE phasers (forward order, before ENTER)
+                    Self::compile_pre_phasers(self, stmts);
+                    self.code.patch_block_pre_end(idx);
                     for s in stmts {
                         if let Stmt::Phaser {
                             kind: PhaserKind::Enter,
@@ -97,7 +102,9 @@ impl Compiler {
                                     kind: PhaserKind::Enter
                                         | PhaserKind::Leave
                                         | PhaserKind::Keep
-                                        | PhaserKind::Undo,
+                                        | PhaserKind::Undo
+                                        | PhaserKind::Pre
+                                        | PhaserKind::Post,
                                     ..
                                 }
                             )
@@ -132,6 +139,9 @@ impl Compiler {
                             }
                         }
                     }
+                    // POST phasers (reverse order, after LEAVE)
+                    self.code.patch_block_post_start(idx);
+                    Self::compile_post_phasers(self, stmts);
                     self.code.patch_loop_end(idx);
                 } else if Self::has_let_deep(stmts) {
                     // Block contains `let`/`temp` — wrap in LetBlock for save/restore
@@ -159,12 +169,15 @@ impl Compiler {
                 } else {
                     // Plain blocks still create a lexical routine scope.
                     let idx = self.code.emit(OpCode::BlockScope {
+                        pre_end: 0,
                         enter_end: 0,
                         body_end: 0,
                         keep_start: 0,
                         undo_start: 0,
+                        post_start: 0,
                         end: 0,
                     });
+                    self.code.patch_block_pre_end(idx);
                     self.code.patch_block_enter_end(idx);
                     for s in stmts {
                         self.compile_stmt(s);
@@ -172,6 +185,7 @@ impl Compiler {
                     self.code.patch_block_body_end(idx);
                     self.code.patch_block_keep_start(idx);
                     self.code.patch_block_undo_start(idx);
+                    self.code.patch_block_post_start(idx);
                     self.code.patch_loop_end(idx);
                 }
                 self.pop_dynamic_scope_lexical(saved_dynamic_scope);
@@ -1357,6 +1371,62 @@ impl Compiler {
                 self.compile_stmt(stmt);
                 self.compile_expr(&Expr::Literal(Value::Bool(true)));
                 self.code.emit(OpCode::SetTopic);
+            }
+        }
+    }
+
+    /// Compile PRE phasers in forward source order.
+    /// Each PRE body is compiled, followed by a CheckPhaser { is_pre: true }.
+    pub(super) fn compile_pre_phasers(compiler: &mut Compiler, stmts: &[Stmt]) {
+        for s in stmts {
+            if let Stmt::Phaser {
+                kind: PhaserKind::Pre,
+                body,
+            } = s
+            {
+                // Compile the PRE body as a block expression that produces a value
+                for (i, inner) in body.iter().enumerate() {
+                    if i == body.len() - 1 {
+                        // Last statement: compile as expression to leave value on stack
+                        match inner {
+                            Stmt::Expr(expr) => compiler.compile_expr(expr),
+                            _ => {
+                                compiler.compile_stmt(inner);
+                                compiler.compile_expr(&Expr::Literal(Value::Bool(true)));
+                            }
+                        }
+                    } else {
+                        compiler.compile_stmt(inner);
+                    }
+                }
+                compiler.code.emit(OpCode::CheckPhaser { is_pre: true });
+            }
+        }
+    }
+
+    /// Compile POST phasers in reverse source order.
+    /// Each POST body is compiled, followed by a CheckPhaser { is_pre: false }.
+    pub(super) fn compile_post_phasers(compiler: &mut Compiler, stmts: &[Stmt]) {
+        for s in stmts.iter().rev() {
+            if let Stmt::Phaser {
+                kind: PhaserKind::Post,
+                body,
+            } = s
+            {
+                for (i, inner) in body.iter().enumerate() {
+                    if i == body.len() - 1 {
+                        match inner {
+                            Stmt::Expr(expr) => compiler.compile_expr(expr),
+                            _ => {
+                                compiler.compile_stmt(inner);
+                                compiler.compile_expr(&Expr::Literal(Value::Bool(true)));
+                            }
+                        }
+                    } else {
+                        compiler.compile_stmt(inner);
+                    }
+                }
+                compiler.code.emit(OpCode::CheckPhaser { is_pre: false });
             }
         }
     }

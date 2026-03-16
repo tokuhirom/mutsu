@@ -1805,18 +1805,32 @@ impl VM {
 
             // -- Block scope --
             OpCode::BlockScope {
+                pre_end,
                 enter_end,
                 body_end,
                 keep_start,
                 undo_start,
+                post_start,
                 end,
             } => {
                 self.exec_block_scope_op(
                     code,
-                    [*enter_end, *body_end, *keep_start, *undo_start, *end],
+                    [
+                        *pre_end,
+                        *enter_end,
+                        *body_end,
+                        *keep_start,
+                        *undo_start,
+                        *post_start,
+                        *end,
+                    ],
                     ip,
                     compiled_fns,
                 )?;
+            }
+            OpCode::CheckPhaser { is_pre } => {
+                self.exec_check_phaser_op(*is_pre)?;
+                *ip += 1;
             }
             OpCode::DoBlockExpr {
                 body_end,

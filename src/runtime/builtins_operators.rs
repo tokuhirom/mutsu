@@ -249,7 +249,7 @@ impl Interpreter {
             self.routine_stack
                 .push((def.package.resolve(), def.name.resolve()));
             self.prepare_definite_return_slot(return_spec.as_deref());
-            let result = self.eval_block_value(&def.body);
+            let result = self.eval_block_value_with_pre_post(&def.body);
             self.routine_stack.pop();
             self.block_stack.pop();
             self.pop_test_assertion_context(pushed_assertion);

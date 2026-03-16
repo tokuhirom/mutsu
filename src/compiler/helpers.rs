@@ -536,14 +536,19 @@ impl Compiler {
             }
         } else if Self::has_block_enter_leave_phasers(body) {
             let idx = sub_compiler.code.emit(OpCode::BlockScope {
+                pre_end: 0,
                 enter_end: 0,
                 body_end: 0,
                 keep_start: 0,
                 undo_start: 0,
+                post_start: 0,
                 end: 0,
             });
+            // PRE phasers (forward order, before ENTER)
+            Self::compile_pre_phasers(&mut sub_compiler, body);
+            sub_compiler.code.patch_block_pre_end(idx);
             let mut body_main: Vec<Stmt> = Vec::new();
-            for stmt in body {
+            for stmt in body.iter() {
                 match stmt {
                     Stmt::Phaser {
                         kind: PhaserKind::Enter,
@@ -554,7 +559,12 @@ impl Compiler {
                         }
                     }
                     Stmt::Phaser {
-                        kind: PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo,
+                        kind:
+                            PhaserKind::Leave
+                            | PhaserKind::Keep
+                            | PhaserKind::Undo
+                            | PhaserKind::Pre
+                            | PhaserKind::Post,
                         ..
                     } => {}
                     _ => body_main.push(stmt.clone()),
@@ -583,6 +593,9 @@ impl Compiler {
                     }
                 }
             }
+            // POST phasers (reverse order, after LEAVE)
+            sub_compiler.code.patch_block_post_start(idx);
+            Self::compile_post_phasers(&mut sub_compiler, body);
             sub_compiler.code.patch_loop_end(idx);
         } else if sink_last_expr {
             Self::compile_routine_body_stmts(&mut sub_compiler, body, true);
@@ -745,6 +758,89 @@ impl Compiler {
         if Self::has_catch_or_control(body) {
             sub_compiler.compile_try(body, &None);
             sub_compiler.code.emit(OpCode::Pop);
+        } else if Self::has_block_enter_leave_phasers(body) {
+            // Body has ENTER/LEAVE/KEEP/UNDO/PRE/POST — wrap in BlockScope
+            let idx = sub_compiler.code.emit(OpCode::BlockScope {
+                pre_end: 0,
+                enter_end: 0,
+                body_end: 0,
+                keep_start: 0,
+                undo_start: 0,
+                post_start: 0,
+                end: 0,
+            });
+            Self::compile_pre_phasers(&mut sub_compiler, body);
+            sub_compiler.code.patch_block_pre_end(idx);
+            // ENTER phasers
+            for stmt in body.iter() {
+                if let Stmt::Phaser {
+                    kind: PhaserKind::Enter,
+                    body: ph_body,
+                } = stmt
+                {
+                    for inner in ph_body {
+                        sub_compiler.compile_stmt(inner);
+                    }
+                }
+            }
+            sub_compiler.code.patch_block_enter_end(idx);
+            // Body (excluding phasers)
+            let body_stmts: Vec<&Stmt> = body
+                .iter()
+                .filter(|s| {
+                    !matches!(
+                        s,
+                        Stmt::Phaser {
+                            kind: PhaserKind::Enter
+                                | PhaserKind::Leave
+                                | PhaserKind::Keep
+                                | PhaserKind::Undo
+                                | PhaserKind::Pre
+                                | PhaserKind::Post,
+                            ..
+                        }
+                    )
+                })
+                .collect();
+            for (i, stmt) in body_stmts.iter().enumerate() {
+                let is_last = i == body_stmts.len() - 1;
+                if is_last && let Stmt::Expr(expr) = stmt {
+                    sub_compiler.compile_expr(expr);
+                    sub_compiler.code.emit(OpCode::SetTopic);
+                    continue;
+                }
+                sub_compiler.compile_stmt(stmt);
+            }
+            sub_compiler.code.patch_block_body_end(idx);
+            sub_compiler.code.patch_block_keep_start(idx);
+            for s in body.iter().rev() {
+                if let Stmt::Phaser {
+                    kind,
+                    body: ph_body,
+                } = s
+                    && matches!(kind, PhaserKind::Leave | PhaserKind::Keep)
+                {
+                    for inner in ph_body {
+                        sub_compiler.compile_stmt(inner);
+                    }
+                }
+            }
+            sub_compiler.code.patch_block_undo_start(idx);
+            for s in body.iter().rev() {
+                if let Stmt::Phaser {
+                    kind,
+                    body: ph_body,
+                } = s
+                    && matches!(kind, PhaserKind::Leave | PhaserKind::Undo)
+                {
+                    for inner in ph_body {
+                        sub_compiler.compile_stmt(inner);
+                    }
+                }
+            }
+            sub_compiler.code.patch_block_post_start(idx);
+            Self::compile_post_phasers(&mut sub_compiler, body);
+            sub_compiler.code.patch_loop_end(idx);
         } else {
             // Compile body; last Stmt::Expr leaves value on stack (implicit return)
             for (i, stmt) in body.iter().enumerate() {
@@ -1385,7 +1481,9 @@ impl Compiler {
                     kind: PhaserKind::Enter
                         | PhaserKind::Leave
                         | PhaserKind::Keep
-                        | PhaserKind::Undo,
+                        | PhaserKind::Undo
+                        | PhaserKind::Pre
+                        | PhaserKind::Post,
                     ..
                 }
             )

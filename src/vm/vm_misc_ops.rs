@@ -1352,22 +1352,35 @@ impl VM {
     pub(super) fn exec_block_scope_op(
         &mut self,
         code: &CompiledCode,
-        bounds: [u32; 5],
+        bounds: [u32; 7],
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
-        let [enter_end, body_end, keep_start, undo_start, end] = bounds;
-        let enter_start = *ip + 1;
+        let [
+            pre_end,
+            enter_end,
+            body_end,
+            keep_start,
+            undo_start,
+            post_start,
+            end,
+        ] = bounds;
+        let pre_start = *ip + 1;
+        let enter_start = pre_end as usize;
         let body_start = enter_end as usize;
         let queue_start = body_end as usize;
         let keep_start = keep_start as usize;
         let undo_start = undo_start as usize;
+        let post_start = post_start as usize;
         let end = end as usize;
         let routine_snapshot = self.interpreter.snapshot_routine_registry();
         self.ensure_env_synced(code);
         let saved_env = self.interpreter.env().clone();
         let saved_locals = self.locals.clone();
         let once_scope = self.interpreter.next_once_scope_id();
+
+        // Run PRE phasers first (before ENTER)
+        self.run_range(code, pre_start, enter_start, compiled_fns)?;
 
         self.run_range(code, enter_start, body_start, compiled_fns)?;
         self.interpreter.push_once_scope(once_scope);
@@ -1385,8 +1398,30 @@ impl VM {
         let queue_res = if Self::should_run_success_queue(&body_result, body_value) {
             self.run_range(code, keep_start, undo_start, compiled_fns)
         } else {
-            self.run_range(code, undo_start, end, compiled_fns)
+            self.run_range(code, undo_start, post_start, compiled_fns)
         };
+
+        // Run POST phasers after LEAVE (regardless of success/failure path)
+        // Set $_ to the return/result value so POST can inspect it
+        if post_start < end {
+            let post_topic = match &body_result {
+                Ok(()) => self.last_topic_value.clone().unwrap_or(Value::Nil),
+                Err(e) => e.return_value.clone().unwrap_or(Value::Nil),
+            };
+            self.ensure_env_synced(code);
+            self.interpreter
+                .env_mut()
+                .insert("_".to_string(), post_topic.clone());
+            // Also update the local slot for $_ if present
+            for (i, name) in code.locals.iter().enumerate() {
+                if name == "_" {
+                    self.locals[i] = post_topic;
+                    break;
+                }
+            }
+        }
+        let post_res = self.run_range(code, post_start, end, compiled_fns);
+
         self.interpreter.restore_routine_registry(routine_snapshot);
 
         self.ensure_env_synced(code);
@@ -1417,6 +1452,18 @@ impl VM {
         self.interpreter.pop_block_scope_depth();
         self.interpreter.pop_once_scope();
 
+        if let Err(e) = post_res {
+            // POST failure overrides successful body and return-value body exits
+            if body_result.is_ok() && queue_res.is_ok() {
+                return Err(e);
+            }
+            // POST failure also overrides a "return" (non-exceptional exit)
+            if let Err(ref be) = body_result
+                && be.return_value.is_some()
+            {
+                return Err(e);
+            }
+        }
         if let Err(e) = queue_res
             && body_result.is_ok()
         {
@@ -1456,6 +1503,26 @@ impl VM {
             }
             Err(_) => false,
         }
+    }
+
+    /// Execute the CheckPhaser opcode: pop TOS, throw X::Phaser::PrePost if falsy.
+    pub(super) fn exec_check_phaser_op(&mut self, is_pre: bool) -> Result<(), RuntimeError> {
+        let val = self.stack.pop().unwrap_or(Value::Nil);
+        if !val.truthy() {
+            let phaser_name = if is_pre { "PRE" } else { "POST" };
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert(
+                "phaser".to_string(),
+                Value::Str(Arc::new(phaser_name.to_string())),
+            );
+            attrs.insert("condition".to_string(), Value::Str(Arc::new(String::new())));
+            let exception =
+                Value::make_instance(crate::symbol::Symbol::intern("X::Phaser::PrePost"), attrs);
+            let mut err = RuntimeError::new(format!("Precondition '{}' failed", phaser_name,));
+            err.exception = Some(Box::new(exception));
+            return Err(err);
+        }
+        Ok(())
     }
 
     pub(super) fn exec_do_block_expr_op(
