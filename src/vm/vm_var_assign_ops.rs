@@ -1,6 +1,7 @@
 use super::*;
 use crate::symbol::Symbol;
 use std::sync::Arc;
+use unicode_normalization::UnicodeNormalization;
 
 impl VM {
     fn varref_target(value: &Value) -> Option<(String, Option<usize>)> {
@@ -439,7 +440,8 @@ impl VM {
             }
             result.push_str(&crate::runtime::utils::coerce_to_str(&v));
         }
-        self.stack.push(Value::str(result));
+        let normalized: String = result.nfc().collect();
+        self.stack.push(Value::str(normalized));
         Ok(())
     }
 

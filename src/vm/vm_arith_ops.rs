@@ -1,6 +1,7 @@
 use super::*;
 use num_traits::ToPrimitive;
 use std::sync::Arc;
+use unicode_normalization::UnicodeNormalization;
 
 impl VM {
     fn is_xx_reeval_thunk(data: &crate::value::SubData) -> bool {
@@ -271,15 +272,18 @@ impl VM {
             } else {
                 crate::runtime::utils::coerce_to_str(&right)
             };
-            self.stack
-                .push(Value::str(format!("{}{}", left_str, right_str)));
+            let concatenated = format!("{}{}", left_str, right_str);
+            let normalized: String = concatenated.nfc().collect();
+            self.stack.push(Value::str(normalized));
             return;
         }
-        self.stack.push(Value::str(format!(
+        let concatenated = format!(
             "{}{}",
             crate::runtime::utils::coerce_to_str(&left),
             crate::runtime::utils::coerce_to_str(&right)
-        )));
+        );
+        let normalized: String = concatenated.nfc().collect();
+        self.stack.push(Value::str(normalized));
     }
 
     pub fn is_buf_value(val: &Value) -> bool {
