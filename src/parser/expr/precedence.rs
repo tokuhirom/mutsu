@@ -273,6 +273,20 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 expr: Box::new(rhs),
             },
         )),
+        Expr::ArrayVar(name) => Ok((
+            r,
+            Expr::AssignExpr {
+                name: format!("@{}", name),
+                expr: Box::new(rhs),
+            },
+        )),
+        Expr::HashVar(name) => Ok((
+            r,
+            Expr::AssignExpr {
+                name: format!("%{}", name),
+                expr: Box::new(rhs),
+            },
+        )),
         Expr::Index { target, index } => {
             if let Expr::Call { name, args } = target.as_ref()
                 && name == "__mutsu_subscript_adverb"
@@ -364,6 +378,14 @@ fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
     match target {
         Expr::Var(name) => Expr::AssignExpr {
             name,
+            expr: Box::new(value),
+        },
+        Expr::ArrayVar(name) => Expr::AssignExpr {
+            name: format!("@{}", name),
+            expr: Box::new(value),
+        },
+        Expr::HashVar(name) => Expr::AssignExpr {
+            name: format!("%{}", name),
             expr: Box::new(value),
         },
         Expr::Index { target, index } => Expr::IndexAssign {
