@@ -166,6 +166,19 @@ impl VM {
                 | "^"
                 | "o"
                 | "∘"
+                | "(-)"
+                | "∖"
+                | "(|)"
+                | "∪"
+                | "(&)"
+                | "∩"
+                | "(^)"
+                | "⊖"
+                | "(.)"
+                | "⊍"
+                | "(==)"
+                | "≡"
+                | "≢"
         )
     }
 
@@ -902,7 +915,8 @@ impl VM {
             "+<", "+>", "~&", "~|", "~^", "~<", "~>", "?&", "?|", "?^", "==", "!=", "<", ">", "<=",
             ">=", "<=>", "===", "=:=", "!=:=", "=>", "eqv", "eq", "ne", "lt", "gt", "le", "ge",
             "leg", "cmp", "~~", "min", "max", "gcd", "lcm", "and", "or", "not", ",", "after",
-            "before", "X", "Z", "x", "xx", "&", "|", "^", "o", "∘",
+            "before", "X", "Z", "x", "xx", "&", "|", "^", "o", "∘", "(-)", "∖", "(|)", "∪", "(&)",
+            "∩", "(^)", "⊖", "(.)", "⊍", "(==)", "≡", "≢",
         ];
         let (negate, base_op) = if let Some(stripped) = op_no_scan.strip_prefix('!')
             && KNOWN_BASE_OPS.contains(&stripped)
@@ -1025,6 +1039,41 @@ impl VM {
             };
             self.stack.push(Value::Seq(std::sync::Arc::new(out)));
             return Ok(());
+        }
+        // For set operators, promote all elements to the highest set type before reducing.
+        // In Raku, [(-)] [Set, Set, Mix] first promotes all to Mix, then reduces.
+        if matches!(
+            base_op.as_str(),
+            "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖" | "(.)" | "⊍"
+        ) && list.len() > 2
+        {
+            let set_level = |v: &Value| -> u8 {
+                match v {
+                    Value::Mix(_) => 2,
+                    Value::Bag(_) => 1,
+                    _ => 0,
+                }
+            };
+            let max_level = list.iter().map(&set_level).max().unwrap_or(0);
+            if max_level > 0 {
+                for item in &mut list {
+                    let level = set_level(item);
+                    if level < max_level {
+                        let promoted = match max_level {
+                            2 => self
+                                .interpreter
+                                .call_method_with_values(item.clone(), "Mix", vec![])
+                                .unwrap_or_else(|_| item.clone()),
+                            1 => self
+                                .interpreter
+                                .call_method_with_values(item.clone(), "Bag", vec![])
+                                .unwrap_or_else(|_| item.clone()),
+                            _ => item.clone(),
+                        };
+                        *item = promoted;
+                    }
+                }
+            }
         }
         if list.is_empty() {
             self.stack.push(runtime::reduction_identity(&base_op));

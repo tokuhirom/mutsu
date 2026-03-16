@@ -684,6 +684,42 @@ impl Interpreter {
                 }
             }
         }
+        // For set operators with 3+ args, promote all to the highest set type first.
+        // In Raku, infix:<(-)>(Set, Set, Mix) promotes all to Mix before reducing.
+        let args = if is_set_op && args.len() > 2 {
+            let set_level = |v: &Value| -> u8 {
+                match v {
+                    Value::Mix(_) => 2,
+                    Value::Bag(_) => 1,
+                    _ => 0,
+                }
+            };
+            let max_level = args.iter().map(&set_level).max().unwrap_or(0);
+            if max_level > 0 {
+                args.iter()
+                    .map(|item| {
+                        let level = set_level(item);
+                        if level < max_level {
+                            match max_level {
+                                2 => self
+                                    .call_method_with_values(item.clone(), "Mix", vec![])
+                                    .unwrap_or_else(|_| item.clone()),
+                                1 => self
+                                    .call_method_with_values(item.clone(), "Bag", vec![])
+                                    .unwrap_or_else(|_| item.clone()),
+                                _ => item.clone(),
+                            }
+                        } else {
+                            item.clone()
+                        }
+                    })
+                    .collect()
+            } else {
+                args
+            }
+        } else {
+            args
+        };
         let mut acc = args[0].clone();
         for rhs in &args[1..] {
             let pair_args = vec![acc.clone(), rhs.clone()];

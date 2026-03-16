@@ -250,33 +250,13 @@ impl Interpreter {
         if let Value::Scalar(inner) = value {
             return Self::multiply_bag_counts(inner.as_ref());
         }
-        fn parse_pair_key(key: &str) -> Option<(String, i64, bool)> {
-            let (base, raw_weight) = key.split_once('\t')?;
-            let weight = match raw_weight {
-                "True" => 1,
-                "False" => 0,
-                _ => raw_weight.parse::<i64>().ok()?,
-            };
-            let explicit = weight != 1;
-            Some((base.to_string(), weight, explicit))
-        }
         if Self::union_is_lazy_input(value) {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
             Value::Bag(b) => {
-                let mut out = std::collections::HashMap::new();
-                for (k, c) in b.iter() {
-                    if let Some((base, weight, explicit)) = parse_pair_key(k) {
-                        let entry = out.entry(base).or_insert((0, false));
-                        entry.0 += weight.saturating_mul(*c);
-                        entry.1 |= explicit;
-                    } else {
-                        let entry = out.entry(k.clone()).or_insert((0, false));
-                        entry.0 += *c;
-                    }
-                }
-                Ok(out)
+                let resolved = crate::runtime::utils::resolve_bag_tab_keys(b);
+                Ok(resolved.into_iter().map(|(k, v)| (k, (v, false))).collect())
             }
             Value::Mix(m) => Ok(m
                 .iter()
@@ -362,7 +342,10 @@ impl Interpreter {
         }
         match value {
             Value::Mix(m) => Ok((**m).clone()),
-            Value::Bag(b) => Ok(b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect()),
+            Value::Bag(b) => {
+                let resolved = crate::runtime::utils::resolve_bag_tab_keys(b);
+                Ok(resolved.into_iter().map(|(k, v)| (k, v as f64)).collect())
+            }
             Value::Set(s) => Ok(s.iter().map(|k| (k.clone(), 1.0)).collect()),
             Value::Hash(h) => Ok(h
                 .iter()
@@ -470,16 +453,11 @@ impl Interpreter {
         let l = Self::multiply_bag_counts(left)?;
         let r = Self::multiply_bag_counts(right)?;
         let mut result: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
-        for (k, (lv, l_explicit)) in l {
-            if let Some((rv, r_explicit)) = r.get(&k) {
+        for (k, (lv, _l_explicit)) in l {
+            if let Some((rv, _r_explicit)) = r.get(&k) {
                 let product = lv * *rv;
                 if product > 0 {
-                    if l_explicit || *r_explicit {
-                        // Pair-ish bag elements are represented as "key<TAB>weight" with count 1.
-                        result.insert(format!("{k}\t{product}"), 1);
-                    } else {
-                        result.insert(k, product);
-                    }
+                    result.insert(k, product);
                 }
             }
         }

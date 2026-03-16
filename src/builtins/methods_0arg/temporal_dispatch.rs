@@ -5,6 +5,36 @@ use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 use std::collections::HashMap;
 
+/// Convert an f64 to a Rat by using its decimal string representation.
+/// This preserves the visible decimal digits (e.g. 10.987654321 → 10987654321/1000000000).
+fn f64_to_decimal_rat(f: f64) -> Value {
+    let s = format!("{}", f);
+    if let Some(dot_pos) = s.find('.') {
+        let decimals = s.len() - dot_pos - 1;
+        let mut den = 1i64;
+        for _ in 0..decimals {
+            den = den.saturating_mul(10);
+        }
+        // Remove the dot and parse as integer numerator
+        let num_str: String = s.chars().filter(|c| *c != '.').collect();
+        if let Ok(num) = num_str.parse::<i64>() {
+            // Simplify the fraction
+            let g = gcd_i64(num.abs(), den);
+            return Value::Rat(num / g, den / g);
+        }
+    }
+    Value::Num(f)
+}
+
+fn gcd_i64(mut a: i64, mut b: i64) -> i64 {
+    while b != 0 {
+        let t = b;
+        b = a % b;
+        a = t;
+    }
+    a
+}
+
 /// Dispatch 0-arg methods for Date instances.
 pub fn date_method_0arg(
     attributes: &HashMap<String, Value>,
@@ -91,7 +121,9 @@ pub fn datetime_method_0arg(
             if second == second.floor() {
                 Some(Ok(Value::Int(second as i64)))
             } else {
-                Some(Ok(Value::Num(second)))
+                // Raku's .second returns a Rat for fractional seconds.
+                // Convert f64 via its decimal representation to preserve precision.
+                Some(Ok(f64_to_decimal_rat(second)))
             }
         }
         "timezone" => Some(Ok(Value::Int(timezone))),
@@ -129,11 +161,8 @@ pub fn datetime_method_0arg(
         "Date" => Some(Ok(make_date(year, month, day))),
         "posix" => {
             let posix = datetime_to_posix(year, month, day, hour, minute, second, timezone);
-            if posix == posix.floor() {
-                Some(Ok(Value::Int(posix as i64)))
-            } else {
-                Some(Ok(Value::Num(posix)))
-            }
+            // Raku's .posix always returns Int (truncating fractional seconds)
+            Some(Ok(Value::Int(posix.floor() as i64)))
         }
         "Numeric" => {
             let posix = datetime_to_posix(year, month, day, hour, minute, second, timezone);

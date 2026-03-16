@@ -406,7 +406,10 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
         let (rest, _) = parse_tag(input, kw)?;
         // Check word boundary (superscript digits are NOT word chars)
         if let Some(c) = rest.chars().next()
-            && (c.is_alphanumeric() || c == '_' || c == '-')
+            && (c.is_alphanumeric() || c == '_'
+                // Hyphen is a word-continuation only for kebab-case identifiers,
+                // i.e. when followed by an alphabetic char. `pi-1` is `pi` minus `1`.
+                || (c == '-' && rest.chars().nth(1).is_some_and(|c2| c2.is_alphabetic())))
             && !is_superscript_digit(c)
         {
             return Err(PError::expected("word boundary"));

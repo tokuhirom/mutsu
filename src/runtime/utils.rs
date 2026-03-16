@@ -1340,7 +1340,10 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
     match val {
         Value::Scalar(inner) => coerce_to_set(inner),
         Value::Set(s) => (**s).clone(),
-        Value::Bag(b) => b.keys().cloned().collect(),
+        Value::Bag(b) => {
+            let resolved = resolve_bag_tab_keys(b);
+            resolved.keys().cloned().collect()
+        }
         Value::Mix(m) => m.keys().cloned().collect(),
         Value::Hash(items) => items
             .iter()
@@ -1362,6 +1365,13 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
         Value::Pair(_, _) | Value::ValuePair(_, _) => {
             let mut elems = HashSet::new();
             insert_set_elem(&mut elems, val);
+            elems
+        }
+        range if range.is_range() => {
+            let mut elems = HashSet::new();
+            for item in value_to_list(range) {
+                insert_set_elem(&mut elems, &item);
+            }
             elems
         }
         _ => {
@@ -1441,7 +1451,10 @@ fn set_type_level(v: &Value) -> u8 {
 fn to_mix_map(v: &Value) -> HashMap<String, f64> {
     match v {
         Value::Mix(m) => (**m).clone(),
-        Value::Bag(b) => b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect(),
+        Value::Bag(b) => {
+            let resolved = resolve_bag_tab_keys(b);
+            resolved.into_iter().map(|(k, v)| (k, v as f64)).collect()
+        }
         Value::Set(s) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
         Value::Hash(h) => {
             let mut result = HashMap::new();
@@ -1472,16 +1485,42 @@ fn to_mix_map(v: &Value) -> HashMap<String, f64> {
             result
         }
         _ => {
-            let s = coerce_to_set(v);
-            s.into_iter().map(|k| (k, 1.0)).collect()
+            // Count occurrences for list-like values (e.g. (a, a, b) → {a: 2.0, b: 1.0})
+            let items = value_to_list(v);
+            let mut result = HashMap::new();
+            for item in &items {
+                *result.entry(item.to_string_value()).or_insert(0.0f64) += 1.0;
+            }
+            result
         }
     }
+}
+
+/// Resolve Bag entries that use the internal "key\tweight" tab format
+/// into plain key→weight entries.
+pub(crate) fn resolve_bag_tab_keys(bag: &HashMap<String, i64>) -> HashMap<String, i64> {
+    let mut result = HashMap::new();
+    for (k, c) in bag.iter() {
+        if let Some((base, raw_weight)) = k.split_once('\t') {
+            let weight = match raw_weight {
+                "True" => 1i64,
+                "False" => 0,
+                _ => raw_weight.parse::<i64>().unwrap_or(1),
+            };
+            *result.entry(base.to_string()).or_insert(0) += weight * c;
+        } else {
+            *result.entry(k.clone()).or_insert(0) += c;
+        }
+    }
+    // Remove zero/negative entries for Bag semantics
+    result.retain(|_, v| *v > 0);
+    result
 }
 
 /// Convert a value to a Bag-level HashMap (key → i64 count)
 fn to_bag_map(v: &Value) -> HashMap<String, i64> {
     match v {
-        Value::Bag(b) => (**b).clone(),
+        Value::Bag(b) => resolve_bag_tab_keys(b),
         Value::Set(s) => s.iter().map(|k| (k.clone(), 1i64)).collect(),
         Value::Hash(h) => {
             let mut result = HashMap::new();
@@ -1499,21 +1538,39 @@ fn to_bag_map(v: &Value) -> HashMap<String, i64> {
             result
         }
         _ => {
-            let s = coerce_to_set(v);
-            s.into_iter().map(|k| (k, 1i64)).collect()
+            // Count occurrences for list-like values (e.g. (a, a, b) → {a: 2, b: 1})
+            let items = value_to_list(v);
+            let mut result = HashMap::new();
+            for item in &items {
+                *result.entry(item.to_string_value()).or_insert(0i64) += 1;
+            }
+            result
         }
     }
 }
 
 /// Standalone set difference: left (-) right
 /// Implements Raku type promotion: Mix > Bag > Set
+///
+/// In Raku, when the RHS is a Hash, it is treated as a Set (truthy keys
+/// with weight 1) rather than using its numeric values as weights.
 pub(crate) fn set_diff_values(left: &Value, right: &Value) -> Value {
-    let level = set_type_level(left).max(set_type_level(right));
+    // When the RHS is a Hash, coerce it to a Set for subtraction.
+    // The Hash's truthy keys each count as weight 1.
+    let right_as_set;
+    let effective_right = if matches!(right, Value::Hash(_)) {
+        right_as_set = Value::set(coerce_to_set(right));
+        &right_as_set
+    } else {
+        right
+    };
+
+    let level = set_type_level(left).max(set_type_level(effective_right));
     match level {
         2 => {
             // Mix-level difference: include all keys, keep non-zero results
             let a = to_mix_map(left);
-            let b = to_mix_map(right);
+            let b = to_mix_map(effective_right);
             let mut result = HashMap::new();
             for (k, v) in &a {
                 let bv = b.get(k).copied().unwrap_or(0.0);
@@ -1532,7 +1589,7 @@ pub(crate) fn set_diff_values(left: &Value, right: &Value) -> Value {
         1 => {
             // Bag-level difference: only positive results
             let a = to_bag_map(left);
-            let b = to_bag_map(right);
+            let b = to_bag_map(effective_right);
             let mut result = HashMap::new();
             for (k, v) in &a {
                 let bv = b.get(k).copied().unwrap_or(0);
@@ -1545,7 +1602,7 @@ pub(crate) fn set_diff_values(left: &Value, right: &Value) -> Value {
         _ => {
             // Set-level difference
             let a = coerce_to_set(left);
-            let b = coerce_to_set(right);
+            let b = coerce_to_set(effective_right);
             Value::set(a.difference(&b).cloned().collect())
         }
     }
@@ -1596,12 +1653,17 @@ pub(crate) fn set_intersect_values(left: &Value, right: &Value) -> Value {
 /// Coerce a value to a Bag (HashMap<String, i64>)
 fn coerce_to_bag(val: &Value) -> HashMap<String, i64> {
     match val {
-        Value::Bag(b) => (**b).clone(),
+        Value::Bag(b) => resolve_bag_tab_keys(b),
         Value::Set(s) => s.iter().map(|k| (k.clone(), 1)).collect(),
         Value::Mix(m) => m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect(),
         _ => {
-            let set = coerce_to_set(val);
-            set.into_iter().map(|k| (k, 1)).collect()
+            // Count occurrences for list-like values
+            let items = value_to_list(val);
+            let mut result = HashMap::new();
+            for item in &items {
+                *result.entry(item.to_string_value()).or_insert(0i64) += 1;
+            }
+            result
         }
     }
 }
@@ -1610,11 +1672,19 @@ fn coerce_to_bag(val: &Value) -> HashMap<String, i64> {
 fn coerce_to_mix(val: &Value) -> HashMap<String, f64> {
     match val {
         Value::Mix(m) => (**m).clone(),
-        Value::Bag(b) => b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect(),
+        Value::Bag(b) => {
+            let resolved = resolve_bag_tab_keys(b);
+            resolved.into_iter().map(|(k, v)| (k, v as f64)).collect()
+        }
         Value::Set(s) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
         _ => {
-            let set = coerce_to_set(val);
-            set.into_iter().map(|k| (k, 1.0)).collect()
+            // Count occurrences for list-like values
+            let items = value_to_list(val);
+            let mut result = HashMap::new();
+            for item in &items {
+                *result.entry(item.to_string_value()).or_insert(0.0f64) += 1.0;
+            }
+            result
         }
     }
 }
