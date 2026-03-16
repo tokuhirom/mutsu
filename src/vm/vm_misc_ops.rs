@@ -1206,9 +1206,7 @@ impl VM {
                 {
                     return Ok(());
                 }
-            } else if is_finite_generic_range
-                && let Value::GenericRange { start, end, .. } = &value
-            {
+            } else if is_finite_generic_range && let Value::GenericRange { start, end, .. } = &value {
                 let start_ok = self.interpreter.type_matches_value(constraint, start);
                 let end_ok = self.interpreter.type_matches_value(constraint, end);
                 if start_ok && end_ok {
