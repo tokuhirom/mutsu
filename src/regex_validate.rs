@@ -462,6 +462,16 @@ fn validate_backslash_sequence(esc: char) -> Result<(), RuntimeError> {
     match esc {
         'd' | 'D' | 'w' | 'W' | 's' | 'S' | 'n' | 'N' | 't' | 'T' | 'r' | 'R' | 'x' | 'o' | 'c'
         | 'C' | 'X' | 'v' | 'V' | 'h' | 'H' | 'e' | 'E' | 'b' | 'B' | '0' => Ok(()),
+        // Obsolete Perl 5 backslash sequences
+        'A' => Err(RuntimeError::obsolete(
+            "\\A as beginning-of-string matcher",
+            "^",
+        )),
+        'Z' => Err(RuntimeError::obsolete(
+            "\\Z as end-of-string matcher",
+            "\\n?$",
+        )),
+        'z' => Err(RuntimeError::obsolete("\\z as end-of-string matcher", "$")),
         _ if !esc.is_ascii_alphabetic() => Ok(()), // non-alpha escapes are always valid
         _ => {
             // Unknown alphabetic backslash sequence

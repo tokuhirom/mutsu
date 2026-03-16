@@ -1801,13 +1801,19 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         let r = &r[len..];
         let (r, _) = ws(r)?;
         let (r, mut right) = if mode == ExprMode::Full {
-            junctive_expr_mode(r, mode).map_err(|err| PError {
-                messages: merge_expected_messages(
-                    "expected expression after comparison operator",
-                    &err.messages,
-                ),
-                remaining_len: err.remaining_len.or(Some(r.len())),
-                exception: None,
+            junctive_expr_mode(r, mode).map_err(|err| {
+                // Preserve fatal errors with structured exceptions (e.g., X::Obsolete)
+                if err.is_fatal() && err.exception.is_some() {
+                    return err;
+                }
+                PError {
+                    messages: merge_expected_messages(
+                        "expected expression after comparison operator",
+                        &err.messages,
+                    ),
+                    remaining_len: err.remaining_len.or(Some(r.len())),
+                    exception: None,
+                }
             })?
         } else {
             junctive_expr_mode(r, mode)?
