@@ -165,6 +165,7 @@ roast/S03-smartmatch/regex-hash.t
 roast/S03-smartmatch/scalar-hash.t
 roast/S03-smartmatch/signature-signature.t
 roast/S04-blocks-and-statements/let.t
+roast/S04-exception-handlers/catch.t
 roast/S04-exception-handlers/top-level.t
 roast/S04-exceptions/control_across_runloop.t
 roast/S04-phasers/begin.t
@@ -352,6 +353,7 @@ roast/S12-enums/pseudo-functional.t
 roast/S12-introspection/WHAT.t
 roast/S12-introspection/can.t
 roast/S12-introspection/definite.t
+roast/S12-introspection/meta-class.t
 roast/S12-introspection/methods.t
 roast/S12-meta/grammarhow.t
 roast/S12-meta/primitives.t
@@ -593,6 +595,7 @@ roast/S32-hash/hyperslice.t
 roast/S32-hash/invert.t
 roast/S32-hash/iterator.t
 roast/S32-hash/keys_values.t
+roast/S32-hash/kv.t
 roast/S32-hash/push.t
 roast/S32-hash/slice.t
 roast/S32-io/IO-Socket-Async.t
@@ -626,6 +629,7 @@ roast/S32-list/first-k.t
 roast/S32-list/first-kv.t
 roast/S32-list/first-p.t
 roast/S32-list/first-v.t
+roast/S32-list/first.t
 roast/S32-list/flat.t
 roast/S32-list/grep.t
 roast/S32-list/map_function_return_values.t
