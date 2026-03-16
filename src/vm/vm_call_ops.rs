@@ -629,6 +629,27 @@ impl VM {
         } else {
             target
         };
+        // Regex.Bool / Regex.so: smartmatch against $_ (needs runtime context)
+        if matches!(method.as_str(), "Bool" | "so")
+            && args.is_empty()
+            && matches!(
+                &target,
+                Value::Regex(_)
+                    | Value::RegexWithAdverbs { .. }
+                    | Value::Routine { is_regex: true, .. }
+            )
+        {
+            let topic = self
+                .interpreter
+                .env()
+                .get("_")
+                .cloned()
+                .unwrap_or(Value::Nil);
+            let matched = self.interpreter.smart_match_values(&topic, &target);
+            self.stack.push(Value::Bool(matched));
+            self.env_dirty = true;
+            return Ok(());
+        }
         let target_for_mod = target.clone();
         let args_for_mod = args.clone();
         let call_result = if !skip_native {
