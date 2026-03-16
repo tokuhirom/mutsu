@@ -2302,6 +2302,17 @@ impl VM {
                 }
                 val.truthy()
             }
+            Value::Regex(_)
+            | Value::RegexWithAdverbs { .. }
+            | Value::Routine { is_regex: true, .. } => {
+                let topic = self
+                    .interpreter
+                    .env()
+                    .get("_")
+                    .cloned()
+                    .unwrap_or(Value::Nil);
+                self.interpreter.smart_match_values(&topic, val)
+            }
             _ => val.truthy(),
         }
     }

@@ -714,6 +714,14 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         ));
     }
 
+    // qr// is obsolete Perl 5 syntax — reject with X::Obsolete
+    if input.starts_with("qr/") || input.starts_with("qr{") || input.starts_with("qr[") {
+        return Err(PError::fatal(
+            "X::Obsolete: Unsupported use of qr for regex quoting. In Raku please use: rx//."
+                .to_string(),
+        ));
+    }
+
     // rx/pattern/ or rx{pattern}
     if let Ok((rest, _)) = parse_tag(input, "rx") {
         let (spec, adverbs) = parse_match_adverbs(rest)?;

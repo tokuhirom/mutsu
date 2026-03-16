@@ -218,7 +218,8 @@ impl VM {
 
     pub(super) fn exec_not_op(&mut self) {
         let val = self.stack.pop().unwrap();
-        self.stack.push(Value::Bool(!val.truthy()));
+        let t = self.eval_truthy(&val);
+        self.stack.push(Value::Bool(!t));
     }
 
     pub(super) fn exec_bool_coerce_op(&mut self) {

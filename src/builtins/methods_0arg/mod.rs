@@ -1395,6 +1395,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 && (target.does_check("Real") || target.does_check("Numeric"))
             {
                 None
+            } else if matches!(
+                target,
+                Value::Regex(_)
+                    | Value::RegexWithAdverbs { .. }
+                    | Value::Routine { is_regex: true, .. }
+            ) {
+                // Regex.Bool needs to smartmatch against $_, which requires
+                // runtime context. Fall through to the runtime handler.
+                None
             } else {
                 Some(Ok(Value::Bool(target.truthy())))
             }
