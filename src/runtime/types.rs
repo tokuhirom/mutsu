@@ -1166,7 +1166,10 @@ impl Interpreter {
             return true;
         }
         if matches!(constraint, "Callable" | "Code" | "Block")
-            && matches!(value_type, "Sub" | "Routine" | "Method" | "Block")
+            && matches!(
+                value_type,
+                "Sub" | "Routine" | "Method" | "Block" | "WhateverCode"
+            )
         {
             return true;
         }

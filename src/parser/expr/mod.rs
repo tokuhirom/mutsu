@@ -373,6 +373,13 @@ fn contains_whatever(expr: &Expr) -> bool {
                 | TokenKind::DotDotDotCaret,
             ..
         } => false,
+        // SmartMatch/BangTilde: Whatever on the RHS is handled at runtime
+        // (autoprime to WhateverCode). Only check LHS for Whatever.
+        Expr::Binary {
+            op: TokenKind::SmartMatch | TokenKind::BangTilde,
+            left,
+            ..
+        } => contains_whatever(left),
         Expr::Binary { left, right, .. } => contains_whatever(left) || contains_whatever(right),
         Expr::Unary { expr, .. } => contains_whatever(expr),
         // Pseudo-methods (.WHAT, .WHO, .HOW, etc.) are always evaluated immediately
@@ -434,6 +441,12 @@ fn count_whatever(expr: &Expr) -> usize {
                 | TokenKind::DotDotDotCaret,
             ..
         } => 0,
+        // SmartMatch/BangTilde: Whatever on RHS is handled at runtime; only count LHS.
+        Expr::Binary {
+            op: TokenKind::SmartMatch | TokenKind::BangTilde,
+            left,
+            ..
+        } => count_whatever(left),
         Expr::Binary { left, right, .. } => count_whatever(left) + count_whatever(right),
         Expr::Unary { expr, .. } => count_whatever(expr),
         Expr::MethodCall { target, .. } => count_whatever(target),
