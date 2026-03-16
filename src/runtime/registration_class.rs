@@ -365,6 +365,7 @@ impl Interpreter {
             "DateTime",
             "Grammar",
             "Proxy",
+            "Stash",
         ];
         for parent in parents {
             // Strip type arguments for validation (e.g., "R[Str:D(Numeric)]" -> "R")
