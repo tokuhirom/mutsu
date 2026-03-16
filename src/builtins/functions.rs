@@ -29,12 +29,26 @@ fn is_infinite_range(value: &Value) -> bool {
     }
 }
 
-fn flat_val_deep(v: &Value, out: &mut Vec<Value>) {
+/// Recursively flatten a value for `flat()`.
+///
+/// `flatten_arrays`: when true, `ArrayKind::Array` values are flattened
+/// (their elements are exposed). Elements coming from a List/Seq context
+/// pass `true`; elements coming from inside an Array pass `false`
+/// (because `[...]` itemizes its contents in Raku).
+fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
     match v {
-        // Lists (not true Arrays), Seqs, and Slips are flattened recursively
+        // Lists, Seqs, and Slips are always flattened; their children
+        // inherit flatten_arrays=true since Lists don't itemize.
         Value::Array(items, ArrayKind::List) | Value::Seq(items) | Value::Slip(items) => {
             for item in items.iter() {
-                flat_val_deep(item, out);
+                flat_val(item, out, true);
+            }
+        }
+        // Real Arrays ([...]): flatten if flag is set. Children get
+        // flatten_arrays=false because [...] itemizes its elements.
+        Value::Array(items, ArrayKind::Array) if flatten_arrays => {
+            for item in items.iter() {
+                flat_val(item, out, false);
             }
         }
         // Itemized containers — don't descend
@@ -538,11 +552,10 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 return Some(Ok(arg.clone()));
             }
             let mut flat = Vec::new();
-            // Top-level: iterate the arg's elements and flatten each
-            let items = crate::runtime::utils::value_to_list(arg);
-            for item in &items {
-                flat_val_deep(item, &mut flat);
-            }
+            // Flatten the argument with flatten_arrays=true so that
+            // top-level arrays (including @a in `flat (6, @a)`) are
+            // flattened, while nested arrays inside [...] are preserved.
+            flat_val(arg, &mut flat, true);
             Some(Ok(Value::Seq(std::sync::Arc::new(flat))))
         }
         "first" => Some(Ok(match arg {
@@ -1054,7 +1067,7 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
             }
             let mut result = Vec::new();
             for arg in args {
-                flat_val_deep(arg, &mut result);
+                flat_val(arg, &mut result, true);
             }
             Some(Ok(Value::Seq(std::sync::Arc::new(result))))
         }

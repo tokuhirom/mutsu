@@ -2957,6 +2957,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "min" => match target {
             Value::Array(items, ..) => Some(Ok(items
                 .iter()
+                .filter(|v| crate::runtime::types::value_is_defined(v))
                 .cloned()
                 .min_by(|a, b| match (a, b) {
                     (Value::Int(x), Value::Int(y)) => x.cmp(y),
@@ -2990,6 +2991,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "max" => match target {
             Value::Array(items, ..) => Some(Ok(items
                 .iter()
+                .filter(|v| crate::runtime::types::value_is_defined(v))
                 .cloned()
                 .max_by(|a, b| match (a, b) {
                     (Value::Int(x), Value::Int(y)) => x.cmp(y),
