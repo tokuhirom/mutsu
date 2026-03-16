@@ -2247,6 +2247,18 @@ impl VM {
             Err(e) => Err(e),
         };
 
+        // Apply return type spec (e.g. `--> 5` returns literal 5 from empty body)
+        let final_result = if let Some(ref return_spec) = method_def.return_type {
+            self.interpreter
+                .finalize_return_with_spec(final_result, Some(return_spec.as_str()))
+        } else {
+            match final_result {
+                Ok(v) => Ok(v),
+                Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
+                Err(e) => Err(e),
+            }
+        };
+
         // Adjust return value if it's the same instance (update attributes)
         final_result.map(|v| {
             let adjusted = match (&base, &v) {

@@ -1645,6 +1645,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Value::Complex(r, _) => Value::Num(*r),
                 Value::Array(items, ..) => Value::Int(items.len() as i64),
                 Value::Hash(h) => Value::Int(h.len() as i64),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Stash" => {
+                    let count = match attributes.get("symbols") {
+                        Some(Value::Hash(map)) => map.len() as i64,
+                        _ => 0,
+                    };
+                    Value::Int(count)
+                }
                 _ => return None,
             };
             Some(Ok(result))
@@ -1865,6 +1876,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     return Some(Err(RuntimeError::new(
                         "Cannot call '.elems' on a Channel instance".to_string(),
                     )));
+                }
+                Value::Range(start, end) => Value::Int((*end - *start + 1).max(0)),
+                Value::RangeExcl(start, end) => Value::Int((*end - *start).max(0)),
+                Value::RangeExclStart(start, end) => Value::Int((*end - *start).max(0)),
+                Value::RangeExclBoth(start, end) => Value::Int((*end - *start - 1).max(0)),
+                Value::GenericRange { .. } => {
+                    let list = crate::runtime::utils::value_to_list(target);
+                    Value::Int(list.len() as i64)
                 }
                 _ => Value::Int(1),
             };

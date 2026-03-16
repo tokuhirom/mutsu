@@ -1638,6 +1638,10 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 || after.starts_with(')')
                 || after.starts_with(',')
                 || after.starts_with(' ')
+                || after.starts_with('\n')
+                || after.starts_with('\r')
+                || after.starts_with('\t')
+                || after.starts_with('}')
             {
                 // Trailing `::` stash lookup form (e.g. `A::`, `MY::`).
                 // Pseudo packages remain supported, and ordinary package stashes are accepted

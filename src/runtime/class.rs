@@ -544,6 +544,12 @@ impl Interpreter {
             Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
             Err(e) => Err(e),
         };
+        // Apply return type spec (e.g. `--> 5` returns literal 5 from empty body)
+        let result = if let Some(ref return_spec) = method_def.return_type {
+            self.finalize_return_with_spec(result, Some(return_spec.as_str()))
+        } else {
+            result
+        };
         for attr_name in attributes.keys().cloned().collect::<Vec<_>>() {
             let original = attributes.get(&attr_name).cloned().unwrap_or(Value::Nil);
             let env_key = format!("!{}", attr_name);
