@@ -472,6 +472,16 @@ impl Interpreter {
             } = &target
             && args.is_empty()
         {
+            // Check that the qualifier class is in the instance's MRO
+            let inst_mro = self.class_mro(&inst_class.resolve());
+            if !inst_mro.iter().any(|c| c == qualifier) {
+                return Err(RuntimeError::new(format!(
+                    "Cannot dispatch to method {} on {} because it is not inherited or done by {}",
+                    actual_method,
+                    qualifier,
+                    inst_class.resolve()
+                )));
+            }
             // Read: look up the attribute in the qualifier class's attribute definitions
             let class_attrs = self.collect_class_attributes(qualifier);
             for (attr_name, is_public, ..) in &class_attrs {

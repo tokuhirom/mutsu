@@ -660,10 +660,14 @@ impl Interpreter {
             }
             return mro;
         }
-        if class_name != "Mu" && !mro.iter().any(|name| name == "Any") {
+        // Only append "Any" if the computed MRO doesn't already include it AND
+        // the class does not explicitly bypass Any by inheriting directly from Mu.
+        let has_any_in_mro = mro.iter().any(|name| name == "Any");
+        let has_mu_in_mro = mro.iter().any(|name| name == "Mu");
+        if class_name != "Mu" && !has_any_in_mro && !has_mu_in_mro {
             mro.push("Any".to_string());
         }
-        if !mro.iter().any(|name| name == "Mu") {
+        if !has_mu_in_mro {
             mro.push("Mu".to_string());
         }
         mro

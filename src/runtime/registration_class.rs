@@ -943,6 +943,18 @@ impl Interpreter {
                             .or_default()
                             .push(def);
                     } else {
+                        // Check for duplicate non-multi method definition.
+                        // Only error if the existing method was defined in
+                        // this class (not composed from a role).
+                        if let Some(existing) = class_def.methods.get(&resolved_method_name) {
+                            let all_from_role = existing.iter().all(|m| m.role_origin.is_some());
+                            if !all_from_role {
+                                return Err(RuntimeError::new(format!(
+                                    "Package '{}' already has a method '{}' (did you mean to declare a multi method?)",
+                                    name, resolved_method_name
+                                )));
+                            }
+                        }
                         class_def
                             .methods
                             .insert(resolved_method_name.clone(), vec![def]);
@@ -1280,6 +1292,19 @@ impl Interpreter {
                                 .or_default()
                                 .push(def);
                         } else {
+                            // Check for duplicate non-multi method definition.
+                            // Only error if the existing method was defined in
+                            // this class (not composed from a role).
+                            if let Some(existing) = class_def.methods.get(&resolved_method_name) {
+                                let all_from_role =
+                                    existing.iter().all(|m| m.role_origin.is_some());
+                                if !all_from_role {
+                                    return Err(RuntimeError::new(format!(
+                                        "Package '{}' already has a method '{}' (did you mean to declare a multi method?)",
+                                        name, resolved_method_name
+                                    )));
+                                }
+                            }
                             class_def.methods.insert(resolved_method_name, vec![def]);
                         }
                     }

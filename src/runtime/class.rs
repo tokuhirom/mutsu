@@ -139,16 +139,33 @@ impl Interpreter {
             return Ok(class_def.mro.clone());
         }
         stack.push(class_name.to_string());
-        let parents = self
+        let explicit_parents = self
             .classes
             .get(class_name)
             .map(|c| c.parents.clone())
             .unwrap_or_default();
+        // If a user-defined class has no explicit parents, it implicitly
+        // inherits from Any (which in turn inherits from Mu).  This matches
+        // Raku's default class hierarchy.
+        let parents = if explicit_parents.is_empty() && self.classes.contains_key(class_name) {
+            vec!["Any".to_string()]
+        } else {
+            explicit_parents
+        };
         let mut seqs: Vec<Vec<String>> = Vec::new();
         for parent in &parents {
             if self.classes.contains_key(parent) {
                 let mro = self.compute_class_mro(parent, stack)?;
                 seqs.push(mro);
+            } else if parent == "Any" {
+                // Any implicitly inherits from Mu
+                seqs.push(vec!["Any".to_string(), "Mu".to_string()]);
+            } else if parent == "Cool" {
+                seqs.push(vec![
+                    "Cool".to_string(),
+                    "Any".to_string(),
+                    "Mu".to_string(),
+                ]);
             } else {
                 seqs.push(vec![parent.clone()]);
             }
