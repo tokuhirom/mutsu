@@ -373,6 +373,26 @@ pub(super) fn supplier_done(supplier_id: u64) {
     }
 }
 
+/// Mark the supplier as done but return pending promises WITHOUT resolving them.
+/// This allows callers to fire done callbacks before resolving promises, avoiding
+/// a race where `await` on the promise returns before done callbacks run.
+pub(super) fn supplier_done_deferred(
+    supplier_id: u64,
+) -> Vec<(crate::value::SharedPromise, Value)> {
+    if let Ok(mut map) = supplier_state_map().lock() {
+        let state = map.entry(supplier_id).or_default();
+        if state.done || state.quit_reason.is_some() {
+            return Vec::new();
+        }
+        state.done = true;
+        let result = state.emitted.last().cloned().unwrap_or(Value::Nil);
+        let pending = std::mem::take(&mut state.pending_promises);
+        pending.into_iter().map(|p| (p, result.clone())).collect()
+    } else {
+        Vec::new()
+    }
+}
+
 pub(super) fn supplier_quit(supplier_id: u64, reason: Value) {
     if let Ok(mut map) = supplier_state_map().lock() {
         let state = map.entry(supplier_id).or_default();
@@ -2816,9 +2836,12 @@ impl Interpreter {
                     let _ = self.handle_classify_emit(supplier_id, tap_index, val);
                 }
                 SupplierEmitAction::HeadLimitReached { supplier_id: sid2 } => {
-                    supplier_done(sid2);
+                    let deferred_promises = supplier_done_deferred(sid2);
                     for done_cb in take_supplier_done_callbacks(sid2) {
                         let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                    }
+                    for (promise, result) in deferred_promises {
+                        promise.keep(result, String::new(), String::new());
                     }
                 }
                 SupplierEmitAction::ProduceCall {
