@@ -697,15 +697,31 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
     if rest.starts_with('?') || rest.starts_with('!') {
         rest = &rest[1..];
     }
-    // Don't parse statement-modifier keywords as colonpairs
+    // Don't parse statement-modifier keywords as bare colonpairs (`:when`),
+    // but allow them when followed by a value (`:when<now>`, `:if(True)`, etc.)
     if matches!(
         name,
         "if" | "unless" | "for" | "while" | "until" | "given" | "when"
-    ) {
+    ) && !rest.starts_with('(')
+        && !rest.starts_with('[')
+        && !rest.starts_with('{')
+        && !rest.starts_with('<')
+    {
         return Err(PError::expected("colonpair name"));
     }
     if let Some(after_paren) = rest.strip_prefix('(') {
         let (r, _) = ws(after_paren)?;
+        // Handle empty parens: :name() → name => ()
+        if let Some(r) = r.strip_prefix(')') {
+            return Ok((
+                r,
+                Expr::Binary {
+                    left: Box::new(Expr::Literal(Value::str(name.to_string()))),
+                    op: crate::token_kind::TokenKind::FatArrow,
+                    right: Box::new(Expr::ArrayLiteral(Vec::new())),
+                },
+            ));
+        }
         let (r, first) = expression(r)?;
         let (r, _) = ws(r)?;
         // Check for separated list: :name(a, b, ...) or :name(a; b; ...) or :name(a,)

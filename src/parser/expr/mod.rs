@@ -139,7 +139,9 @@ pub(super) fn expression_no_sequence(input: &str) -> PResult<'_, Expr> {
 }
 
 fn parse_fat_arrow_value(input: &str) -> PResult<'_, Expr> {
-    let (rest, value) = or_expr(input)?;
+    // Fat arrow (=>) has lower precedence than ternary (??!!),
+    // so the RHS should be parsed at ternary level.
+    let (rest, value) = ternary(input)?;
     let (r, _) = ws(rest)?;
     if r.starts_with("=>") && !r.starts_with("==>") {
         let r = &r[2..];
