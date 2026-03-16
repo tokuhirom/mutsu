@@ -1359,7 +1359,7 @@ impl Compiler {
 
     /// Compile the last statement of a `let` block so its result sets the topic.
     /// This allows `exec_let_block_op` to check the topic for success/failure.
-    fn compile_last_stmt_as_topic(&mut self, stmt: &Stmt) {
+    pub(super) fn compile_last_stmt_as_topic(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Expr(expr) => {
                 self.compile_expr(expr);

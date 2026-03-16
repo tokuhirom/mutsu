@@ -603,6 +603,7 @@ impl Compiler {
             Self::compile_routine_body_stmts(&mut sub_compiler, body, false);
         }
 
+        let fingerprint = crate::ast::function_body_fingerprint(params, param_defs, body);
         let key = if multi {
             let type_sig: Vec<String> = param_defs
                 .iter()
@@ -620,9 +621,12 @@ impl Compiler {
                 }
             )
         } else {
-            // Include arity in key to avoid collisions between same-named
-            // subs with different arities in different scopes
-            format!("{}::{}/{}", self.current_package, name, arity)
+            // Include arity and fingerprint in key to avoid collisions between
+            // same-named subs with different bodies in different scopes
+            format!(
+                "{}::{}/{}#{:x}",
+                self.current_package, name, arity, fingerprint
+            )
         };
 
         let cf = CompiledFunction {
@@ -630,7 +634,7 @@ impl Compiler {
             params: params.to_vec(),
             param_defs: param_defs.to_vec(),
             return_type: return_type.cloned(),
-            fingerprint: crate::ast::function_body_fingerprint(params, param_defs, body),
+            fingerprint,
             // Named subs with no params and no param_defs that don't use @_/%_ have
             // explicit empty signature :() and should reject any arguments.
             empty_sig: params.is_empty()
@@ -1251,6 +1255,103 @@ impl Compiler {
         // If the do block contains CATCH/CONTROL, compile as try so exceptions are handled.
         if Self::has_catch_or_control(body) {
             self.compile_try(body, &None);
+            return;
+        }
+        // If the do block contains ENTER/LEAVE/KEEP/UNDO phasers, wrap in
+        // DoBlockExpr + BlockScope so phaser semantics are preserved.
+        if Self::has_block_enter_leave_phasers(body) {
+            let do_idx = self.code.emit(OpCode::DoBlockExpr {
+                body_end: 0,
+                label: label.clone(),
+                scope_isolate: false,
+            });
+            let saved = self.push_dynamic_scope_lexical();
+            let idx = self.code.emit(OpCode::BlockScope {
+                pre_end: 0,
+                enter_end: 0,
+                body_end: 0,
+                keep_start: 0,
+                undo_start: 0,
+                post_start: 0,
+                end: 0,
+            });
+            // PRE phasers
+            Self::compile_pre_phasers(self, body);
+            self.code.patch_block_pre_end(idx);
+            // ENTER phasers
+            for s in body {
+                if let Stmt::Phaser {
+                    kind: PhaserKind::Enter,
+                    body: ph_body,
+                } = s
+                {
+                    for inner in ph_body {
+                        self.compile_stmt(inner);
+                    }
+                }
+            }
+            self.code.patch_block_enter_end(idx);
+            // Body (filter out phasers)
+            let body_stmts: Vec<&Stmt> = body
+                .iter()
+                .filter(|s| {
+                    !matches!(
+                        s,
+                        Stmt::Phaser {
+                            kind: PhaserKind::Enter
+                                | PhaserKind::Leave
+                                | PhaserKind::Keep
+                                | PhaserKind::Undo
+                                | PhaserKind::Pre
+                                | PhaserKind::Post,
+                            ..
+                        }
+                    )
+                })
+                .collect();
+            for (i, s) in body_stmts.iter().enumerate() {
+                let is_last = i == body_stmts.len() - 1;
+                if is_last {
+                    self.compile_last_stmt_as_topic(s);
+                } else {
+                    self.compile_stmt(s);
+                }
+            }
+            self.code.patch_block_body_end(idx);
+            // KEEP phasers
+            self.code.patch_block_keep_start(idx);
+            for s in body.iter().rev() {
+                if let Stmt::Phaser {
+                    kind,
+                    body: ph_body,
+                } = s
+                    && matches!(kind, PhaserKind::Leave | PhaserKind::Keep)
+                {
+                    for inner in ph_body {
+                        self.compile_stmt(inner);
+                    }
+                }
+            }
+            // UNDO phasers
+            self.code.patch_block_undo_start(idx);
+            for s in body.iter().rev() {
+                if let Stmt::Phaser {
+                    kind,
+                    body: ph_body,
+                } = s
+                    && matches!(kind, PhaserKind::Leave | PhaserKind::Undo)
+                {
+                    for inner in ph_body {
+                        self.compile_stmt(inner);
+                    }
+                }
+            }
+            // POST phasers
+            self.code.patch_block_post_start(idx);
+            Self::compile_post_phasers(self, body);
+            self.code.patch_loop_end(idx);
+            self.pop_dynamic_scope_lexical(saved);
+            self.code.patch_body_end(do_idx);
             return;
         }
         let idx = self.code.emit(OpCode::DoBlockExpr {
