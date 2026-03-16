@@ -6,7 +6,7 @@ use crate::symbol::Symbol;
 use crate::value::signature::extract_sig_info;
 
 impl Interpreter {
-    fn promise_combinator_error(combinator: &str) -> RuntimeError {
+    pub(super) fn promise_combinator_error(combinator: &str) -> RuntimeError {
         let message = format!(
             "Can only use {} to combine defined Promise objects",
             combinator
@@ -19,7 +19,7 @@ impl Interpreter {
         err
     }
 
-    fn collect_promise_combinator_inputs(
+    pub(super) fn collect_promise_combinator_inputs(
         &self,
         combinator: &str,
         args: &[Value],
@@ -43,7 +43,7 @@ impl Interpreter {
         Ok(promises)
     }
 
-    fn supply_list_values(
+    pub(super) fn supply_list_values(
         &mut self,
         attributes: &HashMap<String, Value>,
         wait_until_done: bool,
@@ -702,96 +702,11 @@ impl Interpreter {
         }
         // Supply.merge(...) as a class method
         if method == "merge" && matches!(&target, Value::Package(name) if name == "Supply") {
-            // Validate all args are Supply instances
-            for arg in &args {
-                if !matches!(arg, Value::Instance { class_name, .. } if class_name == "Supply") {
-                    let mut ex_attrs = HashMap::new();
-                    ex_attrs.insert("combinator".to_string(), Value::str("merge".to_string()));
-                    ex_attrs.insert(
-                        "message".to_string(),
-                        Value::str(format!(
-                            "Can only merge Supply objects, got {}",
-                            crate::value::types::what_type_name(arg)
-                        )),
-                    );
-                    let ex = Value::make_instance(
-                        crate::symbol::Symbol::intern("X::Supply::Combinator"),
-                        ex_attrs,
-                    );
-                    let mut err = RuntimeError::new(format!(
-                        "Can only merge Supply objects, got {}",
-                        crate::value::types::what_type_name(arg)
-                    ));
-                    err.exception = Some(Box::new(ex));
-                    return Err(err);
-                }
-            }
-            if args.len() == 1 {
-                // Merging one supply is a noop — return the same supply
-                return Ok(args.into_iter().next().unwrap());
-            }
-            let mut all_values = Vec::new();
-            for arg in &args {
-                if let Value::Instance { attributes, .. } = arg
-                    && let Some(Value::Array(items, ..)) = attributes.get("values")
-                {
-                    all_values.extend(items.iter().cloned());
-                }
-            }
-            let mut new_attrs = HashMap::new();
-            new_attrs.insert("values".to_string(), Value::array(all_values));
-            new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-            new_attrs.insert("live".to_string(), Value::Bool(false));
-            return Ok(Value::make_instance(
-                crate::symbol::Symbol::intern("Supply"),
-                new_attrs,
-            ));
+            return self.dispatch_supply_merge(&args);
         }
         // Supply.zip(...) as a class method
         if method == "zip" && matches!(&target, Value::Package(name) if name == "Supply") {
-            if args.is_empty() {
-                return Ok(Value::make_instance(
-                    crate::symbol::Symbol::intern("Supply"),
-                    {
-                        let mut a = HashMap::new();
-                        a.insert("values".to_string(), Value::array(Vec::new()));
-                        a.insert("taps".to_string(), Value::array(Vec::new()));
-                        a.insert("live".to_string(), Value::Bool(false));
-                        a
-                    },
-                ));
-            }
-            // Collect values from all supplies
-            let mut supply_values: Vec<Vec<Value>> = Vec::new();
-            for arg in &args {
-                if let Value::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } = arg
-                    && class_name == "Supply"
-                {
-                    let vals = match attributes.get("values") {
-                        Some(Value::Array(items, ..)) => items.to_vec(),
-                        _ => Vec::new(),
-                    };
-                    supply_values.push(vals);
-                }
-            }
-            let min_len = supply_values.iter().map(|v| v.len()).min().unwrap_or(0);
-            let mut zipped = Vec::new();
-            for i in 0..min_len {
-                let tuple: Vec<Value> = supply_values.iter().map(|v| v[i].clone()).collect();
-                zipped.push(Value::array(tuple));
-            }
-            let mut new_attrs = HashMap::new();
-            new_attrs.insert("values".to_string(), Value::array(zipped));
-            new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-            new_attrs.insert("live".to_string(), Value::Bool(false));
-            return Ok(Value::make_instance(
-                crate::symbol::Symbol::intern("Supply"),
-                new_attrs,
-            ));
+            return self.dispatch_supply_zip_class(&args);
         }
         if method == "delayed"
             && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply")
@@ -1770,276 +1685,45 @@ impl Interpreter {
             }
             "from-loop" | "from_loop" if matches!(&target, Value::Package(name) if name == "Seq") =>
             {
-                let mut positional: Vec<Value> = Vec::new();
-                let mut label: Option<String> = None;
-                let mut repeat = false;
-
-                for arg in &args {
-                    if let Value::Pair(name, value) = arg {
-                        if name == "label" {
-                            label = Some(value.to_string_value());
-                            continue;
-                        }
-                        if name == "repeat" {
-                            repeat = value.truthy();
-                            continue;
-                        }
-                        continue;
-                    }
-                    if let Value::ValuePair(name, value) = arg {
-                        if let Value::Str(key) = name.as_ref() {
-                            if key.as_str() == "label" {
-                                label = Some(value.to_string_value());
-                                continue;
-                            }
-                            if key.as_str() == "repeat" {
-                                repeat = value.truthy();
-                                continue;
-                            }
-                        }
-                        continue;
-                    }
-                    positional.push(arg.clone());
-                }
-
-                let Some(body_callable) = positional.first().cloned() else {
-                    return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
-                };
-                let cond_callable = positional.get(1).cloned();
-                let step_callable = positional.get(2).cloned();
-
-                let label_matches = |error_label: &Option<String>| {
-                    error_label.as_deref() == label.as_deref() || error_label.is_none()
-                };
-
-                let mut items = Vec::new();
-                let mut first_iteration = true;
-
-                'from_loop: loop {
-                    if (!first_iteration || !repeat)
-                        && let Some(cond) = cond_callable.clone()
-                    {
-                        let cond_value = self.call_sub_value(cond, vec![], true)?;
-                        if !cond_value.truthy() {
-                            break;
-                        }
-                    }
-                    first_iteration = false;
-
-                    'body_redo: loop {
-                        match self.call_sub_value(body_callable.clone(), vec![], true) {
-                            Ok(value) => {
-                                if !matches!(value, Value::Nil) {
-                                    items.push(value);
-                                }
-                                break 'body_redo;
-                            }
-                            Err(e) if e.is_redo && label_matches(&e.label) => continue 'body_redo,
-                            Err(e) if e.is_next && label_matches(&e.label) => break 'body_redo,
-                            Err(e) if e.is_last && label_matches(&e.label) => break 'from_loop,
-                            Err(e) => return Err(e),
-                        }
-                    }
-
-                    if let Some(step) = step_callable.clone() {
-                        match self.call_sub_value(step, vec![], true) {
-                            Ok(_) => {}
-                            Err(e) if e.is_next && label_matches(&e.label) => continue 'from_loop,
-                            Err(e) if e.is_redo && label_matches(&e.label) => continue 'from_loop,
-                            Err(e) if e.is_last && label_matches(&e.label) => break 'from_loop,
-                            Err(e) => return Err(e),
-                        }
-                    }
-                }
-
-                return Ok(Value::Seq(std::sync::Arc::new(items)));
+                return self.dispatch_seq_from_loop(args);
             }
             "say" if args.is_empty() => {
-                let gist = self.render_gist_value(&target);
-                self.write_to_named_handle("$*OUT", &gist, true)?;
-                return Ok(Value::Bool(true));
+                return self.dispatch_say(&target);
             }
             "print" if args.is_empty() => {
-                self.write_to_named_handle("$*OUT", &target.to_string_value(), false)?;
-                return Ok(Value::Bool(true));
+                return self.dispatch_print(&target);
             }
             "put" if args.is_empty() => {
-                self.write_to_named_handle("$*OUT", &target.to_string_value(), true)?;
-                return Ok(Value::Bool(true));
+                return self.dispatch_put(&target);
             }
             "shape" if args.is_empty() => {
-                if let Value::Array(_, kind) = &target {
-                    if *kind == crate::value::ArrayKind::Shaped
-                        && let Some(shape) = Self::infer_array_shape(&target)
-                    {
-                        return Ok(Value::array(
-                            shape.into_iter().map(|n| Value::Int(n as i64)).collect(),
-                        ));
-                    }
-                    // Unshaped arrays return (*,)
-                    return Ok(Value::array(vec![Value::Whatever]));
+                if let Some(result) = self.dispatch_shape(&target) {
+                    return result;
                 }
             }
             "default" if args.is_empty() => {
-                if matches!(target, Value::Array(..)) {
-                    return Ok(Value::Package(Symbol::intern("Any")));
-                }
-                if matches!(target, Value::Set(_)) {
-                    return Ok(Value::Bool(false));
-                }
-                if matches!(target, Value::Bag(_)) {
-                    return Ok(Value::Int(0));
-                }
-                if matches!(target, Value::Mix(_)) {
-                    return Ok(Value::Num(0.0));
+                if let Some(result) = Self::dispatch_default(&target) {
+                    return result;
                 }
             }
             "note" if args.is_empty() => {
-                let content = format!("{}\n", self.render_gist_value(&target));
-                self.write_to_named_handle("$*ERR", &content, false)?;
-                return Ok(Value::Nil);
+                return self.dispatch_note(&target);
             }
             "return-rw" if args.is_empty() => {
                 return Ok(target);
             }
             "encode" if !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply") =>
             {
-                let encoding = args
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_else(|| "utf-8".to_string());
-                let normalized_encoding = self
-                    .find_encoding(&encoding)
-                    .map(|e| e.name.as_str().to_lowercase())
-                    .unwrap_or_else(|| encoding.to_lowercase());
-                let input = target.to_string_value();
-                let translated = self.translate_newlines_for_encode(&input);
-                let mut attrs = HashMap::new();
-                let type_name = match normalized_encoding.as_str() {
-                    "utf-16" | "utf16" => {
-                        let units: Vec<Value> = translated
-                            .encode_utf16()
-                            .map(|u| Value::Int(u as i64))
-                            .collect();
-                        attrs.insert("bytes".to_string(), Value::array(units));
-                        "utf16"
-                    }
-                    _ => {
-                        let bytes = self.encode_with_encoding(&translated, &encoding)?;
-                        let bytes_vals: Vec<Value> =
-                            bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
-                        attrs.insert("bytes".to_string(), Value::array(bytes_vals));
-                        match normalized_encoding.as_str() {
-                            "utf-8" | "utf8" => "utf8",
-                            _ => "Buf",
-                        }
-                    }
-                };
-                return Ok(Value::make_instance(Symbol::intern(type_name), attrs));
+                return self.dispatch_encode(&target, &args);
             }
             "decode" => {
-                if let Value::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } = &target
-                    && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
-                {
-                    let default_encoding = if class_name == "utf16" {
-                        "utf-16"
-                    } else {
-                        "utf-8"
-                    };
-                    let encoding = args
-                        .first()
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_else(|| default_encoding.to_string());
-                    let normalized_encoding = self
-                        .find_encoding(&encoding)
-                        .map(|e| e.name.as_str().to_lowercase())
-                        .unwrap_or_else(|| encoding.to_lowercase());
-                    let bytes = if class_name == "utf16" {
-                        if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
-                            let use_be = normalized_encoding == "utf-16be";
-                            let mut out = Vec::with_capacity(items.len() * 2);
-                            for item in items.iter() {
-                                let unit = match item {
-                                    Value::Int(i) => *i as u16,
-                                    _ => 0u16,
-                                };
-                                let pair = if use_be {
-                                    unit.to_be_bytes()
-                                } else {
-                                    unit.to_le_bytes()
-                                };
-                                out.extend_from_slice(&pair);
-                            }
-                            out
-                        } else {
-                            Vec::new()
-                        }
-                    } else if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
-                        items
-                            .iter()
-                            .map(|v| match v {
-                                Value::Int(i) => *i as u8,
-                                _ => 0,
-                            })
-                            .collect()
-                    } else {
-                        Vec::new()
-                    };
-                    let decoded = self.decode_with_encoding(&bytes, &encoding)?;
-                    let normalized = self.translate_newlines_for_decode(&decoded);
-                    return Ok(Value::str(normalized));
+                if let Some(result) = self.dispatch_decode(&target, &args) {
+                    return result;
                 }
             }
             "subbuf" => {
-                if let Value::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } = &target
-                    && (class_name == "Buf" || class_name == "Blob")
-                {
-                    let bytes = if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
-                        items.to_vec()
-                    } else {
-                        Vec::new()
-                    };
-                    let len = bytes.len();
-                    let start_raw = args
-                        .first()
-                        .map(|v| match v {
-                            Value::Int(i) => *i,
-                            Value::Num(n) => *n as i64,
-                            other => other.to_f64() as i64,
-                        })
-                        .unwrap_or(0);
-                    let start = if start_raw < 0 {
-                        len.saturating_sub(start_raw.unsigned_abs() as usize)
-                    } else {
-                        (start_raw as usize).min(len)
-                    };
-                    let end = if let Some(length_raw) = args.get(1).map(|v| match v {
-                        Value::Int(i) => *i,
-                        Value::Num(n) => *n as i64,
-                        other => other.to_f64() as i64,
-                    }) {
-                        if length_raw <= 0 {
-                            start
-                        } else {
-                            start.saturating_add(length_raw as usize).min(len)
-                        }
-                    } else {
-                        len
-                    };
-                    let mut attrs = HashMap::new();
-                    attrs.insert(
-                        "bytes".to_string(),
-                        Value::array(bytes[start..end].to_vec()),
-                    );
-                    return Ok(Value::make_instance(*class_name, attrs));
+                if let Some(result) = self.dispatch_subbuf(&target, &args) {
+                    return result;
                 }
             }
             "polymod" => {
@@ -2069,56 +1753,13 @@ impl Interpreter {
                 return Ok(Value::Bool(self.type_matches_value(&type_name, &target)));
             }
             "start" => {
-                if let Value::Instance { class_name, .. } = &target
-                    && class_name == "Supply"
-                {
-                    return self.dispatch_supply_transform(target, "start", &args);
-                }
-                if let Some(cls) = self.promise_class_name(&target) {
-                    let block = args.into_iter().next().unwrap_or(Value::Nil);
-                    let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
-                    let ret = Value::Promise(promise.clone());
-                    let mut thread_interp = self.clone_for_thread();
-                    std::thread::spawn(move || {
-                        match thread_interp.call_sub_value(block, vec![], false) {
-                            Ok(result) => {
-                                let output = std::mem::take(&mut thread_interp.output);
-                                let stderr = std::mem::take(&mut thread_interp.stderr_output);
-                                promise.keep(result, output, stderr);
-                            }
-                            Err(e) => {
-                                let output = std::mem::take(&mut thread_interp.output);
-                                let stderr = std::mem::take(&mut thread_interp.stderr_output);
-                                let error_val = if let Some(ex) = e.exception {
-                                    *ex
-                                } else {
-                                    Value::str(e.message)
-                                };
-                                promise.break_with(error_val, output, stderr);
-                            }
-                        }
-                    });
-                    return Ok(ret);
-                }
-                // Thread.start
-                if let Value::Package(ref class_name) = target
-                    && class_name == "Thread"
-                {
-                    return self.dispatch_thread_start(&args);
+                if let Some(result) = self.dispatch_promise_start(&target, &args) {
+                    return result;
                 }
             }
             "in" => {
-                if let Some(cls) = self.promise_class_name(&target) {
-                    let secs = args.first().map(|v| v.to_f64()).unwrap_or(0.0).max(0.0);
-                    let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
-                    let ret = Value::Promise(promise.clone());
-                    std::thread::spawn(move || {
-                        if secs > 0.0 {
-                            std::thread::sleep(Duration::from_secs_f64(secs));
-                        }
-                        promise.keep(Value::Bool(true), String::new(), String::new());
-                    });
-                    return Ok(ret);
+                if let Some(result) = self.dispatch_promise_in(&target, &args) {
+                    return result;
                 }
             }
             "THREAD" => {
@@ -2131,445 +1772,58 @@ impl Interpreter {
                 }
             }
             "at" => {
-                if let Some(cls) = self.promise_class_name(&target) {
-                    // at_time may be an Instant (TAI) or a plain numeric (POSIX).
-                    // Convert Instant values to POSIX for delay calculation.
-                    let at_time = match args.first() {
-                        Some(Value::Instance {
-                            class_name,
-                            attributes,
-                            ..
-                        }) if class_name == "Instant" => {
-                            let tai = attributes.get("value").map(|v| v.to_f64()).unwrap_or(0.0);
-                            crate::builtins::methods_0arg::temporal::instant_to_posix(tai)
-                        }
-                        Some(v) => v.to_f64(),
-                        None => 0.0,
-                    };
-                    let now = crate::value::current_time_secs_f64();
-                    let delay = (at_time - now).max(0.0);
-                    let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
-                    let ret = Value::Promise(promise.clone());
-                    std::thread::spawn(move || {
-                        if delay > 0.0 {
-                            std::thread::sleep(Duration::from_secs_f64(delay));
-                        }
-                        promise.keep(Value::Bool(true), String::new(), String::new());
-                    });
-                    return Ok(ret);
+                if let Some(result) = self.dispatch_promise_at(&target, &args) {
+                    return result;
                 }
             }
             "kept" => {
-                if let Some(cls) = self.promise_class_name(&target) {
-                    let value = args.into_iter().next().unwrap_or(Value::Bool(true));
-                    let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
-                    promise.keep(value, String::new(), String::new());
-                    return Ok(Value::Promise(promise));
+                if let Some(result) = self.dispatch_promise_kept(&target, &args) {
+                    return result;
                 }
             }
             "broken" => {
-                if let Some(cls) = self.promise_class_name(&target) {
-                    let reason_val = args
-                        .into_iter()
-                        .next()
-                        .unwrap_or_else(|| Value::str_from("Died"));
-                    let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
-                    promise.break_with(reason_val, String::new(), String::new());
-                    return Ok(Value::Promise(promise));
+                if let Some(result) = self.dispatch_promise_broken(&target, &args) {
+                    return result;
                 }
             }
             "allof" => {
-                if let Some(cls) = self.promise_class_name(&target) {
-                    let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
-                    let ret = Value::Promise(promise.clone());
-                    let promises = self.collect_promise_combinator_inputs("allof", &args)?;
-                    if promises.is_empty() {
-                        promise.keep(Value::Bool(true), String::new(), String::new());
-                        return Ok(ret);
-                    }
-                    std::thread::spawn(move || {
-                        for p in &promises {
-                            p.wait();
-                        }
-                        promise.keep(Value::Bool(true), String::new(), String::new());
-                    });
-                    return Ok(ret);
+                if let Some(result) = self.dispatch_promise_allof(&target, &args) {
+                    return result;
                 }
             }
             "anyof" => {
-                if let Some(cls) = self.promise_class_name(&target) {
-                    let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
-                    let ret = Value::Promise(promise.clone());
-                    let promises = self.collect_promise_combinator_inputs("anyof", &args)?;
-                    if promises.is_empty() {
-                        promise.keep(Value::Bool(true), String::new(), String::new());
-                        return Ok(ret);
-                    }
-                    std::thread::spawn(move || {
-                        // Poll until any promise resolves
-                        loop {
-                            for p in &promises {
-                                if p.status() != "Planned" {
-                                    promise.keep(Value::Bool(true), String::new(), String::new());
-                                    return;
-                                }
-                            }
-                            std::thread::sleep(Duration::from_millis(1));
-                        }
-                    });
-                    return Ok(ret);
+                if let Some(result) = self.dispatch_promise_anyof(&target, &args) {
+                    return result;
                 }
             }
             "WHAT" if args.is_empty() => {
-                if let Some(info) = self.container_type_metadata(&target) {
-                    if let Some(declared) = info.declared_type {
-                        return Ok(Value::Package(Symbol::intern(&declared)));
-                    }
-                    match &target {
-                        Value::Array(_, _) => {
-                            return Ok(Value::Package(Symbol::intern(&format!(
-                                "Array[{}]",
-                                info.value_type
-                            ))));
-                        }
-                        Value::Hash(_) => {
-                            let name = if let Some(key_type) = info.key_type {
-                                format!("Hash[{},{}]", info.value_type, key_type)
-                            } else {
-                                format!("Hash[{}]", info.value_type)
-                            };
-                            return Ok(Value::Package(Symbol::intern(&name)));
-                        }
-                        _ => {}
-                    }
-                }
-                let type_name: &str = match &target {
-                    Value::Int(_) => "Int",
-                    Value::BigInt(_) => "Int",
-                    Value::Num(_) => "Num",
-                    Value::Str(_) => "Str",
-                    Value::Bool(_) => "Bool",
-                    Value::Range(_, _) => "Range",
-                    Value::RangeExcl(_, _)
-                    | Value::RangeExclStart(_, _)
-                    | Value::RangeExclBoth(_, _)
-                    | Value::GenericRange { .. } => "Range",
-                    Value::Array(_, kind) if kind.is_real_array() => "Array",
-                    Value::Array(_, _) => "List",
-                    Value::LazyList(_) => "Seq",
-                    Value::Hash(_) => "Hash",
-                    Value::Rat(_, _) => "Rat",
-                    Value::FatRat(_, _) => "FatRat",
-                    Value::BigRat(_, _) => "Rat",
-                    Value::Complex(_, _) => "Complex",
-                    Value::Set(_) => "Set",
-                    Value::Bag(_) => "Bag",
-                    Value::Mix(_) => "Mix",
-                    Value::Pair(_, _) | Value::ValuePair(_, _) => "Pair",
-                    Value::Enum { enum_type, .. } => {
-                        return Ok(Value::Package(Symbol::intern(&enum_type.resolve())));
-                    }
-                    Value::Nil => "Any",
-                    Value::Package(name) => {
-                        let resolved = name.resolve();
-                        let visible = if crate::value::is_internal_anon_type_name(&resolved) {
-                            ""
-                        } else {
-                            &resolved
-                        };
-                        return Ok(Value::Package(Symbol::intern(visible)));
-                    }
-                    Value::Routine { is_regex: true, .. } => "Regex",
-                    Value::Routine { .. } => "Sub",
-                    Value::Sub(data) => match data.env.get("__mutsu_callable_type") {
-                        Some(Value::Str(kind)) if kind.as_str() == "Method" => "Method",
-                        Some(Value::Str(kind)) if kind.as_str() == "WhateverCode" => "WhateverCode",
-                        _ => "Sub",
-                    },
-                    Value::WeakSub(_) => "Sub",
-                    Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
-                    Value::Instance { class_name, .. } => {
-                        let resolved = class_name.resolve();
-                        let visible = if crate::value::is_internal_anon_type_name(&resolved) {
-                            ""
-                        } else {
-                            &resolved
-                        };
-                        return Ok(Value::Package(Symbol::intern(visible)));
-                    }
-                    Value::Junction { .. } => "Junction",
-                    Value::Regex(_) | Value::RegexWithAdverbs { .. } => "Regex",
-                    Value::Version { .. } => "Version",
-                    Value::Slip(_) => "Slip",
-                    Value::Seq(_) => "Seq",
-                    Value::Promise(_) => "Promise",
-                    Value::Channel(_) => "Channel",
-                    Value::Whatever => "Whatever",
-                    Value::HyperWhatever => "HyperWhatever",
-                    Value::Capture { .. } => "Capture",
-                    Value::Uni { form, .. } => {
-                        if form.is_empty() {
-                            "Uni"
-                        } else {
-                            form.as_str()
-                        }
-                    }
-                    Value::Mixin(inner, mixins) => {
-                        if let Some(allo) = crate::value::types::allomorph_type_name(inner, mixins)
-                        {
-                            return Ok(Value::Package(Symbol::intern(&allo)));
-                        }
-                        return self.call_method_with_values(
-                            inner.as_ref().clone(),
-                            "WHAT",
-                            args.clone(),
-                        );
-                    }
-                    Value::Proxy {
-                        subclass: Some((name, _)),
-                        ..
-                    } => {
-                        return Ok(Value::Package(*name));
-                    }
-                    Value::Proxy { .. } => "Proxy",
-                    Value::CustomType { name, .. } => {
-                        return Ok(Value::Package(*name));
-                    }
-                    Value::CustomTypeInstance { type_name: tn, .. } => {
-                        return Ok(Value::Package(*tn));
-                    }
-                    Value::ParametricRole {
-                        base_name,
-                        type_args,
-                    } => {
-                        let args_str: Vec<String> = type_args
-                            .iter()
-                            .map(|a| match a {
-                                Value::Package(n) => n.resolve(),
-                                Value::ParametricRole { .. } => {
-                                    // Recursively get the WHAT name for nested parametric roles
-                                    if let Ok(Value::Package(n)) =
-                                        self.call_method_with_values(a.clone(), "WHAT", Vec::new())
-                                    {
-                                        // Strip surrounding parens from (Name)
-                                        n.resolve()
-                                            .trim_start_matches('(')
-                                            .trim_end_matches(')')
-                                            .to_string()
-                                    } else {
-                                        a.to_string_value()
-                                    }
-                                }
-                                _ => a.to_string_value(),
-                            })
-                            .collect();
-                        let name = format!("{}[{}]", base_name, args_str.join(","));
-                        return Ok(Value::Package(Symbol::intern(&name)));
-                    }
-                    Value::Scalar(inner) => {
-                        return self.call_method_with_values(*inner.clone(), "WHAT", args.clone());
-                    }
-                };
-                let visible_type_name = if crate::value::is_internal_anon_type_name(type_name) {
-                    ""
-                } else {
-                    type_name
-                };
-                return Ok(Value::Package(Symbol::intern(visible_type_name)));
+                return self.dispatch_what(&target, args);
             }
             "HOW" => {
-                if !args.is_empty() {
-                    return Err(RuntimeError::new(
-                        "X::Syntax::Argument::MOPMacro: HOW does not take arguments",
-                    ));
-                }
-                // Return custom HOW for CustomType/CustomTypeInstance
-                // Check rebless map first for reblessed instances
-                if let Value::CustomTypeInstance { id, .. } = &target
-                    && let Some(new_how) = self.rebless_map.get(id).cloned()
-                {
-                    return Ok(new_how);
-                }
-                if let Value::CustomType { ref how, .. }
-                | Value::CustomTypeInstance { ref how, .. } = target
-                {
-                    return Ok(*how.clone());
-                }
-                // Return CurriedRoleHOW for parameterized roles
-                if let Value::ParametricRole {
-                    base_name,
-                    type_args,
-                } = &target
-                {
-                    let args_str = type_args
-                        .iter()
-                        .map(|v| match v {
-                            Value::Package(n) => n.resolve(),
-                            other => other.to_string_value(),
-                        })
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    let full_name = format!("{}[{}]", base_name, args_str);
-                    let mut attrs = HashMap::new();
-                    attrs.insert("name".to_string(), Value::str(full_name));
-                    return Ok(Value::make_instance(
-                        Symbol::intern("Perl6::Metamodel::CurriedRoleHOW"),
-                        attrs,
-                    ));
-                }
-                // Return a meta-object (ClassHOW) for any value
-                let type_name = match &target {
-                    Value::Package(name) => name.resolve(),
-                    Value::Instance { class_name, .. } => class_name.resolve(),
-                    _ => {
-                        // Get type name via WHAT logic
-                        let tn = match &target {
-                            Value::Int(_) | Value::BigInt(_) => "Int",
-                            Value::Num(_) => "Num",
-                            Value::Str(_) => "Str",
-                            Value::Bool(_) => "Bool",
-                            Value::Hash(_) => "Hash",
-                            Value::Array(_, kind) if kind.is_real_array() => "Array",
-                            Value::Array(_, _) => "List",
-                            Value::Nil => "Any",
-                            _ => "Mu",
-                        };
-                        tn.to_string()
-                    }
-                };
-                // Use appropriate HOW metaclass for each type kind
-                let how_name = if self.roles.contains_key(&type_name) && !type_name.contains('[')
-                    || matches!(
-                        type_name.as_str(),
-                        "Numeric"
-                            | "Real"
-                            | "Stringy"
-                            | "Positional"
-                            | "Associative"
-                            | "Callable"
-                            | "Setty"
-                            | "Baggy"
-                            | "Mixy"
-                            | "Dateish"
-                            | "Iterable"
-                            | "Iterator"
-                            | "PositionalBindFailover"
-                    ) {
-                    "Perl6::Metamodel::ParametricRoleGroupHOW"
-                } else if self.enum_types.contains_key(&type_name) {
-                    "Perl6::Metamodel::EnumHOW"
-                } else if self.subsets.contains_key(&type_name)
-                    || matches!(type_name.as_str(), "UInt" | "NativeInt")
-                {
-                    "Perl6::Metamodel::SubsetHOW"
-                } else {
-                    "Perl6::Metamodel::ClassHOW"
-                };
-                let mut attrs = HashMap::new();
-                attrs.insert("name".to_string(), Value::str(type_name));
-                return Ok(Value::make_instance(Symbol::intern(how_name), attrs));
+                return self.dispatch_how(&target, &args);
             }
             "WHO" if args.is_empty() => {
-                if let Value::Package(name) = &target {
-                    return Ok(self.package_stash_value(&name.resolve()));
-                }
-                return Ok(Value::Hash(Arc::new(HashMap::new())));
+                return self.dispatch_who(&target);
             }
             "WHY" if args.is_empty() => {
-                // Return declarator doc comment attached to this type/package/sub
-                let keys: Vec<String> = match &target {
-                    Value::Package(name) => vec![name.resolve()],
-                    Value::Instance { class_name, .. } => vec![class_name.resolve()],
-                    Value::Sub(sub_data) => {
-                        let mut k = Vec::new();
-                        if sub_data.package != "" && sub_data.name != "" {
-                            k.push(format!("{}::{}", sub_data.package, sub_data.name));
-                        }
-                        if sub_data.name != "" {
-                            k.push(sub_data.name.resolve());
-                        }
-                        k
-                    }
-                    _ => vec![],
-                };
-                for key in keys {
-                    if let Some(doc) = self.doc_comments.get(&key) {
-                        return Ok(Value::str(doc.clone()));
-                    }
-                }
-                return Ok(Value::Nil);
+                return self.dispatch_why(&target);
             }
             "^name" if args.is_empty() => {
-                return Ok(Value::str(match &target {
-                    Value::Package(name) => name.resolve(),
-                    Value::Instance { class_name, .. } => class_name.resolve(),
-                    Value::Promise(p) => p.class_name().resolve(),
-                    Value::ParametricRole {
-                        base_name,
-                        type_args,
-                    } => {
-                        let args_str = type_args
-                            .iter()
-                            .map(|v| match v {
-                                Value::Package(n) => n.resolve(),
-                                other => other.to_string_value(),
-                            })
-                            .collect::<Vec<_>>()
-                            .join(",");
-                        format!("{}[{}]", base_name, args_str)
-                    }
-                    other => value_type_name(other).to_string(),
-                }));
+                return self.dispatch_caret_name(&target);
             }
             "^enum_value_list" | "enum_value_list" => {
-                let type_name_owned = match &target {
-                    Value::Package(name) => Some(name.resolve()),
-                    Value::Str(name) => Some(name.to_string()),
-                    _ => None,
-                };
-                let type_name = type_name_owned.as_deref();
-                if let Some(type_name) = type_name
-                    && let Some(variants) = self.enum_types.get(type_name)
-                {
-                    let values: Vec<Value> = variants
-                        .iter()
-                        .enumerate()
-                        .map(|(index, (key, val))| Value::Enum {
-                            enum_type: Symbol::intern(type_name),
-                            key: Symbol::intern(key),
-                            value: *val,
-                            index,
-                        })
-                        .collect();
-                    return Ok(Value::array(values));
+                if let Some(result) = self.dispatch_enum_value_list(&target) {
+                    return result;
                 }
             }
             "enums" => {
-                let type_name_owned = match &target {
-                    Value::Package(name) => Some(name.resolve()),
-                    Value::Str(name) => Some(name.to_string()),
-                    _ => None,
-                };
-                let type_name = type_name_owned.as_deref();
-                if let Some(type_name) = type_name
-                    && let Some(variants) = self.enum_types.get(type_name)
-                {
-                    let mut map = HashMap::new();
-                    for (k, v) in variants {
-                        map.insert(k.clone(), Value::Int(*v));
-                    }
-                    return Ok(Value::hash(map));
+                if let Some(result) = self.dispatch_enums(&target) {
+                    return result;
                 }
             }
             "invert" => {
-                if let Value::Str(type_name) = &target
-                    && let Some(variants) = self.enum_types.get(type_name.as_str())
-                {
-                    let mut result = Vec::new();
-                    for (k, v) in variants {
-                        result.push(Value::Pair(v.to_string(), Box::new(Value::str(k.clone()))));
-                    }
-                    return Ok(Value::array(result));
+                if let Some(result) = self.dispatch_invert_enum(&target) {
+                    return result;
                 }
             }
             "subparse" | "parse" | "parsefile" => {
@@ -2578,146 +1832,7 @@ impl Interpreter {
                 }
             }
             "match" => {
-                if args.is_empty() {
-                    return Ok(Value::Nil);
-                }
-                let text = target.to_string_value();
-                let mut overlap = false;
-                let mut global = false;
-                let mut anchored_pos: Option<usize> = None;
-                let mut repeat_bounds: Option<(usize, Option<usize>)> = None;
-                let mut pattern_arg: Option<&Value> = None;
-                for arg in &args {
-                    if let Value::Pair(key, value) = arg {
-                        if (key == "ov" || key == "overlap") && value.truthy() {
-                            overlap = true;
-                        } else if key == "p" || key == "pos" {
-                            anchored_pos = Some(value.to_f64() as usize);
-                        } else if (key == "g" || key == "global") && value.truthy() {
-                            global = true;
-                        } else if key == "x" {
-                            repeat_bounds = Self::parse_match_repeat_bounds(value);
-                        }
-                        continue;
-                    }
-                    if pattern_arg.is_none() {
-                        pattern_arg = Some(arg);
-                    }
-                }
-                let Some(pattern) = pattern_arg else {
-                    return Ok(Value::Nil);
-                };
-                let pat: String = match &pattern {
-                    Value::Regex(p) => p.to_string(),
-                    // Str patterns are treated as literal strings in Raku regex,
-                    // so wrap them in quotes to prevent regex metachar interpretation
-                    // (e.g., spaces are insignificant in Raku regex but significant in literals)
-                    Value::Str(p) => {
-                        // Escape any single quotes in the pattern, then wrap in quotes
-                        let escaped = p.replace('\'', "\\'");
-                        format!("'{}'", escaped)
-                    }
-                    _ => return Ok(Value::Nil),
-                };
-                return {
-                    if global || overlap || repeat_bounds.is_some() {
-                        let all = self.regex_match_all_with_captures(&pat, &text);
-                        let mut selected = if overlap {
-                            let mut best_by_start: std::collections::BTreeMap<
-                                usize,
-                                RegexCaptures,
-                            > = std::collections::BTreeMap::new();
-                            for capture in all {
-                                let key = capture.from;
-                                match best_by_start.get(&key) {
-                                    Some(existing) if capture.to <= existing.to => {}
-                                    _ => {
-                                        best_by_start.insert(key, capture);
-                                    }
-                                }
-                            }
-                            best_by_start.into_values().collect::<Vec<_>>()
-                        } else {
-                            self.select_non_overlapping_matches(all)
-                        };
-                        if let Some((min_required, max_to_return)) = repeat_bounds {
-                            let Some(restricted) = Self::select_matches_by_repeat_bounds(
-                                selected,
-                                min_required,
-                                max_to_return,
-                            ) else {
-                                self.env.insert("/".to_string(), Value::Nil);
-                                return Ok(Value::array(Vec::new()));
-                            };
-                            selected = restricted;
-                        }
-                        if selected.is_empty() {
-                            self.env.insert("/".to_string(), Value::Nil);
-                            return Ok(Value::array(Vec::new()));
-                        }
-                        let matches: Vec<Value> = selected
-                            .iter()
-                            .map(|c| {
-                                Value::make_match_object_full(
-                                    c.matched.clone(),
-                                    c.from as i64,
-                                    c.to as i64,
-                                    &c.positional,
-                                    &c.named,
-                                    &c.named_subcaps,
-                                    &c.positional_subcaps,
-                                    Some(&text),
-                                )
-                            })
-                            .collect();
-                        let result = Value::array(matches);
-                        self.env.insert("/".to_string(), result.clone());
-                        return Ok(result);
-                    }
-                    // Use anchored match if :p(N) or :pos(N) is specified
-                    let captures = if let Some(pos) = anchored_pos {
-                        self.regex_match_with_captures_at(&pat, &text, pos)
-                    } else {
-                        self.regex_match_with_captures(&pat, &text)
-                    };
-                    if let Some(captures) = captures {
-                        let matched = captures.matched.clone();
-                        let from = captures.from as i64;
-                        let to = captures.to as i64;
-                        // Execute code blocks from regex for side effects
-                        self.execute_regex_code_blocks(&captures.code_blocks);
-                        let match_obj = Value::make_match_object_full(
-                            matched,
-                            from,
-                            to,
-                            &captures.positional,
-                            &captures.named,
-                            &captures.named_subcaps,
-                            &captures.positional_subcaps,
-                            Some(&text),
-                        );
-                        // Set positional capture env vars ($0, $1, ...) from match object
-                        if let Value::Instance { ref attributes, .. } = match_obj
-                            && let Some(Value::Array(list, _)) = attributes.get("list")
-                        {
-                            for (i, v) in list.iter().enumerate() {
-                                self.env.insert(i.to_string(), v.clone());
-                            }
-                        }
-                        // Set named capture env vars from match object
-                        if let Value::Instance { ref attributes, .. } = match_obj
-                            && let Some(Value::Hash(named_hash)) = attributes.get("named")
-                        {
-                            for (k, v) in named_hash.iter() {
-                                self.env.insert(format!("<{}>", k), v.clone());
-                            }
-                        }
-                        self.env.insert("/".to_string(), match_obj.clone());
-                        Ok(match_obj)
-                    } else {
-                        Ok(Value::Nil)
-                    }
-                };
+                return self.dispatch_match_method(target, &args);
             }
             "subst" => {
                 return self.dispatch_subst(target, &args);
@@ -2846,70 +1961,7 @@ impl Interpreter {
                 return self.call_method_with_values(target, "atan2", vec![coerced_arg]);
             }
             "Seq" if args.is_empty() => {
-                return Ok(match target {
-                    Value::Seq(_) => target,
-                    Value::Array(items, ..) => Value::Seq(items),
-                    Value::Slip(items) => Value::Seq(items),
-                    Value::Instance {
-                        class_name,
-                        attributes,
-                        ..
-                    } if class_name == "Supply" => {
-                        let values = if let Some(on_demand_cb) =
-                            attributes.get("on_demand_callback")
-                        {
-                            let emitter = Value::make_instance(Symbol::intern("Supplier"), {
-                                let mut a = HashMap::new();
-                                a.insert("emitted".to_string(), Value::array(Vec::new()));
-                                a.insert("done".to_string(), Value::Bool(false));
-                                a
-                            });
-                            self.supply_emit_buffer.push(Vec::new());
-                            let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
-                            self.supply_emit_buffer.pop().unwrap_or_default()
-                        } else if attributes.get("values").is_some() {
-                            self.supply_list_values(&attributes, true)?
-                        } else {
-                            Vec::new()
-                        };
-                        Value::Seq(std::sync::Arc::new(values))
-                    }
-                    Value::LazyList(ll) => {
-                        let items = self.force_lazy_list_bridge(&ll)?;
-                        Value::Seq(std::sync::Arc::new(items))
-                    }
-                    other @ (Value::Range(..)
-                    | Value::RangeExcl(..)
-                    | Value::RangeExclStart(..)
-                    | Value::RangeExclBoth(..)
-                    | Value::GenericRange { .. }) => {
-                        let items = Self::value_to_list(&other);
-                        Value::Seq(std::sync::Arc::new(items))
-                    }
-                    Value::Instance {
-                        class_name,
-                        attributes,
-                        ..
-                    } if {
-                        let cn = class_name.resolve();
-                        cn == "Buf"
-                            || cn == "Blob"
-                            || cn == "utf8"
-                            || cn == "utf16"
-                            || cn.starts_with("Buf[")
-                            || cn.starts_with("Blob[")
-                            || cn.starts_with("buf")
-                            || cn.starts_with("blob")
-                    } =>
-                    {
-                        if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
-                            Value::Seq(items.clone())
-                        } else {
-                            Value::Seq(std::sync::Arc::new(Vec::new()))
-                        }
-                    }
-                    other => Value::Seq(std::sync::Arc::new(vec![other])),
-                });
+                return self.dispatch_seq_coercion(target);
             }
             "list" | "Array" if args.is_empty() => {
                 if let Value::Instance {
@@ -2924,36 +1976,7 @@ impl Interpreter {
                 }
             }
             "List" if args.is_empty() => {
-                if let Value::Instance {
-                    ref class_name,
-                    ref attributes,
-                    ..
-                } = target
-                {
-                    let cn = class_name.resolve();
-                    if cn == "Buf"
-                        || cn == "Blob"
-                        || cn == "utf8"
-                        || cn == "utf16"
-                        || cn.starts_with("Buf[")
-                        || cn.starts_with("Blob[")
-                        || cn.starts_with("buf")
-                        || cn.starts_with("blob")
-                    {
-                        if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
-                            return Ok(Value::Array(items.clone(), crate::value::ArrayKind::List));
-                        }
-                        return Ok(Value::Array(
-                            std::sync::Arc::new(Vec::new()),
-                            crate::value::ArrayKind::List,
-                        ));
-                    }
-                }
-                let items = Self::value_to_list(&target);
-                return Ok(Value::Array(
-                    std::sync::Arc::new(items),
-                    crate::value::ArrayKind::List,
-                ));
+                return self.dispatch_list_coercion(target);
             }
             "Set" | "SetHash" if args.is_empty() => {
                 return self.dispatch_to_set(target);
@@ -2976,47 +1999,8 @@ impl Interpreter {
                 return Ok(result);
             }
             "Setty" | "Baggy" | "Mixy" if args.is_empty() => {
-                // Role-ish quant hash family conversion on type objects.
-                // Raku maps Set/Bag/Mix families to the corresponding family,
-                // preserving hash flavor for *Hash type objects.
-                let source_type = match &target {
-                    Value::Package(name) => Some(name.resolve()),
-                    Value::Set(_) => Some("Set".to_string()),
-                    Value::Bag(_) => Some("Bag".to_string()),
-                    Value::Mix(_) => Some("Mix".to_string()),
-                    _ => None,
-                };
-                if let Some(source_type) = source_type
-                    && matches!(
-                        source_type.as_str(),
-                        "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash"
-                    )
-                {
-                    let hashy = matches!(source_type.as_str(), "SetHash" | "BagHash" | "MixHash");
-                    let mapped = match method {
-                        "Setty" => {
-                            if hashy {
-                                "SetHash"
-                            } else {
-                                "Set"
-                            }
-                        }
-                        "Baggy" => {
-                            if hashy {
-                                "BagHash"
-                            } else {
-                                "Bag"
-                            }
-                        }
-                        _ => {
-                            if hashy {
-                                "MixHash"
-                            } else {
-                                "Mix"
-                            }
-                        }
-                    };
-                    return Ok(Value::Package(Symbol::intern(mapped)));
+                if let Some(result) = self.dispatch_setty_baggy_mixy(&target, method) {
+                    return result;
                 }
             }
             "Map" | "Hash" if args.is_empty() => {
@@ -3114,35 +2098,8 @@ impl Interpreter {
                 } = target
                     && class_name == "Supply"
                 {
-                    if !matches!(
-                        callable,
-                        Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
-                    ) {
-                        return Err(RuntimeError::new("must be code if specified"));
-                    }
-                    if attributes.get("supplier_id").is_some()
-                        || attributes.get("on_demand_callback").is_some()
-                    {
-                        let mut reduce_attrs = HashMap::new();
-                        reduce_attrs.insert("values".to_string(), Value::array(Vec::new()));
-                        reduce_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                        reduce_attrs.insert("live".to_string(), Value::Bool(false));
-                        reduce_attrs.insert("reduce_source".to_string(), target);
-                        reduce_attrs.insert("reduce_callable".to_string(), callable);
-                        return Ok(Value::make_instance(Symbol::intern("Supply"), reduce_attrs));
-                    }
-                    let items = self.supply_list_values(attributes, true)?;
-                    let reduced = self.reduce_items(callable, items)?;
-                    let values = if matches!(reduced, Value::Nil) {
-                        Vec::new()
-                    } else {
-                        vec![reduced]
-                    };
-                    let mut reduce_attrs = HashMap::new();
-                    reduce_attrs.insert("values".to_string(), Value::array(values));
-                    reduce_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                    reduce_attrs.insert("live".to_string(), Value::Bool(false));
-                    return Ok(Value::make_instance(Symbol::intern("Supply"), reduce_attrs));
+                    let attrs_clone = (**attributes).clone();
+                    return self.dispatch_supply_reduce(target, &attrs_clone, callable);
                 }
                 let items = Self::value_to_list(&target);
                 return self.reduce_items(callable, items);
@@ -3155,44 +2112,7 @@ impl Interpreter {
                 } = target
                     && class_name == "Supply"
                 {
-                    let interval = args.first().map(Value::to_f64).unwrap_or(0.0).max(0.0);
-
-                    if let Some(Value::Int(supplier_id)) = attributes.get("supplier_id")
-                        && *supplier_id > 0
-                    {
-                        let (emitted, done, quit_reason) =
-                            crate::runtime::native_methods::supplier_snapshot(*supplier_id as u64);
-                        let mut elems_attrs = HashMap::new();
-                        elems_attrs.insert("values".to_string(), Value::array(Vec::new()));
-                        elems_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                        elems_attrs.insert("live".to_string(), Value::Bool(false));
-                        elems_attrs.insert("supplier_id".to_string(), Value::Int(*supplier_id));
-                        elems_attrs.insert("supplier_done".to_string(), Value::Bool(done));
-                        elems_attrs.insert("elems_filter".to_string(), Value::Bool(true));
-                        elems_attrs.insert("elems_interval".to_string(), Value::Num(interval));
-                        elems_attrs.insert(
-                            "elems_initial_count".to_string(),
-                            Value::Int(emitted.len() as i64),
-                        );
-                        if let Some(reason) = quit_reason {
-                            elems_attrs.insert("quit_reason".to_string(), reason);
-                        }
-                        return Ok(Value::make_instance(Symbol::intern("Supply"), elems_attrs));
-                    }
-
-                    let source_values = self.supply_list_values(attributes, true)?;
-                    let elems_values = if interval > 0.0 {
-                        Vec::new()
-                    } else {
-                        (1..=source_values.len())
-                            .map(|idx| Value::Int(idx as i64))
-                            .collect()
-                    };
-                    let mut elems_attrs = HashMap::new();
-                    elems_attrs.insert("values".to_string(), Value::array(elems_values));
-                    elems_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                    elems_attrs.insert("live".to_string(), Value::Bool(false));
-                    return Ok(Value::make_instance(Symbol::intern("Supply"), elems_attrs));
+                    return self.dispatch_supply_elems(attributes, &args);
                 }
                 return self.call_function("elems", vec![target]);
             }
@@ -3204,51 +2124,7 @@ impl Interpreter {
                 } = target
                     && class_name == "Supply"
                 {
-                    let mapper = args.first().cloned().unwrap_or(Value::Nil);
-                    let source_values =
-                        if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
-                            let emitter = Value::make_instance(Symbol::intern("Supplier"), {
-                                let mut a = HashMap::new();
-                                a.insert("emitted".to_string(), Value::array(Vec::new()));
-                                a.insert("done".to_string(), Value::Bool(false));
-                                a
-                            });
-                            self.supply_emit_buffer.push(Vec::new());
-                            let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
-                            self.supply_emit_buffer.pop().unwrap_or_default()
-                        } else {
-                            attributes
-                                .get("values")
-                                .and_then(|v| {
-                                    if let Value::Array(items, ..) = v {
-                                        Some(items.to_vec())
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .unwrap_or_default()
-                        };
-
-                    let mut mapped_values = Vec::with_capacity(source_values.len());
-                    for value in source_values {
-                        mapped_values.push(self.call_sub_value(
-                            mapper.clone(),
-                            vec![value],
-                            true,
-                        )?);
-                    }
-
-                    let mut attrs = HashMap::new();
-                    attrs.insert("values".to_string(), Value::array(mapped_values));
-                    attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                    attrs.insert(
-                        "live".to_string(),
-                        attributes
-                            .get("live")
-                            .cloned()
-                            .unwrap_or(Value::Bool(false)),
-                    );
-                    return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
+                    return self.dispatch_supply_map(attributes, &args);
                 }
                 let items = Self::value_to_list(&target);
                 return self.eval_map_over_items(args.first().cloned(), items);
@@ -3353,37 +2229,7 @@ impl Interpreter {
                 if let Value::Package(ref class_name) = target
                     && class_name == "Supply"
                 {
-                    // Implement +@ single-arg rule:
-                    // - Single array/list arg: iterate its elements
-                    // - Multiple args: each arg is one value
-                    let values = if args.len() == 1 {
-                        match &args[0] {
-                            Value::Array(items, ..) => items.to_vec(),
-                            Value::Slip(items) | Value::Seq(items) => items.to_vec(),
-                            Value::Range(..)
-                            | Value::RangeExcl(..)
-                            | Value::RangeExclStart(..)
-                            | Value::RangeExclBoth(..)
-                            | Value::GenericRange { .. } => Self::value_to_list(&args[0]),
-                            other => vec![other.clone()],
-                        }
-                    } else {
-                        let mut values = Vec::new();
-                        for arg in &args {
-                            match arg {
-                                Value::Slip(items) => {
-                                    values.extend(items.iter().cloned());
-                                }
-                                other => values.push(other.clone()),
-                            }
-                        }
-                        values
-                    };
-                    let mut attrs = HashMap::new();
-                    attrs.insert("values".to_string(), Value::array(values));
-                    attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                    attrs.insert("live".to_string(), Value::Bool(false));
-                    return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
+                    return self.dispatch_supply_from_list(&args);
                 }
             }
             "repository-for-name" => {
@@ -3409,25 +2255,14 @@ impl Interpreter {
                 if let Value::Package(ref class_name) = target
                     && class_name == "Supply"
                 {
-                    let mut attrs = HashMap::new();
-                    attrs.insert("values".to_string(), Value::array(Vec::new()));
-                    attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                    attrs.insert("live".to_string(), Value::Bool(true));
-                    attrs.insert("signals".to_string(), Value::array(args.clone()));
-                    return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
+                    return self.dispatch_supply_signal(&args);
                 }
             }
             "on-demand" => {
                 if let Value::Package(ref class_name) = target
                     && class_name == "Supply"
                 {
-                    let callback = args.first().cloned().unwrap_or(Value::Nil);
-                    let mut attrs = HashMap::new();
-                    attrs.insert("values".to_string(), Value::array(Vec::new()));
-                    attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                    attrs.insert("live".to_string(), Value::Bool(false));
-                    attrs.insert("on_demand_callback".to_string(), callback);
-                    return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
+                    return self.dispatch_supply_on_demand(&args);
                 }
                 // on-demand called on a Supply instance should die
                 if let Value::Instance { ref class_name, .. } = target
@@ -3661,19 +2496,7 @@ impl Interpreter {
                 } = target
                     && class_name == "Supply"
                 {
-                    let values = match attributes.get("values") {
-                        Some(Value::Array(items, ..)) => items.to_vec(),
-                        _ => Vec::new(),
-                    };
-                    let func = args.first().cloned().unwrap_or(Value::Nil);
-                    let values_list = Value::array(values);
-                    let result = self.eval_call_on_value(func, vec![values_list])?;
-                    let result_values = Self::value_to_list(&result);
-                    let mut attrs = HashMap::new();
-                    attrs.insert("values".to_string(), Value::array(result_values));
-                    attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                    attrs.insert("live".to_string(), Value::Bool(false));
-                    return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
+                    return self.dispatch_supply_grab(attributes, &args);
                 }
                 // Class-level Supply.grab should die
                 if let Value::Package(ref class_name) = target
@@ -3692,33 +2515,7 @@ impl Interpreter {
                 } = target
                     && class_name == "Supply"
                 {
-                    let n = if args.is_empty() {
-                        1usize
-                    } else {
-                        let arg = &args[0];
-                        match arg {
-                            Value::Int(i) => *i as usize,
-                            Value::Num(f) => *f as usize,
-                            Value::Str(s) => s.parse::<usize>().map_err(|_| {
-                                RuntimeError::new(format!(
-                                    "X::Str::Numeric: Cannot convert string '{}' to a number",
-                                    s
-                                ))
-                            })?,
-                            _ => arg.to_f64() as usize,
-                        }
-                    };
-                    let values = match attributes.get("values") {
-                        Some(Value::Array(items, ..)) => {
-                            items.iter().skip(n).cloned().collect::<Vec<_>>()
-                        }
-                        _ => Vec::new(),
-                    };
-                    let mut attrs = HashMap::new();
-                    attrs.insert("values".to_string(), Value::array(values));
-                    attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                    attrs.insert("live".to_string(), Value::Bool(false));
-                    return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
+                    return self.dispatch_supply_skip(attributes, &args);
                 }
             }
             "join" if args.len() <= 1 => {
@@ -3916,75 +2713,8 @@ impl Interpreter {
         }
 
         // Enum dispatch
-        if let Value::Enum {
-            enum_type,
-            key,
-            value,
-            index,
-        } = &target
-        {
-            match method {
-                "key" => return Ok(Value::str(key.resolve())),
-                "value" | "Int" | "Numeric" => return Ok(Value::Int(*value)),
-                "WHAT" => return Ok(Value::Package(*enum_type)),
-                "raku" | "perl" => {
-                    return Ok(Value::str(format!("{}::{}", enum_type, key)));
-                }
-                "gist" | "Str" => return Ok(Value::str(key.resolve())),
-                "kv" => {
-                    return Ok(Value::array(vec![
-                        Value::str(key.resolve()),
-                        Value::Int(*value),
-                    ]));
-                }
-                "pair" => {
-                    return Ok(Value::Pair(key.resolve(), Box::new(Value::Int(*value))));
-                }
-                "ACCEPTS" => {
-                    if args.is_empty() {
-                        return Err(RuntimeError::new("ACCEPTS requires an argument"));
-                    }
-                    let other = &args[0];
-                    return Ok(Value::Bool(match other {
-                        Value::Enum {
-                            enum_type: other_type,
-                            key: other_key,
-                            ..
-                        } => enum_type == other_type && key == other_key,
-                        _ => false,
-                    }));
-                }
-                "pred" => {
-                    if *index == 0 {
-                        return Ok(Value::Nil);
-                    }
-                    if let Some(variants) = self.enum_types.get(&enum_type.resolve())
-                        && let Some((prev_key, prev_val)) = variants.get(index - 1)
-                    {
-                        return Ok(Value::Enum {
-                            enum_type: *enum_type,
-                            key: Symbol::intern(prev_key),
-                            value: *prev_val,
-                            index: index - 1,
-                        });
-                    }
-                    return Ok(Value::Nil);
-                }
-                "succ" => {
-                    if let Some(variants) = self.enum_types.get(&enum_type.resolve())
-                        && let Some((next_key, next_val)) = variants.get(index + 1)
-                    {
-                        return Ok(Value::Enum {
-                            enum_type: *enum_type,
-                            key: Symbol::intern(next_key),
-                            value: *next_val,
-                            index: index + 1,
-                        });
-                    }
-                    return Ok(Value::Nil);
-                }
-                _ => {}
-            }
+        if let Some(result) = self.dispatch_enum_method(&target, method, &args) {
+            return result;
         }
 
         // SharedPromise dispatch
