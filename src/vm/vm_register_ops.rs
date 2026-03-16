@@ -729,7 +729,8 @@ impl VM {
             // was issued. Since the compiler simply ignores these `use` statements,
             // we track them at the interpreter level.
             if !self.interpreter.monkey_typing_enabled() {
-                return Err(RuntimeError::new(
+                return Err(RuntimeError::typed_msg(
+                    "X::Syntax::Augment::WithoutMonkeyTyping",
                     "augment not allowed without 'use MONKEY-TYPING'",
                 ));
             }

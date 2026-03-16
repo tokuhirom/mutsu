@@ -351,6 +351,7 @@ roast/S12-attributes/defaults.t
 roast/S12-attributes/mutators.t
 roast/S12-class/anonymous.t
 roast/S12-class/attributes-required.t
+roast/S12-class/augment-supersede.t
 roast/S12-class/declaration-order.t
 roast/S12-class/extending-arrays.t
 roast/S12-class/inheritance-class-methods.t

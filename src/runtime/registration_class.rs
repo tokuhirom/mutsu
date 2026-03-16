@@ -373,7 +373,9 @@ impl Interpreter {
             } else {
                 parent.as_str()
             };
-            if base_parent == name {
+            // Strip leading `::` for comparison (e.g., `is ::F` refers to `F`)
+            let resolved_parent = base_parent.strip_prefix("::").unwrap_or(base_parent);
+            if resolved_parent == name {
                 return Err(RuntimeError::new(format!(
                     "X::Inheritance::SelfInherit: class '{}' cannot inherit from itself",
                     name
