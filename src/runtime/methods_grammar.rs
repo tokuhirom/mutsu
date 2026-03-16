@@ -140,6 +140,7 @@ impl Interpreter {
         }
         self.env.insert("_".to_string(), Value::str(text.clone()));
         Self::clear_pending_goal_failure();
+        let is_full_parse = method == "parse" || method == "parsefile";
         let result = (|| -> Result<Value, RuntimeError> {
             let pattern = match self.eval_token_call_values(&start_rule, &rule_args) {
                 Ok(Some(pattern)) => pattern,
@@ -282,6 +283,15 @@ impl Interpreter {
             self.env.insert("made".to_string(), old_made);
         } else {
             self.env.remove("made");
+        }
+        // In Raku 6.c, Grammar.parse/parsefile returns Nil on failure.
+        // In 6.e+, it returns a Failure object.
+        if is_full_parse
+            && !crate::parser::current_language_version().starts_with("6.e")
+            && let Ok(Value::Instance { class_name, .. }) = &result
+            && class_name == "Failure"
+        {
+            return Ok(Value::Nil);
         }
         result
     }
