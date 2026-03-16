@@ -988,6 +988,9 @@ impl ZipIter {
                 };
                 ZipIter::IntRangeExcl { start, count }
             }
+            // Nil in zip context is a 1-element list (not empty), matching Raku behavior
+            // where `Nil Z+ 2` yields `(2)` (Nil coerces to 0).
+            Value::Nil => ZipIter::List(vec![Value::Nil]),
             _ => {
                 let list = runtime::value_to_list(val);
                 // Check for trailing Whatever (*) — extends the list by

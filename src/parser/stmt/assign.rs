@@ -92,6 +92,40 @@ impl CompoundAssignOp {
         }
     }
 
+    /// Convert from the base operator name (without `=` suffix) to a CompoundAssignOp.
+    pub(crate) fn from_op_name(name: &str) -> Option<Self> {
+        match name {
+            "+" => Some(CompoundAssignOp::Add),
+            "-" => Some(CompoundAssignOp::Sub),
+            "~" => Some(CompoundAssignOp::Concat),
+            "*" => Some(CompoundAssignOp::Mul),
+            "/" => Some(CompoundAssignOp::Div),
+            "%" => Some(CompoundAssignOp::Mod),
+            "**" => Some(CompoundAssignOp::Power),
+            "//" => Some(CompoundAssignOp::DefinedOr),
+            "||" => Some(CompoundAssignOp::LogicalOr),
+            "&&" => Some(CompoundAssignOp::LogicalAnd),
+            "," => Some(CompoundAssignOp::Comma),
+            "x" => Some(CompoundAssignOp::Repeat),
+            "xx" => Some(CompoundAssignOp::ListRepeat),
+            "+|" => Some(CompoundAssignOp::BitOr),
+            "+&" => Some(CompoundAssignOp::BitAnd),
+            "+^" => Some(CompoundAssignOp::BitXor),
+            "+<" => Some(CompoundAssignOp::BitShiftLeft),
+            "+>" => Some(CompoundAssignOp::BitShiftRight),
+            "min" => Some(CompoundAssignOp::Min),
+            "max" => Some(CompoundAssignOp::Max),
+            "or" => Some(CompoundAssignOp::KeywordOr),
+            "and" => Some(CompoundAssignOp::KeywordAnd),
+            "orelse" => Some(CompoundAssignOp::Orelse),
+            "andthen" => Some(CompoundAssignOp::Andthen),
+            "div" => Some(CompoundAssignOp::IntDiv),
+            "lcm" => Some(CompoundAssignOp::Lcm),
+            "gcd" => Some(CompoundAssignOp::Gcd),
+            _ => None,
+        }
+    }
+
     pub(crate) fn token_kind(self) -> TokenKind {
         match self {
             CompoundAssignOp::Comma => TokenKind::Comma,
@@ -259,15 +293,8 @@ pub(crate) fn parse_compound_assign_op(input: &str) -> Option<(&str, CompoundAss
             return Some((stripped, *op));
         }
     }
-    // Metaop zip compound assignment (`Z+=`, `Z//=`, ...).
-    // For now this reuses the base compound-assignment operator parsing.
-    if let Some(after_z) = input.strip_prefix('Z') {
-        for op in COMPOUND_ASSIGN_OPS {
-            if let Some(stripped) = after_z.strip_prefix(op.symbol()) {
-                return Some((stripped, *op));
-            }
-        }
-    }
+    // Z-prefixed compound assignments (Z+=, Z//=, ...) are handled by
+    // parse_meta_compound_assign_op, not here.
     None
 }
 
@@ -407,6 +434,8 @@ pub(crate) fn parse_meta_compound_assign_op(input: &str) -> Option<(&str, String
         ("R", rest)
     } else if let Some(rest) = input.strip_prefix('X') {
         ("X", rest)
+    } else if let Some(rest) = input.strip_prefix('Z') {
+        ("Z", rest)
     } else {
         return None;
     };
@@ -1244,6 +1273,25 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             Err(_) => expression_no_sequence(rest)?,
         };
         let name = format!("{}{}", prefix, var);
+        // For scalar variables with Z-meta, fall back to plain compound assignment
+        // since scalar Zip on single values is equivalent to the base operator.
+        // This avoids Z+ returning an array when assigning to a scalar.
+        if meta == "Z"
+            && sigil == b'$'
+            && let Some(compound_op) = CompoundAssignOp::from_op_name(&op)
+        {
+            return Ok((
+                rest,
+                Expr::AssignExpr {
+                    name,
+                    expr: Box::new(compound_assigned_value_expr(
+                        Expr::Var(var.to_string()),
+                        compound_op,
+                        rhs,
+                    )),
+                },
+            ));
+        }
         let var_expr = match sigil {
             b'@' => Expr::ArrayVar(var.to_string()),
             b'%' => Expr::HashVar(var.to_string()),
@@ -1596,6 +1644,20 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     if let Some((after_eq, meta, op)) = parse_meta_compound_assign_op(rest) {
         let (after_eq, _) = ws(after_eq)?;
         let (rest, rhs) = parse_assign_expr_or_comma(after_eq)?;
+        // For scalar variables with Z-meta, fall back to plain compound assignment
+        // since scalar Zip on single values is equivalent to the base operator.
+        if meta == "Z"
+            && sigil == b'$'
+            && let Some(compound_op) = CompoundAssignOp::from_op_name(&op)
+        {
+            let expr = compound_assigned_value_expr(var_expr, compound_op, rhs);
+            let stmt = Stmt::Assign {
+                name,
+                expr,
+                op: AssignOp::Assign,
+            };
+            return parse_statement_modifier(rest, stmt);
+        }
         let expr = Expr::MetaOp {
             meta,
             op,
