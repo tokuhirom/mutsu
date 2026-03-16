@@ -2104,10 +2104,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             _ => None,
         },
         "reverse" => match target {
-            Value::Array(items, kind) => {
+            Value::Array(items, _kind) => {
                 let mut reversed = (**items).clone();
                 reversed.reverse();
-                Some(Ok(Value::Array(std::sync::Arc::new(reversed), *kind)))
+                // .reverse returns a List (Seq in Raku), not an Array
+                Some(Ok(Value::Array(
+                    std::sync::Arc::new(reversed),
+                    crate::value::ArrayKind::List,
+                )))
             }
             Value::Range(a, b)
             | Value::RangeExcl(a, b)
@@ -2118,7 +2122,35 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 } else {
                     let mut reversed = crate::runtime::utils::value_to_list(target);
                     reversed.reverse();
-                    Some(Ok(Value::array(reversed)))
+                    Some(Ok(Value::Array(
+                        std::sync::Arc::new(reversed),
+                        crate::value::ArrayKind::List,
+                    )))
+                }
+            }
+            Value::GenericRange { end, .. } => {
+                // Check if the range is empty or infinite from the end side.
+                // For e.g. `1 .. -Inf`, the range is empty, reverse returns empty list.
+                let end_is_neg_inf = matches!(end.as_ref(), Value::Num(n) if n.is_infinite() && n.is_sign_negative());
+                if end_is_neg_inf {
+                    // Empty range — reverse is empty
+                    return Some(Ok(Value::Array(
+                        std::sync::Arc::new(Vec::new()),
+                        crate::value::ArrayKind::List,
+                    )));
+                }
+                // For finite generic ranges, expand and reverse
+                let items = crate::runtime::utils::value_to_list(target);
+                // If value_to_list returned just the range itself, fall through
+                if items.len() == 1 && matches!(items.first(), Some(Value::GenericRange { .. })) {
+                    None
+                } else {
+                    let mut reversed = items;
+                    reversed.reverse();
+                    Some(Ok(Value::Array(
+                        std::sync::Arc::new(reversed),
+                        crate::value::ArrayKind::List,
+                    )))
                 }
             }
             Value::Str(s) => Some(Ok(Value::str(s.chars().rev().collect()))),

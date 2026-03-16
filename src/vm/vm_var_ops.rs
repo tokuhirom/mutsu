@@ -495,7 +495,11 @@ impl VM {
         Ok(())
     }
 
-    fn delete_array_multidim(target: &mut Value, indices: &[Value]) -> Result<Value, RuntimeError> {
+    fn delete_array_multidim(
+        target: &mut Value,
+        indices: &[Value],
+        hole_type: &str,
+    ) -> Result<Value, RuntimeError> {
         let shape = crate::runtime::utils::shaped_array_shape(target);
         let depth = Self::array_depth(target);
         if indices.len() < depth && depth > 1 {
@@ -505,28 +509,29 @@ impl VM {
                 depth,
             ));
         }
+        let hole_value = || Value::Package(Symbol::intern(hole_type));
         if indices.is_empty() {
-            return Ok(Value::Package(Symbol::intern("Any")));
+            return Ok(hole_value());
         }
         let Some(i) = Self::index_to_usize(&indices[0]) else {
-            return Ok(Value::Package(Symbol::intern("Any")));
+            return Ok(hole_value());
         };
         let Value::Array(items, ..) = target else {
-            return Ok(Value::Package(Symbol::intern("Any")));
+            return Ok(hole_value());
         };
         if i >= items.len() {
-            return Ok(Value::Package(Symbol::intern("Any")));
+            return Ok(hole_value());
         }
         let arr = Arc::make_mut(items);
         if indices.len() == 1 {
             let prev = arr[i].clone();
-            arr[i] = Value::Package(Symbol::intern("Any"));
+            arr[i] = hole_value();
             if let Some(shape) = shape.as_deref() {
                 crate::runtime::utils::mark_shaped_array_items(items, Some(shape));
             }
             return Ok(prev);
         }
-        let deleted = Self::delete_array_multidim(&mut arr[i], &indices[1..])?;
+        let deleted = Self::delete_array_multidim(&mut arr[i], &indices[1..], hole_type)?;
         if let Some(shape) = shape.as_deref() {
             crate::runtime::utils::mark_shaped_array_items(items, Some(shape));
         }
@@ -1526,11 +1531,17 @@ impl VM {
         } else {
             idx
         };
+        // For typed arrays (e.g. `my Int @a`), deleted elements become
+        // the type object (e.g. `Int`) instead of `Any`.
+        let hole_type = self
+            .interpreter
+            .var_type_constraint(&var_name)
+            .unwrap_or_else(|| "Any".to_string());
         let result = if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
             if matches!(container, Value::Mix(_)) && !target_is_mixhash {
                 return Err(RuntimeError::new("X::Immutable"));
             }
-            Self::delete_from_container(container, idx)?
+            Self::delete_from_container(container, idx, &hole_type)?
         } else {
             Self::delete_from_missing_container(idx)
         };
@@ -1556,7 +1567,7 @@ impl VM {
     pub(super) fn exec_delete_index_expr_op(&mut self) -> Result<(), RuntimeError> {
         let idx = self.stack.pop().unwrap_or(Value::Nil);
         let mut target = self.stack.pop().unwrap_or(Value::Nil);
-        let result = Self::delete_from_container(&mut target, idx)?;
+        let result = Self::delete_from_container(&mut target, idx, "Any")?;
         self.stack.push(result);
         Ok(())
     }
@@ -2476,14 +2487,19 @@ impl VM {
     /// When idx is a single value, delete that one element.
     /// When idx is an Array, delete each element (slice delete).
     /// When idx is a Range, expand to indices and delete each.
-    fn delete_from_array(container: &mut Value, idx: Value) -> Result<Value, RuntimeError> {
+    fn delete_from_array(
+        container: &mut Value,
+        idx: Value,
+        hole_type: &str,
+    ) -> Result<Value, RuntimeError> {
         match idx {
             Value::Array(indices, ..) => {
                 let indices_vec: Vec<Value> = indices.to_vec();
                 let mut results = Vec::with_capacity(indices_vec.len());
                 for i in indices_vec {
-                    let r = Self::delete_array_multidim(container, std::slice::from_ref(&i))
-                        .unwrap_or(Value::Nil);
+                    let r =
+                        Self::delete_array_multidim(container, std::slice::from_ref(&i), hole_type)
+                            .unwrap_or(Value::Nil);
                     results.push(r);
                 }
                 Ok(Value::array(results))
@@ -2496,14 +2512,16 @@ impl VM {
                 let expanded = crate::runtime::utils::value_to_list(&idx);
                 let mut results = Vec::with_capacity(expanded.len());
                 for i in expanded {
-                    let r = Self::delete_array_multidim(container, std::slice::from_ref(&i))
-                        .unwrap_or(Value::Nil);
+                    let r =
+                        Self::delete_array_multidim(container, std::slice::from_ref(&i), hole_type)
+                            .unwrap_or(Value::Nil);
                     results.push(r);
                 }
                 Ok(Value::array(results))
             }
             _ => {
-                let r = Self::delete_array_multidim(container, std::slice::from_ref(&idx))?;
+                let r =
+                    Self::delete_array_multidim(container, std::slice::from_ref(&idx), hole_type)?;
                 Ok(r)
             }
         }
@@ -2516,7 +2534,11 @@ impl VM {
         }
     }
 
-    fn delete_from_container(container: &mut Value, idx: Value) -> Result<Value, RuntimeError> {
+    fn delete_from_container(
+        container: &mut Value,
+        idx: Value,
+        hole_type: &str,
+    ) -> Result<Value, RuntimeError> {
         Ok(match container {
             Value::Hash(hash) => match idx {
                 Value::Whatever => {
@@ -2549,7 +2571,7 @@ impl VM {
                     _ => Value::Nil,
                 }
             }
-            Value::Array(..) => Self::delete_from_array(container, idx)?,
+            Value::Array(..) => Self::delete_from_array(container, idx, hole_type)?,
             Value::Set(set) => match idx {
                 Value::Array(keys, ..) => {
                     let s = Arc::make_mut(set);
