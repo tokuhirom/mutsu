@@ -43,6 +43,10 @@ pub(crate) struct VM {
     stack: Vec<Value>,
     locals: Vec<Value>,
     in_smartmatch_rhs: bool,
+    /// Set by transliterate op when executed inside smartmatch RHS.
+    /// The smartmatch handler uses this to return the transliterate result
+    /// as a StrDistance-like value instead of performing eq comparison.
+    transliterate_in_smartmatch: bool,
     /// Tracks the last value passed to SetTopic, used as the REPL display value.
     last_topic_value: Option<Value>,
     /// Container name from when/default body (for Scalar container binding)
@@ -158,6 +162,7 @@ impl VM {
             stack: Vec::new(),
             locals: Vec::new(),
             in_smartmatch_rhs: false,
+            transliterate_in_smartmatch: false,
             last_topic_value: None,
             container_ref_var: None,
             topic_source_var: None,

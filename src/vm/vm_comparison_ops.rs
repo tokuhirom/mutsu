@@ -594,8 +594,11 @@ impl VM {
             .insert("_".to_string(), left.clone());
         let saved_in_smartmatch_rhs = self.in_smartmatch_rhs;
         self.in_smartmatch_rhs = true;
+        self.transliterate_in_smartmatch = false;
         let rhs_run = self.run_range(code, rhs_start, rhs_end, compiled_fns);
         self.in_smartmatch_rhs = saved_in_smartmatch_rhs;
+        let was_transliterate = self.transliterate_in_smartmatch;
+        self.transliterate_in_smartmatch = false;
         rhs_run?;
         let right = self.stack.pop().unwrap_or(Value::Nil);
         if let Some(var_name) = lhs_var {
@@ -614,8 +617,17 @@ impl VM {
         } else {
             self.interpreter.env_mut().remove("_");
         }
-        // Smartmatch must NOT force lazy values (lazy ~~ anything → False)
-        let out = if negate {
+        // When RHS was a transliterate (tr///), return the result directly.
+        // In Raku, $x ~~ tr/a/b/ returns a StrDistance that stringifies to the after-string.
+        let out = if was_transliterate {
+            if negate {
+                // !~~ tr/// — negate the truthiness of the result
+                Value::Bool(!right.truthy())
+            } else {
+                right
+            }
+        } else if negate {
+            // Smartmatch must NOT force lazy values (lazy ~~ anything → False)
             self.eval_smartmatch_with_junctions(left, right, true)?
         } else {
             self.eval_smartmatch_with_junctions(left, right, false)?
