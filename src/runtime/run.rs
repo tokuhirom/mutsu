@@ -557,7 +557,8 @@ impl Interpreter {
         if let Some(content) = finish_content {
             self.env.insert("=finish".to_string(), Value::str(content));
         }
-        let (enter_ph, success_ph, failure_ph, body_main) = self.split_block_phasers(&stmts);
+        let (_pre_ph, enter_ph, success_ph, failure_ph, _post_ph, body_main) =
+            self.split_block_phasers(&stmts);
         // Register END phasers eagerly (before VM execution) so they run
         // even if the main body dies or throws an exception.
         // Also filter them out of the body so they don't get registered again
@@ -652,7 +653,15 @@ impl Interpreter {
     }
 
     pub(super) fn run_block(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
-        let (enter_ph, success_ph, failure_ph, body_main) = self.split_block_phasers(stmts);
+        let (pre_ph, enter_ph, success_ph, failure_ph, post_ph, body_main) =
+            self.split_block_phasers(stmts);
+        // Run PRE phasers (before ENTER)
+        for pre in &pre_ph {
+            let result = self.eval_block_value(std::slice::from_ref(pre))?;
+            if !result.truthy() {
+                return Err(Self::make_phaser_prepost_error(true));
+            }
+        }
         self.run_block_raw(&enter_ph)?;
         let body_result = self.run_block_raw(&body_main);
         let queue_res = if Self::should_run_success_queue_raw(&body_result, self.env.get("_")) {
@@ -660,10 +669,59 @@ impl Interpreter {
         } else {
             self.run_block_raw(&failure_ph)
         };
+        // Run POST phasers (after LEAVE, in reverse source order)
+        // Set $_ to the return value so POST can check it
+        if !post_ph.is_empty() {
+            let ret_val = match &body_result {
+                Ok(()) => self.env.get("_").cloned().unwrap_or(Value::Nil),
+                Err(e) => e.return_value.clone().unwrap_or(Value::Nil),
+            };
+            let saved_topic = self.env.get("_").cloned();
+            self.env.insert("_".to_string(), ret_val);
+            let post_res = self.run_post_phasers(&post_ph);
+            if let Some(t) = saved_topic {
+                self.env.insert("_".to_string(), t);
+            }
+            if post_res.is_err() && body_result.is_ok() && queue_res.is_ok() {
+                return post_res;
+            }
+            // POST failure should override a successful return but not a body error
+            if post_res.is_err()
+                && queue_res.is_ok()
+                && matches!(&body_result, Err(e) if e.return_value.is_some())
+            {
+                return post_res;
+            }
+        }
         if queue_res.is_err() && body_result.is_ok() {
             return queue_res;
         }
         body_result
+    }
+
+    /// Create an X::Phaser::PrePost error.
+    pub(super) fn make_phaser_prepost_error(is_pre: bool) -> RuntimeError {
+        let phaser_name = if is_pre { "PRE" } else { "POST" };
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("phaser".to_string(), Value::str(phaser_name.to_string()));
+        attrs.insert("condition".to_string(), Value::str(String::new()));
+        let exception =
+            Value::make_instance(crate::symbol::Symbol::intern("X::Phaser::PrePost"), attrs);
+        let mut err = RuntimeError::new(format!("Precondition '{}' failed", phaser_name));
+        err.exception = Some(Box::new(exception));
+        err
+    }
+
+    /// Run POST phasers (already in reverse source order). Each phaser's result
+    /// is checked; if falsy, an X::Phaser::PrePost error is returned immediately.
+    fn run_post_phasers(&mut self, post_ph: &[Stmt]) -> Result<(), RuntimeError> {
+        for post in post_ph {
+            let result = self.eval_block_value(std::slice::from_ref(post))?;
+            if !result.truthy() {
+                return Err(Self::make_phaser_prepost_error(false));
+            }
+        }
+        Ok(())
     }
 
     pub(super) fn run_block_raw(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {

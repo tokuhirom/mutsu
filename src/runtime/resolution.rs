@@ -5,7 +5,15 @@ type CompiledFnMap = std::collections::HashMap<String, crate::opcode::CompiledFu
 type ProtectBlockCompiled = std::sync::Arc<crate::opcode::CompiledCode>;
 type ProtectBlockCompiledFns = std::sync::Arc<CompiledFnMap>;
 type ProtectBlockCapturedSlots = std::sync::Arc<Vec<usize>>;
-pub(super) type SplitPhasers = (Vec<Stmt>, Vec<Stmt>, Vec<Stmt>, Vec<Stmt>);
+/// (pre_phasers, enter_phasers, success_queue, failure_queue, post_phasers, body_main)
+pub(super) type SplitPhasers = (
+    Vec<Stmt>,
+    Vec<Stmt>,
+    Vec<Stmt>,
+    Vec<Stmt>,
+    Vec<Stmt>,
+    Vec<Stmt>,
+);
 
 impl Interpreter {
     const LAZY_GATHER_TAKE_LIMIT_SIGNAL: &str = "__mutsu_lazy_gather_take_limit_reached__";
@@ -468,20 +476,25 @@ impl Interpreter {
     }
 
     pub(super) fn split_block_phasers(&self, stmts: &[Stmt]) -> SplitPhasers {
+        let mut pre_ph = Vec::new();
         let mut enter_ph = Vec::new();
         let mut body_main = Vec::new();
         let mut success_queue = Vec::new();
         let mut failure_queue = Vec::new();
+        let mut post_ph = Vec::new();
         for stmt in stmts {
             if let Stmt::Phaser { kind, body } = stmt {
                 match kind {
+                    PhaserKind::Pre => pre_ph.push(Stmt::Block(body.clone())),
                     PhaserKind::Enter => enter_ph.push(Stmt::Block(body.clone())),
+                    PhaserKind::Post | PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo => {}
                     _ => body_main.push(stmt.clone()),
                 }
             } else {
                 body_main.push(stmt.clone());
             }
         }
+        // POST phasers in reverse source order
         for stmt in stmts.iter().rev() {
             if let Stmt::Phaser { kind, body } = stmt {
                 match kind {
@@ -491,11 +504,19 @@ impl Interpreter {
                     }
                     PhaserKind::Keep => success_queue.push(Stmt::Block(body.clone())),
                     PhaserKind::Undo => failure_queue.push(Stmt::Block(body.clone())),
+                    PhaserKind::Post => post_ph.push(Stmt::Block(body.clone())),
                     _ => {}
                 }
             }
         }
-        (enter_ph, success_queue, failure_queue, body_main)
+        (
+            pre_ph,
+            enter_ph,
+            success_queue,
+            failure_queue,
+            post_ph,
+            body_main,
+        )
     }
 
     pub(super) fn make_promise_instance(&self, status: &str, result: Value) -> Value {
@@ -936,6 +957,57 @@ impl Interpreter {
             }
             other => vec![other],
         }
+    }
+
+    /// Like `eval_block_value` but handles PRE/POST phasers in the body.
+    /// Used for function call evaluation where the body may contain PRE/POST.
+    pub(crate) fn eval_block_value_with_pre_post(
+        &mut self,
+        body: &[Stmt],
+    ) -> Result<Value, RuntimeError> {
+        let (pre_ph, _enter_ph, _success_ph, _failure_ph, post_ph, body_main) =
+            self.split_block_phasers(body);
+        if pre_ph.is_empty() && post_ph.is_empty() {
+            return self.eval_block_value(body);
+        }
+        // Run PRE phasers
+        for pre in &pre_ph {
+            let result = self.eval_block_value(std::slice::from_ref(pre))?;
+            if !result.truthy() {
+                return Err(Self::make_phaser_prepost_error(true));
+            }
+        }
+        // Run main body
+        let result = self.eval_block_value(&body_main);
+        // Run POST phasers (with $_ set to return value for POST checks)
+        let ret_val = match &result {
+            Ok(v) => v.clone(),
+            Err(e) => e.return_value.clone().unwrap_or(Value::Nil),
+        };
+        let saved_topic = self.env.get("_").cloned();
+        self.env.insert("_".to_string(), ret_val);
+        for post in &post_ph {
+            let post_result = self.eval_block_value(std::slice::from_ref(post));
+            match post_result {
+                Ok(v) if !v.truthy() => {
+                    if let Some(t) = saved_topic {
+                        self.env.insert("_".to_string(), t);
+                    }
+                    return Err(Self::make_phaser_prepost_error(false));
+                }
+                Err(e) => {
+                    if let Some(t) = saved_topic {
+                        self.env.insert("_".to_string(), t);
+                    }
+                    return Err(e);
+                }
+                _ => {}
+            }
+        }
+        if let Some(t) = saved_topic {
+            self.env.insert("_".to_string(), t);
+        }
+        result
     }
 
     pub(crate) fn eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {

@@ -267,11 +267,18 @@ pub(crate) enum OpCode {
         arg_sources_idx: Option<u32>,
     },
     BlockScope {
+        pre_end: u32,
         enter_end: u32,
         body_end: u32,
         keep_start: u32,
         undo_start: u32,
+        post_start: u32,
         end: u32,
+    },
+    /// Check the top-of-stack value; if falsy, throw X::Phaser::PrePost.
+    /// `is_pre` distinguishes PRE (true) from POST (false).
+    CheckPhaser {
+        is_pre: bool,
     },
     DoBlockExpr {
         body_end: u32,
@@ -757,6 +764,14 @@ impl CompiledCode {
         }
     }
 
+    pub(crate) fn patch_block_pre_end(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::BlockScope { pre_end, .. } => *pre_end = target,
+            _ => panic!("patch_block_pre_end on non-BlockScope opcode"),
+        }
+    }
+
     pub(crate) fn patch_block_enter_end(&mut self, idx: usize) {
         let target = self.ops.len() as u32;
         match &mut self.ops[idx] {
@@ -786,6 +801,14 @@ impl CompiledCode {
         match &mut self.ops[idx] {
             OpCode::BlockScope { undo_start, .. } => *undo_start = target,
             _ => panic!("patch_block_undo_start on non-BlockScope opcode"),
+        }
+    }
+
+    pub(crate) fn patch_block_post_start(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::BlockScope { post_start, .. } => *post_start = target,
+            _ => panic!("patch_block_post_start on non-BlockScope opcode"),
         }
     }
 
