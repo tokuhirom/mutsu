@@ -2888,12 +2888,7 @@ impl Interpreter {
                 .count();
             let positional_arg_count = plain_args
                 .iter()
-                .filter(|a| {
-                    !matches!(
-                        unwrap_varref_value((*a).clone()),
-                        Value::Pair(..) | Value::ValuePair(..)
-                    )
-                })
+                .filter(|a| !matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)))
                 .count();
             if positional_arg_count > positional_param_count {
                 return Err(RuntimeError::new(format!(
