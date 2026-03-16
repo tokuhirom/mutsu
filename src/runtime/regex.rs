@@ -1511,7 +1511,11 @@ impl Interpreter {
                 updated
             };
         let mut stack = Vec::new();
-        stack.push((0usize, start, RegexCaptures::default()));
+        let init_caps = RegexCaptures {
+            match_from: start,
+            ..Default::default()
+        };
+        stack.push((0usize, start, init_caps));
         let mut matches = Vec::new();
         while let Some((idx, pos, caps)) = stack.pop() {
             if idx == pattern.tokens.len() {
@@ -2574,17 +2578,32 @@ impl Interpreter {
                     // <?{ expr }> or <!{ expr }> — assertion based on truthiness
                     let result = self.eval_regex_code_assertion(code, current_caps);
                     let pass = if *negated { !result } else { result };
-                    return if pass {
-                        Some((pos, current_caps.clone()))
+                    if pass {
+                        // Also record as a code block so side effects
+                        // (e.g. dynamic variable assignments) are replayed
+                        let mut new_caps = current_caps.clone();
+                        let matched_so_far: String =
+                            chars[current_caps.match_from..pos].iter().collect();
+                        new_caps.code_blocks.push(CodeBlockContext {
+                            code: code.clone(),
+                            named: current_caps.named.clone(),
+                            matched_so_far,
+                            positional: current_caps.positional.clone(),
+                        });
+                        return Some((pos, new_caps));
                     } else {
-                        None
-                    };
+                        return None;
+                    }
                 }
                 // Plain { code } block — always succeeds, record for side effects
                 let mut new_caps = current_caps.clone();
-                new_caps
-                    .code_blocks
-                    .push((code.clone(), current_caps.named.clone()));
+                let matched_so_far: String = chars[current_caps.match_from..pos].iter().collect();
+                new_caps.code_blocks.push(CodeBlockContext {
+                    code: code.clone(),
+                    named: current_caps.named.clone(),
+                    matched_so_far,
+                    positional: current_caps.positional.clone(),
+                });
                 return Some((pos, new_caps));
             }
             RegexAtom::ClosureInterpolation { code } => {
@@ -2949,17 +2968,34 @@ impl Interpreter {
     }
 
     /// Execute code blocks collected during regex matching for side effects.
-    pub(super) fn execute_regex_code_blocks(
-        &mut self,
-        code_blocks: &[(String, HashMap<String, Vec<String>>)],
-    ) {
-        for (code, named_at_point) in code_blocks {
-            let Ok((stmts, _)) = crate::parse_dispatch::parse_source(code) else {
+    pub(super) fn execute_regex_code_blocks(&mut self, code_blocks: &[CodeBlockContext]) {
+        for ctx in code_blocks {
+            let Ok((stmts, _)) = crate::parse_dispatch::parse_source(&ctx.code) else {
                 continue;
             };
+            // Set up $/ as a match object for the matched-so-far text
+            let match_obj = Value::make_match_object_with_captures(
+                ctx.matched_so_far.clone(),
+                0,
+                ctx.matched_so_far.chars().count() as i64,
+                &[],
+                &HashMap::new(),
+            );
+            self.env.insert("/".to_string(), match_obj);
+            // Set up positional captures ($0, $1, ...)
+            for (i, val) in ctx.positional.iter().enumerate() {
+                let pos_match = Value::make_match_object_with_captures(
+                    val.clone(),
+                    0,
+                    val.chars().count() as i64,
+                    &[],
+                    &HashMap::new(),
+                );
+                self.env.insert(i.to_string(), pos_match);
+            }
             // Set up named captures as $<name> variables
             let ast_hint = self.env.get("made").cloned().unwrap_or(Value::Nil);
-            for (k, v) in named_at_point {
+            for (k, v) in &ctx.named {
                 let to_match_with_ast = |text: &str, ast: &Value| -> Value {
                     let match_obj = Value::make_match_object_with_captures(
                         text.to_string(),
