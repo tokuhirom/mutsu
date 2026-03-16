@@ -954,8 +954,18 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             // `my @a is List` creates an immutable List container in Raku.
             // Keep this trait so runtime can enforce readonly assignment.
             let is_list_trait = is_array && trait_name == "List";
-            let include_in_traits =
-                !is_builtin || trait_name == "default" || is_buf_trait || is_list_trait;
+            // Always include uppercase-starting traits in custom_traits for runtime
+            // processing. This covers both known types (Buf, List) and user-defined
+            // classes (e.g. `my @a is MyArray` where MyArray is Array[Str]).
+            let is_uppercase_start = trait_name
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_uppercase());
+            let include_in_traits = !is_builtin
+                || trait_name == "default"
+                || is_buf_trait
+                || is_list_trait
+                || is_uppercase_start;
             // Parse optional trait argument: (expr)
             if let Some(r3) = r2.strip_prefix('(') {
                 let (r3, _) = ws(r3)?;

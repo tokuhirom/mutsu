@@ -3023,11 +3023,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             _ => Some(Ok(target.clone())),
         },
         "of" => match target {
-            Value::Hash(_) => Some(Ok(Value::Package(Symbol::intern("Mu")))),
+            // For Array/Hash values, fall through to runtime handler which can
+            // check container_type_metadata and variable type constraints.
+            Value::Hash(_) | Value::Array(..) => None,
             Value::Package(name) if name.resolve() == "Hash" || name.resolve() == "Array" => {
                 Some(Ok(Value::Package(Symbol::intern("Mu"))))
             }
-            Value::Array(..) => Some(Ok(Value::Package(Symbol::intern("Mu")))),
             _ => None,
         },
         "tclc" => Some(Ok(Value::str(crate::value::tclc_str(

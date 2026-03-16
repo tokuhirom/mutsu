@@ -1286,6 +1286,15 @@ impl Interpreter {
             return result;
         }
 
+        // .of on Array/Hash: check container_type_metadata for element type
+        if method == "of" && args.is_empty() && matches!(&target, Value::Array(..) | Value::Hash(_))
+        {
+            if let Some(info) = self.container_type_metadata(&target) {
+                return Ok(Value::Package(Symbol::intern(&info.value_type)));
+            }
+            return Ok(Value::Package(Symbol::intern("Mu")));
+        }
+
         // Complex→Num conversion needs $*TOLERANCE from dynamic scope
         if method == "Num"
             && args.is_empty()
