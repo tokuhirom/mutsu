@@ -195,6 +195,28 @@ pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
             take_while1(input, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
         (rest, base.to_string())
     };
+    // Handle package-qualified names like List::foo or Foo::Bar::baz
+    let (rest, base) = {
+        let mut rest = rest;
+        let mut name = base;
+        while rest.starts_with("::") {
+            let after_colons = &rest[2..];
+            if let Ok((r, part)) = ident(after_colons) {
+                name.push_str("::");
+                name.push_str(&part);
+                rest = r;
+            } else if let Ok((r, part)) = take_while1(after_colons, |c: char| {
+                c.is_alphanumeric() || c == '_' || c == '-'
+            }) {
+                name.push_str("::");
+                name.push_str(part);
+                rest = r;
+            } else {
+                break;
+            }
+        }
+        (rest, name)
+    };
     // Check for colonpair adverbs like :sym<foo> or :sym«baz»
     let (rest, base) = {
         let mut rest = rest;

@@ -359,6 +359,11 @@ fn parse_bracket_indices_inner(input: &str) -> PResult<'_, ParsedBracketIndex> {
         if r2.starts_with(',') {
             let (r3, _) = parse_char(r2, ',')?;
             let (r3, _) = ws(r3)?;
+            // Handle trailing comma before ']' or ';'
+            if r3.starts_with(']') || r3.starts_with(';') {
+                r = r3;
+                continue;
+            }
             let (r3, next) = expression(r3)?;
             current_dim.push(next);
             r = r3;
@@ -1258,6 +1263,11 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         }
                         let r4 = &r4[1..];
                         let (r4, _) = ws(r4)?;
+                        // Handle trailing comma before ';' or '}'
+                        if r4.starts_with(';') || r4.starts_with('}') || r4.is_empty() {
+                            r_inner = r4;
+                            break;
+                        }
                         let (r4, next) = expression(r4)?;
                         args.push(next);
                         r_inner = r4;
@@ -1432,6 +1442,11 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         }
                         let r4 = &r4[1..];
                         let (r4, _) = ws(r4)?;
+                        // Handle trailing comma before ';' or '}'
+                        if r4.starts_with(';') || r4.starts_with('}') || r4.is_empty() {
+                            r_inner = r4;
+                            break;
+                        }
                         let (r4, next) = expression(r4)?;
                         args.push(next);
                         r_inner = r4;

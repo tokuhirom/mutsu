@@ -1189,6 +1189,11 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 }
                 let r2 = &r2[1..];
                 let (r2, _) = ws(r2)?;
+                // Handle trailing comma before ';' or '}'
+                if r2.starts_with(';') || r2.starts_with('}') || r2.is_empty() {
+                    r_inner = r2;
+                    break;
+                }
                 let (r2, next) = parse_colon_method_arg(r2)?;
                 args.push(next);
                 r_inner = r2;
@@ -1721,6 +1726,11 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 }
                 let r2 = &r2[1..];
                 let (r2, _) = ws(r2)?;
+                // Handle trailing comma before ';' or '}'
+                if r2.starts_with(';') || r2.starts_with('}') || r2.is_empty() {
+                    r_inner = r2;
+                    break;
+                }
                 let (r2, next) = parse_colon_method_arg(r2)?;
                 args.push(next);
                 r_inner = r2;
