@@ -202,6 +202,14 @@ impl Compiler {
                 let idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::MarkVarReadonly(idx));
             }
+            Stmt::MarkSigillessReadonly(name) => {
+                // Set __mutsu_sigilless_readonly::NAME = true in env
+                let key = format!("__mutsu_sigilless_readonly::{}", name);
+                let key_idx = self.code.add_constant(Value::str(key));
+                let true_idx = self.code.add_constant(Value::Bool(true));
+                self.code.emit(OpCode::LoadConst(true_idx));
+                self.code.emit(OpCode::SetGlobal(key_idx));
+            }
             Stmt::Say(exprs) => {
                 self.compile_exprs(exprs);
                 self.code.emit(OpCode::Say(exprs.len() as u32));

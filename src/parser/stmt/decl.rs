@@ -671,8 +671,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         if let Some(r) = r.strip_prefix("::=").or_else(|| r.strip_prefix(":=")) {
             let (r, _) = ws(r)?;
             let (r, expr) = parse_assign_expr_or_comma(r)?;
-            let stmt = Stmt::VarDecl {
-                name,
+            let decl = Stmt::VarDecl {
+                name: name.clone(),
                 expr,
                 type_constraint: None,
                 is_state,
@@ -683,6 +683,11 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 custom_traits: Vec::new(),
                 where_constraint: None,
             };
+            // Sigilless variables are always readonly (bound, not assigned).
+            // Use MarkSigillessReadonly to set __mutsu_sigilless_readonly::NAME
+            // in the env, rather than MarkReadonly which would conflict with
+            // sigiled variables of the same name.
+            let stmt = Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigillessReadonly(name)]);
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
             }
@@ -692,8 +697,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             let r = &r[1..];
             let (r, _) = ws(r)?;
             let (r, expr) = parse_assign_expr_or_comma(r)?;
-            let stmt = Stmt::VarDecl {
-                name,
+            let decl = Stmt::VarDecl {
+                name: name.clone(),
                 expr,
                 type_constraint: None,
                 is_state,
@@ -704,6 +709,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 custom_traits: Vec::new(),
                 where_constraint: None,
             };
+            // Sigilless variables are always readonly (bound, not assigned).
+            let stmt = Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigillessReadonly(name)]);
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
             }

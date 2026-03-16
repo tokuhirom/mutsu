@@ -53,7 +53,9 @@ fn flatten_synthetic_blocks(stmts: &mut Vec<Stmt>) {
     let old = std::mem::take(stmts);
     for stmt in old {
         if let Stmt::SyntheticBlock(ref inner) = stmt {
-            let has_mark_readonly = inner.iter().any(|s| matches!(s, Stmt::MarkReadonly(_)));
+            let has_mark_readonly = inner
+                .iter()
+                .any(|s| matches!(s, Stmt::MarkReadonly(_) | Stmt::MarkSigillessReadonly(_)));
             // Keep SyntheticBlocks with bound array markers intact so the compiler
             // can detect `:=` bind context for `@` variables.
             let has_bound_array = inner.iter().any(|s| {

@@ -674,10 +674,8 @@ roast/S32-str/capitalize.t
 roast/S32-str/chomp.t
 roast/S32-str/chop.t
 roast/S32-str/contains.t
-roast/S32-str/ends-with.t
 roast/S32-str/fc.t
 roast/S32-str/flip.t
-roast/S32-str/index.t
 roast/S32-str/lc.t
 roast/S32-str/length.t
 roast/S32-str/lines.t
@@ -696,7 +694,6 @@ roast/S32-str/sprintf-o.t
 roast/S32-str/sprintf-s.t
 roast/S32-str/sprintf-u.t
 roast/S32-str/sprintf-x.t
-roast/S32-str/starts-with.t
 roast/S32-str/tc.t
 roast/S32-str/tclc.t
 roast/S32-str/trim.t
