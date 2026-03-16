@@ -25,6 +25,7 @@ roast/S02-lexical-conventions/unicode-whitespace.t
 roast/S02-lexical-conventions/unicode.t
 roast/S02-lists/tree.t
 roast/S02-literals/adverbs.t
+roast/S02-literals/array-interpolation.t
 roast/S02-literals/autoref.t
 roast/S02-literals/char-by-name.t
 roast/S02-literals/fmt-interpolation.t
@@ -339,6 +340,7 @@ roast/S12-class/inheritance-class-methods.t
 roast/S12-class/interface-consistency.t
 roast/S12-class/literal.t
 roast/S12-class/mro-6e.t
+roast/S12-class/namespaced.t
 roast/S12-class/parent_attributes.t
 roast/S12-class/rw.t
 roast/S12-class/self-inheritance.t
