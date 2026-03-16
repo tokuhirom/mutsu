@@ -239,11 +239,25 @@ impl RuntimeError {
     }
 
     pub(crate) fn numeric_divide_by_zero_with(numerator: Option<Value>) -> Self {
+        Self::numeric_divide_by_zero_full(numerator, None)
+    }
+
+    pub(crate) fn numeric_divide_by_zero_full(
+        numerator: Option<Value>,
+        using: Option<&str>,
+    ) -> Self {
         let mut attrs = HashMap::new();
-        attrs.insert(
-            "message".to_string(),
-            Value::str_from("Attempt to divide by zero"),
-        );
+        let mut msg = "Attempt to divide".to_string();
+        if let Some(ref n) = numerator {
+            msg.push_str(&format!(" {} by zero", n.to_string_value()));
+        } else {
+            msg.push_str(" by zero");
+        }
+        if let Some(u) = using {
+            msg.push_str(&format!(" using {}", u));
+            attrs.insert("using".to_string(), Value::str_from(u));
+        }
+        attrs.insert("message".to_string(), Value::str_from(&msg));
         if let Some(n) = numerator {
             attrs.insert("numerator".to_string(), n);
         }
