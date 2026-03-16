@@ -37,41 +37,85 @@ impl Interpreter {
         class_def: &ClassDef,
     ) -> Result<(), RuntimeError> {
         for (method_name, defs) in &class_def.methods {
-            let class_defined = defs.iter().any(|def| def.role_origin.is_none());
-            if class_defined {
-                continue;
+            // Check non-multi methods
+            let non_multi: Vec<&MethodDef> = defs
+                .iter()
+                .filter(|d| !d.is_multi && !Self::is_stub_routine_body(&d.body))
+                .collect();
+            let class_defined_non_multi = non_multi.iter().any(|d| d.role_origin.is_none());
+            if !class_defined_non_multi {
+                let mut conflicting_roles = Vec::new();
+                let mut seen_origins = Vec::new();
+                for def in &non_multi {
+                    let Some(role_name) = &def.role_origin else {
+                        continue;
+                    };
+                    // Use original_role for diamond detection: if two methods
+                    // trace back to the same original role, they are not in conflict.
+                    let origin = def.original_role.as_ref().unwrap_or(role_name);
+                    if seen_origins.contains(origin) {
+                        continue;
+                    }
+                    seen_origins.push(origin.clone());
+                    if !conflicting_roles.contains(role_name) {
+                        conflicting_roles.push(role_name.clone());
+                    }
+                }
+                if conflicting_roles.len() > 1 {
+                    conflicting_roles.reverse();
+                    return Err(RuntimeError::new(format!(
+                        "X::Role::Composition::Conflict: Method '{}' must be resolved by class {} because it exists in multiple roles ({})",
+                        method_name,
+                        class_name,
+                        conflicting_roles.join(", "),
+                    )));
+                }
             }
 
-            let mut conflicting_roles = Vec::new();
-            // Track the deepest origins to detect diamond composition
-            let mut seen_origins = Vec::new();
-            for def in defs {
-                if def.is_multi || Self::is_stub_routine_body(&def.body) {
-                    continue;
+            // Check multi methods: detect per-signature conflicts from different roles
+            let multi_defs: Vec<&MethodDef> = defs
+                .iter()
+                .filter(|d| d.is_multi && !Self::is_stub_routine_body(&d.body))
+                .collect();
+            if multi_defs.len() > 1 {
+                // Group by signature, check if any signature has methods from multiple roles
+                // without a class-provided resolution
+                let mut checked: Vec<Vec<String>> = Vec::new();
+                for (i, def_a) in multi_defs.iter().enumerate() {
+                    let sig = Self::method_positional_signature(def_a);
+                    if checked.contains(&sig) {
+                        continue;
+                    }
+                    checked.push(sig);
+                    // Find all methods with matching signature
+                    let mut roles_for_sig: Vec<String> = Vec::new();
+                    let mut class_resolves = def_a.role_origin.is_none();
+                    if let Some(r) = &def_a.role_origin
+                        && !roles_for_sig.contains(r)
+                    {
+                        roles_for_sig.push(r.clone());
+                    }
+                    for def_b in multi_defs.iter().skip(i + 1) {
+                        if Self::method_signatures_match(def_a, def_b) {
+                            if def_b.role_origin.is_none() {
+                                class_resolves = true;
+                            }
+                            if let Some(r) = &def_b.role_origin
+                                && !roles_for_sig.contains(r)
+                            {
+                                roles_for_sig.push(r.clone());
+                            }
+                        }
+                    }
+                    if roles_for_sig.len() > 1 && !class_resolves {
+                        return Err(RuntimeError::new(format!(
+                            "X::Role::Composition::Conflict: Method '{}' must be resolved by class {} because it exists in multiple roles ({})",
+                            method_name,
+                            class_name,
+                            roles_for_sig.join(", "),
+                        )));
+                    }
                 }
-                let Some(role_name) = &def.role_origin else {
-                    continue;
-                };
-                // Use original_role for diamond detection: if two methods
-                // trace back to the same original role, they are not in conflict.
-                let origin = def.original_role.as_ref().unwrap_or(role_name);
-                if seen_origins.contains(origin) {
-                    continue;
-                }
-                seen_origins.push(origin.clone());
-                if !conflicting_roles.contains(role_name) {
-                    conflicting_roles.push(role_name.clone());
-                }
-            }
-
-            if conflicting_roles.len() > 1 {
-                conflicting_roles.reverse();
-                return Err(RuntimeError::new(format!(
-                    "X::Role::Composition::Conflict: Method '{}' must be resolved by class {} because it exists in multiple roles ({})",
-                    method_name,
-                    class_name,
-                    conflicting_roles.join(", "),
-                )));
             }
         }
 

@@ -73,7 +73,7 @@ impl Interpreter {
         Self::is_stub_routine_body(&def.body)
     }
 
-    fn method_positional_signature(def: &MethodDef) -> Vec<String> {
+    pub(super) fn method_positional_signature(def: &MethodDef) -> Vec<String> {
         def.param_defs
             .iter()
             .filter(|pd| !(pd.named || (pd.slurpy && pd.name.starts_with('%'))))
@@ -87,7 +87,7 @@ impl Interpreter {
             .collect()
     }
 
-    fn method_signatures_match(required: &MethodDef, candidate: &MethodDef) -> bool {
+    pub(super) fn method_signatures_match(required: &MethodDef, candidate: &MethodDef) -> bool {
         Self::method_positional_signature(required) == Self::method_positional_signature(candidate)
             && required.is_private == candidate.is_private
     }
@@ -156,41 +156,73 @@ impl Interpreter {
                     concrete.push(def);
                 }
             }
-            if stubs.is_empty() {
-                continue;
+            if !stubs.is_empty() {
+                for required in &stubs {
+                    let matching: Vec<&MethodDef> = concrete
+                        .iter()
+                        .filter(|candidate| Self::method_signatures_match(required, candidate))
+                        .collect();
+                    let local_matches = matching.len();
+                    if local_matches > 1 {
+                        // If the class itself provides a concrete method (role_origin is None),
+                        // it resolves the conflict — no error needed.
+                        let class_provides = matching.iter().any(|m| m.role_origin.is_none());
+                        if !class_provides {
+                            return Err(RuntimeError::new(format!(
+                                "X::Role::Composition::Conflict: multiple candidates for required method '{}'",
+                                method_name
+                            )));
+                        }
+                    }
+                    if local_matches == 0 {
+                        let inherited_matches = self.inherited_matching_method_count(
+                            class_name,
+                            &method_name,
+                            required,
+                        );
+                        let accessor_match = usize::from(self.accessor_matches_stub(
+                            class_name,
+                            &method_name,
+                            required,
+                        ));
+                        let total = inherited_matches + accessor_match;
+                        if total == 0 {
+                            return Err(RuntimeError::new(format!(
+                                "X::Role::Composition::Unimplemented: required method '{}'",
+                                method_name
+                            )));
+                        }
+                        if total > 1 {
+                            return Err(RuntimeError::new(format!(
+                                "X::Role::Composition::Conflict: multiple inherited candidates for required method '{}'",
+                                method_name
+                            )));
+                        }
+                    }
+                }
             }
-            for required in &stubs {
-                let local_matches = concrete
-                    .iter()
-                    .filter(|candidate| Self::method_signatures_match(required, candidate))
-                    .count();
-                if local_matches > 1 {
-                    return Err(RuntimeError::new(format!(
-                        "X::Role::Composition::Conflict: multiple candidates for required method '{}'",
-                        method_name
-                    )));
-                }
-                if local_matches == 0 {
-                    let inherited_matches =
-                        self.inherited_matching_method_count(class_name, &method_name, required);
-                    let accessor_match =
-                        usize::from(self.accessor_matches_stub(class_name, &method_name, required));
-                    let total = inherited_matches + accessor_match;
-                    if total == 0 {
-                        return Err(RuntimeError::new(format!(
-                            "X::Role::Composition::Unimplemented: required method '{}'",
-                            method_name
-                        )));
+            // When a class provides a multi candidate matching a role candidate,
+            // the class version takes priority — remove the role duplicate.
+            let class_methods: Vec<MethodDef> = concrete
+                .iter()
+                .filter(|m| m.role_origin.is_none())
+                .cloned()
+                .collect();
+            if !class_methods.is_empty() {
+                concrete.retain(|m| {
+                    if m.role_origin.is_none() {
+                        return true; // keep class methods
                     }
-                    if total > 1 {
-                        return Err(RuntimeError::new(format!(
-                            "X::Role::Composition::Conflict: multiple inherited candidates for required method '{}'",
-                            method_name
-                        )));
-                    }
-                }
+                    // Keep role method only if no class method has matching signature
+                    !class_methods
+                        .iter()
+                        .any(|cm| Self::method_signatures_match(m, cm))
+                });
             }
             if concrete.is_empty() {
+                if stubs.is_empty() {
+                    continue; // nothing changed, skip update
+                }
                 class_def.methods.remove(&method_name);
             } else {
                 class_def.methods.insert(method_name, concrete);
