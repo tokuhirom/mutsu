@@ -469,9 +469,39 @@ impl VM {
             self.stack.push(Value::Nil);
             return Ok(());
         }
+        // Complex <=> Real: check $*TOLERANCE for imaginary part
+        let left = self.coerce_complex_to_real_if_tolerant(&left)?;
+        let right = self.coerce_complex_to_real_if_tolerant(&right)?;
         let ord = Self::numeric_spaceship_ordering(&left, &right)?;
         self.stack.push(runtime::make_order(ord));
         Ok(())
+    }
+
+    /// If a Complex value has an imaginary part within `$*TOLERANCE` (relative),
+    /// coerce it to its real part. Otherwise throw if it's Complex with a
+    /// significant imaginary component.
+    fn coerce_complex_to_real_if_tolerant(&self, val: &Value) -> Result<Value, RuntimeError> {
+        if let Value::Complex(re, im) = val {
+            if *im == 0.0 {
+                return Ok(Value::Num(*re));
+            }
+            let tolerance = self
+                .interpreter
+                .get_dynamic_var("$*TOLERANCE")
+                .ok()
+                .and_then(|v| runtime::to_float_value(&v))
+                .unwrap_or(1e-15);
+            let scale = re.abs().max(1.0);
+            if im.abs() / scale <= tolerance {
+                Ok(Value::Num(*re))
+            } else {
+                Err(RuntimeError::new(
+                    "Cannot use <=> on Complex number with non-negligible imaginary part",
+                ))
+            }
+        } else {
+            Ok(val.clone())
+        }
     }
 
     pub(super) fn exec_before_after_op(&mut self, is_before: bool) {

@@ -318,9 +318,13 @@ impl VM {
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
             let val = match (&l, &r) {
-                (Value::Int(a), Value::Int(b)) if *b != 0 => Value::Int(a.div_euclid(*b)),
-                (Value::Int(_), Value::Int(_)) => {
-                    return Err(RuntimeError::numeric_divide_by_zero());
+                (Value::Int(a), Value::Int(b)) if *b != 0 => {
+                    Value::Int(num_integer::Integer::div_floor(a, b))
+                }
+                (Value::Int(a), Value::Int(_)) => {
+                    return Err(RuntimeError::numeric_divide_by_zero_with(Some(Value::Int(
+                        *a,
+                    ))));
                 }
                 (Value::BigInt(a), Value::BigInt(b)) if **b != num_bigint::BigInt::from(0i64) => {
                     Value::from_bigint(num_integer::Integer::div_floor(a.as_ref(), b.as_ref()))
@@ -337,9 +341,11 @@ impl VM {
                     let a = runtime::to_int(&l);
                     let b = runtime::to_int(&r);
                     if b == 0 {
-                        return Err(RuntimeError::numeric_divide_by_zero());
+                        return Err(RuntimeError::numeric_divide_by_zero_with(Some(Value::Int(
+                            a,
+                        ))));
                     }
-                    Value::Int(a.div_euclid(b))
+                    Value::Int(num_integer::Integer::div_floor(&a, &b))
                 }
             };
             Ok(val)
@@ -353,17 +359,34 @@ impl VM {
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
             let val = match (&l, &r) {
-                (Value::Int(a), Value::Int(b)) if *b != 0 => Value::Int(a.rem_euclid(*b)),
-                (Value::Int(_), Value::Int(_)) => {
-                    return Err(RuntimeError::new("Modulo by zero"));
+                (Value::Int(a), Value::Int(b)) if *b != 0 => {
+                    Value::Int(num_integer::Integer::mod_floor(a, b))
+                }
+                (Value::Int(a), Value::Int(_)) => {
+                    return Err(RuntimeError::numeric_divide_by_zero_with(Some(Value::Int(
+                        *a,
+                    ))));
+                }
+                (Value::BigInt(a), Value::BigInt(b)) if !b.is_zero() => {
+                    Value::from_bigint(num_integer::Integer::mod_floor(a.as_ref(), b.as_ref()))
+                }
+                (Value::BigInt(a), Value::Int(b)) if *b != 0 => {
+                    let bb = num_bigint::BigInt::from(*b);
+                    Value::from_bigint(num_integer::Integer::mod_floor(a.as_ref(), &bb))
+                }
+                (Value::Int(a), Value::BigInt(b)) if !b.is_zero() => {
+                    let aa = num_bigint::BigInt::from(*a);
+                    Value::from_bigint(num_integer::Integer::mod_floor(&aa, b.as_ref()))
                 }
                 _ => {
                     let a = runtime::to_int(&l);
                     let b = runtime::to_int(&r);
                     if b == 0 {
-                        return Err(RuntimeError::new("Modulo by zero"));
+                        return Err(RuntimeError::numeric_divide_by_zero_with(Some(Value::Int(
+                            a,
+                        ))));
                     }
-                    Value::Int(a.rem_euclid(b))
+                    Value::Int(num_integer::Integer::mod_floor(&a, &b))
                 }
             };
             Ok(val)

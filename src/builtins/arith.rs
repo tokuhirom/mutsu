@@ -8,6 +8,16 @@ use crate::value::{RuntimeError, Value, make_big_rat, make_rat};
 use num_bigint::{BigInt as NumBigInt, Sign};
 use num_traits::{ToPrimitive, Zero};
 
+/// Floored modulo for f64: result has the same sign as the divisor.
+fn float_mod_floor(a: f64, b: f64) -> f64 {
+    let r = a % b;
+    if (r > 0.0 && b < 0.0) || (r < 0.0 && b > 0.0) {
+        r + b
+    } else {
+        r
+    }
+}
+
 /// Check if a value is a Date, Instant, or Duration instance (temporal operand for arithmetic).
 pub fn is_temporal_operand(value: &Value) -> bool {
     matches!(value, Value::Instance { class_name, .. }
@@ -638,7 +648,7 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
             || matches!(r, Value::Rat(_, _) | Value::FatRat(_, _))
         {
             if bn == 0 {
-                return Err(RuntimeError::new("Modulo by zero"));
+                return Err(RuntimeError::numeric_divide_by_zero());
             }
             // Rational modulo with divisor-sign semantics.
             let num = num_integer::Integer::mod_floor(&(an * bd), &(ad * bn));
@@ -652,52 +662,66 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
         } else {
             Ok(match (l, r) {
                 (Value::Int(_), Value::Int(0)) => {
-                    return Err(RuntimeError::new("Modulo by zero"));
+                    return Err(RuntimeError::numeric_divide_by_zero());
                 }
                 (Value::BigInt(_), Value::Int(0)) => {
-                    return Err(RuntimeError::new("Modulo by zero"));
+                    return Err(RuntimeError::numeric_divide_by_zero());
                 }
                 (Value::Int(_), Value::BigInt(b)) if b.is_zero() => {
-                    return Err(RuntimeError::new("Modulo by zero"));
+                    return Err(RuntimeError::numeric_divide_by_zero());
                 }
                 (Value::BigInt(_), Value::BigInt(b)) if b.is_zero() => {
-                    return Err(RuntimeError::new("Modulo by zero"));
+                    return Err(RuntimeError::numeric_divide_by_zero());
                 }
-                (Value::Int(a), Value::Int(b)) => Value::Int(a % b),
-                (Value::BigInt(a), Value::Int(b)) => Value::from_bigint(a.as_ref() % b),
+                (Value::Int(a), Value::Int(b)) => {
+                    Value::Int(num_integer::Integer::mod_floor(&a, &b))
+                }
+                (Value::BigInt(a), Value::Int(b)) => {
+                    let bb = num_bigint::BigInt::from(b);
+                    Value::from_bigint(num_integer::Integer::mod_floor(a.as_ref(), &bb))
+                }
                 (Value::Int(a), Value::BigInt(b)) => {
-                    Value::from_bigint(num_bigint::BigInt::from(a) % b.as_ref())
+                    let aa = num_bigint::BigInt::from(a);
+                    Value::from_bigint(num_integer::Integer::mod_floor(&aa, b.as_ref()))
                 }
-                (Value::BigInt(a), Value::BigInt(b)) => Value::from_bigint(a.as_ref() % b.as_ref()),
-                (Value::Num(a), Value::Num(b)) => Value::Num(a % b),
-                (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 % b),
-                (Value::Num(a), Value::Int(b)) => Value::Num(a % b as f64),
+                (Value::BigInt(a), Value::BigInt(b)) => {
+                    Value::from_bigint(num_integer::Integer::mod_floor(a.as_ref(), b.as_ref()))
+                }
+                (Value::Num(a), Value::Num(b)) => Value::Num(float_mod_floor(a, b)),
+                (Value::Int(a), Value::Num(b)) => Value::Num(float_mod_floor(a as f64, b)),
+                (Value::Num(a), Value::Int(b)) => Value::Num(float_mod_floor(a, b as f64)),
                 _ => Value::Int(0),
             })
         }
     } else {
         Ok(match (l, r) {
             (Value::Int(_), Value::Int(0)) => {
-                return Err(RuntimeError::new("Modulo by zero"));
+                return Err(RuntimeError::numeric_divide_by_zero());
             }
             (Value::BigInt(_), Value::Int(0)) => {
-                return Err(RuntimeError::new("Modulo by zero"));
+                return Err(RuntimeError::numeric_divide_by_zero());
             }
             (Value::Int(_), Value::BigInt(b)) if b.is_zero() => {
-                return Err(RuntimeError::new("Modulo by zero"));
+                return Err(RuntimeError::numeric_divide_by_zero());
             }
             (Value::BigInt(_), Value::BigInt(b)) if b.is_zero() => {
-                return Err(RuntimeError::new("Modulo by zero"));
+                return Err(RuntimeError::numeric_divide_by_zero());
             }
-            (Value::Int(a), Value::Int(b)) => Value::Int(a % b),
-            (Value::BigInt(a), Value::Int(b)) => Value::from_bigint(a.as_ref() % b),
+            (Value::Int(a), Value::Int(b)) => Value::Int(num_integer::Integer::mod_floor(&a, &b)),
+            (Value::BigInt(a), Value::Int(b)) => {
+                let bb = num_bigint::BigInt::from(b);
+                Value::from_bigint(num_integer::Integer::mod_floor(a.as_ref(), &bb))
+            }
             (Value::Int(a), Value::BigInt(b)) => {
-                Value::from_bigint(num_bigint::BigInt::from(a) % b.as_ref())
+                let aa = num_bigint::BigInt::from(a);
+                Value::from_bigint(num_integer::Integer::mod_floor(&aa, b.as_ref()))
             }
-            (Value::BigInt(a), Value::BigInt(b)) => Value::from_bigint(a.as_ref() % b.as_ref()),
-            (Value::Num(a), Value::Num(b)) => Value::Num(a % b),
-            (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 % b),
-            (Value::Num(a), Value::Int(b)) => Value::Num(a % b as f64),
+            (Value::BigInt(a), Value::BigInt(b)) => {
+                Value::from_bigint(num_integer::Integer::mod_floor(a.as_ref(), b.as_ref()))
+            }
+            (Value::Num(a), Value::Num(b)) => Value::Num(float_mod_floor(a, b)),
+            (Value::Int(a), Value::Num(b)) => Value::Num(float_mod_floor(a as f64, b)),
+            (Value::Num(a), Value::Int(b)) => Value::Num(float_mod_floor(a, b as f64)),
             _ => Value::Int(0),
         })
     }
