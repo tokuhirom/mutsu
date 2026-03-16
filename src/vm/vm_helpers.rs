@@ -616,6 +616,7 @@ impl VM {
                 | "ComplexStr"
                 | "Allomorph"
                 | "Attribute"
+                | "X"
         ) || {
             // Handle parameterized types like Buf[uint8], Array[Int], etc.
             if let Some(open) = name.find('[')

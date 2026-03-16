@@ -2809,6 +2809,31 @@ impl Interpreter {
             }
             return Ok(result);
         }
+        // Fallback: if we are inside a `new` method and nextwith/callwith is called,
+        // dispatch to the built-in Mu.new (i.e., bless) on the current invocant.
+        // In Raku, Mu.new(*%attrinit) is always the base candidate in the MRO for `new`.
+        // Check both routine_stack (VM path) and samewith_context_stack (interpreter path).
+        if matches!(func_name, "nextwith" | "callwith") {
+            let in_new = self
+                .routine_stack
+                .last()
+                .is_some_and(|(_, name)| name == "new")
+                || self
+                    .samewith_context_stack
+                    .last()
+                    .is_some_and(|(name, _)| name == "new");
+            if in_new && let Some(invocant) = self.env.get("self").cloned() {
+                let call_args = override_args.unwrap_or_default();
+                let result = self.call_method_with_values(invocant, "bless", call_args)?;
+                if tail_call {
+                    return Err(RuntimeError {
+                        return_value: Some(result),
+                        ..RuntimeError::new("")
+                    });
+                }
+                return Ok(result);
+            }
+        }
         // Not in any dispatch context
         Err(Self::no_dispatcher_error(func_name))
     }

@@ -2399,6 +2399,12 @@ impl Interpreter {
             "new" => {
                 return self.dispatch_new(target, args);
             }
+            // self.Mu::new(...)  –  qualified call to Mu's default constructor.
+            // In Raku, Mu.new simply calls self.bless with the named arguments,
+            // so we redirect to the "bless" logic, bypassing any user-defined new.
+            "Mu::new" => {
+                return self.call_method_with_values(target, "bless", args);
+            }
             "bless" => {
                 // self.bless(:attr1($val1), :attr2($val2), ...)
                 // Creates a new instance of the invocant's class with attributes from named args

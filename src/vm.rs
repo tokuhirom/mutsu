@@ -487,6 +487,20 @@ impl VM {
                 {
                     return Err(self.strict_undeclared_error(&name));
                 }
+                // Reject assignment to immutable type objects (e.g., `Foo .= new`)
+                if !name.starts_with('$')
+                    && !name.starts_with('@')
+                    && !name.starts_with('%')
+                    && !name.starts_with('&')
+                    && !name.contains("::")
+                    && matches!(self.interpreter.env().get(&name), Some(Value::Package(_)))
+                    && self.interpreter.has_class(&name)
+                {
+                    return Err(RuntimeError::new(format!(
+                        "Cannot modify an immutable '{}' type object",
+                        name
+                    )));
+                }
                 let raw_val = self.stack.pop().unwrap_or(Value::Nil);
                 let (raw_val, bind_source) = if let Value::Capture { positional, named } = &raw_val
                 {
