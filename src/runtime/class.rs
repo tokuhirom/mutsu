@@ -402,6 +402,12 @@ impl Interpreter {
         self.env.insert("self".to_string(), base.clone());
         // Also set __ANON_STATE__ for `$.foo` compound-assignment desugaring
         self.env.insert("__ANON_STATE__".to_string(), base.clone());
+        // In Raku, methods do NOT set $_ to the invocant by default.
+        // $_ in a method body is Any unless the invocant is explicitly named $_
+        // (e.g. `method foo ($_: ) { ... }`). The invocant binding loop below
+        // will set $_ back to self if the invocant param is named "_".
+        self.env
+            .insert("_".to_string(), Value::Package(Symbol::intern("Any")));
         if let Some(role_bindings) = self.class_role_param_bindings.get(owner_class) {
             for (name, value) in role_bindings {
                 self.env.insert(name.clone(), value.clone());
@@ -578,6 +584,10 @@ impl Interpreter {
         }
         let mut merged_env = saved_env.clone();
         for (k, v) in self.env.iter() {
+            // $_ is method-local; don't bleed the method's $_ back to the caller
+            if k == "_" {
+                continue;
+            }
             if saved_env.contains_key(k) {
                 merged_env.insert(k.clone(), v.clone());
             }
