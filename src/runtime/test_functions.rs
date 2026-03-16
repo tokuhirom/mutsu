@@ -1023,9 +1023,6 @@ impl Interpreter {
                     if k.contains("::") {
                         continue;
                     }
-                    if matches!(v, Value::Sub(_) | Value::Routine { .. }) {
-                        continue;
-                    }
                     nested.env.insert(k.clone(), v.clone());
                 }
                 nested.run(code).map(|_| Value::Nil)

@@ -291,7 +291,7 @@ fn read_delimited_content<'a>(input: &'a str, escape_backslash: bool) -> PResult
         .chars()
         .next()
         .ok_or_else(|| PError::expected("Q string delimiter"))?;
-    if delim_char.is_alphanumeric() || delim_char.is_whitespace() {
+    if delim_char.is_alphanumeric() || delim_char.is_whitespace() || delim_char == '#' {
         return Err(PError::expected("Q string delimiter"));
     }
     let bracket_close = match delim_char {
@@ -570,6 +570,14 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
     if flags.heredoc {
         let interpolate = flags.has_interpolation() || flags.qq_mode;
         return parse_to_heredoc_with_flags(after_q, &flags, interpolate);
+    }
+
+    // `#` cannot be used as a quoting delimiter (it starts a comment).
+    let trimmed_after_q = after_q.trim_start_matches(' ');
+    if trimmed_after_q.starts_with('#') {
+        return Err(PError::fatal(
+            "# cannot be used as a quote delimiter".to_string(),
+        ));
     }
 
     // Read delimited content

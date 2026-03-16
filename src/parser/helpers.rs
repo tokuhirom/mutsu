@@ -44,10 +44,26 @@ fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
                 at_line_start = false;
                 continue;
             }
+            // #` MUST be followed immediately by an opening bracket.
+            // If skip_embedded_comment returned None, it's an error.
+            if r.starts_with("#`") {
+                return Err(PError::expected("Opening bracket required for #` comment"));
+            }
             let end = r.find('\n').unwrap_or(r.len());
             rest = &r[end..];
             at_line_start = true;
             continue;
+        }
+        // Unspace: `\` followed by whitespace or `#` (embedded comment).
+        // Collapses into nothing, allowing the loop to continue consuming
+        // whitespace and comments.
+        if let Some(after_bs) = r.strip_prefix('\\') {
+            let next = after_bs.chars().next();
+            if next.is_some_and(|c| c.is_whitespace() || c == '#') {
+                rest = after_bs;
+                at_line_start = false;
+                continue;
+            }
         }
         // Pod blocks only appear at the start of a line
         if at_line_start && let Ok((r, _)) = pod_block(r) {
