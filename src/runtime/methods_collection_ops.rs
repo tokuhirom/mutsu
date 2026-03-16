@@ -2459,11 +2459,18 @@ impl Interpreter {
             let chunk_len = end - pos;
             let chunk: Vec<Value> = items[pos..end].to_vec();
 
-            if (chunk_len == count || partial) && (!chunk.is_empty() || count == 0) {
-                result.push(Value::array(chunk));
+            if chunk_len == count || (partial && (!chunk.is_empty() || count == 0)) {
+                // When gap is negative and chunk is partial (not first chunk),
+                // only emit if the chunk has enough elements to contain at least
+                // one new element not already covered by the previous chunk's overlap.
+                let skip_partial =
+                    chunk_len < count && gap < 0 && !result.is_empty() && (chunk_len as i64) < -gap;
+                if !skip_partial {
+                    result.push(Value::array(chunk));
+                }
             }
 
-            if chunk_len < count && !partial {
+            if chunk_len < count {
                 break;
             }
 

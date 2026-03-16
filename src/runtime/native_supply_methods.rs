@@ -434,6 +434,13 @@ impl Interpreter {
                             interval,
                             initial_count,
                         );
+                    } else if let Some(Value::Int(limit)) = attributes.get("head_limit") {
+                        register_supplier_tap_with_head_limit(
+                            *supplier_id as u64,
+                            tap_cb.clone(),
+                            delay_seconds,
+                            *limit as usize,
+                        );
                     } else {
                         register_supplier_tap(*supplier_id as u64, tap_cb.clone(), delay_seconds);
                     }
@@ -755,13 +762,26 @@ impl Interpreter {
                 Ok(self.make_supply_from_values(items, attributes))
             }
             "head" => {
+                let has_supplier = attributes.get("supplier_id").is_some();
                 let source_values = self.supply_get_values(attributes)?;
                 let count = if args.is_empty() {
                     1
                 } else {
                     match args.first() {
-                        Some(Value::Whatever) => source_values.len(),
-                        Some(Value::Num(f)) if f.is_infinite() => source_values.len(),
+                        Some(Value::Whatever) => {
+                            if has_supplier {
+                                usize::MAX
+                            } else {
+                                source_values.len()
+                            }
+                        }
+                        Some(Value::Num(f)) if f.is_infinite() => {
+                            if has_supplier {
+                                usize::MAX
+                            } else {
+                                source_values.len()
+                            }
+                        }
                         Some(Value::Int(n)) => {
                             if *n < 0 {
                                 0
@@ -780,8 +800,17 @@ impl Interpreter {
                         None => 1,
                     }
                 };
-                let taken: Vec<Value> = source_values.into_iter().take(count).collect();
-                Ok(self.make_supply_from_values(taken, attributes))
+                if has_supplier {
+                    // For live (supplier-backed) supplies, create a transformed supply
+                    // that preserves the supplier connection but limits emissions.
+                    let mut new_attrs = attributes.clone();
+                    new_attrs.insert("head_limit".to_string(), Value::Int(count as i64));
+                    new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
+                } else {
+                    let taken: Vec<Value> = source_values.into_iter().take(count).collect();
+                    Ok(self.make_supply_from_values(taken, attributes))
+                }
             }
             "flat" => {
                 let source_values = self.supply_get_values(attributes)?;
@@ -1173,6 +1202,12 @@ impl Interpreter {
                             } => {
                                 self.handle_classify_emit(sid, tap_index, val)?;
                             }
+                            SupplierEmitAction::HeadLimitReached { supplier_id: sid2 } => {
+                                supplier_done(sid2);
+                                for done_cb in take_supplier_done_callbacks(sid2) {
+                                    let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                                }
+                            }
                         }
                     }
                 }
@@ -1310,6 +1345,13 @@ impl Interpreter {
                             delay_seconds,
                             interval,
                             initial_count,
+                        );
+                    } else if let Some(Value::Int(limit)) = attrs.get("head_limit") {
+                        register_supplier_tap_with_head_limit(
+                            *supplier_id as u64,
+                            tap_cb.clone(),
+                            delay_seconds,
+                            *limit as usize,
                         );
                     } else {
                         register_supplier_tap(*supplier_id as u64, tap_cb.clone(), delay_seconds);
@@ -1817,9 +1859,18 @@ impl Interpreter {
             supplier_emit(classify_supplier_id, pair.clone());
             let actions = supplier_emit_callbacks(classify_supplier_id, &pair);
             for action in actions {
-                if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = action {
-                    Self::sleep_for_supply_delay(delay_seconds);
-                    let _ = self.call_sub_value(tap, vec![emitted], true);
+                match action {
+                    SupplierEmitAction::Call(tap, emitted, delay_seconds) => {
+                        Self::sleep_for_supply_delay(delay_seconds);
+                        let _ = self.call_sub_value(tap, vec![emitted], true);
+                    }
+                    SupplierEmitAction::HeadLimitReached { supplier_id: sid2 } => {
+                        supplier_done(sid2);
+                        for done_cb in take_supplier_done_callbacks(sid2) {
+                            let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                        }
+                    }
+                    _ => {}
                 }
             }
 
@@ -1830,9 +1881,18 @@ impl Interpreter {
         supplier_emit(sub_supplier_id, value.clone());
         let actions = supplier_emit_callbacks(sub_supplier_id, &value);
         for action in actions {
-            if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = action {
-                Self::sleep_for_supply_delay(delay_seconds);
-                let _ = self.call_sub_value(tap, vec![emitted], true);
+            match action {
+                SupplierEmitAction::Call(tap, emitted, delay_seconds) => {
+                    Self::sleep_for_supply_delay(delay_seconds);
+                    let _ = self.call_sub_value(tap, vec![emitted], true);
+                }
+                SupplierEmitAction::HeadLimitReached { supplier_id: sid2 } => {
+                    supplier_done(sid2);
+                    for done_cb in take_supplier_done_callbacks(sid2) {
+                        let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                    }
+                }
+                _ => {}
             }
         }
 
