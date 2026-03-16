@@ -1024,7 +1024,7 @@ impl VM {
                 // Mark Failures as handled when tested for truthiness (e.g. && operator)
                 Self::mark_failure_handled_on_stack(&mut self.stack);
                 let val = self.stack.pop().unwrap();
-                if !val.truthy() {
+                if !self.eval_truthy(&val) {
                     // Also mark the original (below dup) as handled
                     Self::mark_failure_handled_on_stack(&mut self.stack);
                     *ip = *target as usize;
@@ -1034,8 +1034,8 @@ impl VM {
             }
             OpCode::JumpIfTrue(target) => {
                 Self::mark_failure_handled_on_stack(&mut self.stack);
-                let val = self.stack.last().unwrap();
-                if val.truthy() {
+                let val = self.stack.last().unwrap().clone();
+                if self.eval_truthy(&val) {
                     *ip = *target as usize;
                 } else {
                     *ip += 1;

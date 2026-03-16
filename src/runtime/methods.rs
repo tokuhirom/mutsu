@@ -483,9 +483,9 @@ impl Interpreter {
         if let Some((qualifier, actual_method)) = method.split_once("::")
             && !method.starts_with('!')
             && let Value::Instance {
-                class_name: _,
+                class_name: inst_class,
                 attributes,
-                ..
+                id: target_id,
             } = &target
             && args.is_empty()
         {
@@ -501,8 +501,16 @@ impl Interpreter {
                 self.resolve_method_with_owner(qualifier, actual_method, &args)
             {
                 let attrs_map = (**attributes).clone();
-                let (result, _) =
-                    self.run_instance_method(qualifier, attrs_map, actual_method, args, None)?;
+                let inst_cn = inst_class.resolve().to_string();
+                let tid = *target_id;
+                let (result, updated) = self.run_instance_method(
+                    qualifier,
+                    attrs_map,
+                    actual_method,
+                    args,
+                    Some(target.clone()),
+                )?;
+                self.overwrite_instance_bindings_by_identity(&inst_cn, tid, updated);
                 if let Value::Proxy { ref fetcher, .. } = result {
                     let _ = method_def;
                     return self.proxy_fetch(fetcher, None, qualifier, &(**attributes).clone(), 0);

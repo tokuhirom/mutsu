@@ -863,6 +863,12 @@ impl Interpreter {
             } else {
                 match arg {
                     Value::Array(items, ..) => list_items.extend(items.iter().cloned()),
+                    Value::Hash(map) => {
+                        // Hashes in list context flatten to key-value Pairs
+                        for (k, v) in map.iter() {
+                            list_items.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                        }
+                    }
                     Value::Range(a, b) => list_items.extend((*a..=*b).map(Value::Int)),
                     Value::RangeExcl(a, b) => list_items.extend((*a..*b).map(Value::Int)),
                     Value::RangeExclStart(a, b) => list_items.extend((*a + 1..=*b).map(Value::Int)),
