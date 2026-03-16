@@ -358,6 +358,7 @@ roast/S12-class/interface-consistency.t
 roast/S12-class/literal.t
 roast/S12-class/mro-6e.t
 roast/S12-class/namespaced.t
+roast/S12-class/open.t
 roast/S12-class/parent_attributes.t
 roast/S12-class/rw.t
 roast/S12-class/self-inheritance.t
