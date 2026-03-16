@@ -321,7 +321,7 @@ impl Interpreter {
             && self
                 .class_mro(&class_name.resolve())
                 .iter()
-                .any(|name| name == "DateTime")
+                .any(|name| name == "DateTime" || name == "Date")
             && let Some(formatter) = attributes.get("formatter")
         {
             let saved_env = self.env().clone();
@@ -550,7 +550,16 @@ impl Interpreter {
         if let Some(result) =
             super::methods_temporal::dispatch_temporal_method(&target, method, &args)
         {
-            return result;
+            // If the result is a Date with a formatter but no rendered output, render it
+            let val = result?;
+            if let Value::Instance { ref attributes, .. } = val
+                && attributes.contains_key("formatter")
+                && !attributes.contains_key("__formatter_rendered")
+            {
+                let formatter = attributes.get("formatter").unwrap().clone();
+                return self.render_date_formatter(val, formatter);
+            }
+            return Ok(val);
         }
 
         if let Value::Instance {

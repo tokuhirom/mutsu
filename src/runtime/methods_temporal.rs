@@ -115,10 +115,13 @@ pub(super) fn dispatch_temporal_method(
                     date_later_earlier(year, month, day, args, method)
                         .map(|v| rebless_date_result(v, *class_name, attributes)),
                 ),
-                "clone" => Some(
-                    date_clone(year, month, day, args)
-                        .map(|v| rebless_date_result(v, *class_name, attributes)),
-                ),
+                "clone" => {
+                    let existing_formatter = attributes.get("formatter").cloned();
+                    Some(
+                        date_clone(year, month, day, existing_formatter, args)
+                            .map(|v| rebless_date_result(v, *class_name, attributes)),
+                    )
+                }
                 "truncated-to" => Some(
                     date_truncated_to(year, month, day, args)
                         .map(|v| rebless_date_result(v, *class_name, attributes)),
@@ -415,21 +418,25 @@ fn date_clone(
     mut year: i64,
     mut month: i64,
     mut day: i64,
+    existing_formatter: Option<Value>,
     args: &[Value],
 ) -> Result<Value, RuntimeError> {
+    let mut formatter = existing_formatter;
     for arg in args {
         if let Value::Pair(key, value) = arg {
             match key.as_str() {
                 "year" => year = value.to_f64() as i64,
                 "month" => month = value.to_f64() as i64,
                 "day" => day = value.to_f64() as i64,
-                "formatter" => {} // TODO: support formatter
+                "formatter" => formatter = Some(*value.clone()),
                 _ => {}
             }
         }
     }
     temporal::validate_date(year, month, day)?;
-    Ok(temporal::make_date(year, month, day))
+    Ok(temporal::make_date_with_formatter(
+        year, month, day, formatter,
+    ))
 }
 
 /// DateTime.clone with optional overrides.

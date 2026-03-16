@@ -179,6 +179,16 @@ pub fn iso_week(year: i64, month: i64, day: i64) -> (i64, i64) {
 
 /// Create a Date instance with year/month/day attributes.
 pub fn make_date(year: i64, month: i64, day: i64) -> Value {
+    make_date_with_formatter(year, month, day, None)
+}
+
+/// Create a Date instance with an optional formatter.
+pub fn make_date_with_formatter(
+    year: i64,
+    month: i64,
+    day: i64,
+    formatter: Option<Value>,
+) -> Value {
     let mut attrs = HashMap::new();
     attrs.insert("year".to_string(), Value::Int(year));
     attrs.insert("month".to_string(), Value::Int(month));
@@ -188,6 +198,9 @@ pub fn make_date(year: i64, month: i64, day: i64) -> Value {
         "days".to_string(),
         Value::Int(civil_to_epoch_days(year, month, day)),
     );
+    if let Some(f) = formatter {
+        attrs.insert("formatter".to_string(), f);
+    }
     Value::make_instance(Symbol::intern("Date"), attrs)
 }
 

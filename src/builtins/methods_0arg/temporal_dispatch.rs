@@ -52,7 +52,18 @@ pub fn date_method_0arg(
         "is-leap-year" => Some(Ok(Value::Bool(is_leap_year(year)))),
         "days-in-month" => Some(Ok(Value::Int(days_in_month(year, month)))),
         "daycount" => Some(Ok(Value::Int(daycount(year, month, day)))),
-        "Str" | "gist" => Some(Ok(Value::str(format_date(year, month, day)))),
+        "Str" | "gist" => {
+            // If a formatter was applied and rendered, use that
+            if let Some(Value::Str(rendered)) = attributes.get("__formatter_rendered") {
+                return Some(Ok(Value::str(rendered.to_string())));
+            }
+            // If there's a formatter but no rendered output, fall through to runtime
+            // so the formatter can be called
+            if attributes.contains_key("formatter") {
+                return None;
+            }
+            Some(Ok(Value::str(format_date(year, month, day))))
+        }
         "Date" => Some(Ok(make_date(year, month, day))),
         "succ" => {
             let new_days = days + 1;
