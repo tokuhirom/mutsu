@@ -128,6 +128,7 @@ roast/S03-operators/flip-flop.t
 roast/S03-operators/gcd.t
 roast/S03-operators/increment.t
 roast/S03-operators/infixed-function.t
+roast/S03-operators/is-divisible-by.t
 roast/S03-operators/lcm.t
 roast/S03-operators/list-quote-junction.t
 roast/S03-operators/minmax.t

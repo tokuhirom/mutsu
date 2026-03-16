@@ -1657,6 +1657,14 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             ));
         }
     }
+    // Detect !% which is an attempt to negate the non-boolean infix:<%;>
+    if r.starts_with("!%") && !r.starts_with("!%%") && !is_ident_char(r.as_bytes().get(2).copied())
+    {
+        return Err(PError::expected_at(
+            "X::Syntax::CannotMeta: Cannot negate % because it is not iffy enough",
+            r,
+        ));
+    }
     // Detect !. which is not a valid metaop
     if r.starts_with("!.") && !r.starts_with("!..") {
         let after = &r[2..];

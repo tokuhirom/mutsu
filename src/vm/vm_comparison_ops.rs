@@ -629,10 +629,13 @@ impl VM {
     pub(super) fn exec_divisible_by_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let (l, r) = runtime::coerce_numeric(left, right);
+        let (l, r) = runtime::coerce_numeric(left.clone(), right);
         let result = match (l, r) {
             (Value::Int(_), Value::Int(0)) => {
-                return Err(RuntimeError::new("Divisibility by zero"));
+                return Err(RuntimeError::numeric_divide_by_zero_full(
+                    Some(left),
+                    Some("infix:<%%>"),
+                ));
             }
             (Value::Int(a), Value::Int(b)) => Value::Bool(a % b == 0),
             _ => Value::Bool(false),
@@ -644,10 +647,13 @@ impl VM {
     pub(super) fn exec_not_divisible_by_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let (l, r) = runtime::coerce_numeric(left, right);
+        let (l, r) = runtime::coerce_numeric(left.clone(), right);
         let result = match (l, r) {
             (Value::Int(_), Value::Int(0)) => {
-                return Err(RuntimeError::new("Divisibility by zero"));
+                return Err(RuntimeError::numeric_divide_by_zero_full(
+                    Some(left),
+                    Some("infix:<%%>"),
+                ));
             }
             (Value::Int(a), Value::Int(b)) => Value::Bool(a % b != 0),
             _ => Value::Bool(true),
