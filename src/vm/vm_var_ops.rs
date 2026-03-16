@@ -700,6 +700,17 @@ impl VM {
                 .call_sub_value(sub_val, Vec::new(), false)?;
             self.env_dirty = true;
             result
+        } else if Interpreter::is_test_function_name(name)
+            && self.interpreter.test_mode_active()
+            // Only try test function dispatch for hyphenated names (e.g.
+            // `make-temp-dir`, `done-testing`). Single-word names like
+            // `run`, `is`, `ok` are either builtins or need args, so they
+            // should go through the normal function resolution path.
+            && name.contains('-')
+        {
+            let result = self.interpreter.call_function(name, Vec::new())?;
+            self.env_dirty = true;
+            result
         } else if self.interpreter.has_function(name)
             || Interpreter::is_implicit_zero_arg_builtin(name)
         {

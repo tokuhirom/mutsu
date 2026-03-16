@@ -287,6 +287,10 @@ struct IoHandleState {
     bin: bool,
     nl_out: String,
     bytes_written: i64,
+    /// Whether any read/seek operation has been performed on this handle.
+    /// Used to implement Raku's eof semantics: a freshly opened file at
+    /// position 0 with size 0 returns False for .eof until a read is attempted.
+    read_attempted: bool,
 }
 
 #[derive(Clone)]
@@ -3220,6 +3224,7 @@ impl Interpreter {
                 bin: handle.bin,
                 nl_out: handle.nl_out.clone(),
                 bytes_written: handle.bytes_written,
+                read_attempted: handle.read_attempted,
             };
             cloned_handles.insert(*id, cloned);
         }

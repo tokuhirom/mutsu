@@ -477,11 +477,11 @@ impl Interpreter {
             ));
         }
         let canonical = fs::canonicalize(&absolute_target).unwrap_or(absolute_target);
-        if let Err(chdir_err) = std::env::set_current_dir(&canonical) {
-            return Err(io_exception_error(
-                "X::IO::Chdir",
-                format!("Failed to chdir to '{}': {}", requested, chdir_err),
-            ));
+        // Raku's chdir primarily updates $*CWD. We attempt the OS-level
+        // chdir for directories but do not treat failure as fatal — the
+        // real validation comes from the :d/:r/:w/:x test adverbs above.
+        if canonical.is_dir() {
+            let _ = std::env::set_current_dir(&canonical);
         }
         let cwd_val = self.make_io_path_instance(&Self::stringify_path(&canonical));
         self.env.insert("$*CWD".to_string(), cwd_val.clone());

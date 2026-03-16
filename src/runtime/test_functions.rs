@@ -84,6 +84,65 @@ impl Interpreter {
         }
     }
 
+    /// Returns true when the Test module has been loaded (plan or test
+    /// state exists), indicating that test function names should be resolved
+    /// as function calls rather than bare words.
+    pub(crate) fn test_mode_active(&self) -> bool {
+        self.test_state.is_some()
+    }
+
+    /// Check if a name matches a known test function (Test or Test::Util).
+    /// Used by the bare word resolver to dispatch zero-arg test function calls.
+    pub(crate) fn is_test_function_name(name: &str) -> bool {
+        matches!(
+            name,
+            "ok" | "nok"
+                | "diag"
+                | "pass"
+                | "flunk"
+                | "is"
+                | "isnt"
+                | "plan"
+                | "done-testing"
+                | "skip"
+                | "skip-rest"
+                | "bail-out"
+                | "cmp-ok"
+                | "like"
+                | "unlike"
+                | "is-deeply"
+                | "is-approx"
+                | "lives-ok"
+                | "dies-ok"
+                | "isa-ok"
+                | "force_todo"
+                | "force-todo"
+                | "eval-lives-ok"
+                | "eval-dies-ok"
+                | "throws-like"
+                | "fails-like"
+                | "is_run"
+                | "run"
+                | "get_out"
+                | "use-ok"
+                | "does-ok"
+                | "can-ok"
+                | "todo"
+                | "subtest"
+                | "tap-ok"
+                | "warns-like"
+                | "doesn't-warn"
+                | "is-eqv"
+                | "group-of"
+                | "doesn't-hang"
+                | "make-temp-file"
+                | "make-temp-path"
+                | "make-temp-dir"
+                | "is-deeply-junction"
+                | "is-path"
+        )
+    }
+
     /// Dispatch Test module functions. Returns `Ok(Some(value))` if the name
     /// matched a Test function, `Ok(None)` if it did not.
     pub(crate) fn call_test_function(
@@ -141,6 +200,7 @@ impl Interpreter {
             "make-temp-file" | "make-temp-path" => self.test_fn_make_temp_file(args).map(Some),
             "make-temp-dir" => self.test_fn_make_temp_dir(args).map(Some),
             "is-deeply-junction" => self.test_fn_is_deeply_junction(args).map(Some),
+            "is-path" => self.test_fn_is_path(args).map(Some),
             _ => Ok(None),
         }
     }
@@ -2625,8 +2685,10 @@ impl Interpreter {
     }
 
     /// `make-temp-dir` — create a temporary directory.
+    /// Accepts an optional positional `Int $chmod?` or named `:chmod`.
     fn test_fn_make_temp_dir(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let chmod_val = Self::named_value(args, "chmod");
+        let chmod_val =
+            Self::named_value(args, "chmod").or_else(|| Self::positional_value(args, 0).cloned());
 
         let tmp_dir = std::env::temp_dir();
         let rand_name = format!(
@@ -2667,5 +2729,42 @@ impl Interpreter {
             }
         }
         None
+    }
+
+    /// `is-path` — compare two IO::Path values after resolving.
+    /// Equivalent to `cmp-ok $got.resolve, '~~', $exp.resolve, $desc`.
+    fn test_fn_is_path(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let got = Self::positional_value(args, 0)
+            .cloned()
+            .unwrap_or(Value::Nil);
+        let exp = Self::positional_value(args, 1)
+            .cloned()
+            .unwrap_or(Value::Nil);
+        let desc = Self::positional_string(args, 2);
+
+        // Resolve both paths: call .resolve method if available, otherwise
+        // fall back to the string representation.
+        let got_resolved = self
+            .call_method_with_values(got.clone(), "resolve", vec![])
+            .map(|v| v.to_string_value())
+            .unwrap_or_else(|_| got.to_string_value());
+        let exp_resolved = self
+            .call_method_with_values(exp.clone(), "resolve", vec![])
+            .map(|v| v.to_string_value())
+            .unwrap_or_else(|_| exp.to_string_value());
+
+        let ok = self.smart_match(
+            &Value::str(got_resolved.clone()),
+            &Value::str(exp_resolved.clone()),
+        );
+        self.test_ok(ok, &desc, false)?;
+        if !ok {
+            let diag = format!(
+                "# Failed test '{}'\n# expected: {}\n#      got: {}\n",
+                desc, exp_resolved, got_resolved
+            );
+            self.stderr_output.push_str(&diag);
+        }
+        Ok(Value::Bool(ok))
     }
 }
