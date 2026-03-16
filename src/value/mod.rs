@@ -1212,6 +1212,7 @@ impl Value {
             named,
             &HashMap::new(),
             &[],
+            &[],
             None,
         )
     }
@@ -1226,6 +1227,7 @@ impl Value {
         named: &HashMap<String, Vec<String>>,
         named_subcaps: &HashMap<String, Vec<crate::runtime::RegexCaptures>>,
         positional_subcaps: &[Option<crate::runtime::RegexCaptures>],
+        positional_quantified: &[Option<Vec<crate::runtime::QuantifiedCaptureEntry>>],
         orig: Option<&str>,
     ) -> Self {
         fn make_capture_match(s: &str, orig: Option<&str>, search_from: usize) -> Value {
@@ -1271,6 +1273,28 @@ impl Value {
                 .iter()
                 .enumerate()
                 .map(|(i, s)| {
+                    // Check if this positional entry is a quantified list
+                    if let Some(Some(qlist)) = caps.positional_quantified.get(i) {
+                        let arr: Vec<Value> = qlist
+                            .iter()
+                            .map(|(text, from, to, subcap)| {
+                                if let Some(sc) = subcap {
+                                    return make_subcap_match(sc, orig);
+                                }
+                                let mut a = HashMap::new();
+                                a.insert("str".to_string(), Value::str(text.clone()));
+                                a.insert("from".to_string(), Value::Int(*from as i64));
+                                a.insert("to".to_string(), Value::Int(*to as i64));
+                                a.insert("list".to_string(), Value::array(Vec::new()));
+                                a.insert("named".to_string(), Value::hash(HashMap::new()));
+                                if let Some(o) = orig {
+                                    a.insert("orig".to_string(), Value::str(o.to_string()));
+                                }
+                                Value::make_instance(Symbol::intern("Match"), a)
+                            })
+                            .collect();
+                        return Value::array(arr);
+                    }
                     // Recursively build nested Match objects for positional subcaptures
                     if let Some(Some(subcap)) = caps.positional_subcaps.get(i) {
                         return make_subcap_match(subcap, orig);
@@ -1327,6 +1351,28 @@ impl Value {
             .iter()
             .enumerate()
             .map(|(i, s)| {
+                // Check if this positional entry is a quantified list
+                if let Some(Some(qlist)) = positional_quantified.get(i) {
+                    let arr: Vec<Value> = qlist
+                        .iter()
+                        .map(|(text, qfrom, qto, subcap)| {
+                            if let Some(sc) = subcap {
+                                return make_subcap_match(sc, orig);
+                            }
+                            let mut a = HashMap::new();
+                            a.insert("str".to_string(), Value::str(text.clone()));
+                            a.insert("from".to_string(), Value::Int(*qfrom as i64));
+                            a.insert("to".to_string(), Value::Int(*qto as i64));
+                            a.insert("list".to_string(), Value::array(Vec::new()));
+                            a.insert("named".to_string(), Value::hash(HashMap::new()));
+                            if let Some(o) = orig {
+                                a.insert("orig".to_string(), Value::str(o.to_string()));
+                            }
+                            Value::make_instance(Symbol::intern("Match"), a)
+                        })
+                        .collect();
+                    return Value::array(arr);
+                }
                 // If there are nested subcaptures for this positional capture,
                 // build a full Match object with subcaptures
                 if let Some(Some(subcap)) = positional_subcaps.get(i) {

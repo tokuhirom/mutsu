@@ -218,6 +218,7 @@ impl Interpreter {
                 &captures.named,
                 &captures.named_subcaps,
                 &captures.positional_subcaps,
+                &captures.positional_quantified,
                 Some(&text),
             );
             let match_obj = if let Value::Instance {

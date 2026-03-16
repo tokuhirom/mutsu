@@ -1581,6 +1581,7 @@ impl Interpreter {
                         &captures.named,
                         &captures.named_subcaps,
                         &captures.positional_subcaps,
+                        &captures.positional_quantified,
                         Some(&text),
                     );
                     // If `make` was called in a code block, set the ast attribute

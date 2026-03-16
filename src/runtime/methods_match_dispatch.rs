@@ -90,6 +90,7 @@ impl Interpreter {
                         &c.named,
                         &c.named_subcaps,
                         &c.positional_subcaps,
+                        &c.positional_quantified,
                         Some(&text),
                     )
                 })
@@ -118,6 +119,7 @@ impl Interpreter {
                 &captures.named,
                 &captures.named_subcaps,
                 &captures.positional_subcaps,
+                &captures.positional_quantified,
                 Some(&text),
             );
             // Set positional capture env vars ($0, $1, ...) from match object

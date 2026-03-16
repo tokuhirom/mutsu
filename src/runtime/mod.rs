@@ -311,6 +311,9 @@ pub(crate) struct CodeBlockContext {
     pub(crate) positional: Vec<String>,
 }
 
+/// A single entry in a quantified capture list: (matched_text, from, to, subcaptures).
+pub(crate) type QuantifiedCaptureEntry = (String, usize, usize, Option<RegexCaptures>);
+
 #[derive(Clone, Default)]
 pub(crate) struct RegexCaptures {
     pub(crate) named: HashMap<String, Vec<String>>,
@@ -321,6 +324,10 @@ pub(crate) struct RegexCaptures {
     /// Nested sub-captures for positional capture groups. Each entry corresponds
     /// to the same index in `positional` and holds inner captures from nested groups.
     pub(crate) positional_subcaps: Vec<Option<RegexCaptures>>,
+    /// When a capture group is quantified (e.g. `(\w)+`), this parallel vec
+    /// stores the list of all iteration matches for that positional index.
+    /// When `Some`, the positional slot should be rendered as an Array of Match objects.
+    pub(crate) positional_quantified: Vec<Option<Vec<QuantifiedCaptureEntry>>>,
     /// Character offsets (start, end) for each entry in `positional`.
     pub(crate) positional_offsets: Vec<(usize, usize)>,
     /// Unnamed capture slots by capture index (for $0, $1, ...), where `None`
