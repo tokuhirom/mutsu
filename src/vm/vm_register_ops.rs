@@ -584,9 +584,38 @@ impl VM {
             }
         }
 
+        // For array/hash variables with a class trait that inherits from Array[X] or Hash[V,K],
+        // propagate the element type constraint so .of works correctly.
+        if name.starts_with('@') || name.starts_with('%') {
+            let element_type = self.find_parameterized_container_parent(&trait_name);
+            if let Some(et) = element_type {
+                if has_arg {
+                    self.stack.pop(); // discard unused trait argument
+                }
+                let name_str = name.to_string();
+                self.interpreter
+                    .set_var_type_constraint(&name_str, Some(et));
+                self.env_dirty = true;
+                return Ok(());
+            }
+        }
+
         if !(self.interpreter.has_proto("trait_mod:<is>")
             || self.interpreter.has_multi_candidates("trait_mod:<is>"))
         {
+            // For uppercase type-like traits (e.g. `is Map`, `is Set`), silently
+            // accept them even if trait_mod:<is> is not defined. These are type
+            // container traits that may not have runtime trait_mod:<is> handlers.
+            if trait_name
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_uppercase())
+            {
+                if has_arg {
+                    self.stack.pop();
+                }
+                return Ok(());
+            }
             return Err(RuntimeError::new(format!(
                 "X::Comp::Trait::Unknown: Unknown variable trait 'is {}'",
                 trait_name
@@ -876,5 +905,29 @@ impl VM {
         } else {
             Err(RuntimeError::new("WheneverScope expects Block body"))
         }
+    }
+
+    /// Walk the MRO of `class_name` to find a parameterized Array or Hash parent.
+    /// Returns the element type if found (e.g. "Str" for `Array[Str]`).
+    fn find_parameterized_container_parent(&self, class_name: &str) -> Option<String> {
+        let parents = self.interpreter.class_parents_readonly(class_name);
+        for parent in &parents {
+            if let Some(inner) = parent
+                .strip_prefix("Array[")
+                .or_else(|| parent.strip_prefix("List["))
+                .and_then(|s| s.strip_suffix(']'))
+            {
+                return Some(inner.trim().to_string());
+            }
+        }
+        // Also check the class itself in case it IS a parameterized type
+        if let Some(inner) = class_name
+            .strip_prefix("Array[")
+            .or_else(|| class_name.strip_prefix("List["))
+            .and_then(|s| s.strip_suffix(']'))
+        {
+            return Some(inner.trim().to_string());
+        }
+        None
     }
 }
