@@ -659,6 +659,7 @@ impl Interpreter {
                     let mut day: i64 = 1;
                     let mut positional = Vec::new();
                     let mut has_named = false;
+                    let mut formatter: Option<Value> = None;
                     for arg in &args {
                         match arg {
                             Value::Pair(key, value) => match key.as_str() {
@@ -674,7 +675,9 @@ impl Interpreter {
                                     day = to_int(value);
                                     has_named = true;
                                 }
-                                "formatter" => {} // ignored for now
+                                "formatter" => {
+                                    formatter = Some(*value.clone());
+                                }
                                 _ => {}
                             },
                             other => positional.push(other),
@@ -686,7 +689,9 @@ impl Interpreter {
                             // Single string arg: parse as date string
                             Value::Str(s) if positional.len() == 1 => {
                                 let (y, m, d) = temporal::parse_date_string(s)?;
-                                return Ok(temporal::make_date(y, m, d));
+                                year = y;
+                                month = m;
+                                day = d;
                             }
                             Value::Instance {
                                 class_name,
@@ -694,7 +699,9 @@ impl Interpreter {
                                 ..
                             } if class_name == "DateTime" => {
                                 let (y, m, d, _, _, _, _) = temporal::datetime_attrs(attributes);
-                                return Ok(temporal::make_date(y, m, d));
+                                year = y;
+                                month = m;
+                                day = d;
                             }
                             _ => {
                                 year = to_int(v);
@@ -706,12 +713,16 @@ impl Interpreter {
                                 }
                             }
                         }
-                    }
-                    if !has_named && positional.is_empty() {
+                    } else if !has_named {
                         return Err(RuntimeError::new("Date.new requires arguments"));
                     }
                     temporal::validate_date(year, month, day)?;
-                    return Ok(temporal::make_date(year, month, day));
+                    let date =
+                        temporal::make_date_with_formatter(year, month, day, formatter.clone());
+                    if let Some(formatter_value) = formatter {
+                        return self.render_date_formatter(date, formatter_value);
+                    }
+                    return Ok(date);
                 }
                 "DateTime" => {
                     use crate::builtins::methods_0arg::temporal;
@@ -2101,5 +2112,32 @@ impl Interpreter {
             subclass: Some((Symbol::intern(class_name), subclass_attrs)),
             decontainerized: false,
         })
+    }
+
+    /// Call a Date formatter and store the rendered result in `__formatter_rendered`.
+    pub(super) fn render_date_formatter(
+        &mut self,
+        date: Value,
+        formatter_value: Value,
+    ) -> Result<Value, RuntimeError> {
+        if let Value::Instance {
+            class_name,
+            ref attributes,
+            id,
+        } = date
+        {
+            let saved_env = self.env().clone();
+            let saved_readonly = self.save_readonly_vars();
+            let rendered = self
+                .eval_call_on_value(formatter_value, vec![date.clone()])?
+                .to_string_value();
+            *self.env_mut() = saved_env;
+            self.restore_readonly_vars(saved_readonly);
+            let mut updated = (**attributes).clone();
+            updated.insert("__formatter_rendered".to_string(), Value::str(rendered));
+            Ok(Value::make_instance_with_id(class_name, updated, id))
+        } else {
+            Ok(date)
+        }
     }
 }

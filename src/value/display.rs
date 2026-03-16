@@ -589,6 +589,9 @@ impl Value {
                     && attributes.contains_key("day")
                     && !attributes.contains_key("hour") =>
             {
+                if let Some(Value::Str(s)) = attributes.get("__formatter_rendered") {
+                    return s.to_string();
+                }
                 let (y, m, d) = crate::builtins::methods_0arg::temporal::date_attrs(attributes);
                 crate::builtins::methods_0arg::temporal::format_date(y, m, d)
             }

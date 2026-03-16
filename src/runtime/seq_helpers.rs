@@ -2103,8 +2103,31 @@ impl Interpreter {
                 let rb = crate::vm::VM::extract_buf_bytes(right);
                 lb == rb
             }
-            // Instance identity: two instances match iff they have the same id
-            (Value::Instance { id: id_a, .. }, Value::Instance { id: id_b, .. }) => id_a == id_b,
+            // Instance ~~ Instance: value types (Date, DateTime) use eqv,
+            // other classes use identity comparison
+            (
+                Value::Instance {
+                    class_name: lc,
+                    id: id_a,
+                    ..
+                },
+                Value::Instance {
+                    class_name: rc,
+                    id: id_b,
+                    ..
+                },
+            ) => {
+                if lc == rc
+                    && matches!(
+                        lc.resolve().as_ref(),
+                        "Date" | "DateTime" | "Duration" | "Instant"
+                    )
+                {
+                    left.eqv(right)
+                } else {
+                    id_a == id_b
+                }
+            }
             // When RHS is a Bool, result is that Bool
             (_, Value::Bool(b)) => *b,
             // X::AdHoc smartmatch: delegate to payload
@@ -2122,7 +2145,7 @@ impl Interpreter {
                     false
                 }
             }
-            // Instance identity
+            // Instance ~~ Type or other: identity check (false)
             (Value::Instance { .. }, _) | (_, Value::Instance { .. }) => false,
             // Range ~~ Range: LHS is subset of RHS.
             // Uses raw bound values. Exclusivity is compared pairwise:
