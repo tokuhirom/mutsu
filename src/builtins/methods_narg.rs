@@ -342,13 +342,17 @@ pub(crate) fn native_method_1arg(
             }
         }
         "substr" => {
-            let s = target.to_string_value();
             let start = match arg {
-                Value::Int(i) => (*i).max(0) as usize,
+                Value::Int(i) if *i >= 0 => *i as usize,
+                Value::Int(_) => return None, // negative: let runtime handle
                 _ => return None,
             };
-            let result: String = s.chars().skip(start).collect();
-            Some(Ok(Value::str(result)))
+            let s = target.to_string_value();
+            let chars: Vec<char> = s.chars().collect();
+            if start > chars.len() {
+                return None; // out-of-range: let runtime handle (returns Failure)
+            }
+            Some(Ok(Value::str(chars[start..].iter().collect())))
         }
         "AT-POS" => {
             let idx = match arg {
@@ -1560,18 +1564,22 @@ pub(crate) fn native_method_2arg(
             Some(Ok(Value::str(rendered)))
         }
         "substr" => {
-            let s = target.to_string_value();
             let start = match arg1 {
-                Value::Int(i) => (*i).max(0) as usize,
+                Value::Int(i) if *i >= 0 => *i as usize,
+                Value::Int(_) => return None, // negative: let runtime handle
                 _ => return None,
             };
             let len = match arg2 {
-                Value::Int(i) => (*i).max(0) as usize,
+                Value::Int(i) if *i >= 0 => *i as usize,
+                Value::Int(_) => return None,
                 _ => return None,
             };
+            let s = target.to_string_value();
             let chars: Vec<char> = s.chars().collect();
+            if start > chars.len() {
+                return None; // out-of-range: let runtime handle (returns Failure)
+            }
             let end = (start + len).min(chars.len());
-            let start = start.min(chars.len());
             Some(Ok(Value::str(chars[start..end].iter().collect())))
         }
         "base" => {

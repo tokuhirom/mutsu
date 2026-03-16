@@ -777,28 +777,51 @@ impl Interpreter {
         let chars: Vec<char> = s.chars().collect();
         let total_len = chars.len();
 
+        // Check if first arg is a Range — handle substr($str, 6..8) form
+        if let Some(first_arg) = args.first()
+            && let Some((range_start, range_end)) =
+                self.substr_extract_range(first_arg, total_len)?
+        {
+            let rs = range_start.min(total_len);
+            let re = range_end.min(total_len);
+            return Ok(Value::str(chars[rs..re].iter().collect()));
+        }
+
         // First arg: start position
-        let start = if let Some(pos) = args.first() {
-            match pos {
-                Value::Int(i) => {
-                    let i = *i;
-                    if i < 0 {
-                        (total_len as i64 + i).max(0) as usize
-                    } else {
-                        i as usize
-                    }
-                }
-                other => other.to_string_value().parse::<i64>().unwrap_or(0).max(0) as usize,
-            }
+        let start_raw: i64 = if let Some(pos) = args.first() {
+            self.substr_resolve_position(pos, total_len)?
         } else {
             0
         };
 
-        // Second arg: length (can be Int, WhateverCode/Sub, or absent)
+        // Resolve negative start (from WhateverCode calling convention)
+        let start = if start_raw < 0 {
+            total_len as i64 + start_raw
+        } else {
+            start_raw
+        };
+
+        // Out-of-range check: return Failure wrapping X::OutOfRange
+        if start < 0 || start as usize > total_len {
+            return self.substr_out_of_range_failure(start, total_len);
+        }
+
+        let start = start as usize;
+
+        // Second arg: length (can be Int, WhateverCode/Sub, Num/Inf, or absent)
         let end = if let Some(len_val) = args.get(1) {
             match len_val {
                 Value::Int(i) => {
                     let len = (*i).max(0) as usize;
+                    (start + len).min(total_len)
+                }
+                Value::Num(f) if f.is_infinite() && *f > 0.0 => total_len,
+                Value::Num(f) => {
+                    let len = (*f as i64).max(0) as usize;
+                    (start + len).min(total_len)
+                }
+                Value::Rat(n, d) if *d != 0 => {
+                    let len = (*n / *d).max(0) as usize;
                     (start + len).min(total_len)
                 }
                 Value::Sub { .. } => {
@@ -812,6 +835,8 @@ impl Interpreter {
                         self.eval_call_on_value(len_val.clone(), vec![Value::Int(remaining)])?;
                     let len = match &result {
                         Value::Int(i) => (*i).max(0) as usize,
+                        Value::Num(f) => (*f as i64).max(0) as usize,
+                        Value::Rat(n, d) if *d != 0 => (*n / *d).max(0) as usize,
                         _ => 0,
                     };
                     (start + len).min(total_len)
@@ -822,7 +847,95 @@ impl Interpreter {
             total_len // no length: take rest
         };
 
-        let start = start.min(total_len);
         Ok(Value::str(chars[start..end].iter().collect()))
+    }
+
+    /// Resolve a position argument to an i64, handling Int, Num, Rat, WhateverCode/Sub.
+    fn substr_resolve_position(
+        &mut self,
+        pos: &Value,
+        total_len: usize,
+    ) -> Result<i64, RuntimeError> {
+        match pos {
+            Value::Int(i) => Ok(*i),
+            Value::Num(f) => Ok(*f as i64),
+            Value::Rat(n, d) if *d != 0 => Ok(*n / *d),
+            Value::Sub { .. } => {
+                // WhateverCode/Callable: call with total_len to resolve position
+                let result =
+                    self.eval_call_on_value(pos.clone(), vec![Value::Int(total_len as i64)])?;
+                match &result {
+                    Value::Int(i) => Ok(*i),
+                    Value::Num(f) => Ok(*f as i64),
+                    Value::Rat(n, d) if *d != 0 => Ok(*n / *d),
+                    _ => Ok(0),
+                }
+            }
+            other => Ok(other.to_string_value().parse::<i64>().unwrap_or(0)),
+        }
+    }
+
+    /// Extract start/end indices from a Range value for substr.
+    /// Returns Some((start, end)) if the value is a Range, None otherwise.
+    fn substr_extract_range(
+        &mut self,
+        val: &Value,
+        total_len: usize,
+    ) -> Result<Option<(usize, usize)>, RuntimeError> {
+        match val {
+            Value::Range(a, b) => {
+                let end = b.saturating_add(1).max(0) as usize;
+                Ok(Some((*a as usize, end)))
+            }
+            Value::RangeExcl(a, b) => Ok(Some((*a as usize, *b as usize))),
+            Value::RangeExclStart(a, b) => {
+                let end = b.saturating_add(1).max(0) as usize;
+                Ok(Some(((*a + 1) as usize, end)))
+            }
+            Value::RangeExclBoth(a, b) => Ok(Some(((*a + 1) as usize, *b as usize))),
+            Value::GenericRange {
+                start,
+                end,
+                excl_start,
+                excl_end,
+            } => {
+                let s = self.substr_resolve_position(start, total_len)?;
+                let s = if *excl_start { s + 1 } else { s };
+                let e_val = self.substr_resolve_position(end, total_len)?;
+                // For Inf end (e.g., 10..*), e_val will be very large; clamp later
+                let e = if *excl_end { e_val } else { e_val + 1 };
+                let s = s.max(0) as usize;
+                let e = e.max(0) as usize;
+                Ok(Some((s, e)))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// Return a Failure wrapping X::OutOfRange for substr out-of-range start.
+    fn substr_out_of_range_failure(
+        &self,
+        start: i64,
+        total_len: usize,
+    ) -> Result<Value, RuntimeError> {
+        let mut ex_attrs = std::collections::HashMap::new();
+        ex_attrs.insert(
+            "what".to_string(),
+            Value::str("Start argument to substr".to_string()),
+        );
+        ex_attrs.insert("got".to_string(), Value::str(start.to_string()));
+        ex_attrs.insert("range".to_string(), Value::str(format!("0..{}", total_len)));
+        ex_attrs.insert(
+            "message".to_string(),
+            Value::str("X::OutOfRange".to_string()),
+        );
+        let exception = Value::make_instance(Symbol::intern("X::OutOfRange"), ex_attrs);
+        let mut failure_attrs = std::collections::HashMap::new();
+        failure_attrs.insert("exception".to_string(), exception);
+        failure_attrs.insert("handled".to_string(), Value::Bool(false));
+        Ok(Value::make_instance(
+            Symbol::intern("Failure"),
+            failure_attrs,
+        ))
     }
 }
