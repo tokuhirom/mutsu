@@ -558,6 +558,8 @@ pub(crate) enum Stmt {
         sigil: char,
         /// Optional `where` constraint expression
         where_constraint: Option<Box<Expr>>,
+        /// `has $x` (no twigil) creates an alias: `$x` → `$!x` inside the class
+        is_alias: bool,
     },
     MethodDecl {
         name: Symbol,

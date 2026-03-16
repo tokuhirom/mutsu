@@ -431,6 +431,7 @@ impl Interpreter {
                     is_multi: true,
                     is_my: false,
                     role_origin: None,
+                    original_role: None,
                     return_type: None,
                     compiled_code: None,
                 };

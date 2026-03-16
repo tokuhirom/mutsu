@@ -200,6 +200,7 @@ impl Interpreter {
                         mro: Vec::new(),
                         attribute_types: HashMap::new(),
                         wildcard_handles: Vec::new(),
+                        alias_attributes: HashSet::new(),
                     },
                 );
             }
@@ -1766,6 +1767,8 @@ impl Interpreter {
                     };
                     attrs.insert(attr_name, val);
                 }
+                // Add alias metadata for `has $x` (no twigil) attributes
+                self.add_alias_attribute_metadata(class_key, &mut attrs);
                 self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
                 // Restore env after default evaluation, but preserve side effects
                 // on variables that already existed in the caller environment.

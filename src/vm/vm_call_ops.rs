@@ -250,7 +250,13 @@ impl VM {
         // or when in lvalue assignment context (e.g. f() = 42 calls f with in_lvalue_assignment=true).
         let skip_proxy_fetch = matches!(
             name.as_str(),
-            "return-rw" | "return" | "die" | "fail" | "leave" | "__mutsu_assign_method_lvalue"
+            "return-rw"
+                | "return"
+                | "die"
+                | "fail"
+                | "leave"
+                | "__mutsu_assign_method_lvalue"
+                | "__mutsu_index_assign_method_lvalue"
         ) || self.interpreter.in_lvalue_assignment;
         let args = if skip_proxy_fetch {
             args
