@@ -1357,12 +1357,22 @@ impl Interpreter {
                     IoHandleTarget::Stdout => 1i64,
                     IoHandleTarget::Stderr => 2i64,
                     _ => {
-                        if let Some(ref file) = state.file {
-                            use std::os::unix::io::AsRawFd;
-                            file.as_raw_fd() as i64
-                        } else {
+                        #[cfg(unix)]
+                        {
+                            if let Some(ref file) = state.file {
+                                use std::os::unix::io::AsRawFd;
+                                file.as_raw_fd() as i64
+                            } else {
+                                return Err(RuntimeError::new(
+                                    "native-descriptor: handle has no file descriptor",
+                                ));
+                            }
+                        }
+                        #[cfg(not(unix))]
+                        {
+                            let _ = state;
                             return Err(RuntimeError::new(
-                                "native-descriptor: handle has no file descriptor",
+                                "native-descriptor: not supported on this platform",
                             ));
                         }
                     }
