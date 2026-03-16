@@ -578,9 +578,16 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
 
 /// Parse the body of a class declaration (after `class` keyword and whitespace).
 pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
-    let (rest, name, name_expr) = if input.starts_with("::") {
-        let (rest, (name, expr)) = parse_indirect_decl_name(input)?;
-        (rest, name, Some(expr))
+    let (rest, name, name_expr) = if let Some(after_colons) = input.strip_prefix("::") {
+        // Check if this is `::Ident` (forward stub) or `::(expr)` (indirect name)
+        if after_colons.starts_with('(') {
+            let (rest, (name, expr)) = parse_indirect_decl_name(input)?;
+            (rest, name, Some(expr))
+        } else {
+            // `class ::F { ... }` — forward declaration stub, name is just the identifier
+            let (rest, name) = qualified_ident(after_colons)?;
+            (rest, name, None)
+        }
     } else {
         let (rest, name) = qualified_ident(input)?;
         (rest, name, None)
