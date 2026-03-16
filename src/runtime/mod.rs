@@ -857,6 +857,7 @@ impl Interpreter {
                     "unique",
                     "on-close",
                     "classify",
+                    "Channel",
                     "Supply",
                     "Promise",
                     "schedule-on",

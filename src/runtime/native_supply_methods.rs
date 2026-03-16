@@ -1057,6 +1057,16 @@ impl Interpreter {
                 let source_values = self.supply_get_values(attributes)?;
                 Ok(Value::Seq(std::sync::Arc::new(source_values)))
             }
+            "Channel" => {
+                // Supply.Channel: create a Channel, send all supply values into it, close it
+                let source_values = self.supply_get_values(attributes)?;
+                let ch = SharedChannel::new();
+                for v in source_values {
+                    ch.send(v);
+                }
+                ch.close();
+                Ok(Value::Channel(ch))
+            }
             "Supply" | "supply" => {
                 // .Supply on a Supply is identity (noop) — return self
                 // Preserve the same id for === identity check

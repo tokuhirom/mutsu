@@ -326,7 +326,7 @@ impl Interpreter {
                 ch.fail(Self::as_exception_value(reason));
                 Ok(Value::Nil)
             }
-            "list" | "List" | "Seq" => {
+            "list" | "List" | "Array" | "Seq" => {
                 // Drain the channel into a list (blocks until closed)
                 let mut items = Vec::new();
                 loop {
@@ -344,6 +344,9 @@ impl Interpreter {
                 Ok(Value::array(items))
             }
             "closed" => Ok(Value::Promise(ch.closed_promise())),
+            "elems" => Err(RuntimeError::new(
+                "Cannot call '.elems' on a Channel instance".to_string(),
+            )),
             "Bool" => Ok(Value::Bool(true)),
             "WHAT" => Ok(Value::Package(Symbol::intern("Channel"))),
             "Str" | "gist" => Ok(Value::str_from("Channel")),

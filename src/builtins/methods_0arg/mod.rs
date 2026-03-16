@@ -1861,6 +1861,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         Value::Int(0)
                     }
                 }
+                Value::Channel(_) => {
+                    return Some(Err(RuntimeError::new(
+                        "Cannot call '.elems' on a Channel instance".to_string(),
+                    )));
+                }
                 _ => Value::Int(1),
             };
             Some(Ok(result))
