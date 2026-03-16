@@ -652,12 +652,14 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 },
             ));
         }
-        // Check for twigils: *, ?, ^, =, ~, :
+        // Check for twigils: *, ?, ^, =, ~, :, !, .
         let (after_twigil, twigil) = if after_sigil.starts_with('*')
             || after_sigil.starts_with('?')
             || after_sigil.starts_with('^')
             || after_sigil.starts_with('=')
             || after_sigil.starts_with('~')
+            || after_sigil.starts_with('!')
+            || after_sigil.starts_with('.')
         {
             (&after_sigil[1..], &after_sigil[..1])
         } else if after_sigil.starts_with(':') && !after_sigil.starts_with("::") {
@@ -1643,12 +1645,14 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
     if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') || r.starts_with('&') {
         let sigil = &r[..1];
         let after_sigil = &r[1..];
-        // Check for twigils: *, ?, ^, =, ~, :
+        // Check for twigils: *, ?, ^, =, ~, :, !, .
         let (after_twigil, twigil) = if after_sigil.starts_with('*')
             || after_sigil.starts_with('?')
             || after_sigil.starts_with('^')
             || after_sigil.starts_with('=')
             || after_sigil.starts_with('~')
+            || after_sigil.starts_with('!')
+            || after_sigil.starts_with('.')
         {
             (&after_sigil[1..], &after_sigil[..1])
         } else if after_sigil.starts_with(':') && !after_sigil.starts_with("::") {

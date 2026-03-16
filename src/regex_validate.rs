@@ -460,8 +460,8 @@ fn skip_balanced(chars: &mut std::iter::Peekable<std::str::Chars<'_>>, open: cha
 fn validate_backslash_sequence(esc: char) -> Result<(), RuntimeError> {
     // Known valid backslash sequences in Raku regex
     match esc {
-        'd' | 'D' | 'w' | 'W' | 's' | 'S' | 'n' | 'N' | 't' | 'r' | 'x' | 'o' | 'c' | 'C' | 'X'
-        | 'v' | 'V' | 'h' | 'H' | 'e' | 'E' | 'b' | 'B' | '0' => Ok(()),
+        'd' | 'D' | 'w' | 'W' | 's' | 'S' | 'n' | 'N' | 't' | 'T' | 'r' | 'R' | 'x' | 'o' | 'c'
+        | 'C' | 'X' | 'v' | 'V' | 'h' | 'H' | 'e' | 'E' | 'b' | 'B' | '0' => Ok(()),
         _ if !esc.is_ascii_alphabetic() => Ok(()), // non-alpha escapes are always valid
         _ => {
             // Unknown alphabetic backslash sequence

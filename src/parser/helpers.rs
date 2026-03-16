@@ -364,6 +364,29 @@ pub(super) fn is_ident_char(b: Option<u8>) -> bool {
     }
 }
 
+/// Check if a byte could start a variable name after a sigil.
+/// Unlike `is_ident_char`, this returns false for digits because variable
+/// names cannot start with a digit (e.g. `%7` is modulo-7, not a hash var).
+/// Includes twigil characters that can appear after a sigil.
+pub(super) fn could_start_var_name(b: Option<u8>) -> bool {
+    match b {
+        Some(c) => {
+            c.is_ascii_alphabetic()
+                || c == b'_'
+                || c == b'!'
+                || c == b'*'
+                || c == b'?'
+                || c == b'.'
+                || c == b'^'
+                || c == b':'
+                || c == b'='
+                || c == b'~'
+                || c >= 0x80 // non-ASCII (Unicode letters)
+        }
+        None => false,
+    }
+}
+
 /// Loop/control-flow labels use all-caps identifier style and may include digits.
 /// Examples: `OUTER`, `L1`, `_RETRY`.
 pub(super) fn is_loop_label_name(name: &str) -> bool {

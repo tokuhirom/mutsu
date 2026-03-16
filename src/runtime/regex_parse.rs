@@ -867,7 +867,12 @@ impl Interpreter {
                         'n' => RegexAtom::Newline,
                         'N' => RegexAtom::NotNewline,
                         't' => RegexAtom::Literal('\t'),
+                        'T' => RegexAtom::CharClass(CharClass {
+                            negated: true,
+                            items: vec![ClassItem::Char('\t')],
+                        }),
                         'r' => RegexAtom::Literal('\r'),
+                        'R' => RegexAtom::Newline, // \R matches any newline sequence
                         'x' => {
                             // \x[HEX] hex escape in regex
                             if chars.peek() == Some(&'[') {

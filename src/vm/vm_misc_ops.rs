@@ -149,6 +149,8 @@ impl VM {
                 | "~~"
                 | "min"
                 | "max"
+                | "div"
+                | "mod"
                 | "gcd"
                 | "lcm"
                 | "and"

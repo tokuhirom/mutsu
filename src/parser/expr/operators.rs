@@ -1,6 +1,6 @@
 use crate::token_kind::TokenKind;
 
-use super::super::helpers::is_ident_char;
+use super::super::helpers::{could_start_var_name, is_ident_char};
 use super::super::parse_result::{PError, merge_expected_messages};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -229,7 +229,7 @@ pub(super) fn parse_multiplicative_op(r: &str) -> Option<(MultiplicativeOp, usiz
         Some((MultiplicativeOp::Div, 1))
     } else if r.starts_with('%')
         && !r.starts_with("%%")
-        && !is_ident_char(r.as_bytes().get(1).copied())
+        && !could_start_var_name(r.as_bytes().get(1).copied())
     {
         Some((MultiplicativeOp::Mod, 1))
     } else if r.starts_with("%%") {
