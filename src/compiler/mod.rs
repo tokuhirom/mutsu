@@ -130,6 +130,53 @@ impl Compiler {
             Expr::HashVar(name) => Some(format!("%{}", name)),
             Expr::CodeVar(name) => Some(format!("&{}", name)),
             Expr::BareWord(name) => Some(name.to_string()),
+            // For FatArrow (named args like `:into(%h)`), encode "key=varname"
+            // so the VM can write back to the variable after a builtin call.
+            Expr::Binary {
+                left,
+                op: crate::token_kind::TokenKind::FatArrow,
+                right,
+            } => {
+                let key = match left.as_ref() {
+                    Expr::Literal(Value::Str(s)) => Some(s.as_str()),
+                    Expr::BareWord(s) => Some(s.as_str()),
+                    _ => None,
+                };
+                let val_name = Self::extract_inner_varname(right);
+                if let (Some(k), Some(v)) = (key, val_name) {
+                    Some(format!("{}={}", k, v))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Extract variable name from an expression, including through DoStmt/SyntheticBlock.
+    fn extract_inner_varname(expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::Var(name) => Some(name.clone()),
+            Expr::ArrayVar(name) => Some(format!("@{}", name)),
+            Expr::HashVar(name) => Some(format!("%{}", name)),
+            Expr::CodeVar(name) => Some(format!("&{}", name)),
+            Expr::DoStmt(stmt) => Self::extract_varname_from_stmt(stmt),
+            _ => None,
+        }
+    }
+
+    /// Extract variable name from a statement, handling VarDecl and SyntheticBlock.
+    fn extract_varname_from_stmt(stmt: &Stmt) -> Option<String> {
+        match stmt {
+            Stmt::VarDecl { name, .. } | Stmt::Assign { name, .. } => Some(name.clone()),
+            Stmt::SyntheticBlock(stmts) => {
+                for s in stmts {
+                    if let Some(name) = Self::extract_varname_from_stmt(s) {
+                        return Some(name);
+                    }
+                }
+                None
+            }
             _ => None,
         }
     }

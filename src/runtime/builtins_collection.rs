@@ -1034,6 +1034,44 @@ impl Interpreter {
         Ok(Value::Nil)
     }
 
+    /// Find a variable name in the current environment whose value is identical
+    /// (by Arc pointer) to the given value. Used for :into writeback.
+    fn find_var_by_identity(&self, value: &Value) -> Option<String> {
+        match value {
+            Value::Hash(target_arc) => {
+                for (name, env_val) in self.env().iter() {
+                    if let Value::Hash(env_arc) = env_val
+                        && std::sync::Arc::ptr_eq(target_arc, env_arc)
+                    {
+                        return Some(name.clone());
+                    }
+                }
+                None
+            }
+            Value::Bag(target_arc) => {
+                for (name, env_val) in self.env().iter() {
+                    if let Value::Bag(env_arc) = env_val
+                        && std::sync::Arc::ptr_eq(target_arc, env_arc)
+                    {
+                        return Some(name.clone());
+                    }
+                }
+                None
+            }
+            Value::Mix(target_arc) => {
+                for (name, env_val) in self.env().iter() {
+                    if let Value::Mix(env_arc) = env_val
+                        && std::sync::Arc::ptr_eq(target_arc, env_arc)
+                    {
+                        return Some(name.clone());
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
     pub(super) fn builtin_classify(
         &mut self,
         name: &str,
@@ -1126,18 +1164,33 @@ impl Interpreter {
             }
         }
 
+        // Extract variable names from arg_sources for :into writeback
+        let arg_sources = self.take_pending_call_arg_sources();
         let mut mapper: Option<Value> = None;
         let mut as_mapper: Option<Value> = None;
         let mut into_target_raw: Option<Value> = None;
         let mut into_target: Option<Value> = None;
+        let mut into_varname: Option<String> = None;
         let mut positional: Vec<Value> = Vec::new();
-        for arg in args {
+        for (i, arg) in args.iter().enumerate() {
             let fetched_arg = self.auto_fetch_proxy(arg)?;
             match &fetched_arg {
                 Value::Pair(key, value) if key == "as" => {
                     as_mapper = Some(self.auto_fetch_proxy(value)?)
                 }
                 Value::Pair(key, value) if key == "into" => {
+                    // Look up the variable name from arg_sources metadata
+                    // The compiler encodes FatArrow args as "key=varname"
+                    if let Some(ref sources) = arg_sources
+                        && let Some(Some(source)) = sources.get(i)
+                        && let Some(varname) = source.strip_prefix("into=")
+                    {
+                        into_varname = Some(varname.to_string());
+                    }
+                    // Fallback: search env for a variable with matching identity
+                    if into_varname.is_none() {
+                        into_varname = self.find_var_by_identity(value);
+                    }
                     into_target_raw = Some(*value.clone());
                     into_target = Some(self.auto_fetch_proxy(value)?);
                 }
@@ -1258,20 +1311,28 @@ impl Interpreter {
             }
         }
 
-        if into_target_raw
-            .as_ref()
-            .is_some_and(|value| matches!(value, Value::Proxy { .. }))
+        // Write back result to the caller's variable if :into was specified
         {
-            let mut updated: Option<Value> = None;
-            if let Some(counts) = bag_counts.clone() {
-                updated = Some(Value::bag(counts));
-            } else if let Some(counts) = mix_counts.clone() {
-                updated = Some(Value::mix(counts));
-            } else if into_target.is_some() {
-                updated = Some(Value::hash(buckets.clone()));
-            }
-            if let Some(new_value) = updated {
-                let _ = self.assign_proxy_lvalue(into_target_raw.unwrap(), new_value)?;
+            let has_proxy = into_target_raw
+                .as_ref()
+                .is_some_and(|value| matches!(value, Value::Proxy { .. }));
+            let has_varname = into_varname.is_some();
+            if has_proxy || has_varname {
+                let mut updated: Option<Value> = None;
+                if let Some(counts) = bag_counts.clone() {
+                    updated = Some(Value::bag(counts));
+                } else if let Some(counts) = mix_counts.clone() {
+                    updated = Some(Value::mix(counts));
+                } else if into_target.is_some() {
+                    updated = Some(Value::hash(buckets.clone()));
+                }
+                if let Some(new_value) = updated {
+                    if has_proxy {
+                        let _ = self.assign_proxy_lvalue(into_target_raw.unwrap(), new_value)?;
+                    } else if let Some(ref vname) = into_varname {
+                        self.env_mut().insert(vname.clone(), new_value);
+                    }
+                }
             }
         }
 
