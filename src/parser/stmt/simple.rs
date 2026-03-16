@@ -435,7 +435,7 @@ pub(in crate::parser) fn set_current_language_version(version: &str) {
     });
 }
 
-pub(in crate::parser) fn current_language_version() -> String {
+pub(crate) fn current_language_version() -> String {
     CURRENT_LANGUAGE_VERSION.with(|v| v.borrow().clone())
 }
 

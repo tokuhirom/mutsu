@@ -1,3 +1,5 @@
+roast/6.c/S02-names/SETTING-6c.t
+roast/6.c/S05-grammar/parse_and_parsefile-6c.t
 roast/6.d/S02-literals/version.t
 roast/6.d/S05-capture/match-object.t
 roast/6.d/S32-num/log.t

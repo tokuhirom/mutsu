@@ -729,9 +729,10 @@ impl Interpreter {
                 // No explicit method found — try auto-accessor for public `is rw` attributes
                 let class_attrs = self.collect_class_attributes(qualifier);
                 let mut found_rw = false;
-                for (attr_name, is_public, _default, is_rw, ..) in &class_attrs {
+                for (attr_name, is_public, _default, is_rw, _is_required, sigil, ..) in &class_attrs
+                {
                     if attr_name == actual_method && *is_public {
-                        if !is_rw {
+                        if !is_rw && *sigil != '@' && *sigil != '%' {
                             return Err(RuntimeError::new(format!(
                                 "X::Assignment::RO: method '{}' is not rw",
                                 actual_method
@@ -818,9 +819,9 @@ impl Interpreter {
         } else if method_args.is_empty() {
             let class_attrs = self.collect_class_attributes(&class_name.resolve());
             let mut found_public_rw = false;
-            for (attr_name, is_public, _default, is_rw, ..) in &class_attrs {
+            for (attr_name, is_public, _default, is_rw, _is_required, sigil, ..) in &class_attrs {
                 if attr_name == method && *is_public {
-                    if !is_rw {
+                    if !is_rw && *sigil != '@' && *sigil != '%' {
                         return Err(RuntimeError::new(format!(
                             "X::Assignment::RO: method '{}' is not rw",
                             method

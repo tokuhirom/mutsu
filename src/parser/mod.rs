@@ -12,6 +12,10 @@ pub(crate) fn is_imported_function(name: &str) -> bool {
 
 pub use stmt::simple::{clear_parser_lib_paths, set_parser_lib_paths, set_parser_program_path};
 
+pub(crate) fn current_language_version() -> String {
+    stmt::simple::current_language_version()
+}
+
 use std::cell::RefCell;
 
 use crate::ast::Stmt;
