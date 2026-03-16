@@ -35,8 +35,12 @@ const CACHE_MAGIC: &[u8; 4] = b"MTSU";
 
 /// The interpreter version stamp embedded in cache files.
 /// Cache is invalidated whenever this changes.
-fn interpreter_version() -> &'static str {
-    env!("CARGO_PKG_VERSION")
+/// Includes both the crate version and a cache format version that should be
+/// bumped whenever the AST enum layout changes (adding/removing/reordering variants).
+fn interpreter_version() -> String {
+    // Bump CACHE_FORMAT_VERSION when Stmt/Expr/Value enum variants change
+    const CACHE_FORMAT_VERSION: u32 = 2;
+    format!("{}+cf{}", env!("CARGO_PKG_VERSION"), CACHE_FORMAT_VERSION)
 }
 
 /// Compute a deterministic hash of a canonical file path for use as cache filename.
@@ -165,7 +169,7 @@ pub(crate) fn save_cached_ast(source_path: &Path, stmts: &[Stmt]) {
     let meta = CacheMetadata {
         mtime_nanos: source_mtime,
         source_hash: source_content_hash(source_path),
-        version: interpreter_version().to_string(),
+        version: interpreter_version(),
     };
 
     let Ok(meta_bytes) = bincode::serialize(&meta) else {

@@ -1169,12 +1169,14 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 let (r, body) = parse_block_body(r)?;
                 return Ok((r, Expr::Try { body, catch: None }));
             }
-            // try STMT — wrap the entire following statement in try
-            let (r, stmt) = statement_pub(r)?;
+            // try EXPR — wrap the following expression in try.
+            // Statement modifiers (for, if, etc.) bind outside try,
+            // so we parse an expression, not a full statement.
+            let (r, expr) = expression(r)?;
             return Ok((
                 r,
                 Expr::Try {
-                    body: vec![stmt],
+                    body: vec![Stmt::Expr(expr)],
                     catch: None,
                 },
             ));
