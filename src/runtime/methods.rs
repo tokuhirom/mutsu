@@ -212,6 +212,42 @@ impl Interpreter {
         if let Value::Scalar(inner) = target {
             return self.call_method_with_values(*inner, method, args);
         }
+        // Unhandled Failure explosion: calling a non-Failure method on an unhandled
+        // Failure should throw the stored exception (Raku behavior).
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &target
+            && class_name.resolve() == "Failure"
+            && !attributes.get("handled").is_some_and(Value::truthy)
+            && !matches!(
+                method,
+                "exception"
+                    | "handled"
+                    | "self"
+                    | "defined"
+                    | "Bool"
+                    | "so"
+                    | "gist"
+                    | "Str"
+                    | "raku"
+                    | "perl"
+                    | "WHICH"
+                    | "backtrace"
+                    | "is-handling"
+                    | "WHAT"
+                    | "^name"
+                    | "isa"
+                    | "does"
+                    | "ACCEPTS"
+                    | "Failure"
+                    | "sink"
+            )
+            && let Some(err) = self.failure_to_runtime_error_if_unhandled(&target)
+        {
+            return Err(err);
+        }
         if Self::should_autothread_method(method)
             && let Value::Junction { kind, values } = &target
         {
@@ -1654,7 +1690,7 @@ impl Interpreter {
                     attrs.insert("message".to_string(), Value::str("Failed".to_string()));
                     Value::make_instance(Symbol::intern("Exception"), attrs)
                 };
-                let exception = args
+                let raw_exception = args
                     .first()
                     .cloned()
                     .filter(|v| !matches!(v, Value::Nil))
@@ -1665,6 +1701,35 @@ impl Interpreter {
                             .filter(|v| !matches!(v, Value::Nil))
                     })
                     .unwrap_or_else(default_exception);
+                // Wrap non-Exception values in X::AdHoc (Raku behavior)
+                let exception = if let Value::Instance { class_name, .. } = &raw_exception {
+                    let cn = class_name.resolve();
+                    if cn == "Exception"
+                        || cn.starts_with("X::")
+                        || cn.starts_with("CX::")
+                        || self.mro_readonly(&cn).iter().any(|p| {
+                            p == "Exception" || p.starts_with("X::") || p.starts_with("CX::")
+                        })
+                    {
+                        raw_exception
+                    } else {
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("payload".to_string(), raw_exception.clone());
+                        attrs.insert(
+                            "message".to_string(),
+                            Value::str(raw_exception.to_string_value()),
+                        );
+                        Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
+                    }
+                } else {
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("payload".to_string(), raw_exception.clone());
+                    attrs.insert(
+                        "message".to_string(),
+                        Value::str(raw_exception.to_string_value()),
+                    );
+                    Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
+                };
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("exception".to_string(), exception);
                 attrs.insert("handled".to_string(), Value::Bool(false));

@@ -514,6 +514,20 @@ impl VM {
                     if !matches!(val, Value::Nil)
                         && !self.interpreter.type_matches_value(&constraint, &val)
                     {
+                        // When assigning an unhandled Failure to a typed variable
+                        // that can't hold it, explode the Failure first (Raku behavior)
+                        if let Value::Instance {
+                            class_name,
+                            attributes,
+                            ..
+                        } = &val
+                            && class_name.resolve() == "Failure"
+                            && !attributes.get("handled").is_some_and(Value::truthy)
+                            && let Some(err) =
+                                self.interpreter.failure_to_runtime_error_if_unhandled(&val)
+                        {
+                            return Err(err);
+                        }
                         return Err(RuntimeError::new(
                             runtime::utils::type_check_assignment_error(&name, &constraint, &val),
                         ));
@@ -1577,6 +1591,23 @@ impl VM {
             }
             OpCode::Fail => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
+                // When fail() receives a Failure:D, extract the inner exception
+                // and re-arm it (Raku behavior: fail(Failure:D) re-arms)
+                let val = if let Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } = &val
+                    && class_name.resolve() == "Failure"
+                {
+                    if let Some(exc) = attributes.get("exception") {
+                        exc.clone()
+                    } else {
+                        val
+                    }
+                } else {
+                    val
+                };
                 return Err(self.runtime_error_from_exception_value(val, "Failed", true));
             }
             OpCode::Return => {

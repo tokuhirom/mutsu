@@ -1578,7 +1578,7 @@ pub(super) const KNOWN_CALLS: &[&str] = &[
 ];
 
 /// Check if a name is a known statement-level function call.
-pub(super) fn is_known_call(name: &str) -> bool {
+pub(in crate::parser) fn is_known_call(name: &str) -> bool {
     KNOWN_CALLS.contains(&name) || is_imported_function(name)
 }
 

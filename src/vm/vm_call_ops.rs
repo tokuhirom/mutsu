@@ -650,6 +650,44 @@ impl VM {
             self.env_dirty = true;
             return Ok(());
         }
+        // Unhandled Failure explosion: calling a non-Failure method on an unhandled
+        // Failure should throw the stored exception (Raku behavior).
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &target
+            && class_name.resolve() == "Failure"
+            && !attributes.get("handled").is_some_and(Value::truthy)
+            && !matches!(
+                method.as_str(),
+                "exception"
+                    | "handled"
+                    | "self"
+                    | "defined"
+                    | "Bool"
+                    | "so"
+                    | "gist"
+                    | "Str"
+                    | "raku"
+                    | "perl"
+                    | "WHICH"
+                    | "backtrace"
+                    | "is-handling"
+                    | "WHAT"
+                    | "^name"
+                    | "isa"
+                    | "does"
+                    | "ACCEPTS"
+                    | "Failure"
+                    | "sink"
+            )
+            && let Some(err) = self
+                .interpreter
+                .failure_to_runtime_error_if_unhandled(&target)
+        {
+            return Err(err);
+        }
         let target_for_mod = target.clone();
         let args_for_mod = args.clone();
         let call_result = if !skip_native {

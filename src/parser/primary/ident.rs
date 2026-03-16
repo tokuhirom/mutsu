@@ -1942,7 +1942,8 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || starts_with_term_keyword(r)
             || hyphen_forward_call
             || is_user_sub
-            || is_imported_sub)
+            || is_imported_sub
+            || crate::parser::stmt::simple::is_known_call(&name))
             && let Ok((r2, arg)) = parse_listop_arg(r)
         {
             let (r2, invocant_colon_call) =
@@ -1957,6 +1958,14 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
             if is_user_sub {
                 return parse_expr_listop_args(r, call_name);
+            }
+            // Known builtin calls like `defined`, `elems` take a single arg
+            // in expression context (no comma-separated multi-arg collection).
+            if !is_imported_sub
+                && !hyphen_forward_call
+                && crate::parser::stmt::simple::is_known_call(&name)
+            {
+                return Ok((r2, make_call_expr(call_name, input, vec![arg])));
             }
             let mut args = vec![arg];
             let mut rest_after = r2;
