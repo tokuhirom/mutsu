@@ -1177,6 +1177,12 @@ impl VM {
             {
                 return Some(cf);
             }
+            let key_fp = format!("{name}/{}#{:x}", arity, expected_fingerprint);
+            if let Some(cf) = compiled_fns.get(&key_fp)
+                && matches_resolved(cf)
+            {
+                return Some(cf);
+            }
             let key_arity = format!("{name}/{arity}");
             if let Some(cf) = compiled_fns.get(&key_arity)
                 && matches_resolved(cf)
@@ -1195,6 +1201,13 @@ impl VM {
         {
             return Some(cf);
         }
+        // Try fingerprint-keyed lookup (for same-named subs in different scopes)
+        let key_fp = format!("{}::{}/{}#{:x}", pkg, name, arity, expected_fingerprint);
+        if let Some(cf) = compiled_fns.get(&key_fp)
+            && matches_resolved(cf)
+        {
+            return Some(cf);
+        }
         let key_arity = format!("{}::{}/{}", pkg, name, arity);
         if let Some(cf) = compiled_fns.get(&key_arity)
             && matches_resolved(cf)
@@ -1208,6 +1221,12 @@ impl VM {
             return Some(cf);
         }
         if pkg != "GLOBAL" {
+            let key_fp_global = format!("GLOBAL::{}/{}#{:x}", name, arity, expected_fingerprint);
+            if let Some(cf) = compiled_fns.get(&key_fp_global)
+                && matches_resolved(cf)
+            {
+                return Some(cf);
+            }
             let key_global = format!("GLOBAL::{}", name);
             if let Some(cf) = compiled_fns.get(&key_global)
                 && matches_resolved(cf)
