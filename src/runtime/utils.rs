@@ -1831,7 +1831,7 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
         }
         Value::Enum { value, .. } => Some(*value as f64),
         Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
-        Value::Str(s) => s.parse::<f64>().ok(),
+        Value::Str(s) => s.trim().parse::<f64>().ok(),
         Value::Nil => Some(0.0),
         _ if val.as_list_items().is_some() => Some(val.as_list_items().unwrap().len() as f64),
         Value::LazyList(ll) => {

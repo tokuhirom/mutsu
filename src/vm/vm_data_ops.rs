@@ -1,4 +1,22 @@
 use super::*;
+use crate::value::RuntimeError;
+
+/// Check if a value is a Rat/FatRat/BigRat with zero denominator and throw
+/// X::Numeric::DivideByZero if so (Raku defers the error until the value is used).
+fn check_rat_divide_by_zero(v: &Value) -> Result<(), RuntimeError> {
+    match v {
+        Value::Rat(n, d) if *d == 0 => Err(RuntimeError::numeric_divide_by_zero_with(Some(
+            Value::Int(*n),
+        ))),
+        Value::FatRat(n, d) if *d == 0 => Err(RuntimeError::numeric_divide_by_zero_with(Some(
+            Value::Int(*n),
+        ))),
+        Value::BigRat(n, d) if d.is_zero() => Err(RuntimeError::numeric_divide_by_zero_with(Some(
+            Value::from_bigint(n.clone()),
+        ))),
+        _ => Ok(()),
+    }
+}
 
 impl VM {
     pub(super) fn exec_make_array_op(&mut self, n: u32, is_real_array: bool) {
@@ -84,6 +102,7 @@ impl VM {
         let mut parts = Vec::new();
         for v in &values {
             let v = self.interpreter.auto_fetch_proxy(v)?;
+            check_rat_divide_by_zero(&v)?;
             parts.push(self.interpreter.render_gist_value(&v));
         }
         let line = parts.join("");
@@ -117,6 +136,7 @@ impl VM {
         let mut content = String::new();
         for v in &values {
             let v = self.interpreter.auto_fetch_proxy(v)?;
+            check_rat_divide_by_zero(&v)?;
             content.push_str(&self.interpreter.render_str_value(&v));
         }
         self.interpreter
@@ -130,6 +150,7 @@ impl VM {
         let values: Vec<Value> = self.stack.drain(start..).collect();
         let mut content = String::new();
         for v in &values {
+            check_rat_divide_by_zero(v)?;
             content.push_str(&v.to_string_value());
         }
         self.interpreter

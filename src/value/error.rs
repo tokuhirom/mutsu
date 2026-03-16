@@ -235,11 +235,18 @@ impl RuntimeError {
     }
 
     pub(crate) fn numeric_divide_by_zero() -> Self {
+        Self::numeric_divide_by_zero_with(None)
+    }
+
+    pub(crate) fn numeric_divide_by_zero_with(numerator: Option<Value>) -> Self {
         let mut attrs = HashMap::new();
         attrs.insert(
             "message".to_string(),
             Value::str_from("Attempt to divide by zero"),
         );
+        if let Some(n) = numerator {
+            attrs.insert("numerator".to_string(), n);
+        }
         let ex = Value::make_instance(Symbol::intern("X::Numeric::DivideByZero"), attrs);
         let mut err = Self::new("X::Numeric::DivideByZero");
         err.exception = Some(Box::new(ex));

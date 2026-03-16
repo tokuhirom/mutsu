@@ -2402,14 +2402,22 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             Value::Nil => Some(Ok(Value::str_from("(Any)"))),
             Value::FatRat(n, d) => {
-                if method == "gist" {
+                if *d == 0 && (method == "gist" || method == "Str") {
+                    Some(Err(RuntimeError::numeric_divide_by_zero_with(Some(
+                        Value::Int(*n),
+                    ))))
+                } else if method == "gist" {
                     Some(Ok(Value::str(target.to_string_value())))
                 } else {
                     Some(Ok(Value::str(format!("FatRat.new({}, {})", n, d))))
                 }
             }
-            Value::BigRat(_, _) => {
-                if method == "gist" {
+            Value::BigRat(n, d) => {
+                if d.is_zero() && (method == "gist" || method == "Str") {
+                    Some(Err(RuntimeError::numeric_divide_by_zero_with(Some(
+                        Value::from_bigint(n.clone()),
+                    ))))
+                } else if method == "gist" {
                     Some(Ok(Value::str(target.to_string_value())))
                 } else {
                     Some(Ok(Value::str(raku_value(target))))
@@ -2419,12 +2427,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 if *d == 0 {
                     if method == "raku" || method == "perl" {
                         Some(Ok(Value::str(format!("<{}/0>", n))))
-                    } else if *n == 0 {
-                        Some(Ok(Value::str_from("NaN")))
-                    } else if *n > 0 {
-                        Some(Ok(Value::str_from("Inf")))
                     } else {
-                        Some(Ok(Value::str_from("-Inf")))
+                        Some(Err(RuntimeError::numeric_divide_by_zero_with(Some(
+                            Value::Int(*n),
+                        ))))
                     }
                 } else if *n % *d == 0 {
                     if method == "raku" || method == "perl" {
