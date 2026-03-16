@@ -814,6 +814,35 @@ impl VM {
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
+        // When RHS is Whatever, autoprime: return a WhateverCode that takes
+        // one argument and smartmatches LHS against it.
+        // In Raku, `$x ~~ *` produces `-> $a { $x ~~ $a }`.
+        if matches!(&right, Value::Whatever) {
+            use crate::ast::{Expr, Stmt};
+            use crate::env::Env;
+            let mut env = Env::new();
+            env.insert(
+                "__mutsu_callable_type".to_string(),
+                Value::str_from("WhateverCode"),
+            );
+            // Capture the LHS value in the closure environment
+            env.insert("__wc_sm_lhs".to_string(), left);
+            let param = "__wc_0".to_string();
+            let body = vec![Stmt::Expr(Expr::Binary {
+                left: Box::new(Expr::Var("__wc_sm_lhs".to_string())),
+                op: crate::token_kind::TokenKind::SmartMatch,
+                right: Box::new(Expr::Var(param.clone())),
+            })];
+            return Ok(Value::make_sub(
+                Symbol::intern("GLOBAL"),
+                Symbol::intern("<whatevercode-smartmatch>"),
+                vec![param],
+                Vec::new(),
+                body,
+                false,
+                env,
+            ));
+        }
         let is_regex = matches!(
             &right,
             Value::Regex(_)
