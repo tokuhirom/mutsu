@@ -792,11 +792,11 @@ impl VM {
 
             // -- Identity/value equality --
             OpCode::StrictEq => {
-                self.exec_strict_eq_op();
+                self.exec_strict_eq_op()?;
                 *ip += 1;
             }
             OpCode::StrictNe => {
-                self.exec_strict_ne_op();
+                self.exec_strict_ne_op()?;
                 *ip += 1;
             }
             OpCode::Eqv => {

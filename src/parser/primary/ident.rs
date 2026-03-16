@@ -467,6 +467,14 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if input.starts_with("rand")
         && !input[4..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
     {
+        // rand() and rand(N) are Perl 5 syntax — throw X::Obsolete
+        let after_rand = &input[4..];
+        let after_ws = after_rand.trim_start();
+        if after_ws.starts_with('(') {
+            return Err(PError::fatal(
+                "X::Obsolete: Unsupported use of rand().  In Raku please use: rand.".to_string(),
+            ));
+        }
         return Ok((
             &input[4..],
             Expr::Call {
