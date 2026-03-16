@@ -74,6 +74,17 @@ impl VM {
                     args.push(Value::Pair(k.clone(), Box::new(v.clone())));
                 }
             }
+            // When a Pair or ValuePair is slipped via |, it becomes a named
+            // argument (regular Pair).  ValuePair is the "positional pair"
+            // wrapper produced by (:key(val)), but |$pair always flattens it
+            // back to a named argument in Raku.
+            Value::ValuePair(key, val) => {
+                if let Value::Str(name) = key.as_ref() {
+                    args.push(Value::Pair(name.to_string(), val));
+                } else {
+                    args.push(Value::ValuePair(key, val));
+                }
+            }
             Value::Range(..)
             | Value::RangeExcl(..)
             | Value::RangeExclStart(..)
