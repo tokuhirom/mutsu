@@ -3019,6 +3019,7 @@ impl Interpreter {
                 | "truncate"
                 | "atan2"
                 | "substr"
+                | "words"
         )
     }
 

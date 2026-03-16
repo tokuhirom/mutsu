@@ -185,7 +185,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 .split_whitespace()
                 .map(|p| Value::str(p.to_string()))
                 .collect();
-            Some(Ok(Value::array(parts)))
+            Some(Ok(Value::Seq(std::sync::Arc::new(parts))))
         }
         "chars" => Some(Ok(Value::Int(
             arg.to_string_value().graphemes(true).count() as i64,
@@ -943,6 +943,29 @@ fn native_function_2arg(
                 return None;
             }
             Some(minmax_two(arg1, arg2, true))
+        }
+        "words" => {
+            let s = arg1.to_string_value();
+            let limit = match arg2 {
+                Value::Int(i) => Some((*i).max(0) as usize),
+                Value::BigInt(bi) => {
+                    use num_traits::ToPrimitive;
+                    Some(bi.to_usize().unwrap_or(usize::MAX))
+                }
+                Value::Whatever => None,
+                Value::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
+                Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+                Value::Rat(n, d) if *d == 0 && *n > 0 => None,
+                _ => return None,
+            };
+            let mut words: Vec<Value> = s
+                .split_whitespace()
+                .map(|w| Value::str(w.to_string()))
+                .collect();
+            if let Some(n) = limit {
+                words.truncate(n);
+            }
+            Some(Ok(Value::Seq(std::sync::Arc::new(words))))
         }
         _ => None,
     }

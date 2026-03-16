@@ -798,6 +798,13 @@ impl Interpreter {
             }
             return Ok(Value::array(words));
         }
+        // Non-handle argument: delegate to string-splitting words (native function)
+        if !args.is_empty()
+            && let Some(result) =
+                crate::builtins::native_function(crate::symbol::Symbol::intern("words"), args)
+        {
+            return result;
+        }
         Ok(Value::array(Vec::new()))
     }
 }
