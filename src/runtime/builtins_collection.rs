@@ -761,41 +761,66 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_sort(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        // sort(comparator, list) or sort(list)
-        if args.len() >= 2 {
-            let first = &args[0];
-            // Check if first arg is a callable (comparator function)
-            if matches!(first, Value::Sub(_) | Value::Routine { .. }) {
-                let comparator = first.clone();
-                let mut items: Vec<Value> = Vec::new();
-                for arg in args.iter().skip(1) {
-                    if crate::runtime::utils::is_shaped_array(arg) {
-                        items.extend(crate::runtime::utils::shaped_array_leaves(arg));
-                    } else {
-                        match arg {
-                            Value::Array(elems, ..) => items.extend(elems.iter().cloned()),
-                            Value::Seq(elems) => items.extend(elems.iter().cloned()),
-                            other => items.push(other.clone()),
-                        }
-                    }
+        // Extract named args (:k, :by) and positional args
+        let mut return_k = false;
+        let mut by_callable: Option<Value> = None;
+        let mut callable: Option<Value> = None;
+        let mut positional: Vec<Value> = Vec::new();
+
+        for arg in args {
+            match arg {
+                Value::Pair(key, val) if key == "k" => {
+                    return_k = val.truthy();
                 }
-                // Delegate to dispatch_sort which handles all callable types
-                return self.dispatch_sort(Value::array(items), &[comparator]);
+                Value::Pair(key, val) if key == "by" => {
+                    by_callable = Some(val.as_ref().clone());
+                }
+                _ => positional.push(arg.clone()),
             }
         }
-        let val = args.first().cloned();
-        Ok(match val {
-            Some(ref v) if crate::runtime::utils::is_shaped_array(v) => {
-                let mut leaves = crate::runtime::utils::shaped_array_leaves(v);
-                leaves.sort_by_key(|a| a.to_string_value());
-                Value::array(leaves)
+
+        // sort(comparator, list, ...) or sort(list, ...) or sort(items...)
+        if positional.len() >= 2 {
+            let first = &positional[0];
+            if matches!(first, Value::Sub(_) | Value::Routine { .. }) {
+                callable = Some(first.clone());
+                positional.remove(0);
             }
-            Some(Value::Array(mut items, ..)) => {
-                Arc::make_mut(&mut items).sort_by_key(|a| a.to_string_value());
-                Value::Array(items, ArrayKind::List)
+        }
+
+        // Prefer :by over positional callable
+        if by_callable.is_some() {
+            callable = by_callable;
+        }
+
+        // Flatten positional args into items
+        let mut items: Vec<Value> = Vec::new();
+        for arg in &positional {
+            if crate::runtime::utils::is_shaped_array(arg) {
+                items.extend(crate::runtime::utils::shaped_array_leaves(arg));
+            } else {
+                match arg {
+                    Value::Array(elems, ..) => items.extend(elems.iter().cloned()),
+                    Value::Seq(elems) => items.extend(elems.iter().cloned()),
+                    other => items.push(other.clone()),
+                }
             }
-            _ => Value::Nil,
-        })
+        }
+
+        // Build sort args for dispatch_sort
+        let mut sort_args: Vec<Value> = Vec::new();
+        if let Some(c) = callable {
+            sort_args.push(c);
+        }
+        if return_k {
+            sort_args.push(Value::Pair("k".to_string(), Box::new(Value::Bool(true))));
+        }
+
+        if items.is_empty() && positional.is_empty() {
+            return Ok(Value::array(Vec::new()));
+        }
+
+        self.dispatch_sort(Value::array(items), &sort_args)
     }
 
     pub(super) fn builtin_unique(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

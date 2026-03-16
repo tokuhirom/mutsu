@@ -1888,7 +1888,13 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
         (Value::BigInt(a), Value::Int(b)) => a.as_ref().cmp(&num_bigint::BigInt::from(*b)) as i32,
         (Value::Int(a), Value::BigInt(b)) => num_bigint::BigInt::from(*a).cmp(b.as_ref()) as i32,
         (Value::Num(a), Value::Num(b)) => {
-            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal) as i32
+            // NaN sorts after everything (including Inf)
+            match (a.is_nan(), b.is_nan()) {
+                (true, true) => 0,
+                (true, false) => 1,
+                (false, true) => -1,
+                _ => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal) as i32,
+            }
         }
         (Value::BigInt(a), Value::Num(b)) => {
             a.as_ref()
