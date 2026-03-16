@@ -104,6 +104,7 @@ roast/S03-operators/andthen.t
 roast/S03-operators/assign-is-not-binding.t
 roast/S03-operators/autovivification.t
 roast/S03-operators/basic-types.t
+roast/S03-operators/bit.t
 roast/S03-operators/boolean-bitwise.t
 roast/S03-operators/brainos.t
 roast/S03-operators/chained-declarators.t
@@ -654,3 +655,4 @@ roast/S32-num/pi.t
 roast/S32-num/polar.t
 roast/S32-num/power.t
 roast/S32-num/real-bridge.t
+roast/S32-str/rindex.t

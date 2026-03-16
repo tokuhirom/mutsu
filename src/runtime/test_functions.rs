@@ -1026,9 +1026,29 @@ impl Interpreter {
                     }
                     nested.env.insert(k.clone(), v.clone());
                 }
-                nested.run(code).map(|_| Value::Nil)
+                let run_result = nested.run(code).map(|_| Value::Nil);
+                // If execution succeeded, check if the last evaluated value was
+                // a Failure (which would throw in sink context in Raku).
+                match run_result {
+                    Ok(_) => {
+                        if let Some(last_val) = nested.last_value.take() {
+                            Self::sink_failure_to_error(last_val)
+                        } else {
+                            Ok(Value::Nil)
+                        }
+                    }
+                    err => err,
+                }
             }
-            _ => Ok(Value::Nil),
+            // When throws-like receives a non-code value (e.g., a Failure from
+            // an eagerly-evaluated expression like `rindex(...)`), sink it so that
+            // Failures throw their wrapped exception.
+            other => Self::sink_failure_to_error(other.clone()),
+        };
+        // Also handle Failures returned as Ok values from block/string code evaluation.
+        let result = match result {
+            Ok(val) => Self::sink_failure_to_error(val),
+            err => err,
         };
         // Normalize type-object representation: "(Exception)" -> "Exception"
         let expected_normalized = expected

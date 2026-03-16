@@ -296,4 +296,35 @@ impl Interpreter {
         }
         None
     }
+
+    /// Convert a Failure value into an Err (simulating sink-context behavior).
+    /// In Raku, a Failure in sink context throws its wrapped exception.
+    /// This is used by throws-like to detect Failures returned by code blocks.
+    pub(super) fn sink_failure_to_error(val: Value) -> Result<Value, RuntimeError> {
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &val
+            && class_name == "Failure"
+            && let Some(exception) = attributes.get("exception")
+        {
+            let message = if let Value::Instance {
+                attributes: ex_attrs,
+                ..
+            } = exception
+            {
+                ex_attrs
+                    .get("message")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default()
+            } else {
+                exception.to_string_value()
+            };
+            let mut err = RuntimeError::new(message);
+            err.exception = Some(Box::new(exception.clone()));
+            return Err(err);
+        }
+        Ok(val)
+    }
 }
