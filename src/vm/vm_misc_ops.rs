@@ -613,7 +613,25 @@ impl VM {
             .env()
             .get(name)
             .cloned()
-            .unwrap_or(Value::Nil);
+            .unwrap_or_else(|| {
+                // $<foo> is sugar for $/{'foo'}: fall back to looking up $/ and indexing
+                if let Some(key) = name.strip_prefix('<').and_then(|s| s.strip_suffix('>'))
+                    && let Some(match_val) = self.interpreter.env().get("$/").cloned()
+                {
+                    return match &match_val {
+                        Value::Hash(map) => map.get(key).cloned().unwrap_or(Value::Nil),
+                        _ => self
+                            .interpreter
+                            .call_method_with_values(
+                                match_val,
+                                "AT-KEY",
+                                vec![Value::str(key.to_string())],
+                            )
+                            .unwrap_or(Value::Nil),
+                    };
+                }
+                Value::Nil
+            });
         self.stack.push(val);
     }
 

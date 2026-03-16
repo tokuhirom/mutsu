@@ -1285,6 +1285,26 @@ pub(super) fn try_interpolate_var<'a>(
             parts.push(expr);
             return Some(var_rest);
         }
+        // $<key> is sugar for $/<key> (named capture shorthand)
+        if next == '<'
+            && let Some(after_lt) = rest.strip_prefix("$<")
+            && let Some(end) = after_lt.find('>')
+        {
+            if !current.is_empty() {
+                parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+            }
+            let key = &after_lt[..end];
+            let var_expr = Expr::Var("/".to_string());
+            let index = Expr::Literal(Value::str(key.to_string()));
+            let expr = Expr::Index {
+                target: Box::new(var_expr),
+                index: Box::new(index),
+            };
+            let var_rest = &after_lt[end + 1..];
+            let (expr, var_rest) = try_parse_interp_method_call(var_rest, expr);
+            parts.push(expr);
+            return Some(var_rest);
+        }
         // Numeric capture variables: $0, $1, $2, ...
         if next.is_ascii_digit() {
             if !current.is_empty() {
