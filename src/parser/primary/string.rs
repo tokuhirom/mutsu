@@ -382,12 +382,12 @@ fn parse_to_heredoc(input: &str, interpolate: bool) -> PResult<'_, Expr> {
     while search_pos <= heredoc_start.len() {
         // Raku allows indentation before heredoc terminators.
         let line = &heredoc_start[search_pos..];
-        let leading_ws = line
+        let leading_ws_bytes: usize = line
             .chars()
             .take_while(|c| matches!(c, ' ' | '\t'))
             .map(char::len_utf8)
-            .sum::<usize>();
-        let term_pos = search_pos + leading_ws;
+            .sum();
+        let term_pos = search_pos + leading_ws_bytes;
         if heredoc_start[term_pos..].starts_with(delimiter) {
             let after_delim = &heredoc_start[term_pos + delimiter.len()..];
             if after_delim.is_empty()
@@ -397,7 +397,7 @@ fn parse_to_heredoc(input: &str, interpolate: bool) -> PResult<'_, Expr> {
             {
                 content_end = Some(search_pos);
                 terminator_end = Some(term_pos + delimiter.len());
-                terminator_indent = leading_ws;
+                terminator_indent = ws_column_width(line);
                 break;
             }
         }
@@ -412,29 +412,7 @@ fn parse_to_heredoc(input: &str, interpolate: bool) -> PResult<'_, Expr> {
         let content = if terminator_indent == 0 {
             content.to_string()
         } else {
-            // Strip terminator indentation from each heredoc content line.
-            let mut dedented = String::new();
-            for segment in content.split_inclusive('\n') {
-                let mut bytes_to_strip = terminator_indent;
-                let mut strip_pos = 0usize;
-                for ch in segment.chars() {
-                    if bytes_to_strip == 0 {
-                        break;
-                    }
-                    if matches!(ch, ' ' | '\t') {
-                        let len = ch.len_utf8();
-                        if len > bytes_to_strip {
-                            break;
-                        }
-                        bytes_to_strip -= len;
-                        strip_pos += len;
-                    } else {
-                        break;
-                    }
-                }
-                dedented.push_str(&segment[strip_pos..]);
-            }
-            dedented
+            dedent_heredoc(content, terminator_indent)
         };
         let after_terminator = &heredoc_start[terminator_end.expect("terminator end")..];
         // Skip optional newline after terminator
@@ -448,7 +426,9 @@ fn parse_to_heredoc(input: &str, interpolate: bool) -> PResult<'_, Expr> {
         } else if content.contains("\\qq") {
             parse_single_quote_qq(&content)
         } else {
-            Expr::Literal(Value::str(content))
+            // q:heredoc processes \\ → \ (same as single-quoted strings)
+            let processed = process_q_escapes(&content, '\0');
+            Expr::Literal(Value::str(processed))
         };
         // Return rest_of_line + after_terminator as remaining input.
         if rest_of_line.trim().is_empty() {
@@ -479,6 +459,19 @@ fn interpolate_heredoc_content(content: &str) -> Expr {
             let escaped = rest.as_bytes()[1] as char;
             current.push(escaped);
             rest = &rest[2..];
+            continue;
+        }
+        // Handle {expr} closure interpolation in qq:to heredocs
+        if rest.starts_with('{')
+            && let Some((after, inner)) = parse_braced_interpolation(rest)
+            && let Ok((remaining, expr)) = crate::parser::expr::expression(inner.trim())
+            && remaining.trim().is_empty()
+        {
+            if !current.is_empty() {
+                parts.push(Expr::Literal(Value::str(std::mem::take(&mut current))));
+            }
+            parts.push(expr);
+            rest = after;
             continue;
         }
         if let Some(r) = try_interpolate_var(rest, &mut parts, &mut current) {
@@ -662,12 +655,12 @@ fn parse_to_heredoc_with_flags<'a>(
     let mut search_pos = 0;
     while search_pos <= heredoc_start.len() {
         let line = &heredoc_start[search_pos..];
-        let leading_ws = line
+        let leading_ws_bytes: usize = line
             .chars()
             .take_while(|c| matches!(c, ' ' | '\t'))
             .map(char::len_utf8)
-            .sum::<usize>();
-        let term_pos = search_pos + leading_ws;
+            .sum();
+        let term_pos = search_pos + leading_ws_bytes;
         if heredoc_start[term_pos..].starts_with(delimiter) {
             let after_delim = &heredoc_start[term_pos + delimiter.len()..];
             if after_delim.is_empty()
@@ -677,7 +670,7 @@ fn parse_to_heredoc_with_flags<'a>(
             {
                 content_end = Some(search_pos);
                 terminator_end = Some(term_pos + delimiter.len());
-                terminator_indent = leading_ws;
+                terminator_indent = ws_column_width(line);
                 break;
             }
         }
@@ -708,7 +701,9 @@ fn parse_to_heredoc_with_flags<'a>(
         } else if content.contains("\\qq") {
             parse_single_quote_qq(&content)
         } else {
-            Expr::Literal(Value::str(content))
+            // q:heredoc processes \\ → \ (same as single-quoted strings)
+            let processed = process_q_escapes(&content, '\0');
+            Expr::Literal(Value::str(processed))
         };
 
         // Apply word splitting if :w
@@ -742,25 +737,64 @@ fn parse_to_heredoc_with_flags<'a>(
     Err(PError::expected("heredoc terminator"))
 }
 
-/// Dedent heredoc content by removing leading whitespace matching the terminator's indentation.
-fn dedent_heredoc(content: &str, terminator_indent: usize) -> String {
+/// Compute the visual column width of leading whitespace, treating tabs as
+/// stops at every 8 columns.
+fn ws_column_width(s: &str) -> usize {
+    let mut col = 0usize;
+    for ch in s.chars() {
+        match ch {
+            ' ' => col += 1,
+            '\t' => col = (col / 8 + 1) * 8,
+            _ => break,
+        }
+    }
+    col
+}
+
+/// Dedent heredoc content by removing leading whitespace matching the terminator's
+/// visual column width. Tabs are treated as stops at every 8 columns so that
+/// mixed tab/space indentation is handled correctly.
+fn dedent_heredoc(content: &str, terminator_indent_bytes: usize) -> String {
+    // First, compute the terminator indent as a column width.
+    // We receive the raw byte length of the terminator's leading whitespace,
+    // so reconstruct the whitespace string to measure its column width.
+    // However, the caller only passes byte length, so we need the actual
+    // whitespace chars. Instead, accept the byte-based indent and re-derive
+    // the column width from the terminator line.
+    // Since we can't access the terminator line here, we use an alternative:
+    // compute column width from the content's context.
+    //
+    // Actually, the cleanest approach: take column-based indent directly.
+    // For now, we'll use the byte-based indent for the simple (spaces-only
+    // or tabs-only) case and fall through to column-based for mixed.
+    dedent_heredoc_by_columns(content, terminator_indent_bytes)
+}
+
+fn dedent_heredoc_by_columns(content: &str, target_cols: usize) -> String {
     let mut dedented = String::new();
     for segment in content.split_inclusive('\n') {
-        let mut bytes_to_strip = terminator_indent;
+        let mut col = 0usize;
         let mut strip_pos = 0usize;
         for ch in segment.chars() {
-            if bytes_to_strip == 0 {
+            if col >= target_cols {
                 break;
             }
-            if matches!(ch, ' ' | '\t') {
-                let len = ch.len_utf8();
-                if len > bytes_to_strip {
-                    break;
+            match ch {
+                ' ' => {
+                    col += 1;
+                    strip_pos += 1;
                 }
-                bytes_to_strip -= len;
-                strip_pos += len;
-            } else {
-                break;
+                '\t' => {
+                    let next_col = (col / 8 + 1) * 8;
+                    if next_col > target_cols {
+                        // Tab overshoots the target — stop here without
+                        // consuming it (the tab will remain in the output).
+                        break;
+                    }
+                    col = next_col;
+                    strip_pos += 1;
+                }
+                _ => break,
             }
         }
         dedented.push_str(&segment[strip_pos..]);
