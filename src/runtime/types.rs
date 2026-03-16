@@ -2814,6 +2814,54 @@ impl Interpreter {
                         err.exception = Some(Box::new(exception));
                         return Err(err);
                     }
+                    // Implicit Positional constraint: untyped @-sigiled parameters
+                    // require the argument to be Positional (Array, List, etc.).
+                    if pd.type_constraint.is_none()
+                        && pd.name.starts_with('@')
+                        && !pd.slurpy
+                        && !self.type_matches_value("Positional", &value)
+                    {
+                        let type_error_kind = "X::TypeCheck::Binding::Parameter";
+                        let mut err = RuntimeError::new(format!(
+                            "{}: Type check failed in binding to parameter '{}'; expected Positional but got {} ({})",
+                            type_error_kind,
+                            pd.name,
+                            super::value_type_name(&value),
+                            super::utils::gist_value(&value)
+                        ));
+                        let mut ex_attrs = std::collections::HashMap::new();
+                        ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                        let exception = Value::make_instance(
+                            Symbol::intern("X::TypeCheck::Binding::Parameter"),
+                            ex_attrs,
+                        );
+                        err.exception = Some(Box::new(exception));
+                        return Err(err);
+                    }
+                    // Implicit Associative constraint: untyped %-sigiled parameters
+                    // require the argument to be Associative (Hash, Map, etc.).
+                    if pd.type_constraint.is_none()
+                        && pd.name.starts_with('%')
+                        && !pd.slurpy
+                        && !self.type_matches_value("Associative", &value)
+                    {
+                        let type_error_kind = "X::TypeCheck::Binding::Parameter";
+                        let mut err = RuntimeError::new(format!(
+                            "{}: Type check failed in binding to parameter '{}'; expected Associative but got {} ({})",
+                            type_error_kind,
+                            pd.name,
+                            super::value_type_name(&value),
+                            super::utils::gist_value(&value)
+                        ));
+                        let mut ex_attrs = std::collections::HashMap::new();
+                        ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                        let exception = Value::make_instance(
+                            Symbol::intern("X::TypeCheck::Binding::Parameter"),
+                            ex_attrs,
+                        );
+                        err.exception = Some(Box::new(exception));
+                        return Err(err);
+                    }
                     if let Some((sig_params, sig_ret)) = &pd.code_signature
                         && !code_signature_matches_value(self, sig_params, sig_ret, &value)
                     {
