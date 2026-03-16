@@ -268,8 +268,7 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
         }
         (Value::WeakSub(a), Value::WeakSub(b)) => a.ptr_eq(b),
         (Value::Mixin(a_inner, a_mix), Value::Mixin(b_inner, b_mix)) => {
-            // Value identity: same underlying Arc pointers
-            std::sync::Arc::ptr_eq(a_inner, b_inner) && std::sync::Arc::ptr_eq(a_mix, b_mix)
+            a_inner.eqv(b_inner) && a_mix == b_mix
         }
         (Value::Mixin(_, _), _) | (_, Value::Mixin(_, _)) => false,
         (
