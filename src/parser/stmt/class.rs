@@ -582,7 +582,15 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
     loop {
         if let Some(r2) = keyword("is", r) {
             let (r2, _) = ws1(r2)?;
-            let (r2, parent) = qualified_ident(r2)?;
+            // Handle `is ::Foo` (indirect name lookup) — treat the
+            // `::Ident` as a parent name so that validation later
+            // produces X::Inheritance::UnknownParent.
+            let (r2, parent) = if let Some(stripped) = r2.strip_prefix("::") {
+                let (r3, ident_part) = qualified_ident(stripped)?;
+                (r3, format!("::{}", ident_part))
+            } else {
+                qualified_ident(r2)?
+            };
             if parent == "hidden" {
                 is_hidden = true;
             } else if parent == "rw" {
@@ -599,7 +607,9 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
                 let (r2, _) = ws(r2)?;
                 r = r2;
                 continue;
-            } else if parent.starts_with(|c: char| c.is_ascii_uppercase()) {
+            } else if parent.starts_with(|c: char| c.is_ascii_uppercase())
+                || parent.starts_with("::")
+            {
                 let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
                 parents.push(format!("{}{}", parent, bracket_suffix));
                 r = r2;
