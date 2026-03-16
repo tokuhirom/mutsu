@@ -609,6 +609,22 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_pop(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.is_empty() {
+            let msg =
+                "Calling pop() will never work with signature of the proto ($, *%)".to_string();
+            let mut attrs = StdHashMap::new();
+            attrs.insert("message".to_string(), Value::str(msg.clone()));
+            let ex = Value::make_instance(Symbol::intern("X::TypeCheck::Argument"), attrs);
+            let mut err = RuntimeError::new(msg);
+            err.exception = Some(Box::new(ex));
+            return Err(err);
+        }
+        if args.len() > 1 {
+            return Err(RuntimeError::new(format!(
+                "Too many positionals passed to pop; expected 1 argument but got {}",
+                args.len()
+            )));
+        }
         Ok(match args.first().cloned() {
             Some(Value::Array(mut items, ..)) => {
                 let items_mut = Arc::make_mut(&mut items);

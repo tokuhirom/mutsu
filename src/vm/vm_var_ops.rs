@@ -520,7 +520,7 @@ impl VM {
         let arr = Arc::make_mut(items);
         if indices.len() == 1 {
             let prev = arr[i].clone();
-            arr[i] = Value::Nil;
+            arr[i] = Value::Package(Symbol::intern("Any"));
             if let Some(shape) = shape.as_deref() {
                 crate::runtime::utils::mark_shaped_array_items(items, Some(shape));
             }
