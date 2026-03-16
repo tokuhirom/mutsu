@@ -867,6 +867,8 @@ impl Interpreter {
             let mut found_public_rw = false;
             for (attr_name, is_public, _default, is_rw, _is_required, sigil, ..) in &class_attrs {
                 if attr_name == method && *is_public {
+                    // @ and % attributes are containers whose elements are always writable
+                    // through indexing, even without `is rw`.
                     if !is_rw && *sigil != '@' && *sigil != '%' {
                         return Err(RuntimeError::new(format!(
                             "X::Assignment::RO: method '{}' is not rw",
