@@ -936,11 +936,30 @@ impl Interpreter {
                 }
                 Ok(Value::Int(to_int(left).div_euclid(divisor)))
             }
-            "%" => {
+            "%" | "mod" => {
                 if is_fractional(left) || is_fractional(right) {
-                    Ok(Value::Num(to_num(left) % to_num(right)))
+                    let l = to_num(left);
+                    let r = to_num(right);
+                    if r == 0.0 {
+                        return Err(RuntimeError::numeric_divide_by_zero());
+                    }
+                    // Raku uses floored-division modulo (sign follows divisor)
+                    Ok(Value::Num(l - (l / r).floor() * r))
                 } else {
-                    Ok(Value::Int(to_int(left) % to_int(right)))
+                    let l = to_int(left);
+                    let r = to_int(right);
+                    if r == 0 {
+                        return Err(RuntimeError::numeric_divide_by_zero());
+                    }
+                    // Raku uses floored-division modulo (sign follows divisor)
+                    // a - floor(a/b) * b
+                    let rem = l % r;
+                    let result = if rem != 0 && (rem ^ r) < 0 {
+                        rem + r
+                    } else {
+                        rem
+                    };
+                    Ok(Value::Int(result))
                 }
             }
             "**" => Ok(crate::builtins::arith_pow(left.clone(), right.clone())),
