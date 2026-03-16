@@ -131,6 +131,7 @@ roast/S03-operators/reduce-le1arg.t
 roast/S03-operators/relational.t
 roast/S03-operators/repeat.t
 roast/S03-operators/scalar-assign.t
+roast/S03-operators/set_difference.t
 roast/S03-operators/set_elem.t
 roast/S03-operators/set_equality.t
 roast/S03-operators/set_multiply.t
@@ -703,6 +704,7 @@ roast/S32-str/uc.t
 roast/S32-str/windows-1251-windows-1252-encode-decode.t
 roast/S32-temporal/DateTime.t
 roast/S32-temporal/calendar.t
+roast/S32-temporal/greg-jd-frac-seconds.t
 roast/S32-trig/atan2.t
 roast/S32-trig/cos.t
 roast/S32-trig/cosec.t

@@ -41,6 +41,11 @@ impl Interpreter {
                     elems.insert(k);
                 }
             }
+            other if other.is_range() => {
+                for item in Self::value_to_list(&other) {
+                    elems.insert(item.to_string_value());
+                }
+            }
             other => {
                 elems.insert(other.to_string_value());
             }
@@ -62,8 +67,8 @@ impl Interpreter {
         };
         let add_pair_key = |map: &mut HashMap<String, i64>, key: String, weight: i64| {
             if weight > 0 {
-                let pair_key = format!("{key}\t{weight}");
-                *map.entry(pair_key).or_insert(0) += 1;
+                // Pair value is the weight/count for the Bag entry
+                *map.entry(key).or_insert(0) += weight;
             }
         };
         match target {
@@ -103,6 +108,11 @@ impl Interpreter {
             }
             Value::ValuePair(k, v) => {
                 add_pair_key(&mut counts, k.to_string_value(), pair_weight(&v));
+            }
+            other if other.is_range() => {
+                for item in Self::value_to_list(&other) {
+                    *counts.entry(item.to_string_value()).or_insert(0) += 1;
+                }
             }
             other => {
                 counts.insert(other.to_string_value(), 1);
@@ -194,6 +204,11 @@ impl Interpreter {
                     if w != 0.0 {
                         weights.insert(k.clone(), w);
                     }
+                }
+            }
+            other if other.is_range() => {
+                for item in Self::value_to_list(&other) {
+                    *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
                 }
             }
             other => {
