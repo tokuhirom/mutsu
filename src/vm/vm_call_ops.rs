@@ -688,47 +688,44 @@ impl VM {
         {
             return Err(err);
         }
-        let target_for_mod = target.clone();
-        let args_for_mod = args.clone();
-        let call_result = if !skip_native {
-            if let Some(native_result) =
-                self.try_native_method(&target, Symbol::intern(&method), &args)
-            {
-                native_result
-            } else {
-                self.try_compiled_method_or_interpret(target, &method, args)
-            }
-        } else {
-            self.try_compiled_method_or_interpret(target, &method, args)
-        };
+        // For .* and .+ modifiers, skip the single-dispatch call and go
+        // directly to the all-methods-in-MRO path to avoid double execution.
         match modifier.as_deref() {
-            Some("?") => {
-                self.stack.push(call_result.unwrap_or(Value::Nil));
-            }
             Some("+") => {
-                let vals = self.call_method_all_with_fallback(
-                    &target_for_mod,
-                    &method,
-                    &args_for_mod,
-                    skip_native,
-                )?;
+                let vals =
+                    self.call_method_all_with_fallback(&target, &method, &args, skip_native)?;
                 self.stack.push(Value::array(vals));
                 self.env_dirty = true;
             }
             Some("*") => {
-                match self.call_method_all_with_fallback(
-                    &target_for_mod,
-                    &method,
-                    &args_for_mod,
-                    skip_native,
-                ) {
+                match self.call_method_all_with_fallback(&target, &method, &args, skip_native) {
                     Ok(vals) => self.stack.push(Value::array(vals)),
                     Err(_) => self.stack.push(Value::array(vec![])),
                 }
+                self.env_dirty = true;
             }
             _ => {
-                self.stack.push(call_result?);
-                self.env_dirty = true;
+                let call_result = if !skip_native {
+                    if let Some(native_result) =
+                        self.try_native_method(&target, Symbol::intern(&method), &args)
+                    {
+                        native_result
+                    } else {
+                        self.try_compiled_method_or_interpret(target, &method, args)
+                    }
+                } else {
+                    self.try_compiled_method_or_interpret(target, &method, args)
+                };
+                match modifier.as_deref() {
+                    Some("?") => {
+                        self.stack.push(call_result.unwrap_or(Value::Nil));
+                        self.env_dirty = true;
+                    }
+                    _ => {
+                        self.stack.push(call_result?);
+                        self.env_dirty = true;
+                    }
+                }
             }
         }
         Ok(())
@@ -1350,33 +1347,49 @@ impl VM {
         if skip_native {
             self.interpreter.skip_pseudo_method_native = Some(method.clone());
         }
-        let call_result = if !skip_native {
-            if let Some(native_result) =
-                self.try_native_method(&target, Symbol::intern(&method), &args)
-            {
-                native_result
-            } else {
-                self.try_compiled_method_mut_or_interpret(&target_name, target, &method, args)
-            }
-        } else {
-            self.try_compiled_method_mut_or_interpret(&target_name, target, &method, args)
-        };
+        // For .* and .+ modifiers, skip the single-dispatch call and go
+        // directly to the all-methods-in-MRO path to avoid double execution.
         match modifier.as_deref() {
-            Some("?") => {
-                self.stack.push(call_result.unwrap_or(Value::Nil));
-            }
             Some("+") => {
-                let val = call_result?;
-                self.stack.push(Value::array(vec![val]));
+                let vals =
+                    self.call_method_all_with_fallback(&target, &method, &args, skip_native)?;
+                self.stack.push(Value::array(vals));
                 self.env_dirty = true;
             }
-            Some("*") => match call_result {
-                Ok(val) => self.stack.push(Value::array(vec![val])),
-                Err(_) => self.stack.push(Value::array(vec![])),
-            },
-            _ => {
-                self.stack.push(call_result?);
+            Some("*") => {
+                match self.call_method_all_with_fallback(&target, &method, &args, skip_native) {
+                    Ok(vals) => self.stack.push(Value::array(vals)),
+                    Err(_) => self.stack.push(Value::array(vec![])),
+                }
                 self.env_dirty = true;
+            }
+            _ => {
+                let call_result = if !skip_native {
+                    if let Some(native_result) =
+                        self.try_native_method(&target, Symbol::intern(&method), &args)
+                    {
+                        native_result
+                    } else {
+                        self.try_compiled_method_mut_or_interpret(
+                            &target_name,
+                            target,
+                            &method,
+                            args,
+                        )
+                    }
+                } else {
+                    self.try_compiled_method_mut_or_interpret(&target_name, target, &method, args)
+                };
+                match modifier.as_deref() {
+                    Some("?") => {
+                        self.stack.push(call_result.unwrap_or(Value::Nil));
+                        self.env_dirty = true;
+                    }
+                    _ => {
+                        self.stack.push(call_result?);
+                        self.env_dirty = true;
+                    }
+                }
             }
         }
         Ok(())

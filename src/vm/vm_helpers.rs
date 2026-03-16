@@ -1912,10 +1912,13 @@ impl VM {
             self.interpreter.env_mut().remove("?ROLE");
         }
 
-        // Set self
+        // Set self and __ANON_STATE__ (used by `$.foo` desugaring inside methods)
         self.interpreter
             .env_mut()
             .insert("self".to_string(), base.clone());
+        self.interpreter
+            .env_mut()
+            .insert("__ANON_STATE__".to_string(), base.clone());
 
         // Role param bindings
         if let Some(role_bindings) = self
@@ -2214,6 +2217,7 @@ impl VM {
         // back into the caller's env (e.g. method param `$g` vs caller `$g`).
         let mut method_local_keys: HashSet<String> = HashSet::from_iter([
             "self".to_string(),
+            "__ANON_STATE__".to_string(),
             "?CLASS".to_string(),
             "?ROLE".to_string(),
         ]);

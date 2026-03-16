@@ -882,13 +882,18 @@ impl Interpreter {
                 let mut attrs = (**attributes).clone();
                 let mut out = Vec::with_capacity(candidates.len());
                 for (resolved_owner, method_def) in candidates {
+                    // Build an invocant with the latest attributes so that
+                    // `$.attr` accessor reads inside the method body see
+                    // values updated by preceding calls in the MRO chain.
+                    let invocant =
+                        Value::make_instance_with_id(*class_name, attrs.clone(), *target_id);
                     let (result, updated) = self.run_instance_method_resolved(
                         &class_name.resolve(),
                         &resolved_owner,
                         method_def,
                         attrs,
                         args.clone(),
-                        Some(target.clone()),
+                        Some(invocant),
                     )?;
                     attrs = updated;
                     out.push(result);
