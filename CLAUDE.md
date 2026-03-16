@@ -113,6 +113,7 @@ Executes compiled bytecode. `vm.rs` contains the VM struct, `run()`, and a thin 
   5. CI (GitHub Actions) runs `make test` and `make roast`. The PR merges automatically when CI passes.
   6. After creating a PR, watch it with `gh pr checks <pr-number> --watch` until CI completes. If CI fails or a merge conflict occurs, fix the issue on the same branch, push again, and continue watching until the PR merges.
 - If CI fails, fix the issue on the same branch, push again, and wait for CI to pass.
+- **Never close a PR without preserving its knowledge.** If a PR has rebase conflicts, rebase it (manually or with an agent that reads the PR diff via `gh pr diff <number>`). The PR diff itself is the best documentation of the change — do not just close it and write a summary. Reopen and fix it, or have a new agent read the diff and re-implement on a fresh branch.
 - Write all documents, code comments, and commit messages in English.
 - Do not use `echo`, `cat`, `printf`, or heredoc via Bash to create files. Always use the Write tool.
 - Temporary test scripts must be written to `./tmp/` (project-local, gitignored) using the Write tool. Never write to `/tmp/` or `/tmp/claude-1000/`.
