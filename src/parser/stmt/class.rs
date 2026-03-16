@@ -692,6 +692,10 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
             }
         })
     });
+    // Register the class name so the parser can disambiguate identifiers
+    // from regex/substitution operators (e.g. `S` vs `S///`).
+    super::simple::register_user_type(&name);
+
     let class_stmt = Stmt::ClassDecl {
         name: Symbol::intern(&name),
         name_expr,
@@ -950,6 +954,8 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
             },
         );
     }
+    super::simple::register_user_type(&name);
+
     Ok((
         rest,
         Stmt::RoleDecl {
@@ -1088,6 +1094,7 @@ pub(super) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
         parents.push("Grammar".to_string());
     }
     let (rest, body) = block(r)?;
+    super::simple::register_user_type(&name);
     Ok((
         rest,
         Stmt::ClassDecl {

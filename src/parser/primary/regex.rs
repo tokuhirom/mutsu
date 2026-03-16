@@ -929,7 +929,11 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
 
     // S/pattern/replacement/ — non-destructive substitution
     // Supports adverbs before the delimiter: S:i/.../.../
-    if let Some(after_s) = input.strip_prefix('S') {
+    // Skip if 'S' has been declared as a user type (class/role/grammar) —
+    // it should be parsed as a type object, not substitution.
+    if let Some(after_s) = input.strip_prefix('S')
+        && !crate::parser::stmt::simple::is_user_declared_type("S")
+    {
         let (spec, adverbs) = parse_match_adverbs(after_s)?;
         if let Some(open_ch) = spec.chars().next() {
             let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
