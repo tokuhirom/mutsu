@@ -299,6 +299,43 @@ pub(crate) fn parse_custom_compound_assign_op(input: &str) -> Option<(&str, Stri
     None
 }
 
+/// Parse set operator compound assignment: `(|)=`, `(&)=`, `(-)=`, `(^)=`, `(.)=`, `(+)=`
+/// and their Unicode variants: `∪=`, `∩=`, etc.
+/// Returns (rest_after_equals, TokenKind for the set operator).
+pub(crate) fn parse_set_compound_assign_op(input: &str) -> Option<(&str, TokenKind)> {
+    let (tok, len) = if input.starts_with("(|)") {
+        (TokenKind::SetUnion, 3)
+    } else if input.starts_with("(&)") {
+        (TokenKind::SetIntersect, 3)
+    } else if input.starts_with("(.)") {
+        (TokenKind::SetMultiply, 3)
+    } else if input.starts_with("(-)") {
+        (TokenKind::SetDiff, 3)
+    } else if input.starts_with("(^)") {
+        (TokenKind::SetSymDiff, 3)
+    } else if input.starts_with("(+)") {
+        (TokenKind::SetUnion, 3) // Bag union
+    } else if input.starts_with('∪') {
+        (TokenKind::SetUnion, '∪'.len_utf8())
+    } else if input.starts_with('∩') {
+        (TokenKind::SetIntersect, '∩'.len_utf8())
+    } else if input.starts_with('⊍') {
+        (TokenKind::SetMultiply, '⊍'.len_utf8())
+    } else if input.starts_with('∖') {
+        (TokenKind::SetDiff, '∖'.len_utf8())
+    } else if input.starts_with('⊖') {
+        (TokenKind::SetSymDiff, '⊖'.len_utf8())
+    } else {
+        return None;
+    };
+    let after_op = &input[len..];
+    if after_op.starts_with('=') && !after_op.starts_with("==") {
+        Some((&after_op[1..], tok))
+    } else {
+        None
+    }
+}
+
 fn find_matching_bracket(input: &str) -> Option<usize> {
     if !input.starts_with('[') {
         return None;
@@ -1563,6 +1600,30 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             meta,
             op,
             left: Box::new(var_expr),
+            right: Box::new(rhs),
+        };
+        let stmt = Stmt::Assign {
+            name,
+            expr,
+            op: AssignOp::Assign,
+        };
+        return parse_statement_modifier(rest, stmt);
+    }
+
+    // Set operator compound assignment: $s (|)= 5 → $s = $s (|) 5
+    if let Some((stripped, set_tok)) = parse_set_compound_assign_op(rest) {
+        let (rest, _) = ws(stripped)?;
+        let (rest, rhs) = parse_assign_expr_or_comma(rest).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected right-hand expression after set compound assignment",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
+        })?;
+        let expr = Expr::Binary {
+            left: Box::new(var_expr),
+            op: set_tok,
             right: Box::new(rhs),
         };
         let stmt = Stmt::Assign {
