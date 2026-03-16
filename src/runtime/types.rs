@@ -282,6 +282,16 @@ fn sub_signature_matches_value(
         {
             return false;
         }
+        // Implicit Any constraint: untyped $ parameters reject Junction type objects
+        if pd.type_constraint.is_none()
+            && !pd.name.starts_with('@')
+            && !pd.name.starts_with('%')
+            && !pd.name.starts_with('&')
+            && !pd.slurpy
+            && !interpreter.type_matches_value("Any", &candidate)
+        {
+            return false;
+        }
         if let Some(sub) = &pd.sub_signature
             && !sub_signature_matches_value(interpreter, sub, &candidate)
         {
@@ -1087,8 +1097,12 @@ impl Interpreter {
     }
 
     pub(super) fn type_matches(constraint: &str, value_type: &str) -> bool {
-        if constraint == "Any" || constraint == "Mu" {
+        if constraint == "Mu" {
             return true;
+        }
+        if constraint == "Any" {
+            // Junction is a direct subtype of Mu, not Any
+            return value_type != "Junction";
         }
         if constraint == value_type {
             return true;
@@ -1776,6 +1790,13 @@ impl Interpreter {
                 return true;
             }
         }
+        // For Package (type object) values, use the package name as the type
+        // so that e.g. Junction (which is Mu, not Any) is correctly rejected
+        // when the constraint is Any.
+        if let Value::Package(package_name) = value {
+            let resolved = package_name.resolve();
+            return Self::type_matches(constraint, &resolved);
+        }
         let value_type = super::value_type_name(value);
         Self::type_matches(constraint, value_type)
     }
@@ -1957,6 +1978,17 @@ impl Interpreter {
                         // Coercion source-type validation is deferred until bind time.
                         return false;
                     }
+                }
+                // Implicit Any constraint: untyped $ parameters reject Junction type objects
+                if pd.type_constraint.is_none()
+                    && !pd.name.starts_with('@')
+                    && !pd.name.starts_with('%')
+                    && !pd.name.starts_with('&')
+                    && !pd.slurpy
+                    && let Some(arg) = arg_for_checks.as_ref()
+                    && !self.type_matches_value("Any", arg)
+                {
+                    return false;
                 }
                 if pd.name.starts_with('&')
                     && let Some(arg) = arg_for_checks.as_ref()
@@ -2755,6 +2787,32 @@ impl Interpreter {
                             }
                             value = Value::hash(map);
                         }
+                    }
+                    // Implicit Any constraint: untyped $ parameters default to Any,
+                    // which rejects Junction (a direct subtype of Mu, not Any).
+                    if pd.type_constraint.is_none()
+                        && !pd.name.starts_with('@')
+                        && !pd.name.starts_with('%')
+                        && !pd.name.starts_with('&')
+                        && !pd.slurpy
+                        && !self.type_matches_value("Any", &value)
+                    {
+                        let mut err = RuntimeError::new(format!(
+                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected Any but got {} ({})",
+                            if pd.name.is_empty() {
+                                "<anon>"
+                            } else {
+                                &pd.name
+                            },
+                            super::value_type_name(&value),
+                            super::utils::gist_value(&value)
+                        ));
+                        let mut ex_attrs = std::collections::HashMap::new();
+                        ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                        let exception =
+                            Value::make_instance(Symbol::intern("X::TypeCheck::Binding"), ex_attrs);
+                        err.exception = Some(Box::new(exception));
+                        return Err(err);
                     }
                     if let Some((sig_params, sig_ret)) = &pd.code_signature
                         && !code_signature_matches_value(self, sig_params, sig_ret, &value)
