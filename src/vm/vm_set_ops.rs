@@ -194,7 +194,7 @@ impl VM {
     }
 
     fn lazy_list_error() -> RuntimeError {
-        RuntimeError::new("X::Cannot::Lazy")
+        RuntimeError::cannot_lazy("elems")
     }
 
     fn is_infinite_bound(value: &Value) -> bool {

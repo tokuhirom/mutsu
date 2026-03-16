@@ -1082,6 +1082,15 @@ impl Interpreter {
                 } else if let Some(cls) = &ex_class {
                     cls == expected_normalized
                         || cls.starts_with(&format!("{}::", expected_normalized))
+                        // Check MRO: the exception's class hierarchy may include the expected type
+                        || self.classes.get(cls).is_some_and(|def| {
+                            def.mro.iter().any(|parent| parent == expected_normalized)
+                        })
+                        // X::Comp::Group wraps compile-time errors: match any X::Comp subtype
+                        || (expected_normalized == "X::Comp::Group"
+                            && self.classes.get(cls).is_some_and(|def| {
+                                def.mro.iter().any(|p| p == "X::Comp")
+                            }))
                         // X::AdHoc wrapping a die'd string that encodes a type name
                         // (e.g., die "X::Syntax::UnlessElse: ..."): fall through to
                         // message-based matching below.
@@ -1098,6 +1107,7 @@ impl Interpreter {
                         || err.message.contains("X::Comp")
                         || err.message.contains("X::Undeclared")
                         || err.message.contains("X::Obsolete")
+                        || err.message.contains("X::Redeclaration")
                         || err.message.contains("parse error")
                 } else if expected_normalized == "X::AdHoc" {
                     // X::AdHoc matches any ad-hoc error

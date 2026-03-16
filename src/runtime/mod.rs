@@ -1771,6 +1771,138 @@ impl Interpreter {
                 alias_attributes: HashSet::new(),
             },
         );
+
+        // Register additional X:: exception classes using a helper closure
+        // to reduce boilerplate.
+        let mut register_x = |name: &str, parent: &str| {
+            let mut mro = vec![name.to_string()];
+            // Walk up through existing classes to build full MRO
+            let mut cur = parent.to_string();
+            loop {
+                mro.push(cur.clone());
+                if let Some(cls) = classes.get(&cur)
+                    && let Some(p) = cls.parents.first()
+                    && p != &cur
+                {
+                    cur = p.clone();
+                    continue;
+                }
+                break;
+            }
+            if !mro.contains(&"Exception".to_string()) {
+                mro.push("Exception".to_string());
+            }
+            classes.insert(
+                name.to_string(),
+                ClassDef {
+                    parents: vec![parent.to_string()],
+                    attributes: Vec::new(),
+                    methods: HashMap::new(),
+                    native_methods: HashSet::new(),
+                    mro,
+                    attribute_types: HashMap::new(),
+                    wildcard_handles: Vec::new(),
+                    alias_attributes: HashSet::new(),
+                },
+            );
+        };
+
+        // X::Comp hierarchy (compile-time errors)
+        register_x("X::Comp", "Exception");
+        register_x("X::Comp::Group", "X::Comp");
+        register_x("X::Comp::AdHoc", "X::Comp");
+
+        // X::Syntax hierarchy (syntax errors, subtypes of X::Comp)
+        register_x("X::Syntax", "X::Comp");
+        register_x("X::Syntax::Confused", "X::Syntax");
+        register_x("X::Syntax::Missing", "X::Syntax");
+        register_x("X::Syntax::Malformed", "X::Syntax");
+        register_x("X::Syntax::Variable::Numeric", "X::Syntax");
+        register_x("X::Syntax::Variable::Initializer", "X::Syntax");
+        register_x("X::Syntax::Variable::ConflictingTypes", "X::Syntax");
+        register_x("X::Syntax::Number::LiteralType", "X::Syntax");
+        register_x("X::Syntax::Regex::SolitaryQuantifier", "X::Syntax");
+        register_x("X::Syntax::Regex::NullRegex", "X::Syntax");
+        register_x("X::Syntax::Term::MissingInitializer", "X::Syntax");
+        register_x("X::Syntax::WithoutElse", "X::Syntax");
+        register_x("X::Syntax::UnlessElse", "X::Syntax");
+
+        // X::Obsolete (compile-time, subtype of X::Comp)
+        register_x("X::Obsolete", "X::Comp");
+
+        // X::Undeclared hierarchy
+        register_x("X::Undeclared", "X::Comp");
+        register_x("X::Undeclared::Symbols", "X::Comp");
+
+        // X::Redeclaration
+        register_x("X::Redeclaration", "X::Comp");
+
+        // X::Assignment::RO
+        register_x("X::Assignment::RO", "Exception");
+
+        // X::Str::Numeric
+        register_x("X::Str::Numeric", "Exception");
+
+        // X::Multi::NoMatch / X::Multi::Ambiguous
+        register_x("X::Multi::NoMatch", "Exception");
+        register_x("X::Multi::Ambiguous", "Exception");
+
+        // X::OutOfRange
+        register_x("X::OutOfRange", "Exception");
+
+        // X::Method::NotFound
+        register_x("X::Method::NotFound", "Exception");
+
+        // X::Immutable
+        register_x("X::Immutable", "Exception");
+
+        // X::Cannot::Lazy
+        register_x("X::Cannot::Lazy", "Exception");
+        register_x("X::Cannot::Capture", "Exception");
+
+        // X::Match::Bool
+        register_x("X::Match::Bool", "Exception");
+
+        // X::Adverb
+        register_x("X::Adverb", "Exception");
+
+        // X::ControlFlow::Return
+        register_x("X::ControlFlow::Return", "Exception");
+
+        // X::Bind
+        register_x("X::Bind", "Exception");
+
+        // X::StubCode
+        register_x("X::StubCode", "Exception");
+
+        // X::Signature::Placeholder
+        register_x("X::Signature::Placeholder", "Exception");
+
+        // X::SecurityPolicy
+        register_x("X::SecurityPolicy", "Exception");
+
+        // X::NotEnoughDimensions
+        register_x("X::NotEnoughDimensions", "Exception");
+
+        // X::IO::Closed
+        register_x("X::IO::Closed", "Exception");
+
+        // X::Role subtypes
+        register_x("X::Role::Parametric::NoSuchCandidate", "Exception");
+        register_x("X::Role::Unimplemented::Multi", "Exception");
+
+        // X::NYI
+        register_x("X::NYI", "Exception");
+
+        // X::Method::Private::Permission
+        register_x("X::Method::Private::Permission", "Exception");
+
+        // X::ParametricConstant
+        register_x("X::ParametricConstant", "Exception");
+
+        // X::UnitScope::Invalid
+        register_x("X::UnitScope::Invalid", "Exception");
+
         let mut interpreter = Self {
             env: Env::from(env),
             output: String::new(),

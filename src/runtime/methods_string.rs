@@ -326,7 +326,11 @@ impl Interpreter {
                 Value::Str(s) => s.parse::<i64>().unwrap_or(0),
                 Value::BigInt(b) => {
                     if b.as_ref() > &num_bigint::BigInt::from(i64::MAX) {
-                        return Err(RuntimeError::new("X::OutOfRange"));
+                        return Err(RuntimeError::out_of_range(
+                            "start",
+                            Value::BigInt(b.clone()),
+                            "0..Inf",
+                        ));
                     }
                     b.to_string().parse::<i64>().unwrap_or(0)
                 }
@@ -338,7 +342,11 @@ impl Interpreter {
         let text = target.to_string_value();
         let len = text.chars().count() as i64;
         if start < 0 || start > len {
-            return Err(RuntimeError::new("X::OutOfRange"));
+            return Err(RuntimeError::out_of_range(
+                "start",
+                Value::Int(start),
+                &format!("0..{}", len),
+            ));
         }
         let hay: String = text.chars().skip(start as usize).collect();
         Ok(Self::contains_value(&hay, &needle, ignore_case))

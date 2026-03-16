@@ -431,7 +431,7 @@ impl VM {
             || matches!(head, Value::Num(f) if f.is_infinite() && *f > 0.0)
         {
             if indices.len() > 1 && crate::runtime::utils::is_shaped_array(target) {
-                return Err(RuntimeError::new("X::NYI"));
+                return Err(RuntimeError::typed_msg("X::NYI", "Not yet implemented"));
             }
             let Value::Array(items, ..) = target else {
                 return Ok(Value::Nil);
@@ -1570,7 +1570,7 @@ impl VM {
             .unwrap_or_else(|| "Any".to_string());
         let result = if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
             if matches!(container, Value::Mix(_)) && !target_is_mixhash {
-                return Err(RuntimeError::new("X::Immutable"));
+                return Err(RuntimeError::immutable("Mix", "delete"));
             }
             Self::delete_from_container(container, idx, &hole_type)?
         } else {

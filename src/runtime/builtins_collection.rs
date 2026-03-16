@@ -936,7 +936,10 @@ impl Interpreter {
                 Value::Bool(_) | Value::Int(_) | Value::Num(_) | Value::Str(_)
             )
         {
-            return Err(RuntimeError::new("X::Match::Bool"));
+            return Err(RuntimeError::typed_msg(
+                "X::Match::Bool",
+                "Cannot use Bool as Matcher with '.match'. Did you mean to use $_ ~~ ... instead?",
+            ));
         }
         if args.len() == 2
             && let Value::GenericRange { end, .. } = &args[1]

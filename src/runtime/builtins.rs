@@ -2398,7 +2398,7 @@ impl Interpreter {
                 if let Value::Proxy { .. } = result {
                     return self.assign_proxy_lvalue(result, value);
                 }
-                Err(RuntimeError::new("X::Assignment::RO: sub is not rw"))
+                Err(RuntimeError::assignment_ro(Some("sub is not rw")))
             }
             Value::WeakSub(weak) => match weak.upgrade() {
                 Some(strong) => {
@@ -2406,9 +2406,9 @@ impl Interpreter {
                 }
                 None => Err(RuntimeError::new("Callable has been freed")),
             },
-            _ => Err(RuntimeError::new(
-                "X::Assignment::RO: cannot assign through non-callable value",
-            )),
+            _ => Err(RuntimeError::assignment_ro(Some(
+                "cannot assign through non-callable value",
+            ))),
         }
     }
 
@@ -2437,7 +2437,7 @@ impl Interpreter {
     }
 
     fn builtin_assignment_ro(&mut self, _args: &[Value]) -> Result<Value, RuntimeError> {
-        Err(RuntimeError::new("X::Assignment::RO"))
+        Err(RuntimeError::assignment_ro(None))
     }
 
     fn builtin_star_lvalue_rhs(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -2891,7 +2891,7 @@ impl Interpreter {
             }
         }
         if code.contains("&?ROUTINE") && self.routine_stack.is_empty() {
-            return Err(RuntimeError::new("X::Undeclared::Symbols"));
+            return Err(RuntimeError::undeclared_symbols("Undeclared name"));
         }
         self.eval_eval_string(&code)
     }

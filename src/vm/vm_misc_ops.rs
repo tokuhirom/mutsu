@@ -686,7 +686,7 @@ impl VM {
                 .get_env_with_main_alias(&name)
                 .is_some_and(|current| !matches!(current, Value::Nil))
         {
-            return Err(RuntimeError::new("X::Assignment::RO"));
+            return Err(RuntimeError::assignment_ro(None));
         }
         if name.starts_with('&') && !name.contains("::") {
             let bare = name.trim_start_matches('&');
@@ -697,7 +697,7 @@ impl VM {
                 || self.interpreter.resolve_token_defs(bare).is_some()
                 || self.interpreter.has_proto_token(bare);
             if is_routine_symbol && !has_variable_slot {
-                return Err(RuntimeError::new("X::Assignment::RO"));
+                return Err(RuntimeError::assignment_ro(None));
             }
         }
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
@@ -730,7 +730,7 @@ impl VM {
                 if let Some(class_name) = class_name {
                     let class = class_name.resolve();
                     if class == "Blob" || class.starts_with("blob") {
-                        return Err(RuntimeError::new("X::Assignment::RO"));
+                        return Err(RuntimeError::assignment_ro(None));
                     }
                     if class == "Buf" || class.starts_with("buf") {
                         let items = runtime::value_to_list(&assigned)
@@ -784,7 +784,7 @@ impl VM {
             Some(Value::Bool(true))
         ) && !matches!(self.interpreter.env().get(&alias_key), Some(Value::Str(_)))
         {
-            return Err(RuntimeError::new("X::Assignment::RO"));
+            return Err(RuntimeError::assignment_ro(None));
         }
         if let Some(source_name) = bind_source {
             let mut resolved_source = source_name;
@@ -1149,7 +1149,7 @@ impl VM {
                 is_regex: false,
             });
         } else {
-            return Err(RuntimeError::new("X::Undeclared::Symbols"));
+            return Err(RuntimeError::undeclared_symbols("Undeclared name"));
         }
         Ok(())
     }
@@ -1159,10 +1159,10 @@ impl VM {
             if matches!(val, Value::Sub(_)) {
                 self.stack.push(val);
             } else {
-                return Err(RuntimeError::new("X::Undeclared::Symbols"));
+                return Err(RuntimeError::undeclared_symbols("Undeclared name"));
             }
         } else {
-            return Err(RuntimeError::new("X::Undeclared::Symbols"));
+            return Err(RuntimeError::undeclared_symbols("Undeclared name"));
         }
         Ok(())
     }
@@ -1228,7 +1228,10 @@ impl VM {
         let value = self.stack.last().expect("TypeCheck: empty stack").clone();
         if let Value::Array(..) = &value {
             if !self.array_elements_match_constraint(constraint, &value) {
-                return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
+                return Err(RuntimeError::typed_msg(
+                    "X::Syntax::Number::LiteralType",
+                    "Literal type mismatch",
+                ));
             }
             return Ok(());
         }
@@ -1285,7 +1288,17 @@ impl VM {
                 && !self.interpreter.type_matches_value(constraint, &value)
             {
                 if base_constraint == "Int" && matches!(value, Value::Num(f) if f.is_nan()) {
-                    return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("value".to_string(), value.clone());
+                    attrs.insert(
+                        "vartype".to_string(),
+                        Value::Package(Symbol::intern(base_constraint)),
+                    );
+                    attrs.insert(
+                        "message".to_string(),
+                        Value::str("Cannot convert NaN to Int".to_string()),
+                    );
+                    return Err(RuntimeError::typed("X::Syntax::Number::LiteralType", attrs));
                 }
                 let coerced = match base_constraint {
                     "Str" => Some(Value::str(crate::runtime::utils::coerce_to_str(&value))),
@@ -1294,8 +1307,9 @@ impl VM {
                 if let Some(new_val) = coerced {
                     *self.stack.last_mut().unwrap() = new_val;
                 } else {
-                    return Err(RuntimeError::new(
-                        "X::TypeCheck::Assignment: Type check failed in assignment",
+                    return Err(RuntimeError::typecheck_assignment(
+                        base_constraint,
+                        crate::runtime::utils::value_type_name(&value),
                     ));
                 }
             }
@@ -1306,15 +1320,13 @@ impl VM {
                 .has_type_capture_binding(declared_constraint)
         {
             // Unknown user-defined type — reject it
-            return Err(RuntimeError::new(format!(
-                "X::Undeclared: Type '{}' is not declared",
-                constraint
-            )));
+            return Err(RuntimeError::undeclared("type", constraint));
         }
         if !matches!(value, Value::Nil) && !self.interpreter.type_matches_value(constraint, &value)
         {
-            return Err(RuntimeError::new(
-                "X::TypeCheck::Assignment: Type check failed in assignment",
+            return Err(RuntimeError::typecheck_assignment(
+                constraint,
+                crate::runtime::utils::value_type_name(&value),
             ));
         }
         if !matches!(value, Value::Nil) {

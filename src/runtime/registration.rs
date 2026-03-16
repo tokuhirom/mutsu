@@ -365,7 +365,10 @@ impl Interpreter {
                         .get(owner_class)
                         .is_some_and(|trusted| trusted.contains(caller_class))
                 {
-                    return Err(RuntimeError::new("X::Method::Private::Permission"));
+                    return Err(RuntimeError::typed_msg(
+                        "X::Method::Private::Permission",
+                        "Cannot call private method without permission",
+                    ));
                 }
             }
             Expr::HyperMethodCall { target, args, .. } => {

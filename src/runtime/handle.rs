@@ -83,6 +83,16 @@ impl Interpreter {
         content: &str,
         newline: bool,
     ) -> Result<(), RuntimeError> {
+        self.write_to_handle_value_trying(handle_value, content, newline, "write")
+    }
+
+    pub(super) fn write_to_handle_value_trying(
+        &mut self,
+        handle_value: &Value,
+        content: &str,
+        newline: bool,
+        trying: &str,
+    ) -> Result<(), RuntimeError> {
         let id = Self::handle_id_from_value(handle_value)
             .ok_or_else(|| RuntimeError::new("Expected IO::Handle"))?;
         let state = self
@@ -90,7 +100,7 @@ impl Interpreter {
             .get_mut(&id)
             .ok_or_else(|| RuntimeError::new("Invalid IO::Handle"))?;
         if state.closed {
-            return Err(RuntimeError::new("X::IO::Closed: IO::Handle is closed"));
+            return Err(RuntimeError::io_closed(trying));
         }
         let mut payload = String::from(content);
         if newline {
@@ -228,7 +238,7 @@ impl Interpreter {
     ) -> Result<Option<String>, RuntimeError> {
         let state = self.handle_state_mut(handle_value)?;
         if state.closed {
-            return Err(RuntimeError::new("X::IO::Closed: IO::Handle is closed"));
+            return Err(RuntimeError::io_closed("handle operation"));
         }
         match state.target {
             IoHandleTarget::Stdout | IoHandleTarget::Stderr => {
@@ -264,7 +274,7 @@ impl Interpreter {
     ) -> Result<Vec<u8>, RuntimeError> {
         let state = self.handle_state_mut(handle_value)?;
         if state.closed {
-            return Err(RuntimeError::new("X::IO::Closed: IO::Handle is closed"));
+            return Err(RuntimeError::io_closed("handle operation"));
         }
         match state.target {
             IoHandleTarget::Stdout | IoHandleTarget::Stderr => {
@@ -341,7 +351,7 @@ impl Interpreter {
     ) -> Result<String, RuntimeError> {
         let state = self.handle_state_mut(handle_value)?;
         if state.closed {
-            return Err(RuntimeError::new("X::IO::Closed: IO::Handle is closed"));
+            return Err(RuntimeError::io_closed("handle operation"));
         }
         match state.target {
             IoHandleTarget::Stdout | IoHandleTarget::Stderr => {
@@ -429,7 +439,7 @@ impl Interpreter {
     ) -> Result<i64, RuntimeError> {
         let state = self.handle_state_mut(handle_value)?;
         if state.closed {
-            return Err(RuntimeError::new("X::IO::Closed: IO::Handle is closed"));
+            return Err(RuntimeError::io_closed("handle operation"));
         }
         let file = state
             .file
@@ -478,7 +488,7 @@ impl Interpreter {
     pub(super) fn tell_handle_value(&mut self, handle_value: &Value) -> Result<i64, RuntimeError> {
         let state = self.handle_state_mut(handle_value)?;
         if state.closed {
-            return Err(RuntimeError::new("X::IO::Closed: IO::Handle is closed"));
+            return Err(RuntimeError::io_closed("handle operation"));
         }
         match state.target {
             IoHandleTarget::File => {
@@ -498,7 +508,7 @@ impl Interpreter {
     pub(super) fn handle_eof_value(&mut self, handle_value: &Value) -> Result<bool, RuntimeError> {
         let state = self.handle_state_mut(handle_value)?;
         if state.closed {
-            return Err(RuntimeError::new("X::IO::Closed: IO::Handle is closed"));
+            return Err(RuntimeError::io_closed("handle operation"));
         }
         match state.target {
             IoHandleTarget::File => {
