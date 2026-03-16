@@ -405,6 +405,17 @@ impl Interpreter {
             let type_name = crate::runtime::utils::value_type_name(&target);
             return Err(make_method_not_found_error(method, type_name, false));
         }
+        // Mutating array methods on Value::Array (non-container path).
+        // This handles cases like %hash<key>.push(4) where the target is an
+        // Array value retrieved from a container and we need to produce a
+        // modified copy that the caller can write back.
+        if matches!(
+            method,
+            "push" | "pop" | "shift" | "unshift" | "append" | "prepend"
+        ) && matches!(&target, Value::Array(_, kind) if kind.is_real_array())
+        {
+            return self.array_mutate_copy(target, method, args);
+        }
         // Buf/Blob.allocate(size, fill?)
         if method == "allocate"
             && let Value::Package(name) = &target
@@ -2840,6 +2851,77 @@ impl Interpreter {
 
         // Instance dispatch, package dispatch, and fallback paths
         self.dispatch_instance_and_fallback(target, method, args)
+    }
+
+    /// Produce a modified copy of an Array value for push/pop/shift/unshift/append/prepend.
+    /// Used when the target is not a named variable (e.g., a hash or array element).
+    fn array_mutate_copy(
+        &self,
+        target: Value,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let mut items = match target {
+            Value::Array(ref v, ..) => v.to_vec(),
+            _ => Vec::new(),
+        };
+        let kind = match &target {
+            Value::Array(_, k) => *k,
+            _ => crate::value::ArrayKind::Array,
+        };
+        match method {
+            "push" => {
+                let normalized = Self::normalize_push_args_for_copy(args);
+                items.extend(normalized);
+                Ok(Value::Array(Arc::new(items), kind))
+            }
+            "append" => {
+                let flat = flatten_append_args(args);
+                items.extend(flat);
+                Ok(Value::Array(Arc::new(items), kind))
+            }
+            "pop" => {
+                if !args.is_empty() {
+                    return Err(RuntimeError::new(format!(
+                        "Too many positionals passed; expected 1 argument but got {}",
+                        args.len() + 1
+                    )));
+                }
+                if items.is_empty() {
+                    Ok(Value::Array(Arc::new(items), kind))
+                } else {
+                    items.pop();
+                    Ok(Value::Array(Arc::new(items), kind))
+                }
+            }
+            "shift" => {
+                if items.is_empty() {
+                    Ok(Value::Array(Arc::new(items), kind))
+                } else {
+                    items.remove(0);
+                    Ok(Value::Array(Arc::new(items), kind))
+                }
+            }
+            "unshift" | "prepend" => {
+                let normalized = Self::normalize_push_args_for_copy(args);
+                for (i, arg) in normalized.into_iter().enumerate() {
+                    items.insert(i, arg);
+                }
+                Ok(Value::Array(Arc::new(items), kind))
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// Normalize push/unshift arguments (unwrap Scalar containers, deitemize).
+    fn normalize_push_args_for_copy(args: Vec<Value>) -> Vec<Value> {
+        args.into_iter()
+            .map(|arg| match arg {
+                Value::Scalar(inner) => *inner,
+                Value::Array(items, kind) if kind.is_itemized() => Value::Array(items, kind),
+                other => other,
+            })
+            .collect()
     }
 
     fn buf_allocate(&mut self, class_name: Symbol, args: &[Value]) -> Result<Value, RuntimeError> {

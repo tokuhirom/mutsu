@@ -2022,6 +2022,30 @@ impl Compiler {
         matches!(expr, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))
     }
 
+    /// Check if a method call is a known mutating method on an indexed target
+    /// (e.g., `%hash<key>.push(4)` or `@array[0].push(5)`).
+    pub(super) fn is_mutating_method_on_index(
+        target: &Expr,
+        method_name: &crate::symbol::Symbol,
+    ) -> bool {
+        let method = method_name.resolve();
+        let is_mutating = matches!(
+            method.as_str(),
+            "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
+        );
+        if !is_mutating {
+            return false;
+        }
+        if let Expr::Index {
+            target: idx_target, ..
+        } = target
+        {
+            Self::postfix_index_name(idx_target).is_some()
+        } else {
+            false
+        }
+    }
+
     /// Extract the variable name from a DoStmt(VarDecl { .. }) expression,
     /// used for `++state $` patterns.
     pub(super) fn extract_vardecl_name(expr: &Expr) -> Option<String> {
