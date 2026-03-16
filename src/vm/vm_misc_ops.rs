@@ -1199,19 +1199,22 @@ impl VM {
                 if !matches!(end.as_ref(), Value::Num(n) if n.is_infinite())
                     && !matches!(end.as_ref(), Value::Whatever | Value::HyperWhatever)
             );
-            if is_finite_int_range {
-                if self
-                    .interpreter
+            let range_ok = if is_finite_int_range {
+                self.interpreter
                     .type_matches_value(constraint, &Value::Int(0))
-                {
-                    return Ok(());
+            } else if is_finite_generic_range {
+                match &value {
+                    Value::GenericRange { start, end, .. } => {
+                        self.interpreter.type_matches_value(constraint, start)
+                            && self.interpreter.type_matches_value(constraint, end)
+                    }
+                    _ => false,
                 }
-            } else if is_finite_generic_range && let Value::GenericRange { start, end, .. } = &value {
-                let start_ok = self.interpreter.type_matches_value(constraint, start);
-                let end_ok = self.interpreter.type_matches_value(constraint, end);
-                if start_ok && end_ok {
-                    return Ok(());
-                }
+            } else {
+                false
+            };
+            if range_ok {
+                return Ok(());
             }
             // Infinite ranges and non-matching types fall through to normal check
         }
