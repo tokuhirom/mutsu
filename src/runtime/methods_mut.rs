@@ -505,6 +505,20 @@ impl Interpreter {
                 class_name.resolve()
             )));
         }
+        // Handle class-level attribute assignment (our $.x / my $.x)
+        {
+            let class_name_for_lookup = match &target {
+                Value::Package(name) => Some(name.resolve()),
+                Value::Instance { class_name, .. } => Some(class_name.resolve()),
+                _ => None,
+            };
+            if let Some(cn) = class_name_for_lookup
+                && self.has_class_level_attr(&cn, method)
+            {
+                self.set_class_level_attr(&cn, method, value.clone());
+                return Ok(value);
+            }
+        }
         if method == "subbuf-rw" {
             return self.assign_subbuf_rw(target_var, target, method_args, value);
         }

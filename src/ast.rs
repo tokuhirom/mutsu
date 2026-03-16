@@ -564,6 +564,10 @@ pub(crate) enum Stmt {
         where_constraint: Option<Box<Expr>>,
         /// `has $x` (no twigil) creates an alias: `$x` → `$!x` inside the class
         is_alias: bool,
+        /// `our $.x` — package-scoped class attribute (shared across instances)
+        is_our: bool,
+        /// `my $.x` — lexically-scoped class attribute (shared across instances)
+        is_my: bool,
     },
     MethodDecl {
         name: Symbol,
