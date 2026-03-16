@@ -386,6 +386,9 @@ pub(super) enum FeedOp {
 pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize)> {
     let next_non_ws = |s: &str| s.trim_start().chars().next();
     let starts_hyper_prefix_marker = |s: &str| s.starts_with('\u{00AB}') || s.starts_with("<<");
+    let starts_user_prefix_op = |s: &str| {
+        crate::parser::stmt::simple::match_user_declared_prefix_op(s.trim_start()).is_some()
+    };
     let unary_term_start = |c: char| {
         c == '$'
             || c == '@'
@@ -422,6 +425,7 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
         && !input.starts_with("--")
         && !input.starts_with("->")
         && (starts_hyper_prefix_marker(&input[1..])
+            || starts_user_prefix_op(&input[1..])
             || (matches!(next_non_ws(&input[1..]), Some(c) if unary_term_start(c) || c == '.' || c == '\u{221E}')))
     // topic call / ∞
     {
@@ -434,6 +438,7 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
     } else if input.starts_with('+')
         && !input.starts_with("++")
         && (starts_hyper_prefix_marker(&input[1..])
+            || starts_user_prefix_op(&input[1..])
             || matches!(next_non_ws(&input[1..]), Some(c) if unary_term_start(c) || c == '.' || c == '\u{221E}'))
     {
         Some((PrefixUnaryOp::Positive, 1))
