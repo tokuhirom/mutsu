@@ -1068,6 +1068,25 @@ impl Interpreter {
             }
         }
 
+        // Class-level attribute access (our $.x / my $.x) — works on both
+        // type objects (Foo.bar) and instances ($obj.bar).
+        // A per-instance attribute with the same name hides the class-level one.
+        {
+            let class_name_for_lookup = match &target {
+                Value::Package(name) => Some(name.resolve()),
+                Value::Instance { class_name, .. } => Some(class_name.resolve()),
+                _ => None,
+            };
+            if let Some(cn) = class_name_for_lookup
+                && args.is_empty()
+                && self.has_class_level_attr(&cn, method)
+                && !self.has_public_accessor(&cn, method)
+                && let Some(val) = self.get_class_level_attr(&cn, method)
+            {
+                return Ok(val);
+            }
+        }
+
         if let Some(callable) = self.env.get(&format!("&{}", method)).cloned()
             && matches!(
                 callable,

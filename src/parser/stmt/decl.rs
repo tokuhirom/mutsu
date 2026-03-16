@@ -830,6 +830,55 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     let is_hash = sigil == b'%';
     let is_code = sigil == b'&';
 
+    // Handle `our $.name` / `my $.name` — class-level (shared) attributes.
+    // These use the dot twigil which means "public accessor".
+    if (sigil == b'$' || is_array || is_hash)
+        && rest.len() > 2
+        && rest.as_bytes()[1] == b'.'
+        && rest[2..]
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_alphabetic() || c == '_')
+    {
+        let after_dot = &rest[2..];
+        let (after_name, attr_name) = take_while1(after_dot, |c: char| {
+            c.is_alphanumeric() || c == '_' || c == '-'
+        })?;
+        let attr_name = attr_name.to_string();
+        let (after_name, _) = ws(after_name)?;
+        // Parse optional default value
+        let (after_name, default) = if after_name.starts_with('=')
+            && !after_name.starts_with("==")
+            && !after_name.starts_with("=>")
+        {
+            let r = &after_name[1..];
+            let (r, _) = ws(r)?;
+            let (r, expr) = expression(r)?;
+            (r, Some(expr))
+        } else {
+            (after_name, None)
+        };
+        let stmt = Stmt::HasDecl {
+            name: Symbol::intern(&attr_name),
+            is_public: true,
+            default,
+            handles: Vec::new(),
+            is_rw: true,
+            is_readonly: false,
+            type_constraint: type_constraint.clone(),
+            is_required: None,
+            sigil: sigil as char,
+            where_constraint: None,
+            is_alias: false,
+            is_our,
+            is_my: !is_our && !is_state,
+        };
+        if apply_modifier {
+            return parse_statement_modifier(after_name, stmt);
+        }
+        return Ok((after_name, stmt));
+    }
+
     let prefix = if is_array {
         "@"
     } else if is_hash {
@@ -1683,6 +1732,8 @@ fn has_decl_list(input: &str) -> PResult<'_, Stmt> {
             sigil: sigil as char,
             where_constraint: None,
             is_alias,
+            is_our: false,
+            is_my: false,
         });
         let (r, _) = ws(rest)?;
         rest = r;
@@ -2002,6 +2053,8 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             sigil: sigil as char,
             where_constraint,
             is_alias,
+            is_our: false,
+            is_my: false,
         },
     ))
 }

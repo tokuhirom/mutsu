@@ -1312,7 +1312,11 @@ impl Interpreter {
             || (!is_pseudo_method
                 && matches!(&target, Value::Instance { class_name, .. } if self.has_public_accessor(&class_name.resolve(), method)))
             || (!is_pseudo_method
-                && matches!(&target, Value::Package(class_name) if self.has_user_method(&class_name.resolve(), method)));
+                && matches!(&target, Value::Package(class_name) if self.has_user_method(&class_name.resolve(), method)))
+            || (!is_pseudo_method
+                && matches!(&target, Value::Package(class_name) if self.has_class_level_attr(&class_name.resolve(), method) && !self.has_public_accessor(&class_name.resolve(), method)))
+            || (!is_pseudo_method
+                && matches!(&target, Value::Instance { class_name, .. } if self.has_class_level_attr(&class_name.resolve(), method) && !self.has_public_accessor(&class_name.resolve(), method)));
         let native_result = if bypass_native_fastpath {
             None
         } else {

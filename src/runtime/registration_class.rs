@@ -409,6 +409,7 @@ impl Interpreter {
             mro: Vec::new(),
             wildcard_handles: Vec::new(),
             alias_attributes: HashSet::new(),
+            class_level_attrs: HashMap::new(),
         };
         if is_hidden {
             self.hidden_classes.insert(name.to_string());
@@ -688,6 +689,7 @@ impl Interpreter {
                     mro: Vec::new(),
                     wildcard_handles: Vec::new(),
                     alias_attributes: HashSet::new(),
+                    class_level_attrs: HashMap::new(),
                 };
                 self.classes.insert(base_role.to_string(), punned_class);
                 if !punned_composed_roles.is_empty() {
@@ -837,8 +839,26 @@ impl Interpreter {
                     sigil,
                     where_constraint,
                     is_alias,
+                    is_our,
+                    is_my,
                 } => {
                     let attr_name_str = attr_name.resolve();
+
+                    // Handle class-level attributes (our $.x / my $.x)
+                    if *is_our || *is_my {
+                        // Evaluate the default value if present
+                        let initial_value = if let Some(expr) = default {
+                            self.eval_block_value(&[Stmt::Expr(expr.clone())])?
+                        } else {
+                            Value::Nil
+                        };
+                        class_def
+                            .class_level_attrs
+                            .insert(attr_name_str.clone(), initial_value);
+                        // Skip per-instance attribute registration
+                        continue;
+                    }
+
                     // Check for duplicate attribute from role composition
                     if class_def
                         .attributes
@@ -1333,6 +1353,8 @@ impl Interpreter {
                     handles,
                     where_constraint,
                     is_alias,
+                    is_our: _,
+                    is_my: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     if let Some(class_def) = self.classes.get_mut(name) {
@@ -1442,6 +1464,8 @@ impl Interpreter {
                     sigil,
                     where_constraint,
                     is_alias: _,
+                    is_our: _,
+                    is_my: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     role_def.attributes.push((

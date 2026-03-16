@@ -178,6 +178,9 @@ struct ClassDef {
     mro: Vec<String>,
     /// Attribute var names (e.g. "!foo") that have `handles *` wildcard delegation.
     wildcard_handles: Vec<String>,
+    /// Class-level attributes declared with `our $.x` or `my $.x` (shared across instances).
+    /// Maps attribute name to its current value.
+    class_level_attrs: HashMap<String, Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -748,6 +751,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -761,6 +765,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -778,6 +783,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -794,6 +800,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -807,6 +814,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -823,6 +831,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -836,6 +845,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -877,6 +887,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -890,6 +901,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -903,6 +915,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -916,6 +929,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -934,6 +948,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -950,6 +965,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -963,6 +979,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -997,6 +1014,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1016,6 +1034,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1032,6 +1051,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1045,6 +1065,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1058,6 +1079,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1071,6 +1093,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1087,6 +1110,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1100,6 +1124,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1116,6 +1141,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1129,6 +1155,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1145,6 +1172,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1210,6 +1238,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1257,6 +1286,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1270,6 +1300,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1283,6 +1314,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1299,6 +1331,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1329,6 +1362,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1354,6 +1388,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1367,6 +1402,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1396,6 +1432,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1428,6 +1465,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1460,6 +1498,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1489,6 +1528,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1505,6 +1545,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1518,6 +1559,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1531,6 +1573,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1544,6 +1587,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1557,6 +1601,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1570,6 +1615,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1583,6 +1629,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1596,6 +1643,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1609,6 +1657,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1622,6 +1671,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1635,6 +1685,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1648,6 +1699,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1661,6 +1713,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1678,6 +1731,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1696,6 +1750,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1709,6 +1764,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1726,6 +1782,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1743,6 +1800,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1756,6 +1814,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1769,6 +1828,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
         classes.insert(
@@ -1782,6 +1842,7 @@ impl Interpreter {
                 attribute_types: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
             },
         );
 
@@ -1816,6 +1877,7 @@ impl Interpreter {
                     attribute_types: HashMap::new(),
                     wildcard_handles: Vec::new(),
                     alias_attributes: HashSet::new(),
+                    class_level_attrs: HashMap::new(),
                 },
             );
         };

@@ -201,6 +201,7 @@ impl Interpreter {
                         attribute_types: HashMap::new(),
                         wildcard_handles: Vec::new(),
                         alias_attributes: HashSet::new(),
+                        class_level_attrs: HashMap::new(),
                     },
                 );
             }

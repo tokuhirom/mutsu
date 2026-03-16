@@ -255,6 +255,74 @@ impl Interpreter {
             .any(|(attr_name, is_public, ..)| *is_public && attr_name == method_name)
     }
 
+    /// Look up a class-level attribute (declared with `our $.x` or `my $.x`).
+    /// Searches the class and its MRO.
+    pub(crate) fn get_class_level_attr(
+        &mut self,
+        class_name: &str,
+        attr_name: &str,
+    ) -> Option<Value> {
+        // Check own class first
+        if let Some(class_def) = self.classes.get(class_name)
+            && let Some(val) = class_def.class_level_attrs.get(attr_name)
+        {
+            return Some(val.clone());
+        }
+        // Walk MRO for inherited class-level attributes
+        let mro = self.class_mro(class_name);
+        for parent in &mro {
+            if parent == class_name {
+                continue;
+            }
+            if let Some(parent_def) = self.classes.get(parent)
+                && let Some(val) = parent_def.class_level_attrs.get(attr_name)
+            {
+                return Some(val.clone());
+            }
+        }
+        None
+    }
+
+    /// Check if a class (or its MRO) has a class-level attribute.
+    pub(crate) fn has_class_level_attr(&mut self, class_name: &str, attr_name: &str) -> bool {
+        self.get_class_level_attr(class_name, attr_name).is_some()
+    }
+
+    /// Set a class-level attribute value. Searches the class and its MRO to find
+    /// where the attribute is defined, then updates it.
+    pub(crate) fn set_class_level_attr(
+        &mut self,
+        class_name: &str,
+        attr_name: &str,
+        value: Value,
+    ) -> bool {
+        // Check own class first
+        if let Some(class_def) = self.classes.get_mut(class_name)
+            && class_def.class_level_attrs.contains_key(attr_name)
+        {
+            class_def
+                .class_level_attrs
+                .insert(attr_name.to_string(), value);
+            return true;
+        }
+        // Walk MRO
+        let mro = self.class_mro(class_name);
+        for parent in &mro {
+            if parent == class_name {
+                continue;
+            }
+            if let Some(parent_def) = self.classes.get_mut(parent)
+                && parent_def.class_level_attrs.contains_key(attr_name)
+            {
+                parent_def
+                    .class_level_attrs
+                    .insert(attr_name.to_string(), value);
+                return true;
+            }
+        }
+        false
+    }
+
     /// Collect wildcard-handles attribute var names from the class and its MRO.
     pub(super) fn collect_wildcard_handles(&mut self, class_name: &str) -> Vec<String> {
         let mro = self.class_mro(class_name);
