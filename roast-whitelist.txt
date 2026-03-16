@@ -563,6 +563,7 @@ roast/S17-supply/rotate.t
 roast/S17-supply/rotor.t
 roast/S17-supply/schedule-on.t
 roast/S17-supply/skip.t
+roast/S17-supply/snip.t
 roast/S17-supply/sort.t
 roast/S17-supply/split.t
 roast/S17-supply/squish.t
