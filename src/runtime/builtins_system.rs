@@ -953,10 +953,21 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_sleep(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let duration = Self::duration_from_seconds(Self::seconds_from_value(args.first().cloned()));
-        thread::sleep(duration);
-        self.sync_shared_vars_to_env();
-        Ok(Value::Nil)
+        let secs = Self::seconds_from_value(args.first().cloned());
+        match secs {
+            None | Some(f64::INFINITY) => {
+                // sleep with no args or Inf sleeps indefinitely
+                loop {
+                    thread::sleep(Duration::from_secs(3600));
+                }
+            }
+            Some(s) => {
+                let duration = Self::duration_from_seconds(Some(s));
+                thread::sleep(duration);
+                self.sync_shared_vars_to_env();
+                Ok(Value::Nil)
+            }
+        }
     }
 
     pub(super) fn builtin_sleep_timer(&self, args: &[Value]) -> Result<Value, RuntimeError> {
