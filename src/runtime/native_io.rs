@@ -465,9 +465,41 @@ impl Interpreter {
                     .first()
                     .map(|v| v.to_string_value())
                     .ok_or_else(|| RuntimeError::new("rename/move requires destination"))?;
+                let createonly = Self::named_bool(&args, "createonly");
                 let dest_buf = self.resolve_path(&dest);
+                // Check if source and destination are the same file
+                if path_buf == dest_buf
+                    || (path_buf.exists()
+                        && dest_buf.exists()
+                        && fs::canonicalize(&path_buf).ok() == fs::canonicalize(&dest_buf).ok())
+                {
+                    let ex = Value::make_instance(Symbol::intern("X::IO::Move"), HashMap::new());
+                    let mut failure_attrs = HashMap::new();
+                    failure_attrs.insert("exception".to_string(), ex);
+                    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                    failure_attrs.insert(
+                        "message".to_string(),
+                        Value::Str(
+                            format!(
+                                "Failed to move '{}': source and destination are the same file",
+                                p
+                            )
+                            .into(),
+                        ),
+                    );
+                    return Ok(Value::make_instance(
+                        Symbol::intern("Failure"),
+                        failure_attrs,
+                    ));
+                }
+                if createonly && dest_buf.exists() {
+                    return Err(io_exception(
+                        "X::IO::Move",
+                        format!("Failed to move '{}': destination already exists", p),
+                    ));
+                }
                 fs::rename(&path_buf, &dest_buf).map_err(|err| {
-                    RuntimeError::new(format!("Failed to rename '{}': {}", p, err))
+                    io_exception("X::IO::Move", format!("Failed to move '{}': {}", p, err))
                 })?;
                 Ok(Value::Bool(true))
             }

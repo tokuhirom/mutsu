@@ -150,18 +150,25 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_unlink(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let path = args
-            .first()
-            .map(|v| v.to_string_value())
-            .ok_or_else(|| RuntimeError::new("unlink requires a path argument"))?;
-        match fs::remove_file(&path) {
-            Ok(()) => Ok(Value::Bool(true)),
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Value::Bool(false)),
-            Err(err) => Err(RuntimeError::new(format!(
-                "Failed to unlink '{}': {}",
-                path, err
-            ))),
+        // Raku's unlink() returns a list of filenames that were requested to be
+        // removed (always truthy). Errors other than NotFound still throw.
+        let mut names = Vec::new();
+        for arg in args {
+            let path = arg.to_string_value();
+            let resolved = self.resolve_path(&path);
+            match fs::remove_file(&resolved) {
+                Ok(()) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => {
+                    return Err(RuntimeError::new(format!(
+                        "Failed to unlink '{}': {}",
+                        path, err
+                    )));
+                }
+            }
+            names.push(Value::Str(path.into()));
         }
+        Ok(Value::array(names))
     }
 
     pub(super) fn builtin_open(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -337,18 +344,63 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_rename(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let source = args
+        let mut positional = Vec::new();
+        let mut createonly = false;
+        for arg in args {
+            match arg {
+                Value::Pair(key, value) if key == "createonly" => {
+                    createonly = value.truthy();
+                }
+                _ => positional.push(arg),
+            }
+        }
+        let source = positional
             .first()
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("rename requires a source path"))?;
-        let dest = args
+        let dest = positional
             .get(1)
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("rename requires a destination path"))?;
         let src_buf = self.resolve_path(&source);
         let dest_buf = self.resolve_path(&dest);
-        fs::rename(&src_buf, &dest_buf)
-            .map_err(|err| RuntimeError::new(format!("Failed to rename '{}': {}", source, err)))?;
+        // Check if source and destination are the same file
+        if src_buf == dest_buf
+            || (src_buf.exists()
+                && dest_buf.exists()
+                && fs::canonicalize(&src_buf).ok() == fs::canonicalize(&dest_buf).ok())
+        {
+            let ex = Value::make_instance(Symbol::intern("X::IO::Move"), HashMap::new());
+            let mut failure_attrs = HashMap::new();
+            failure_attrs.insert("exception".to_string(), ex);
+            failure_attrs.insert("handled".to_string(), Value::Bool(false));
+            failure_attrs.insert(
+                "message".to_string(),
+                Value::Str(
+                    format!(
+                        "Failed to move '{}': source and destination are the same file",
+                        source
+                    )
+                    .into(),
+                ),
+            );
+            return Ok(Value::make_instance(
+                Symbol::intern("Failure"),
+                failure_attrs,
+            ));
+        }
+        if createonly && dest_buf.exists() {
+            return Err(io_exception_error(
+                "X::IO::Move",
+                format!("Failed to move '{}': destination already exists", source),
+            ));
+        }
+        fs::rename(&src_buf, &dest_buf).map_err(|err| {
+            io_exception_error(
+                "X::IO::Move",
+                format!("Failed to move '{}': {}", source, err),
+            )
+        })?;
         Ok(Value::Bool(true))
     }
 
