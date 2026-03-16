@@ -39,10 +39,10 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         if let Some(i) = source_index {
             let Some(container) = self.interpreter.env_mut().get_mut(source_name) else {
-                return Err(RuntimeError::new("X::Assignment::RO"));
+                return Err(RuntimeError::assignment_ro(None));
             };
             let Value::Array(items, ..) = container else {
-                return Err(RuntimeError::new("X::Assignment::RO"));
+                return Err(RuntimeError::assignment_ro(None));
             };
             let arr = Arc::make_mut(items);
             if i >= arr.len() {
@@ -626,7 +626,7 @@ impl VM {
                     }
                 }
                 Value::Mix(_) if !target_is_mixhash => {
-                    return Err(RuntimeError::new("X::Assignment::RO"));
+                    return Err(RuntimeError::assignment_ro(None));
                 }
                 _ => Value::Nil,
             }
@@ -735,7 +735,7 @@ impl VM {
             false
         };
         if !bind_mode && self.is_bound_index(&var_name, &encoded_idx) {
-            return Err(RuntimeError::new("X::Assignment::RO"));
+            return Err(RuntimeError::assignment_ro(None));
         }
         if !self.interpreter.env().contains_key(&var_name)
             && let Some(slot) = self.find_local_slot(code, &var_name)
@@ -753,7 +753,7 @@ impl VM {
                     let mut initialized_marks: Vec<String> = Vec::new();
                     if is_shaped {
                         if bind_mode && is_bound_index {
-                            return Err(RuntimeError::new("X::Assignment::RO"));
+                            return Err(RuntimeError::assignment_ro(None));
                         }
                         // Multidimensional indexing: @arr[0;0] = 'x'
                         Self::assign_array_multidim(container, keys.as_ref(), val.clone())?;
@@ -880,7 +880,7 @@ impl VM {
                                 || crate::runtime::utils::is_shaped_array(container)
                             {
                                 if bind_mode && is_bound_index {
-                                    return Err(RuntimeError::new("X::Assignment::RO"));
+                                    return Err(RuntimeError::assignment_ro(None));
                                 }
                                 Self::assign_array_multidim(
                                     container,
@@ -975,7 +975,7 @@ impl VM {
                         }
                         Value::Mix(ref mut mix) => {
                             if !target_is_mixhash {
-                                return Err(RuntimeError::new("X::Assignment::RO"));
+                                return Err(RuntimeError::assignment_ro(None));
                             }
                             let m = Arc::make_mut(mix);
                             let weight = Self::mix_assignment_weight(&val);
@@ -1316,7 +1316,7 @@ impl VM {
             if let Some(class_name) = class_name {
                 let class = class_name.resolve();
                 if class == "Blob" || class.starts_with("blob") {
-                    return Err(RuntimeError::new("X::Assignment::RO"));
+                    return Err(RuntimeError::assignment_ro(None));
                 }
                 if class == "Buf" || class.starts_with("buf") {
                     let items = runtime::value_to_list(&assigned)
@@ -1372,7 +1372,7 @@ impl VM {
             Some(Value::Bool(true))
         ) && !matches!(self.interpreter.env().get(&alias_key), Some(Value::Str(_)))
         {
-            return Err(RuntimeError::new("X::Assignment::RO"));
+            return Err(RuntimeError::assignment_ro(None));
         }
         if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
             self.interpreter.reset_atomic_var_key(name);
@@ -1594,7 +1594,7 @@ impl VM {
             if let Some(class_name) = class_name {
                 let class = class_name.resolve();
                 if class == "Blob" || class.starts_with("blob") {
-                    return Err(RuntimeError::new("X::Assignment::RO"));
+                    return Err(RuntimeError::assignment_ro(None));
                 }
                 if class == "Buf" || class.starts_with("buf") {
                     let items = runtime::value_to_list(&assigned)
@@ -1650,7 +1650,7 @@ impl VM {
             Some(Value::Bool(true))
         ) && !matches!(self.interpreter.env().get(&alias_key), Some(Value::Str(_)))
         {
-            return Err(RuntimeError::new("X::Assignment::RO"));
+            return Err(RuntimeError::assignment_ro(None));
         }
         if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
             self.interpreter.reset_atomic_var_key(name);

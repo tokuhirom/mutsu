@@ -503,7 +503,7 @@ impl Interpreter {
                     return Err(RuntimeError::new("Exception"));
                 }
                 if is_lazy_union_input(arg0) {
-                    return Err(RuntimeError::new("X::Cannot::Lazy"));
+                    return Err(RuntimeError::cannot_lazy("coerce"));
                 }
                 return Ok(coerce_value_to_quanthash(arg0));
             }

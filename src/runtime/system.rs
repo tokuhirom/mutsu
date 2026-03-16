@@ -14,7 +14,7 @@ impl Interpreter {
                 self.check_eval_class_redeclarations(&stmts)?;
                 let value = self.eval_block_value(&stmts)?;
                 if self.eval_result_is_unresolved_bareword(&stmts, &value) {
-                    return Err(RuntimeError::new("X::Undeclared::Symbols"));
+                    return Err(RuntimeError::undeclared_symbols("Undeclared name"));
                 }
                 Ok(value)
             }

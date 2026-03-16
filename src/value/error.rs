@@ -252,6 +252,219 @@ impl RuntimeError {
         err.exception = Some(Box::new(ex));
         err
     }
+
+    /// Create a typed exception error with the given class name and attributes.
+    /// This is the general-purpose constructor for structured exceptions.
+    pub(crate) fn typed(class_name: &str, attrs: HashMap<String, Value>) -> Self {
+        let msg = attrs
+            .get("message")
+            .map(|v| v.to_string_value())
+            .unwrap_or_else(|| class_name.to_string());
+        let ex = Value::make_instance(Symbol::intern(class_name), attrs);
+        let mut err = Self::new(msg);
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
+    /// Create a typed exception with just a message attribute.
+    pub(crate) fn typed_msg(class_name: &str, message: impl Into<String>) -> Self {
+        let message = message.into();
+        let mut attrs = HashMap::new();
+        attrs.insert("message".to_string(), Value::str(message.clone()));
+        let ex = Value::make_instance(Symbol::intern(class_name), attrs);
+        let mut err = Self::new(message);
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
+    /// X::Assignment::RO - Cannot modify an immutable value
+    pub(crate) fn assignment_ro(value: Option<&str>) -> Self {
+        let msg = if let Some(v) = value {
+            format!("Cannot modify an immutable value ({})", v)
+        } else {
+            "Cannot modify an immutable value".to_string()
+        };
+        let mut attrs = HashMap::new();
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        if let Some(v) = value {
+            attrs.insert("value".to_string(), Value::str(v.to_string()));
+        }
+        Self::typed("X::Assignment::RO", attrs)
+    }
+
+    /// X::Str::Numeric - Cannot convert string to number
+    #[allow(dead_code)]
+    pub(crate) fn str_numeric(source: &str, reason: &str) -> Self {
+        let msg = format!("Cannot convert string '{}' to number: {}", source, reason);
+        let mut attrs = HashMap::new();
+        attrs.insert("source".to_string(), Value::str(source.to_string()));
+        attrs.insert("reason".to_string(), Value::str(reason.to_string()));
+        attrs.insert("target-name".to_string(), Value::str("Numeric".to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::Str::Numeric", attrs)
+    }
+
+    /// X::OutOfRange - Index out of range
+    pub(crate) fn out_of_range(what: &str, got: Value, range: &str) -> Self {
+        let msg = format!(
+            "Index out of range. Is: {}, should be in {}",
+            got.to_string_value(),
+            range
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("what".to_string(), Value::str(what.to_string()));
+        attrs.insert("got".to_string(), got);
+        attrs.insert("range".to_string(), Value::str(range.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::OutOfRange", attrs)
+    }
+
+    /// X::Undeclared - Undeclared name
+    pub(crate) fn undeclared(what: &str, name: &str) -> Self {
+        let msg = format!("Undeclared {} '{}'", what, name);
+        let mut attrs = HashMap::new();
+        attrs.insert("what".to_string(), Value::str(what.to_string()));
+        attrs.insert("symbol".to_string(), Value::str(name.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::Undeclared", attrs)
+    }
+
+    /// X::Undeclared::Symbols - Undeclared name (symbols variant)
+    pub(crate) fn undeclared_symbols(message: impl Into<String>) -> Self {
+        Self::typed_msg("X::Undeclared::Symbols", message)
+    }
+
+    /// X::Redeclaration - Redeclared symbol
+    #[allow(dead_code)]
+    pub(crate) fn redeclaration(what: &str, name: &str) -> Self {
+        let msg = format!("Redeclaration of {} '{}'", what, name);
+        let mut attrs = HashMap::new();
+        attrs.insert("what".to_string(), Value::str(what.to_string()));
+        attrs.insert("symbol".to_string(), Value::str(name.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::Redeclaration", attrs)
+    }
+
+    /// X::Method::NotFound - No such method
+    #[allow(dead_code)]
+    pub(crate) fn method_not_found(method: &str, typename: &str) -> Self {
+        let msg = format!(
+            "No such method '{}' for invocant of type '{}'",
+            method, typename
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("method".to_string(), Value::str(method.to_string()));
+        attrs.insert("typename".to_string(), Value::str(typename.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::Method::NotFound", attrs)
+    }
+
+    /// X::Obsolete - Obsolete syntax
+    #[allow(dead_code)]
+    pub(crate) fn obsolete(old: &str, replacement: &str) -> Self {
+        let msg = format!(
+            "Unsupported use of {}. In Raku please use: {}.",
+            old, replacement
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("old".to_string(), Value::str(old.to_string()));
+        attrs.insert(
+            "replacement".to_string(),
+            Value::str(replacement.to_string()),
+        );
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::Obsolete", attrs)
+    }
+
+    /// X::Immutable - Cannot modify an immutable value
+    pub(crate) fn immutable(typename: &str, method: &str) -> Self {
+        let msg = format!("Cannot call '{}' on an immutable '{}'", method, typename);
+        let mut attrs = HashMap::new();
+        attrs.insert("typename".to_string(), Value::str(typename.to_string()));
+        attrs.insert("method".to_string(), Value::str(method.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::Immutable", attrs)
+    }
+
+    /// X::Cannot::Lazy - Cannot .elems a lazy list
+    pub(crate) fn cannot_lazy(action: &str) -> Self {
+        let msg = format!("Cannot .{} a lazy list", action);
+        let mut attrs = HashMap::new();
+        attrs.insert("action".to_string(), Value::str(action.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::Cannot::Lazy", attrs)
+    }
+
+    /// X::Syntax::Missing - Missing required syntax element
+    #[allow(dead_code)]
+    pub(crate) fn syntax_missing(what: &str) -> Self {
+        let msg = format!("Missing {}", what);
+        let mut attrs = HashMap::new();
+        attrs.insert("what".to_string(), Value::str(what.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::Syntax::Missing", attrs)
+    }
+
+    /// X::Syntax::Confused - Confused parse error
+    #[allow(dead_code)]
+    pub(crate) fn syntax_confused(message: impl Into<String>) -> Self {
+        Self::typed_msg("X::Syntax::Confused", message)
+    }
+
+    /// X::Syntax::Malformed - Malformed syntax
+    #[allow(dead_code)]
+    pub(crate) fn syntax_malformed(what: &str, message: impl Into<String>) -> Self {
+        let message = message.into();
+        let mut attrs = HashMap::new();
+        attrs.insert("what".to_string(), Value::str(what.to_string()));
+        attrs.insert("message".to_string(), Value::str(message.clone()));
+        Self::typed("X::Syntax::Malformed", attrs)
+    }
+
+    /// X::ControlFlow::Return - Return outside of routine
+    #[allow(dead_code)]
+    pub(crate) fn controlflow_return(out_of_dynamic_scope: bool) -> Self {
+        let msg = "Attempt to return outside of any Routine".to_string();
+        let mut attrs = HashMap::new();
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert(
+            "out-of-dynamic-scope".to_string(),
+            Value::Bool(!out_of_dynamic_scope),
+        );
+        Self::typed("X::ControlFlow::Return", attrs)
+    }
+
+    /// X::TypeCheck::Assignment - Type check failed in assignment
+    pub(crate) fn typecheck_assignment(expected: &str, got: &str) -> Self {
+        let msg = format!(
+            "Type check failed in assignment; expected {}, got {}",
+            expected, got
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("expected".to_string(), Value::str(expected.to_string()));
+        attrs.insert("got".to_string(), Value::str(got.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::TypeCheck::Assignment", attrs)
+    }
+
+    /// X::IO::Closed - IO::Handle is closed
+    pub(crate) fn io_closed(trying: &str) -> Self {
+        let msg = format!("Cannot do '{}' on a closed handle", trying);
+        let mut attrs = HashMap::new();
+        attrs.insert("trying".to_string(), Value::str(trying.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::IO::Closed", attrs)
+    }
+
+    /// X::Bind - Cannot bind to a thing
+    #[allow(dead_code)]
+    pub(crate) fn bind(target: &str) -> Self {
+        let msg = format!("Cannot bind to {}", target);
+        let mut attrs = HashMap::new();
+        attrs.insert("target".to_string(), Value::str(target.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::Bind", attrs)
+    }
 }
 
 #[cfg(test)]

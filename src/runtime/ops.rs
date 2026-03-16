@@ -1454,7 +1454,10 @@ impl Interpreter {
         if matches!(left, Value::Pair(..) | Value::ValuePair(..))
             || matches!(right, Value::Pair(..) | Value::ValuePair(..))
         {
-            return Err(RuntimeError::new("X::Multi::NoMatch"));
+            return Err(RuntimeError::typed_msg(
+                "X::Multi::NoMatch",
+                "Cannot resolve caller; none of the candidates match",
+            ));
         }
         // Version-vs-Version comparison: use version_cmp_parts directly
         if let (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) =

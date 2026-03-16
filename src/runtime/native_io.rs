@@ -1220,7 +1220,7 @@ impl Interpreter {
                     }
                 }
                 let content = String::from_utf8_lossy(&bytes).to_string();
-                self.write_to_handle_value(&target_val, &content, false)?;
+                self.write_to_handle_value_trying(&target_val, &content, false, "write")?;
                 Ok(Value::Bool(true))
             }
             "print" => {
@@ -1228,7 +1228,7 @@ impl Interpreter {
                 for arg in &args {
                     content.push_str(&self.render_str_value(arg));
                 }
-                self.write_to_handle_value(&target_val, &content, false)?;
+                self.write_to_handle_value_trying(&target_val, &content, false, "print")?;
                 Ok(Value::Bool(true))
             }
             "say" => {
@@ -1236,7 +1236,7 @@ impl Interpreter {
                 for arg in &args {
                     content.push_str(&self.render_gist_value(arg));
                 }
-                self.write_to_handle_value(&target_val, &content, true)?;
+                self.write_to_handle_value_trying(&target_val, &content, true, "say")?;
                 Ok(Value::Bool(true))
             }
             "put" => {
@@ -1244,7 +1244,7 @@ impl Interpreter {
                 for arg in &args {
                     content.push_str(&self.render_str_value(arg));
                 }
-                self.write_to_handle_value(&target_val, &content, true)?;
+                self.write_to_handle_value_trying(&target_val, &content, true, "put")?;
                 Ok(Value::Bool(true))
             }
             "flush" => {

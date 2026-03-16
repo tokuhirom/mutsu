@@ -537,7 +537,7 @@ impl VM {
                     Some(Value::Bool(true))
                 ) && !matches!(self.interpreter.env().get(&alias_key), Some(Value::Str(_)))
                 {
-                    return Err(RuntimeError::new("X::Assignment::RO"));
+                    return Err(RuntimeError::assignment_ro(None));
                 }
                 if let Some(source_name) = bind_source {
                     let mut resolved_source = source_name;
@@ -2040,7 +2040,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::AssignReadOnly => {
-                return Err(RuntimeError::new("X::Assignment::RO"));
+                return Err(RuntimeError::assignment_ro(None));
             }
             OpCode::CheckReadOnly(name_idx) => {
                 let name = Self::const_str(code, *name_idx);

@@ -240,7 +240,10 @@ impl Interpreter {
             .collect();
 
         if matches.is_empty() {
-            return Err(RuntimeError::new("X::Role::Parametric::NoSuchCandidate"));
+            return Err(RuntimeError::typed_msg(
+                "X::Role::Parametric::NoSuchCandidate",
+                "No matching candidate found for the parametric role",
+            ));
         }
 
         matches.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)));
@@ -429,7 +432,10 @@ impl Interpreter {
                 self.resolve_role_candidate(parent)?
             {
                 if role.is_stub_role {
-                    return Err(RuntimeError::new("X::Role::Parametric::NoSuchCandidate"));
+                    return Err(RuntimeError::typed_msg(
+                        "X::Role::Parametric::NoSuchCandidate",
+                        "No matching candidate found for the parametric role",
+                    ));
                 }
                 // Check if this role was specified via `is` (punning) vs `does` (composition)
                 let is_punned = !does_parents.contains(parent);
@@ -1050,7 +1056,10 @@ impl Interpreter {
                         RuntimeError::new(format!("Unknown role: {}", role_name_str))
                     })?;
                     if role.is_stub_role {
-                        return Err(RuntimeError::new("X::Role::Parametric::NoSuchCandidate"));
+                        return Err(RuntimeError::typed_msg(
+                            "X::Role::Parametric::NoSuchCandidate",
+                            "No matching candidate found for the parametric role",
+                        ));
                     }
                     for attr in &role.attributes {
                         if !class_def.attributes.iter().any(|(n, ..)| n == &attr.0) {
@@ -1515,7 +1524,10 @@ impl Interpreter {
                         RuntimeError::new(format!("Unknown role: {}", role_name_str))
                     })?;
                     if role.is_stub_role {
-                        return Err(RuntimeError::new("X::Role::Parametric::NoSuchCandidate"));
+                        return Err(RuntimeError::typed_msg(
+                            "X::Role::Parametric::NoSuchCandidate",
+                            "No matching candidate found for the parametric role",
+                        ));
                     }
                     self.role_parents
                         .entry(name.to_string())
@@ -1601,7 +1613,10 @@ impl Interpreter {
                             .as_deref()
                             .is_some_and(|rt| rt.contains("?CLASS")))
                     {
-                        return Err(RuntimeError::new("X::Role::Unimplemented::Multi"));
+                        return Err(RuntimeError::typed_msg(
+                            "X::Role::Unimplemented::Multi",
+                            "Unimplemented multi method from role",
+                        ));
                     }
                     let resolved_method_name = if let Some(expr) = name_expr {
                         self.eval_block_value(&[Stmt::Expr(expr.clone())])?
