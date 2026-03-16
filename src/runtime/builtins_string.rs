@@ -148,7 +148,20 @@ impl Interpreter {
             Some(Value::Str(s)) => s.to_string(),
             _ => String::new(),
         };
-        let rendered = super::sprintf::format_sprintf_args(&fmt, &args[1..]);
+        // Flatten array arguments (Raku: sprintf("%d", [42]) treats array elements as args)
+        let rest = &args[1..];
+        let flattened: Vec<Value>;
+        let actual_args = if rest.len() == 1 {
+            if let Value::Array(items, ..) = &rest[0] {
+                flattened = items.as_ref().clone();
+                &flattened
+            } else {
+                rest
+            }
+        } else {
+            rest
+        };
+        let rendered = super::sprintf::format_sprintf_args(&fmt, actual_args);
         Ok(Value::str(rendered))
     }
 

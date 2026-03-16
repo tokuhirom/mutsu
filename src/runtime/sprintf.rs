@@ -116,6 +116,11 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
             }
             Some(Value::Num(f)) => *f as i64,
             Some(Value::Rat(n, d)) if *d != 0 => *n / *d,
+            Some(Value::FatRat(n, d)) if *d != 0 => *n / *d,
+            Some(Value::BigRat(n, d)) if *d != num_bigint::BigInt::from(0) => {
+                use num_traits::ToPrimitive;
+                (n / d).to_i64().unwrap_or(0)
+            }
             Some(Value::Str(s)) => s.trim().parse::<i64>().unwrap_or(0),
             Some(Value::Bool(b)) => {
                 if *b {
@@ -131,6 +136,8 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
             Some(Value::Int(i)) => BigInt::from(*i),
             Some(Value::Num(f)) => BigInt::from(*f as i64),
             Some(Value::Rat(n, d)) if *d != 0 => BigInt::from(*n / *d),
+            Some(Value::FatRat(n, d)) if *d != 0 => BigInt::from(*n / *d),
+            Some(Value::BigRat(n, d)) if *d != num_bigint::BigInt::from(0) => n / d,
             Some(Value::Str(s)) => s
                 .trim()
                 .parse::<BigInt>()
@@ -143,6 +150,12 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
             Some(Value::Int(i)) => *i as f64,
             Some(Value::Num(f)) => *f,
             Some(Value::Rat(n, d)) if *d != 0 => *n as f64 / *d as f64,
+            Some(Value::FatRat(n, d)) if *d != 0 => *n as f64 / *d as f64,
+            Some(Value::BigRat(n, d)) if *d != num_bigint::BigInt::from(0) => {
+                use num_traits::ToPrimitive;
+                let result = n * BigInt::from(1_000_000_000i64) / d;
+                result.to_f64().unwrap_or(0.0) / 1_000_000_000.0
+            }
             Some(Value::Str(s)) => s.trim().parse::<f64>().unwrap_or(0.0),
             _ => 0.0,
         };
@@ -162,12 +175,24 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
                 let i = bigint_val();
                 let is_neg = i < BigInt::from(0);
                 let prefix = sign_prefix(is_neg, plus_sign, space_flag);
-                let abs = if is_neg {
+                let mut abs = if is_neg {
                     format!("{}", -&i)
                 } else {
                     format!("{}", i)
                 };
-                format!("{}{}", prefix, abs)
+                // Apply precision: minimum number of digits
+                if let Some(p) = prec_num {
+                    if p == 0 && abs == "0" {
+                        abs.clear();
+                    } else if abs.len() < p {
+                        abs = format!("{:0>width$}", abs, width = p);
+                    }
+                }
+                if abs.is_empty() && prefix.is_empty() {
+                    String::new()
+                } else {
+                    format!("{}{}", prefix, abs)
+                }
             }
             'u' => {
                 let i = bigint_val();
@@ -268,31 +293,44 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
             }
             'f' | 'F' => {
                 let f = float_val();
-                let p = prec_num.unwrap_or(6);
-                let is_neg = f.is_sign_negative() && (f != 0.0 || f.is_sign_negative());
-                let prefix = sign_prefix(is_neg, plus_sign, space_flag);
-                let abs = f.abs();
-                format!("{}{:.*}", prefix, p, abs)
+                if f.is_infinite() || f.is_nan() {
+                    format_inf_nan(f, plus_sign, space_flag)
+                } else {
+                    let p = prec_num.unwrap_or(6);
+                    let is_neg = f.is_sign_negative() && (f != 0.0 || f.is_sign_negative());
+                    let prefix = sign_prefix(is_neg, plus_sign, space_flag);
+                    let abs = f.abs();
+                    format!("{}{:.*}", prefix, p, abs)
+                }
             }
             'e' | 'E' => {
                 let f = float_val();
-                let p = prec_num.unwrap_or(6);
-                let is_neg = f.is_sign_negative() && (f != 0.0 || f.is_sign_negative());
-                let prefix = sign_prefix(is_neg, plus_sign, space_flag);
-                let abs = f.abs();
-                let formatted = if spec == 'e' {
-                    normalize_sci_exponent(&format!("{:.*e}", p, abs))
+                if f.is_infinite() || f.is_nan() {
+                    format_inf_nan(f, plus_sign, space_flag)
                 } else {
-                    normalize_sci_exponent(&format!("{:.*E}", p, abs))
-                };
-                format!("{}{}", prefix, formatted)
+                    let p = prec_num.unwrap_or(6);
+                    let is_neg = f.is_sign_negative() && (f != 0.0 || f.is_sign_negative());
+                    let prefix = sign_prefix(is_neg, plus_sign, space_flag);
+                    let abs = f.abs();
+                    let formatted = if spec == 'e' {
+                        normalize_sci_exponent(&format!("{:.*e}", p, abs))
+                    } else {
+                        normalize_sci_exponent(&format!("{:.*E}", p, abs))
+                    };
+                    format!("{}{}", prefix, formatted)
+                }
             }
             'g' | 'G' => {
                 let f = float_val();
-                if let Some(p) = prec_num {
-                    format!("{:.*}", p, f)
+                if f.is_infinite() || f.is_nan() {
+                    format_inf_nan(f, plus_sign, space_flag)
                 } else {
-                    format!("{}", f)
+                    let is_neg = f.is_sign_negative() && (f != 0.0 || f.is_sign_negative());
+                    let prefix = sign_prefix(is_neg, plus_sign, space_flag);
+                    let abs = f.abs();
+                    let p = prec_num.unwrap_or(6).max(1);
+                    let formatted = format_g(abs, p, spec == 'G', hash_flag);
+                    format!("{}{}", prefix, formatted)
                 }
             }
             'c' => {
@@ -317,6 +355,108 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
         }
     }
     out
+}
+
+/// Format a non-negative float using %g/%G rules:
+/// - Use %e/%E if exponent < -4 or >= precision
+/// - Otherwise use %f
+/// - Precision specifies total significant digits
+/// - Trailing zeros are removed (unless # flag is set)
+fn format_g(abs: f64, prec: usize, upper: bool, hash_flag: bool) -> String {
+    // Determine exponent
+    let exp = if abs == 0.0 {
+        0i32
+    } else {
+        abs.log10().floor() as i32
+    };
+    let use_sci = exp < -4 || exp >= prec as i32;
+    if use_sci {
+        // Scientific notation with (prec-1) decimal digits
+        let decimal_digits = prec.saturating_sub(1);
+        let raw = format!("{:.*e}", decimal_digits, abs);
+        let normalized = normalize_sci_exponent(&raw);
+        // Replace 'e' with correct case
+        let normalized = if upper {
+            normalized.replacen('e', "E", 1)
+        } else {
+            normalized
+        };
+        if hash_flag {
+            normalized
+        } else {
+            strip_trailing_zeros_sci(&normalized)
+        }
+    } else {
+        // Fixed notation with (prec - 1 - exp) decimal places
+        let decimal_digits = if prec as i32 > exp + 1 {
+            (prec as i32 - exp - 1) as usize
+        } else {
+            0
+        };
+        let raw = format!("{:.*}", decimal_digits, abs);
+        if hash_flag {
+            raw
+        } else {
+            strip_trailing_zeros_fixed(&raw)
+        }
+    }
+}
+
+/// Strip trailing zeros after decimal point in fixed notation.
+/// "3.1400" -> "3.14", "3.0" -> "3", "100" -> "100"
+fn strip_trailing_zeros_fixed(s: &str) -> String {
+    if s.contains('.') {
+        let trimmed = s.trim_end_matches('0');
+        if let Some(without_dot) = trimmed.strip_suffix('.') {
+            without_dot.to_string()
+        } else {
+            trimmed.to_string()
+        }
+    } else {
+        s.to_string()
+    }
+}
+
+/// Strip trailing zeros in scientific notation mantissa.
+/// "3.1400e+02" -> "3.14e+02", "3.0000e+02" -> "3e+02"
+fn strip_trailing_zeros_sci(s: &str) -> String {
+    let e_pos = s.rfind('e').or_else(|| s.rfind('E'));
+    if let Some(pos) = e_pos {
+        let mantissa = &s[..pos];
+        let exp_part = &s[pos..];
+        if mantissa.contains('.') {
+            let trimmed = mantissa.trim_end_matches('0');
+            if let Some(without_dot) = trimmed.strip_suffix('.') {
+                format!("{}{}", without_dot, exp_part)
+            } else {
+                format!("{}{}", trimmed, exp_part)
+            }
+        } else {
+            s.to_string()
+        }
+    } else {
+        s.to_string()
+    }
+}
+
+/// Format Inf/NaN values consistently across all format specifiers.
+/// Raku always uses "Inf", "-Inf", "NaN" regardless of %e/%E/%f/%g/%G.
+fn format_inf_nan(f: f64, plus_sign: bool, space_flag: bool) -> String {
+    if f.is_nan() {
+        "NaN".to_string()
+    } else {
+        let is_neg = f.is_sign_negative();
+        let prefix = if is_neg {
+            "-"
+        } else if plus_sign {
+            "+"
+        } else if space_flag {
+            " "
+        } else {
+            ""
+        };
+        format!("{}Inf", prefix)
+    }
 }
 
 /// Returns the sign prefix for a numeric value.
