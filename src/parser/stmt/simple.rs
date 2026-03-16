@@ -35,6 +35,9 @@ struct LexicalScope {
     /// Operator precedence levels. Key is full operator name (e.g. "infix:<add>"),
     /// value is numeric precedence level.
     op_precedence: HashMap<String, i32>,
+    /// User-declared class/role/grammar/enum names. Used to disambiguate
+    /// identifiers like `S` from the `S///` substitution operator.
+    user_types: HashSet<String>,
 }
 
 thread_local! {
@@ -463,6 +466,29 @@ pub(in crate::parser) fn is_user_declared_sub(name: &str) -> bool {
             .iter()
             .rev()
             .any(|scope| scope.user_subs.contains(name))
+    })
+}
+
+/// Register a user-declared type name (class, role, grammar, enum).
+pub(in crate::parser) fn register_user_type(name: &str) {
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let current = scopes
+            .last_mut()
+            .expect("scope stack should never be empty");
+        current.user_types.insert(name.to_string());
+    });
+}
+
+/// Check if a name was declared as a user type (class, role, grammar, enum)
+/// in any enclosing scope.
+pub(in crate::parser) fn is_user_declared_type(name: &str) -> bool {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        scopes
+            .iter()
+            .rev()
+            .any(|scope| scope.user_types.contains(name))
     })
 }
 
