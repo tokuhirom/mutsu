@@ -1019,6 +1019,7 @@ impl Interpreter {
                 nested.subsets = self.subsets.clone();
                 nested.type_metadata = self.type_metadata.clone();
                 nested.current_package = self.current_package.clone();
+                nested.suppressed_names = self.suppressed_names.clone();
                 for (k, v) in &self.env {
                     if k.contains("::") {
                         continue;

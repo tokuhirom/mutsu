@@ -1402,9 +1402,12 @@ pub(super) fn try_interpolate_var<'a>(
             let expr = Expr::ArrayVar(name.to_string());
             let after_name = &var_rest[end..];
             let mut remainder = after_name;
-            // Zen-slice interpolation: "@arr[]" should interpolate the array value
+            // Zen-slice interpolation: "@arr[]" and "@arr.[]" should interpolate the array value
             let mut consumed = false;
-            if let Some(r) = remainder.strip_prefix("[]") {
+            if let Some(r) = remainder.strip_prefix(".[]") {
+                remainder = r;
+                consumed = true;
+            } else if let Some(r) = remainder.strip_prefix("[]") {
                 remainder = r;
                 consumed = true;
             }

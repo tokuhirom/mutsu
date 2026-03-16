@@ -669,7 +669,7 @@ impl VM {
                 || current_package == "GLOBAL"
                 || resolved_name == current_package
             {
-                resolved_name
+                resolved_name.clone()
             } else {
                 format!("{current_package}::{resolved_name}")
             };
@@ -701,6 +701,11 @@ impl VM {
             );
             env.entry(qualified_name.clone())
                 .or_insert(Value::Package(Symbol::intern(&qualified_name)));
+            // When a nested class is registered with a qualified name (e.g. A::B),
+            // suppress the short name (B) so it cannot be used outside the parent class.
+            if qualified_name != resolved_name && !resolved_name.contains("::") {
+                self.interpreter.suppress_name(&resolved_name);
+            }
             self.env_dirty = true;
             Ok(())
         } else {
