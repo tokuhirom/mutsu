@@ -188,12 +188,36 @@ impl Compiler {
                         if name.resolve() == "__mutsu_record_bound_array_len"
                     )
                 });
+                // Collect sigilless readonly names so we can clear the flag
+                // before the VarDecl assignment (allows re-declaration in loops).
+                let sigilless_readonly_names: Vec<String> = stmts
+                    .iter()
+                    .filter_map(|s| {
+                        if let Stmt::MarkSigillessReadonly(name) = s {
+                            Some(name.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
                 for s in stmts {
                     if has_bound_array_len
                         && let Stmt::VarDecl { name, .. } = s
                         && name.starts_with('@')
                     {
                         self.bind_vardecl = true;
+                    }
+                    // Before compiling a VarDecl that will be followed by
+                    // MarkSigillessReadonly, clear the old readonly flag so
+                    // that re-declaration in a loop iteration succeeds.
+                    if let Stmt::VarDecl { name, .. } = s
+                        && sigilless_readonly_names.contains(name)
+                    {
+                        let key = format!("__mutsu_sigilless_readonly::{}", name);
+                        let key_idx = self.code.add_constant(Value::str(key));
+                        let false_idx = self.code.add_constant(Value::Bool(false));
+                        self.code.emit(OpCode::LoadConst(false_idx));
+                        self.code.emit(OpCode::SetGlobal(key_idx));
                     }
                     self.compile_stmt(s);
                 }
