@@ -1000,6 +1000,12 @@ pub(super) fn process_escape_sequence<'a>(
                 {
                     current.push(ch);
                 }
+                // NFC-normalize: \xHHHH escapes may introduce characters that
+                // should compose with surrounding text
+                use unicode_normalization::UnicodeNormalization;
+                let normalized: String = current.nfc().collect();
+                current.clear();
+                current.push_str(&normalized);
                 return Some((&r[len..], true));
             }
             return Some((r, true));

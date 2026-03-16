@@ -1997,13 +1997,16 @@ impl Interpreter {
             (Value::Str(a), Value::Str(b)) => a == b,
             // Str ~~ Numeric: numify LHS and compare
             (Value::Str(a), Value::Int(b)) => a.trim().parse::<f64>() == Ok(*b as f64),
-            (Value::Str(a), Value::Num(b)) => a.trim().parse::<f64>().is_ok_and(|v| {
-                if v.is_nan() && b.is_nan() {
-                    true
-                } else {
-                    v == *b
-                }
-            }),
+            (Value::Str(a), Value::Num(b)) => {
+                let trimmed = a.trim().replace('\u{2212}', "-");
+                trimmed.parse::<f64>().is_ok_and(|v| {
+                    if v.is_nan() && b.is_nan() {
+                        true
+                    } else {
+                        v == *b
+                    }
+                })
+            }
             (Value::Str(a), Value::Rat(n, d)) => {
                 if *d != 0 {
                     a.trim()

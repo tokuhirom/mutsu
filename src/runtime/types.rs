@@ -1118,6 +1118,17 @@ impl Interpreter {
         if crate::runtime::native_types::is_native_int_type(constraint) && value_type == "Int" {
             return true;
         }
+        // Native float types (num32, num64) are subtypes of Num
+        if constraint == "Num" && matches!(value_type, "num32" | "num64" | "num") {
+            return true;
+        }
+        if matches!(constraint, "num32" | "num64") && value_type == "Num" {
+            return true;
+        }
+        // Native str type is a subtype of Str
+        if constraint == "Str" && value_type == "str" {
+            return true;
+        }
         // Numeric hierarchy: Int is a Numeric, Num is a Numeric
         if constraint == "Numeric"
             && matches!(
