@@ -1920,6 +1920,15 @@ impl VM {
             .env_mut()
             .insert("__ANON_STATE__".to_string(), base.clone());
 
+        // In Raku, methods do NOT set $_ to the invocant by default.
+        // $_ in a method body is Any unless the invocant is explicitly named $_
+        // (e.g. `method foo ($_: ) { ... }`). The invocant binding loop below
+        // will set $_ back to self if the invocant param is named "_".
+        self.interpreter.env_mut().insert(
+            "_".to_string(),
+            Value::Package(crate::symbol::Symbol::intern("Any")),
+        );
+
         // Role param bindings
         if let Some(role_bindings) = self
             .interpreter
@@ -2220,6 +2229,7 @@ impl VM {
             "__ANON_STATE__".to_string(),
             "?CLASS".to_string(),
             "?ROLE".to_string(),
+            "_".to_string(),
         ]);
         for p in &method_def.params {
             method_local_keys.insert(p.clone());

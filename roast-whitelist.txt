@@ -402,6 +402,7 @@ roast/S12-methods/method-vs-sub.t
 roast/S12-methods/private.t
 roast/S12-methods/submethods.t
 roast/S12-methods/syntax.t
+roast/S12-methods/topic.t
 roast/S12-methods/trusts.t
 roast/S12-methods/typed-attributes.t
 roast/S12-methods/what.t
