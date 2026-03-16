@@ -6,7 +6,7 @@ use crate::ast::{Expr, Stmt};
 use crate::regex_validate::validate_regex_syntax;
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
-use crate::value::Value;
+use crate::value::{RuntimeError, Value};
 
 /// Process escape sequences in a tr/// from/to string.
 /// Handles \n, \t, \r, \x.., \o.., \\, etc.
@@ -42,6 +42,45 @@ fn validate_regex_pattern_or_perror(pattern: &str) -> Result<(), PError> {
             PError::fatal(e.message)
         }
     })
+}
+
+/// Reject obsolete Perl 5 trailing regex modifiers (e.g., m/pattern/i, m/pattern/g).
+/// In Raku, adverbs come before the delimiter (:i, :g), not after.
+fn reject_trailing_p5_modifiers(rest: &str) -> Result<(), PError> {
+    // Collect consecutive ASCII lowercase letters immediately after closing delimiter
+    let modifier_str: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_lowercase())
+        .collect();
+    if !modifier_str.is_empty() {
+        // Check if the next char after the modifier letters is NOT alphanumeric/underscore/hyphen
+        // (to avoid false positives like m/foo/method where "method" is an identifier)
+        let after_mods = &rest[modifier_str.len()..];
+        let next_ch = after_mods.chars().next();
+        let is_standalone = match next_ch {
+            None => true,
+            Some(c) => !c.is_ascii_alphanumeric() && c != '_' && c != '-',
+        };
+        if is_standalone {
+            let old = format!("/{}", modifier_str);
+            let replacement = match modifier_str.as_str() {
+                "m" => "^^ and $$ anchors",
+                "s" => ". to match any character",
+                "i" => ":i or :ignorecase adverb",
+                "x" => ":x or :sigspace adverb",
+                "g" => ":g or :global adverb",
+                "e" => "an EVAL block",
+                _ => "a Raku adverb",
+            };
+            let err = RuntimeError::obsolete(&old, replacement);
+            return Err(if let Some(ex) = err.exception {
+                PError::fatal_with_exception(err.message, ex)
+            } else {
+                PError::fatal(err.message)
+            });
+        }
+    }
+    Ok(())
 }
 
 use super::super::expr::expression;
@@ -1162,6 +1201,8 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     if !is_paired && open_ch == '-' && has_unescaped_statement_boundary(pattern) {
                         return Err(PError::expected("regex literal"));
                     }
+                    // Detect obsolete Perl 5 trailing modifiers (e.g., m/pattern/i)
+                    reject_trailing_p5_modifiers(rest)?;
                     let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                     if !adverbs.perl5 {
                         validate_regex_pattern_or_perror(&pattern)?;

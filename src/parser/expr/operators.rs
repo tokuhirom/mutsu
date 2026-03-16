@@ -609,6 +609,10 @@ pub(super) fn enrich_expected_error(
     context: &str,
     remaining_len_fallback: usize,
 ) -> PError {
+    // Preserve fatal errors with structured exceptions (e.g., X::Obsolete)
+    if err.is_fatal() && err.exception.is_some() {
+        return err;
+    }
     PError {
         messages: merge_expected_messages(context, &err.messages),
         remaining_len: err.remaining_len.or(Some(remaining_len_fallback)),
