@@ -547,18 +547,24 @@ impl VM {
         self.stack.push(runtime::make_order(ord));
     }
 
-    pub(super) fn exec_strict_eq_op(&mut self) {
+    pub(super) fn exec_strict_eq_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack
-            .push(Value::Bool(runtime::values_identical(&left, &right)));
+        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+            Ok(Value::Bool(runtime::values_identical(&l, &r)))
+        })?;
+        self.stack.push(result);
+        Ok(())
     }
 
-    pub(super) fn exec_strict_ne_op(&mut self) {
+    pub(super) fn exec_strict_ne_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack
-            .push(Value::Bool(!runtime::values_identical(&left, &right)));
+        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+            Ok(Value::Bool(!runtime::values_identical(&l, &r)))
+        })?;
+        self.stack.push(result);
+        Ok(())
     }
 
     pub(super) fn exec_eqv_op(&mut self) -> Result<(), RuntimeError> {
