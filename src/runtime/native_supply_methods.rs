@@ -441,6 +441,15 @@ impl Interpreter {
                             delay_seconds,
                             *limit as usize,
                         );
+                    } else if let Some(produce_callable) =
+                        attributes.get("produce_callable").cloned()
+                    {
+                        register_supplier_produce_tap(
+                            *supplier_id as u64,
+                            tap_cb.clone(),
+                            delay_seconds,
+                            produce_callable,
+                        );
                     } else {
                         register_supplier_tap(*supplier_id as u64, tap_cb.clone(), delay_seconds);
                     }
@@ -836,6 +845,19 @@ impl Interpreter {
                 ) {
                     return Err(RuntimeError::new("Supply.produce requires a code argument"));
                 }
+                // For live (Supplier-backed) supplies, create a derived supply
+                // that stores the produce callable for deferred execution on tap.
+                if attributes.get("supplier_id").is_some() {
+                    let mut new_attrs = HashMap::new();
+                    new_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    if let Some(sid) = attributes.get("supplier_id") {
+                        new_attrs.insert("supplier_id".to_string(), sid.clone());
+                    }
+                    new_attrs.insert("produce_callable".to_string(), reducer);
+                    new_attrs.insert("live".to_string(), Value::Bool(false));
+                    return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
+                }
                 let source_values = self.supply_get_values(attributes)?;
                 let mut produced = Vec::new();
                 if !source_values.is_empty() {
@@ -1208,6 +1230,24 @@ impl Interpreter {
                                     let _ = self.call_sub_value(done_cb, Vec::new(), true);
                                 }
                             }
+                            SupplierEmitAction::ProduceCall {
+                                callback,
+                                callable,
+                                value: val,
+                                accumulator,
+                                delay_seconds,
+                                tap_index,
+                            } => {
+                                let new_acc = if let Some(acc) = accumulator {
+                                    self.call_sub_value(callable, vec![acc, val], false)
+                                        .unwrap_or(Value::Nil)
+                                } else {
+                                    val
+                                };
+                                supplier_produce_update_acc(sid, tap_index, new_acc.clone());
+                                Self::sleep_for_supply_delay(delay_seconds);
+                                self.call_sub_value(callback, vec![new_acc], true)?;
+                            }
                         }
                     }
                 }
@@ -1352,6 +1392,13 @@ impl Interpreter {
                             tap_cb.clone(),
                             delay_seconds,
                             *limit as usize,
+                        );
+                    } else if let Some(produce_callable) = attrs.get("produce_callable").cloned() {
+                        register_supplier_produce_tap(
+                            *supplier_id as u64,
+                            tap_cb.clone(),
+                            delay_seconds,
+                            produce_callable,
                         );
                     } else {
                         register_supplier_tap(*supplier_id as u64, tap_cb.clone(), delay_seconds);

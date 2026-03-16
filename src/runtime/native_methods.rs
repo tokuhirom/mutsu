@@ -425,6 +425,14 @@ struct SupplierTapSubscription {
     head_limit: Option<usize>,
     /// Count of values emitted so far (used with head_limit)
     head_count: usize,
+    /// Produce (scan/fold) state: callable and running accumulator
+    produce_state: Option<ProduceState>,
+}
+
+#[derive(Clone)]
+struct ProduceState {
+    callable: Value,
+    accumulator: Option<Value>,
 }
 
 #[derive(Clone, Default)]
@@ -750,6 +758,7 @@ pub(super) fn register_supplier_tap(supplier_id: u64, tap: Value, delay_seconds:
                 elems_trace: None,
                 head_limit: None,
                 head_count: 0,
+                produce_state: None,
             });
     }
 }
@@ -775,6 +784,7 @@ pub(super) fn register_supplier_tap_with_head_limit(
                 elems_trace: None,
                 head_limit: Some(limit),
                 head_count: 0,
+                produce_state: None,
             });
     }
 }
@@ -800,6 +810,7 @@ pub(super) fn register_supplier_lines_tap(
                 elems_trace: None,
                 head_limit: None,
                 head_count: 0,
+                produce_state: None,
             });
     }
 }
@@ -831,6 +842,7 @@ pub(super) fn register_supplier_elems_tap(
                 }),
                 head_limit: None,
                 head_count: 0,
+                produce_state: None,
             });
     }
 }
@@ -855,6 +867,15 @@ pub(super) enum SupplierEmitAction {
     /// Signal that a head-limited tap has reached its limit; fire done callbacks.
     HeadLimitReached {
         supplier_id: u64,
+    },
+    /// Produce (scan) transform: needs interpreter to call the callable
+    ProduceCall {
+        callback: Value,
+        callable: Value,
+        value: Value,
+        accumulator: Option<Value>,
+        delay_seconds: f64,
+        tap_index: usize,
     },
 }
 
@@ -942,6 +963,15 @@ pub(super) fn supplier_emit_callbacks(
                         tap.delay_seconds,
                     ));
                 }
+            } else if let Some(ref ps) = tap.produce_state {
+                actions.push(SupplierEmitAction::ProduceCall {
+                    callback: tap.callback.clone(),
+                    callable: ps.callable.clone(),
+                    value: emitted_value.clone(),
+                    accumulator: ps.accumulator.clone(),
+                    delay_seconds: tap.delay_seconds,
+                    tap_index: idx,
+                });
             } else {
                 actions.push(SupplierEmitAction::Call(
                     tap.callback.clone(),
@@ -1015,7 +1045,48 @@ pub(super) fn register_supplier_unique_tap(
                 elems_trace: None,
                 head_limit: None,
                 head_count: 0,
+                produce_state: None,
             });
+    }
+}
+
+pub(super) fn register_supplier_produce_tap(
+    supplier_id: u64,
+    tap: Value,
+    delay_seconds: f64,
+    callable: Value,
+) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        map.entry(supplier_id)
+            .or_default()
+            .taps
+            .push(SupplierTapSubscription {
+                callback: tap,
+                line_mode: false,
+                line_chomp: true,
+                line_buffer: String::new(),
+                delay_seconds,
+                unique_filter: None,
+                classify_state: None,
+                elems_trace: None,
+                head_limit: None,
+                head_count: 0,
+                produce_state: Some(ProduceState {
+                    callable,
+                    accumulator: None,
+                }),
+            });
+    }
+}
+
+/// Update the accumulator for a produce tap after the interpreter has computed the new value.
+pub(super) fn supplier_produce_update_acc(supplier_id: u64, tap_index: usize, new_acc: Value) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock()
+        && let Some(subs) = map.get_mut(&supplier_id)
+        && let Some(tap) = subs.taps.get_mut(tap_index)
+        && let Some(ref mut ps) = tap.produce_state
+    {
+        ps.accumulator = Some(new_acc);
     }
 }
 
@@ -1055,6 +1126,7 @@ pub(super) fn register_supplier_classify_tap(
                 elems_trace: None,
                 head_limit: None,
                 head_count: 0,
+                produce_state: None,
             });
     }
 }
@@ -2747,6 +2819,24 @@ impl Interpreter {
                     for done_cb in take_supplier_done_callbacks(sid2) {
                         let _ = self.call_sub_value(done_cb, Vec::new(), true);
                     }
+                }
+                SupplierEmitAction::ProduceCall {
+                    callback,
+                    callable,
+                    value: val,
+                    accumulator,
+                    delay_seconds,
+                    tap_index,
+                } => {
+                    let new_acc = if let Some(acc) = accumulator {
+                        self.call_sub_value(callable, vec![acc, val], false)
+                            .unwrap_or(Value::Nil)
+                    } else {
+                        val
+                    };
+                    supplier_produce_update_acc(supplier_id, tap_index, new_acc.clone());
+                    Self::sleep_for_supply_delay(delay_seconds);
+                    let _ = self.call_sub_value(callback, vec![new_acc], true);
                 }
             }
         }
