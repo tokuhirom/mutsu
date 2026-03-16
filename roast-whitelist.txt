@@ -269,6 +269,7 @@ roast/S05-modifier/global.t
 roast/S05-modifier/my.t
 roast/S05-modifier/overlapping.t
 roast/S05-modifier/pos.t
+roast/S05-modifier/ratchet.t
 roast/S05-modifier/repetition-exhaustive.t
 roast/S05-modifier/repetition.t
 roast/S05-modifier/samemark.t

@@ -577,8 +577,68 @@ impl Interpreter {
                 source = rest.trim_start();
                 continue;
             }
+            if let Some(rest) = source.strip_prefix(":!ratchet") {
+                ratchet = false;
+                source = rest.trim_start();
+                continue;
+            }
             if let Some(rest) = source.strip_prefix(":ratchet") {
                 ratchet = true;
+                source = rest.trim_start();
+                continue;
+            }
+            if let Some(rest) = source.strip_prefix(":!ignorecase") {
+                ignore_case = false;
+                source = rest.trim_start();
+                continue;
+            }
+            if let Some(rest) = source.strip_prefix(":!ignoremark") {
+                ignore_mark = false;
+                source = rest.trim_start();
+                continue;
+            }
+            if let Some(rest) = source.strip_prefix(":!sigspace") {
+                sigspace = false;
+                source = rest.trim_start();
+                continue;
+            }
+            if let Some(rest) = source.strip_prefix(":!i")
+                && (rest.is_empty()
+                    || rest.starts_with(' ')
+                    || rest.starts_with(':')
+                    || rest.starts_with('/'))
+            {
+                ignore_case = false;
+                source = rest.trim_start();
+                continue;
+            }
+            if let Some(rest) = source.strip_prefix(":!s")
+                && (rest.is_empty()
+                    || rest.starts_with(' ')
+                    || rest.starts_with(':')
+                    || rest.starts_with('/'))
+            {
+                sigspace = false;
+                source = rest.trim_start();
+                continue;
+            }
+            if let Some(rest) = source.strip_prefix(":!r")
+                && (rest.is_empty()
+                    || rest.starts_with(' ')
+                    || rest.starts_with(':')
+                    || rest.starts_with('/'))
+            {
+                ratchet = false;
+                source = rest.trim_start();
+                continue;
+            }
+            if let Some(rest) = source.strip_prefix(":!m")
+                && (rest.is_empty()
+                    || rest.starts_with(' ')
+                    || rest.starts_with(':')
+                    || rest.starts_with('/'))
+            {
+                ignore_mark = false;
                 source = rest.trim_start();
                 continue;
             }
@@ -597,29 +657,27 @@ impl Interpreter {
                 source = rest.trim_start();
                 continue;
             }
-            if let Some(rest) = source.strip_prefix(":r") {
+            if let Some(rest) = source.strip_prefix(":r")
+                && (rest.is_empty()
+                    || rest.starts_with(' ')
+                    || rest.starts_with(':')
+                    || rest.starts_with('/'))
+            {
                 // Make sure it's :r and not :ratchet (already handled) or other identifiers
-                if rest.is_empty()
-                    || rest.starts_with(' ')
-                    || rest.starts_with(':')
-                    || rest.starts_with('/')
-                {
-                    ratchet = true;
-                    source = rest.trim_start();
-                    continue;
-                }
+                ratchet = true;
+                source = rest.trim_start();
+                continue;
             }
-            if let Some(rest) = source.strip_prefix(":m") {
-                // Make sure it's :m and not :mm or :my or other identifiers
-                if rest.is_empty()
+            if let Some(rest) = source.strip_prefix(":m")
+                && (rest.is_empty()
                     || rest.starts_with(' ')
                     || rest.starts_with(':')
-                    || rest.starts_with('/')
-                {
-                    ignore_mark = true;
-                    source = rest.trim_start();
-                    continue;
-                }
+                    || rest.starts_with('/'))
+            {
+                // Make sure it's :m and not :mm or :my or other identifiers
+                ignore_mark = true;
+                source = rest.trim_start();
+                continue;
             }
             break;
         }
@@ -832,6 +890,23 @@ impl Interpreter {
                         named_capture: pending_named_capture.take(),
                         ratchet,
                     });
+                    continue;
+                }
+                // Handle inline scope modifiers: :ratchet, :!ratchet, :r, :!r,
+                // :ignorecase, :!ignorecase, :i, :!i, :sigspace, :!sigspace, :s, :!s,
+                // :ignoremark, :!ignoremark, :m, :!m
+                if let Some(modifier_rest) = Self::try_parse_inline_modifier(
+                    &remaining,
+                    &mut ratchet,
+                    &mut ignore_case,
+                    &mut ignore_mark,
+                    &mut sigspace,
+                ) {
+                    // Advance chars by the number of characters consumed
+                    let consumed = remaining.len() - modifier_rest.len();
+                    for _ in 0..consumed {
+                        chars.next();
+                    }
                     continue;
                 }
             }
@@ -1453,16 +1528,23 @@ impl Interpreter {
                         }
                     }
                     let alternatives = Self::split_top_level_alternation(&group_pattern);
+                    let needs_capture_scope = ignore_case || sigspace || ratchet || ignore_mark;
                     if alternatives.len() > 1 {
                         let mut alt_patterns = Vec::new();
                         for alt in alternatives {
-                            let parsed_alt = if ignore_case || sigspace {
+                            let parsed_alt = if needs_capture_scope {
                                 let mut scoped = String::new();
                                 if ignore_case {
                                     scoped.push_str(":i ");
                                 }
                                 if sigspace {
                                     scoped.push_str(":s ");
+                                }
+                                if ratchet {
+                                    scoped.push_str(":ratchet ");
+                                }
+                                if ignore_mark {
+                                    scoped.push_str(":m ");
                                 }
                                 scoped.push_str(alt.trim_end());
                                 self.parse_regex(&scoped)
@@ -1489,13 +1571,19 @@ impl Interpreter {
                         };
                         RegexAtom::CaptureGroup(group_pat)
                     } else {
-                        let parsed_group = if ignore_case || sigspace {
+                        let parsed_group = if needs_capture_scope {
                             let mut scoped = String::new();
                             if ignore_case {
                                 scoped.push_str(":i ");
                             }
                             if sigspace {
                                 scoped.push_str(":s ");
+                            }
+                            if ratchet {
+                                scoped.push_str(":ratchet ");
+                            }
+                            if ignore_mark {
+                                scoped.push_str(":m ");
                             }
                             scoped.push_str(group_pattern.trim_end());
                             self.parse_regex(&scoped)
@@ -1530,16 +1618,23 @@ impl Interpreter {
                     }
                     // Parse the group as top-level alternation, including `||`.
                     let alternatives = Self::split_top_level_alternation(&group_pattern);
+                    let needs_scope = ignore_case || sigspace || ratchet || ignore_mark;
                     if alternatives.len() > 1 {
                         let mut alt_patterns = Vec::new();
                         for alt in alternatives {
-                            let parsed_alt = if ignore_case || sigspace {
+                            let parsed_alt = if needs_scope {
                                 let mut scoped = String::new();
                                 if ignore_case {
                                     scoped.push_str(":i ");
                                 }
                                 if sigspace {
                                     scoped.push_str(":s ");
+                                }
+                                if ratchet {
+                                    scoped.push_str(":ratchet ");
+                                }
+                                if ignore_mark {
+                                    scoped.push_str(":m ");
                                 }
                                 scoped.push_str(alt.trim_end());
                                 self.parse_regex(&scoped)
@@ -1553,13 +1648,19 @@ impl Interpreter {
                         try_collapse_alternation_to_charclass(&alt_patterns)
                             .unwrap_or(RegexAtom::Alternation(alt_patterns))
                     } else {
-                        let parsed_group = if ignore_case || sigspace {
+                        let parsed_group = if needs_scope {
                             let mut scoped = String::new();
                             if ignore_case {
                                 scoped.push_str(":i ");
                             }
                             if sigspace {
                                 scoped.push_str(":s ");
+                            }
+                            if ratchet {
+                                scoped.push_str(":ratchet ");
+                            }
+                            if ignore_mark {
+                                scoped.push_str(":m ");
                             }
                             scoped.push_str(group_pattern.trim_end());
                             self.parse_regex(&scoped)
@@ -1656,6 +1757,128 @@ impl Interpreter {
             ignore_case,
             ignore_mark,
         })
+    }
+
+    /// Try to parse an inline scope modifier from the remaining source after ':'.
+    /// Returns `Some(remaining)` if a modifier was recognized (and flags updated),
+    /// or `None` if no modifier matched.
+    fn try_parse_inline_modifier<'a>(
+        remaining: &'a str,
+        ratchet: &mut bool,
+        ignore_case: &mut bool,
+        ignore_mark: &mut bool,
+        sigspace: &mut bool,
+    ) -> Option<&'a str> {
+        fn is_word_boundary(rest: &str) -> bool {
+            rest.is_empty() || !rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+        }
+        fn is_short_boundary(rest: &str) -> bool {
+            rest.is_empty()
+                || rest.starts_with(' ')
+                || rest.starts_with(':')
+                || rest.starts_with('/')
+        }
+        // Check negated long forms first
+        if let Some(rest) = remaining.strip_prefix("!ratchet")
+            && is_word_boundary(rest)
+        {
+            *ratchet = false;
+            return Some(rest);
+        }
+        if let Some(rest) = remaining.strip_prefix("!ignorecase")
+            && is_word_boundary(rest)
+        {
+            *ignore_case = false;
+            return Some(rest);
+        }
+        if let Some(rest) = remaining.strip_prefix("!ignoremark")
+            && is_word_boundary(rest)
+        {
+            *ignore_mark = false;
+            return Some(rest);
+        }
+        if let Some(rest) = remaining.strip_prefix("!sigspace")
+            && is_word_boundary(rest)
+        {
+            *sigspace = false;
+            return Some(rest);
+        }
+        // Negated short forms
+        if let Some(rest) = remaining.strip_prefix("!r")
+            && is_short_boundary(rest)
+        {
+            *ratchet = false;
+            return Some(rest);
+        }
+        if let Some(rest) = remaining.strip_prefix("!i")
+            && is_short_boundary(rest)
+        {
+            *ignore_case = false;
+            return Some(rest);
+        }
+        if let Some(rest) = remaining.strip_prefix("!s")
+            && is_short_boundary(rest)
+        {
+            *sigspace = false;
+            return Some(rest);
+        }
+        if let Some(rest) = remaining.strip_prefix("!m")
+            && is_short_boundary(rest)
+        {
+            *ignore_mark = false;
+            return Some(rest);
+        }
+        // Positive long forms
+        if let Some(rest) = remaining.strip_prefix("ratchet")
+            && is_word_boundary(rest)
+        {
+            *ratchet = true;
+            return Some(rest);
+        }
+        if let Some(rest) = remaining.strip_prefix("ignorecase")
+            && is_word_boundary(rest)
+        {
+            *ignore_case = true;
+            return Some(rest);
+        }
+        if let Some(rest) = remaining.strip_prefix("ignoremark")
+            && is_word_boundary(rest)
+        {
+            *ignore_mark = true;
+            return Some(rest);
+        }
+        if let Some(rest) = remaining.strip_prefix("sigspace")
+            && is_word_boundary(rest)
+        {
+            *sigspace = true;
+            return Some(rest);
+        }
+        // Positive short forms
+        if let Some(rest) = remaining.strip_prefix("r")
+            && is_short_boundary(rest)
+        {
+            *ratchet = true;
+            return Some(rest);
+        }
+        if let Some(rest) = remaining.strip_prefix("i")
+            && is_short_boundary(rest)
+        {
+            *ignore_case = true;
+            return Some(rest);
+        }
+        if let Some(rest) = remaining.strip_prefix("s")
+            && is_short_boundary(rest)
+        {
+            *sigspace = true;
+            return Some(rest);
+        }
+        if let Some(rest) = remaining.strip_prefix("m")
+            && is_short_boundary(rest)
+        {
+            *ignore_mark = true;
+            return Some(rest);
+        }
+        None
     }
 
     pub(super) fn interpolate_regex_scalars(&self, pattern: &str) -> Result<String, RuntimeError> {
