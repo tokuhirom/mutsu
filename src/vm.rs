@@ -437,6 +437,24 @@ impl VM {
                         Value::Nil
                     }
                 });
+                // When the value is Nil and the variable has a type constraint,
+                // return the type object (consistent with GetLocal behavior).
+                let val = if matches!(val, Value::Nil) {
+                    if let Some(def) = self.interpreter.var_default(name) {
+                        def.clone()
+                    } else if let Some(constraint) =
+                        self.interpreter.var_type_constraint_fast(name).cloned()
+                    {
+                        let nominal = self
+                            .interpreter
+                            .nominal_type_object_name_for_constraint(&constraint);
+                        Value::Package(Symbol::intern(&nominal))
+                    } else {
+                        val
+                    }
+                } else {
+                    val
+                };
                 self.stack.push(val);
                 *ip += 1;
             }
