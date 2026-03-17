@@ -13,6 +13,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::ast::Expr;
+use crate::value::Value;
 
 thread_local! {
     static PRIMARY_MEMO_TLS: RefCell<HashMap<(usize, usize), MemoEntry<Expr>>> = RefCell::new(HashMap::new());
@@ -28,6 +29,10 @@ pub(super) fn set_original_source(source: &str) {
     ORIGINAL_SOURCE.with(|s| {
         *s.borrow_mut() = (source.as_ptr() as usize, source.len());
     });
+}
+
+pub(crate) fn angle_word_value(word: &str) -> Value {
+    container::angle_word_value(word)
 }
 
 /// Compute the 1-based line number of `input` within the original source.

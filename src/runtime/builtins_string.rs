@@ -199,6 +199,89 @@ impl Interpreter {
         Ok(Value::make_instance(Symbol::intern("Format"), attrs))
     }
 
+    pub(super) fn builtin_quotewords_atom(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        Ok(Self::quotewords_args_result(args, true))
+    }
+
+    pub(super) fn builtin_words_atom(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        Ok(Self::quotewords_args_result(args, false))
+    }
+
+    fn quotewords_args_result(args: &[Value], allomorphic: bool) -> Value {
+        let mut items = Vec::new();
+        let mut pending_literal = String::new();
+        for value in args {
+            if let Some(literal) = Self::quotewords_literal_value(value) {
+                pending_literal.push_str(&literal);
+                continue;
+            }
+            if !pending_literal.is_empty() {
+                items.push(Value::str(std::mem::take(&mut pending_literal)));
+            }
+            Self::quotewords_value_into(value, &mut items, allomorphic);
+        }
+        if !pending_literal.is_empty() {
+            items.push(Value::str(pending_literal));
+        }
+        match items.len() {
+            0 => Value::array(Vec::new()),
+            1 => items.into_iter().next().unwrap(),
+            _ => Value::array(items),
+        }
+    }
+
+    pub(super) fn builtin_unknown_backslash_escape(
+        &self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let escape = args
+            .first()
+            .map(|v| v.to_string_value())
+            .unwrap_or_else(|| "?".to_string());
+        Err(RuntimeError::typed_msg(
+            "X::Backslash::UnrecognizedSequence",
+            format!("Unrecognized backslash sequence: \\{}", escape),
+        ))
+    }
+
+    fn quotewords_literal_value(value: &Value) -> Option<String> {
+        let Value::Scalar(inner) = value else {
+            return None;
+        };
+        let Value::Pair(marker, payload) = inner.as_ref() else {
+            return None;
+        };
+        if marker == "__mutsu_qw_literal" {
+            Some(payload.to_string_value())
+        } else {
+            None
+        }
+    }
+
+    fn quotewords_value_into(value: &Value, out: &mut Vec<Value>, allomorphic: bool) {
+        match value {
+            Value::Array(items, kind) if !kind.is_itemized() => {
+                for item in items.iter() {
+                    Self::quotewords_value_into(item, out, allomorphic);
+                }
+            }
+            Value::Seq(items) | Value::Slip(items) => {
+                for item in items.iter() {
+                    Self::quotewords_value_into(item, out, allomorphic);
+                }
+            }
+            other => {
+                for word in other.to_string_value().split_whitespace() {
+                    if allomorphic {
+                        out.push(crate::parser::angle_word_value(word));
+                    } else {
+                        out.push(Value::str(word.to_string()));
+                    }
+                }
+            }
+        }
+    }
+
     /// Handle .split() method with full support for regex splitters, limits, and named params.
     pub(crate) fn handle_split_method(
         &mut self,

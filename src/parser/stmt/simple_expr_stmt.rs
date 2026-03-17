@@ -202,6 +202,10 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         return parse_statement_modifier(rest, stmt);
     }
 
+    if let Ok((rest, expr)) = crate::parser::primary::string::qx_string(input) {
+        return parse_statement_modifier(rest, Stmt::Expr(expr));
+    }
+
     let (rest, expr) = match expression(input) {
         Ok(parsed) => parsed,
         Err(err) => {
@@ -230,6 +234,14 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             }
         }
     };
+
+    if let Expr::BareWord(name) = &expr
+        && matches!(name.as_str(), "qx" | "qqx")
+        && rest.starts_with('=')
+        && let Ok((r_qx, qx_expr)) = crate::parser::primary::string::qx_string(input)
+    {
+        return parse_statement_modifier(r_qx, Stmt::Expr(qx_expr));
+    }
 
     // Check for index assignment after expression
     let rest_before_ws = rest;

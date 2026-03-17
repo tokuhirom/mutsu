@@ -21,6 +21,8 @@ pub(super) struct QuoteFlags {
     pub format: bool,     // :o / :format — sprintf format
     pub q_mode: bool,     // :q — single-quote semantics (\\ and \')
     pub qq_mode: bool,    // :qq — double-quote semantics (all interpolation)
+    pub quote_open: Option<char>,
+    pub quote_close: Option<char>,
 }
 
 impl QuoteFlags {
@@ -110,9 +112,12 @@ impl QuoteFlags {
 /// Returns the remaining input after all adverbs.
 /// Example: ":s:b:c" → flags.scalar=true, flags.backslash=true, flags.closure=true
 pub(super) fn parse_colon_adverbs<'a>(mut input: &'a str, flags: &mut QuoteFlags) -> &'a str {
-    // Allow whitespace before first colon (e.g. "q :w /...")
-    input = input.trim_start_matches(' ');
-    while let Some(r) = input.strip_prefix(':') {
+    loop {
+        // Allow whitespace before each colon (e.g. "q :heredoc :c \"EOF\"")
+        input = input.trim_start_matches(' ');
+        let Some(r) = input.strip_prefix(':') else {
+            break;
+        };
         let end = r
             .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
             .unwrap_or(r.len());
@@ -200,7 +205,7 @@ pub(super) fn process_content_with_flags(content: &str, flags: &QuoteFlags) -> E
 
     // q mode with only :q (single-quote semantics) — minimal processing
     if flags.q_mode && !flags.full_backslash() && !flags.has_interpolation() {
-        return process_q_mode_content(content);
+        return process_q_mode_content(content, flags);
     }
 
     // General processing with selective interpolation
@@ -216,8 +221,19 @@ pub(super) fn process_content_with_flags(content: &str, flags: &QuoteFlags) -> E
                     rest = r;
                     continue;
                 }
-                // Unknown escape in :b mode — keep literal
                 let (c, after_escape) = escaped_char(rest).unwrap();
+                if c.is_alphanumeric() || c == '_' {
+                    if !current.is_empty() {
+                        parts.push(Expr::Literal(Value::str(std::mem::take(&mut current))));
+                    }
+                    parts.push(Expr::Call {
+                        name: Symbol::intern("__mutsu_unknown_backslash_escape"),
+                        args: vec![Expr::Literal(Value::str(c.to_string()))],
+                    });
+                    let _ = after_escape;
+                    return finalize_interpolation(parts, current);
+                }
+                // Unknown non-word escape in :b mode stays literal.
                 current.push('\\');
                 current.push(c);
                 rest = after_escape;
@@ -279,7 +295,7 @@ fn escaped_char(rest: &str) -> Option<(char, &str)> {
 
 /// Process content in q mode (single-quote semantics).
 /// Only handles \\, \', and \qq[]/\q:adverb{} escapes.
-fn process_q_mode_content(content: &str) -> Expr {
+fn process_q_mode_content(content: &str, flags: &QuoteFlags) -> Expr {
     // Check for \qq or \q: escape sequences that need special handling
     if content.contains("\\qq")
         || content.contains("\\q:")
@@ -290,15 +306,13 @@ fn process_q_mode_content(content: &str) -> Expr {
         || content.contains("\\q<")
         || content.contains("\\q|")
     {
-        return process_q_mode_with_escapes(content);
+        return process_q_mode_with_escapes(content, flags);
     }
-    // Simple q mode — just handle \\ and \'
-    let s = content.replace("\\'", "'").replace("\\\\", "\\");
-    Expr::Literal(Value::str(s))
+    process_q_mode_with_escapes(content, flags)
 }
 
 /// Process q-mode content that contains \qq[] or \q:adverb{} escapes.
-fn process_q_mode_with_escapes(content: &str) -> Expr {
+fn process_q_mode_with_escapes(content: &str, flags: &QuoteFlags) -> Expr {
     let mut parts: Vec<Expr> = Vec::new();
     let mut current = String::new();
     let mut rest = content;
@@ -313,7 +327,10 @@ fn process_q_mode_with_escapes(content: &str) -> Expr {
             let Some((c, after_escape)) = escaped_char(rest) else {
                 break;
             };
-            if c == '\\' {
+            if is_q_literal_escape(c, flags) {
+                current.push(c);
+                rest = after_escape;
+            } else if c == '\\' {
                 current.push('\\');
                 rest = after_escape;
             } else if c == '\'' {
@@ -395,6 +412,7 @@ fn parse_inline_quote<'a>(input: &'a str, flags: &QuoteFlags) -> Option<(&'a str
     if first.is_alphanumeric() || first.is_whitespace() {
         return None;
     }
+    let mut flags = flags.clone();
 
     let bracket_close = match first {
         '{' => Some('}'),
@@ -404,9 +422,12 @@ fn parse_inline_quote<'a>(input: &'a str, flags: &QuoteFlags) -> Option<(&'a str
         _ => super::string::unicode_bracket_close_pub(first),
     };
 
+    flags.quote_open = Some(first);
+    flags.quote_close = Some(bracket_close.unwrap_or(first));
+
     if let Some(close) = bracket_close {
         let (rest, content) = super::string::read_bracketed(input, first, close, true).ok()?;
-        let expr = process_content_with_flags(content, flags);
+        let expr = process_content_with_flags(content, &flags);
         return Some((rest, expr));
     }
 
@@ -415,7 +436,7 @@ fn parse_inline_quote<'a>(input: &'a str, flags: &QuoteFlags) -> Option<(&'a str
     let end = body.find(first)?;
     let content = &body[..end];
     let rest = &body[end + first.len_utf8()..];
-    let expr = process_content_with_flags(content, flags);
+    let expr = process_content_with_flags(content, &flags);
     Some((rest, expr))
 }
 
@@ -480,12 +501,8 @@ fn process_q_escape_in_interpolating<'a>(
 ) -> Option<&'a str> {
     let (c, after_escape) = escaped_char(rest)?;
     match c {
-        '\\' => {
-            current.push('\\');
-            Some(after_escape)
-        }
-        '\'' => {
-            current.push('\'');
+        _ if is_q_literal_escape(c, _flags) => {
+            current.push(c);
             Some(after_escape)
         }
         'q' => {
@@ -495,6 +512,10 @@ fn process_q_escape_in_interpolating<'a>(
         }
         _ => None,
     }
+}
+
+fn is_q_literal_escape(c: char, flags: &QuoteFlags) -> bool {
+    c == '\\' || c == '\'' || flags.quote_open == Some(c) || flags.quote_close == Some(c)
 }
 
 /// Try interpolation based on quote flags (selective per-sigil).

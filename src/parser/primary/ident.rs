@@ -710,6 +710,7 @@ pub(super) fn is_expr_listop(name: &str) -> bool {
         name,
         "EVAL"
             | "flat"
+            | "is_run"
             | "slip"
             | "produce"
             | "reduce"
@@ -1667,6 +1668,13 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         }
         (r, full_name)
     };
+
+    if matches!(name.as_str(), "qx" | "qqx")
+        && rest.starts_with('=')
+        && let Ok(parsed) = super::string::qx_string(input)
+    {
+        return Ok(parsed);
+    }
 
     // Check if followed by `(` for function call
     if rest.starts_with('(') {

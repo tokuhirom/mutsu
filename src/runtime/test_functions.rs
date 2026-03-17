@@ -85,6 +85,33 @@ impl Interpreter {
         }
     }
 
+    fn program_mentions_qx(program: &str) -> bool {
+        for marker in ["qx", "qqx"] {
+            let mut search_from = 0usize;
+            while let Some(offset) = program[search_from..].find(marker) {
+                let idx = search_from + offset;
+                let before_ok = if idx == 0 {
+                    true
+                } else {
+                    !program[..idx]
+                        .chars()
+                        .next_back()
+                        .is_some_and(|c| c.is_alphanumeric() || matches!(c, '_' | '\'' | '-'))
+                };
+                let after = &program[idx + marker.len()..];
+                let after_ok = after
+                    .chars()
+                    .next()
+                    .is_some_and(|c| !c.is_alphanumeric() && !matches!(c, '_' | '\'' | '-'));
+                if before_ok && after_ok {
+                    return true;
+                }
+                search_from = idx + marker.len();
+            }
+        }
+        false
+    }
+
     /// Returns true when the Test module has been loaded (plan or test
     /// state exists), indicating that test function names should be resolved
     /// as function calls rather than bare words.
@@ -1521,8 +1548,9 @@ impl Interpreter {
         // (e.g., for --help, when program is empty with CLI args,
         //  or when the code uses Supply.interval/threads that could call
         //  std::process::exit on die)
-        let code_needs_subprocess =
-            program.contains("Supply.interval") || program.contains("Supply.interval:");
+        let code_needs_subprocess = program.contains("Supply.interval")
+            || program.contains("Supply.interval:")
+            || (expected_err.is_some() && Self::program_mentions_qx(&program));
         let needs_subprocess = has_unsupported_compiler_args
             || (program.is_empty() && run_args.is_some())
             || code_needs_subprocess;
@@ -1570,7 +1598,7 @@ impl Interpreter {
             if let Some(items) = run_args {
                 nested.set_args(items);
             }
-            nested.set_program_path("<is_run>");
+            nested.program_path = self.program_path.clone();
             let result = nested.run(&program);
             nested.flush_all_handles();
             Self::extract_run_output(&nested, result)

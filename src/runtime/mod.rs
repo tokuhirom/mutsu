@@ -1942,6 +1942,8 @@ impl Interpreter {
         register_x("X::Syntax::Variable::Initializer", "X::Syntax");
         register_x("X::Syntax::Variable::ConflictingTypes", "X::Syntax");
         register_x("X::Syntax::Number::LiteralType", "X::Syntax");
+        register_x("X::Syntax::Regex::Adverb", "X::Syntax");
+        register_x("X::Backslash::UnrecognizedSequence", "X::Backslash");
         register_x("X::Syntax::Regex::SolitaryQuantifier", "X::Syntax");
         register_x("X::Syntax::Regex::NullRegex", "X::Syntax");
         register_x("X::Syntax::Term::MissingInitializer", "X::Syntax");
@@ -2865,6 +2867,16 @@ impl Interpreter {
     /// Enable immediate flushing of output to stdout.
     pub fn set_immediate_stdout(&mut self, val: bool) {
         self.immediate_stdout = val;
+    }
+
+    pub fn flush_stderr_buffer(&mut self) {
+        if !self.stderr_output.is_empty() {
+            if !self.immediate_stdout {
+                eprint!("{}", self.stderr_output);
+                let _ = std::io::stderr().flush();
+            }
+            self.stderr_output.clear();
+        }
     }
 
     /// Enable or disable module precompilation cache.

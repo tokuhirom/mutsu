@@ -117,8 +117,9 @@ impl Interpreter {
                     use std::io::Write;
                     let _ = std::io::stderr().write_all(payload.as_bytes());
                     let _ = std::io::stderr().flush();
+                } else {
+                    self.stderr_output.push_str(&payload);
                 }
-                self.stderr_output.push_str(&payload);
                 Ok(())
             }
             IoHandleTarget::File => {

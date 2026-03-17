@@ -44,6 +44,14 @@ fn validate_regex_pattern_or_perror(pattern: &str) -> Result<(), PError> {
     })
 }
 
+fn regex_adverb_error(adverb: &str, message: impl Into<String>) -> PError {
+    let err = RuntimeError::typed_msg("X::Syntax::Regex::Adverb", message);
+    let message = err.message;
+    let exception = err.exception.expect("typed regex adverb error");
+    let _ = adverb;
+    PError::fatal_with_exception(message, exception)
+}
+
 /// Reject obsolete Perl 5 trailing regex modifiers (e.g., m/pattern/i, m/pattern/g).
 /// In Raku, adverbs come before the delimiter (:i, :g), not after.
 fn reject_trailing_p5_modifiers(rest: &str) -> Result<(), PError> {
@@ -238,6 +246,11 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
             && let Ok(count) = leading_digits.parse::<usize>()
         {
             adverbs.repeat = Some(count);
+        } else {
+            return Err(regex_adverb_error(
+                &name,
+                format!("Unsupported regex adverb :{}", name),
+            ));
         }
 
         spec = r;
@@ -764,6 +777,19 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // rx/pattern/ or rx{pattern}
     if let Ok((rest, _)) = parse_tag(input, "rx") {
         let (spec, adverbs) = parse_match_adverbs(rest)?;
+        if adverbs.global
+            || adverbs.exhaustive
+            || adverbs.overlap
+            || adverbs.repeat.is_some()
+            || adverbs.nth.is_some()
+            || adverbs.pos
+            || adverbs.continue_
+        {
+            return Err(regex_adverb_error(
+                "rx",
+                "Match-time adverbs are not allowed on rx// regex literals",
+            ));
+        }
         let (spec, _) = ws(spec)?;
         let (open_ch, close_ch, is_paired) = if spec.starts_with('/') {
             ('/', '/', false)

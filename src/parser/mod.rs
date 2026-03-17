@@ -19,8 +19,8 @@ pub(crate) fn current_language_version() -> String {
 use std::cell::RefCell;
 
 use crate::ast::Stmt;
-use crate::value::RuntimeError;
 use crate::value::RuntimeErrorCode;
+use crate::value::{RuntimeError, Value};
 
 thread_local! {
     static PARSE_WARNINGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
@@ -70,6 +70,10 @@ pub(crate) fn invalidate_all_memos() {
         primary::reset_primary_memo();
         stmt::reset_statement_memo();
     }
+}
+
+pub(crate) fn angle_word_value(word: &str) -> Value {
+    primary::angle_word_value(word)
 }
 
 fn line_col_at_offset(source: &str, offset: usize) -> (usize, usize) {
@@ -381,8 +385,10 @@ mod tests {
         let Stmt::VarDecl { expr, .. } = &stmts[0] else {
             panic!("expected VarDecl")
         };
-        let Expr::ArrayLiteral(items) = expr else {
-            panic!("expected array literal")
+        let items = match expr {
+            Expr::ArrayLiteral(items) => items,
+            Expr::Call { name, args } if name.resolve() == "list" => args,
+            _ => panic!("expected list expression"),
         };
         assert_eq!(items.len(), 7);
         assert!(matches!(

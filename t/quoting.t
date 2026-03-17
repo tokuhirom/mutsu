@@ -1,13 +1,13 @@
 use Test;
-plan 11;
+plan 14;
 
 # q// literal string (no interpolation)
 my $q1 = q/hello world/;
 is $q1, 'hello world', 'q// basic string';
 
-# q() with parens
-my $q2 = q(hello parens);
-is $q2, 'hello parens', 'q() basic string';
+# q () with parens
+my $q2 = q (hello parens);
+is $q2, 'hello parens', 'q () basic string';
 
 # q{} with braces
 my $q3 = q{hello braces};
@@ -44,3 +44,8 @@ is $q6, '%08b', 'q:c adverb form parses as a q literal';
 
 my $bits = 5;
 is q:c/%0{$bits}b/, '%05b', 'q:c interpolates closure expressions';
+
+is q< \> >, ' > ', 'q handles escaped paired closer';
+is q< \< >, ' < ', 'q handles escaped paired opener';
+
+is Q:b♥\♥♥, '♥', 'Q:b handles escaped non-ASCII delimiters';

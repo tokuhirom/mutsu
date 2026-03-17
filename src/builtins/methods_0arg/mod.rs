@@ -919,8 +919,37 @@ fn raku_value(v: &Value) -> String {
             }
         }
         Value::Complex(r, i) => format!("<{}>", crate::value::format_complex(*r, *i)),
-        Value::Pair(key, value) => format!("{} => {}", key, raku_value(value)),
+        Value::Pair(key, value) => {
+            let ident_like = !key.is_empty()
+                && key
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '_' || c == '-');
+            if ident_like {
+                match value.as_ref() {
+                    Value::Bool(true) => format!(":{}", key),
+                    _ => format!(":{}({})", key, raku_value(value)),
+                }
+            } else {
+                format!(
+                    "{} => {}",
+                    raku_value(&Value::str(key.clone())),
+                    raku_value(value)
+                )
+            }
+        }
         Value::ValuePair(key, value) => {
+            if let Value::Str(key_str) = key.as_ref() {
+                let ident_like = !key_str.is_empty()
+                    && key_str
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '_' || c == '-');
+                if ident_like {
+                    return match value.as_ref() {
+                        Value::Bool(true) => format!(":{}", key_str),
+                        _ => format!(":{}({})", key_str, raku_value(value)),
+                    };
+                }
+            }
             let key_repr = match key.as_ref() {
                 Value::Pair(_, _) | Value::ValuePair(_, _) => format!("({})", raku_value(key)),
                 _ => raku_value(key),
