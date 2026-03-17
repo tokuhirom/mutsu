@@ -1625,8 +1625,34 @@ impl VM {
         // Restore scope if scope_isolate is true
         if let Some((saved_env, saved_locals)) = saved_env {
             let block_result = self.stack.pop().unwrap_or(Value::Nil);
+            // Preserve hash variables declared or re-declared inside the
+            // block so that inline `my %h` declarations (e.g. in
+            // `:into(my %h := :{})`) remain visible in the outer scope.
+            // Only hash variables are preserved to avoid side effects
+            // on other container types.
+            let current_env = self.interpreter.env().clone();
+            let mut new_vars: Vec<(String, Value)> = Vec::new();
+            for (name, value) in current_env.iter() {
+                if !name.starts_with('%') || name.starts_with("%*") {
+                    continue;
+                }
+                let is_new_or_changed = match saved_env.get(name) {
+                    None => true,
+                    Some(saved_val) => match (value, saved_val) {
+                        (Value::Hash(a), Value::Hash(b)) => !std::sync::Arc::ptr_eq(a, b),
+                        _ => std::mem::discriminant(value) != std::mem::discriminant(saved_val),
+                    },
+                };
+                if is_new_or_changed {
+                    new_vars.push((name.clone(), value.clone()));
+                }
+            }
             let restored_env = saved_env.clone();
             *self.interpreter.env_mut() = restored_env;
+            // Re-insert newly declared user variables
+            for (name, value) in new_vars {
+                self.interpreter.env_mut().insert(name, value);
+            }
             self.locals = saved_locals;
             for (idx, name) in code.locals.iter().enumerate() {
                 if let Some(val) = self.interpreter.env().get(name).cloned() {
