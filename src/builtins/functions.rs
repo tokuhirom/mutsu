@@ -3,6 +3,7 @@
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{ArrayKind, RuntimeError, Value};
+use num_bigint::BigInt as NumBigInt;
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -1019,6 +1020,40 @@ fn native_function_3arg(
     }
 }
 
+fn gcd_u64(mut a: u64, mut b: u64) -> u64 {
+    while b != 0 {
+        let t = b;
+        b = a % b;
+        a = t;
+    }
+    a
+}
+
+/// If the value represents an integer (even as Num, Rat, Str, or BigInt), return as BigInt.
+fn generic_range_as_bigint(v: &Value) -> Option<NumBigInt> {
+    match v {
+        Value::Int(i) => Some(NumBigInt::from(*i)),
+        Value::BigInt(n) => Some((**n).clone()),
+        Value::Num(f) => {
+            if f.is_finite() && *f == f.trunc() && f.abs() < i64::MAX as f64 {
+                Some(NumBigInt::from(*f as i64))
+            } else {
+                None
+            }
+        }
+        Value::Rat(n, d) => {
+            if *d != 0 && *n % *d == 0 {
+                Some(NumBigInt::from(*n / *d))
+            } else {
+                None
+            }
+        }
+        Value::Str(s) => s.trim().parse::<i64>().ok().map(NumBigInt::from),
+        Value::Bool(b) => Some(NumBigInt::from(if *b { 1 } else { 0 })),
+        _ => None,
+    }
+}
+
 fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     match name {
         "min" => {
@@ -1151,6 +1186,123 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
                                 total_f += s as f64;
                             } else {
                                 total += s;
+                            }
+                        }
+                    }
+                    Value::RangeExclStart(a, b) => {
+                        let start = a + 1;
+                        if start <= *b {
+                            let n = b - start + 1;
+                            let s = n * (start + b) / 2;
+                            if has_num {
+                                total_f += s as f64;
+                            } else {
+                                total += s;
+                            }
+                        }
+                    }
+                    Value::RangeExclBoth(a, b) => {
+                        let start = a + 1;
+                        let end = b - 1;
+                        if start <= end {
+                            let n = end - start + 1;
+                            let s = n * (start + end) / 2;
+                            if has_num {
+                                total_f += s as f64;
+                            } else {
+                                total += s;
+                            }
+                        }
+                    }
+                    Value::GenericRange {
+                        start,
+                        end,
+                        excl_start,
+                        excl_end,
+                    } => {
+                        // Try to detect integer-valued ranges for Gauss formula
+                        let start_bi = generic_range_as_bigint(start);
+                        let end_bi = generic_range_as_bigint(end);
+                        if let (Some(a), Some(b)) = (start_bi, end_bi) {
+                            let one = NumBigInt::from(1);
+                            let two = NumBigInt::from(2);
+                            let zero = NumBigInt::from(0);
+                            let eff_start = if *excl_start { &a + &one } else { a };
+                            let eff_end = if *excl_end { &b - &one } else { b };
+                            if eff_start <= eff_end {
+                                let n = &eff_end - &eff_start + &one;
+                                let s_plus = &eff_start + &eff_end;
+                                let s = if &s_plus % &two == zero {
+                                    (&s_plus / &two) * &n
+                                } else {
+                                    &s_plus * (&n / &two)
+                                };
+                                if let Ok(val) = i64::try_from(&s) {
+                                    if has_num {
+                                        total_f += val as f64;
+                                    } else {
+                                        total += val;
+                                    }
+                                } else {
+                                    // Result is too large for i64, return BigInt directly
+                                    return Some(Ok(Value::BigInt(std::sync::Arc::new(s))));
+                                }
+                            }
+                        } else {
+                            // Non-integer range: sum via list with Rat support
+                            let items = crate::runtime::utils::value_to_list(arg);
+                            let items_have_rat =
+                                items.iter().any(|v| matches!(v, Value::Rat(_, _)));
+                            if items_have_rat {
+                                // Use rational arithmetic for the entire result
+                                let mut rat_num: i64 = total;
+                                let mut rat_den: i64 = 1;
+                                for item in &items {
+                                    let (in_num, in_den) = match item {
+                                        Value::Rat(n, d) => (*n, *d),
+                                        Value::Int(n) => (*n, 1),
+                                        _ => (crate::runtime::to_int(item), 1),
+                                    };
+                                    rat_num = rat_num * in_den + in_num * rat_den;
+                                    rat_den *= in_den;
+                                    let g = gcd_u64(rat_num.unsigned_abs(), rat_den.unsigned_abs())
+                                        as i64;
+                                    if g > 1 {
+                                        rat_num /= g;
+                                        rat_den /= g;
+                                    }
+                                }
+                                // Return Rat result directly
+                                return if rat_den == 1 {
+                                    Some(Ok(Value::Int(rat_num)))
+                                } else {
+                                    Some(Ok(Value::Rat(rat_num, rat_den)))
+                                };
+                            }
+                            for item in &items {
+                                match item {
+                                    Value::Int(i) => {
+                                        if has_num {
+                                            total_f += *i as f64;
+                                        } else {
+                                            total += i;
+                                        }
+                                    }
+                                    Value::Num(f) => {
+                                        if !has_num {
+                                            total_f = total as f64;
+                                            has_num = true;
+                                        }
+                                        total_f += f;
+                                    }
+                                    _ => {
+                                        if has_num {
+                                            total_f += item.to_f64();
+                                        } else {
+                                            total += item.to_f64() as i64;
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

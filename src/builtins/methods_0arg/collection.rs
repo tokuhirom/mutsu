@@ -1,7 +1,36 @@
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{EnumValue, RuntimeError, Value};
+use num_bigint::BigInt as NumBigInt;
 use std::sync::Arc;
+
+/// If the value represents an integer (even as Num, Rat, Str, or BigInt), return as BigInt.
+fn value_as_bigint(v: &Value) -> Option<NumBigInt> {
+    match v {
+        Value::Int(i) => Some(NumBigInt::from(*i)),
+        Value::BigInt(n) => Some((**n).clone()),
+        Value::Num(f) => {
+            if f.is_finite() && *f == f.trunc() && f.abs() < i64::MAX as f64 {
+                Some(NumBigInt::from(*f as i64))
+            } else {
+                None
+            }
+        }
+        Value::Rat(n, d) => {
+            if *d != 0 && *n % *d == 0 {
+                Some(NumBigInt::from(*n / *d))
+            } else {
+                None
+            }
+        }
+        Value::Str(s) => {
+            let trimmed = s.trim();
+            trimmed.parse::<i64>().ok().map(NumBigInt::from)
+        }
+        Value::Bool(b) => Some(NumBigInt::from(if *b { 1 } else { 0 })),
+        _ => None,
+    }
+}
 
 fn gcd_u64(mut a: u64, mut b: u64) -> u64 {
     while b != 0 {
@@ -623,6 +652,133 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 } else {
                     let total: i64 = items.iter().map(runtime::to_int).sum();
                     Some(Ok(Value::Int(total)))
+                }
+            }
+            // Integer ranges: use Gauss formula for O(1) sum
+            Value::Range(a, b) => {
+                if a > b {
+                    Some(Ok(Value::Int(0)))
+                } else {
+                    let n = *b - *a + 1;
+                    // n * (a + b) / 2, but careful about overflow
+                    let sum = if (*a + *b) % 2 == 0 {
+                        ((*a + *b) / 2) * n
+                    } else {
+                        (*a + *b) * (n / 2)
+                    };
+                    Some(Ok(Value::Int(sum)))
+                }
+            }
+            Value::RangeExcl(a, b) => {
+                // a ..^ b means a to b-1 inclusive
+                if a >= b {
+                    Some(Ok(Value::Int(0)))
+                } else {
+                    let end = *b - 1;
+                    let n = end - *a + 1;
+                    let sum = if (*a + end) % 2 == 0 {
+                        ((*a + end) / 2) * n
+                    } else {
+                        (*a + end) * (n / 2)
+                    };
+                    Some(Ok(Value::Int(sum)))
+                }
+            }
+            Value::RangeExclStart(a, b) => {
+                // a ^.. b means a+1 to b inclusive
+                let start = *a + 1;
+                if start > *b {
+                    Some(Ok(Value::Int(0)))
+                } else {
+                    let n = *b - start + 1;
+                    let sum = if (start + *b) % 2 == 0 {
+                        ((start + *b) / 2) * n
+                    } else {
+                        (start + *b) * (n / 2)
+                    };
+                    Some(Ok(Value::Int(sum)))
+                }
+            }
+            Value::RangeExclBoth(a, b) => {
+                // a ^..^ b means a+1 to b-1 inclusive
+                let start = *a + 1;
+                let end = *b - 1;
+                if start > end {
+                    Some(Ok(Value::Int(0)))
+                } else {
+                    let n = end - start + 1;
+                    let sum = if (start + end) % 2 == 0 {
+                        ((start + end) / 2) * n
+                    } else {
+                        (start + end) * (n / 2)
+                    };
+                    Some(Ok(Value::Int(sum)))
+                }
+            }
+            Value::GenericRange {
+                start,
+                end,
+                excl_start,
+                excl_end,
+            } => {
+                // Check if endpoints are integer-valued (using BigInt for arbitrary precision)
+                let start_bi = value_as_bigint(start);
+                let end_bi = value_as_bigint(end);
+
+                if let (Some(a), Some(b)) = (start_bi, end_bi) {
+                    // Integer-valued range: use Gauss formula with BigInt
+                    let one = NumBigInt::from(1);
+                    let two = NumBigInt::from(2);
+                    let zero = NumBigInt::from(0);
+                    let effective_start = if *excl_start { &a + &one } else { a };
+                    let effective_end = if *excl_end { &b - &one } else { b };
+                    if effective_start > effective_end {
+                        Some(Ok(Value::Int(0)))
+                    } else {
+                        let n = &effective_end - &effective_start + &one;
+                        let s_plus = &effective_start + &effective_end;
+                        let sum = if &s_plus % &two == zero {
+                            (&s_plus / &two) * &n
+                        } else {
+                            &s_plus * (&n / &two)
+                        };
+                        // Try to fit in i64, otherwise return BigInt
+                        if let Ok(val) = i64::try_from(&sum) {
+                            Some(Ok(Value::Int(val)))
+                        } else {
+                            Some(Ok(Value::BigInt(Arc::new(sum))))
+                        }
+                    }
+                } else {
+                    // Non-integer range: convert to list and sum
+                    let items = runtime::value_to_list(target);
+                    let has_rat = items.iter().any(|v| matches!(v, Value::Rat(_, _)));
+                    if has_rat {
+                        let mut num: i64 = 0;
+                        let mut den: i64 = 1;
+                        for item in &items {
+                            let (in_num, in_den) = match item {
+                                Value::Rat(n, d) => (*n, *d),
+                                Value::Int(n) => (*n, 1),
+                                _ => (runtime::to_int(item), 1),
+                            };
+                            num = num * in_den + in_num * den;
+                            den *= in_den;
+                            let g = gcd_u64(num.unsigned_abs(), den.unsigned_abs()) as i64;
+                            if g > 1 {
+                                num /= g;
+                                den /= g;
+                            }
+                        }
+                        if den == 1 {
+                            Some(Ok(Value::Int(num)))
+                        } else {
+                            Some(Ok(Value::Rat(num, den)))
+                        }
+                    } else {
+                        let total: i64 = items.iter().map(runtime::to_int).sum();
+                        Some(Ok(Value::Int(total)))
+                    }
                 }
             }
             _ => None,
