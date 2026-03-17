@@ -316,7 +316,8 @@ impl Compiler {
                 }
                 let slot = self.alloc_local(name);
                 if *is_state {
-                    let key = format!("__state_{}::{}", self.current_package, name);
+                    let ip = self.code.ops.len();
+                    let key = format!("__state_{}::{}@{}", self.current_package, name, ip);
                     let key_idx = self.code.add_constant(Value::str(key.clone()));
                     self.code.state_locals.push((slot as usize, key.clone()));
                     self.code.emit(OpCode::StateVarInit(slot, key_idx));
