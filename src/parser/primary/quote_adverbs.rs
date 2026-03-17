@@ -333,6 +333,9 @@ fn process_q_mode_with_escapes(content: &str, flags: &QuoteFlags) -> Expr {
             } else if c == '\\' {
                 current.push('\\');
                 rest = after_escape;
+            } else if c == '\'' {
+                current.push('\'');
+                rest = after_escape;
             } else {
                 current.push('\\');
                 current.push(c);

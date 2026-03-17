@@ -1030,7 +1030,10 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                 }
             }
         }
-        Value::Set(items) => items.iter().map(|s| Value::str(s.clone())).collect(),
+        Value::Set(items) => items
+            .iter()
+            .map(|s| Value::Pair(s.clone(), Box::new(Value::Bool(true))))
+            .collect(),
         Value::Bag(items) => items
             .iter()
             .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Int(*v))))
@@ -1734,6 +1737,7 @@ pub(crate) fn unwrap_mixin(val: Value) -> Value {
 
 pub(crate) fn to_rat_parts(val: &Value) -> Option<(i64, i64)> {
     match val {
+        Value::Mixin(inner, _) => to_rat_parts(inner),
         Value::Int(i) => Some((*i, 1)),
         Value::Rat(n, d) => Some((*n, *d)),
         Value::FatRat(n, d) => Some((*n, *d)),
@@ -1743,6 +1747,7 @@ pub(crate) fn to_rat_parts(val: &Value) -> Option<(i64, i64)> {
 
 pub(crate) fn to_big_rat_parts(val: &Value) -> Option<(BigInt, BigInt)> {
     match val {
+        Value::Mixin(inner, _) => to_big_rat_parts(inner),
         Value::Int(i) => Some((BigInt::from(*i), BigInt::from(1))),
         Value::BigInt(i) => Some(((**i).clone(), BigInt::from(1))),
         Value::Rat(n, d) | Value::FatRat(n, d) => Some((BigInt::from(*n), BigInt::from(*d))),
@@ -2018,7 +2023,16 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
         }
         _ => {
             if let (Some((an, ad)), Some((bn, bd))) = (to_rat_parts(a), to_rat_parts(b)) {
-                return compare_rat_parts((an, ad), (bn, bd)) as i32;
+                let cmp = compare_rat_parts((an, ad), (bn, bd)) as i32;
+                if cmp != 0 {
+                    return cmp;
+                }
+                // For allomorphic types (IntStr, RatStr, etc.), break numeric ties
+                // with string comparison
+                if matches!(a, Value::Mixin(..)) || matches!(b, Value::Mixin(..)) {
+                    return a.to_string_value().cmp(&b.to_string_value()) as i32;
+                }
+                return cmp;
             }
             a.to_string_value().cmp(&b.to_string_value()) as i32
         }

@@ -104,6 +104,7 @@ roast/S02-types/nominalizables.t
 roast/S02-types/parsing-bool.t
 roast/S02-types/range-iterator.t
 roast/S02-types/resolved-in-setting.t
+roast/S02-types/set-iterator.t
 roast/S02-types/sigils-and-types.t
 roast/S02-types/stash.t
 roast/S02-types/subscripts_and_context.t
@@ -123,6 +124,7 @@ roast/S03-metaops/not.t
 roast/S03-metaops/reverse.t
 roast/S03-operators/also.t
 roast/S03-operators/andthen.t
+roast/S03-operators/arith.t
 roast/S03-operators/assign-is-not-binding.t
 roast/S03-operators/autovivification.t
 roast/S03-operators/basic-types.t
@@ -131,6 +133,7 @@ roast/S03-operators/boolean-bitwise.t
 roast/S03-operators/brainos.t
 roast/S03-operators/chained-declarators.t
 roast/S03-operators/comparison-simple.t
+roast/S03-operators/comparison.t
 roast/S03-operators/composition.t
 roast/S03-operators/custom.t
 roast/S03-operators/div.t
@@ -441,6 +444,7 @@ roast/S14-roles/composition.t
 roast/S14-roles/conflicts.t
 roast/S14-roles/generic-subtyping.t
 roast/S14-roles/instantiation.t
+roast/S14-roles/lexical.t
 roast/S14-roles/parameter-subtyping.t
 roast/S14-roles/parameterized-basic.t
 roast/S14-roles/stubs.t
@@ -602,6 +606,7 @@ roast/S19-command-line/repl.t
 roast/S22-package-format/local.t
 roast/S24-testing/0-compile.t
 roast/S24-testing/1-basic.t
+roast/S24-testing/10-is-approx.t
 roast/S24-testing/11-plan-skip-all.t
 roast/S24-testing/12-subtest-todo.t
 roast/S24-testing/13-cmp-ok.t
@@ -669,6 +674,7 @@ roast/S32-io/copy.t
 roast/S32-io/dir.t
 roast/S32-io/io-path-extension.t
 roast/S32-io/io-path-subclasses.t
+roast/S32-io/mkdir_rmdir.t
 roast/S32-io/move.t
 roast/S32-io/native-descriptor.t
 roast/S32-io/note.t
@@ -812,6 +818,7 @@ roast/integration/method-calls-and-instantiation.t
 roast/integration/packages.t
 roast/integration/pair-in-array.t
 roast/integration/passing-pair-class-to-sub.t
+roast/integration/real-strings.t
 roast/integration/rule-in-class-Str.t
 roast/integration/say-crash.t
 roast/integration/sequence.t

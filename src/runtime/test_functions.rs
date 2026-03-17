@@ -747,12 +747,23 @@ impl Interpreter {
     }
 
     fn test_fn_is_approx(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let desc = Self::positional_string(args, 2);
         let todo = Self::named_bool(args, "todo");
         let got = Self::positional_value_required(args, 0, "is-approx expects got")?;
         let expected = Self::positional_value_required(args, 1, "is-approx expects expected")?;
-        let explicit_abs_tol =
-            Self::named_value(args, "abs-tol").and_then(|v| super::to_float_value(&v));
+
+        // Detect three-arg form: is-approx(got, expected, numeric-tolerance, desc?)
+        // If the third positional arg is numeric, treat it as abs-tol.
+        let third_pos = Self::positional_value(args, 2);
+        let (positional_abs_tol, desc) = if let Some(v) = third_pos.and_then(super::to_float_value)
+        {
+            (Some(v), Self::positional_string(args, 3))
+        } else {
+            (None, Self::positional_string(args, 2))
+        };
+
+        let explicit_abs_tol = Self::named_value(args, "abs-tol")
+            .and_then(|v| super::to_float_value(&v))
+            .or(positional_abs_tol);
         let explicit_rel_tol =
             Self::named_value(args, "rel-tol").and_then(|v| super::to_float_value(&v));
 
@@ -992,6 +1003,7 @@ impl Interpreter {
         nested.subsets = self.subsets.clone();
         nested.type_metadata = self.type_metadata.clone();
         nested.current_package = self.current_package.clone();
+        nested.var_dynamic_flags = self.var_dynamic_flags.clone();
         for (k, v) in &self.env {
             if k.contains("::") {
                 continue;
@@ -1060,6 +1072,7 @@ impl Interpreter {
         nested.subsets = self.subsets.clone();
         nested.type_metadata = self.type_metadata.clone();
         nested.current_package = self.current_package.clone();
+        nested.var_dynamic_flags = self.var_dynamic_flags.clone();
         for (k, v) in &self.env {
             if k.contains("::") {
                 continue;
@@ -1109,6 +1122,7 @@ impl Interpreter {
                 nested.current_package = self.current_package.clone();
                 nested.suppressed_names = self.suppressed_names.clone();
                 nested.lexical_class_scopes = self.lexical_class_scopes.clone();
+                nested.var_dynamic_flags = self.var_dynamic_flags.clone();
                 for (k, v) in &self.env {
                     if k.contains("::") {
                         continue;
@@ -1346,6 +1360,7 @@ impl Interpreter {
                 nested.subsets = self.subsets.clone();
                 nested.type_metadata = self.type_metadata.clone();
                 nested.current_package = self.current_package.clone();
+                nested.var_dynamic_flags = self.var_dynamic_flags.clone();
                 for (k, v) in &self.env {
                     if k.contains("::") {
                         continue;

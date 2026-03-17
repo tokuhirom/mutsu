@@ -92,26 +92,29 @@ impl VM {
     pub(super) fn exec_num_ne_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+        // != is a negation meta-operator shortcut for !==.
+        // It first evaluates == (which autothreads through junctions),
+        // then negates the boolean-collapsed result, always returning Bool.
+        let eq_result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
-            // NaN is unordered: NaN != anything is always True
+            // NaN is unordered: NaN == anything is always False
             if is_nan_value(&l) || is_nan_value(&r) {
-                return Ok(Value::Bool(true));
+                return Ok(Value::Bool(false));
             }
             if let (Some(a), Some(b)) =
                 (runtime::to_big_rat_parts(&l), runtime::to_big_rat_parts(&r))
                 && (is_rationalish(&l) || is_rationalish(&r))
             {
-                Ok(Value::Bool(!runtime::big_rat_parts_equal(a, b)))
+                Ok(Value::Bool(runtime::big_rat_parts_equal(a, b)))
             } else if matches!(l, Value::Nil) || matches!(r, Value::Nil) {
                 Ok(Value::Bool(
-                    runtime::to_float_value(&l) != runtime::to_float_value(&r),
+                    runtime::to_float_value(&l) == runtime::to_float_value(&r),
                 ))
             } else {
-                Ok(Value::Bool(l != r))
+                Ok(Value::Bool(l == r))
             }
         })?;
-        self.stack.push(result);
+        self.stack.push(Value::Bool(!eq_result.truthy()));
         Ok(())
     }
 
@@ -226,16 +229,19 @@ impl VM {
     pub(super) fn exec_str_ne_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+        // ne is a negation meta-operator shortcut for !eq.
+        // It first evaluates eq (which autothreads through junctions),
+        // then negates the boolean-collapsed result, always returning Bool.
+        let eq_result = self.eval_binary_with_junctions(left, right, |_, l, r| {
             if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
                 Ok(Value::Bool(
-                    Self::buf_cmp_bytes(&l, &r) != std::cmp::Ordering::Equal,
+                    Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Equal,
                 ))
             } else {
-                Ok(Value::Bool(l.to_string_value() != r.to_string_value()))
+                Ok(Value::Bool(l.to_string_value() == r.to_string_value()))
             }
         })?;
-        self.stack.push(result);
+        self.stack.push(Value::Bool(!eq_result.truthy()));
         Ok(())
     }
 
@@ -491,8 +497,8 @@ impl VM {
                 .ok()
                 .and_then(|v| runtime::to_float_value(&v))
                 .unwrap_or(1e-15);
-            let scale = re.abs().max(1.0);
-            if im.abs() / scale <= tolerance {
+            let re_abs = re.abs();
+            if re_abs != 0.0 && im.abs() / re_abs <= tolerance {
                 Ok(Value::Num(*re))
             } else {
                 Err(RuntimeError::new(
@@ -560,10 +566,13 @@ impl VM {
     pub(super) fn exec_strict_ne_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            Ok(Value::Bool(!runtime::values_identical(&l, &r)))
+        // !== is a negation meta-operator applied to ===.
+        // It first evaluates === (which autothreads through junctions),
+        // then negates the boolean-collapsed result, always returning Bool.
+        let eq_result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+            Ok(Value::Bool(runtime::values_identical(&l, &r)))
         })?;
-        self.stack.push(result);
+        self.stack.push(Value::Bool(!eq_result.truthy()));
         Ok(())
     }
 
