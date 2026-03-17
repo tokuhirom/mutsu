@@ -1808,14 +1808,30 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Some(Ok(Value::Num(f64::NAN)))
         }
         "chr" => {
-            let code = match target {
-                Value::Int(i) => *i,
-                Value::Num(f) => *f as i64,
+            let (code, display) = match target {
+                Value::Int(i) => (*i, format!("{}", i)),
+                Value::BigInt(n) => {
+                    // BigInt is always out of range for chr
+                    let hex = format!("{:X}", &**n);
+                    return Some(Err(RuntimeError::new(format!(
+                        "Codepoint {} (0x{}) is out of bounds in 'chr'",
+                        n, hex
+                    ))));
+                }
+                Value::Num(f) => (*f as i64, format!("{}", *f as i64)),
                 _ => {
                     let s = target.to_string_value();
-                    s.parse::<i64>().unwrap_or(0)
+                    let i = s.parse::<i64>().unwrap_or(0);
+                    (i, format!("{}", i))
                 }
             };
+            if !(0..=0x10FFFF).contains(&code) {
+                let hex = format!("{:X}", code);
+                return Some(Err(RuntimeError::new(format!(
+                    "Codepoint {} (0x{}) is out of bounds in 'chr'",
+                    display, hex
+                ))));
+            }
             if let Some(ch) = char::from_u32(code as u32) {
                 // NFC-normalize: some codepoints decompose in NFC
                 // (e.g., U+0F75 TIBETAN VOWEL SIGN UU -> U+0F71 + U+0F74)
@@ -1823,8 +1839,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Some(Ok(Value::str(s)))
             } else {
                 Some(Err(RuntimeError::new(format!(
-                    "chr({}) does not map to a valid Unicode character",
-                    code
+                    "Codepoint {} (0x{:X}) is out of bounds in 'chr'",
+                    display, code
                 ))))
             }
         }

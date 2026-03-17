@@ -21,13 +21,40 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_chr(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        if let Some(Value::Int(i)) = args.first()
-            && *i >= 0
-            && let Some(ch) = std::char::from_u32(*i as u32)
-        {
-            return Ok(Value::str(ch.to_string()));
+        let Some(arg) = args.first() else {
+            return Ok(Value::str(String::new()));
+        };
+        let (code, display) = match arg {
+            Value::Int(i) => (*i, format!("{}", i)),
+            Value::BigInt(n) => {
+                let hex = format!("{:X}", &**n);
+                return Err(RuntimeError::new(format!(
+                    "Codepoint {} (0x{}) is out of bounds in 'chr'",
+                    n, hex
+                )));
+            }
+            Value::Num(f) => (*f as i64, format!("{}", *f as i64)),
+            _ => {
+                let s = arg.to_string_value();
+                let i = s.parse::<i64>().unwrap_or(0);
+                (i, format!("{}", i))
+            }
+        };
+        if !(0..=0x10FFFF).contains(&code) {
+            let hex = format!("{:X}", code);
+            return Err(RuntimeError::new(format!(
+                "Codepoint {} (0x{}) is out of bounds in 'chr'",
+                display, hex
+            )));
         }
-        Ok(Value::str(String::new()))
+        if let Some(ch) = std::char::from_u32(code as u32) {
+            Ok(Value::str(ch.to_string()))
+        } else {
+            Err(RuntimeError::new(format!(
+                "Codepoint {} (0x{:X}) is out of bounds in 'chr'",
+                display, code
+            )))
+        }
     }
 
     pub(super) fn builtin_ord(&self, args: &[Value]) -> Result<Value, RuntimeError> {
