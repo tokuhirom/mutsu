@@ -33,7 +33,13 @@ The parser is in `src/parser/` and is used unconditionally.
 
 Parser implementation details (dispatch order, precedence, extension checklist) are documented in `docs/parser-overview.md`.
 
-This is a **hybrid** architecture: the bytecode VM handles primitive operations (arithmetic, comparisons, loops, jumps) natively, but delegates complex operations (user-defined function calls, method dispatch, regex, class instantiation) back to the tree-walking `Interpreter` (`runtime/`). The VM holds an embedded `Interpreter` and calls into it for anything beyond simple bytecode.
+This is a **bytecode VM** architecture. The VM should handle ALL operations natively via compiled bytecode. The tree-walking `Interpreter` (`runtime/`) exists as legacy code that is being eliminated.
+
+**IMPORTANT: Do NOT add new interpreter fallbacks from the VM.** When implementing a new feature:
+- Implement it in the compiler (`compiler/`) to emit bytecode, and in the VM (`vm/`) to execute it.
+- Do NOT call `interpreter.call_method_with_values()`, `interpreter.run_instance_method()`, or similar interpreter methods from VM code for new features.
+- Existing interpreter fallbacks are technical debt to be eliminated, not a pattern to follow.
+- If you must use the interpreter as a temporary measure, leave a `// TODO: compile to bytecode` comment.
 
 ### Core data types
 
