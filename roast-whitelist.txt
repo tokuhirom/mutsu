@@ -442,6 +442,7 @@ roast/S14-roles/composition.t
 roast/S14-roles/conflicts.t
 roast/S14-roles/generic-subtyping.t
 roast/S14-roles/instantiation.t
+roast/S14-roles/lexical.t
 roast/S14-roles/parameter-subtyping.t
 roast/S14-roles/parameterized-basic.t
 roast/S14-roles/stubs.t
