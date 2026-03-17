@@ -302,7 +302,7 @@ impl Interpreter {
         // Detect stub body: `class Foo { ... }` — body is a stub operator call
         let is_stub_body = body.len() == 1
             && matches!(&body[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
-                if *fn_name == "__mutsu_stub_die");
+                if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn");
 
         // Validate that all parent classes exist
         // Allow inheriting from built-in types that may not be in the classes HashMap
@@ -398,6 +398,28 @@ impl Interpreter {
                     "X::Inheritance::UnknownParent: class '{}' specifies unknown parent class '{}'",
                     name, parent
                 )));
+            }
+            // Check if parent is a stub (not yet composed)
+            if self.class_stubs.contains(resolved_parent) {
+                let message = format!(
+                    "'{}' cannot inherit from '{}' because '{}' isn't composed yet (maybe it is stubbed)",
+                    name, resolved_parent, resolved_parent
+                );
+                let mut attrs = HashMap::new();
+                attrs.insert("child-name".to_string(), Value::str(name.to_string()));
+                attrs.insert(
+                    "parent-name".to_string(),
+                    Value::str(resolved_parent.to_string()),
+                );
+                attrs.insert("message".to_string(), Value::str(message.clone()));
+                let ex = Value::make_instance(
+                    crate::symbol::Symbol::intern("X::Inheritance::NotComposed"),
+                    attrs,
+                );
+                let mut err =
+                    RuntimeError::new(format!("X::Inheritance::NotComposed: {}", message));
+                err.exception = Some(Box::new(ex));
+                return Err(err);
             }
         }
         let mut class_def = ClassDef {
@@ -811,6 +833,8 @@ impl Interpreter {
         }
         // Clear stub status now that the class has a real body.
         self.class_stubs.remove(name);
+        // Also clear package stub status (for `package Foo { ... }; class Foo { }`)
+        self.package_stubs.remove(name);
         let saved_package = self.current_package.clone();
         let saved_env = self.env.clone();
         self.current_package = name.to_string();

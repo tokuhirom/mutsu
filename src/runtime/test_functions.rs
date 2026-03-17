@@ -8,6 +8,7 @@ impl Interpreter {
         self.cunion_classes = nested.cunion_classes.clone();
         self.hidden_classes = nested.hidden_classes.clone();
         self.class_stubs = nested.class_stubs.clone();
+        self.package_stubs = nested.package_stubs.clone();
         self.hidden_defer_parents = nested.hidden_defer_parents.clone();
         self.class_trusts = nested.class_trusts.clone();
         self.class_composed_roles = nested.class_composed_roles.clone();

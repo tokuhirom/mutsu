@@ -513,6 +513,8 @@ pub struct Interpreter {
     hidden_classes: HashSet<String>,
     /// Classes that were declared as stubs (`class Foo { ... }`).
     class_stubs: HashSet<String>,
+    /// Packages/modules that were declared as stubs (`module Foo { ... }`).
+    pub(crate) package_stubs: HashSet<String>,
     hidden_defer_parents: HashMap<String, HashSet<String>>,
     class_trusts: HashMap<String, HashSet<String>>,
     class_composed_roles: HashMap<String, Vec<String>>, // class -> roles composed via `does`
@@ -2049,6 +2051,7 @@ impl Interpreter {
             cunion_classes: HashSet::new(),
             hidden_classes: HashSet::new(),
             class_stubs: HashSet::new(),
+            package_stubs: HashSet::new(),
             hidden_defer_parents: HashMap::new(),
             class_trusts: HashMap::new(),
             class_composed_roles: {
@@ -3421,6 +3424,7 @@ impl Interpreter {
             cunion_classes: self.cunion_classes.clone(),
             hidden_classes: self.hidden_classes.clone(),
             class_stubs: self.class_stubs.clone(),
+            package_stubs: self.package_stubs.clone(),
             hidden_defer_parents: self.hidden_defer_parents.clone(),
             class_trusts: self.class_trusts.clone(),
             class_composed_roles: self.class_composed_roles.clone(),

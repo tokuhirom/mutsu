@@ -1778,6 +1778,16 @@ impl VM {
                 self.env_dirty = true;
                 *ip += 1;
             }
+            OpCode::RegisterPackageStub { name_idx } => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                self.interpreter.package_stubs.insert(name);
+                *ip += 1;
+            }
+            OpCode::ClearPackageStub { name_idx } => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                self.interpreter.package_stubs.remove(&name);
+                *ip += 1;
+            }
 
             // -- Phaser END --
             OpCode::PhaserEnd(idx) => {

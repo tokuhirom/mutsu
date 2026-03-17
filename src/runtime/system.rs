@@ -16,6 +16,7 @@ impl Interpreter {
                 if self.eval_result_is_unresolved_bareword(&stmts, &value) {
                     return Err(RuntimeError::undeclared_symbols("Undeclared name"));
                 }
+                self.check_unresolved_stubs()?;
                 Ok(value)
             }
             Err(parse_err) => {
@@ -57,7 +58,7 @@ impl Interpreter {
             };
             let is_stub = body.len() == 1
                 && matches!(&body[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
-                    if *fn_name == "__mutsu_stub_die");
+                    if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn");
             match seen_classes.get(&name) {
                 None => {
                     seen_classes.insert(name.to_string(), is_stub);

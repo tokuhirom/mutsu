@@ -613,6 +613,9 @@ impl Interpreter {
         // (not inherited from a previous REPL line)
         self.last_value = last_value;
 
+        // Check for unresolved package/class stubs (X::Package::Stubbed)
+        self.check_unresolved_stubs()?;
+
         // Auto-call MAIN sub if defined
         if self.resolve_function("MAIN").is_some() {
             let args_val = self
@@ -919,6 +922,41 @@ impl Interpreter {
             self.run_block(&stmts)?;
         }
         Ok(())
+    }
+
+    /// Check for unresolved package/class stubs at program end.
+    /// Throws X::Package::Stubbed if any stubs remain.
+    pub(crate) fn check_unresolved_stubs(&self) -> Result<(), RuntimeError> {
+        let mut unresolved: Vec<String> = Vec::new();
+        for name in &self.class_stubs {
+            unresolved.push(name.clone());
+        }
+        for name in &self.package_stubs {
+            unresolved.push(name.clone());
+        }
+        if unresolved.is_empty() {
+            return Ok(());
+        }
+        unresolved.sort();
+        let names_list = unresolved
+            .iter()
+            .map(|n| format!("    {}", n))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let message = format!(
+            "The following packages were stubbed but not defined:\n{}",
+            names_list
+        );
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert(
+            "packages".to_string(),
+            Value::array(unresolved.iter().map(|n| Value::str(n.clone())).collect()),
+        );
+        attrs.insert("message".to_string(), Value::str(message.clone()));
+        let ex = Value::make_instance(crate::symbol::Symbol::intern("X::Package::Stubbed"), attrs);
+        let mut err = RuntimeError::new(&message);
+        err.exception = Some(Box::new(ex));
+        Err(err)
     }
 }
 
