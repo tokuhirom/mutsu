@@ -3692,17 +3692,32 @@ impl Interpreter {
         while let Ok(SupplyEvent::Emit(value)) = rx.recv() {
             Self::sleep_for_supply_delay(delay_seconds);
             let result = interp.call_sub_value(cb.clone(), vec![value], true);
-            // Flush stdout
+            // Flush stdout (check both the per-interpreter buffer and the
+            // shared thread output buffer used by thread clones).
             if !interp.output.is_empty() {
                 print!("{}", interp.output);
                 let _ = std::io::stdout().flush();
                 interp.output.clear();
+            }
+            if let Some(ref shared) = interp.shared_thread_output {
+                let drained = std::mem::take(&mut *shared.lock().unwrap());
+                if !drained.is_empty() {
+                    print!("{}", drained);
+                    let _ = std::io::stdout().flush();
+                }
             }
             // Flush stderr
             if !interp.stderr_output.is_empty() {
                 eprint!("{}", interp.stderr_output);
                 let _ = std::io::stderr().flush();
                 interp.stderr_output.clear();
+            }
+            if let Some(ref shared) = interp.shared_thread_stderr {
+                let drained = std::mem::take(&mut *shared.lock().unwrap());
+                if !drained.is_empty() {
+                    eprint!("{}", drained);
+                    let _ = std::io::stderr().flush();
+                }
             }
             // If the callback called exit, terminate the process
             if interp.halted {
