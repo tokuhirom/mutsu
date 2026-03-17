@@ -2162,16 +2162,10 @@ impl Compiler {
                         self.code.emit(OpCode::LoadNil);
                     }
                 }
-                Stmt::Block(inner) => {
+                Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
                     // Block in expression context: compile as scoped block
                     // that returns its last value, with scope isolation.
                     self.compile_do_block_expr_scoped(inner, &None);
-                }
-                Stmt::SyntheticBlock(inner) => {
-                    // SyntheticBlocks from `:=` binding should NOT use scope
-                    // isolation because the declared variable must remain
-                    // visible in the outer scope.
-                    self.compile_do_block_expr(inner, &None);
                 }
                 _ => {
                     self.compile_stmt(stmt);
