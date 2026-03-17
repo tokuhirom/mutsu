@@ -571,6 +571,38 @@ impl Interpreter {
             }
             return Ok(value);
         }
+        // chomp setter for IO::Handle
+        if method == "chomp"
+            && let Value::Instance {
+                class_name,
+                attributes,
+                id: inst_id,
+            } = &target
+            && class_name == "IO::Handle"
+            && let Some(Value::Int(handle_id)) = attributes.get("handle")
+        {
+            let hid = *handle_id as usize;
+            let new_chomp = value.truthy();
+            if let Some(state) = self.handles.get_mut(&hid) {
+                state.line_chomp = new_chomp;
+            }
+            // Also update instance attribute so .open can inherit it
+            let mut new_attrs = (**attributes).clone();
+            new_attrs.insert("chomp".to_string(), Value::Bool(new_chomp));
+            let tid = *inst_id;
+            self.overwrite_instance_bindings_by_identity(
+                &class_name.resolve(),
+                tid,
+                new_attrs.clone(),
+            );
+            if let Some(var_name) = target_var {
+                self.env.insert(
+                    var_name.to_string(),
+                    Value::make_instance_with_id(*class_name, new_attrs, tid),
+                );
+            }
+            return Ok(value);
+        }
         if method == "value"
             && let Value::Instance {
                 class_name,
