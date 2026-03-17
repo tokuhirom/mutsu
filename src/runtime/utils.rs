@@ -1030,7 +1030,10 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                 }
             }
         }
-        Value::Set(items) => items.iter().map(|s| Value::str(s.clone())).collect(),
+        Value::Set(items) => items
+            .iter()
+            .map(|s| Value::Pair(s.clone(), Box::new(Value::Bool(true))))
+            .collect(),
         Value::Bag(items) => items
             .iter()
             .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Int(*v))))
