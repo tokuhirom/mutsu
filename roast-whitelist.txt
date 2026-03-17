@@ -263,6 +263,7 @@ roast/S05-metasyntax/unknown.t
 roast/S05-modifier/Perl_1.t
 roast/S05-modifier/Perl_10.t
 roast/S05-modifier/Perl_2.t
+roast/S05-modifier/Perl_4.t
 roast/S05-modifier/Perl_5.t
 roast/S05-modifier/Perl_6.t
 roast/S05-modifier/Perl_7.t

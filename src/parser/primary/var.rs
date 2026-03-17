@@ -235,6 +235,21 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
         let line = current_line_number(input);
         return Ok((rest, Expr::Literal(Value::Int(line))));
     }
+    // Normalize positional capture variables: $00 → $0, $01 → $1, etc.
+    // Strip leading zeros from all-digit variable names so $00 resolves to $0.
+    let full_name = if !full_name.is_empty()
+        && full_name.chars().next().unwrap().is_ascii_digit()
+        && full_name.chars().all(|c| c.is_ascii_digit())
+    {
+        let trimmed = full_name.trim_start_matches('0');
+        if trimmed.is_empty() {
+            "0".to_string()
+        } else {
+            trimmed.to_string()
+        }
+    } else {
+        full_name
+    };
     Ok((rest, Expr::Var(full_name)))
 }
 
