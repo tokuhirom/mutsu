@@ -657,11 +657,12 @@ impl Interpreter {
                     let values: Vec<Value> = variants
                         .iter()
                         .enumerate()
-                        .map(|(index, (key, val))| Value::Enum {
+                        .map(|(index, (key, val, sv))| Value::Enum {
                             enum_type: Symbol::intern(&type_name),
                             key: Symbol::intern(key),
                             value: *val,
                             index,
+                            str_value: *sv,
                         })
                         .collect();
                     Ok(Value::array(values))

@@ -293,15 +293,16 @@ impl Interpreter {
     pub(super) fn coerce_to_enum_variant(
         &mut self,
         enum_name: &str,
-        variants: &[(String, i64)],
+        variants: &[(String, i64, Option<Symbol>)],
         value: Value,
     ) -> Option<Value> {
         let by_index = |idx: usize| -> Option<Value> {
-            variants.get(idx).map(|(key, val)| Value::Enum {
+            variants.get(idx).map(|(key, val, sv)| Value::Enum {
                 enum_type: Symbol::intern(enum_name),
                 key: Symbol::intern(key),
                 value: *val,
                 index: idx,
+                str_value: *sv,
             })
         };
 
@@ -314,13 +315,13 @@ impl Interpreter {
                 variants
                     .iter()
                     .enumerate()
-                    .find(|(_, (k, _))| k == &key.resolve())
+                    .find(|(_, (k, _, _))| k == &key.resolve())
                     .and_then(|(idx, _)| by_index(idx))
             }
             Value::Int(int_value) => variants
                 .iter()
                 .enumerate()
-                .find(|(_, (_, v))| *v == int_value)
+                .find(|(_, (_, v, _))| *v == int_value)
                 .and_then(|(idx, _)| by_index(idx)),
             Value::Num(num_value) => {
                 if num_value.fract() == 0.0 {
@@ -328,7 +329,7 @@ impl Interpreter {
                     variants
                         .iter()
                         .enumerate()
-                        .find(|(_, (_, v))| *v == int_value)
+                        .find(|(_, (_, v, _))| *v == int_value)
                         .and_then(|(idx, _)| by_index(idx))
                 } else {
                     None
@@ -337,7 +338,7 @@ impl Interpreter {
             Value::Str(name) => variants
                 .iter()
                 .enumerate()
-                .find(|(_, (key, _))| key.as_str() == name.as_str())
+                .find(|(_, (key, _, _))| key.as_str() == name.as_str())
                 .and_then(|(idx, _)| by_index(idx)),
             other => self
                 .call_method_with_values(other, enum_name, vec![])

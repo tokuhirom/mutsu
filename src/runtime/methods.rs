@@ -851,7 +851,7 @@ impl Interpreter {
                             return Ok(Value::Bool(true));
                         }
                         if let Some(variants) = self.enum_types.get(&enum_type.resolve())
-                            && variants.iter().any(|(variant, _)| variant == method)
+                            && variants.iter().any(|(variant, _, _)| variant == method)
                         {
                             return Ok(Value::Bool(false));
                         }
@@ -1072,11 +1072,12 @@ impl Interpreter {
                     variants
                         .iter()
                         .enumerate()
-                        .map(|(index, (key, value))| Value::Enum {
+                        .map(|(index, (key, value, sv))| Value::Enum {
                             enum_type: Symbol::intern(&type_name),
                             key: Symbol::intern(key),
                             value: *value,
                             index,
+                            str_value: *sv,
                         })
                         .collect()
                 })

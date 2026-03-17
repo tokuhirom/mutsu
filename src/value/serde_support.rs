@@ -55,6 +55,7 @@ enum SerValue {
         key: Symbol,
         value: i64,
         index: usize,
+        str_value: Option<Symbol>,
     },
     Regex(String),
     RegexWithAdverbs {
@@ -177,11 +178,13 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             key,
             value,
             index,
+            str_value,
         } => Ok(SerValue::Enum {
             enum_type: *enum_type,
             key: *key,
             value: *value,
             index: *index,
+            str_value: *str_value,
         }),
         Value::Regex(s) => Ok(SerValue::Regex((**s).clone())),
         Value::RegexWithAdverbs {
@@ -362,11 +365,13 @@ fn ser_to_value(sv: SerValue) -> Value {
             key,
             value,
             index,
+            str_value,
         } => Value::Enum {
             enum_type,
             key,
             value,
             index,
+            str_value,
         },
         SerValue::Regex(s) => Value::Regex(Arc::new(s)),
         SerValue::RegexWithAdverbs {

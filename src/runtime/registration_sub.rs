@@ -675,27 +675,57 @@ impl Interpreter {
             } else {
                 variants
             };
-        let mut enum_variants = Vec::new();
+        let mut enum_variants: Vec<(String, i64, Option<Symbol>)> = Vec::new();
         let mut next_value: i64 = 0;
+        // Track whether this is a string-valued enum (for string auto-increment)
+        let mut last_str_value: Option<String> = None;
         for (key, value_expr) in variants {
-            let val = if let Some(expr) = value_expr {
+            if let Some(expr) = value_expr {
                 let v = self.eval_block_value(&[Stmt::Expr(expr.clone())])?;
                 match v {
-                    Value::Int(i) => i,
-                    Value::Bool(b) => {
-                        if b {
-                            1
-                        } else {
-                            0
-                        }
+                    Value::Int(i) => {
+                        enum_variants.push((key.clone(), i, None));
+                        next_value = i + 1;
+                        last_str_value = None;
                     }
-                    _ => next_value,
+                    Value::Bool(b) => {
+                        let i = if b { 1 } else { 0 };
+                        enum_variants.push((key.clone(), i, None));
+                        next_value = i + 1;
+                        last_str_value = None;
+                    }
+                    Value::Str(s) => {
+                        // String-valued enum variant
+                        let sv = Symbol::intern(&s);
+                        enum_variants.push((key.clone(), next_value, Some(sv)));
+                        last_str_value = Some(s.to_string());
+                        next_value += 1;
+                    }
+                    _ => {
+                        enum_variants.push((key.clone(), next_value, None));
+                        next_value += 1;
+                        last_str_value = None;
+                    }
                 }
+            } else if let Some(ref prev_str) = last_str_value {
+                // String auto-increment: next string value after the previous one
+                let incremented = string_increment(prev_str);
+                let sv = Symbol::intern(&incremented);
+                enum_variants.push((key.clone(), next_value, Some(sv)));
+                last_str_value = Some(incremented);
+                next_value += 1;
             } else {
-                next_value
-            };
-            enum_variants.push((key.clone(), val));
-            next_value = val + 1;
+                enum_variants.push((key.clone(), next_value, None));
+                next_value += 1;
+            }
+        }
+        // Check for mixed int/string enum values (forbidden in Raku)
+        let has_str = enum_variants.iter().any(|(_, _, sv)| sv.is_some());
+        let has_int = enum_variants.iter().any(|(_, _, sv)| sv.is_none());
+        if has_str && has_int {
+            return Err(RuntimeError::new(
+                "Incompatible MROs in P6opaque rebless for types Str",
+            ));
         }
         let is_anonymous = name.is_empty();
         let enum_type_name = if is_anonymous { "__ANON_ENUM__" } else { name };
@@ -712,12 +742,13 @@ impl Interpreter {
                 );
             }
         }
-        for (index, (key, val)) in enum_variants.iter().enumerate() {
+        for (index, (key, val, sv)) in enum_variants.iter().enumerate() {
             let enum_val = Value::Enum {
                 enum_type: Symbol::intern(enum_type_name),
                 key: Symbol::intern(key),
                 value: *val,
                 index,
+                str_value: *sv,
             };
             if !is_anonymous {
                 self.env
@@ -742,7 +773,7 @@ impl Interpreter {
         // Register exports if `is export`
         if is_export && !is_anonymous {
             let pkg = self.current_package.clone();
-            for (key, _) in &enum_variants {
+            for (key, _, _) in &enum_variants {
                 self.register_exported_var(pkg.clone(), key.clone(), vec!["DEFAULT".to_string()]);
             }
         }
@@ -750,12 +781,68 @@ impl Interpreter {
         // For anonymous enums, return a Map (Hash) of key => value pairs
         if is_anonymous {
             let mut map = HashMap::new();
-            for (key, val) in &enum_variants {
-                map.insert(key.clone(), Value::Int(*val));
+            for (key, val, sv) in &enum_variants {
+                if let Some(s) = sv {
+                    map.insert(key.clone(), Value::str(s.resolve()));
+                } else {
+                    map.insert(key.clone(), Value::Int(*val));
+                }
             }
             Ok(Value::hash(map))
         } else {
             Ok(Value::Nil)
         }
     }
+}
+
+/// Increment a string value (Raku string increment semantics).
+/// For single-char strings, increments the last character.
+/// "x" -> "y", "z" -> "aa", "Z" -> "AA"
+fn string_increment(s: &str) -> String {
+    if s.is_empty() {
+        return "a".to_string();
+    }
+    let mut chars: Vec<char> = s.chars().collect();
+    let mut i = chars.len();
+    loop {
+        if i == 0 {
+            // All chars wrapped around, prepend a new char
+            let first = chars[0];
+            let prefix = if first.is_ascii_uppercase() { 'A' } else { 'a' };
+            chars.insert(0, prefix);
+            break;
+        }
+        i -= 1;
+        let c = chars[i];
+        if c.is_ascii_lowercase() {
+            if c == 'z' {
+                chars[i] = 'a';
+                // carry
+            } else {
+                chars[i] = (c as u8 + 1) as char;
+                break;
+            }
+        } else if c.is_ascii_uppercase() {
+            if c == 'Z' {
+                chars[i] = 'A';
+                // carry
+            } else {
+                chars[i] = (c as u8 + 1) as char;
+                break;
+            }
+        } else if c.is_ascii_digit() {
+            if c == '9' {
+                chars[i] = '0';
+                // carry
+            } else {
+                chars[i] = (c as u8 + 1) as char;
+                break;
+            }
+        } else {
+            // Non-alphanumeric: just increment codepoint
+            chars[i] = char::from_u32(c as u32 + 1).unwrap_or(c);
+            break;
+        }
+    }
+    chars.into_iter().collect()
 }

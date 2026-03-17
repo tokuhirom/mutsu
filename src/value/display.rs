@@ -446,7 +446,13 @@ impl Value {
             Value::ValuePair(k, v) => {
                 format!("{}\t{}", k.to_string_value(), v.to_string_value())
             }
-            Value::Enum { key, .. } => key.resolve(),
+            Value::Enum { key, str_value, .. } => {
+                if let Some(sv) = str_value {
+                    sv.resolve()
+                } else {
+                    key.resolve()
+                }
+            }
             Value::CompUnitDepSpec { short_name } => {
                 format!("CompUnit::DependencySpecification({})", short_name)
             }

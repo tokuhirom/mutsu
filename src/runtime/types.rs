@@ -887,21 +887,22 @@ impl Interpreter {
     }
 
     pub(super) fn init_endian_enum(&mut self) {
-        let variants = vec![
-            ("NativeEndian".to_string(), 0i64),
-            ("LittleEndian".to_string(), 1i64),
-            ("BigEndian".to_string(), 2i64),
+        let variants: Vec<(String, i64, Option<Symbol>)> = vec![
+            ("NativeEndian".to_string(), 0i64, None),
+            ("LittleEndian".to_string(), 1i64, None),
+            ("BigEndian".to_string(), 2i64, None),
         ];
         self.enum_types
             .insert("Endian".to_string(), variants.clone());
         self.env
             .insert("Endian".to_string(), Value::str_from("Endian"));
-        for (index, (key, val)) in variants.iter().enumerate() {
+        for (index, (key, val, sv)) in variants.iter().enumerate() {
             let enum_val = Value::Enum {
                 enum_type: Symbol::intern("Endian"),
                 key: Symbol::intern(key),
                 value: *val,
                 index,
+                str_value: *sv,
             };
             // Register as both Endian::NativeEndian and bare NativeEndian
             self.env
@@ -911,13 +912,13 @@ impl Interpreter {
     }
 
     pub(super) fn init_protocol_family_enum(&mut self) {
-        let variants = vec![
-            ("PF_UNSPEC".to_string(), 0i64),
-            ("PF_INET".to_string(), 1i64),
-            ("PF_INET6".to_string(), 2i64),
-            ("PF_LOCAL".to_string(), 3i64),
-            ("PF_UNIX".to_string(), 3i64),
-            ("PF_MAX".to_string(), 4i64),
+        let variants: Vec<(String, i64, Option<Symbol>)> = vec![
+            ("PF_UNSPEC".to_string(), 0i64, None),
+            ("PF_INET".to_string(), 1i64, None),
+            ("PF_INET6".to_string(), 2i64, None),
+            ("PF_LOCAL".to_string(), 3i64, None),
+            ("PF_UNIX".to_string(), 3i64, None),
+            ("PF_MAX".to_string(), 4i64, None),
         ];
         self.enum_types
             .insert("ProtocolFamily".to_string(), variants.clone());
@@ -925,12 +926,13 @@ impl Interpreter {
             "ProtocolFamily".to_string(),
             Value::Package(Symbol::intern("ProtocolFamily")),
         );
-        for (index, (key, val)) in variants.iter().enumerate() {
+        for (index, (key, val, sv)) in variants.iter().enumerate() {
             let enum_val = Value::Enum {
                 enum_type: Symbol::intern("ProtocolFamily"),
                 key: Symbol::intern(key),
                 value: *val,
                 index,
+                str_value: *sv,
             };
             self.env
                 .insert(format!("ProtocolFamily::{}", key), enum_val.clone());
@@ -939,21 +941,22 @@ impl Interpreter {
     }
 
     pub(super) fn init_order_enum(&mut self) {
-        let variants = vec![
-            ("Less".to_string(), -1i64),
-            ("Same".to_string(), 0i64),
-            ("More".to_string(), 1i64),
+        let variants: Vec<(String, i64, Option<Symbol>)> = vec![
+            ("Less".to_string(), -1i64, None),
+            ("Same".to_string(), 0i64, None),
+            ("More".to_string(), 1i64, None),
         ];
         self.enum_types
             .insert("Order".to_string(), variants.clone());
         self.env
             .insert("Order".to_string(), Value::str_from("Order"));
-        for (index, (key, val)) in variants.iter().enumerate() {
+        for (index, (key, val, sv)) in variants.iter().enumerate() {
             let enum_val = Value::Enum {
                 enum_type: Symbol::intern("Order"),
                 key: Symbol::intern(key),
                 value: *val,
                 index,
+                str_value: *sv,
             };
             self.env.insert(format!("Order::{}", key), enum_val.clone());
             self.env.insert(key.clone(), enum_val);
@@ -962,37 +965,38 @@ impl Interpreter {
 
     pub(super) fn init_signal_enum(&mut self) {
         // Use libc constants on Unix, standard POSIX numbers on other platforms
-        let variants = vec![
-            ("SIGHUP".to_string(), Self::sig_num(1)),
-            ("SIGINT".to_string(), Self::sig_num(2)),
-            ("SIGQUIT".to_string(), Self::sig_num(3)),
-            ("SIGILL".to_string(), Self::sig_num(4)),
-            ("SIGABRT".to_string(), Self::sig_num(6)),
-            ("SIGFPE".to_string(), Self::sig_num(8)),
-            ("SIGKILL".to_string(), Self::sig_num(9)),
-            ("SIGSEGV".to_string(), Self::sig_num(11)),
-            ("SIGPIPE".to_string(), Self::sig_num(13)),
-            ("SIGALRM".to_string(), Self::sig_num(14)),
-            ("SIGTERM".to_string(), Self::sig_num(15)),
-            ("SIGUSR1".to_string(), Self::sig_num(10)),
-            ("SIGUSR2".to_string(), Self::sig_num(12)),
-            ("SIGCHLD".to_string(), Self::sig_num(17)),
-            ("SIGCONT".to_string(), Self::sig_num(18)),
-            ("SIGSTOP".to_string(), Self::sig_num(19)),
-            ("SIGTSTP".to_string(), Self::sig_num(20)),
-            ("SIGTTIN".to_string(), Self::sig_num(21)),
-            ("SIGTTOU".to_string(), Self::sig_num(22)),
+        let variants: Vec<(String, i64, Option<Symbol>)> = vec![
+            ("SIGHUP".to_string(), Self::sig_num(1), None),
+            ("SIGINT".to_string(), Self::sig_num(2), None),
+            ("SIGQUIT".to_string(), Self::sig_num(3), None),
+            ("SIGILL".to_string(), Self::sig_num(4), None),
+            ("SIGABRT".to_string(), Self::sig_num(6), None),
+            ("SIGFPE".to_string(), Self::sig_num(8), None),
+            ("SIGKILL".to_string(), Self::sig_num(9), None),
+            ("SIGSEGV".to_string(), Self::sig_num(11), None),
+            ("SIGPIPE".to_string(), Self::sig_num(13), None),
+            ("SIGALRM".to_string(), Self::sig_num(14), None),
+            ("SIGTERM".to_string(), Self::sig_num(15), None),
+            ("SIGUSR1".to_string(), Self::sig_num(10), None),
+            ("SIGUSR2".to_string(), Self::sig_num(12), None),
+            ("SIGCHLD".to_string(), Self::sig_num(17), None),
+            ("SIGCONT".to_string(), Self::sig_num(18), None),
+            ("SIGSTOP".to_string(), Self::sig_num(19), None),
+            ("SIGTSTP".to_string(), Self::sig_num(20), None),
+            ("SIGTTIN".to_string(), Self::sig_num(21), None),
+            ("SIGTTOU".to_string(), Self::sig_num(22), None),
         ];
         self.enum_types
             .insert("Signal".to_string(), variants.clone());
         self.env
             .insert("Signal".to_string(), Value::str_from("Signal"));
-        for (index, (key, val)) in variants.iter().enumerate() {
+        for (index, (key, val, sv)) in variants.iter().enumerate() {
             let enum_val = Value::Enum {
                 enum_type: Symbol::intern("Signal"),
                 key: Symbol::intern(key),
                 value: *val,
                 index,
+                str_value: *sv,
             };
             self.env
                 .insert(format!("Signal::{}", key), enum_val.clone());

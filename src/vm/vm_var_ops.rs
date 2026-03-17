@@ -597,6 +597,7 @@ impl VM {
                 key: Symbol::intern("Less"),
                 value: -1,
                 index: 0,
+                str_value: None,
             }
         } else if name == "Order::Same" {
             Value::Enum {
@@ -604,6 +605,7 @@ impl VM {
                 key: Symbol::intern("Same"),
                 value: 0,
                 index: 1,
+                str_value: None,
             }
         } else if name == "Order::More" {
             Value::Enum {
@@ -611,6 +613,7 @@ impl VM {
                 key: Symbol::intern("More"),
                 value: 1,
                 index: 2,
+                str_value: None,
             }
         } else if (name.starts_with("infix:<")
             || name.starts_with("prefix:<")

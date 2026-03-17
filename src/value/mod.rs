@@ -326,6 +326,9 @@ pub enum Value {
         key: Symbol,
         value: i64,
         index: usize,
+        /// For string-valued enums, stores the string value.
+        /// When Some, `.Str` and `.value` return this string instead of the key/int.
+        str_value: Option<Symbol>,
     },
     Regex(Arc<String>),
     RegexWithAdverbs {

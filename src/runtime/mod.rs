@@ -507,7 +507,7 @@ pub struct Interpreter {
     gather_items: Vec<Vec<Value>>,
     gather_take_limits: Vec<Option<usize>>,
     block_scope_depth: usize,
-    enum_types: HashMap<String, Vec<(String, i64)>>,
+    enum_types: HashMap<String, Vec<(String, i64, Option<Symbol>)>>,
     classes: HashMap<String, ClassDef>,
     cunion_classes: HashSet<String>,
     hidden_classes: HashSet<String>,

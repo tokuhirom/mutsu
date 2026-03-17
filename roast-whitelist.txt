@@ -393,6 +393,7 @@ roast/S12-construction/construction.t
 roast/S12-construction/named-params-in-BUILD.t
 roast/S12-construction/new.t
 roast/S12-enums/anonymous.t
+roast/S12-enums/non-int.t
 roast/S12-enums/pseudo-functional.t
 roast/S12-introspection/WHAT.t
 roast/S12-introspection/can.t

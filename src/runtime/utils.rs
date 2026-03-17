@@ -302,18 +302,21 @@ pub(crate) fn make_order(ord: std::cmp::Ordering) -> Value {
             key: Symbol::intern("Less"),
             value: -1,
             index: 0,
+            str_value: None,
         },
         std::cmp::Ordering::Equal => Value::Enum {
             enum_type: Symbol::intern("Order"),
             key: Symbol::intern("Same"),
             value: 0,
             index: 1,
+            str_value: None,
         },
         std::cmp::Ordering::Greater => Value::Enum {
             enum_type: Symbol::intern("Order"),
             key: Symbol::intern("More"),
             value: 1,
             index: 2,
+            str_value: None,
         },
     }
 }

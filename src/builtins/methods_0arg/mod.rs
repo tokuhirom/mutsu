@@ -1343,6 +1343,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }),
             value: if cfg!(target_endian = "little") { 1 } else { 2 },
             index: if cfg!(target_endian = "little") { 1 } else { 2 },
+            str_value: None,
         }));
     }
     match method {

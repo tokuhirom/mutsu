@@ -331,11 +331,12 @@ impl Interpreter {
             let values: Vec<Value> = variants
                 .iter()
                 .enumerate()
-                .map(|(index, (key, val))| Value::Enum {
+                .map(|(index, (key, val, sv))| Value::Enum {
                     enum_type: Symbol::intern(type_name),
                     key: Symbol::intern(key),
                     value: *val,
                     index,
+                    str_value: *sv,
                 })
                 .collect();
             return Some(Ok(Value::array(values)));
@@ -355,8 +356,12 @@ impl Interpreter {
             && let Some(variants) = self.enum_types.get(type_name)
         {
             let mut map = HashMap::new();
-            for (k, v) in variants {
-                map.insert(k.clone(), Value::Int(*v));
+            for (k, v, sv) in variants {
+                if let Some(s) = sv {
+                    map.insert(k.clone(), Value::str(s.resolve()));
+                } else {
+                    map.insert(k.clone(), Value::Int(*v));
+                }
             }
             return Some(Ok(Value::hash(map)));
         }
@@ -372,8 +377,13 @@ impl Interpreter {
             && let Some(variants) = self.enum_types.get(type_name.as_str())
         {
             let mut result = Vec::new();
-            for (k, v) in variants {
-                result.push(Value::Pair(v.to_string(), Box::new(Value::str(k.clone()))));
+            for (k, v, sv) in variants {
+                let key_val = if let Some(s) = sv {
+                    s.resolve()
+                } else {
+                    v.to_string()
+                };
+                result.push(Value::Pair(key_val, Box::new(Value::str(k.clone()))));
             }
             return Some(Ok(Value::array(result)));
         }
