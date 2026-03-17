@@ -1550,6 +1550,30 @@ impl Interpreter {
                 self.apply_multi_regex_captures(&selected);
                 true
             }
+            // Array/List ~~ Regex: iterate elements, match each individually
+            (
+                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items),
+                Value::Regex(_) | Value::RegexWithAdverbs { .. },
+            ) => {
+                for item in items.iter() {
+                    if self.smart_match(item, right) {
+                        return true;
+                    }
+                }
+                self.env.insert("/".to_string(), Value::Nil);
+                false
+            }
+            // Hash ~~ Regex: iterate keys, match each individually
+            (Value::Hash(map), Value::Regex(_) | Value::RegexWithAdverbs { .. }) => {
+                for key in map.keys() {
+                    let key_val = Value::str(key.clone());
+                    if self.smart_match(&key_val, right) {
+                        return true;
+                    }
+                }
+                self.env.insert("/".to_string(), Value::Nil);
+                false
+            }
             // Single match: plain Regex or RegexWithAdverbs without multi-match flags
             (_, Value::Regex(pat))
             | (
