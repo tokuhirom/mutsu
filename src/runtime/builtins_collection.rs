@@ -1470,4 +1470,115 @@ impl Interpreter {
 
         Ok(Value::Seq(std::sync::Arc::new(rounds)))
     }
+
+    /// `duckmap(&block, \obj)` — apply block to each element; on type mismatch
+    /// descend recursively into iterables, or return the element unchanged.
+    pub(super) fn builtin_duckmap(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 2 {
+            return Err(RuntimeError::new("duckmap requires a block and an object"));
+        }
+        let block = args[0].clone();
+        let obj = args[1].clone();
+        self.duckmap_iterate(&block, &obj)
+    }
+
+    /// Iterate over the elements of a value, applying duckmap to each.
+    /// This is the entry point for both the method and function forms.
+    pub(crate) fn duckmap_iterate(
+        &mut self,
+        block: &Value,
+        target: &Value,
+    ) -> Result<Value, RuntimeError> {
+        match target {
+            Value::Array(items, kind) => {
+                let mut result = Vec::new();
+                for item in items.iter() {
+                    match self.duckmap_element(block, item) {
+                        Ok(v) => result.push(v),
+                        Err(e) if e.is_next => continue,
+                        Err(e) if e.is_last => break,
+                        Err(e) => return Err(e),
+                    }
+                }
+                if kind.is_real_array() {
+                    Ok(Value::real_array(result))
+                } else {
+                    Ok(Value::array(result))
+                }
+            }
+            Value::Seq(items) => {
+                let mut result = Vec::new();
+                for item in items.iter() {
+                    match self.duckmap_element(block, item) {
+                        Ok(v) => result.push(v),
+                        Err(e) if e.is_next => continue,
+                        Err(e) if e.is_last => break,
+                        Err(e) => return Err(e),
+                    }
+                }
+                Ok(Value::Seq(std::sync::Arc::new(result)))
+            }
+            Value::Hash(map) => {
+                let mut result = std::collections::HashMap::new();
+                for (k, v) in map.iter() {
+                    match self.duckmap_element(block, v) {
+                        Ok(mapped) => {
+                            result.insert(k.clone(), mapped);
+                        }
+                        Err(e) if e.is_next => continue,
+                        Err(e) if e.is_last => break,
+                        Err(e) => return Err(e),
+                    }
+                }
+                Ok(Value::Hash(std::sync::Arc::new(result)))
+            }
+            // Single non-iterable value: try the block on it directly
+            _ => self.duckmap_element(block, target),
+        }
+    }
+
+    /// Apply duckmap to a single element: try the block, on failure descend.
+    fn duckmap_element(&mut self, block: &Value, value: &Value) -> Result<Value, RuntimeError> {
+        // Try to call the block with this value
+        match self.call_sub_value(block.clone(), vec![value.clone()], false) {
+            Ok(result) => Ok(result),
+            Err(e) if e.is_next || e.is_last || e.is_redo => {
+                // Propagate loop control signals (next, last, redo)
+                Err(e)
+            }
+            Err(_) => {
+                // Block rejected the value (type mismatch, etc.)
+                // Try to descend into iterable structures
+                match value {
+                    Value::Array(items, kind) => {
+                        let mut result = Vec::new();
+                        for item in items.iter() {
+                            result.push(self.duckmap_element(block, item)?);
+                        }
+                        if kind.is_real_array() {
+                            Ok(Value::real_array(result))
+                        } else {
+                            Ok(Value::array(result))
+                        }
+                    }
+                    Value::Seq(items) => {
+                        let mut result = Vec::new();
+                        for item in items.iter() {
+                            result.push(self.duckmap_element(block, item)?);
+                        }
+                        Ok(Value::Seq(std::sync::Arc::new(result)))
+                    }
+                    Value::Hash(map) => {
+                        let mut result = std::collections::HashMap::new();
+                        for (k, v) in map.iter() {
+                            result.insert(k.clone(), self.duckmap_element(block, v)?);
+                        }
+                        Ok(Value::Hash(std::sync::Arc::new(result)))
+                    }
+                    // Not iterable — return unchanged
+                    _ => Ok(value.clone()),
+                }
+            }
+        }
+    }
 }

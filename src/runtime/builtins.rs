@@ -602,6 +602,7 @@ impl Interpreter {
             "circumfix:<[ ]>" => Ok(Value::real_array(args.clone())),
             "lol" => Ok(Value::array(args.clone())),
             "flat" => self.builtin_flat(&args),
+            "duckmap" => self.builtin_duckmap(&args),
             "slip" | "Slip" => self.builtin_slip(&args),
             "take" => {
                 let value = if args.len() <= 1 {
