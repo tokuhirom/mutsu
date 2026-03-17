@@ -1881,40 +1881,17 @@ impl VM {
 
         self.interpreter.push_method_class(owner_class.to_string());
 
-        // Detect role context (same logic as class.rs)
+        // Detect role context: use the pre-computed role_origin stored on the
+        // MethodDef (set during role composition) instead of expensive fingerprint
+        // matching on every call.
         let role_context = if self.interpreter.is_role(owner_class) {
             Some(owner_class.to_string())
-        } else if let Some(composed) = self.interpreter.class_composed_roles(receiver_class_name) {
-            let target_fp = crate::ast::function_body_fingerprint(
-                &method_def.params,
-                &method_def.param_defs,
-                &method_def.body,
-            );
-            let composed = composed.clone();
-            composed.iter().find_map(|role_name| {
-                let base_role = role_name
-                    .split_once('[')
-                    .map(|(b, _)| b)
-                    .unwrap_or(role_name.as_str());
-                self.interpreter
-                    .get_role_def(base_role)
-                    .and_then(|role_def| {
-                        role_def
-                            .methods
-                            .values()
-                            .flatten()
-                            .any(|candidate| {
-                                crate::ast::function_body_fingerprint(
-                                    &candidate.params,
-                                    &candidate.param_defs,
-                                    &candidate.body,
-                                ) == target_fp
-                            })
-                            .then(|| base_role.to_string())
-                    })
-            })
         } else {
-            None
+            method_def
+                .original_role
+                .as_ref()
+                .or(method_def.role_origin.as_ref())
+                .cloned()
         };
 
         // Set ::?CLASS / ::?ROLE

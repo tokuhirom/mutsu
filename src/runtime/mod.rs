@@ -213,7 +213,9 @@ struct SubsetDef {
 pub(crate) struct MethodDef {
     pub(crate) params: Vec<String>,
     pub(crate) param_defs: Vec<ParamDef>,
-    pub(crate) body: Vec<Stmt>,
+    /// Method body AST. Wrapped in Arc to make MethodDef clones O(1) since
+    /// the body is never mutated after construction and can be large.
+    pub(crate) body: std::sync::Arc<Vec<Stmt>>,
     pub(crate) is_rw: bool,
     pub(crate) is_private: bool,
     pub(crate) is_multi: bool,
@@ -2086,7 +2088,7 @@ impl Interpreter {
                     let stub_method = |body: Vec<Stmt>| MethodDef {
                         params: Vec::new(),
                         param_defs: Vec::new(),
-                        body,
+                        body: std::sync::Arc::new(body),
                         is_rw: false,
                         is_private: false,
                         is_multi: false,

@@ -699,10 +699,12 @@ impl Interpreter {
         self.samewith_context_stack.pop();
     }
 
+    #[allow(dead_code)]
     pub(crate) fn class_composed_roles(&self, class_name: &str) -> Option<&Vec<String>> {
         self.class_composed_roles.get(class_name)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn get_role_def(&self, role_name: &str) -> Option<&super::RoleDef> {
         self.roles.get(role_name)
     }
