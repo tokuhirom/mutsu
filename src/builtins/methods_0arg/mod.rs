@@ -1427,6 +1427,18 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
         }
         "Str" | "Stringy" => match target {
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Failure" => {
+                // Using a Failure in string context throws the wrapped exception.
+                if let Some(ex) = attributes.get("exception") {
+                    Some(Err(RuntimeError::from_exception_value(ex.clone())))
+                } else {
+                    Some(Err(RuntimeError::new("Failed")))
+                }
+            }
             Value::Package(_) | Value::Instance { .. } => None,
             Value::LazyList(_) => None, // fall through to runtime to force the list
             Value::Enum { .. } => None, // fall through to enum dispatch for string enum support
@@ -2638,8 +2650,16 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     .unwrap_or_else(|| "Failed".to_string());
                 if method == "gist" {
                     Some(Ok(Value::str(msg)))
-                } else {
+                } else if method == "raku" || method == "perl" {
                     Some(Ok(Value::str(format!("Failure.new(\"{}\")", msg))))
+                } else {
+                    // Str, Numeric, Int, etc. — using a Failure in a value
+                    // context throws the wrapped exception.
+                    if let Some(ex) = attributes.get("exception") {
+                        Some(Err(RuntimeError::from_exception_value(ex.clone())))
+                    } else {
+                        Some(Err(RuntimeError::new(&msg)))
+                    }
                 }
             }
             Value::Instance {

@@ -329,9 +329,7 @@ impl VM {
                     Value::Int(num_integer::Integer::div_floor(a, b))
                 }
                 (Value::Int(a), Value::Int(_)) => {
-                    return Err(RuntimeError::numeric_divide_by_zero_with(Some(Value::Int(
-                        *a,
-                    ))));
+                    RuntimeError::divide_by_zero_failure(Some(Value::Int(*a)), Some("div"))
                 }
                 (Value::BigInt(a), Value::BigInt(b)) if **b != num_bigint::BigInt::from(0i64) => {
                     Value::from_bigint(num_integer::Integer::div_floor(a.as_ref(), b.as_ref()))
@@ -348,9 +346,10 @@ impl VM {
                     let a = runtime::to_int(&l);
                     let b = runtime::to_int(&r);
                     if b == 0 {
-                        return Err(RuntimeError::numeric_divide_by_zero_with(Some(Value::Int(
-                            a,
-                        ))));
+                        return Ok(RuntimeError::divide_by_zero_failure(
+                            Some(Value::Int(a)),
+                            Some("div"),
+                        ));
                     }
                     Value::Int(num_integer::Integer::div_floor(&a, &b))
                 }
@@ -370,9 +369,7 @@ impl VM {
                     Value::Int(num_integer::Integer::mod_floor(a, b))
                 }
                 (Value::Int(a), Value::Int(_)) => {
-                    return Err(RuntimeError::numeric_divide_by_zero_with(Some(Value::Int(
-                        *a,
-                    ))));
+                    RuntimeError::divide_by_zero_failure(Some(Value::Int(*a)), Some("%"))
                 }
                 (Value::BigInt(a), Value::BigInt(b)) if !b.is_zero() => {
                     Value::from_bigint(num_integer::Integer::mod_floor(a.as_ref(), b.as_ref()))
@@ -389,9 +386,10 @@ impl VM {
                     let a = runtime::to_int(&l);
                     let b = runtime::to_int(&r);
                     if b == 0 {
-                        return Err(RuntimeError::numeric_divide_by_zero_with(Some(Value::Int(
-                            a,
-                        ))));
+                        return Ok(RuntimeError::divide_by_zero_failure(
+                            Some(Value::Int(a)),
+                            Some("%"),
+                        ));
                     }
                     Value::Int(num_integer::Integer::mod_floor(&a, &b))
                 }

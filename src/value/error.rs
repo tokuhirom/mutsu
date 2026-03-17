@@ -89,6 +89,22 @@ impl RuntimeError {
         }
     }
 
+    /// Create a RuntimeError from an exception Value.
+    /// Extracts the message from the exception's attributes and wraps it.
+    pub(crate) fn from_exception_value(ex: Value) -> Self {
+        let msg = if let Value::Instance { attributes, .. } = &ex {
+            attributes
+                .get("message")
+                .map(|v| v.to_string_value())
+                .unwrap_or_else(|| ex.to_string_value())
+        } else {
+            ex.to_string_value()
+        };
+        let mut err = Self::new(msg);
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
     pub(crate) fn with_location(
         message: impl Into<String>,
         code: RuntimeErrorCode,
@@ -265,6 +281,31 @@ impl RuntimeError {
         let mut err = Self::new("X::Numeric::DivideByZero");
         err.exception = Some(Box::new(ex));
         err
+    }
+
+    /// Create a Failure value wrapping an X::Numeric::DivideByZero exception.
+    /// In Raku, `div` and `%` by zero return a Failure (lazy exception)
+    /// instead of throwing immediately.
+    pub(crate) fn divide_by_zero_failure(numerator: Option<Value>, using: Option<&str>) -> Value {
+        let mut attrs = HashMap::new();
+        let mut msg = "Attempt to divide".to_string();
+        if let Some(ref n) = numerator {
+            msg.push_str(&format!(" {} by zero", n.to_string_value()));
+        } else {
+            msg.push_str(" by zero");
+        }
+        if let Some(u) = using {
+            msg.push_str(&format!(" using {}", u));
+            attrs.insert("using".to_string(), Value::str_from(u));
+        }
+        attrs.insert("message".to_string(), Value::str_from(&msg));
+        if let Some(n) = numerator {
+            attrs.insert("numerator".to_string(), n);
+        }
+        let ex = Value::make_instance(Symbol::intern("X::Numeric::DivideByZero"), attrs);
+        let mut failure_attrs = HashMap::new();
+        failure_attrs.insert("exception".to_string(), ex);
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
     /// Create a typed exception error with the given class name and attributes.
