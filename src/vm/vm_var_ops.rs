@@ -623,10 +623,16 @@ impl VM {
                 is_regex: false,
             }
         } else if self.interpreter.is_name_suppressed(name) {
-            return Err(RuntimeError::new(format!(
-                "X::Undeclared::Symbols: Undeclared name:\n    {} used at line 1",
-                name,
-            )));
+            // If we are inside the parent class of the suppressed nested class,
+            // resolve the short name to the qualified name (e.g. Frog -> Forest::Frog).
+            if let Some(qualified) = self.interpreter.resolve_suppressed_type(name) {
+                Value::Package(Symbol::intern(&qualified))
+            } else {
+                return Err(RuntimeError::new(format!(
+                    "X::Undeclared::Symbols: Undeclared name:\n    {} used at line 1",
+                    name,
+                )));
+            }
         } else if let Some((pkg, sym)) = name.rsplit_once("::")
             && let Some(stripped_sym) = sym.strip_prefix('&')
         {

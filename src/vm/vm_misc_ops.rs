@@ -1347,8 +1347,15 @@ impl VM {
                 .interpreter
                 .has_type_capture_binding(declared_constraint)
         {
-            // Unknown user-defined type — reject it
-            return Err(RuntimeError::undeclared("type", constraint));
+            // Check if this is a suppressed nested class name that can be resolved
+            if self
+                .interpreter
+                .resolve_suppressed_type(declared_constraint)
+                .is_none()
+            {
+                // Unknown user-defined type — reject it
+                return Err(RuntimeError::undeclared("type", constraint));
+            }
         }
         if !matches!(value, Value::Nil) && !self.interpreter.type_matches_value(constraint, &value)
         {
@@ -1425,6 +1432,7 @@ impl VM {
         self.run_range(code, enter_start, body_start, compiled_fns)?;
         self.interpreter.push_once_scope(once_scope);
         self.interpreter.push_block_scope_depth();
+        self.interpreter.push_lexical_class_scope();
         let stack_base = self.stack.len();
         let topic_before = self.last_topic_value.clone();
         let body_result = self.run_range(code, body_start, queue_start, compiled_fns);
@@ -1489,6 +1497,7 @@ impl VM {
             }
         }
         *self.interpreter.env_mut() = restored_env;
+        self.interpreter.pop_lexical_class_scope();
         self.interpreter.pop_block_scope_depth();
         self.interpreter.pop_once_scope();
 

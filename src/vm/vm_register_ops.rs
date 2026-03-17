@@ -680,6 +680,7 @@ impl VM {
             parents,
             class_is_rw,
             is_hidden,
+            is_lexical,
             hidden_parents,
             does_parents,
             repr,
@@ -733,11 +734,26 @@ impl VM {
             // When a nested class is registered inside another class (e.g. class B inside class A
             // becomes A::B), suppress the short name (B) so it cannot be used outside.
             // Only suppress when the parent package is itself a class, not a module.
+            // Also register the short name in the lexical env so it is available
+            // within the enclosing class body and its methods.
             if qualified_name != resolved_name
                 && !resolved_name.contains("::")
                 && self.interpreter.has_type(&current_package)
             {
                 self.interpreter.suppress_name(&resolved_name);
+                // Register the short name in the lexical env so it resolves
+                // within the enclosing class scope (e.g. `Frog` inside `Forest`).
+                let env = self.interpreter.env_mut();
+                env.insert(
+                    resolved_name.clone(),
+                    Value::Package(Symbol::intern(&qualified_name)),
+                );
+            }
+            // When `my class` is used, register the class name as lexically scoped
+            // so it gets suppressed when the enclosing block scope exits.
+            if *is_lexical {
+                self.interpreter
+                    .register_lexical_class(resolved_name.clone());
             }
             self.env_dirty = true;
             Ok(())
