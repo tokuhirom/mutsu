@@ -57,7 +57,7 @@ fn flatten_target(target: &Value, depth: Option<usize>, flatten_arrays: bool) ->
     Value::Seq(Arc::new(flat))
 }
 
-fn fmt_joinable_target(target: &Value) -> bool {
+pub(crate) fn fmt_joinable_target(target: &Value) -> bool {
     matches!(
         target,
         Value::Array(..)
@@ -69,6 +69,26 @@ fn fmt_joinable_target(target: &Value) -> bool {
             | Value::RangeExclBoth(..)
             | Value::GenericRange { .. }
     )
+}
+
+/// Extract key and value from a Pair or ValuePair.
+fn pair_key_value(val: &Value) -> Option<(Value, Value)> {
+    match val {
+        Value::Pair(k, v) => Some((Value::str(k.to_string()), *v.clone())),
+        Value::ValuePair(k, v) => Some((*k.clone(), *v.clone())),
+        _ => None,
+    }
+}
+
+/// Format a single value or a pair for `.fmt()`.
+/// If the value is a Pair, format with two args (key, value).
+/// Otherwise, format as a single arg.
+fn fmt_single_or_pair(fmt: &str, item: &Value) -> String {
+    if let Some((k, v)) = pair_key_value(item) {
+        runtime::format_sprintf_args(fmt, &[k, v])
+    } else {
+        runtime::format_sprintf(fmt, Some(item))
+    }
 }
 
 fn contains_value_recursive(hay: &str, needle: &Value) -> Value {
@@ -670,10 +690,24 @@ pub(crate) fn native_method_1arg(
         }
         "fmt" => {
             let fmt = arg.to_string_value();
-            if fmt_joinable_target(target) {
+            if let Value::Hash(items) = target {
+                // Hash.fmt(format): format each key-value pair, join with "\n"
+                let rendered = items
+                    .iter()
+                    .map(|(k, v)| {
+                        runtime::format_sprintf_args(&fmt, &[Value::str(k.to_string()), v.clone()])
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                Some(Ok(Value::str(rendered)))
+            } else if let Some((k, v)) = pair_key_value(target) {
+                // Pair.fmt(format): format key and value
+                let rendered = runtime::format_sprintf_args(&fmt, &[k, v]);
+                Some(Ok(Value::str(rendered)))
+            } else if fmt_joinable_target(target) {
                 let rendered = runtime::value_to_list(target)
                     .into_iter()
-                    .map(|item| runtime::format_sprintf(&fmt, Some(&item)))
+                    .map(|item| fmt_single_or_pair(&fmt, &item))
                     .collect::<Vec<_>>()
                     .join(" ");
                 Some(Ok(Value::str(rendered)))
@@ -1578,19 +1612,33 @@ pub(crate) fn native_method_2arg(
     match method {
         "expmod" => Some(crate::builtins::expmod(target, arg1, arg2)),
         "fmt" => {
-            if !fmt_joinable_target(target) {
-                return Some(Err(RuntimeError::new(
-                    "Too many positionals passed; expected 1 or 2 arguments but got 3",
-                )));
-            }
-            let fmt = arg1.to_string_value();
+            let fmt_str = arg1.to_string_value();
             let sep = arg2.to_string_value();
-            let rendered = runtime::value_to_list(target)
-                .into_iter()
-                .map(|item| runtime::format_sprintf(&fmt, Some(&item)))
-                .collect::<Vec<_>>()
-                .join(&sep);
-            Some(Ok(Value::str(rendered)))
+            if let Value::Hash(items) = target {
+                // Hash.fmt(format, separator)
+                let rendered = items
+                    .iter()
+                    .map(|(k, v)| {
+                        runtime::format_sprintf_args(
+                            &fmt_str,
+                            &[Value::str(k.to_string()), v.clone()],
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(&sep);
+                Some(Ok(Value::str(rendered)))
+            } else if fmt_joinable_target(target) {
+                let rendered = runtime::value_to_list(target)
+                    .into_iter()
+                    .map(|item| fmt_single_or_pair(&fmt_str, &item))
+                    .collect::<Vec<_>>()
+                    .join(&sep);
+                Some(Ok(Value::str(rendered)))
+            } else {
+                Some(Err(RuntimeError::new(
+                    "Too many positionals passed; expected 1 or 2 arguments but got 3",
+                )))
+            }
         }
         "substr" => {
             let start = match arg1 {

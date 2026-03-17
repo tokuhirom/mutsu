@@ -459,6 +459,18 @@ fn match_value_to(val: &Value) -> i64 {
     0
 }
 
+/// Format a single item for 0-arg `.fmt()` on lists.
+/// Pairs format as "%s\t%s", other values as "%s".
+fn fmt_0arg_item(item: &Value) -> String {
+    match item {
+        Value::Pair(k, v) => {
+            runtime::format_sprintf_args("%s\t%s", &[Value::str(k.to_string()), *v.clone()])
+        }
+        Value::ValuePair(k, v) => runtime::format_sprintf_args("%s\t%s", &[*k.clone(), *v.clone()]),
+        _ => runtime::format_sprintf("%s", Some(item)),
+    }
+}
+
 // ── 0-arg method dispatch ────────────────────────────────────────────
 /// Try to dispatch a 0-argument method call on a Value.
 /// Returns `Some(Ok(..))` / `Some(Err(..))` when handled, `None` to fall through.
@@ -2564,6 +2576,48 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             let s = target.to_string_value();
             let parts: Vec<Value> = s.chars().map(|c| Value::str(c.to_string())).collect();
             Some(Ok(Value::array(parts)))
+        }
+        "fmt" => {
+            // .fmt() with no arguments: use default format and separator
+            match target {
+                Value::Hash(items) => {
+                    let rendered = items
+                        .iter()
+                        .map(|(k, v)| {
+                            runtime::format_sprintf_args(
+                                "%s\t%s",
+                                &[Value::str(k.to_string()), v.clone()],
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    Some(Ok(Value::str(rendered)))
+                }
+                Value::Pair(k, v) => {
+                    let rendered = runtime::format_sprintf_args(
+                        "%s\t%s",
+                        &[Value::str(k.to_string()), *v.clone()],
+                    );
+                    Some(Ok(Value::str(rendered)))
+                }
+                Value::ValuePair(k, v) => {
+                    let rendered =
+                        runtime::format_sprintf_args("%s\t%s", &[*k.clone(), *v.clone()]);
+                    Some(Ok(Value::str(rendered)))
+                }
+                _ if super::methods_narg::fmt_joinable_target(target) => {
+                    let rendered = runtime::value_to_list(target)
+                        .into_iter()
+                        .map(|item| fmt_0arg_item(&item))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    Some(Ok(Value::str(rendered)))
+                }
+                _ => {
+                    let rendered = runtime::format_sprintf("%s", Some(target));
+                    Some(Ok(Value::str(rendered)))
+                }
+            }
         }
         "join" => {
             if matches!(target, Value::LazyList(_)) {
