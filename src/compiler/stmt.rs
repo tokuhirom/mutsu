@@ -995,16 +995,28 @@ impl Compiler {
                 is_unit,
             } => {
                 let qualified_name = self.qualify_package_name(&name.resolve());
+                // Detect stub body: `module Foo { ... }` — body is a stub operator
+                let is_stub_body = body.len() == 1
+                    && matches!(&body[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
+                        if fn_name.resolve() == "__mutsu_stub_die"
+                            || fn_name.resolve() == "__mutsu_stub_warn");
                 if *is_unit {
                     // unit module/package — set package for the rest of the scope
                     self.current_package = qualified_name.clone();
                     // Register the package name so it's accessible as a value
                     let name_idx = self.code.add_constant(Value::str(qualified_name.clone()));
                     self.code.emit(OpCode::RegisterPackage { name_idx });
+                } else if is_stub_body {
+                    // Stub package — register name but don't execute the body
+                    let name_idx = self.code.add_constant(Value::str(qualified_name.clone()));
+                    self.code.emit(OpCode::RegisterPackage { name_idx });
+                    self.code.emit(OpCode::RegisterPackageStub { name_idx });
                 } else {
                     let name_idx = self.code.add_constant(Value::str(qualified_name.clone()));
                     // Non-unit package declarations also produce a type object value.
                     self.code.emit(OpCode::RegisterPackage { name_idx });
+                    // Clear any previous stub status for this package
+                    self.code.emit(OpCode::ClearPackageStub { name_idx });
                     let pkg_idx = self.code.emit(OpCode::PackageScope {
                         name_idx,
                         body_end: 0,

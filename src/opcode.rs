@@ -509,6 +509,14 @@ pub(crate) enum OpCode {
     RegisterPackage {
         name_idx: u32,
     },
+    /// Register a package as a stub (body is `...`, `!!!`, or `???`).
+    RegisterPackageStub {
+        name_idx: u32,
+    },
+    /// Clear a package stub when the package is redefined with a real body.
+    ClearPackageStub {
+        name_idx: u32,
+    },
 
     // -- Phaser --
     PhaserEnd(u32),
