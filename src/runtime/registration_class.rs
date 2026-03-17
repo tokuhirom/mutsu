@@ -907,13 +907,13 @@ impl Interpreter {
                                 .push(MethodDef {
                                     params: Vec::new(),
                                     param_defs: Vec::new(),
-                                    body: vec![Stmt::Expr(Expr::MethodCall {
+                                    body: std::sync::Arc::new(vec![Stmt::Expr(Expr::MethodCall {
                                         target: Box::new(Expr::Var(attr_var_name.clone())),
                                         name: Symbol::intern(handle_name),
                                         args: Vec::new(),
                                         modifier: None,
                                         quoted: false,
-                                    })],
+                                    })]),
                                     is_rw: false,
                                     is_private: false,
                                     is_multi: false,
@@ -955,7 +955,7 @@ impl Interpreter {
                     let def = MethodDef {
                         params: effective_params.clone(),
                         param_defs: effective_param_defs.clone(),
-                        body: method_body.clone(),
+                        body: std::sync::Arc::new(method_body.clone()),
                         is_rw: *is_rw,
                         is_private: *is_private,
                         is_multi: *multi,
@@ -1306,7 +1306,7 @@ impl Interpreter {
                     let def = MethodDef {
                         params: effective_params,
                         param_defs: effective_param_defs,
-                        body: method_body.clone(),
+                        body: std::sync::Arc::new(method_body.clone()),
                         is_rw: *is_rw,
                         is_private: *is_private,
                         is_multi: *multi,
@@ -1391,13 +1391,15 @@ impl Interpreter {
                                     .push(MethodDef {
                                         params: Vec::new(),
                                         param_defs: Vec::new(),
-                                        body: vec![Stmt::Expr(Expr::MethodCall {
-                                            target: Box::new(Expr::Var(attr_var_name.clone())),
-                                            name: Symbol::intern(handle_name),
-                                            args: Vec::new(),
-                                            modifier: None,
-                                            quoted: false,
-                                        })],
+                                        body: std::sync::Arc::new(vec![Stmt::Expr(
+                                            Expr::MethodCall {
+                                                target: Box::new(Expr::Var(attr_var_name.clone())),
+                                                name: Symbol::intern(handle_name),
+                                                args: Vec::new(),
+                                                modifier: None,
+                                                quoted: false,
+                                            },
+                                        )]),
                                         is_rw: false,
                                         is_private: false,
                                         is_multi: false,
@@ -1493,13 +1495,13 @@ impl Interpreter {
                                 .push(MethodDef {
                                     params: Vec::new(),
                                     param_defs: Vec::new(),
-                                    body: vec![Stmt::Expr(Expr::MethodCall {
+                                    body: std::sync::Arc::new(vec![Stmt::Expr(Expr::MethodCall {
                                         target: Box::new(Expr::Var(attr_var_name.clone())),
                                         name: Symbol::intern(handle_name),
                                         args: Vec::new(),
                                         modifier: None,
                                         quoted: false,
-                                    })],
+                                    })]),
                                     is_rw: false,
                                     is_private: false,
                                     is_multi: false,
@@ -1654,7 +1656,7 @@ impl Interpreter {
                     let def = MethodDef {
                         params: params.clone(),
                         param_defs: param_defs.clone(),
-                        body: method_body.clone(),
+                        body: std::sync::Arc::new(method_body.clone()),
                         is_rw: *is_rw,
                         is_private: *is_private,
                         is_multi: *multi,

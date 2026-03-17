@@ -319,6 +319,48 @@ impl Interpreter {
         arg_values: &[Value],
     ) -> Option<(String, MethodDef)> {
         let mro = self.class_mro(class_name);
+        // Fast path: when there are no positional args, avoid cloning the
+        // overloads vector by scanning with a shared borrow first. This covers
+        // the common case of zero-argument private method calls in tight loops.
+        if arg_values.is_empty() {
+            for cn in &mro {
+                if let Some(overloads) = self
+                    .classes
+                    .get(cn)
+                    .and_then(|c| c.methods.get(method_name))
+                {
+                    // First pass: skip stubs
+                    for def in overloads {
+                        if !def.is_private {
+                            continue;
+                        }
+                        if Self::is_stub_method_body(&def.body) {
+                            continue;
+                        }
+                        if def
+                            .param_defs
+                            .iter()
+                            .all(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"))
+                        {
+                            return Some((cn.clone(), def.clone()));
+                        }
+                    }
+                    // Second pass: include stubs
+                    for def in overloads {
+                        if !def.is_private {
+                            continue;
+                        }
+                        if def
+                            .param_defs
+                            .iter()
+                            .all(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"))
+                        {
+                            return Some((cn.clone(), def.clone()));
+                        }
+                    }
+                }
+            }
+        }
         for cn in mro {
             if let Some(overloads) = self
                 .classes

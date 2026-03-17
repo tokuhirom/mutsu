@@ -45,7 +45,7 @@ impl Interpreter {
                 Symbol::intern(method_name),
                 def.params.clone(),
                 full_param_defs,
-                def.body.clone(),
+                (*def.body).clone(),
                 def.is_rw,
                 crate::env::Env::new(),
             ));
@@ -422,7 +422,7 @@ impl Interpreter {
                             shape_constraints: None,
                         })
                         .collect(),
-                    body: sub_data.body.clone(),
+                    body: std::sync::Arc::new(sub_data.body.clone()),
                     is_rw: false,
                     is_private: false,
                     is_multi: false,
@@ -460,7 +460,7 @@ impl Interpreter {
                 let def = MethodDef {
                     params: sub_data.params.clone(),
                     param_defs: sub_data.param_defs.clone(),
-                    body: sub_data.body.clone(),
+                    body: std::sync::Arc::new(sub_data.body.clone()),
                     is_rw: sub_data.is_rw,
                     is_private: false,
                     is_multi: true,
@@ -1414,7 +1414,7 @@ impl Interpreter {
                         Symbol::intern(method_name),
                         params,
                         param_defs,
-                        def.body.clone(),
+                        (*def.body).clone(),
                         def.is_rw,
                         crate::env::Env::new(),
                     ));

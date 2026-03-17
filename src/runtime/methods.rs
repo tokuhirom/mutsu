@@ -955,7 +955,7 @@ impl Interpreter {
                                 Symbol::intern(&method_name),
                                 def.params.clone(),
                                 def.param_defs.clone(),
-                                def.body.clone(),
+                                (*def.body).clone(),
                                 def.is_rw,
                                 crate::env::Env::new(),
                             ));
