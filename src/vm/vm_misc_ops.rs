@@ -1451,6 +1451,7 @@ impl VM {
 
         // Run POST phasers after LEAVE (regardless of success/failure path)
         // Set $_ to the return/result value so POST can inspect it
+        // Set $! to the exception if the body threw one
         if post_start < end {
             let post_topic = match &body_result {
                 Ok(()) => self.last_topic_value.clone().unwrap_or(Value::Nil),
@@ -1465,6 +1466,28 @@ impl VM {
                 if name == "_" {
                     self.locals[i] = post_topic;
                     break;
+                }
+            }
+            // If the body threw an exception, set $! so POST can see it
+            if let Err(ref e) = body_result
+                && Self::is_exceptional_block_exit(e)
+            {
+                let err_val = if let Some(ex) = e.exception.as_ref() {
+                    *ex.clone()
+                } else {
+                    let mut exc_attrs = std::collections::HashMap::new();
+                    exc_attrs.insert("message".to_string(), Value::str(e.message.clone()));
+                    Value::make_instance(crate::symbol::Symbol::intern("Exception"), exc_attrs)
+                };
+                self.interpreter
+                    .env_mut()
+                    .insert("!".to_string(), err_val.clone());
+                // Also update the local slot for $! if present
+                for (i, name) in code.locals.iter().enumerate() {
+                    if name == "!" {
+                        self.locals[i] = err_val;
+                        break;
+                    }
                 }
             }
         }
