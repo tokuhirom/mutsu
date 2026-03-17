@@ -723,7 +723,7 @@ impl Interpreter {
             "close" => self.builtin_close(&args),
             "dir" => self.builtin_dir(&args),
             "copy" => self.builtin_copy(&args),
-            "rename" | "move" => self.builtin_rename(&args),
+            "rename" | "move" => self.builtin_rename(name, &args),
             "chmod" => self.builtin_chmod(&args),
             "mkdir" => self.builtin_mkdir(&args),
             "rmdir" => self.builtin_rmdir(&args),

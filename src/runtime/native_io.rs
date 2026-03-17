@@ -461,6 +461,12 @@ impl Interpreter {
                 Ok(Value::Bool(true))
             }
             "rename" | "move" => {
+                let ex_type = if method == "rename" {
+                    "X::IO::Rename"
+                } else {
+                    "X::IO::Move"
+                };
+                let verb = if method == "rename" { "rename" } else { "move" };
                 let dest = args
                     .first()
                     .map(|v| v.to_string_value())
@@ -473,7 +479,7 @@ impl Interpreter {
                         && dest_buf.exists()
                         && fs::canonicalize(&path_buf).ok() == fs::canonicalize(&dest_buf).ok())
                 {
-                    let ex = Value::make_instance(Symbol::intern("X::IO::Move"), HashMap::new());
+                    let ex = Value::make_instance(Symbol::intern(ex_type), HashMap::new());
                     let mut failure_attrs = HashMap::new();
                     failure_attrs.insert("exception".to_string(), ex);
                     failure_attrs.insert("handled".to_string(), Value::Bool(false));
@@ -481,8 +487,8 @@ impl Interpreter {
                         "message".to_string(),
                         Value::Str(
                             format!(
-                                "Failed to move '{}': source and destination are the same file",
-                                p
+                                "Failed to {} '{}': source and destination are the same file",
+                                verb, p
                             )
                             .into(),
                         ),
@@ -494,12 +500,12 @@ impl Interpreter {
                 }
                 if createonly && dest_buf.exists() {
                     return Err(io_exception(
-                        "X::IO::Move",
-                        format!("Failed to move '{}': destination already exists", p),
+                        ex_type,
+                        format!("Failed to {} '{}': destination already exists", verb, p),
                     ));
                 }
                 fs::rename(&path_buf, &dest_buf).map_err(|err| {
-                    io_exception("X::IO::Move", format!("Failed to move '{}': {}", p, err))
+                    io_exception(ex_type, format!("Failed to {} '{}': {}", verb, p, err))
                 })?;
                 Ok(Value::Bool(true))
             }
