@@ -1080,6 +1080,7 @@ impl Interpreter {
                 nested.type_metadata = self.type_metadata.clone();
                 nested.current_package = self.current_package.clone();
                 nested.suppressed_names = self.suppressed_names.clone();
+                nested.lexical_class_scopes = self.lexical_class_scopes.clone();
                 for (k, v) in &self.env {
                     if k.contains("::") {
                         continue;

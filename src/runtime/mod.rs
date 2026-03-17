@@ -621,6 +621,9 @@ pub struct Interpreter {
     wrap_dispatch_stack: Vec<WrapDispatchFrame>,
     /// Names suppressed by `anon class`. These bare words should error as undeclared.
     suppressed_names: HashSet<String>,
+    /// Stack of lexically-scoped class names per block scope depth.
+    /// When a block scope exits, classes registered in that scope get suppressed.
+    lexical_class_scopes: Vec<Vec<String>>,
     /// Last expression value from VM execution, used by REPL for auto-display.
     pub(crate) last_value: Option<Value>,
     /// Pending env updates from regex code blocks, to be synced to VM locals.
@@ -2170,6 +2173,7 @@ impl Interpreter {
             wrap_handle_counter: 0,
             wrap_dispatch_stack: Vec::new(),
             suppressed_names: HashSet::new(),
+            lexical_class_scopes: Vec::new(),
             last_value: None,
             pending_local_updates: Vec::new(),
             readonly_vars: HashSet::new(),
@@ -2308,8 +2312,58 @@ impl Interpreter {
         self.suppressed_names.insert(name.to_string());
     }
 
+    pub(crate) fn unsuppress_name(&mut self, name: &str) {
+        self.suppressed_names.remove(name);
+    }
+
+    /// Push a new lexical class scope frame.
+    pub(crate) fn push_lexical_class_scope(&mut self) {
+        self.lexical_class_scopes.push(Vec::new());
+    }
+
+    /// Pop a lexical class scope frame, suppressing all class names registered in it.
+    pub(crate) fn pop_lexical_class_scope(&mut self) {
+        if let Some(names) = self.lexical_class_scopes.pop() {
+            for name in names {
+                self.suppressed_names.insert(name);
+            }
+        }
+    }
+
+    /// Register a class name as lexically scoped in the current block.
+    pub(crate) fn register_lexical_class(&mut self, name: String) {
+        if let Some(scope) = self.lexical_class_scopes.last_mut() {
+            scope.push(name);
+        }
+    }
+
     pub(crate) fn is_name_suppressed(&self, name: &str) -> bool {
         self.suppressed_names.contains(name)
+    }
+
+    /// Resolve a suppressed nested class short name to its qualified form.
+    /// For example, if `Frog` is suppressed and we are inside class `Forest`,
+    /// this returns `Some("Forest::Frog")` if `Forest::Frog` is a known type.
+    pub(crate) fn resolve_suppressed_type(&self, name: &str) -> Option<String> {
+        if !self.suppressed_names.contains(name) {
+            return None;
+        }
+        // Check current package
+        let current_pkg = &self.current_package;
+        if current_pkg != "GLOBAL" {
+            let qualified = format!("{}::{}", current_pkg, name);
+            if self.has_type(&qualified) {
+                return Some(qualified);
+            }
+        }
+        // Check method class stack
+        for class_name in self.method_class_stack.iter().rev() {
+            let qualified = format!("{}::{}", class_name, name);
+            if self.has_type(&qualified) {
+                return Some(qualified);
+            }
+        }
+        None
     }
 
     pub fn set_pid(&mut self, pid: i64) {
@@ -3402,6 +3456,7 @@ impl Interpreter {
             wrap_handle_counter: self.wrap_handle_counter,
             wrap_dispatch_stack: Vec::new(),
             suppressed_names: self.suppressed_names.clone(),
+            lexical_class_scopes: self.lexical_class_scopes.clone(),
             last_value: None,
             pending_local_updates: Vec::new(),
             readonly_vars: HashSet::new(),

@@ -1373,6 +1373,7 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             parents,
             class_is_rw: false,
             is_hidden: false,
+            is_lexical: false,
             hidden_parents: Vec::new(),
             does_parents: Vec::new(),
             repr: None,

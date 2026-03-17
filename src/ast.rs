@@ -541,6 +541,7 @@ pub(crate) enum Stmt {
         parents: Vec<String>,
         class_is_rw: bool,
         is_hidden: bool,
+        is_lexical: bool,
         hidden_parents: Vec<String>,
         does_parents: Vec<String>,
         repr: Option<String>,

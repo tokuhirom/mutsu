@@ -620,7 +620,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     // my class Name is Parent { ... }
     if let Some(r) = keyword("class", rest) {
         let (r, _) = ws1(r)?;
-        return class_decl_body(r);
+        return class_decl_body(r, !is_our);
     }
     // my grammar Name { ... }
     if keyword("grammar", rest).is_some() {

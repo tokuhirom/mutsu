@@ -482,7 +482,7 @@ fn normalize_token_pattern(pattern: &str) -> String {
 pub(crate) fn class_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("class", input).ok_or_else(|| PError::expected("class declaration"))?;
     let (rest, _) = ws1(rest)?;
-    class_decl_body(rest)
+    class_decl_body(rest, false)
 }
 
 /// Parse `augment class ClassName { ... }` declaration (monkey-patching).
@@ -563,6 +563,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         parents,
         class_is_rw: false,
         is_hidden: false,
+        is_lexical: false,
         hidden_parents: Vec::new(),
         does_parents: Vec::new(),
         repr: anon_repr,
@@ -577,7 +578,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// Parse the body of a class declaration (after `class` keyword and whitespace).
-pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
+pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
     let (rest, name, name_expr) = if let Some(after_colons) = input.strip_prefix("::") {
         // Check if this is `::Ident` (forward stub) or `::(expr)` (indirect name)
         if after_colons.starts_with('(') {
@@ -709,6 +710,7 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
         parents,
         class_is_rw,
         is_hidden,
+        is_lexical,
         hidden_parents,
         does_parents,
         repr,
@@ -1123,6 +1125,7 @@ pub(super) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
             parents,
             class_is_rw: false,
             is_hidden: false,
+            is_lexical: false,
             hidden_parents: vec![],
             does_parents,
             repr: None,
@@ -1175,6 +1178,7 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 parents: Vec::new(),
                 class_is_rw: false,
                 is_hidden: false,
+                is_lexical: false,
                 hidden_parents: Vec::new(),
                 does_parents: Vec::new(),
                 repr: None,
