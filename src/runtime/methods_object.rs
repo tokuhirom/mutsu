@@ -1584,6 +1584,16 @@ impl Interpreter {
                 }
             }
             if let Some(role) = self.roles.get(&class_name.resolve()).cloned() {
+                // Check for attribute conflicts detected during role composition
+                if let Some((attr_name, role_a, role_b)) = role.attribute_conflicts.first() {
+                    return Err(RuntimeError::new(format!(
+                        "Attribute '$!{}' conflicts in role '{}' composition: declared in both '{}' and '{}'",
+                        attr_name,
+                        class_name.resolve(),
+                        role_a,
+                        role_b
+                    )));
+                }
                 let mut named_args: HashMap<String, Value> = HashMap::new();
                 let mut positional_args: Vec<Value> = Vec::new();
                 for arg in &args {

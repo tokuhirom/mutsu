@@ -517,31 +517,36 @@ impl Interpreter {
                 attributes,
                 id: target_id,
             } = &target
-            && args.is_empty()
         {
-            // Check that the qualifier class is in the instance's MRO
-            let inst_mro = self.class_mro(&inst_class.resolve());
-            if !inst_mro.iter().any(|c| c == qualifier) {
+            // Check that the qualifier class/role is in the instance's MRO or composed roles
+            let inst_cn_str = inst_class.resolve();
+            let inst_mro = self.class_mro(&inst_cn_str);
+            let in_mro = inst_mro.iter().any(|c| c == qualifier);
+            let in_composed_roles = self
+                .class_composed_roles
+                .get(&inst_cn_str)
+                .is_some_and(|roles| roles.iter().any(|r| r == qualifier));
+            if !in_mro && !in_composed_roles {
                 return Err(RuntimeError::new(format!(
                     "Cannot dispatch to method {} on {} because it is not inherited or done by {}",
-                    actual_method,
-                    qualifier,
-                    inst_class.resolve()
+                    actual_method, qualifier, inst_cn_str
                 )));
             }
             // Read: look up the attribute in the qualifier class's attribute definitions
-            let class_attrs = self.collect_class_attributes(qualifier);
-            for (attr_name, is_public, ..) in &class_attrs {
-                if *is_public && attr_name == actual_method {
-                    return Ok(attributes.get(actual_method).cloned().unwrap_or(Value::Nil));
+            if args.is_empty() {
+                let class_attrs = self.collect_class_attributes(qualifier);
+                for (attr_name, is_public, ..) in &class_attrs {
+                    if *is_public && attr_name == actual_method {
+                        return Ok(attributes.get(actual_method).cloned().unwrap_or(Value::Nil));
+                    }
                 }
             }
-            // Also try running the actual method on the qualifier class
+            // Try running the actual method on the qualifier class
             if let Some((_owner, method_def)) =
                 self.resolve_method_with_owner(qualifier, actual_method, &args)
             {
                 let attrs_map = (**attributes).clone();
-                let inst_cn = inst_class.resolve().to_string();
+                let inst_cn = inst_cn_str.to_string();
                 let tid = *target_id;
                 let (result, updated) = self.run_instance_method(
                     qualifier,
@@ -556,6 +561,58 @@ impl Interpreter {
                     return self.proxy_fetch(fetcher, None, qualifier, &(**attributes).clone(), 0);
                 }
                 return Ok(result);
+            }
+            // Fallback: find a method with matching role_origin in the instance's class.
+            // This handles qualified calls like self.RoleName::method() where the role's
+            // methods have been composed into the class.
+            if let Some(overloads) = self
+                .classes
+                .get(&inst_cn_str)
+                .and_then(|c| c.methods.get(actual_method))
+                .cloned()
+            {
+                for def in overloads {
+                    if def.role_origin.as_deref() == Some(qualifier)
+                        && !def.is_private
+                        && self.method_args_match(&args, &def.param_defs)
+                    {
+                        let attrs_map = (**attributes).clone();
+                        let inst_cn = inst_cn_str.to_string();
+                        let tid = *target_id;
+                        let (result, updated) = self.run_instance_method_resolved(
+                            &inst_cn,
+                            qualifier,
+                            def,
+                            attrs_map,
+                            args,
+                            Some(target.clone()),
+                        )?;
+                        self.overwrite_instance_bindings_by_identity(&inst_cn, tid, updated);
+                        return Ok(result);
+                    }
+                }
+            }
+            // Also check the role definition directly
+            if let Some(role_def) = self.roles.get(qualifier).cloned()
+                && let Some(overloads) = role_def.methods.get(actual_method)
+            {
+                for def in overloads {
+                    if !def.is_private && self.method_args_match(&args, &def.param_defs) {
+                        let attrs_map = (**attributes).clone();
+                        let inst_cn = inst_cn_str.to_string();
+                        let tid = *target_id;
+                        let (result, updated) = self.run_instance_method_resolved(
+                            &inst_cn,
+                            qualifier,
+                            def.clone(),
+                            attrs_map,
+                            args,
+                            Some(target.clone()),
+                        )?;
+                        self.overwrite_instance_bindings_by_identity(&inst_cn, tid, updated);
+                        return Ok(result);
+                    }
+                }
             }
         }
 

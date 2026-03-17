@@ -203,6 +203,9 @@ pub(crate) struct RoleDef {
     /// Unique identifier for this role definition instance, used to distinguish
     /// different lexical roles with the same name.
     pub(crate) role_id: u64,
+    /// Attribute conflicts detected during role-to-role composition.
+    /// Each entry is (attr_name, declaring_role, conflicting_role).
+    pub(crate) attribute_conflicts: Vec<(String, String, String)>,
 }
 
 #[derive(Debug, Clone)]
@@ -2084,6 +2087,7 @@ impl Interpreter {
                         captured_env: None,
                         wildcard_handles: Vec::new(),
                         role_id: 0,
+                        attribute_conflicts: Vec::new(),
                     },
                 );
                 roles.insert(
@@ -2096,6 +2100,7 @@ impl Interpreter {
                         captured_env: None,
                         wildcard_handles: Vec::new(),
                         role_id: 0,
+                        attribute_conflicts: Vec::new(),
                     },
                 );
                 roles.insert(
@@ -2108,6 +2113,7 @@ impl Interpreter {
                         captured_env: None,
                         wildcard_handles: Vec::new(),
                         role_id: 0,
+                        attribute_conflicts: Vec::new(),
                     },
                 );
                 roles.insert(
@@ -2120,6 +2126,7 @@ impl Interpreter {
                         captured_env: None,
                         wildcard_handles: Vec::new(),
                         role_id: 0,
+                        attribute_conflicts: Vec::new(),
                     },
                 );
                 // CompUnit::Repository role with required stub methods
@@ -2155,6 +2162,7 @@ impl Interpreter {
                             captured_env: None,
                             wildcard_handles: Vec::new(),
                             role_id: 0,
+                            attribute_conflicts: Vec::new(),
                         },
                     );
                 }
