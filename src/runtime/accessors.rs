@@ -615,7 +615,6 @@ impl Interpreter {
         self.method_class_stack.pop();
     }
 
-
     /// Set up a method dispatch frame for nextsame/callsame support.
     /// Returns true if a frame was pushed (caller must call pop_method_dispatch).
     /// Also pushes a samewith context unconditionally for samewith() support.
