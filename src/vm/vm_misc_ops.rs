@@ -1307,17 +1307,21 @@ impl VM {
             if !matches!(value, Value::Nil)
                 && !self.interpreter.type_matches_value(constraint, &value)
             {
-                if base_constraint == "Int" && matches!(value, Value::Num(f) if f.is_nan()) {
+                if base_constraint == "Int"
+                    && matches!(value, Value::Num(f) if f.is_nan() || f.is_infinite())
+                {
                     let mut attrs = std::collections::HashMap::new();
                     attrs.insert("value".to_string(), value.clone());
                     attrs.insert(
                         "vartype".to_string(),
                         Value::Package(Symbol::intern(base_constraint)),
                     );
-                    attrs.insert(
-                        "message".to_string(),
-                        Value::str("Cannot convert NaN to Int".to_string()),
-                    );
+                    let desc = if matches!(value, Value::Num(f) if f.is_nan()) {
+                        "Cannot convert NaN to Int"
+                    } else {
+                        "Cannot assign a literal of type Num (Inf) to a variable of type Int"
+                    };
+                    attrs.insert("message".to_string(), Value::str(desc.to_string()));
                     return Err(RuntimeError::typed("X::Syntax::Number::LiteralType", attrs));
                 }
                 let coerced = match base_constraint {
