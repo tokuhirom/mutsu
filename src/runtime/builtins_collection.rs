@@ -822,6 +822,13 @@ impl Interpreter {
                 match arg {
                     Value::Array(elems, ..) => items.extend(elems.iter().cloned()),
                     Value::Seq(elems) => items.extend(elems.iter().cloned()),
+                    Value::Range(..)
+                    | Value::RangeExcl(..)
+                    | Value::RangeExclStart(..)
+                    | Value::RangeExclBoth(..)
+                    | Value::GenericRange { .. } => {
+                        items.extend(Self::value_to_list(arg));
+                    }
                     other => items.push(other.clone()),
                 }
             }
