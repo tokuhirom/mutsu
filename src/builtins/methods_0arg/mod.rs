@@ -2540,9 +2540,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 },
             ))))
         }
-        "chomp" => Some(Ok(Value::str(crate::builtins::chomp_one(
-            &target.to_string_value(),
-        )))),
+        "chomp" => {
+            // IO::Handle.chomp is an attribute accessor, not the Str method
+            if matches!(target, Value::Instance { class_name, .. } if class_name == "IO::Handle") {
+                return None;
+            }
+            Some(Ok(Value::str(crate::builtins::chomp_one(
+                &target.to_string_value(),
+            ))))
+        }
         "chop" => {
             if let Value::Package(type_name) = target {
                 return Some(Err(RuntimeError::new(format!(

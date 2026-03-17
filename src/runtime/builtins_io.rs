@@ -177,8 +177,17 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("open requires a path argument"))?;
         check_null_in_path(&path)?;
-        let (read, write, append, bin, line_chomp, line_separators, out_buffer_capacity, nl_out) =
-            self.parse_io_flags_values(&args[1..]);
+        let (
+            read,
+            write,
+            append,
+            bin,
+            line_chomp,
+            line_separators,
+            out_buffer_capacity,
+            nl_out,
+            enc,
+        ) = self.parse_io_flags_values(&args[1..]);
         let path_buf = self.resolve_path(&path);
         self.open_file_handle(
             &path_buf,
@@ -190,6 +199,7 @@ impl Interpreter {
             line_separators,
             out_buffer_capacity,
             nl_out,
+            enc,
         )
     }
 

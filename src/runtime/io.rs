@@ -687,6 +687,23 @@ impl Interpreter {
                 "mode".to_string(),
                 Value::str(Self::mode_name(state.mode).to_string()),
             );
+            // Store handle state attributes so IO::Handle.open can inherit them
+            attrs.insert("chomp".to_string(), Value::Bool(state.line_chomp));
+            attrs.insert("nl-out".to_string(), Value::str(state.nl_out.clone()));
+            // Store nl-in
+            if state.line_separators.len() == 1 {
+                attrs.insert(
+                    "nl-in".to_string(),
+                    Value::str(String::from_utf8_lossy(&state.line_separators[0]).to_string()),
+                );
+            } else {
+                let items: Vec<Value> = state
+                    .line_separators
+                    .iter()
+                    .map(|s| Value::str(String::from_utf8_lossy(s).to_string()))
+                    .collect();
+                attrs.insert("nl-in".to_string(), Value::real_array(items));
+            }
         }
         if bin {
             attrs.insert("bin".to_string(), Value::Bool(true));

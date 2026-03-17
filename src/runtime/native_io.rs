@@ -388,7 +388,7 @@ impl Interpreter {
                 Ok(Value::array(parts))
             }
             "slurp" => {
-                let (_, _, _, bin, _, _, _, _) = self.parse_io_flags_values(&args);
+                let (_, _, _, bin, _, _, _, _, _) = self.parse_io_flags_values(&args);
                 if bin {
                     let bytes = fs::read(&path_buf).map_err(|err| {
                         RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
@@ -416,6 +416,7 @@ impl Interpreter {
                     line_separators,
                     out_buffer_capacity,
                     nl_out,
+                    enc,
                 ) = self.parse_io_flags_values(&args);
                 self.open_file_handle(
                     &path_buf,
@@ -427,6 +428,7 @@ impl Interpreter {
                     line_separators,
                     out_buffer_capacity,
                     nl_out,
+                    enc,
                 )
             }
             "copy" => {
@@ -1035,7 +1037,20 @@ impl Interpreter {
         let target_val = Value::make_instance(Symbol::intern("IO::Handle"), target.clone());
         match method {
             "DESTROY" => {
-                let _ = self.close_handle_value(&target_val)?;
+                // Standard handles ($*IN, $*OUT, $*ERR) must not be closed by DESTROY
+                let is_std = if let Some(id) = Self::handle_id_from_value(&target_val) {
+                    self.handles.get(&id).is_some_and(|s| {
+                        matches!(
+                            s.target,
+                            IoHandleTarget::Stdin | IoHandleTarget::Stdout | IoHandleTarget::Stderr
+                        )
+                    })
+                } else {
+                    false
+                };
+                if !is_std {
+                    let _ = self.close_handle_value(&target_val)?;
+                }
                 Ok(Value::Bool(true))
             }
             "path" | "IO" => {
@@ -1069,6 +1084,7 @@ impl Interpreter {
             }
             "open" => {
                 // IO::Handle.new(:path(...)).open(:w, :nl-out(...))
+                // Merge instance attributes with open args (args override instance attrs)
                 let path_str = target
                     .get("path")
                     .map(|v| match v {
@@ -1084,6 +1100,28 @@ impl Interpreter {
                     })
                     .unwrap_or_default();
                 let path_buf = self.resolve_path(&path_str);
+
+                // Build merged args: instance attributes as defaults, open args override
+                let mut merged_args = Vec::new();
+                // Collect which keys the open() args explicitly specify
+                let mut explicit_keys: std::collections::HashSet<String> =
+                    std::collections::HashSet::new();
+                for arg in &args {
+                    if let Value::Pair(name, _) = arg {
+                        explicit_keys.insert(name.clone());
+                    }
+                }
+                // Add instance attributes as pairs (only if not overridden by open args)
+                for (key, value) in target.iter() {
+                    if key == "handle" || key == "path" || key == "mode" {
+                        continue;
+                    }
+                    if !explicit_keys.contains(key) {
+                        merged_args.push(Value::Pair(key.clone(), Box::new(value.clone())));
+                    }
+                }
+                merged_args.extend(args.iter().cloned());
+
                 let (
                     read,
                     write,
@@ -1093,7 +1131,8 @@ impl Interpreter {
                     line_separators,
                     out_buffer_capacity,
                     nl_out,
-                ) = self.parse_io_flags_values(&args);
+                    enc,
+                ) = self.parse_io_flags_values(&merged_args);
                 self.open_file_handle(
                     &path_buf,
                     read,
@@ -1104,6 +1143,7 @@ impl Interpreter {
                     line_separators,
                     out_buffer_capacity,
                     nl_out,
+                    enc,
                 )
             }
             "nl-out" => {
@@ -1161,6 +1201,16 @@ impl Interpreter {
                         Ok(Value::real_array(items))
                     }
                 }
+            }
+            "chomp" => {
+                if let Some(arg) = args.first() {
+                    let val = arg.truthy();
+                    let state = self.handle_state_mut(&target_val)?;
+                    state.line_chomp = val;
+                    return Ok(Value::Bool(val));
+                }
+                let state = self.handle_state_mut(&target_val)?;
+                Ok(Value::Bool(state.line_chomp))
             }
             "print-nl" => {
                 let nl = {

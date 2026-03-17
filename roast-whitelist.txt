@@ -670,6 +670,7 @@ roast/S32-io/move.t
 roast/S32-io/native-descriptor.t
 roast/S32-io/note.t
 roast/S32-io/null-char.t
+roast/S32-io/open.t
 roast/S32-io/other-stress.t
 roast/S32-io/other.t
 roast/S32-io/out-buffering.t

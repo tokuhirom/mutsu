@@ -588,6 +588,7 @@ impl Interpreter {
         Vec<Vec<u8>>,
         Option<usize>,
         Option<String>,
+        Option<String>,
     ) {
         let mut read = false;
         let mut write = false;
@@ -597,6 +598,7 @@ impl Interpreter {
         let mut nl_in: Option<Vec<Vec<u8>>> = None;
         let mut out_buffer: Option<usize> = None;
         let mut nl_out: Option<String> = None;
+        let mut enc: Option<String> = None;
         for arg in args {
             if let Value::Pair(name, value) = arg {
                 let truthy = value.truthy();
@@ -613,6 +615,7 @@ impl Interpreter {
                     "nl-in" => nl_in = Some(Self::parse_nl_in_value(value)),
                     "nl-out" => nl_out = Some(value.to_string_value()),
                     "out-buffer" => out_buffer = Self::parse_out_buffer_size(value),
+                    "enc" => enc = Some(value.to_string_value()),
                     _ => {}
                 }
             }
@@ -631,6 +634,7 @@ impl Interpreter {
             ),
             out_buffer,
             nl_out,
+            enc,
         )
     }
 
@@ -646,6 +650,7 @@ impl Interpreter {
         line_separators: Vec<Vec<u8>>,
         out_buffer_capacity: Option<usize>,
         nl_out: Option<String>,
+        enc: Option<String>,
     ) -> Result<Value, RuntimeError> {
         // Opening a directory as a file handle is an error in Raku
         if path.is_dir() {
@@ -684,7 +689,11 @@ impl Interpreter {
             path: Some(Self::stringify_path(path)),
             line_separators: Self::normalize_line_separators(line_separators),
             line_chomp,
-            encoding: "utf-8".to_string(),
+            encoding: if bin {
+                "bin".to_string()
+            } else {
+                enc.unwrap_or_else(|| "utf-8".to_string())
+            },
             file: Some(file),
             socket: None,
             listener: None,
