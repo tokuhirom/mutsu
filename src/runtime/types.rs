@@ -1373,6 +1373,17 @@ impl Interpreter {
             other => (other, HashMap::new()),
         };
         mixins.insert(format!("__mutsu_role__{}", role_name), Value::Bool(true));
+        // Store the role's unique ID so that different lexical roles with the
+        // same name (e.g. two `my role A { }` in different scopes) produce
+        // distinct mixin maps, making `===` return False for values mixed with
+        // different role instances.
+        let role_id = self.roles.get(role_name).map_or(0, |r| r.role_id);
+        if role_id != 0 {
+            mixins.insert(
+                format!("__mutsu_role_id__{}", role_name),
+                Value::Int(role_id as i64),
+            );
+        }
 
         if let Some(role) = role {
             // Temporarily merge captured environment from the role definition
