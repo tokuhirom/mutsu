@@ -899,12 +899,10 @@ impl VM {
             (Value::Array(items, kind), Value::Range(a, b)) => {
                 let start = a.max(0) as usize;
                 let end = b.max(-1) as usize;
-                let slice = if start >= items.len() {
-                    Vec::new()
-                } else {
-                    let end = end.min(items.len().saturating_sub(1));
-                    items[start..=end].to_vec()
-                };
+                let default = self.typed_container_default(&Value::Array(items.clone(), kind));
+                let slice: Vec<Value> = (start..=end)
+                    .map(|i| items.get(i).cloned().unwrap_or_else(|| default.clone()))
+                    .collect();
                 if kind.is_real_array() {
                     Value::array(slice)
                 } else {
@@ -914,20 +912,22 @@ impl VM {
             (Value::Array(items, kind), Value::RangeExcl(a, b)) => {
                 let start = a.max(0) as usize;
                 let end_excl = b.max(0) as usize;
-                let slice = if start >= items.len() {
-                    Vec::new()
-                } else {
-                    let end_excl = end_excl.min(items.len());
-                    if start >= end_excl {
-                        Vec::new()
+                if start >= end_excl {
+                    if kind.is_real_array() {
+                        Value::array(Vec::new())
                     } else {
-                        items[start..end_excl].to_vec()
+                        Value::Seq(Arc::new(Vec::new()))
                     }
-                };
-                if kind.is_real_array() {
-                    Value::array(slice)
                 } else {
-                    Value::Seq(Arc::new(slice))
+                    let default = self.typed_container_default(&Value::Array(items.clone(), kind));
+                    let slice: Vec<Value> = (start..end_excl)
+                        .map(|i| items.get(i).cloned().unwrap_or_else(|| default.clone()))
+                        .collect();
+                    if kind.is_real_array() {
+                        Value::array(slice)
+                    } else {
+                        Value::Seq(Arc::new(slice))
+                    }
                 }
             }
             (Value::Array(items, is_arr), Value::Num(n)) => {
@@ -967,26 +967,20 @@ impl VM {
             (Value::Seq(items), Value::Range(a, b)) => {
                 let start = a.max(0) as usize;
                 let end = b.max(-1) as usize;
-                let slice = if start >= items.len() {
-                    Vec::new()
-                } else {
-                    let end = end.min(items.len().saturating_sub(1));
-                    items[start..=end].to_vec()
-                };
+                let slice: Vec<Value> = (start..=end)
+                    .map(|i| items.get(i).cloned().unwrap_or(Value::Nil))
+                    .collect();
                 Value::Seq(Arc::new(slice))
             }
             (Value::Seq(items), Value::RangeExcl(a, b)) => {
                 let start = a.max(0) as usize;
                 let end_excl = b.max(0) as usize;
-                let slice = if start >= items.len() {
+                let slice: Vec<Value> = if start >= end_excl {
                     Vec::new()
                 } else {
-                    let end_excl = end_excl.min(items.len());
-                    if start >= end_excl {
-                        Vec::new()
-                    } else {
-                        items[start..end_excl].to_vec()
-                    }
+                    (start..end_excl)
+                        .map(|i| items.get(i).cloned().unwrap_or(Value::Nil))
+                        .collect()
                 };
                 Value::Seq(Arc::new(slice))
             }

@@ -503,6 +503,40 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     })
                     .collect(),
             ))),
+            Value::Bag(items) => Some(Ok(Value::array(
+                items
+                    .iter()
+                    .map(|(k, v)| {
+                        Value::ValuePair(Box::new(Value::Int(*v)), Box::new(Value::str(k.clone())))
+                    })
+                    .collect(),
+            ))),
+            Value::Set(items) => Some(Ok(Value::array(
+                items
+                    .iter()
+                    .map(|k| {
+                        Value::ValuePair(
+                            Box::new(Value::Bool(true)),
+                            Box::new(Value::str(k.clone())),
+                        )
+                    })
+                    .collect(),
+            ))),
+            Value::Mix(items) => Some(Ok(Value::array(
+                items
+                    .iter()
+                    .map(|(k, v)| {
+                        let weight = crate::value::make_rat((*v * 1_000_000.0) as i64, 1_000_000);
+                        // Simplify to Int if the weight is a whole number
+                        let weight_val = if v.fract() == 0.0 {
+                            Value::Int(*v as i64)
+                        } else {
+                            weight
+                        };
+                        Value::ValuePair(Box::new(weight_val), Box::new(Value::str(k.clone())))
+                    })
+                    .collect(),
+            ))),
             Value::Package(_) => Some(Ok(Value::array(Vec::new()))),
             v if v.is_range() => {
                 let values = crate::runtime::utils::value_to_list(v);
