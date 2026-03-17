@@ -224,6 +224,46 @@ impl Interpreter {
     }
 
     pub(crate) fn is_native_method(&mut self, class_name: &str, method_name: &str) -> bool {
+        // IO::Handle has native methods handled by native_io_handle
+        if class_name == "IO::Handle"
+            && matches!(
+                method_name,
+                "DESTROY"
+                    | "path"
+                    | "IO"
+                    | "Str"
+                    | "gist"
+                    | "open"
+                    | "nl-out"
+                    | "nl-in"
+                    | "chomp"
+                    | "print-nl"
+                    | "close"
+                    | "get"
+                    | "getc"
+                    | "readchars"
+                    | "lines"
+                    | "words"
+                    | "read"
+                    | "write"
+                    | "print"
+                    | "say"
+                    | "put"
+                    | "flush"
+                    | "out-buffer"
+                    | "seek"
+                    | "tell"
+                    | "eof"
+                    | "encoding"
+                    | "opened"
+                    | "slurp"
+                    | "Supply"
+                    | "native-descriptor"
+                    | "spurt"
+            )
+        {
+            return true;
+        }
         let mro = self.class_mro(class_name);
         for cn in mro {
             if let Some(class_def) = self.classes.get(&cn)

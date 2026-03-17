@@ -1277,6 +1277,8 @@ impl Interpreter {
                     if class_name == "Supplier" || class_name == "Supplier::Preserving"))
             || matches!(&target, Value::Instance { class_name, .. }
                 if self.is_native_method(&class_name.resolve(), method))
+            || (matches!(&target, Value::Instance { class_name, .. } if class_name == "IO::Handle")
+                && matches!(method, "chomp" | "encoding" | "opened" | "DESTROY"))
             || (matches!(&target, Value::Instance { .. })
                 && (target.does_check("Real") || target.does_check("Numeric")))
             || matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(&class_name.resolve(), "Bridge"))
