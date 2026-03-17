@@ -455,6 +455,7 @@ fn lift_phasers_from_closure_stmt(stmt: &mut Stmt, check: &mut Vec<Stmt>, init: 
 /// Hoists VarDecls, then BEGIN (forward), CHECK (reverse), INIT (forward), rest.
 fn reorder_at_level(stmts: &mut Vec<Stmt>, extra_check: Vec<Stmt>, extra_init: Vec<Stmt>) {
     let mut var_decls: Vec<Stmt> = Vec::new();
+    let mut use_stmts: Vec<Stmt> = Vec::new();
     let mut check: Vec<Vec<Stmt>> = Vec::new();
     let mut init: Vec<Vec<Stmt>> = Vec::new();
     let mut rest: Vec<Stmt> = Vec::new();
@@ -537,12 +538,21 @@ fn reorder_at_level(stmts: &mut Vec<Stmt>, extra_check: Vec<Stmt>, extra_init: V
             continue;
         }
 
+        // Hoist `use` statements before CHECK/INIT blocks, since `use` is
+        // a compile-time directive in Raku and its imports must be available
+        // to CHECK blocks.
+        if matches!(&stmt, Stmt::Use { .. }) {
+            use_stmts.push(stmt);
+            continue;
+        }
+
         rest.push(stmt);
     }
 
-    // Reconstruct: VarDecls first, then CHECK (reverse), INIT (forward),
-    // then rest (which includes BEGIN phasers in their original order).
+    // Reconstruct: VarDecls first, then `use` (compile-time imports),
+    // then CHECK (reverse), INIT (forward), then rest.
     stmts.extend(var_decls);
+    stmts.extend(use_stmts);
     for body in check.iter().rev() {
         stmts.extend(body.iter().cloned());
     }
