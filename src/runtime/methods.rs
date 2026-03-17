@@ -559,6 +559,25 @@ impl Interpreter {
             }
         }
 
+        // Handle qualified method calls on non-Instance values: e.g. (-42).Int::abs
+        // Split qualifier::method, verify the qualifier matches the target's type,
+        // then dispatch the actual method on the target.
+        if let Some((qualifier, actual_method)) = method.split_once("::")
+            && !method.starts_with('!')
+            && !matches!(&target, Value::Instance { .. })
+        {
+            let type_name = super::utils::value_type_name(&target);
+            // Check type hierarchy: Int ~~ Cool ~~ Any ~~ Mu
+            let type_matches = qualifier == type_name || Self::type_inherits(type_name, qualifier);
+            if type_matches {
+                return self.call_method_with_values(target, actual_method, args);
+            }
+            return Err(RuntimeError::new(format!(
+                "X::Method::InvalidQualifier: Cannot dispatch to a method on {} because it is not inherited or done by {}",
+                qualifier, type_name
+            )));
+        }
+
         // Handle method calls on Proxy subclass values (accessing subclass attributes)
         if let Value::Proxy {
             subclass: Some((ref subclass_name, ref subclass_attrs)),
@@ -2228,6 +2247,10 @@ impl Interpreter {
                 let items = Self::value_to_list(&target);
                 return self.eval_map_over_items(args.first().cloned(), items);
             }
+            "duckmap" => {
+                let block = args.first().cloned().unwrap_or(Value::Nil);
+                return self.duckmap_iterate(&block, &target);
+            }
             "max" | "min" => {
                 if matches!(target, Value::Hash(_)) {
                     let mut call_args = vec![target.clone()];
@@ -2961,5 +2984,32 @@ impl Interpreter {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("bytes".to_string(), Value::array(byte_vals));
         Ok(Value::make_instance(class_name, attrs))
+    }
+
+    /// Check if a builtin type inherits from a given ancestor type.
+    /// Covers the standard Raku type hierarchy for builtin types.
+    fn type_inherits(type_name: &str, ancestor: &str) -> bool {
+        // Standard hierarchy chains for builtin types
+        let chain: &[&str] = match type_name {
+            "Int" => &["Int", "Cool", "Any", "Mu"],
+            "Num" => &["Num", "Cool", "Any", "Mu"],
+            "Rat" | "FatRat" => &["Rat", "Cool", "Any", "Mu"],
+            "Str" => &["Str", "Cool", "Any", "Mu"],
+            "Bool" => &["Bool", "Int", "Cool", "Any", "Mu"],
+            "Array" => &["Array", "List", "Cool", "Any", "Mu"],
+            "List" => &["List", "Cool", "Any", "Mu"],
+            "Hash" => &["Hash", "Cool", "Any", "Mu"],
+            "Range" => &["Range", "Cool", "Any", "Mu"],
+            "Pair" => &["Pair", "Cool", "Any", "Mu"],
+            "Set" => &["Set", "Any", "Mu"],
+            "Bag" => &["Bag", "Any", "Mu"],
+            "Mix" => &["Mix", "Any", "Mu"],
+            "Complex" => &["Complex", "Cool", "Any", "Mu"],
+            "Regex" => &["Regex", "Method", "Routine", "Block", "Code", "Any", "Mu"],
+            "Sub" => &["Sub", "Routine", "Block", "Code", "Any", "Mu"],
+            "Junction" => &["Junction", "Mu"],
+            _ => &["Any", "Mu"],
+        };
+        chain.contains(&ancestor)
     }
 }
