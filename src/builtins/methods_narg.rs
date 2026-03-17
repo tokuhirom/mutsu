@@ -398,10 +398,7 @@ pub(crate) fn native_method_1arg(
             {
                 return None;
             }
-            let s = target.to_string_value();
-            let sep = arg.to_string_value();
-            let parts: Vec<Value> = s.split(&sep).map(|p| Value::str(p.to_string())).collect();
-            Some(Ok(Value::array(parts)))
+            super::split::native_split_method(target, std::slice::from_ref(arg))
         }
         "lines" => {
             if let Value::Instance { class_name, .. } = target
@@ -1567,6 +1564,15 @@ pub(crate) fn native_method_2arg(
             return Some(Ok(flatten_target(target, Some(depth), false)));
         }
         return None;
+    }
+
+    if method == "split" {
+        if let Value::Instance { class_name, .. } = target
+            && class_name == "Supply"
+        {
+            return None;
+        }
+        return super::split::native_split_method(target, &[arg1.clone(), arg2.clone()]);
     }
 
     match method {

@@ -55,7 +55,7 @@ impl VM {
 
     fn append_slip_value(args: &mut Vec<Value>, slip_val: Value) {
         match slip_val {
-            Value::Array(elements, ..) => {
+            Value::Array(elements, ..) | Value::Seq(elements) => {
                 args.extend(elements.iter().cloned());
             }
             Value::Capture { positional, named } => {
