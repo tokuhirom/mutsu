@@ -463,6 +463,13 @@ impl Interpreter {
                         "No matching candidate found for the parametric role",
                     ));
                 }
+                // Check for attribute conflicts detected during role composition
+                if let Some((attr_name, role_a, role_b)) = role.attribute_conflicts.first() {
+                    return Err(RuntimeError::new(format!(
+                        "Attribute '$!{}' conflicts in role '{}' composition: declared in both '{}' and '{}'",
+                        attr_name, base_role_name, role_a, role_b
+                    )));
+                }
                 // Check if this role was specified via `is` (punning) vs `does` (composition)
                 let is_punned = !does_parents.contains(parent);
                 if is_punned {
@@ -1469,6 +1476,7 @@ impl Interpreter {
             captured_env: None,
             wildcard_handles: Vec::new(),
             role_id: super::next_role_id(),
+            attribute_conflicts: Vec::new(),
         };
         let flattened_body: Vec<&Stmt> = body
             .iter()
@@ -1495,6 +1503,36 @@ impl Interpreter {
                     is_my: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
+                    // Check if this attribute already exists from a composed role
+                    if let Some(existing) = role_def
+                        .attributes
+                        .iter()
+                        .find(|(n, ..)| n == &attr_name_str)
+                    {
+                        // The attribute already exists from a parent role composition.
+                        // Record the conflict; the existing one came from a composed role.
+                        // We need to figure out which role contributed it.
+                        let parent_role = self
+                            .role_parents
+                            .get(name)
+                            .and_then(|parents| {
+                                parents.iter().find(|p| {
+                                    let base =
+                                        p.split_once('[').map(|(b, _)| b).unwrap_or(p.as_str());
+                                    self.roles.get(base).is_some_and(|r| {
+                                        r.attributes.iter().any(|(n, ..)| n == &attr_name_str)
+                                    })
+                                })
+                            })
+                            .cloned()
+                            .unwrap_or_else(|| "unknown".to_string());
+                        let _ = existing;
+                        role_def.attribute_conflicts.push((
+                            attr_name_str.clone(),
+                            name.to_string(),
+                            parent_role,
+                        ));
+                    }
                     role_def.attributes.push((
                         attr_name_str.clone(),
                         *is_public,
@@ -1606,7 +1644,14 @@ impl Interpreter {
                         Vec::new()
                     };
                     for attr in &role.attributes {
-                        if !role_def.attributes.iter().any(|(n, ..)| n == &attr.0) {
+                        if role_def.attributes.iter().any(|(n, ..)| n == &attr.0) {
+                            // Attribute conflict: declared in both current role and parent role
+                            role_def.attribute_conflicts.push((
+                                attr.0.clone(),
+                                name.to_string(),
+                                base_role_name.to_string(),
+                            ));
+                        } else {
                             role_def.attributes.push(attr.clone());
                         }
                     }
