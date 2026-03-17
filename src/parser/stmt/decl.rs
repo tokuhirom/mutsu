@@ -2239,7 +2239,7 @@ fn parse_enum_variant_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> 
 }
 
 pub(super) fn parse_enum_decl_body(input: &str) -> PResult<'_, Stmt> {
-    let (rest, name_str) = ident(input)?;
+    let (rest, name_str) = qualified_ident(input)?;
     let name = Symbol::intern(&name_str);
     let (rest, _) = ws(rest)?;
 
