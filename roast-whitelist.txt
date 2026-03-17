@@ -69,6 +69,7 @@ roast/S02-magicals/pid.t
 roast/S02-magicals/progname.t
 roast/S02-magicals/subname.t
 roast/S02-names-vars/contextual.t
+roast/S02-names-vars/list_array_perl.t
 roast/S02-names-vars/signature.t
 roast/S02-names-vars/varnames.t
 roast/S02-names/SETTING-6e.t
