@@ -1099,16 +1099,48 @@ impl Interpreter {
                 Value::hash(new_hash)
             }
             Value::Array(ref items, kind) => {
-                let idx = crate::runtime::to_int(&index) as usize;
-                let mut new_items = (**items).clone();
-                if idx >= new_items.len() {
-                    new_items.resize(
-                        idx + 1,
-                        Value::Package(crate::symbol::Symbol::intern("Any")),
-                    );
+                // Check for multi-dimensional index (e.g. $c.a[3;1] = val)
+                if let Value::Array(ref indices, ..) = index {
+                    let is_shaped = crate::runtime::utils::is_shaped_array(&current);
+                    if is_shaped || indices.len() > 1 {
+                        // Multi-dim assignment with bounds checking
+                        let mut updated =
+                            Value::Array(std::sync::Arc::new((**items).clone()), kind);
+                        Self::multidim_assign_recursive(
+                            &mut updated,
+                            indices.as_ref(),
+                            value.clone(),
+                        )?;
+                        updated
+                    } else if indices.len() == 1 {
+                        let idx = crate::runtime::to_int(&indices[0]) as usize;
+                        let mut new_items = (**items).clone();
+                        if idx >= new_items.len() {
+                            new_items.resize(
+                                idx + 1,
+                                Value::Package(crate::symbol::Symbol::intern("Any")),
+                            );
+                        }
+                        new_items[idx] = value.clone();
+                        Value::Array(std::sync::Arc::new(new_items), kind)
+                    } else {
+                        return Ok(value);
+                    }
+                } else {
+                    let idx = crate::runtime::to_int(&index) as usize;
+                    let mut new_items = (**items).clone();
+                    if idx >= new_items.len() {
+                        if crate::runtime::utils::is_shaped_array(&current) {
+                            return Err(RuntimeError::new("Index out of bounds"));
+                        }
+                        new_items.resize(
+                            idx + 1,
+                            Value::Package(crate::symbol::Symbol::intern("Any")),
+                        );
+                    }
+                    new_items[idx] = value.clone();
+                    Value::Array(std::sync::Arc::new(new_items), kind)
                 }
-                new_items[idx] = value.clone();
-                Value::Array(std::sync::Arc::new(new_items), kind)
             }
             _ => return Ok(value),
         };
@@ -1126,6 +1158,33 @@ impl Interpreter {
             updated,
         )?;
         Ok(value)
+    }
+
+    /// Recursively assign a value into a multi-dimensional array at the given indices,
+    /// checking bounds at each level (shaped arrays must not grow).
+    fn multidim_assign_recursive(
+        target: &mut Value,
+        indices: &[Value],
+        val: Value,
+    ) -> Result<(), RuntimeError> {
+        if indices.is_empty() {
+            *target = val;
+            return Ok(());
+        }
+        let i = crate::runtime::to_int(&indices[0]) as usize;
+        let Value::Array(items, ..) = target else {
+            return Err(RuntimeError::new("Index out of bounds"));
+        };
+        if i >= items.len() {
+            return Err(RuntimeError::new("Index out of bounds"));
+        }
+        let arr = std::sync::Arc::make_mut(items);
+        if indices.len() == 1 {
+            arr[i] = val;
+        } else {
+            Self::multidim_assign_recursive(&mut arr[i], &indices[1..], val)?;
+        }
+        Ok(())
     }
 
     fn builtin_assign_method_lvalue(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
