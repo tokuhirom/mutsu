@@ -672,6 +672,7 @@ roast/S32-io/copy.t
 roast/S32-io/dir.t
 roast/S32-io/io-path-extension.t
 roast/S32-io/io-path-subclasses.t
+roast/S32-io/mkdir_rmdir.t
 roast/S32-io/move.t
 roast/S32-io/native-descriptor.t
 roast/S32-io/note.t
