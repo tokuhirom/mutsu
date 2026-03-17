@@ -1307,18 +1307,11 @@ impl VM {
             if !matches!(value, Value::Nil)
                 && !self.interpreter.type_matches_value(constraint, &value)
             {
-                if base_constraint == "Int" && matches!(value, Value::Num(f) if f.is_nan()) {
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("value".to_string(), value.clone());
-                    attrs.insert(
-                        "vartype".to_string(),
-                        Value::Package(Symbol::intern(base_constraint)),
-                    );
-                    attrs.insert(
-                        "message".to_string(),
-                        Value::str("Cannot convert NaN to Int".to_string()),
-                    );
-                    return Err(RuntimeError::typed("X::Syntax::Number::LiteralType", attrs));
+                if matches!(value, Value::Num(f) if f.is_nan() || f.is_infinite()) {
+                    return Err(RuntimeError::syntax_number_literal_type(
+                        value,
+                        base_constraint,
+                    ));
                 }
                 let coerced = match base_constraint {
                     "Str" => Some(Value::str(crate::runtime::utils::coerce_to_str(&value))),

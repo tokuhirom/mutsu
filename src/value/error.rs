@@ -489,6 +489,27 @@ impl RuntimeError {
         Self::typed("X::ControlFlow::Return", attrs)
     }
 
+    /// X::Syntax::Number::LiteralType - Cannot assign a literal of type X to a variable of type Y
+    pub(crate) fn syntax_number_literal_type(value: Value, vartype: &str) -> Self {
+        let value_type = crate::runtime::utils::value_type_name(&value);
+        let msg = format!(
+            "Cannot assign a literal of type {} ({}) to a variable of type {}. You can declare the variable to be of type Real, or try to coerce the value with {val}.{vt} or {vt}({val})",
+            value_type,
+            value.to_string_value(),
+            vartype,
+            val = value.to_string_value(),
+            vt = vartype,
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("value".to_string(), value);
+        attrs.insert(
+            "vartype".to_string(),
+            Value::Package(crate::symbol::Symbol::intern(vartype)),
+        );
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::Syntax::Number::LiteralType", attrs)
+    }
+
     /// X::TypeCheck::Assignment - Type check failed in assignment
     pub(crate) fn typecheck_assignment(expected: &str, got: &str) -> Self {
         let msg = format!(
