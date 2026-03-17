@@ -491,8 +491,8 @@ impl VM {
                 .ok()
                 .and_then(|v| runtime::to_float_value(&v))
                 .unwrap_or(1e-15);
-            let scale = re.abs().max(1.0);
-            if im.abs() / scale <= tolerance {
+            let re_abs = re.abs();
+            if re_abs != 0.0 && im.abs() / re_abs <= tolerance {
                 Ok(Value::Num(*re))
             } else {
                 Err(RuntimeError::new(
