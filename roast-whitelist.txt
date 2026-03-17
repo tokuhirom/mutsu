@@ -247,6 +247,7 @@ roast/S05-mass/properties-block.t
 roast/S05-mass/properties-contributory.t
 roast/S05-mass/properties-derived.t
 roast/S05-mass/properties-script.t
+roast/S05-match/arrayhash.t
 roast/S05-match/basics.t
 roast/S05-match/blocks.t
 roast/S05-match/non-capturing.t
