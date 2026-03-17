@@ -743,7 +743,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
 
     // Optional type constraint: my Int $x or my Str(Match) $x (coercion type)
     let (rest, mut type_constraint) = {
-        // Try to parse a type name followed by a sigil or \
+        // Try to parse a type name followed by a sigil or \ or `constant`
         let saved = rest;
         if let Some((r, tc)) = parse_type_constraint_expr(rest) {
             let (r2, _) = ws(r)?;
@@ -752,6 +752,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 || r2.starts_with('%')
                 || r2.starts_with('&')
                 || r2.starts_with('\\')
+                || keyword("constant", r2).is_some()
             {
                 (r2, Some(tc))
             } else {
@@ -761,6 +762,26 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             (saved, None)
         }
     };
+
+    // my <Type> constant <name> = <expr>
+    if keyword("constant", rest).is_some() {
+        let (r, mut stmt) = constant_decl(rest)?;
+        // Patch in the type constraint and scope
+        if let Stmt::VarDecl {
+            type_constraint: ref mut tc,
+            is_our: ref mut our_flag,
+            ..
+        } = stmt
+        {
+            *tc = type_constraint;
+            // `my <Type> constant` → lexically scoped; `our <Type> constant` → package scoped
+            *our_flag = is_our;
+        }
+        if apply_modifier {
+            return parse_statement_modifier(r, stmt);
+        }
+        return Ok((r, stmt));
+    }
 
     // Sigilless variable after type: my Int \name = expr / my Int \name := expr / ::=
     if let Some(r) = rest.strip_prefix('\\') {
