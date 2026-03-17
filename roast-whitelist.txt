@@ -795,12 +795,14 @@ roast/S32-trig/sinh.t
 roast/S32-trig/tan.t
 roast/S32-trig/tanh.t
 roast/integration/advent2009-day01.t
+roast/integration/advent2009-day02.t
 roast/integration/advent2009-day03.t
 roast/integration/advent2009-day07.t
 roast/integration/advent2009-day13.t
 roast/integration/advent2009-day14.t
 roast/integration/advent2009-day15.t
 roast/integration/advent2009-day19.t
+roast/integration/advent2009-day22.t
 roast/integration/advent2010-day06.t
 roast/integration/advent2010-day08.t
 roast/integration/advent2010-day21.t

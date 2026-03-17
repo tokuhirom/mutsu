@@ -1228,8 +1228,23 @@ impl Interpreter {
                 }
                 _ => Ok(Value::str_from("P6opaque")),
             },
-            "Str" | "Stringy" if args.is_empty() => match target {
+            "Str" | "Stringy" if args.is_empty() => match &target {
                 Value::Package(_) => Ok(Value::str(String::new())),
+                Value::Instance { class_name, .. } => {
+                    // When Stringy is requested but only Str is user-defined (or
+                    // vice versa), delegate to the available user method so that
+                    // custom stringification works through `~$obj`.
+                    let alt = if method == "Stringy" {
+                        "Str"
+                    } else {
+                        "Stringy"
+                    };
+                    if self.has_user_method(&class_name.resolve(), alt) {
+                        self.call_method_with_values(target, alt, vec![])
+                    } else {
+                        Ok(Value::str(target.to_string_value()))
+                    }
+                }
                 _ => Ok(Value::str(target.to_string_value())),
             },
             "Numeric" | "Real" if args.is_empty() => {

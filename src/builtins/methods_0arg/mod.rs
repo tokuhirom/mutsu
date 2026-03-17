@@ -538,6 +538,8 @@ pub(crate) fn native_method_0arg(
                     Value::Int(i)
                 } else if let Ok(f) = s.parse::<f64>() {
                     Value::Num(f)
+                } else if let Some(v) = parse_raku_int_from_str(s) {
+                    v
                 } else {
                     return None;
                 };
