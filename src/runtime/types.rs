@@ -2366,6 +2366,36 @@ impl Interpreter {
                 .insert("%_".to_string(), Value::hash(leftover_named));
             return Ok(rw_bindings);
         }
+        // Pre-compute the set of explicit named parameter keys so that
+        // slurpy hash (*%rest) can exclude args already bound to named params.
+        let explicit_named_keys: std::collections::HashSet<String> = param_defs
+            .iter()
+            .filter(|pd| (pd.named || pd.name.starts_with(':')) && !pd.slurpy)
+            .map(|pd| {
+                let name = if pd.name.starts_with(':') {
+                    &pd.name[1..]
+                } else if let Some(rest) = pd
+                    .name
+                    .strip_prefix("@:")
+                    .or_else(|| pd.name.strip_prefix("%:"))
+                {
+                    rest
+                } else if pd.named {
+                    let after_sigil = pd
+                        .name
+                        .strip_prefix('@')
+                        .or_else(|| pd.name.strip_prefix('%'))
+                        .unwrap_or(&pd.name);
+                    after_sigil
+                        .strip_prefix('!')
+                        .or_else(|| after_sigil.strip_prefix('.'))
+                        .unwrap_or(after_sigil)
+                } else {
+                    &pd.name
+                };
+                name.to_string()
+            })
+            .collect();
         let mut positional_idx = 0usize;
         for pd in param_defs {
             if pd.slurpy {
@@ -2391,11 +2421,14 @@ impl Interpreter {
                         bind_sub_signature_from_value(self, sub_params, &capture_value)?;
                     }
                 } else if is_hash_slurpy {
-                    // *%hash — collect Pair arguments into a hash
+                    // *%hash — collect Pair arguments into a hash,
+                    // excluding args already bound to explicit named parameters.
                     let mut hash_items = std::collections::HashMap::new();
                     for arg in args.iter() {
                         let arg = unwrap_varref_value(arg.clone());
-                        if let Value::Pair(k, v) = arg {
+                        if let Value::Pair(k, v) = arg
+                            && !explicit_named_keys.contains(&k)
+                        {
                             hash_items.insert(k.clone(), *v.clone());
                         }
                     }
