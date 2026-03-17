@@ -720,12 +720,23 @@ impl Interpreter {
     }
 
     fn test_fn_is_approx(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let desc = Self::positional_string(args, 2);
         let todo = Self::named_bool(args, "todo");
         let got = Self::positional_value_required(args, 0, "is-approx expects got")?;
         let expected = Self::positional_value_required(args, 1, "is-approx expects expected")?;
-        let explicit_abs_tol =
-            Self::named_value(args, "abs-tol").and_then(|v| super::to_float_value(&v));
+
+        // Detect three-arg form: is-approx(got, expected, numeric-tolerance, desc?)
+        // If the third positional arg is numeric, treat it as abs-tol.
+        let third_pos = Self::positional_value(args, 2);
+        let (positional_abs_tol, desc) = if let Some(v) = third_pos.and_then(super::to_float_value)
+        {
+            (Some(v), Self::positional_string(args, 3))
+        } else {
+            (None, Self::positional_string(args, 2))
+        };
+
+        let explicit_abs_tol = Self::named_value(args, "abs-tol")
+            .and_then(|v| super::to_float_value(&v))
+            .or(positional_abs_tol);
         let explicit_rel_tol =
             Self::named_value(args, "rel-tol").and_then(|v| super::to_float_value(&v));
 
