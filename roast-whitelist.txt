@@ -781,6 +781,7 @@ roast/integration/advent2012-day16.t
 roast/integration/advent2013-day07.t
 roast/integration/advent2013-day22.t
 roast/integration/eval-and-threads.t
+roast/integration/failure-and-callsame.t
 roast/integration/lexical-array-in-inner-block.t
 roast/integration/method-calls-and-instantiation.t
 roast/integration/packages.t
