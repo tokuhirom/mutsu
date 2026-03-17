@@ -217,10 +217,10 @@ pub(super) fn process_content_with_flags(content: &str, flags: &QuoteFlags) -> E
                     continue;
                 }
                 // Unknown escape in :b mode — keep literal
-                let c = rest[1..].chars().next().unwrap();
+                let (c, after_escape) = escaped_char(rest).unwrap();
                 current.push('\\');
                 current.push(c);
-                rest = &rest[1 + c.len_utf8()..];
+                rest = after_escape;
                 continue;
             } else if flags.q_mode {
                 // q-mode: handle \\, \', and \qq[]/\q:adverb{} escapes
@@ -231,10 +231,10 @@ pub(super) fn process_content_with_flags(content: &str, flags: &QuoteFlags) -> E
                     continue;
                 }
                 // Not a recognized q escape — keep literal
-                let c = rest[1..].chars().next().unwrap();
+                let (c, after_escape) = escaped_char(rest).unwrap();
                 current.push('\\');
                 current.push(c);
-                rest = &rest[1 + c.len_utf8()..];
+                rest = after_escape;
                 continue;
             }
         }
@@ -271,6 +271,12 @@ pub(super) fn process_content_with_flags(content: &str, flags: &QuoteFlags) -> E
     finalize_interpolation(parts, current)
 }
 
+fn escaped_char(rest: &str) -> Option<(char, &str)> {
+    let after_backslash = rest.strip_prefix('\\')?;
+    let c = after_backslash.chars().next()?;
+    Some((c, &after_backslash[c.len_utf8()..]))
+}
+
 /// Process content in q mode (single-quote semantics).
 /// Only handles \\, \', and \qq[]/\q:adverb{} escapes.
 fn process_q_mode_content(content: &str) -> Expr {
@@ -304,17 +310,19 @@ fn process_q_mode_with_escapes(content: &str) -> Expr {
                 continue;
             }
             // Not a recognized escape — keep literal backslash and char
-            let c = rest.as_bytes()[1] as char;
+            let Some((c, after_escape)) = escaped_char(rest) else {
+                break;
+            };
             if c == '\\' {
                 current.push('\\');
-                rest = &rest[2..];
+                rest = after_escape;
             } else if c == '\'' {
                 current.push('\'');
-                rest = &rest[2..];
+                rest = after_escape;
             } else {
                 current.push('\\');
                 current.push(c);
-                rest = &rest[2..];
+                rest = after_escape;
             }
             continue;
         }
@@ -418,30 +426,30 @@ fn process_b_mode_escape<'a>(
     current: &mut String,
     flags: &QuoteFlags,
 ) -> Option<&'a str> {
-    let c = rest.as_bytes()[1] as char;
+    let (c, after_escape) = escaped_char(rest)?;
 
     // Handle backslash-escaped sigils that would otherwise trigger interpolation
     if flags.has_interpolation() {
         match c {
             '$' if flags.interp_scalar() => {
                 current.push('$');
-                return Some(&rest[2..]);
+                return Some(after_escape);
             }
             '@' if flags.interp_array() => {
                 current.push('@');
-                return Some(&rest[2..]);
+                return Some(after_escape);
             }
             '%' if flags.interp_hash() => {
                 current.push('%');
-                return Some(&rest[2..]);
+                return Some(after_escape);
             }
             '&' if flags.interp_function() => {
                 current.push('&');
-                return Some(&rest[2..]);
+                return Some(after_escape);
             }
             '{' if flags.interp_closure() => {
                 current.push('{');
-                return Some(&rest[2..]);
+                return Some(after_escape);
             }
             _ => {}
         }
@@ -457,7 +465,7 @@ fn process_b_mode_escape<'a>(
     // Non-word character: strip backslash (e.g. \| → |)
     if !c.is_alphanumeric() && c != '_' {
         current.push(c);
-        return Some(&rest[c.len_utf8() + 1..]);
+        return Some(after_escape);
     }
 
     None
@@ -470,15 +478,15 @@ fn process_q_escape_in_interpolating<'a>(
     current: &mut String,
     _flags: &QuoteFlags,
 ) -> Option<&'a str> {
-    let c = rest.as_bytes()[1] as char;
+    let (c, after_escape) = escaped_char(rest)?;
     match c {
         '\\' => {
             current.push('\\');
-            Some(&rest[2..])
+            Some(after_escape)
         }
         '\'' => {
             current.push('\'');
-            Some(&rest[2..])
+            Some(after_escape)
         }
         'q' => {
             // \qq[...] or \q:adverb{...}
