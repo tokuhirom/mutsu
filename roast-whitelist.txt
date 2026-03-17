@@ -167,6 +167,7 @@ roast/S03-operators/subscript-adverbs.t
 roast/S03-operators/subscript-vs-lt.t
 roast/S03-operators/ternary.t
 roast/S03-operators/u2212-minus.t
+roast/S03-operators/value_equivalence.t
 roast/S03-sequence/arity-2-or-more.t
 roast/S03-sequence/arity0.t
 roast/S03-sequence/basic.t

@@ -1468,6 +1468,7 @@ impl Interpreter {
             is_hidden: false,
             captured_env: None,
             wildcard_handles: Vec::new(),
+            role_id: super::next_role_id(),
         };
         let flattened_body: Vec<&Stmt> = body
             .iter()

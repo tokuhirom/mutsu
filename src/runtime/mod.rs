@@ -11,8 +11,15 @@ use std::os::unix::fs::{self as unix_fs, PermissionsExt};
 use std::os::windows::fs as windows_fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread;
+
+static ROLE_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+pub(crate) fn next_role_id() -> u64 {
+    ROLE_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
+}
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::ast::{Expr, FunctionDef, ParamDef, PhaserKind, Stmt};
@@ -193,6 +200,9 @@ pub(crate) struct RoleDef {
     pub(crate) captured_env: Option<HashMap<String, Value>>,
     /// Attribute var names (e.g. "!foo") that have `handles *` wildcard delegation.
     pub(crate) wildcard_handles: Vec<String>,
+    /// Unique identifier for this role definition instance, used to distinguish
+    /// different lexical roles with the same name.
+    pub(crate) role_id: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -2073,6 +2083,7 @@ impl Interpreter {
                         is_hidden: false,
                         captured_env: None,
                         wildcard_handles: Vec::new(),
+                        role_id: 0,
                     },
                 );
                 roles.insert(
@@ -2084,6 +2095,7 @@ impl Interpreter {
                         is_hidden: false,
                         captured_env: None,
                         wildcard_handles: Vec::new(),
+                        role_id: 0,
                     },
                 );
                 roles.insert(
@@ -2095,6 +2107,7 @@ impl Interpreter {
                         is_hidden: false,
                         captured_env: None,
                         wildcard_handles: Vec::new(),
+                        role_id: 0,
                     },
                 );
                 roles.insert(
@@ -2106,6 +2119,7 @@ impl Interpreter {
                         is_hidden: false,
                         captured_env: None,
                         wildcard_handles: Vec::new(),
+                        role_id: 0,
                     },
                 );
                 // CompUnit::Repository role with required stub methods
@@ -2140,6 +2154,7 @@ impl Interpreter {
                             is_hidden: false,
                             captured_env: None,
                             wildcard_handles: Vec::new(),
+                            role_id: 0,
                         },
                     );
                 }
