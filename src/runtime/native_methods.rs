@@ -1566,6 +1566,7 @@ impl Interpreter {
                 | "Encoding::Builtin"
                 | "Encoding::Encoder"
                 | "Encoding::Decoder"
+                | "VM"
         ) {
             Some(class_name.to_string())
         } else {
@@ -1601,6 +1602,7 @@ impl Interpreter {
                         | "Encoding::Builtin"
                         | "Encoding::Encoder"
                         | "Encoding::Decoder"
+                        | "VM"
                 )
             })
         };
@@ -1636,6 +1638,7 @@ impl Interpreter {
             "Encoding::Builtin" => Ok(Self::native_encoding_builtin(attributes, method, &args)),
             "Encoding::Encoder" => Self::native_encoding_encoder(attributes, method, &args),
             "Encoding::Decoder" => Ok(Self::native_encoding_decoder(attributes, method, &args)),
+            "VM" => self.native_vm(attributes, method),
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on '{}'",
                 method, class_name
@@ -2477,6 +2480,36 @@ impl Interpreter {
             }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on Kernel",
+                method
+            ))),
+        }
+    }
+
+    // --- VM ---
+
+    fn native_vm(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+    ) -> Result<Value, RuntimeError> {
+        match method {
+            "name" | "auth" | "version" | "precomp-ext" | "precomp-target" => {
+                Ok(attributes.get(method).cloned().unwrap_or(Value::Nil))
+            }
+            "request-garbage-collection" => {
+                // Trigger pending DESTROY submethods for objects whose refcount dropped to 0.
+                self.run_pending_instance_destroys()?;
+                Ok(Value::Nil)
+            }
+            "gist" | "Str" => {
+                let name = attributes
+                    .get("name")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                Ok(Value::str(name))
+            }
+            _ => Err(RuntimeError::new(format!(
+                "No native method '{}' on VM",
                 method
             ))),
         }
