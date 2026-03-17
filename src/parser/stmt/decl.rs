@@ -505,7 +505,15 @@ pub(super) fn no_stmt(input: &str) -> PResult<'_, Stmt> {
 
 /// Parse `my`, `our`, or `state` variable declaration.
 pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
-    my_decl_inner(input, true)
+    let (rest, stmt) = my_decl_inner(input, true)?;
+    // If postfix ++ / -- follows, reject from statement-level parsing so the
+    // expression parser can handle `state $i++` as PostfixOp(DoStmt(VarDecl)).
+    if rest.starts_with("++") || rest.starts_with("--") {
+        return Err(PError::expected(
+            "statement (postfix operator on declarator requires expression context)",
+        ));
+    }
+    Ok((rest, stmt))
 }
 
 /// Parse a `my`/`our`/`state` declaration in expression context (no statement modifier).
