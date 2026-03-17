@@ -191,15 +191,26 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             arg.to_string_value().graphemes(true).count() as i64,
         ))),
         "chr" => {
-            let code = match arg {
-                Value::Int(i) => *i,
-                Value::Num(f) => *f as i64,
-                _ => arg.to_string_value().parse::<i64>().unwrap_or(-1),
+            let (code, display) = match arg {
+                Value::Int(i) => (*i, format!("{}", i)),
+                Value::BigInt(n) => {
+                    let hex = format!("{:X}", &**n);
+                    return Some(Err(RuntimeError::new(format!(
+                        "Codepoint {} (0x{}) is out of bounds in 'chr'",
+                        n, hex
+                    ))));
+                }
+                Value::Num(f) => (*f as i64, format!("{}", *f as i64)),
+                _ => {
+                    let i = arg.to_string_value().parse::<i64>().unwrap_or(-1);
+                    (i, format!("{}", i))
+                }
             };
             if !(0..=0x10FFFF).contains(&code) {
+                let hex = format!("{:X}", code);
                 return Some(Err(RuntimeError::new(format!(
-                    "chr({}) out of range. bg: Expected 0..1114111",
-                    code
+                    "Codepoint {} (0x{}) is out of bounds in 'chr'",
+                    display, hex
                 ))));
             }
             if let Some(ch) = std::char::from_u32(code as u32) {
@@ -208,8 +219,8 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 Some(Ok(Value::str(s)))
             } else {
                 Some(Err(RuntimeError::new(format!(
-                    "chr({}) does not map to a valid Unicode character",
-                    code
+                    "Codepoint {} (0x{:X}) is out of bounds in 'chr'",
+                    display, code
                 ))))
             }
         }
