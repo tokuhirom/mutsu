@@ -102,6 +102,7 @@ roast/S02-types/nominalizables.t
 roast/S02-types/parsing-bool.t
 roast/S02-types/range-iterator.t
 roast/S02-types/resolved-in-setting.t
+roast/S02-types/set-iterator.t
 roast/S02-types/sigils-and-types.t
 roast/S02-types/stash.t
 roast/S02-types/subscripts_and_context.t
