@@ -85,7 +85,6 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
 
         try_primary!(number::dot_decimal(input));
         try_primary!(number::decimal(input));
-        try_primary!(number::rational(input));
         try_primary!(number::integer(input));
         try_primary!(number::generic_radix(input));
         try_primary!(number::unicode_numeric_literal(input));
@@ -166,10 +165,12 @@ mod tests {
     }
 
     #[test]
-    fn parse_rational_literal() {
+    fn parse_no_rat_literal() {
+        // Raku no longer has numerator/denominator Rat literals in expression context.
+        // `1/4` is parsed as Int(1) followed by `/4`, not as Rat(1,4).
         let (rest, expr) = primary("1/4").unwrap();
-        assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::Literal(Value::Rat(1, 4))));
+        assert_eq!(rest, "/4");
+        assert!(matches!(expr, Expr::Literal(Value::Int(1))));
     }
 
     #[test]
