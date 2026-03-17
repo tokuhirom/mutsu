@@ -428,6 +428,12 @@ impl Interpreter {
         let callable_arity = if let Some(ref c) = callable {
             match c {
                 Value::Sub(data) => {
+                    if data.empty_sig {
+                        // Reject explicitly 0-arity named subs (e.g., `sub foo () { ... }`)
+                        return Err(RuntimeError::new(
+                            "sort requires a callable with at least 1 parameter".to_string(),
+                        ));
+                    }
                     // For blocks/closures, 0 params means implicit $_ (treat as 1-arity mapper)
                     if data.params.is_empty() {
                         1
@@ -457,6 +463,47 @@ impl Interpreter {
             vec![]
         };
 
+        /// Stable merge sort that always calls the comparator with (left, right) ordering.
+        /// This ensures consistent semantics with Raku where the comparator receives
+        /// elements in their relative position order.
+        fn merge_sort_with_cmp<F>(items: &mut [Value], cmp: &mut F)
+        where
+            F: FnMut(&Value, &Value) -> std::cmp::Ordering,
+        {
+            let len = items.len();
+            if len <= 1 {
+                return;
+            }
+            let mid = len / 2;
+            merge_sort_with_cmp(&mut items[..mid], cmp);
+            merge_sort_with_cmp(&mut items[mid..], cmp);
+            // Merge
+            let left = items[..mid].to_vec();
+            let right = items[mid..].to_vec();
+            let (mut i, mut j, mut k) = (0, 0, 0);
+            while i < left.len() && j < right.len() {
+                // Always compare (left, right) to maintain Raku semantics
+                if cmp(&left[i], &right[j]) != std::cmp::Ordering::Greater {
+                    items[k] = left[i].clone();
+                    i += 1;
+                } else {
+                    items[k] = right[j].clone();
+                    j += 1;
+                }
+                k += 1;
+            }
+            while i < left.len() {
+                items[k] = left[i].clone();
+                i += 1;
+                k += 1;
+            }
+            while j < right.len() {
+                items[k] = right[j].clone();
+                j += 1;
+                k += 1;
+            }
+        }
+
         fn sort_items(
             interp: &mut Interpreter,
             items: &mut [Value],
@@ -465,8 +512,9 @@ impl Interpreter {
         ) {
             match callable {
                 Some(Value::Sub(data)) if arity >= 2 => {
-                    // Sub comparator: manual env to handle $^a/$^b and named params
-                    items.sort_by(|a, b| {
+                    // Sub comparator: use merge sort for correct (left, right) ordering
+                    let data = data.clone();
+                    merge_sort_with_cmp(items, &mut |a: &Value, b: &Value| {
                         let saved = interp.env.clone();
                         for (k, v) in &data.env {
                             interp.env.insert(k.clone(), v.clone());
@@ -507,8 +555,9 @@ impl Interpreter {
                     });
                 }
                 Some(c) if arity >= 2 => {
-                    // Routine comparator: call with 2 args
-                    items.sort_by(|a, b| {
+                    // Routine comparator: use merge sort for correct (left, right) ordering
+                    let c = c.clone();
+                    merge_sort_with_cmp(items, &mut |a: &Value, b: &Value| {
                         let call_args = vec![a.clone(), b.clone()];
                         match interp.eval_call_on_value(c.clone(), call_args) {
                             Ok(result) => sort_result_to_ordering(&result),
