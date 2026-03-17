@@ -838,6 +838,17 @@ impl VM {
             };
             target = Value::array(forced);
         }
+        // Normalize index: convert Seq/LazyList indices to Array for
+        // uniform handling in the match below.
+        let is_lazy_index = matches!(&index, Value::LazyList(..));
+        let index = if let Value::LazyList(ref ll) = index {
+            let items = self.interpreter.force_lazy_list_bridge(ll)?;
+            Value::array(items)
+        } else if let Value::Seq(items) = index {
+            Value::Array(items, crate::value::ArrayKind::List)
+        } else {
+            index
+        };
         let result = match (target, index) {
             (Value::Array(items, is_arr), Value::Int(i)) => {
                 if i < 0 {
@@ -874,13 +885,17 @@ impl VM {
                     let mut out = Vec::with_capacity(indices.len());
                     for idx in indices.iter() {
                         if let Some(i) = Self::index_to_usize(idx) {
+                            if is_lazy_index && i >= items.len() {
+                                // Lazy index: stop at array boundary
+                                break;
+                            }
                             out.push(Self::resolve_array_entry(
                                 items,
                                 *kind,
                                 i,
                                 self.typed_container_default(&target),
                             ));
-                        } else {
+                        } else if !is_lazy_index {
                             out.push(self.typed_container_default(&target));
                         }
                     }
@@ -899,12 +914,11 @@ impl VM {
             (Value::Array(items, kind), Value::Range(a, b)) => {
                 let start = a.max(0) as usize;
                 let end = b.max(-1) as usize;
-                let slice = if start >= items.len() {
-                    Vec::new()
-                } else {
-                    let end = end.min(items.len().saturating_sub(1));
-                    items[start..=end].to_vec()
-                };
+                let default = self.typed_container_default(&Value::Array(items.clone(), kind));
+                let mut slice = Vec::new();
+                for i in start..=end {
+                    slice.push(Self::resolve_array_entry(&items, kind, i, default.clone()));
+                }
                 if kind.is_real_array() {
                     Value::array(slice)
                 } else {
@@ -914,20 +928,23 @@ impl VM {
             (Value::Array(items, kind), Value::RangeExcl(a, b)) => {
                 let start = a.max(0) as usize;
                 let end_excl = b.max(0) as usize;
-                let slice = if start >= items.len() {
-                    Vec::new()
-                } else {
-                    let end_excl = end_excl.min(items.len());
-                    if start >= end_excl {
-                        Vec::new()
+                if start >= end_excl {
+                    if kind.is_real_array() {
+                        Value::array(Vec::new())
                     } else {
-                        items[start..end_excl].to_vec()
+                        Value::Seq(Arc::new(Vec::new()))
                     }
-                };
-                if kind.is_real_array() {
-                    Value::array(slice)
                 } else {
-                    Value::Seq(Arc::new(slice))
+                    let default = self.typed_container_default(&Value::Array(items.clone(), kind));
+                    let mut slice = Vec::with_capacity(end_excl - start);
+                    for i in start..end_excl {
+                        slice.push(Self::resolve_array_entry(&items, kind, i, default.clone()));
+                    }
+                    if kind.is_real_array() {
+                        Value::array(slice)
+                    } else {
+                        Value::Seq(Arc::new(slice))
+                    }
                 }
             }
             (Value::Array(items, is_arr), Value::Num(n)) => {

@@ -2536,6 +2536,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             let items = if let Some(items) = target.as_list_items() {
                 items.as_ref().clone()
+            } else if matches!(
+                target,
+                Value::Range(..)
+                    | Value::RangeExcl(..)
+                    | Value::RangeExclStart(..)
+                    | Value::RangeExclBoth(..)
+                    | Value::GenericRange { .. }
+            ) {
+                crate::runtime::utils::value_to_list(target)
             } else {
                 return Some(Ok(target.clone()));
             };
