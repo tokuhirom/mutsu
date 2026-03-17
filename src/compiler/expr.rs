@@ -2041,8 +2041,7 @@ impl Compiler {
                     if *is_state {
                         self.compile_expr(expr);
                         let slot = self.alloc_local(name);
-                        let id = STATE_COUNTER.fetch_add(1, Ordering::Relaxed);
-                        let key = format!("__state_{}::{}#{}", self.current_package, name, id);
+                        let key = format!("__state_{}::{}", self.current_package, name);
                         let key_idx = self.code.add_constant(Value::str(key.clone()));
                         self.code.state_locals.push((slot as usize, key.clone()));
                         self.code.emit(OpCode::StateVarInit(slot, key_idx));

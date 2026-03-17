@@ -746,7 +746,12 @@ impl Compiler {
     ) -> CompiledCode {
         let mut sub_compiler = Compiler::new();
         sub_compiler.is_routine = is_routine;
-        sub_compiler.set_current_package(self.current_package.clone());
+        // Give closures a unique package name so their state variables don't
+        // collide with state variables in the enclosing code that happen to
+        // share the same variable name.
+        let closure_id = STATE_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let closure_package = format!("{}::&<closure>/{}", self.current_package, closure_id);
+        sub_compiler.set_current_package(closure_package);
         // Pre-allocate locals for parameters
         for param in params {
             sub_compiler.alloc_local(param);
