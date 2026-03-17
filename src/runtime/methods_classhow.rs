@@ -1370,6 +1370,7 @@ impl Interpreter {
         let class_name = match target {
             Value::Instance { class_name, .. } => class_name.resolve(),
             Value::Package(name) => name.resolve(),
+            Value::Enum { enum_type, .. } => enum_type.resolve(),
             _ => utils::value_type_name(target).to_string(),
         };
         let mro = self.classhow_mro_unhidden_names(target);
@@ -1464,6 +1465,19 @@ impl Interpreter {
                     is_regex: false,
                 });
             }
+        }
+        // For enum values, also check enum-specific methods (key, value, Int, Str, etc.)
+        if results.is_empty()
+            && matches!(target, Value::Enum { .. })
+            && self
+                .dispatch_enum_method(target, method_name, &[])
+                .is_some()
+        {
+            results.push(Value::Routine {
+                package: Symbol::intern(&class_name),
+                name: Symbol::intern(method_name),
+                is_regex: false,
+            });
         }
         results
     }
