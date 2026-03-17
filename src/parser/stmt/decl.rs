@@ -2095,7 +2095,9 @@ pub(crate) fn enum_decl(input: &str) -> PResult<'_, Stmt> {
 
 /// Parse anonymous enum body (after `enum` keyword with no name).
 fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
-    let (rest, variants) = if input.starts_with('<') {
+    let (rest, variants) = if input.starts_with("<<") {
+        parse_double_angle_enum_variants(input)?
+    } else if input.starts_with('<') {
         let (r, _) = parse_char(input, '<')?;
         let mut variants = Vec::new();
         let mut r = r;
@@ -2147,6 +2149,51 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
     ))
 }
 
+/// Parse `<< ... >>` enum variant list.
+/// Supports plain words and colonpairs like `:key<value>`.
+fn parse_double_angle_enum_variants(input: &str) -> PResult<'_, Vec<(String, Option<Expr>)>> {
+    let r = input
+        .strip_prefix("<<")
+        .ok_or_else(|| PError::expected("<<"))?;
+    let mut variants = Vec::new();
+    let mut r = r;
+    loop {
+        // Skip whitespace (including newlines)
+        let (r2, _) = ws(r)?;
+        r = r2;
+        // Check for closing >>
+        if let Some(r2) = r.strip_prefix(">>") {
+            return Ok((r2, variants));
+        }
+        // Colonpair: :key<value>
+        if r.starts_with(':') && !r.starts_with("::") {
+            let after_colon = &r[1..];
+            // Parse the key (identifier)
+            let (after_key, key) = take_while1(after_colon, |c: char| {
+                c.is_alphanumeric() || c == '_' || c == '-'
+            })?;
+            // Check for <value>
+            if let Some(after_open) = after_key.strip_prefix('<') {
+                let (after_val, val) = take_while1(after_open, |c: char| c != '>')?;
+                let after_close = after_val
+                    .strip_prefix('>')
+                    .ok_or_else(|| PError::expected(">"))?;
+                variants.push((key.to_string(), Some(Expr::Literal(Value::str_from(val)))));
+                r = after_close;
+            } else {
+                // :key with no value — treat as boolean true (no explicit value)
+                variants.push((key.to_string(), None));
+                r = after_key;
+            }
+        } else {
+            // Plain word
+            let (r2, word) = take_while1(r, |c: char| !c.is_whitespace() && c != '>' && c != ':')?;
+            variants.push((word.to_string(), None));
+            r = r2;
+        }
+    }
+}
+
 fn parse_enum_variant_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
     let (rest, expr) = expression(input)?;
     match expr {
@@ -2188,8 +2235,10 @@ pub(super) fn parse_enum_decl_body(input: &str) -> PResult<'_, Stmt> {
         rest = r;
     }
 
-    // Enum variants in <> or ()
-    let (rest, variants) = if rest.starts_with('<') {
+    // Enum variants in << >>, <> or ()
+    let (rest, variants) = if rest.starts_with("<<") {
+        parse_double_angle_enum_variants(rest)?
+    } else if rest.starts_with('<') {
         let (r, _) = parse_char(rest, '<')?;
         let mut variants = Vec::new();
         let mut r = r;
