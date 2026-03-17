@@ -705,6 +705,34 @@ impl VM {
                 self.env_dirty = true;
             }
             _ => {
+                // Nil method fallback: in Raku, calling most methods on Nil returns Nil.
+                // Certain mutating methods throw exceptions.
+                // This must be in the VM path (not the interpreter's call_method_with_values)
+                // to avoid affecting internal dispatch (e.g. max :by comparators).
+                if matches!(&target, Value::Nil) {
+                    match method.as_str() {
+                        "BIND-POS" | "BIND-KEY" | "ASSIGN-POS" | "ASSIGN-KEY" | "STORE"
+                        | "push" | "append" | "unshift" | "prepend" => {
+                            return Err(RuntimeError::new(format!(
+                                "Invocant of method '{}' must be an object instance of type \
+                                 'Any', not a type object of type 'Nil'.  Did you forget a \
+                                 '.new'?",
+                                method
+                            )));
+                        }
+                        "defined" | "Bool" | "so" | "not" | "gist" | "Str" | "raku" | "perl"
+                        | "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "VAR" | "DEFINITE"
+                        | "isa" | "does" | "can" | "^name" | "^mro" | "new" | "bless" | "clone"
+                        | "item" | "self" | "sink" => {
+                            // Fall through to normal dispatch
+                        }
+                        _ => {
+                            self.stack.push(Value::Nil);
+                            self.env_dirty = true;
+                            return Ok(());
+                        }
+                    }
+                }
                 let call_result = if !skip_native {
                     if let Some(native_result) =
                         self.try_native_method(&target, Symbol::intern(&method), &args)
