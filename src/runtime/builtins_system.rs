@@ -897,13 +897,22 @@ impl Interpreter {
         let shell_args = vec![
             Value::str(command),
             Value::Pair("out".to_string(), Box::new(Value::Bool(true))),
+            Value::Pair("err".to_string(), Box::new(Value::Bool(true))),
         ];
         let proc_value = self.builtin_shell(&shell_args)?;
 
-        if let Value::Instance { attributes, .. } = proc_value
-            && let Some(out_pipe) = attributes.get("out")
-        {
-            return self.call_method_with_values(out_pipe.clone(), "slurp", vec![]);
+        if let Value::Instance { attributes, .. } = proc_value {
+            if let Some(err_pipe) = attributes.get("err") {
+                let stderr = self.call_method_with_values(err_pipe.clone(), "slurp", vec![])?;
+                let stderr_text = stderr.to_string_value();
+                if !stderr_text.is_empty() {
+                    eprint!("{}", stderr_text);
+                    let _ = std::io::Write::flush(&mut std::io::stderr());
+                }
+            }
+            if let Some(out_pipe) = attributes.get("out") {
+                return self.call_method_with_values(out_pipe.clone(), "slurp", vec![]);
+            }
         }
 
         Ok(Value::str(String::new()))

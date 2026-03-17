@@ -36,6 +36,12 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
         return cached;
     }
     let result = (|| {
+        if (input.starts_with("qx") || input.starts_with("qqx"))
+            && let Ok((rest, expr)) = super::primary::string::qx_string(input)
+            && rest.trim_start().is_empty()
+        {
+            return Ok((rest, expr));
+        }
         let (rest, mut expr) = ternary(input)?;
         // Handle => (fat arrow / pair constructor) - lower precedence than ternary
         let (r, _) = ws(rest)?;
@@ -1562,6 +1568,10 @@ mod tests {
             } if matches!(
                 *expr,
                 Expr::ArrayLiteral(ref items) if items.len() == 2
+            ) || matches!(
+                *expr,
+                Expr::Call { ref name, ref args }
+                    if name.resolve() == "list" && args.len() == 2
             )
         ));
     }

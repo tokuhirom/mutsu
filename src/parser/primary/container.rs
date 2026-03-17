@@ -8,10 +8,8 @@ use crate::value::Value;
 use super::super::expr::{expression, expression_no_sequence};
 use super::super::helpers::{is_non_breaking_space, split_angle_words, ws};
 use super::super::stmt::keyword;
-use super::string::{
-    double_quoted_string, single_quoted_string, smart_double_quoted_string,
-    smart_single_quoted_string,
-};
+use super::quote_adverbs::QuoteFlags;
+use super::string::{parse_quotewords_quoted_atom, quotewords_atom_expr};
 
 /// Parse a parenthesized expression or list.
 pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
@@ -815,6 +813,9 @@ fn parse_quote_word_list<'a>(
             .map(angle_word_expr)
             .collect()
     };
+    if quoted_words {
+        return Ok((rest, super::string::make_word_result_expr(exprs)));
+    }
     if exprs.len() == 1 {
         let expr = exprs.into_iter().next().unwrap();
         // Single-word angle brackets: <7+8i> produces plain Complex, not ComplexStr
@@ -837,10 +838,27 @@ fn find_quote_word_close(input: &str, close: &str) -> Option<usize> {
     let mut i = 0usize;
     let mut quoted_by: Option<char> = None;
     let mut escaped = false;
+    let mut angle_depth = 0usize;
     while i < input.len() {
         let rest = &input[i..];
-        if quoted_by.is_none() && rest.starts_with(close) {
+        if quoted_by.is_none()
+            && angle_depth == 0
+            && rest.starts_with(close)
+            && !rest
+                .strip_prefix(close)
+                .is_some_and(|after| close == ">>" && after.starts_with('>'))
+        {
             return Some(i);
+        }
+        if quoted_by.is_none() && rest.starts_with("#`") {
+            let after = skip_quotish_embedded_comment(&rest[2..])?;
+            i = input.len() - after.len();
+            continue;
+        }
+        if quoted_by.is_none() && rest.starts_with('#') {
+            let end = rest.find('\n').unwrap_or(rest.len());
+            i += end;
+            continue;
         }
         let mut chars = rest.chars();
         let ch = chars.next()?;
@@ -861,6 +879,12 @@ fn find_quote_word_close(input: &str, close: &str) -> Option<usize> {
                 '‘' => '’',
                 _ => unreachable!(),
             });
+        } else if close == ">>" {
+            if ch == '<' {
+                angle_depth += 1;
+            } else if ch == '>' && angle_depth > 0 {
+                angle_depth -= 1;
+            }
         }
         i += ch_len;
     }
@@ -890,8 +914,9 @@ fn find_nested_angle_close(input: &str) -> Option<usize> {
 fn split_quotish_words(content: &str) -> Result<Vec<Expr>, PError> {
     let mut words = Vec::new();
     let mut rest = content;
+    let flags = QuoteFlags::qq_double();
     loop {
-        rest = trim_breaking_ws(rest);
+        rest = trim_quotish_ws_and_comments(rest)?;
         if rest.is_empty() {
             break;
         }
@@ -900,15 +925,134 @@ fn split_quotish_words(content: &str) -> Result<Vec<Expr>, PError> {
             rest = r;
             continue;
         }
-        let word_len = rest
-            .char_indices()
-            .find_map(|(idx, c)| (c.is_whitespace() && !is_non_breaking_space(c)).then_some(idx))
-            .unwrap_or(rest.len());
+        let word_len = find_quotish_word_end(rest);
         let (word, r) = rest.split_at(word_len);
-        words.push(angle_word_expr(word));
+        if word.starts_with(':')
+            && let Ok((remaining, expr)) = expression(word)
+            && remaining.is_empty()
+        {
+            words.push(Expr::MethodCall {
+                target: Box::new(expr),
+                name: Symbol::intern("item"),
+                args: vec![],
+                modifier: None,
+                quoted: false,
+            });
+        } else if word.contains('$')
+            || word.contains('@')
+            || word.contains('%')
+            || word.contains('&')
+            || word.contains('{')
+            || word.contains('\\')
+        {
+            let expr = super::quote_adverbs::process_content_with_flags(word, &flags);
+            words.push(quotewords_atom_expr(expr));
+        } else {
+            words.push(angle_word_expr(word));
+        }
         rest = r;
     }
     Ok(words)
+}
+
+fn trim_quotish_ws_and_comments(mut input: &str) -> Result<&str, PError> {
+    loop {
+        let trimmed = trim_breaking_ws(input);
+        if trimmed.len() != input.len() {
+            input = trimmed;
+            continue;
+        }
+        if let Some(after) = input.strip_prefix("#`") {
+            input = skip_quotish_embedded_comment(after)
+                .ok_or_else(|| PError::expected("Opening bracket required for #` comment"))?;
+            continue;
+        }
+        if let Some(after) = input.strip_prefix('#') {
+            let end = after.find('\n').unwrap_or(after.len());
+            input = &after[end..];
+            continue;
+        }
+        return Ok(input);
+    }
+}
+
+fn skip_quotish_embedded_comment(input: &str) -> Option<&str> {
+    let mut chars = input.chars();
+    let open = chars.next()?;
+    let close = match open {
+        '(' => ')',
+        '[' => ']',
+        '{' => '}',
+        '<' => '>',
+        '«' => '»',
+        '“' => '”',
+        '‘' => '’',
+        _ => return None,
+    };
+    let mut count = 1usize;
+    let mut rest = chars.as_str();
+    while rest.starts_with(open) {
+        count += 1;
+        rest = &rest[open.len_utf8()..];
+    }
+    let close_seq: String = std::iter::repeat_n(close, count).collect();
+    let open_seq: String = std::iter::repeat_n(open, count).collect();
+    if count == 1 {
+        let mut depth = 1i32;
+        let mut scan = rest;
+        while !scan.is_empty() {
+            let ch = scan.chars().next().unwrap();
+            if ch == open {
+                depth += 1;
+            } else if ch == close {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&scan[ch.len_utf8()..]);
+                }
+            }
+            scan = &scan[ch.len_utf8()..];
+        }
+        None
+    } else {
+        let mut depth = 1i32;
+        let mut scan = rest;
+        while !scan.is_empty() {
+            if scan.starts_with(&close_seq) {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&scan[close_seq.len()..]);
+                }
+                scan = &scan[close_seq.len()..];
+            } else if scan.starts_with(&open_seq) {
+                depth += 1;
+                scan = &scan[open_seq.len()..];
+            } else {
+                let ch = scan.chars().next().unwrap();
+                scan = &scan[ch.len_utf8()..];
+            }
+        }
+        None
+    }
+}
+
+fn find_quotish_word_end(input: &str) -> usize {
+    for (idx, c) in input.char_indices() {
+        if (c.is_whitespace() && !is_non_breaking_space(c))
+            || c == '#'
+            || c == '"'
+            || c == '\''
+            || c == '“'
+            || c == '‘'
+            || c == '”'
+            || c == '’'
+            || c == '„'
+            || c == '‚'
+            || c == '｢'
+        {
+            return idx;
+        }
+    }
+    input.len()
 }
 
 fn trim_breaking_ws(input: &str) -> &str {
@@ -924,71 +1068,52 @@ fn trim_breaking_ws(input: &str) -> &str {
 }
 
 fn parse_quoted_word(input: &str) -> Result<Option<(&str, Expr)>, PError> {
-    if let Ok((rest, expr)) = single_quoted_string(input) {
-        return quoted_word_expr(rest, expr);
-    }
-    if let Ok((rest, expr)) = smart_single_quoted_string(input) {
-        return quoted_word_expr(rest, expr);
-    }
-    if let Ok((rest, expr)) = double_quoted_string(input) {
-        return quoted_word_expr(rest, expr);
-    }
-    if let Ok((rest, expr)) = smart_double_quoted_string(input) {
-        return quoted_word_expr(rest, expr);
-    }
-    Ok(None)
+    parse_quotewords_quoted_atom(input)
+}
+pub(crate) fn angle_word_expr(word: &str) -> Expr {
+    Expr::Literal(angle_word_value(word))
 }
 
-fn quoted_word_expr(rest: &str, expr: Expr) -> Result<Option<(&str, Expr)>, PError> {
-    Ok(Some((rest, expr)))
-}
-fn angle_word_expr(word: &str) -> Expr {
+pub(crate) fn angle_word_value(word: &str) -> Value {
     // Raku `<...>` words produce allomorphic types: numeric-looking words
     // become IntStr, RatStr, NumStr, or ComplexStr — values that smartmatch
     // against both their numeric type and Str.
     // We represent allomorphs as Mixin(numeric_value, {"Str": Str(word)}).
     // Fraction notation (e.g. <3/2>) produces a plain Rat, not RatStr.
     if let Some((n, d)) = parse_angle_rat_word(word) {
-        return Expr::Literal(crate::value::make_rat(n, d));
+        return crate::value::make_rat(n, d);
     }
     if let Some(complex) = parse_angle_complex(word) {
-        return make_allomorphic_expr(complex, word);
+        return make_allomorphic_value(complex, word);
     }
     if let Ok((rest, expr)) = super::number::integer(word)
         && rest.is_empty()
+        && let Expr::Literal(val) = expr
     {
-        if let Expr::Literal(val) = expr {
-            return make_allomorphic_expr(val, word);
-        }
-        return expr;
+        return make_allomorphic_value(val, word);
     }
     if let Ok((rest, expr)) = super::number::decimal(word)
         && rest.is_empty()
+        && let Expr::Literal(val) = expr
     {
-        if let Expr::Literal(val) = expr {
-            return make_allomorphic_expr(val, word);
-        }
-        return expr;
+        return make_allomorphic_value(val, word);
     }
     if let Ok((rest, expr)) = super::number::dot_decimal(word)
         && rest.is_empty()
+        && let Expr::Literal(val) = expr
     {
-        if let Expr::Literal(val) = expr {
-            return make_allomorphic_expr(val, word);
-        }
-        return expr;
+        return make_allomorphic_value(val, word);
     }
     if let Some(val) = parse_angle_num(word) {
-        return make_allomorphic_expr(val, word);
+        return make_allomorphic_value(val, word);
     }
-    Expr::Literal(Value::str(word.to_string()))
+    Value::str(word.to_string())
 }
 
-/// Create an allomorphic expression: a numeric value that also matches Str.
-fn make_allomorphic_expr(val: Value, word: &str) -> Expr {
+fn make_allomorphic_value(val: Value, word: &str) -> Value {
     let mut mixins = std::collections::HashMap::new();
     mixins.insert("Str".to_string(), Value::str(word.to_string()));
-    Expr::Literal(Value::mixin(val, mixins))
+    Value::mixin(val, mixins)
 }
 
 fn parse_angle_rat_word(word: &str) -> Option<(i64, i64)> {

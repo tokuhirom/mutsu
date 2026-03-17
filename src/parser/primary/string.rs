@@ -8,6 +8,48 @@ use crate::value::Value;
 use super::super::expr::expression;
 use super::var::parse_var_name_from_str;
 
+fn make_list_expr(items: Vec<Expr>) -> Expr {
+    Expr::Call {
+        name: Symbol::intern("list"),
+        args: items,
+    }
+}
+
+pub(super) fn make_word_result_expr(items: Vec<Expr>) -> Expr {
+    if items.len() == 1 {
+        Expr::Call {
+            name: Symbol::intern("__mutsu_qw_result"),
+            args: items,
+        }
+    } else {
+        make_list_expr(items)
+    }
+}
+
+fn quotewords_literal_marker(s: String) -> Expr {
+    Expr::Literal(Value::Scalar(Box::new(Value::Pair(
+        "__mutsu_qw_literal".to_string(),
+        Box::new(Value::str(s)),
+    ))))
+}
+
+pub(super) fn quotewords_atom_expr(atom_expr: Expr) -> Expr {
+    let args = match atom_expr {
+        Expr::StringInterpolation(parts) => parts
+            .into_iter()
+            .map(|part| match part {
+                Expr::Literal(Value::Str(s)) => quotewords_literal_marker(s.to_string()),
+                other => other,
+            })
+            .collect(),
+        other => vec![other],
+    };
+    Expr::Call {
+        name: Symbol::intern("__mutsu_quotewords_atom"),
+        args,
+    }
+}
+
 /// Map a Unicode opening bracket to its closing counterpart (public for sibling modules).
 pub(super) fn unicode_bracket_close_pub(open: char) -> Option<char> {
     unicode_bracket_close(open)
@@ -198,6 +240,11 @@ pub(super) fn big_q_string(input: &str) -> PResult<'_, Expr> {
         return parse_to_heredoc(rest, flags.has_interpolation() || flags.qq_mode);
     }
 
+    if let Some((open, close)) = quote_delimiters(rest) {
+        flags.quote_open = Some(open);
+        flags.quote_close = Some(close);
+    }
+
     // Handle :q/:qq through existing paths when no other adverbs are set
     if flags.qq_mode
         && !flags.backslash
@@ -227,6 +274,10 @@ pub(super) fn big_q_string(input: &str) -> PResult<'_, Expr> {
     let (after, content) = read_delimited_content(rest, escape)?;
 
     // Process content with flags
+    if flags.quotewords {
+        let items = parse_quotewords_items(content, &flags)?;
+        return Ok((after, make_word_result_expr(items)));
+    }
     let expr = process_content_with_flags(content, &flags);
 
     // Apply post-processing (execute, word-split, format)
@@ -251,22 +302,26 @@ fn apply_post_processing<'a>(
     }
 
     // Handle :w/:ww word splitting
+    if flags.quotewords
+        && let Expr::Literal(Value::Str(ref s)) = expr
+    {
+        let items = parse_quotewords_items(s, flags)?;
+        return Ok((after, make_word_result_expr(items)));
+    }
+
     if flags.words || flags.quotewords {
         if let Expr::Literal(Value::Str(ref s)) = expr {
             let words: Vec<Expr> = s
                 .split_whitespace()
                 .map(|w| Expr::Literal(Value::str(w.to_string())))
                 .collect();
-            return Ok((after, Expr::ArrayLiteral(words)));
+            return Ok((after, make_word_result_expr(words)));
         }
         return Ok((
             after,
-            Expr::MethodCall {
-                target: Box::new(expr),
-                name: Symbol::intern("words"),
-                args: vec![],
-                modifier: None,
-                quoted: false,
+            Expr::Call {
+                name: Symbol::intern("__mutsu_words_atom"),
+                args: vec![expr],
             },
         ));
     }
@@ -282,6 +337,160 @@ fn apply_post_processing<'a>(
     }
 
     Ok((after, expr))
+}
+
+fn parse_quotewords_items(
+    content: &str,
+    flags: &super::quote_adverbs::QuoteFlags,
+) -> Result<Vec<Expr>, PError> {
+    let mut items = Vec::new();
+    let mut rest = content;
+    loop {
+        rest = trim_quotewords_ws_and_comments(rest)?;
+        if rest.is_empty() {
+            break;
+        }
+        if let Some((next, quoted)) = parse_quotewords_quoted_atom(rest)? {
+            items.push(quoted);
+            rest = next;
+            continue;
+        }
+
+        let atom_len = find_quotewords_atom_end(rest);
+        let (atom, next) = rest.split_at(atom_len);
+        let atom_expr = super::quote_adverbs::process_content_with_flags(atom, flags);
+        items.push(quotewords_atom_expr(atom_expr));
+        rest = next;
+    }
+    Ok(items)
+}
+
+fn trim_quotewords_ws_and_comments(mut input: &str) -> Result<&str, PError> {
+    loop {
+        let trimmed = input.trim_start_matches(|c: char| c.is_whitespace());
+        if trimmed.len() != input.len() {
+            input = trimmed;
+            continue;
+        }
+        if let Some(after) = input.strip_prefix("#`") {
+            input = skip_quotewords_embedded_comment(after)
+                .ok_or_else(|| PError::expected("Opening bracket required for #` comment"))?;
+            continue;
+        }
+        if let Some(after) = input.strip_prefix('#') {
+            let end = after.find('\n').unwrap_or(after.len());
+            input = &after[end..];
+            continue;
+        }
+        return Ok(input);
+    }
+}
+
+fn skip_quotewords_embedded_comment(input: &str) -> Option<&str> {
+    let mut chars = input.chars();
+    let open = chars.next()?;
+    let close = unicode_bracket_close(open)?;
+    let mut count = 1usize;
+    let mut rest = chars.as_str();
+    while rest.starts_with(open) {
+        count += 1;
+        rest = &rest[open.len_utf8()..];
+    }
+    let close_seq: String = std::iter::repeat_n(close, count).collect();
+    let open_seq: String = std::iter::repeat_n(open, count).collect();
+    if count == 1 {
+        let mut depth = 1i32;
+        let mut scan = rest;
+        while !scan.is_empty() {
+            let ch = scan.chars().next().unwrap();
+            if ch == open {
+                depth += 1;
+            } else if ch == close {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&scan[ch.len_utf8()..]);
+                }
+            }
+            scan = &scan[ch.len_utf8()..];
+        }
+        None
+    } else {
+        let mut depth = 1i32;
+        let mut scan = rest;
+        while !scan.is_empty() {
+            if scan.starts_with(&close_seq) {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&scan[close_seq.len()..]);
+                }
+                scan = &scan[close_seq.len()..];
+            } else if scan.starts_with(&open_seq) {
+                depth += 1;
+                scan = &scan[open_seq.len()..];
+            } else {
+                let ch = scan.chars().next().unwrap();
+                scan = &scan[ch.len_utf8()..];
+            }
+        }
+        None
+    }
+}
+
+pub(super) fn parse_quotewords_quoted_atom(input: &str) -> Result<Option<(&str, Expr)>, PError> {
+    if let Ok((rest, expr)) = single_quoted_string(input) {
+        return Ok(Some((rest, expr)));
+    }
+    if let Some((rest, expr)) = parse_quotewords_unicode_quoted_atom(input) {
+        return Ok(Some((rest, expr)));
+    }
+    if let Ok((rest, expr)) = double_quoted_string(input) {
+        return Ok(Some((rest, expr)));
+    }
+    Ok(None)
+}
+
+fn find_quotewords_atom_end(input: &str) -> usize {
+    for (idx, ch) in input.char_indices() {
+        if ch.is_whitespace()
+            || matches!(
+                ch,
+                '#' | '"' | '\'' | '“' | '”' | '„' | '‘' | '’' | '‚' | '｢'
+            )
+        {
+            return idx;
+        }
+    }
+    input.len()
+}
+
+fn parse_quotewords_unicode_quoted_atom(input: &str) -> Option<(&str, Expr)> {
+    let first = input.chars().next()?;
+    match first {
+        '‘' | '’' | '‚' => parse_quotewords_single_quote_atom(input),
+        '“' | '”' | '„' => {
+            let (rest, content) = parse_quotewords_quote_span(input, &['“', '”'])?;
+            Some((rest, interpolate_string_content(content)))
+        }
+        '｢' => corner_bracket_string(input).ok(),
+        _ => None,
+    }
+}
+
+fn parse_quotewords_single_quote_atom(input: &str) -> Option<(&str, Expr)> {
+    let (rest, content) = parse_quotewords_quote_span(input, &['‘', '’'])?;
+    Some((rest, Expr::Literal(Value::str(content.to_string()))))
+}
+
+fn parse_quotewords_quote_span<'a>(input: &'a str, closers: &[char]) -> Option<(&'a str, &'a str)> {
+    let first = input.chars().next()?;
+    let body = &input[first.len_utf8()..];
+    for (idx, ch) in body.char_indices() {
+        if closers.contains(&ch) {
+            let rest = &body[idx + ch.len_utf8()..];
+            return Some((rest, &body[..idx]));
+        }
+    }
+    None
 }
 
 /// Read delimited content from input. Handles bracket-style and symmetric delimiters.
@@ -321,6 +530,19 @@ fn read_delimited_content<'a>(input: &'a str, escape_backslash: bool) -> PResult
     let content = &after_open[..end];
     let after = &after_open[end + delim_char.len_utf8()..];
     Ok((after, content))
+}
+
+fn quote_delimiters(input: &str) -> Option<(char, char)> {
+    let rest = input.trim_start_matches(' ');
+    let open = rest.chars().next()?;
+    let close = match open {
+        '{' => '}',
+        '[' => ']',
+        '(' => ')',
+        '<' => '>',
+        _ => unicode_bracket_close(open).unwrap_or(open),
+    };
+    Some((open, close))
 }
 
 /// Find the position of the first unescaped occurrence of `delim` in `s`.
@@ -443,47 +665,10 @@ fn parse_to_heredoc(input: &str, interpolate: bool) -> PResult<'_, Expr> {
 }
 
 fn interpolate_heredoc_content(content: &str) -> Expr {
-    let mut parts: Vec<Expr> = Vec::new();
-    let mut current = String::new();
-    let mut rest = content;
-
-    while !rest.is_empty() {
-        if rest.starts_with("\\$")
-            || rest.starts_with("\\@")
-            || rest.starts_with("\\%")
-            || rest.starts_with("\\&")
-            || rest.starts_with("\\{")
-            || rest.starts_with("\\}")
-            || rest.starts_with("\\\\")
-        {
-            let escaped = rest.as_bytes()[1] as char;
-            current.push(escaped);
-            rest = &rest[2..];
-            continue;
-        }
-        // Handle {expr} closure interpolation in qq:to heredocs
-        if rest.starts_with('{')
-            && let Some((after, inner)) = parse_braced_interpolation(rest)
-            && let Ok((remaining, expr)) = crate::parser::expr::expression(inner.trim())
-            && remaining.trim().is_empty()
-        {
-            if !current.is_empty() {
-                parts.push(Expr::Literal(Value::str(std::mem::take(&mut current))));
-            }
-            parts.push(expr);
-            rest = after;
-            continue;
-        }
-        if let Some(r) = try_interpolate_var(rest, &mut parts, &mut current) {
-            rest = r;
-            continue;
-        }
-        let ch = rest.chars().next().expect("non-empty");
-        current.push(ch);
-        rest = &rest[ch.len_utf8()..];
-    }
-
-    finalize_interpolation(parts, current)
+    super::quote_adverbs::process_content_with_flags(
+        content,
+        &super::quote_adverbs::QuoteFlags::qq_double(),
+    )
 }
 
 fn parse_to_heredoc_delimiter(input: &str) -> PResult<'_, &'_ str> {
@@ -523,6 +708,12 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("q string"));
     }
     let mut after_q = &input[1..];
+
+    if let Some(after_paren) = after_q.strip_prefix('(')
+        && !after_paren.starts_with('(')
+    {
+        return Err(PError::expected("q string"));
+    }
 
     // q:nfc, q:nfd, q:nfkc, q:nfkd — Unicode normalization adverbs
     for nf_form in &[":nfkc", ":nfkd", ":nfc", ":nfd"] {
@@ -580,6 +771,11 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
         ));
     }
 
+    if let Some((open, close)) = quote_delimiters(after_q) {
+        flags.quote_open = Some(open);
+        flags.quote_close = Some(close);
+    }
+
     // Read delimited content
     let escape = flags.q_mode || flags.qq_mode || flags.backslash;
     let (rest, content) = read_delimited_content(after_q, escape)?;
@@ -616,6 +812,10 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
     }
 
     // Process content with flags
+    if flags.quotewords {
+        let items = parse_quotewords_items(content, &flags)?;
+        return Ok((rest, make_word_result_expr(items)));
+    }
     let expr = process_content_with_flags(content, &flags);
 
     // Apply post-processing (execute, word-split, format)
@@ -873,7 +1073,7 @@ fn parse_q_quoted_content(input: &str, is_qq: bool, q_closure_interp: bool) -> P
 /// Parse qx{...}, qqx{...} forms.
 /// qx executes with single-quote (backslash) interpolation.
 /// qqx executes with full interpolation.
-pub(super) fn qx_string(input: &str) -> PResult<'_, Expr> {
+pub(in crate::parser) fn qx_string(input: &str) -> PResult<'_, Expr> {
     // Try qqx first, then qx
     let (after_qx, is_qq) = if let Some(r) = input.strip_prefix("qqx") {
         (r, true)
@@ -1630,6 +1830,39 @@ pub(super) fn try_interpolate_var<'a>(
     None
 }
 
+fn has_malformed_angle_interpolation(rest: &str) -> bool {
+    let mut chars = rest.chars();
+    let Some(sigil) = chars.next() else {
+        return false;
+    };
+    if !matches!(sigil, '$' | '@' | '%') {
+        return false;
+    }
+    let mut after_name = chars.as_str();
+    let mut saw_name = false;
+    while let Some(ch) = after_name.chars().next() {
+        if ch.is_alphanumeric() || ch == '_' || ch == '-' {
+            saw_name = true;
+            after_name = &after_name[ch.len_utf8()..];
+        } else {
+            break;
+        }
+    }
+    if !saw_name {
+        return false;
+    }
+    if let Some(after_open) = after_name.strip_prefix("<<") {
+        return !after_open.contains(">>");
+    }
+    if let Some(after_open) = after_name.strip_prefix('«') {
+        return !after_open.contains('»');
+    }
+    if let Some(after_open) = after_name.strip_prefix('<') {
+        return !after_open.contains('>');
+    }
+    false
+}
+
 /// Assemble interpolation parts into a final expression.
 pub(super) fn finalize_interpolation(parts: Vec<Expr>, current: String) -> Expr {
     if parts.is_empty() {
@@ -1932,6 +2165,9 @@ pub(super) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
             }
             continue;
         }
+        if has_malformed_angle_interpolation(rest) {
+            return Err(PError::expected("closing '>' in interpolated index"));
+        }
         if let Some(r) = try_interpolate_var(rest, &mut parts, &mut current) {
             rest = r;
             continue;
@@ -2002,7 +2238,7 @@ pub(super) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
         }
         if rest.starts_with('\\') && rest.len() > 1 {
             if let Some((r, needs_continue)) =
-                process_escape_sequence(rest, &mut current, &['”', '{', '}'])
+                process_escape_sequence(rest, &mut current, &['“', '{', '}'])
             {
                 rest = r;
                 if needs_continue {
@@ -2015,6 +2251,9 @@ pub(super) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
                 rest = &rest[2..];
             }
             continue;
+        }
+        if has_malformed_angle_interpolation(rest) {
+            return Err(PError::expected("closing '>' in interpolated index"));
         }
         if let Some(r) = try_interpolate_var(rest, &mut parts, &mut current) {
             rest = r;

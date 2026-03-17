@@ -49,7 +49,7 @@ impl Compiler {
     pub(super) fn compile_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Expr(expr) => {
-                self.compile_expr(expr);
+                self.compile_condition_expr(expr);
                 self.code.emit(OpCode::SinkPop);
             }
             Stmt::Block(stmts) => {

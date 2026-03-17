@@ -642,6 +642,13 @@ fn statement(input: &str) -> PResult<'_, Stmt> {
     if let Some(cached) = STMT_MEMO.get(input) {
         return cached;
     }
+    if (input.starts_with("qx") || input.starts_with("qqx"))
+        && let Ok((rest, expr)) = crate::parser::primary::string::qx_string(input)
+    {
+        let result = parse_statement_modifier(rest, Stmt::Expr(expr));
+        STMT_MEMO.store(input, &result);
+        return result;
+    }
     let input_len = input.len();
     let mut best_error: Option<(usize, PError)> = None;
     let mut early_success: Option<(&str, Stmt)> = None;

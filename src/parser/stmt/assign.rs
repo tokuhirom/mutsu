@@ -1540,6 +1540,9 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     // Try bare identifier assignment for sigilless variables: a = expr
     if !is_sigiled {
         if let Ok((after_ident, bare_name)) = ident(input) {
+            if bare_name == "qx" || bare_name == "qqx" {
+                return Err(PError::expected("assignment"));
+            }
             let (after_ws, _) = ws(after_ident)?;
             if (after_ws.starts_with('=') && !after_ws.starts_with("=="))
                 || after_ws.starts_with("⚛=")
