@@ -1665,6 +1665,31 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             r,
         ));
     }
+    // Detect !+ !- !* !/ !~ (non-comparison) which cannot be negated
+    if r.starts_with("!+") && !r.starts_with("!+&") {
+        return Err(PError::expected_at(
+            "X::Syntax::CannotMeta: Cannot negate + because it is not iffy enough",
+            r,
+        ));
+    }
+    if r.starts_with("!-") && !r.starts_with("!--") {
+        return Err(PError::expected_at(
+            "X::Syntax::CannotMeta: Cannot negate - because it is not iffy enough",
+            r,
+        ));
+    }
+    if r.starts_with("!*") && !r.starts_with("!**") {
+        return Err(PError::expected_at(
+            "X::Syntax::CannotMeta: Cannot negate * because it is not iffy enough",
+            r,
+        ));
+    }
+    if r.starts_with("!/") && !r.starts_with("!//") {
+        return Err(PError::expected_at(
+            "X::Syntax::CannotMeta: Cannot negate / because it is not iffy enough",
+            r,
+        ));
+    }
     // Detect !. which is not a valid metaop
     if r.starts_with("!.") && !r.starts_with("!..") {
         let after = &r[2..];
