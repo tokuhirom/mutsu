@@ -8,6 +8,10 @@ pub(super) const BOUND_HASH_REF_SENTINEL: &str = "__mutsu_bound_hash_ref";
 const SELF_ARRAY_REF_SENTINEL: &str = "__mutsu_self_array_ref";
 
 impl VM {
+    fn range_end_is_unbounded(end: i64) -> bool {
+        end == i64::MAX
+    }
+
     /// When binding a Proxy to a variable, update the captured envs of its
     /// FETCH/STORE closures to include the Proxy itself under the variable name.
     /// This simulates capture-by-reference for the common Proxy binding pattern:
@@ -913,7 +917,11 @@ impl VM {
             }
             (Value::Array(items, kind), Value::Range(a, b)) => {
                 let start = a.max(0) as usize;
-                let end = b.max(-1) as usize;
+                let end = if Self::range_end_is_unbounded(b) {
+                    items.len().saturating_sub(1)
+                } else {
+                    b.max(-1) as usize
+                };
                 let default = self.typed_container_default(&Value::Array(items.clone(), kind));
                 let mut slice = Vec::new();
                 for i in start..=end {
@@ -927,7 +935,11 @@ impl VM {
             }
             (Value::Array(items, kind), Value::RangeExcl(a, b)) => {
                 let start = a.max(0) as usize;
-                let end_excl = b.max(0) as usize;
+                let end_excl = if Self::range_end_is_unbounded(b) {
+                    items.len()
+                } else {
+                    b.max(0) as usize
+                };
                 if start >= end_excl {
                     if kind.is_real_array() {
                         Value::array(Vec::new())

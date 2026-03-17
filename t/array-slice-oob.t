@@ -1,5 +1,5 @@
 use Test;
-plan 12;
+plan 13;
 
 # Array slicing beyond bounds should pad with Nil
 {
@@ -31,6 +31,12 @@ plan 12;
     my @a = 1, 2, 3;
     is-deeply @a[0, 1, 2, 3, 4], (1, 2, 3, Nil, Nil),
         'array index slice pads with Nil';
+}
+
+# Open-ended slices should clip at array boundary
+{
+    my @a = 1, 2, 3, 4;
+    is-deeply @a[2..*], (3, 4), 'inclusive open-ended slice clips at boundary';
 }
 
 # Seq/List slicing pads with Nil
