@@ -1704,7 +1704,7 @@ pub(crate) fn native_method_2arg(
             let bytes = buf_get_bytes(target)?;
             let offset_i64 = to_int_val(arg1);
             let endian_val = match arg2 {
-                Value::Enum { value, .. } => *value,
+                Value::Enum { value, .. } => value.as_i64(),
                 Value::Int(i) => *i,
                 _ => 0, // NativeEndian
             };

@@ -807,7 +807,7 @@ impl Interpreter {
                         0.0
                     }
                 }
-                Value::Enum { value, .. } => *value as f64,
+                Value::Enum { value, .. } => value.as_i64() as f64,
                 Value::Array(items, kind) => {
                     if kind.is_itemized() {
                         0.0

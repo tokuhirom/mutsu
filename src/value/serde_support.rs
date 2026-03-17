@@ -4,7 +4,7 @@
 //! variants (Sub, WeakSub, Promise, Channel, LazyList, Proxy, CustomType, etc.)
 //! are rejected at serialization time with an error.
 
-use super::{ArrayKind, JunctionKind, Value, VersionPart};
+use super::{ArrayKind, EnumValue, JunctionKind, Value, VersionPart};
 use crate::symbol::Symbol;
 use num_bigint::BigInt as NumBigInt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -53,7 +53,7 @@ enum SerValue {
     Enum {
         enum_type: Symbol,
         key: Symbol,
-        value: i64,
+        value: EnumValue,
         index: usize,
     },
     Regex(String),
@@ -180,7 +180,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
         } => Ok(SerValue::Enum {
             enum_type: *enum_type,
             key: *key,
-            value: *value,
+            value: value.clone(),
             index: *index,
         }),
         Value::Regex(s) => Ok(SerValue::Regex((**s).clone())),

@@ -888,9 +888,9 @@ impl Interpreter {
 
     pub(super) fn init_endian_enum(&mut self) {
         let variants = vec![
-            ("NativeEndian".to_string(), 0i64),
-            ("LittleEndian".to_string(), 1i64),
-            ("BigEndian".to_string(), 2i64),
+            ("NativeEndian".to_string(), EnumValue::Int(0)),
+            ("LittleEndian".to_string(), EnumValue::Int(1)),
+            ("BigEndian".to_string(), EnumValue::Int(2)),
         ];
         self.enum_types
             .insert("Endian".to_string(), variants.clone());
@@ -900,7 +900,7 @@ impl Interpreter {
             let enum_val = Value::Enum {
                 enum_type: Symbol::intern("Endian"),
                 key: Symbol::intern(key),
-                value: *val,
+                value: val.clone(),
                 index,
             };
             // Register as both Endian::NativeEndian and bare NativeEndian
@@ -912,12 +912,12 @@ impl Interpreter {
 
     pub(super) fn init_protocol_family_enum(&mut self) {
         let variants = vec![
-            ("PF_UNSPEC".to_string(), 0i64),
-            ("PF_INET".to_string(), 1i64),
-            ("PF_INET6".to_string(), 2i64),
-            ("PF_LOCAL".to_string(), 3i64),
-            ("PF_UNIX".to_string(), 3i64),
-            ("PF_MAX".to_string(), 4i64),
+            ("PF_UNSPEC".to_string(), EnumValue::Int(0)),
+            ("PF_INET".to_string(), EnumValue::Int(1)),
+            ("PF_INET6".to_string(), EnumValue::Int(2)),
+            ("PF_LOCAL".to_string(), EnumValue::Int(3)),
+            ("PF_UNIX".to_string(), EnumValue::Int(3)),
+            ("PF_MAX".to_string(), EnumValue::Int(4)),
         ];
         self.enum_types
             .insert("ProtocolFamily".to_string(), variants.clone());
@@ -929,7 +929,7 @@ impl Interpreter {
             let enum_val = Value::Enum {
                 enum_type: Symbol::intern("ProtocolFamily"),
                 key: Symbol::intern(key),
-                value: *val,
+                value: val.clone(),
                 index,
             };
             self.env
@@ -940,9 +940,9 @@ impl Interpreter {
 
     pub(super) fn init_order_enum(&mut self) {
         let variants = vec![
-            ("Less".to_string(), -1i64),
-            ("Same".to_string(), 0i64),
-            ("More".to_string(), 1i64),
+            ("Less".to_string(), EnumValue::Int(-1)),
+            ("Same".to_string(), EnumValue::Int(0)),
+            ("More".to_string(), EnumValue::Int(1)),
         ];
         self.enum_types
             .insert("Order".to_string(), variants.clone());
@@ -952,7 +952,7 @@ impl Interpreter {
             let enum_val = Value::Enum {
                 enum_type: Symbol::intern("Order"),
                 key: Symbol::intern(key),
-                value: *val,
+                value: val.clone(),
                 index,
             };
             self.env.insert(format!("Order::{}", key), enum_val.clone());
@@ -963,25 +963,25 @@ impl Interpreter {
     pub(super) fn init_signal_enum(&mut self) {
         // Use libc constants on Unix, standard POSIX numbers on other platforms
         let variants = vec![
-            ("SIGHUP".to_string(), Self::sig_num(1)),
-            ("SIGINT".to_string(), Self::sig_num(2)),
-            ("SIGQUIT".to_string(), Self::sig_num(3)),
-            ("SIGILL".to_string(), Self::sig_num(4)),
-            ("SIGABRT".to_string(), Self::sig_num(6)),
-            ("SIGFPE".to_string(), Self::sig_num(8)),
-            ("SIGKILL".to_string(), Self::sig_num(9)),
-            ("SIGSEGV".to_string(), Self::sig_num(11)),
-            ("SIGPIPE".to_string(), Self::sig_num(13)),
-            ("SIGALRM".to_string(), Self::sig_num(14)),
-            ("SIGTERM".to_string(), Self::sig_num(15)),
-            ("SIGUSR1".to_string(), Self::sig_num(10)),
-            ("SIGUSR2".to_string(), Self::sig_num(12)),
-            ("SIGCHLD".to_string(), Self::sig_num(17)),
-            ("SIGCONT".to_string(), Self::sig_num(18)),
-            ("SIGSTOP".to_string(), Self::sig_num(19)),
-            ("SIGTSTP".to_string(), Self::sig_num(20)),
-            ("SIGTTIN".to_string(), Self::sig_num(21)),
-            ("SIGTTOU".to_string(), Self::sig_num(22)),
+            ("SIGHUP".to_string(), EnumValue::Int(Self::sig_num(1))),
+            ("SIGINT".to_string(), EnumValue::Int(Self::sig_num(2))),
+            ("SIGQUIT".to_string(), EnumValue::Int(Self::sig_num(3))),
+            ("SIGILL".to_string(), EnumValue::Int(Self::sig_num(4))),
+            ("SIGABRT".to_string(), EnumValue::Int(Self::sig_num(6))),
+            ("SIGFPE".to_string(), EnumValue::Int(Self::sig_num(8))),
+            ("SIGKILL".to_string(), EnumValue::Int(Self::sig_num(9))),
+            ("SIGSEGV".to_string(), EnumValue::Int(Self::sig_num(11))),
+            ("SIGPIPE".to_string(), EnumValue::Int(Self::sig_num(13))),
+            ("SIGALRM".to_string(), EnumValue::Int(Self::sig_num(14))),
+            ("SIGTERM".to_string(), EnumValue::Int(Self::sig_num(15))),
+            ("SIGUSR1".to_string(), EnumValue::Int(Self::sig_num(10))),
+            ("SIGUSR2".to_string(), EnumValue::Int(Self::sig_num(12))),
+            ("SIGCHLD".to_string(), EnumValue::Int(Self::sig_num(17))),
+            ("SIGCONT".to_string(), EnumValue::Int(Self::sig_num(18))),
+            ("SIGSTOP".to_string(), EnumValue::Int(Self::sig_num(19))),
+            ("SIGTSTP".to_string(), EnumValue::Int(Self::sig_num(20))),
+            ("SIGTTIN".to_string(), EnumValue::Int(Self::sig_num(21))),
+            ("SIGTTOU".to_string(), EnumValue::Int(Self::sig_num(22))),
         ];
         self.enum_types
             .insert("Signal".to_string(), variants.clone());
@@ -991,7 +991,7 @@ impl Interpreter {
             let enum_val = Value::Enum {
                 enum_type: Symbol::intern("Signal"),
                 key: Symbol::intern(key),
-                value: *val,
+                value: val.clone(),
                 index,
             };
             self.env

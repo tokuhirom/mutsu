@@ -22,15 +22,38 @@ impl Interpreter {
 
         match method {
             "key" => Some(Ok(Value::str(key.resolve()))),
-            "value" | "Int" | "Numeric" => Some(Ok(Value::Int(*value))),
+            "value" | "Int" | "Numeric" => match value {
+                EnumValue::Int(i) => Some(Ok(Value::Int(*i))),
+                EnumValue::Str(s) => {
+                    if method == "value" {
+                        Some(Ok(Value::str(s.clone())))
+                    } else {
+                        // .Int / .Numeric on a string enum should try to coerce
+                        None // fall through to runtime for proper error
+                    }
+                }
+            },
             "WHAT" => Some(Ok(Value::Package(*enum_type))),
             "raku" | "perl" => Some(Ok(Value::str(format!("{}::{}", enum_type, key)))),
-            "gist" | "Str" => Some(Ok(Value::str(key.resolve()))),
-            "kv" => Some(Ok(Value::array(vec![
-                Value::str(key.resolve()),
-                Value::Int(*value),
-            ]))),
-            "pair" => Some(Ok(Value::Pair(key.resolve(), Box::new(Value::Int(*value))))),
+            "gist" => Some(Ok(Value::str(key.resolve()))),
+            "Str" => match value {
+                EnumValue::Int(_) => Some(Ok(Value::str(key.resolve()))),
+                EnumValue::Str(s) => Some(Ok(Value::str(s.clone()))),
+            },
+            "kv" => {
+                let val = match value {
+                    EnumValue::Int(i) => Value::Int(*i),
+                    EnumValue::Str(s) => Value::str(s.clone()),
+                };
+                Some(Ok(Value::array(vec![Value::str(key.resolve()), val])))
+            }
+            "pair" => {
+                let val = match value {
+                    EnumValue::Int(i) => Value::Int(*i),
+                    EnumValue::Str(s) => Value::str(s.clone()),
+                };
+                Some(Ok(Value::Pair(key.resolve(), Box::new(val))))
+            }
             "ACCEPTS" => {
                 if args.is_empty() {
                     return Some(Err(RuntimeError::new("ACCEPTS requires an argument")));
@@ -55,7 +78,7 @@ impl Interpreter {
                     return Some(Ok(Value::Enum {
                         enum_type: *enum_type,
                         key: Symbol::intern(prev_key),
-                        value: *prev_val,
+                        value: prev_val.clone(),
                         index: index - 1,
                     }));
                 }
@@ -68,7 +91,7 @@ impl Interpreter {
                     return Some(Ok(Value::Enum {
                         enum_type: *enum_type,
                         key: Symbol::intern(next_key),
-                        value: *next_val,
+                        value: next_val.clone(),
                         index: index + 1,
                     }));
                 }

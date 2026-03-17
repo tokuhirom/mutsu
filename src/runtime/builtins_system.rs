@@ -1184,7 +1184,7 @@ impl Interpreter {
         let signals: Vec<(i64, Value)> = args
             .iter()
             .filter_map(|v| match v {
-                Value::Enum { value, .. } => Some((*value, v.clone())),
+                Value::Enum { value, .. } => Some((value.as_i64(), v.clone())),
                 Value::Int(i) => Some((*i, v.clone())),
                 _ => None,
             })

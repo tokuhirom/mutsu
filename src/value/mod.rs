@@ -281,6 +281,31 @@ impl ArrayKind {
     }
 }
 
+/// Value stored in an enum variant: either an integer or a string.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum EnumValue {
+    Int(i64),
+    Str(String),
+}
+
+impl EnumValue {
+    /// Return the integer value, or 0 for string enums.
+    pub fn as_i64(&self) -> i64 {
+        match self {
+            EnumValue::Int(i) => *i,
+            EnumValue::Str(_) => 0,
+        }
+    }
+
+    /// Return the string representation for `.Str` coercion.
+    pub fn to_str_value(&self) -> String {
+        match self {
+            EnumValue::Int(i) => i.to_string(),
+            EnumValue::Str(s) => s.clone(),
+        }
+    }
+}
+
 #[allow(private_interfaces)]
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -324,7 +349,7 @@ pub enum Value {
     Enum {
         enum_type: Symbol,
         key: Symbol,
-        value: i64,
+        value: EnumValue,
         index: usize,
     },
     Regex(Arc<String>),

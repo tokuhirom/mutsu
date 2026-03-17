@@ -2,7 +2,7 @@
 
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::value::{ArrayKind, RuntimeError, Value, make_big_rat, make_rat};
+use crate::value::{ArrayKind, EnumValue, RuntimeError, Value, make_big_rat, make_rat};
 use num_traits::{Signed, ToPrimitive, Zero};
 use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
@@ -1341,7 +1341,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             } else {
                 "BigEndian"
             }),
-            value: if cfg!(target_endian = "little") { 1 } else { 2 },
+            value: EnumValue::Int(if cfg!(target_endian = "little") { 1 } else { 2 }),
             index: if cfg!(target_endian = "little") { 1 } else { 2 },
         }));
     }
@@ -1429,6 +1429,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "Str" | "Stringy" => match target {
             Value::Package(_) | Value::Instance { .. } => None,
             Value::LazyList(_) => None, // fall through to runtime to force the list
+            Value::Enum { .. } => None, // fall through to enum dispatch for string enum support
             Value::Str(s) if s.as_str() == "IO::Special" => Some(Ok(Value::str_from(""))),
             Value::Rat(_, 0) | Value::FatRat(_, 0) => {
                 // Zero-denominator Rat/FatRat .Str throws X::Numeric::DivideByZero
@@ -2093,7 +2094,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         Value::Complex(re / abs, im / abs)
                     }
                 }
-                Value::Enum { value, .. } => Value::Int(value.signum()),
+                Value::Enum { value, .. } => Value::Int(value.as_i64().signum()),
                 _ => return None,
             };
             Some(Ok(result))

@@ -660,7 +660,7 @@ impl Interpreter {
                         .map(|(index, (key, val))| Value::Enum {
                             enum_type: Symbol::intern(&type_name),
                             key: Symbol::intern(key),
-                            value: *val,
+                            value: val.clone(),
                             index,
                         })
                         .collect();

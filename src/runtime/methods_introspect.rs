@@ -334,7 +334,7 @@ impl Interpreter {
                 .map(|(index, (key, val))| Value::Enum {
                     enum_type: Symbol::intern(type_name),
                     key: Symbol::intern(key),
-                    value: *val,
+                    value: val.clone(),
                     index,
                 })
                 .collect();
@@ -356,7 +356,11 @@ impl Interpreter {
         {
             let mut map = HashMap::new();
             for (k, v) in variants {
-                map.insert(k.clone(), Value::Int(*v));
+                let val = match v {
+                    EnumValue::Int(i) => Value::Int(*i),
+                    EnumValue::Str(s) => Value::str(s.clone()),
+                };
+                map.insert(k.clone(), val);
             }
             return Some(Ok(Value::hash(map)));
         }
@@ -373,7 +377,10 @@ impl Interpreter {
         {
             let mut result = Vec::new();
             for (k, v) in variants {
-                result.push(Value::Pair(v.to_string(), Box::new(Value::str(k.clone()))));
+                result.push(Value::Pair(
+                    v.to_str_value(),
+                    Box::new(Value::str(k.clone())),
+                ));
             }
             return Some(Ok(Value::array(result)));
         }

@@ -595,21 +595,21 @@ impl VM {
             Value::Enum {
                 enum_type: Symbol::intern("Order"),
                 key: Symbol::intern("Less"),
-                value: -1,
+                value: EnumValue::Int(-1),
                 index: 0,
             }
         } else if name == "Order::Same" {
             Value::Enum {
                 enum_type: Symbol::intern("Order"),
                 key: Symbol::intern("Same"),
-                value: 0,
+                value: EnumValue::Int(0),
                 index: 1,
             }
         } else if name == "Order::More" {
             Value::Enum {
                 enum_type: Symbol::intern("Order"),
                 key: Symbol::intern("More"),
-                value: 1,
+                value: EnumValue::Int(1),
                 index: 2,
             }
         } else if (name.starts_with("infix:<")
