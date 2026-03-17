@@ -899,13 +899,7 @@ impl VM {
             (Value::Array(items, kind), Value::Range(a, b)) => {
                 let start = a.max(0) as usize;
                 let end = b.max(-1) as usize;
-                let slice = if kind.is_real_array() {
-                    // Real Arrays pad out-of-bounds with the typed default
-                    let default = self.typed_container_default(&Value::Array(items.clone(), kind));
-                    (start..=end)
-                        .map(|i| items.get(i).cloned().unwrap_or_else(|| default.clone()))
-                        .collect()
-                } else if start >= items.len() {
+                let slice = if start >= items.len() {
                     Vec::new()
                 } else {
                     let end = end.min(items.len().saturating_sub(1));
@@ -920,35 +914,20 @@ impl VM {
             (Value::Array(items, kind), Value::RangeExcl(a, b)) => {
                 let start = a.max(0) as usize;
                 let end_excl = b.max(0) as usize;
-                if start >= end_excl {
-                    if kind.is_real_array() {
-                        Value::array(Vec::new())
-                    } else {
-                        Value::Seq(Arc::new(Vec::new()))
-                    }
+                let slice = if start >= items.len() {
+                    Vec::new()
                 } else {
-                    let slice = if kind.is_real_array() {
-                        // Real Arrays pad out-of-bounds with the typed default
-                        let default =
-                            self.typed_container_default(&Value::Array(items.clone(), kind));
-                        (start..end_excl)
-                            .map(|i| items.get(i).cloned().unwrap_or_else(|| default.clone()))
-                            .collect()
-                    } else if start >= items.len() {
+                    let end_excl = end_excl.min(items.len());
+                    if start >= end_excl {
                         Vec::new()
                     } else {
-                        let end_excl = end_excl.min(items.len());
-                        if start >= end_excl {
-                            Vec::new()
-                        } else {
-                            items[start..end_excl].to_vec()
-                        }
-                    };
-                    if kind.is_real_array() {
-                        Value::array(slice)
-                    } else {
-                        Value::Seq(Arc::new(slice))
+                        items[start..end_excl].to_vec()
                     }
+                };
+                if kind.is_real_array() {
+                    Value::array(slice)
+                } else {
+                    Value::Seq(Arc::new(slice))
                 }
             }
             (Value::Array(items, is_arr), Value::Num(n)) => {
