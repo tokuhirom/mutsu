@@ -10,7 +10,7 @@ use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 use super::expression;
-use super::operators::{parse_postfix_update_op, parse_prefix_unary_op};
+use super::operators::{PrefixUnaryOp, parse_postfix_update_op, parse_prefix_unary_op};
 
 /// When a prefix operator is applied to a WhateverCode (Lambda or AnonSubParams),
 /// compose the prefix into the body so that `+(* + 1)` becomes `-> $_ { +($_ + 1) }`
@@ -778,6 +778,23 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         } else {
             prefix_expr(rest)?
         };
+        // Detect precedence confusion: `!%h<a>:exists` should be `:!exists`
+        // Only trigger when the operand was NOT parenthesized (i.e., not `!(%h<a>:exists)`)
+        if op == PrefixUnaryOp::Not
+            && matches!(&expr, Expr::Exists { .. })
+            && !input[len..].trim_start().starts_with('(')
+        {
+            return Ok((
+                rest,
+                Expr::Call {
+                    name: Symbol::intern("die"),
+                    args: vec![Expr::Literal(Value::str(
+                        "Precedence issue with ! and :exists, perhaps you meant :!exists?"
+                            .to_string(),
+                    ))],
+                },
+            ));
+        }
         // If the operand is a WhateverCode (Lambda or AnonSubParams), compose
         // the prefix operator into its body instead of wrapping it.
         let result = compose_prefix_into_whatevercode(op.token_kind(), expr);
