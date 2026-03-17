@@ -479,7 +479,10 @@ impl Interpreter {
 
         // Early check: private method call on non-Instance, non-Package values
         if let Some(private_rest) = method.strip_prefix('!')
-            && !matches!(&target, Value::Instance { .. } | Value::Package(_))
+            && !matches!(
+                &target,
+                Value::Instance { .. } | Value::Package(_) | Value::Mixin(_, _)
+            )
         {
             // Owner-qualified: !Owner::method
             if let Some((owner_class, private_name)) = private_rest.split_once("::") {
@@ -962,12 +965,19 @@ impl Interpreter {
                 })
                 .collect();
             role_names.sort();
+            // Determine if this is a private method call (method starts with '!')
+            let is_private_call = method.starts_with('!');
+            let lookup_name = if is_private_call {
+                &method[1..]
+            } else {
+                method
+            };
             let mut role_has_method = false;
             for role_name in role_names {
                 let Some(role) = self.roles.get(&role_name).cloned() else {
                     continue;
                 };
-                let Some(overloads) = role.methods.get(method).cloned() else {
+                let Some(overloads) = role.methods.get(lookup_name).cloned() else {
                     continue;
                 };
                 role_has_method = true;
@@ -984,7 +994,11 @@ impl Interpreter {
                     self.env.insert(name.clone(), value.clone());
                 }
                 for def in overloads {
-                    if def.is_private || !self.method_args_match(&args, &def.param_defs) {
+                    if is_private_call {
+                        if !def.is_private {
+                            continue;
+                        }
+                    } else if def.is_private || !self.method_args_match(&args, &def.param_defs) {
                         continue;
                     }
                     let role_attrs: HashMap<String, Value> = mixins
