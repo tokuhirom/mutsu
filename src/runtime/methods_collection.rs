@@ -220,51 +220,19 @@ impl Interpreter {
 
     pub(super) fn dispatch_to_map(&self, target: Value) -> Result<Value, RuntimeError> {
         // Map is stored as Hash internally in mutsu; .Map on a Hash returns it as-is
-        self.dispatch_to_hash(target)
+        self.dispatch_to_hash_impl(target, true)
     }
 
     pub(super) fn dispatch_to_hash(&self, target: Value) -> Result<Value, RuntimeError> {
+        self.dispatch_to_hash_impl(target, true)
+    }
+
+    fn dispatch_to_hash_impl(&self, target: Value, check_odd: bool) -> Result<Value, RuntimeError> {
         match target {
             Value::Hash(_) => Ok(target),
-            Value::Array(items, ..) => {
-                let mut map = HashMap::new();
-                let mut iter = items.iter();
-                while let Some(item) = iter.next() {
-                    match item {
-                        Value::Pair(k, v) => {
-                            map.insert(k.clone(), *v.clone());
-                        }
-                        Value::ValuePair(k, v) => {
-                            map.insert(k.to_string_value(), *v.clone());
-                        }
-                        other => {
-                            let key = other.to_string_value();
-                            let value = iter.next().cloned().unwrap_or(Value::Nil);
-                            map.insert(key, value);
-                        }
-                    }
-                }
-                Ok(Value::hash(map))
-            }
+            Value::Array(items, ..) => Self::items_to_hash(items.as_ref(), check_odd),
             Value::Seq(items) | Value::Slip(items) => {
-                let mut map = HashMap::new();
-                let mut iter = items.iter();
-                while let Some(item) = iter.next() {
-                    match item {
-                        Value::Pair(k, v) => {
-                            map.insert(k.clone(), *v.clone());
-                        }
-                        Value::ValuePair(k, v) => {
-                            map.insert(k.to_string_value(), *v.clone());
-                        }
-                        other => {
-                            let key = other.to_string_value();
-                            let value = iter.next().cloned().unwrap_or(Value::Nil);
-                            map.insert(key, value);
-                        }
-                    }
-                }
-                Ok(Value::hash(map))
+                Self::items_to_hash(items.as_ref(), check_odd)
             }
             Value::Set(s) => {
                 let mut map = HashMap::new();
@@ -300,10 +268,83 @@ impl Interpreter {
                 }
             }
             other => {
+                // Single non-Pair scalar: this is 1 element (odd), so throw
+                if check_odd {
+                    if let Value::Pair(k, v) = other {
+                        let mut map = HashMap::new();
+                        map.insert(k.to_string(), *v);
+                        return Ok(Value::hash(map));
+                    }
+                    return Err(Self::make_odd_number_error(&[other]));
+                }
                 let mut map = HashMap::new();
                 map.insert(other.to_string_value(), Value::Bool(true));
                 Ok(Value::hash(map))
             }
+        }
+    }
+
+    /// Convert a slice of items to a Hash, optionally checking for odd element count.
+    fn items_to_hash(items: &[Value], check_odd: bool) -> Result<Value, RuntimeError> {
+        if check_odd {
+            // Count non-Pair elements to detect odd count
+            let non_pair_count = items
+                .iter()
+                .filter(|v| !matches!(v, Value::Pair(..) | Value::ValuePair(..)))
+                .count();
+            if non_pair_count % 2 != 0 {
+                return Err(Self::make_odd_number_error(items));
+            }
+        }
+        let mut map = HashMap::new();
+        let mut iter = items.iter();
+        while let Some(item) = iter.next() {
+            match item {
+                Value::Pair(k, v) => {
+                    map.insert(k.clone(), *v.clone());
+                }
+                Value::ValuePair(k, v) => {
+                    map.insert(k.to_string_value(), *v.clone());
+                }
+                other => {
+                    let key = other.to_string_value();
+                    let value = iter.next().cloned().unwrap_or(Value::Nil);
+                    map.insert(key, value);
+                }
+            }
+        }
+        Ok(Value::hash(map))
+    }
+
+    /// Create an X::Hash::Store::OddNumber error.
+    fn make_odd_number_error(items: &[Value]) -> RuntimeError {
+        let count = items.len();
+        let last = items
+            .last()
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let message = if count == 1 {
+            format!(
+                "Odd number of elements found where hash initializer expected:\n\
+                 Only saw: {}",
+                last
+            )
+        } else {
+            format!(
+                "Odd number of elements found where hash initializer expected:\n\
+                 Found {} (implicit) elements:\nLast element seen: {}",
+                count, last
+            )
+        };
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::str(message.clone()));
+        let ex = Value::make_instance(
+            crate::symbol::Symbol::intern("X::Hash::Store::OddNumber"),
+            attrs,
+        );
+        RuntimeError {
+            exception: Some(Box::new(ex)),
+            ..RuntimeError::new(message)
         }
     }
 }
