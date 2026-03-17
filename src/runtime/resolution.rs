@@ -1170,33 +1170,27 @@ impl Interpreter {
         ProtectBlockCompiledFns,
         ProtectBlockCapturedSlots,
     ) {
-        if let Some(ref cc) = data.compiled_code {
-            let slots: Vec<usize> = cc
-                .locals
-                .iter()
-                .enumerate()
-                .filter_map(|(idx, name)| data.env.contains_key(name).then_some(idx))
-                .collect();
-            return (
-                cc.clone(),
-                std::sync::Arc::new(std::collections::HashMap::new()),
-                std::sync::Arc::new(slots),
-            );
-        }
         let entry = self.protect_block_cache.entry(data.id).or_insert_with(|| {
-            let compiler = crate::compiler::Compiler::new();
-            let (compiled, compiled_fns) = compiler.compile(&data.body);
+            let (compiled, compiled_fns) = if let Some(ref cc) = data.compiled_code {
+                (
+                    cc.clone(),
+                    std::sync::Arc::new(std::collections::HashMap::new()),
+                )
+            } else {
+                let compiler = crate::compiler::Compiler::new();
+                let (compiled, compiled_fns) = compiler.compile(&data.body);
+                (
+                    std::sync::Arc::new(compiled),
+                    std::sync::Arc::new(compiled_fns),
+                )
+            };
             let captured_slots: Vec<usize> = compiled
                 .locals
                 .iter()
                 .enumerate()
                 .filter_map(|(idx, name)| data.env.contains_key(name).then_some(idx))
                 .collect();
-            (
-                std::sync::Arc::new(compiled),
-                std::sync::Arc::new(compiled_fns),
-                std::sync::Arc::new(captured_slots),
-            )
+            (compiled, compiled_fns, std::sync::Arc::new(captured_slots))
         });
         (entry.0.clone(), entry.1.clone(), entry.2.clone())
     }

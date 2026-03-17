@@ -1119,8 +1119,10 @@ impl Interpreter {
                         if crate::runtime::utils::is_shaped_array(&current) {
                             return Err(RuntimeError::new("Index out of bounds"));
                         }
-                        new_items
-                            .resize(idx + 1, Value::Package(crate::symbol::Symbol::intern("Any")));
+                        new_items.resize(
+                            idx + 1,
+                            Value::Package(crate::symbol::Symbol::intern("Any")),
+                        );
                     }
                     new_items[idx] = value.clone();
                     Value::Array(std::sync::Arc::new(new_items), kind)
