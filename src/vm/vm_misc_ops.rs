@@ -534,14 +534,22 @@ impl VM {
         if let Some(err) = self.interpreter.failure_to_runtime_error_if_unhandled(&val) {
             return Err(err);
         }
-        // If the value is an Instance, try calling the Stringy method
-        if let Value::Instance { .. } = &val
-            && let Ok(result) =
+        // If the value is an Instance, try calling the Stringy method, then Str
+        if let Value::Instance { .. } = &val {
+            if let Ok(result) =
                 self.interpreter
                     .call_method_with_values(val.clone(), "Stringy", vec![])
-        {
-            self.stack.push(result);
-            return Ok(());
+            {
+                self.stack.push(result);
+                return Ok(());
+            }
+            if let Ok(result) = self
+                .interpreter
+                .call_method_with_values(val.clone(), "Str", vec![])
+            {
+                self.stack.push(result);
+                return Ok(());
+            }
         }
         // Force LazyList before stringification
         if let Value::LazyList(_) = &val {

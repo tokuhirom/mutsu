@@ -206,7 +206,28 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 }
                 Value::Num(f) => (*f as i64, format!("{}", *f as i64)),
                 _ => {
-                    let i = arg.to_string_value().parse::<i64>().unwrap_or(-1);
+                    let s = arg.to_string_value();
+                    let trimmed = s.trim();
+                    let i = if let Ok(v) = trimmed.parse::<i64>() {
+                        v
+                    } else if let Some(hex) = trimmed
+                        .strip_prefix("0x")
+                        .or_else(|| trimmed.strip_prefix("0X"))
+                    {
+                        i64::from_str_radix(hex, 16).unwrap_or(-1)
+                    } else if let Some(oct) = trimmed
+                        .strip_prefix("0o")
+                        .or_else(|| trimmed.strip_prefix("0O"))
+                    {
+                        i64::from_str_radix(oct, 8).unwrap_or(-1)
+                    } else if let Some(bin) = trimmed
+                        .strip_prefix("0b")
+                        .or_else(|| trimmed.strip_prefix("0B"))
+                    {
+                        i64::from_str_radix(bin, 2).unwrap_or(-1)
+                    } else {
+                        -1
+                    };
                     (i, format!("{}", i))
                 }
             };
