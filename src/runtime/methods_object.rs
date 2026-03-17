@@ -568,7 +568,19 @@ impl Interpreter {
                     return Ok(result);
                 }
                 "Uni" => {
-                    let text: String = args
+                    // Flatten array arguments so Uni.new(@codes) works
+                    let mut flat_args: Vec<&Value> = Vec::new();
+                    for a in &args {
+                        match a {
+                            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                                for item in items.iter() {
+                                    flat_args.push(item);
+                                }
+                            }
+                            other => flat_args.push(other),
+                        }
+                    }
+                    let text: String = flat_args
                         .iter()
                         .filter_map(|a| {
                             let cp = match a {

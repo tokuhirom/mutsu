@@ -1361,6 +1361,59 @@ impl VM {
                 };
                 Value::array(slice)
             }
+            // Uni/NFC/NFD/NFKC/NFKD indexing: returns integer codepoint values
+            (Value::Uni { ref text, .. }, Value::Int(i)) => {
+                let chars: Vec<char> = text.chars().collect();
+                if i < 0 || (i as usize) >= chars.len() {
+                    Value::Nil
+                } else {
+                    Value::Int(chars[i as usize] as i64)
+                }
+            }
+            (Value::Uni { ref text, .. }, Value::Sub(ref data)) => {
+                let chars: Vec<char> = text.chars().collect();
+                let len = chars.len() as i64;
+                let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
+                let mut sub_env = data.env.clone();
+                sub_env.insert(param.to_string(), Value::Int(len));
+                let saved_env = std::mem::take(self.interpreter.env_mut());
+                *self.interpreter.env_mut() = sub_env;
+                let idx = self
+                    .interpreter
+                    .eval_block_value(&data.body)
+                    .unwrap_or(Value::Nil);
+                *self.interpreter.env_mut() = saved_env;
+                let i = match &idx {
+                    Value::Int(i) => Some(*i),
+                    Value::Num(n) => Some(*n as i64),
+                    _ => None,
+                };
+                match i {
+                    Some(i) if i >= 0 && (i as usize) < chars.len() => {
+                        Value::Int(chars[i as usize] as i64)
+                    }
+                    _ => Value::Nil,
+                }
+            }
+            (Value::Uni { ref text, .. }, Value::Array(indices, ..)) => {
+                let chars: Vec<char> = text.chars().collect();
+                Value::array(
+                    indices
+                        .iter()
+                        .map(|idx| {
+                            if let Value::Int(i) = idx {
+                                if *i >= 0 && (*i as usize) < chars.len() {
+                                    Value::Int(chars[*i as usize] as i64)
+                                } else {
+                                    Value::Nil
+                                }
+                            } else {
+                                Value::Nil
+                            }
+                        })
+                        .collect(),
+                )
+            }
             // Capture indexing: $capture<key> (named) or $capture[idx] (positional)
             (
                 Value::Capture {
