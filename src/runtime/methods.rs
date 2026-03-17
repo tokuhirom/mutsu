@@ -510,7 +510,8 @@ impl Interpreter {
 
         // Handle qualified method names: Class::method (e.g., $o.Parent::x)
         // Access the attribute as defined in the specified class, not the most-derived one.
-        if let Some((qualifier, actual_method)) = method.split_once("::")
+        // Use rsplit_once to handle multi-part qualifiers like Bar::R::method
+        if let Some((qualifier, actual_method)) = method.rsplit_once("::")
             && !method.starts_with('!')
             && let Value::Instance {
                 class_name: inst_class,
@@ -519,13 +520,23 @@ impl Interpreter {
             } = &target
         {
             // Check that the qualifier class/role is in the instance's MRO or composed roles
+            // Also check roles across the whole MRO (not just the instance's class)
+            // and match base name of parameterized roles (e.g., "Bar::R" matches "Bar::R[Str]")
             let inst_cn_str = inst_class.resolve();
             let inst_mro = self.class_mro(&inst_cn_str);
             let in_mro = inst_mro.iter().any(|c| c == qualifier);
-            let in_composed_roles = self
-                .class_composed_roles
-                .get(&inst_cn_str)
-                .is_some_and(|roles| roles.iter().any(|r| r == qualifier));
+            let in_composed_roles = if !in_mro {
+                inst_mro.iter().any(|c| {
+                    self.class_composed_roles.get(c).is_some_and(|roles| {
+                        roles.iter().any(|r| {
+                            r == qualifier
+                                || r.starts_with(qualifier) && r[qualifier.len()..].starts_with('[')
+                        })
+                    })
+                })
+            } else {
+                false
+            };
             if !in_mro && !in_composed_roles {
                 return Err(RuntimeError::new(format!(
                     "Cannot dispatch to method {} on {} because it is not inherited or done by {}",
@@ -593,7 +604,16 @@ impl Interpreter {
                 }
             }
             // Also check the role definition directly
-            if let Some(role_def) = self.roles.get(qualifier).cloned()
+            // Try parameterized role names too (e.g., qualifier "Bar::R" matches role "Bar::R[Str]")
+            let role_lookup = self.roles.get(qualifier).cloned().or_else(|| {
+                self.roles
+                    .iter()
+                    .find(|(name, _)| {
+                        name.starts_with(qualifier) && name[qualifier.len()..].starts_with('[')
+                    })
+                    .map(|(_, def)| def.clone())
+            });
+            if let Some(role_def) = role_lookup
                 && let Some(overloads) = role_def.methods.get(actual_method)
             {
                 for def in overloads {
