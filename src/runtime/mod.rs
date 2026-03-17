@@ -1507,6 +1507,32 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "VM".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: [
+                    "name",
+                    "auth",
+                    "version",
+                    "precomp-ext",
+                    "precomp-target",
+                    "request-garbage-collection",
+                    "gist",
+                    "Str",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+                mro: vec!["VM".to_string()],
+                attribute_types: HashMap::new(),
+                wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
+            },
+        );
+        classes.insert(
             "Compiler".to_string(),
             ClassDef {
                 parents: Vec::new(),

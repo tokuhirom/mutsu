@@ -800,6 +800,16 @@ impl Interpreter {
             None
         };
 
+        // Maintain a mutable copy of the generator closure's captured env so that
+        // side-effects (e.g. `++$i`) persist across iterations instead of being reset
+        // from the immutable `data.env` each time.
+        let mut generator_closure_env: Option<crate::env::Env> =
+            if let Some(Value::Sub(data)) = generator.as_ref() {
+                Some(data.env.clone())
+            } else {
+                None
+            };
+
         'seq_gen: for _ in 0..max_gen {
             let next = match &mode {
                 SeqMode::Closure => {
@@ -871,7 +881,10 @@ impl Interpreter {
                                 }
                             } else {
                                 let saved = self.env.clone();
-                                for (k, v) in &data.env {
+                                // Use the mutable closure env so side-effects persist
+                                // across iterations (e.g. `my $i = 0; { ++$i } ... *`).
+                                let closure_env = generator_closure_env.as_ref().unwrap();
+                                for (k, v) in closure_env {
                                     self.env.insert(k.clone(), v.clone());
                                 }
 
@@ -934,6 +947,15 @@ impl Interpreter {
                                         return Err(e);
                                     }
                                 };
+                                // Propagate side-effects back to the mutable closure env
+                                // so the next iteration sees updated values.
+                                if let Some(ref mut gen_env) = generator_closure_env {
+                                    for (k, v) in self.env.iter() {
+                                        if gen_env.contains_key(k) {
+                                            gen_env.insert(k.clone(), v.clone());
+                                        }
+                                    }
+                                }
                                 self.env = restore_env_with_side_effects(saved, &self.env);
                                 val
                             }
@@ -1127,11 +1149,6 @@ impl Interpreter {
                     match epk {
                         EndpointKind::Closure(closure_val) => {
                             if let Value::Sub(data) = closure_val {
-                                let saved = self.env.clone();
-                                for (k, v) in &data.env {
-                                    self.env.insert(k.clone(), v.clone());
-                                }
-
                                 let arity = if !data.params.is_empty() {
                                     data.params.len()
                                 } else {
@@ -1139,6 +1156,18 @@ impl Interpreter {
                                 };
 
                                 let result_len = result.len();
+                                // For multi-arity endpoint closures, skip the check
+                                // until we have enough values (result + current item).
+                                if arity > 1 && result_len + 1 < arity {
+                                    result.push(item);
+                                    continue;
+                                }
+
+                                let saved = self.env.clone();
+                                for (k, v) in &data.env {
+                                    self.env.insert(k.clone(), v.clone());
+                                }
+
                                 let args: Vec<Value> = if result_len == 0 {
                                     vec![item.clone(); arity]
                                 } else if result_len < arity - 1 {
