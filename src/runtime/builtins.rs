@@ -715,6 +715,7 @@ impl Interpreter {
             "trim" => self.builtin_trim(&args),
             "chars" => self.builtin_chars(&args),
             "sprintf" | "zprintf" => self.builtin_sprintf(&args),
+            "split" => self.handle_split_function(args),
             // File I/O
             "slurp" => self.builtin_slurp(&args),
             "spurt" => self.builtin_spurt(&args),

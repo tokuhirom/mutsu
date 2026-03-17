@@ -1346,6 +1346,13 @@ impl Interpreter {
             return result;
         }
 
+        // Comprehensive split handler (for regex splitters and 3+ args)
+        if method == "split"
+            && !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply")
+        {
+            return self.handle_split_method(target, args);
+        }
+
         // .of on Array/Hash: check container_type_metadata for element type
         if method == "of" && args.is_empty() && matches!(&target, Value::Array(..) | Value::Hash(_))
         {

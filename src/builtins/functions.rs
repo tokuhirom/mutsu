@@ -88,6 +88,9 @@ pub(crate) fn native_function(
         }
         return native_function_variadic(name, args);
     }
+    if name == "split" {
+        return super::split::native_split_function(args);
+    }
     match args.len() {
         0 => native_function_0arg(name),
         1 => native_function_1arg(name, &args[0]),
