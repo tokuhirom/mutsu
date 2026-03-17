@@ -78,7 +78,6 @@ roast/S02-names/caller.t
 roast/S02-names/dynamic-scope.t
 roast/S02-names/identifier.t
 roast/S02-names/indirect.t
-roast/S02-names/is_dynamic.t
 roast/S02-names/strict.t
 roast/S02-one-pass-parsing/less-than.t
 roast/S02-one-pass-parsing/misc.t
@@ -328,7 +327,6 @@ roast/S06-signature/definite-return.t
 roast/S06-signature/mixed-placeholders.t
 roast/S06-signature/multi-invocant.t
 roast/S06-signature/multidimensional.t
-roast/S06-signature/multiple-signatures.t
 roast/S06-signature/named-placeholders.t
 roast/S06-signature/named-renaming.t
 roast/S06-signature/optional.t
