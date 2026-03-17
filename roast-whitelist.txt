@@ -683,6 +683,7 @@ roast/S32-list/categorize.t
 roast/S32-list/combinations.t
 roast/S32-list/create.t
 roast/S32-list/cross.t
+roast/S32-list/duckmap.t
 roast/S32-list/end.t
 roast/S32-list/first-end-k.t
 roast/S32-list/first-end-kv.t

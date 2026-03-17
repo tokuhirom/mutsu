@@ -1194,6 +1194,59 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = r_after;
                 continue;
             }
+            // Parse qualified method name with leading `::`, e.g. `.::Int::abs`
+            // `.::` with no name is a syntax error (X::Syntax::Malformed)
+            if let Some(r_after_colons) = r.strip_prefix("::") {
+                if let Ok((r2, first_part)) = take_while1(r_after_colons, |c: char| {
+                    c.is_alphanumeric() || c == '_' || c == '-'
+                }) {
+                    let mut qualified = first_part.to_string();
+                    let mut r2 = r2;
+                    while let Some(after_colons) = r2.strip_prefix("::") {
+                        if let Ok((r3, part)) = take_while1(after_colons, |c: char| {
+                            c.is_alphanumeric() || c == '_' || c == '-'
+                        }) {
+                            qualified.push_str("::");
+                            qualified.push_str(part);
+                            r2 = r3;
+                        } else {
+                            break;
+                        }
+                    }
+                    let name = Symbol::intern(&qualified);
+                    let r2_unspace = consume_unspace(r2);
+                    if r2_unspace.starts_with('(') {
+                        let (r3, _) = parse_char(r2_unspace, '(')?;
+                        let (r3, _) = ws(r3)?;
+                        let (r3, args) = parse_call_arg_list(r3)?;
+                        let (r3, _) = ws(r3)?;
+                        let (r3, _) = parse_char(r3, ')')?;
+                        expr = Expr::MethodCall {
+                            target: Box::new(expr),
+                            name,
+                            args,
+                            modifier,
+                            quoted: false,
+                        };
+                        rest = r3;
+                        continue;
+                    }
+                    // No-arg qualified method call
+                    expr = Expr::MethodCall {
+                        target: Box::new(expr),
+                        name,
+                        args: Vec::new(),
+                        modifier,
+                        quoted: false,
+                    };
+                    rest = r2;
+                    continue;
+                } else {
+                    return Err(PError::fatal(
+                        "X::Syntax::Malformed: Malformed qualified method name".to_string(),
+                    ));
+                }
+            }
             // Parse method name
             if let Ok((r, parsed_name)) =
                 take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
