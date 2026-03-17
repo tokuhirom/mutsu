@@ -196,7 +196,10 @@ impl Value {
             Value::Bag(b) => !b.is_empty(),
             Value::Mix(m) => !m.is_empty(),
             Value::Pair(_, _) | Value::ValuePair(_, _) => true,
-            Value::Enum { .. } => true,
+            Value::Enum { value, .. } => match value {
+                EnumValue::Int(i) => *i != 0,
+                EnumValue::Str(s) => !s.is_empty(),
+            },
             Value::CompUnitDepSpec { .. } => true,
             Value::Package(_) | Value::ParametricRole { .. } => false,
             Value::Routine { .. } => true,
