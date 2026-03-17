@@ -200,6 +200,7 @@ roast/S04-phasers/begin.t
 roast/S04-phasers/end.t
 roast/S04-phasers/first.t
 roast/S04-phasers/next.t
+roast/S04-phasers/pre-post.t
 roast/S04-statement-modifiers/for.t
 roast/S04-statement-modifiers/given.t
 roast/S04-statement-modifiers/if.t
