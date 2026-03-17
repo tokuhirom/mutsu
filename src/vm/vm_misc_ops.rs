@@ -1625,39 +1625,23 @@ impl VM {
         // Restore scope if scope_isolate is true
         if let Some((saved_env, saved_locals)) = saved_env {
             let block_result = self.stack.pop().unwrap_or(Value::Nil);
-            // Collect user variables declared or re-declared inside the block.
-            // These must survive the scope restore so that inline `my`
-            // declarations in expression context remain visible.
-            // A variable is considered "block-declared" if it's either new
-            // or its value changed (different Arc identity).
+            // Preserve hash variables declared or re-declared inside the
+            // block so that inline `my %h` declarations (e.g. in
+            // `:into(my %h := :{})`) remain visible in the outer scope.
+            // Only hash variables are preserved to avoid side effects
+            // on other container types.
             let current_env = self.interpreter.env().clone();
             let mut new_vars: Vec<(String, Value)> = Vec::new();
             for (name, value) in current_env.iter() {
-                if !(name.starts_with('$')
-                    || name.starts_with('@')
-                    || name.starts_with('%')
-                    || name.starts_with('&'))
-                    || name.starts_with("$*")
-                    || name.starts_with("@*")
-                    || name.starts_with("%*")
-                    || name.starts_with("&*")
-                {
+                if !name.starts_with('%') || name.starts_with("%*") {
                     continue;
                 }
                 let is_new_or_changed = match saved_env.get(name) {
                     None => true,
-                    Some(saved_val) => {
-                        // Check if the value changed by comparing discriminants
-                        // and, for container types, Arc pointer identity.
-                        std::mem::discriminant(value) != std::mem::discriminant(saved_val)
-                            || match (value, saved_val) {
-                                (Value::Hash(a), Value::Hash(b)) => !std::sync::Arc::ptr_eq(a, b),
-                                (Value::Array(a, _), Value::Array(b, _)) => {
-                                    !std::sync::Arc::ptr_eq(a, b)
-                                }
-                                _ => false,
-                            }
-                    }
+                    Some(saved_val) => match (value, saved_val) {
+                        (Value::Hash(a), Value::Hash(b)) => !std::sync::Arc::ptr_eq(a, b),
+                        _ => std::mem::discriminant(value) != std::mem::discriminant(saved_val),
+                    },
                 };
                 if is_new_or_changed {
                     new_vars.push((name.clone(), value.clone()));
