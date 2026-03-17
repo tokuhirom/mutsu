@@ -32,8 +32,8 @@ is (1 ... 5, 'xyzzy', 'plugh').join(', '), '1, 2, 3, 4, 5, xyzzy, plugh', 'extra
 
 # non-integer endpoint (sequence stops before it)
 is (1 ... 5.5).join(', '), '1, 2, 3, 4, 5', 'float endpoint';
-is (1, 3 ... 10).head(10).join(', '), '1, 3, 5, 7, 9', 'arithmetic past endpoint';
-is (1, 3, 9 ... 100).head(10).join(', '), '1, 3, 9, 27, 81', 'geometric past endpoint';
+is (1, 3 ... 10).[lazy ^10].join(', '), '1, 3, 5, 7, 9', 'arithmetic past endpoint';
+is (1, 3, 9 ... 100).[lazy ^10].join(', '), '1, 3, 9, 27, 81', 'geometric past endpoint';
 
 # infinite sequences with slice
 is (1 ... *).[^5].join(', '), '1, 2, 3, 4, 5', 'infinite increasing';
@@ -61,7 +61,7 @@ is (1, 1, 1, 2, 4 ... 16).join(', '), '1, 1, 1, 2, 4, 8, 16', 'misleading then g
 is (4, 2, 1, 2, 4 ... 16).join(', '), '4, 2, 1, 2, 4, 8, 16', 'direction change geometric';
 
 # wrong side
-is (1, 2 ... 0).head(3), (), 'wrong side gives empty';
+is (1, 2 ... 0).[lazy ^3], (), 'wrong side gives empty';
 
 # exclusive sequences (...^)
 is (1 ...^ 5).join(', '), '1, 2, 3, 4', 'exclusive sequence';
@@ -70,7 +70,7 @@ is (1, 3, 9 ...^ 81).join(', '), '1, 3, 9, 27', 'exclusive geometric';
 is (1, { $_ + 2 } ...^ 9).join(', '), '1, 3, 5, 7', 'exclusive with closure';
 is (1 ...^ 1), (), 'exclusive same value';
 is (1, 1 ...^ 1), (), 'exclusive constant same value';
-is (1, 2 ...^ 0, 'xyzzy', 'plugh').head(5).join(', '), 'xyzzy, plugh', 'exclusive with extra RHS';
+is (1, 2 ...^ 0, 'xyzzy', 'plugh').[lazy ^5].join(', '), 'xyzzy, plugh', 'exclusive with extra RHS';
 is ~(1 ...^ 0), '1', 'exclusive single past endpoint';
 is (4...^5).join(', '), '4', '4...^5 parses as 4 ...^ 5';
 

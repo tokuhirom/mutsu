@@ -899,10 +899,18 @@ impl VM {
             (Value::Array(items, kind), Value::Range(a, b)) => {
                 let start = a.max(0) as usize;
                 let end = b.max(-1) as usize;
-                let default = self.typed_container_default(&Value::Array(items.clone(), kind));
-                let slice: Vec<Value> = (start..=end)
-                    .map(|i| items.get(i).cloned().unwrap_or_else(|| default.clone()))
-                    .collect();
+                let slice = if kind.is_real_array() {
+                    // Real Arrays pad out-of-bounds with the typed default
+                    let default = self.typed_container_default(&Value::Array(items.clone(), kind));
+                    (start..=end)
+                        .map(|i| items.get(i).cloned().unwrap_or_else(|| default.clone()))
+                        .collect()
+                } else if start >= items.len() {
+                    Vec::new()
+                } else {
+                    let end = end.min(items.len().saturating_sub(1));
+                    items[start..=end].to_vec()
+                };
                 if kind.is_real_array() {
                     Value::array(slice)
                 } else {
@@ -919,10 +927,23 @@ impl VM {
                         Value::Seq(Arc::new(Vec::new()))
                     }
                 } else {
-                    let default = self.typed_container_default(&Value::Array(items.clone(), kind));
-                    let slice: Vec<Value> = (start..end_excl)
-                        .map(|i| items.get(i).cloned().unwrap_or_else(|| default.clone()))
-                        .collect();
+                    let slice = if kind.is_real_array() {
+                        // Real Arrays pad out-of-bounds with the typed default
+                        let default =
+                            self.typed_container_default(&Value::Array(items.clone(), kind));
+                        (start..end_excl)
+                            .map(|i| items.get(i).cloned().unwrap_or_else(|| default.clone()))
+                            .collect()
+                    } else if start >= items.len() {
+                        Vec::new()
+                    } else {
+                        let end_excl = end_excl.min(items.len());
+                        if start >= end_excl {
+                            Vec::new()
+                        } else {
+                            items[start..end_excl].to_vec()
+                        }
+                    };
                     if kind.is_real_array() {
                         Value::array(slice)
                     } else {
@@ -967,20 +988,26 @@ impl VM {
             (Value::Seq(items), Value::Range(a, b)) => {
                 let start = a.max(0) as usize;
                 let end = b.max(-1) as usize;
-                let slice: Vec<Value> = (start..=end)
-                    .map(|i| items.get(i).cloned().unwrap_or(Value::Nil))
-                    .collect();
+                let slice = if start >= items.len() {
+                    Vec::new()
+                } else {
+                    let end = end.min(items.len().saturating_sub(1));
+                    items[start..=end].to_vec()
+                };
                 Value::Seq(Arc::new(slice))
             }
             (Value::Seq(items), Value::RangeExcl(a, b)) => {
                 let start = a.max(0) as usize;
                 let end_excl = b.max(0) as usize;
-                let slice: Vec<Value> = if start >= end_excl {
+                let slice = if start >= items.len() {
                     Vec::new()
                 } else {
-                    (start..end_excl)
-                        .map(|i| items.get(i).cloned().unwrap_or(Value::Nil))
-                        .collect()
+                    let end_excl = end_excl.min(items.len());
+                    if start >= end_excl {
+                        Vec::new()
+                    } else {
+                        items[start..end_excl].to_vec()
+                    }
                 };
                 Value::Seq(Arc::new(slice))
             }
