@@ -2312,6 +2312,10 @@ impl Interpreter {
         self.suppressed_names.insert(name.to_string());
     }
 
+    pub(crate) fn unsuppress_name(&mut self, name: &str) {
+        self.suppressed_names.remove(name);
+    }
+
     /// Push a new lexical class scope frame.
     pub(crate) fn push_lexical_class_scope(&mut self) {
         self.lexical_class_scopes.push(Vec::new());

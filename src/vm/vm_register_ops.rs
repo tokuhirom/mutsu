@@ -722,6 +722,9 @@ impl VM {
             {
                 self.interpreter.register_cunion_class(&qualified_name);
             }
+            // If the name was previously suppressed (e.g. by a `my class` in an
+            // earlier block), clear the suppression since we're now re-declaring it.
+            self.interpreter.unsuppress_name(&resolved_name);
             // Register the class name in the lexical env so that
             // ::("ClassName") indirect lookups can find it in the current scope.
             let env = self.interpreter.env_mut();
