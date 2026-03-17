@@ -1271,6 +1271,16 @@ impl Interpreter {
             })
     }
 
+    pub(crate) fn has_enum_type(&self, name: &str) -> bool {
+        self.enum_types.contains_key(name)
+    }
+
+    pub(crate) fn has_enum_variant(&self, enum_name: &str, variant_name: &str) -> bool {
+        self.enum_types
+            .get(enum_name)
+            .is_some_and(|variants| variants.iter().any(|(k, _)| k == variant_name))
+    }
+
     pub(crate) fn has_role(&self, name: &str) -> bool {
         self.roles.contains_key(name)
     }
