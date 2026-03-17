@@ -727,7 +727,7 @@ impl Interpreter {
                             Ok(result) => {
                                 // Handle Order enum (Less=-1, Same=0, More=1)
                                 let n = match &result {
-                                    Value::Enum { value, .. } => *value as f64,
+                                    Value::Enum { value, .. } => value.as_i64() as f64,
                                     other => other.to_f64(),
                                 };
                                 if n < 0.0 {

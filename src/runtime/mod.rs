@@ -20,8 +20,8 @@ use crate::env::Env;
 use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
 use crate::parse_dispatch;
 use crate::value::{
-    ArrayKind, JunctionKind, LazyList, RuntimeError, SharedChannel, SharedPromise, Value, make_rat,
-    take_pending_instance_destroys,
+    ArrayKind, EnumValue, JunctionKind, LazyList, RuntimeError, SharedChannel, SharedPromise,
+    Value, make_rat, take_pending_instance_destroys,
 };
 use num_traits::Signed;
 
@@ -507,7 +507,7 @@ pub struct Interpreter {
     gather_items: Vec<Vec<Value>>,
     gather_take_limits: Vec<Option<usize>>,
     block_scope_depth: usize,
-    enum_types: HashMap<String, Vec<(String, i64)>>,
+    enum_types: HashMap<String, Vec<(String, EnumValue)>>,
     classes: HashMap<String, ClassDef>,
     cunion_classes: HashSet<String>,
     hidden_classes: HashSet<String>,

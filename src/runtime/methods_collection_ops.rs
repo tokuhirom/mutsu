@@ -364,9 +364,9 @@ impl Interpreter {
                 let cmp = match cmp_val {
                     Value::Enum {
                         ref enum_type,
-                        value,
+                        ref value,
                         ..
-                    } if enum_type == "Order" => value,
+                    } if enum_type == "Order" => value.as_i64(),
                     other => {
                         let n = other.to_f64();
                         if n > 0.0 {
@@ -542,7 +542,7 @@ impl Interpreter {
                 Value::Bool(false) => std::cmp::Ordering::Less,
                 Value::Enum {
                     enum_type, value, ..
-                } if enum_type == "Order" => value.cmp(&0),
+                } if enum_type == "Order" => value.as_i64().cmp(&0),
                 _ => std::cmp::Ordering::Equal,
             }
         }
@@ -613,7 +613,7 @@ fn sort_indices(
             Value::Bool(false) => std::cmp::Ordering::Less,
             Value::Enum {
                 enum_type, value, ..
-            } if enum_type == "Order" => value.cmp(&0),
+            } if enum_type == "Order" => value.as_i64().cmp(&0),
             _ => std::cmp::Ordering::Equal,
         }
     }
@@ -1947,7 +1947,7 @@ impl Interpreter {
                     "family" => {
                         family = Some(match value.as_ref() {
                             Value::Int(i) => *i,
-                            Value::Enum { value: v, .. } => *v,
+                            Value::Enum { value: v, .. } => v.as_i64(),
                             other => other.to_string_value().parse::<i64>().unwrap_or(0),
                         });
                     }

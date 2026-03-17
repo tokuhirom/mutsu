@@ -433,7 +433,7 @@ impl Interpreter {
                         .first()
                         .and_then(|v| match v {
                             Value::Int(s) => Some(*s as i32),
-                            Value::Enum { value, .. } => Some(*value as i32),
+                            Value::Enum { value, .. } => Some(value.as_i64() as i32),
                             Value::Str(s) => match s.as_str() {
                                 "HUP" | "SIGHUP" => Some(libc::SIGHUP),
                                 "INT" | "SIGINT" => Some(libc::SIGINT),

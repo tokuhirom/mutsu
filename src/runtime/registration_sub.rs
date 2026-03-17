@@ -1,6 +1,19 @@
 use super::*;
 use crate::symbol::Symbol;
 
+/// Increment a string by one character (Raku's string increment for enums).
+/// "x" -> "y", "z" -> "aa", "Z" -> "AA", etc.
+fn string_increment(s: &str) -> String {
+    if s.is_empty() {
+        return String::new();
+    }
+    let mut chars: Vec<char> = s.chars().collect();
+    if let Some(last) = chars.last_mut() {
+        *last = char::from_u32(*last as u32 + 1).unwrap_or(*last);
+    }
+    chars.into_iter().collect()
+}
+
 impl Interpreter {
     fn default_check_constraint_base(constraint: &str) -> &str {
         let mut end = constraint.len();
@@ -676,26 +689,64 @@ impl Interpreter {
                 variants
             };
         let mut enum_variants = Vec::new();
-        let mut next_value: i64 = 0;
+        let mut next_int_value: i64 = 0;
+        let mut next_str_value: Option<String> = None;
         for (key, value_expr) in variants {
             let val = if let Some(expr) = value_expr {
                 let v = self.eval_block_value(&[Stmt::Expr(expr.clone())])?;
                 match v {
-                    Value::Int(i) => i,
+                    Value::Int(i) => {
+                        next_str_value = None;
+                        EnumValue::Int(i)
+                    }
                     Value::Bool(b) => {
-                        if b {
-                            1
+                        next_str_value = None;
+                        EnumValue::Int(if b { 1 } else { 0 })
+                    }
+                    Value::Str(s) => {
+                        let ev = EnumValue::Str(s.to_string());
+                        // Set up string increment for next auto-value
+                        next_str_value = Some(string_increment(&s));
+                        ev
+                    }
+                    _ => {
+                        if let Some(ref s) = next_str_value {
+                            let ev = EnumValue::Str(s.clone());
+                            next_str_value = Some(string_increment(s));
+                            ev
                         } else {
-                            0
+                            EnumValue::Int(next_int_value)
                         }
                     }
-                    _ => next_value,
                 }
+            } else if let Some(ref s) = next_str_value {
+                let ev = EnumValue::Str(s.clone());
+                next_str_value = Some(string_increment(s));
+                ev
             } else {
-                next_value
+                EnumValue::Int(next_int_value)
             };
+            match &val {
+                EnumValue::Int(i) => {
+                    next_int_value = i + 1;
+                }
+                EnumValue::Str(_) => {}
+            }
             enum_variants.push((key.clone(), val));
-            next_value = val + 1;
+        }
+        // Validate that all enum values are of the same type (no mixed Int/Str)
+        if enum_variants.len() > 1 {
+            let has_int = enum_variants
+                .iter()
+                .any(|(_, v)| matches!(v, EnumValue::Int(_)));
+            let has_str = enum_variants
+                .iter()
+                .any(|(_, v)| matches!(v, EnumValue::Str(_)));
+            if has_int && has_str {
+                return Err(RuntimeError::new(
+                    "Incompatible MROs in P6opaque rebless for types Str",
+                ));
+            }
         }
         let is_anonymous = name.is_empty();
         let enum_type_name = if is_anonymous { "__ANON_ENUM__" } else { name };
@@ -716,7 +767,7 @@ impl Interpreter {
             let enum_val = Value::Enum {
                 enum_type: Symbol::intern(enum_type_name),
                 key: Symbol::intern(key),
-                value: *val,
+                value: val.clone(),
                 index,
             };
             if !is_anonymous {
@@ -751,7 +802,11 @@ impl Interpreter {
         if is_anonymous {
             let mut map = HashMap::new();
             for (key, val) in &enum_variants {
-                map.insert(key.clone(), Value::Int(*val));
+                let v = match val {
+                    EnumValue::Int(i) => Value::Int(*i),
+                    EnumValue::Str(s) => Value::str(s.clone()),
+                };
+                map.insert(key.clone(), v);
             }
             Ok(Value::hash(map))
         } else {

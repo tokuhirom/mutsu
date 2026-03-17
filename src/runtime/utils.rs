@@ -2,7 +2,7 @@ use crate::symbol::Symbol;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use crate::value::{ArrayKind, JunctionKind, RuntimeError, Value};
+use crate::value::{ArrayKind, EnumValue, JunctionKind, RuntimeError, Value};
 use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{Signed, ToPrimitive, Zero};
@@ -300,19 +300,19 @@ pub(crate) fn make_order(ord: std::cmp::Ordering) -> Value {
         std::cmp::Ordering::Less => Value::Enum {
             enum_type: Symbol::intern("Order"),
             key: Symbol::intern("Less"),
-            value: -1,
+            value: EnumValue::Int(-1),
             index: 0,
         },
         std::cmp::Ordering::Equal => Value::Enum {
             enum_type: Symbol::intern("Order"),
             key: Symbol::intern("Same"),
-            value: 0,
+            value: EnumValue::Int(0),
             index: 1,
         },
         std::cmp::Ordering::Greater => Value::Enum {
             enum_type: Symbol::intern("Order"),
             key: Symbol::intern("More"),
-            value: 1,
+            value: EnumValue::Int(1),
             index: 2,
         },
     }
@@ -1208,7 +1208,7 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
         | Value::BigRat(_, _)
         | Value::Complex(_, _) => val,
         Value::Bool(b) => Value::Int(if b { 1 } else { 0 }),
-        Value::Enum { value, .. } => Value::Int(value),
+        Value::Enum { value, .. } => Value::Int(value.as_i64()),
         Value::Str(ref s) => {
             let s = s.trim();
             if let Some(v) = parse_prefixed_generic_radix_literal(s) {
@@ -1894,7 +1894,7 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
                 None
             }
         }
-        Value::Enum { value, .. } => Some(*value as f64),
+        Value::Enum { value, .. } => Some(value.as_i64() as f64),
         Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
         Value::Str(s) => s.trim().parse::<f64>().ok(),
         Value::Nil => Some(0.0),

@@ -1,6 +1,6 @@
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::{EnumValue, RuntimeError, Value};
 use std::sync::Arc;
 
 fn gcd_u64(mut a: u64, mut b: u64) -> u64 {
@@ -403,7 +403,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 Value::Enum { key, value, .. } => Some(Ok(Value::Seq(Arc::new(vec![
                     Value::str(key.resolve()),
-                    Value::Int(*value),
+                    match value {
+                        EnumValue::Int(i) => Value::Int(*i),
+                        EnumValue::Str(s) => Value::str(s.clone()),
+                    },
                 ])))),
                 Value::Package(_) => Some(Ok(Value::array(Vec::new()))),
                 v if v.is_range() => Some(Ok(Value::array(positional_kv(
