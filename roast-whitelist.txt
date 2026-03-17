@@ -438,6 +438,7 @@ roast/S15-nfg/crlf-encoding.t
 roast/S15-nfg/emoji-test.t
 roast/S15-nfg/from-file.t
 roast/S15-nfg/grapheme-break.t
+roast/S15-nfg/long-uni.t
 roast/S15-nfg/many-combiners.t
 roast/S15-nfg/many-threads.t
 roast/S15-nfg/mass-roundtrip-nfc.t
