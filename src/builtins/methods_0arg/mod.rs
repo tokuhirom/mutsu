@@ -758,19 +758,32 @@ fn gist_array_wrap(inner: &str, kind: ArrayKind) -> String {
     }
 }
 
-fn raku_array_wrap(inner: &str, kind: ArrayKind) -> String {
+fn raku_array_wrap_counted(inner: &str, kind: ArrayKind, count: usize) -> String {
     match kind {
         ArrayKind::Array | ArrayKind::Shaped => format!("[{}]", inner),
-        ArrayKind::List => format!("({})", inner),
+        ArrayKind::List => {
+            if count == 1 {
+                format!("({},)", inner)
+            } else {
+                format!("({})", inner)
+            }
+        }
         ArrayKind::ItemArray => format!("$[{}]", inner),
         ArrayKind::ItemList => {
             if inner.is_empty() {
                 "$( )".to_string()
+            } else if count == 1 {
+                format!("$({},)", inner)
             } else {
                 format!("$({})", inner)
             }
         }
     }
+}
+
+fn raku_array_wrap(inner: &str, kind: ArrayKind) -> String {
+    // Fallback without count (used for self-referencing snapshot rendering)
+    raku_array_wrap_counted(inner, kind, 2) // count=2 to avoid trailing comma
 }
 
 fn raku_value(v: &Value) -> String {
@@ -785,7 +798,7 @@ fn raku_value(v: &Value) -> String {
                     .join(", ");
                 raku_array_wrap(&inner, k)
             };
-            let inner = items
+            let rendered: Vec<_> = items
                 .iter()
                 .map(|item| {
                     if is_self_array_ref_marker(item) {
@@ -794,13 +807,18 @@ fn raku_value(v: &Value) -> String {
                         raku_value(item)
                     }
                 })
-                .collect::<Vec<_>>()
-                .join(", ");
-            raku_array_wrap(&inner, *kind)
+                .collect();
+            let count = rendered.len();
+            let inner = rendered.join(", ");
+            raku_array_wrap_counted(&inner, *kind, count)
         }
         Value::Seq(items) => {
             let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
-            format!("({})", inner)
+            if items.len() == 1 {
+                format!("({},)", inner)
+            } else {
+                format!("({})", inner)
+            }
         }
         Value::Slip(items) => {
             let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");

@@ -121,7 +121,10 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
                 use num_traits::ToPrimitive;
                 (n / d).to_i64().unwrap_or(0)
             }
-            Some(Value::Str(s)) => s.trim().parse::<i64>().unwrap_or(0),
+            Some(Value::Str(s)) => s
+                .trim()
+                .parse::<i64>()
+                .unwrap_or_else(|_| s.trim().parse::<f64>().unwrap_or(0.0) as i64),
             Some(Value::Bool(b)) => {
                 if *b {
                     1
@@ -141,7 +144,7 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
             Some(Value::Str(s)) => s
                 .trim()
                 .parse::<BigInt>()
-                .unwrap_or_else(|_| BigInt::from(0)),
+                .unwrap_or_else(|_| BigInt::from(s.trim().parse::<f64>().unwrap_or(0.0) as i64)),
             Some(Value::Bool(true)) => BigInt::from(1),
             Some(Value::Bool(false)) => BigInt::from(0),
             _ => BigInt::from(0),
