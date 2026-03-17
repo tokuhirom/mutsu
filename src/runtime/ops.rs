@@ -932,7 +932,10 @@ impl Interpreter {
             "div" => {
                 let divisor = to_int(right);
                 if divisor == 0 {
-                    return Err(RuntimeError::numeric_divide_by_zero());
+                    return Ok(RuntimeError::divide_by_zero_failure(
+                        Some(Value::Int(to_int(left))),
+                        Some("div"),
+                    ));
                 }
                 Ok(Value::Int(to_int(left).div_euclid(divisor)))
             }
@@ -941,7 +944,10 @@ impl Interpreter {
                     let l = to_num(left);
                     let r = to_num(right);
                     if r == 0.0 {
-                        return Err(RuntimeError::numeric_divide_by_zero());
+                        return Ok(RuntimeError::divide_by_zero_failure(
+                            Some(Value::Num(l)),
+                            Some("%"),
+                        ));
                     }
                     // Raku uses floored-division modulo (sign follows divisor)
                     Ok(Value::Num(l - (l / r).floor() * r))
@@ -949,7 +955,10 @@ impl Interpreter {
                     let l = to_int(left);
                     let r = to_int(right);
                     if r == 0 {
-                        return Err(RuntimeError::numeric_divide_by_zero());
+                        return Ok(RuntimeError::divide_by_zero_failure(
+                            Some(Value::Int(l)),
+                            Some("%"),
+                        ));
                     }
                     // Raku uses floored-division modulo (sign follows divisor)
                     // a - floor(a/b) * b
