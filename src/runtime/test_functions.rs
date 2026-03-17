@@ -1001,6 +1001,7 @@ impl Interpreter {
         nested.role_type_params = self.role_type_params.clone();
         nested.class_role_param_bindings = self.class_role_param_bindings.clone();
         nested.subsets = self.subsets.clone();
+        nested.enum_types = self.enum_types.clone();
         nested.type_metadata = self.type_metadata.clone();
         nested.current_package = self.current_package.clone();
         nested.var_dynamic_flags = self.var_dynamic_flags.clone();
@@ -1070,6 +1071,7 @@ impl Interpreter {
         nested.role_type_params = self.role_type_params.clone();
         nested.class_role_param_bindings = self.class_role_param_bindings.clone();
         nested.subsets = self.subsets.clone();
+        nested.enum_types = self.enum_types.clone();
         nested.type_metadata = self.type_metadata.clone();
         nested.current_package = self.current_package.clone();
         nested.var_dynamic_flags = self.var_dynamic_flags.clone();
@@ -1118,6 +1120,7 @@ impl Interpreter {
                 nested.role_type_params = self.role_type_params.clone();
                 nested.class_role_param_bindings = self.class_role_param_bindings.clone();
                 nested.subsets = self.subsets.clone();
+                nested.enum_types = self.enum_types.clone();
                 nested.type_metadata = self.type_metadata.clone();
                 nested.current_package = self.current_package.clone();
                 nested.suppressed_names = self.suppressed_names.clone();
@@ -1358,6 +1361,7 @@ impl Interpreter {
                 nested.role_type_params = self.role_type_params.clone();
                 nested.class_role_param_bindings = self.class_role_param_bindings.clone();
                 nested.subsets = self.subsets.clone();
+                nested.enum_types = self.enum_types.clone();
                 nested.type_metadata = self.type_metadata.clone();
                 nested.current_package = self.current_package.clone();
                 nested.var_dynamic_flags = self.var_dynamic_flags.clone();

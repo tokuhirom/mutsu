@@ -772,6 +772,16 @@ impl VM {
             // Meta-object protocol type objects
             Value::Package(Symbol::intern(name))
         } else if name.contains("::") {
+            // Check if this is an access to a non-existent enum variant
+            if let Some((pkg, sym)) = name.rsplit_once("::")
+                && self.interpreter.has_enum_type(pkg)
+                && !self.interpreter.has_enum_variant(pkg, sym)
+            {
+                return Err(RuntimeError::new(format!(
+                    "Could not find symbol '&{}' in '{}'",
+                    sym, pkg,
+                )));
+            }
             Value::Package(Symbol::intern(name))
         } else if name.chars().count() == 1 {
             // Single unicode character — check for vulgar fractions etc.
