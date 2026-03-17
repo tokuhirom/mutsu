@@ -343,7 +343,12 @@ impl Interpreter {
         Ok(Value::Bool(true))
     }
 
-    pub(super) fn builtin_rename(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_rename(&self, name: &str, args: &[Value]) -> Result<Value, RuntimeError> {
+        let ex_type = if name == "rename" {
+            "X::IO::Rename"
+        } else {
+            "X::IO::Move"
+        };
         let mut positional = Vec::new();
         let mut createonly = false;
         for arg in args {
@@ -370,7 +375,7 @@ impl Interpreter {
                 && dest_buf.exists()
                 && fs::canonicalize(&src_buf).ok() == fs::canonicalize(&dest_buf).ok())
         {
-            let ex = Value::make_instance(Symbol::intern("X::IO::Move"), HashMap::new());
+            let ex = Value::make_instance(Symbol::intern(ex_type), HashMap::new());
             let mut failure_attrs = HashMap::new();
             failure_attrs.insert("exception".to_string(), ex);
             failure_attrs.insert("handled".to_string(), Value::Bool(false));
@@ -378,8 +383,8 @@ impl Interpreter {
                 "message".to_string(),
                 Value::Str(
                     format!(
-                        "Failed to move '{}': source and destination are the same file",
-                        source
+                        "Failed to {} '{}': source and destination are the same file",
+                        name, source
                     )
                     .into(),
                 ),
@@ -391,15 +396,15 @@ impl Interpreter {
         }
         if createonly && dest_buf.exists() {
             return Err(io_exception_error(
-                "X::IO::Move",
-                format!("Failed to move '{}': destination already exists", source),
+                ex_type,
+                format!(
+                    "Failed to {} '{}': destination already exists",
+                    name, source
+                ),
             ));
         }
         fs::rename(&src_buf, &dest_buf).map_err(|err| {
-            io_exception_error(
-                "X::IO::Move",
-                format!("Failed to move '{}': {}", source, err),
-            )
+            io_exception_error(ex_type, format!("Failed to {} '{}': {}", name, source, err))
         })?;
         Ok(Value::Bool(true))
     }
