@@ -829,7 +829,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
 
     // Destructuring: my ($a, $b) = expr
     if rest.starts_with('(') {
-        return parse_destructuring_decl(rest);
+        return parse_destructuring_decl(rest, is_state);
     }
 
     // Parse variable
@@ -1476,7 +1476,7 @@ struct DestructureVar {
     is_named: bool,
 }
 
-pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
+pub(super) fn parse_destructuring_decl(input: &str, is_state: bool) -> PResult<'_, Stmt> {
     let (rest, _) = parse_char(input, '(')?;
     let (rest, _) = ws(rest)?;
     let mut vars: Vec<DestructureVar> = Vec::new();
@@ -1605,7 +1605,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
                         index: Box::new(Expr::Literal(Value::str(bare_name.to_string()))),
                     },
                     type_constraint: None,
-                    is_state: false,
+                    is_state,
                     is_our: false,
                     is_dynamic: false,
                     is_export: false,
@@ -1661,7 +1661,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
                 name: dvar.name.clone(),
                 expr,
                 type_constraint: None,
-                is_state: false,
+                is_state,
                 is_our: false,
                 is_dynamic: false,
                 is_export: false,
@@ -1685,7 +1685,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
             name: dvar.name.clone(),
             expr: Expr::Literal(Value::Nil),
             type_constraint: None,
-            is_state: false,
+            is_state,
             is_our: false,
             is_dynamic: false,
             is_export: false,

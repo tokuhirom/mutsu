@@ -309,6 +309,43 @@ impl VM {
         }
     }
 
+    /// Sync only state variables whose `StateVarInit` opcode falls within
+    /// the given instruction range [start..end). This avoids prematurely
+    /// syncing state variables that haven't been initialized yet.
+    fn sync_state_locals_in_range(&mut self, code: &CompiledCode, start: usize, end: usize) {
+        for (slot, key) in &code.state_locals {
+            // Check if this exact state variable (by key) has its StateVarInit in the range.
+            // We match both slot and key_idx to avoid false matches when multiple
+            // state variables share the same local slot.
+            let has_init_in_range = code.ops[start..end].iter().any(|op| {
+                if let OpCode::StateVarInit(s, k) = op {
+                    if *s as usize != *slot {
+                        return false;
+                    }
+                    // Verify the key constant matches
+                    if let Value::Str(ref stored_key) = code.constants[*k as usize] {
+                        stored_key.as_ref() == key.as_str()
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            });
+            if !has_init_in_range {
+                continue;
+            }
+            let local_name = &code.locals[*slot];
+            let val = self
+                .interpreter
+                .env()
+                .get(local_name)
+                .cloned()
+                .unwrap_or_else(|| self.locals[*slot].clone());
+            self.interpreter.set_state_var(key.clone(), val);
+        }
+    }
+
     /// Get a reference to the interpreter (for reading env values).
     pub(crate) fn interpreter(&self) -> &Interpreter {
         &self.interpreter

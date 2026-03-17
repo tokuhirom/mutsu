@@ -105,6 +105,11 @@ impl VM {
             'body_redo: loop {
                 match self.run_range(code, body_start, loop_end, compiled_fns) {
                     Ok(()) => {
+                        // Sync state variables modified in this iteration so
+                        // the next iteration's StateVarInit sees updated values.
+                        if !code.state_locals.is_empty() {
+                            self.sync_state_locals_in_range(code, body_start, loop_end);
+                        }
                         if let Some(saved_topic) = &topic_before_body {
                             if let Some(v) = saved_topic.clone() {
                                 self.interpreter.env_mut().insert("_".to_string(), v);
@@ -316,6 +321,12 @@ impl VM {
             'body_redo: loop {
                 match self.run_range(code, body_start, loop_end, compiled_fns) {
                     Ok(()) => {
+                        // Sync state variables modified in this iteration so
+                        // that StateVarInit in the next iteration sees the
+                        // updated values.
+                        if !code.state_locals.is_empty() {
+                            self.sync_state_locals_in_range(code, body_start, loop_end);
+                        }
                         if writes_back_topic {
                             self.write_back_for_topic_item(code, &container_binding, idx);
                         }
@@ -678,6 +689,9 @@ impl VM {
             'body_redo: loop {
                 match self.run_range(code, body_start, step_begin, compiled_fns) {
                     Ok(()) => {
+                        if !code.state_locals.is_empty() {
+                            self.sync_state_locals_in_range(code, body_start, step_begin);
+                        }
                         if let Some(ref mut coll) = collected {
                             let base = stack_base.unwrap();
                             if self.stack.len() > base {
@@ -993,7 +1007,12 @@ impl VM {
             first = false;
             'body_redo: loop {
                 match self.run_range(code, body_start, cond_start, compiled_fns) {
-                    Ok(()) => break 'body_redo,
+                    Ok(()) => {
+                        if !code.state_locals.is_empty() {
+                            self.sync_state_locals_in_range(code, body_start, cond_start);
+                        }
+                        break 'body_redo;
+                    }
                     Err(e) if e.is_redo && Self::label_matches(&e.label, label) => {
                         continue 'body_redo;
                     }
