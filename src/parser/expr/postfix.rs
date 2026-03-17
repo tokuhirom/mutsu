@@ -832,12 +832,21 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    // lazy prefix (treated as no-op): lazy expr
+    // lazy prefix: wrap inner expression with .lazy method call
     if input.starts_with("lazy") && !is_ident_char(input.as_bytes().get(4).copied()) {
         let r = &input[4..];
         let (r, _) = ws(r)?;
         let (r, expr) = prefix_expr(r)?;
-        return Ok((r, expr));
+        return Ok((
+            r,
+            Expr::MethodCall {
+                target: Box::new(expr),
+                name: Symbol::intern("lazy"),
+                args: vec![],
+                modifier: None,
+                quoted: false,
+            },
+        ));
     }
     // hyper prefix: eager materialization variant (same surface semantics as `.hyper`)
     if input.starts_with("hyper") && !is_ident_char(input.as_bytes().get(5).copied()) {
