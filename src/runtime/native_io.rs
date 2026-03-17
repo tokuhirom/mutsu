@@ -540,18 +540,43 @@ impl Interpreter {
                 }
                 Ok(Value::Bool(true))
             }
-            "mkdir" => {
-                fs::create_dir_all(&path_buf).map_err(|err| {
-                    RuntimeError::new(format!("Failed to mkdir '{}': {}", p, err))
-                })?;
-                Ok(Value::make_instance(
+            "mkdir" => match fs::create_dir_all(&path_buf) {
+                Ok(()) => Ok(Value::make_instance(
                     Symbol::intern("IO::Path"),
                     attributes.clone(),
-                ))
-            }
+                )),
+                Err(err) => {
+                    let msg = format!(
+                        "Failed to create directory '{}' with mode '0o777': Failed to mkdir: {}",
+                        p, err
+                    );
+                    let mut ex_attrs = HashMap::new();
+                    ex_attrs.insert("message".to_string(), Value::str_from(&msg));
+                    ex_attrs.insert("path".to_string(), Value::str_from(&p));
+                    let ex = Value::make_instance(Symbol::intern("X::IO::Mkdir"), ex_attrs);
+                    let mut failure_attrs = HashMap::new();
+                    failure_attrs.insert("exception".to_string(), ex);
+                    Ok(Value::make_instance(
+                        Symbol::intern("Failure"),
+                        failure_attrs,
+                    ))
+                }
+            },
             "rmdir" => match fs::remove_dir(&path_buf) {
                 Ok(()) => Ok(Value::Bool(true)),
-                Err(_) => Ok(Value::Bool(false)),
+                Err(err) => {
+                    let msg = format!("Failed to remove the directory '{}': {}", p, err);
+                    let mut ex_attrs = HashMap::new();
+                    ex_attrs.insert("message".to_string(), Value::str_from(&msg));
+                    ex_attrs.insert("path".to_string(), Value::str_from(&p));
+                    let ex = Value::make_instance(Symbol::intern("X::IO::Rmdir"), ex_attrs);
+                    let mut failure_attrs = HashMap::new();
+                    failure_attrs.insert("exception".to_string(), ex);
+                    Ok(Value::make_instance(
+                        Symbol::intern("Failure"),
+                        failure_attrs,
+                    ))
+                }
             },
             "dir" => {
                 let mut entries = Vec::new();
