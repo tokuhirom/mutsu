@@ -287,7 +287,7 @@ impl VM {
                     .interpreter
                     .call_user_routine_direct(&name.resolve(), args);
             }
-            return self.interpreter.eval_call_on_value(callable.clone(), args);
+            return self.vm_call_on_value(callable.clone(), args, None);
         }
         debug_assert!(args.len() == 2);
         self.eval_reduction_operator_values(base_op, &args[0], &args[1])

@@ -1462,29 +1462,13 @@ impl VM {
             target
         };
 
-        // Fast path: if target is a Sub with compiled_code, dispatch to compiled closure
-        if let Value::Sub(ref data) = target
-            && let Some(ref cc) = data.compiled_code
-        {
-            let cc = cc.clone();
-            let sub_is_rw = data.is_rw;
-            let data = data.clone();
-            self.interpreter.set_pending_call_arg_sources(arg_sources);
-            let result = self.call_compiled_closure(&data, &cc, args, compiled_fns);
-            self.interpreter.set_pending_call_arg_sources(None);
-            let result = self.interpreter.maybe_fetch_rw_proxy(result?, sub_is_rw)?;
-            self.stack.push(result);
-            self.env_dirty = true;
-            return Ok(());
-        }
-
         let sub_is_rw = if let Value::Sub(ref data) = target {
             data.is_rw
         } else {
             false
         };
         self.interpreter.set_pending_call_arg_sources(arg_sources);
-        let result = self.interpreter.eval_call_on_value(target, args);
+        let result = self.vm_call_on_value(target, args, Some(compiled_fns));
         self.interpreter.set_pending_call_arg_sources(None);
         let result = self.interpreter.maybe_fetch_rw_proxy(result?, sub_is_rw)?;
         self.stack.push(result);
@@ -1519,21 +1503,6 @@ impl VM {
         // resolve_code_var handles pseudo-package stripping internally
         let target = self.interpreter.resolve_code_var(&name);
         let result = if !matches!(target, Value::Nil) {
-            // Fast path: compiled closure dispatch
-            if let Value::Sub(ref data) = target
-                && let Some(ref cc) = data.compiled_code
-            {
-                let cc = cc.clone();
-                let sub_is_rw = data.is_rw;
-                let data = data.clone();
-                self.interpreter.set_pending_call_arg_sources(arg_sources);
-                let result = self.call_compiled_closure(&data, &cc, args, compiled_fns);
-                self.interpreter.set_pending_call_arg_sources(None);
-                let result = self.interpreter.maybe_fetch_rw_proxy(result?, sub_is_rw)?;
-                self.stack.push(result);
-                self.env_dirty = true;
-                return Ok(());
-            }
             let sub_is_rw = if let Value::Sub(ref data) = target {
                 data.is_rw
             } else {
@@ -1541,7 +1510,7 @@ impl VM {
             };
             self.interpreter
                 .set_pending_call_arg_sources(arg_sources.clone());
-            let result = self.interpreter.eval_call_on_value(target, args);
+            let result = self.vm_call_on_value(target, args, Some(compiled_fns));
             self.interpreter.set_pending_call_arg_sources(None);
             self.interpreter.maybe_fetch_rw_proxy(result?, sub_is_rw)?
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
