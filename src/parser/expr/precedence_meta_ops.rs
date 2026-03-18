@@ -545,6 +545,56 @@ fn parse_hyper_op(input: &str) -> Option<(String, bool, bool, usize)> {
     None
 }
 
+/// Parse hyper operator with function reference: >>[&func]<<, <<[&func]>>, etc.
+/// Returns (func_name, dwim_left, dwim_right, total_consumed_length)
+fn parse_hyper_func_op(input: &str) -> Option<(String, bool, bool, usize)> {
+    // Determine left delimiter and dwim_left
+    let (dwim_left, left_len, after_left) = if let Some(r) = input.strip_prefix('\u{00BB}') {
+        (false, '\u{00BB}'.len_utf8(), r)
+    } else if let Some(r) = input.strip_prefix('\u{00AB}') {
+        (true, '\u{00AB}'.len_utf8(), r)
+    } else if let Some(r) = input.strip_prefix(">>") {
+        (false, 2, r)
+    } else if let Some(r) = input.strip_prefix("<<") {
+        (true, 2, r)
+    } else {
+        return None;
+    };
+
+    // Check for [&func] pattern
+    if !after_left.starts_with("[&") {
+        return None;
+    }
+    let bracket_content = &after_left[2..]; // skip "[&"
+    let end = bracket_content.find(']')?;
+    let name = &bracket_content[..end];
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
+        return None;
+    }
+    let after_bracket = &after_left[2 + end + 1..]; // skip "[&name]"
+    let bracket_len = 2 + end + 1;
+
+    // Determine right delimiter and dwim_right
+    let (dwim_right, right_len) = if let Some(_r) = after_bracket.strip_prefix('\u{00BB}') {
+        (true, '\u{00BB}'.len_utf8())
+    } else if let Some(_r) = after_bracket.strip_prefix('\u{00AB}') {
+        (false, '\u{00AB}'.len_utf8())
+    } else if after_bracket.starts_with(">>") {
+        (true, 2)
+    } else if after_bracket.starts_with("<<") {
+        (false, 2)
+    } else {
+        return None;
+    };
+
+    let total_len = left_len + bracket_len + right_len;
+    Some((name.to_string(), dwim_left, dwim_right, total_len))
+}
+
 /// Try to parse a custom infix word operator at a given precedence range.
 /// Returns Some(remaining_input) if a custom infix was parsed, None otherwise.
 /// `min_level` is exclusive, `max_level` is inclusive.
@@ -581,6 +631,27 @@ pub(super) fn concat_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = replication_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
+        // Hyper operators with function reference: >>[&func]<<, <<[&func]>>, etc.
+        if let Some((func_name, dwim_left, dwim_right, len)) = parse_hyper_func_op(r) {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = replication_expr(r).map_err(|err| {
+                enrich_expected_error(
+                    err,
+                    "expected expression after hyper function operator",
+                    r.len(),
+                )
+            })?;
+            left = Expr::HyperFuncOp {
+                func_name,
+                left: Box::new(left),
+                right: Box::new(right),
+                dwim_left,
+                dwim_right,
+            };
+            rest = r;
+            continue;
+        }
         // Hyper operators: >>op<<, >>op>>, <<op<<, <<op>>
         if let Some((op, dwim_left, dwim_right, len)) = parse_hyper_op(r) {
             let r = &r[len..];

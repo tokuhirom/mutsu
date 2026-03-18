@@ -272,6 +272,14 @@ pub(crate) enum Expr {
         dwim_left: bool,
         dwim_right: bool,
     },
+    /// Hyper operator with a function reference: >>[&func]<<, <<[&func]>>, etc.
+    HyperFuncOp {
+        func_name: String,
+        left: Box<Expr>,
+        right: Box<Expr>,
+        dwim_left: bool,
+        dwim_right: bool,
+    },
     MetaOp {
         meta: String, // "R", "X", "Z"
         op: String,
@@ -948,7 +956,9 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
         Expr::IndirectCodeLookup { package, .. } => collect_ph_expr(package, out),
         Expr::SymbolicDeref { expr, .. } => collect_ph_expr(expr, out),
         Expr::Reduction { expr, .. } | Expr::Eager(expr) => collect_ph_expr(expr, out),
-        Expr::HyperOp { left, right, .. } | Expr::MetaOp { left, right, .. } => {
+        Expr::HyperOp { left, right, .. }
+        | Expr::HyperFuncOp { left, right, .. }
+        | Expr::MetaOp { left, right, .. } => {
             collect_ph_expr(left, out);
             collect_ph_expr(right, out);
         }
