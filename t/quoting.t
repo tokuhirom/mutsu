@@ -1,5 +1,5 @@
 use Test;
-plan 14;
+plan 15;
 
 # q// literal string (no interpolation)
 my $q1 = q/hello world/;
@@ -49,3 +49,4 @@ is q< \> >, ' > ', 'q handles escaped paired closer';
 is q< \< >, ' < ', 'q handles escaped paired opener';
 
 is Q:b♥\♥♥, '♥', 'Q:b handles escaped non-ASCII delimiters';
+is q｢foo\｢bar\｣baz｣, 'foo｢bar｣baz', 'q handles escaped multibyte paired delimiters';
