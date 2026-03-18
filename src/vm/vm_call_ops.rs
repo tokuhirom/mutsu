@@ -645,7 +645,7 @@ impl VM {
                 .get("_")
                 .cloned()
                 .unwrap_or(Value::Nil);
-            let matched = self.interpreter.smart_match_values(&topic, &target);
+            let matched = self.vm_smart_match(&topic, &target);
             self.stack.push(Value::Bool(matched));
             self.env_dirty = true;
             return Ok(());

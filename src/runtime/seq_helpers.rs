@@ -2303,7 +2303,7 @@ impl Interpreter {
     }
 
     /// Get raw bounds of a range as f64 (NOT adjusted for exclusivity).
-    fn range_raw_bounds_f64(v: &Value) -> (f64, f64) {
+    pub(crate) fn range_raw_bounds_f64(v: &Value) -> (f64, f64) {
         match v {
             Value::Range(a, b) => (*a as f64, *b as f64),
             Value::RangeExcl(a, b) => (*a as f64, *b as f64),
@@ -2315,7 +2315,7 @@ impl Interpreter {
     }
 
     /// Get exclusivity flags for a range: (start_val, end_val, excl_start, excl_end).
-    fn range_exclusivity(v: &Value) -> (f64, f64, bool, bool) {
+    pub(crate) fn range_exclusivity(v: &Value) -> (f64, f64, bool, bool) {
         match v {
             Value::Range(a, b) => (*a as f64, *b as f64, false, false),
             Value::RangeExcl(a, b) => (*a as f64, *b as f64, false, true),
@@ -2332,7 +2332,7 @@ impl Interpreter {
     }
 
     /// Check if a range has string endpoints.
-    fn range_has_string_endpoints(v: &Value) -> bool {
+    pub(crate) fn range_has_string_endpoints(v: &Value) -> bool {
         match v {
             Value::GenericRange { start, end, .. } => {
                 matches!(**start, Value::Str(_)) || matches!(**end, Value::Str(_))
@@ -2342,7 +2342,7 @@ impl Interpreter {
     }
 
     /// Get raw string bounds of a range.
-    fn range_raw_string_bounds(v: &Value) -> (String, String) {
+    pub(crate) fn range_raw_string_bounds(v: &Value) -> (String, String) {
         match v {
             Value::GenericRange { start, end, .. } => {
                 (start.to_string_value(), end.to_string_value())
@@ -2356,7 +2356,7 @@ impl Interpreter {
     }
 
     /// Compute element count of a range as f64.
-    fn range_elems_f64(v: &Value) -> f64 {
+    pub(crate) fn range_elems_f64(v: &Value) -> f64 {
         match v {
             Value::Range(a, b) => {
                 if *b == i64::MAX || *a == i64::MIN {
@@ -2403,7 +2403,7 @@ impl Interpreter {
     }
 
     /// Check if a value is contained within a range.
-    fn value_in_range(val: &Value, range: &Value) -> bool {
+    pub(crate) fn value_in_range(val: &Value, range: &Value) -> bool {
         let (r_min, r_max) = Self::range_raw_bounds_f64(range);
         let (_, _, r_es, r_ee) = Self::range_exclusivity(range);
 

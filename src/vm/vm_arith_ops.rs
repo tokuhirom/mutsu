@@ -236,7 +236,7 @@ impl VM {
                     .get("_")
                     .cloned()
                     .unwrap_or(Value::Nil);
-                Value::Bool(self.interpreter.smart_match_values(&topic, &val))
+                Value::Bool(self.vm_smart_match(&topic, &val))
             }
             _ => Value::Bool(val.truthy()),
         };
