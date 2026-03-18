@@ -123,6 +123,20 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
     if let Some(seq) = try_parse_sequence_in_paren(input, std::slice::from_ref(&first)) {
         return seq;
     }
+    // Chained colonpairs in parens: (:a(2) :b(3) :c(4)) → list of pairs.
+    // In Raku, space-separated colonpairs inside parentheses form a list without commas.
+    if is_colonpair_expr(&first) && looks_like_colonpair_start(input) {
+        let mut items = vec![first];
+        let mut rest = input;
+        while looks_like_colonpair_start(rest) {
+            let (r, pair) = super::misc::colonpair_expr(rest)?;
+            items.push(pair);
+            let (r, _) = ws(r)?;
+            rest = r;
+        }
+        let (rest, _) = parse_char(rest, ')')?;
+        return Ok((rest, finalize_paren_list(items)));
+    }
     if let Ok((input, _)) = parse_char(input, ')') {
         // Parenthesized pair: (:a(3)) — mark as positional so it's not treated
         // as a named argument in function calls.
@@ -194,6 +208,40 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
         items.push(next);
         input_rest = input;
     }
+}
+
+/// Check if an expression is a colonpair (represented as a FatArrow binary expression).
+fn is_colonpair_expr(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Binary {
+            op: TokenKind::FatArrow,
+            ..
+        }
+    )
+}
+
+/// Check if the input starts with a colonpair pattern (`:name`, `:!name`, `:name(...)`, etc.)
+/// but not `::` (namespace separator) or `:=` (binding) or `:N<radix>` (radix literal).
+fn looks_like_colonpair_start(input: &str) -> bool {
+    let Some(r) = input.strip_prefix(':') else {
+        return false;
+    };
+    if r.starts_with(':') || r.starts_with('=') {
+        return false;
+    }
+    // :36<...> is a radix literal, not a colonpair
+    let digit_end = r
+        .char_indices()
+        .take_while(|(_, c)| crate::builtins::unicode::unicode_decimal_digit_value(*c).is_some())
+        .last()
+        .map(|(idx, c)| idx + c.len_utf8())
+        .unwrap_or(0);
+    if digit_end > 0 && r[digit_end..].starts_with('<') {
+        return false;
+    }
+    // Must start with identifier char or `!` (negated colonpair)
+    r.starts_with(|c: char| c.is_alphabetic() || c == '_' || c == '!')
 }
 
 fn finalize_paren_list(items: Vec<Expr>) -> Expr {
