@@ -350,22 +350,83 @@ pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
         let full_name = format!("{}:<{}>", base, op_symbol);
         return Ok((after_close, full_name));
     }
+    // Bare identifier form: infix:[sym] or circumfix:[sym1, sym2]
+    // where the identifiers are compile-time constants
+    if is_op_category
+        && let Some(after_open) = rest.strip_prefix(":[")
+        && let Some(end_pos) = after_open.find(']')
+    {
+        let content = after_open[..end_pos].trim();
+        // Check if content contains comma-separated parts (for circumfix)
+        let parts: Vec<&str> = content.split(',').map(|s| s.trim()).collect();
+        let mut resolved_parts = Vec::new();
+        let mut all_resolved = true;
+        for part in &parts {
+            let p = part.trim_matches(|c: char| c == '"' || c == '\'');
+            // Try to resolve as a compile-time constant
+            if let Some(value) = super::simple::lookup_compile_time_constant(p) {
+                resolved_parts.push(value);
+            } else if let Some(bare) = p.strip_prefix('$') {
+                if let Some(value) = super::simple::lookup_compile_time_constant(bare) {
+                    resolved_parts.push(value);
+                } else if let Some(value) = super::simple::lookup_compile_time_constant(p) {
+                    resolved_parts.push(value);
+                } else {
+                    all_resolved = false;
+                    break;
+                }
+            } else {
+                all_resolved = false;
+                break;
+            }
+        }
+        if all_resolved && !resolved_parts.is_empty() {
+            let after_close = &after_open[end_pos + 1..];
+            let op_symbol = resolved_parts.join(" ");
+            let full_name = format!("{}:<{}>", base, op_symbol);
+            return Ok((after_close, full_name));
+        }
+    }
     Ok((rest, base))
 }
 
 /// Validate that circumfix/postcircumfix operators have exactly 2 delimiter parts.
 fn validate_categorical_parts(name: &str) -> Result<(), PError> {
-    for prefix in &["circumfix:<", "postcircumfix:<"] {
-        if let Some(rest) = name.strip_prefix(prefix)
-            && let Some(delims) = rest.strip_suffix('>')
-        {
-            let parts: Vec<&str> = delims.split_whitespace().collect();
-            if parts.len() > 2 {
-                return Err(PError::fatal(
-                    "X::Syntax::AddCategorical::TooManyParts: Too many parts in categorical name"
-                        .to_string(),
-                ));
-            }
+    // Determine the category and expected number of parts
+    let (category, expected) =
+        if name.starts_with("circumfix:<") || name.starts_with("postcircumfix:<") {
+            let cat = if name.starts_with("circumfix") {
+                "circumfix"
+            } else {
+                "postcircumfix"
+            };
+            (cat, 2usize)
+        } else if name.starts_with("infix:<") {
+            ("infix", 1)
+        } else if name.starts_with("prefix:<") {
+            ("prefix", 1)
+        } else if name.starts_with("postfix:<") {
+            ("postfix", 1)
+        } else if name.starts_with("term:<") {
+            ("term", 1)
+        } else {
+            return Ok(());
+        };
+
+    let delim_start = name.find(":<").unwrap() + 2;
+    if let Some(delims) = name[delim_start..].strip_suffix('>') {
+        let parts: Vec<&str> = delims.split_whitespace().collect();
+        if parts.len() > expected {
+            return Err(PError::fatal(format!(
+                "X::Syntax::AddCategorical::TooManyParts: Too many symbols provided for categorical of type {}; needs only {}",
+                category, expected
+            )));
+        }
+        if parts.len() < expected {
+            return Err(PError::fatal(format!(
+                "X::Syntax::AddCategorical::TooFewParts: Not enough symbols provided for categorical of type {}; needs {}",
+                category, expected
+            )));
         }
     }
     Ok(())
