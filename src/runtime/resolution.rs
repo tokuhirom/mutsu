@@ -969,6 +969,8 @@ impl Interpreter {
                         body: list.body.clone(),
                         env,
                         cache: std::sync::Mutex::new(list.cache.lock().unwrap().clone()),
+                        compiled_code: list.compiled_code.clone(),
+                        compiled_fns: list.compiled_fns.clone(),
                     }))
                 } else {
                     v

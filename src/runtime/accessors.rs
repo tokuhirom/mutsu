@@ -1017,6 +1017,26 @@ impl Interpreter {
         Ok(())
     }
 
+    pub(crate) fn gather_items_len(&self) -> usize {
+        self.gather_items.len()
+    }
+
+    pub(crate) fn push_gather_items(&mut self, items: Vec<Value>) {
+        self.gather_items.push(items);
+    }
+
+    pub(crate) fn pop_gather_items(&mut self) -> Option<Vec<Value>> {
+        self.gather_items.pop()
+    }
+
+    pub(crate) fn push_gather_take_limit(&mut self, limit: Option<usize>) {
+        self.gather_take_limits.push(limit);
+    }
+
+    pub(crate) fn pop_gather_take_limit(&mut self) {
+        self.gather_take_limits.pop();
+    }
+
     pub(crate) fn current_package(&self) -> &str {
         &self.current_package
     }

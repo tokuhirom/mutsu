@@ -563,11 +563,9 @@ impl Interpreter {
                             if !items.is_empty() {
                                 items.remove(0);
                             }
-                            result = Value::LazyList(std::sync::Arc::new(crate::value::LazyList {
-                                body: vec![],
-                                env: crate::env::Env::new(),
-                                cache: std::sync::Mutex::new(Some(items)),
-                            }));
+                            result = Value::LazyList(std::sync::Arc::new(
+                                crate::value::LazyList::new_cached(items),
+                            ));
                         }
                         _ => {}
                     }
@@ -916,11 +914,9 @@ impl Interpreter {
     }
 
     pub(crate) fn make_repeat_lazy_cache(items: Vec<Value>) -> Value {
-        Value::LazyList(std::sync::Arc::new(crate::value::LazyList {
-            body: Vec::new(),
-            env: crate::env::Env::new(),
-            cache: std::sync::Mutex::new(Some(items)),
-        }))
+        Value::LazyList(std::sync::Arc::new(crate::value::LazyList::new_cached(
+            items,
+        )))
     }
 
     pub(crate) fn repeat_lhs_once(&mut self, left: &Value) -> Result<Value, RuntimeError> {

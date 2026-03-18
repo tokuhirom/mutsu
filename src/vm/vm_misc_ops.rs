@@ -490,7 +490,7 @@ impl VM {
         }
         // Force LazyList before numeric coercion so we can count elements
         let val = if let Value::LazyList(ll) = &val {
-            let items = self.interpreter.force_lazy_list_bridge(ll)?;
+            let items = self.force_lazy_list_vm(ll)?;
             Value::Seq(std::sync::Arc::new(items))
         } else {
             val
@@ -960,7 +960,7 @@ impl VM {
         };
         let list_value = self.stack.pop().unwrap_or(Value::Nil);
         let mut list = if let Value::LazyList(ref ll) = list_value {
-            self.interpreter.force_lazy_list_bridge(ll)?
+            self.force_lazy_list_vm(ll)?
         } else {
             runtime::value_to_list(&list_value)
         };
@@ -983,7 +983,7 @@ impl VM {
                 Value::Array(items, kind) if !kind.is_itemized() => items.iter().cloned().collect(),
                 Value::Seq(items) => items.iter().cloned().collect(),
                 Value::LazyList(ll) => {
-                    if let Ok(items) = self.interpreter.force_lazy_list_bridge(&ll) {
+                    if let Ok(items) = self.force_lazy_list_vm(&ll) {
                         items
                     } else {
                         vec![Value::LazyList(ll)]

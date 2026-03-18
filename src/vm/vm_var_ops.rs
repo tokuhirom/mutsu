@@ -845,10 +845,10 @@ impl VM {
                     Value::RangeExcl(_, end) if *end > 0 => self
                         .interpreter
                         .force_lazy_list_prefix_bridge(ll, *end as usize)?,
-                    _ => self.interpreter.force_lazy_list_bridge(ll)?,
+                    _ => self.force_lazy_list_vm(ll)?,
                 }
             } else {
-                self.interpreter.force_lazy_list_bridge(ll)?
+                self.force_lazy_list_vm(ll)?
             };
             target = Value::array(forced);
         }
@@ -856,7 +856,7 @@ impl VM {
         // uniform handling in the match below.
         let is_lazy_index = matches!(&index, Value::LazyList(..));
         let index = if let Value::LazyList(ref ll) = index {
-            let items = self.interpreter.force_lazy_list_bridge(ll)?;
+            let items = self.force_lazy_list_vm(ll)?;
             Value::array(items)
         } else if let Value::Seq(items) = index {
             Value::Array(items, crate::value::ArrayKind::List)

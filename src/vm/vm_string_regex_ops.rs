@@ -437,11 +437,9 @@ impl VM {
                     }
                 }
                 if lazy_inputs {
-                    Value::LazyList(std::sync::Arc::new(crate::value::LazyList {
-                        body: Vec::new(),
-                        env: crate::env::Env::new(),
-                        cache: std::sync::Mutex::new(Some(results)),
-                    }))
+                    Value::LazyList(std::sync::Arc::new(crate::value::LazyList::new_cached(
+                        results,
+                    )))
                 } else if results.is_empty() {
                     Value::Seq(std::sync::Arc::new(Vec::new()))
                 } else {

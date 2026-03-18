@@ -174,7 +174,7 @@ impl VM {
                     (start..end).map(Value::Int).collect()
                 }
             }
-            Value::LazyList(list) => self.interpreter.force_lazy_list_bridge(list)?,
+            Value::LazyList(list) => self.force_lazy_list_vm(list)?,
             _ => vec![val.clone()],
         })
     }
@@ -1292,9 +1292,7 @@ impl VM {
             let mut assigned = if is_bind {
                 // `:=` binding preserves the container type (e.g. List stays List).
                 match raw_popped {
-                    Value::LazyList(list) => {
-                        Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?)
-                    }
+                    Value::LazyList(list) => Value::real_array(self.force_lazy_list_vm(&list)?),
                     other => other,
                 }
             } else {
@@ -1302,7 +1300,7 @@ impl VM {
                     Value::LazyList(list) => {
                         match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
                             Some(Value::Bool(true)) => Value::LazyList(list),
-                            _ => Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?),
+                            _ => Value::real_array(self.force_lazy_list_vm(&list)?),
                         }
                     }
                     other => runtime::coerce_to_array(other),
@@ -1582,7 +1580,7 @@ impl VM {
             let mut assigned = match raw_val {
                 Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
                     Some(Value::Bool(true)) => Value::LazyList(list),
-                    _ => Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?),
+                    _ => Value::real_array(self.force_lazy_list_vm(&list)?),
                 },
                 other => runtime::coerce_to_array(other),
             };

@@ -621,7 +621,7 @@ impl VM {
             && Self::lazy_list_needs_forcing(&method)
         {
             let saved_env = self.interpreter.env().clone();
-            let items = self.interpreter.force_lazy_list_bridge(ll)?;
+            let items = self.force_lazy_list_vm(ll)?;
             if !matches!(method.as_str(), "elems" | "hyper" | "race") {
                 *self.interpreter.env_mut() = saved_env;
             }

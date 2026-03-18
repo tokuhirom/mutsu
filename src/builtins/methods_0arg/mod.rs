@@ -2571,6 +2571,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                             body: list.body.clone(),
                             env,
                             cache: std::sync::Mutex::new(cache),
+                            compiled_code: list.compiled_code.clone(),
+                            compiled_fns: list.compiled_fns.clone(),
                         },
                     ))));
                 }
@@ -2600,6 +2602,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     body: vec![],
                     env,
                     cache: std::sync::Mutex::new(Some(items)),
+                    compiled_code: None,
+                    compiled_fns: None,
                 },
             ))))
         }
