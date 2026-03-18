@@ -358,6 +358,23 @@ impl Interpreter {
         }
 
         if self.has_role(name) {
+            // If the role has CALL-ME, dispatch to it on the type object
+            if self.role_has_method(name, "CALL-ME") {
+                return self.call_method_with_values(
+                    Value::Package(Symbol::intern(name)),
+                    "CALL-ME",
+                    args.to_vec(),
+                );
+            }
+            // If the role has COERCE, pun it to a class and dispatch coercion
+            if self.role_has_method(name, "COERCE") && args.len() == 1 {
+                self.ensure_role_punned_to_class(name);
+                return self.call_method_with_values(
+                    Value::Package(Symbol::intern(name)),
+                    "COERCE",
+                    args.to_vec(),
+                );
+            }
             return Ok(Value::Pair(
                 name.to_string(),
                 Box::new(Value::array(args.to_vec())),
@@ -390,6 +407,17 @@ impl Interpreter {
             return self.call_method_with_values(
                 Value::Package(Symbol::intern(name)),
                 "new",
+                args.to_vec(),
+            );
+        }
+
+        // Fallback: if name is a known class/role with CALL-ME, invoke it on the type object
+        if (self.has_class(name) && self.has_user_method(name, "CALL-ME"))
+            || (self.has_role(name) && self.role_has_method(name, "CALL-ME"))
+        {
+            return self.call_method_with_values(
+                Value::Package(Symbol::intern(name)),
+                "CALL-ME",
                 args.to_vec(),
             );
         }

@@ -1934,4 +1934,31 @@ impl Interpreter {
             _ => 0,
         }
     }
+
+    /// Auto-pun a role into a class so it can be instantiated (e.g. via COERCE or new).
+    /// If the role is already registered as a class, this is a no-op.
+    pub(crate) fn ensure_role_punned_to_class(&mut self, role_name: &str) {
+        if self.classes.contains_key(role_name) {
+            return;
+        }
+        let role_def = match self.roles.get(role_name) {
+            Some(r) => r.clone(),
+            None => return,
+        };
+        let punned_class = ClassDef {
+            parents: Vec::new(),
+            attributes: role_def.attributes.clone(),
+            attribute_types: HashMap::new(),
+            methods: HashMap::new(),
+            native_methods: HashSet::new(),
+            mro: vec![role_name.to_string(), "Any".to_string(), "Mu".to_string()],
+            wildcard_handles: Vec::new(),
+            alias_attributes: HashSet::new(),
+            class_level_attrs: HashMap::new(),
+        };
+        self.classes.insert(role_name.to_string(), punned_class);
+        // Register the role as a composed role of the punned class
+        self.class_composed_roles
+            .insert(role_name.to_string(), vec![role_name.to_string()]);
+    }
 }

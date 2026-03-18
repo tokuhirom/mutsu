@@ -2300,6 +2300,24 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 (r, None)
             };
 
+            // Hyper postcircumfix call-on: >>.(args) — invoke each element as a callable
+            if r.starts_with('(') {
+                let (r, _) = parse_char(r, '(')?;
+                let (r, _) = ws(r)?;
+                let (r, args) = parse_call_arg_list(r)?;
+                let (r, _) = ws(r)?;
+                let (r, _) = parse_char(r, ')')?;
+                expr = Expr::HyperMethodCall {
+                    target: Box::new(expr),
+                    name: Symbol::intern("CALL-ME"),
+                    args,
+                    modifier,
+                    quoted: false,
+                };
+                rest = r;
+                continue;
+            }
+
             // Hyper postcircumfix key lookup: >>.<a>
             if r.starts_with('<')
                 && !r.starts_with("<=")

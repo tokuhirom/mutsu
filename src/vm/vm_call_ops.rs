@@ -1488,7 +1488,12 @@ impl VM {
             return Err(RuntimeError::new("VM stack underflow in CallOnCodeVar"));
         }
         let start = self.stack.len() - arity;
-        let args: Vec<Value> = self.stack.drain(start..).collect();
+        let raw_args: Vec<Value> = self.stack.drain(start..).collect();
+        // Flatten any Slip values in the argument list (from |capture slipping)
+        let mut args = Vec::new();
+        for arg in raw_args {
+            Self::append_flattened_call_arg(&mut args, arg, false);
+        }
         let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
         self.interpreter.set_pending_callsite_line(callsite_line);
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
@@ -1555,7 +1560,12 @@ impl VM {
             return Err(RuntimeError::new("VM stack underflow in HyperMethodCall"));
         }
         let start = self.stack.len() - arity;
-        let args: Vec<Value> = self.stack.drain(start..).collect();
+        let raw_args: Vec<Value> = self.stack.drain(start..).collect();
+        // Flatten any Slip values in the argument list (from |capture slipping)
+        let mut args = Vec::new();
+        for arg in raw_args {
+            Self::append_flattened_call_arg(&mut args, arg, false);
+        }
         let target = self
             .stack
             .pop()
@@ -1564,6 +1574,18 @@ impl VM {
         let mut results = Vec::with_capacity(items.len());
         for (idx, item) in items.iter_mut().enumerate() {
             let method = Self::rewrite_method_name(&method_raw, modifier.as_deref());
+            // Special case: CALL-ME on callable items (from >>.(args) syntax).
+            // Instead of method dispatch, invoke the item directly as a callable.
+            if method == "CALL-ME"
+                && matches!(
+                    item,
+                    Value::Sub(..) | Value::WeakSub(..) | Value::Routine { .. } | Value::Mixin(..)
+                )
+            {
+                let val = self.vm_call_on_value(item.clone(), args.clone(), None)?;
+                results.push(val);
+                continue;
+            }
             let mut skip_native = method == "VAR"
                 || (quoted
                     && matches!(
