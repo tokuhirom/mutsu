@@ -1513,12 +1513,25 @@ impl VM {
                     Value::Nil
                 }
             }
+            // Array + Str: coerce numeric string to Int for positional indexing
+            (Value::Array(items, is_arr), Value::Str(ref s)) => {
+                if let Ok(i) = s.trim().parse::<i64>() {
+                    if i < 0 {
+                        Self::make_out_of_range_failure(i)
+                    } else {
+                        let default =
+                            self.typed_container_default(&Value::Array(items.clone(), is_arr));
+                        Self::resolve_array_entry(&items, is_arr, i as usize, default)
+                    }
+                } else {
+                    Self::make_assoc_indexing_failure("Array")
+                }
+            }
             // Associative indexing on non-hash types returns a Failure
             (ref target, Value::Str(_))
                 if matches!(
                     target,
-                    Value::Array(..)
-                        | Value::Int(_)
+                    Value::Int(_)
                         | Value::BigInt(_)
                         | Value::Num(_)
                         | Value::Rat(..)

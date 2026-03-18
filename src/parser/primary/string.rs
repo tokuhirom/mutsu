@@ -64,6 +64,9 @@ fn unicode_bracket_close(open: char) -> Option<char> {
         '\u{005B}' => Some('\u{005D}'), // [ ]
         '\u{007B}' => Some('\u{007D}'), // { }
         '\u{00AB}' => Some('\u{00BB}'), // « »
+        '\u{0F3A}' => Some('\u{0F3B}'), // ༺ ༻
+        '\u{0F3C}' => Some('\u{0F3D}'), // ༼ ༽
+        '\u{169B}' => Some('\u{169C}'), // ᚛ ᚜
         '\u{2018}' => Some('\u{2019}'), // ' '
         '\u{201A}' => Some('\u{2019}'), // ‚ '
         '\u{201C}' => Some('\u{201D}'), // " "
@@ -75,6 +78,13 @@ fn unicode_bracket_close(open: char) -> Option<char> {
         '\u{2308}' => Some('\u{2309}'), // ⌈ ⌉
         '\u{230A}' => Some('\u{230B}'), // ⌊ ⌋
         '\u{2329}' => Some('\u{232A}'), // 〈 〉
+        '\u{2768}' => Some('\u{2769}'), // ❨ ❩
+        '\u{276A}' => Some('\u{276B}'), // ❪ ❫
+        '\u{276C}' => Some('\u{276D}'), // ❬ ❭
+        '\u{276E}' => Some('\u{276F}'), // ❮ ❯
+        '\u{2770}' => Some('\u{2771}'), // ❰ ❱
+        '\u{2772}' => Some('\u{2773}'), // ❲ ❳
+        '\u{2774}' => Some('\u{2775}'), // ❴ ❵
         '\u{27C5}' => Some('\u{27C6}'), // ⟅ ⟆
         '\u{27E6}' => Some('\u{27E7}'), // ⟦ ⟧
         '\u{27E8}' => Some('\u{27E9}'), // ⟨ ⟩
@@ -92,6 +102,8 @@ fn unicode_bracket_close(open: char) -> Option<char> {
         '\u{2993}' => Some('\u{2994}'), // ⦓ ⦔
         '\u{2995}' => Some('\u{2996}'), // ⦕ ⦖
         '\u{2997}' => Some('\u{2998}'), // ⦗ ⦘
+        '\u{29D8}' => Some('\u{29D9}'), // ⧘ ⧙
+        '\u{29DA}' => Some('\u{29DB}'), // ⧚ ⧛
         '\u{29FC}' => Some('\u{29FD}'), // ⧼ ⧽
         '\u{2E22}' => Some('\u{2E23}'), // ⸢ ⸣
         '\u{2E24}' => Some('\u{2E25}'), // ⸤ ⸥
@@ -109,6 +121,15 @@ fn unicode_bracket_close(open: char) -> Option<char> {
         '\u{301D}' => Some('\u{301E}'), // 〝 〞
         '\u{FD3E}' => Some('\u{FD3F}'), // ﴾ ﴿
         '\u{FE17}' => Some('\u{FE18}'), // ︗ ︘
+        '\u{FE35}' => Some('\u{FE36}'), // ︵ ︶
+        '\u{FE37}' => Some('\u{FE38}'), // ︷ ︸
+        '\u{FE39}' => Some('\u{FE3A}'), // ︹ ︺
+        '\u{FE3B}' => Some('\u{FE3C}'), // ︻ ︼
+        '\u{FE3D}' => Some('\u{FE3E}'), // ︽ ︾
+        '\u{FE3F}' => Some('\u{FE40}'), // ︿ ﹀
+        '\u{FE41}' => Some('\u{FE42}'), // ﹁ ﹂
+        '\u{FE43}' => Some('\u{FE44}'), // ﹃ ﹄
+        '\u{FE47}' => Some('\u{FE48}'), // ﹇ ﹈
         '\u{FE59}' => Some('\u{FE5A}'), // ﹙ ﹚
         '\u{FE5B}' => Some('\u{FE5C}'), // ﹛ ﹜
         '\u{FE5D}' => Some('\u{FE5E}'), // ﹝ ﹞
@@ -2032,25 +2053,35 @@ pub(super) fn single_quoted_string(input: &str) -> PResult<'_, Expr> {
     }
 }
 
-/// Parse smart single-quoted string literal: ‘...’ (no interpolation)
+/// Parse smart single-quoted string literal (no interpolation).
+/// Accepts \u{2018}...\u{2019}, \u{201A}...\u{2019}, \u{201A}...\u{2018}, \u{2019}...\u{2019}, \u{2019}...\u{2018}
 pub(super) fn smart_single_quoted_string(input: &str) -> PResult<'_, Expr> {
-    let (input, close) = if let Ok((rest, _)) = parse_char(input, '‘') {
-        (rest, '’')
-    } else {
-        let (rest, _) = parse_char(input, '’')?;
-        (rest, '‘')
+    let first = input
+        .chars()
+        .next()
+        .ok_or_else(|| PError::expected("smart single quote"))?;
+    // Determine the set of valid closing characters based on opener
+    let closers: &[char] = match first {
+        '\u{2018}' => &['\u{2019}'],
+        '\u{201A}' => &['\u{2019}', '\u{2018}'],
+        '\u{2019}' => &['\u{2019}', '\u{2018}'],
+        _ => return Err(PError::expected("smart single quote")),
     };
+    let input = &input[first.len_utf8()..];
     let mut rest = input;
     let start = input;
     loop {
         if rest.is_empty() {
-            return Err(PError::expected("closing ’"));
-        }
-        if let Some(after_quote) = rest.strip_prefix(close) {
-            let content = &start[..start.len() - rest.len()];
-            return Ok((after_quote, Expr::Literal(Value::str(content.to_string()))));
+            return Err(PError::expected("closing smart single quote"));
         }
         let ch = rest.chars().next().unwrap();
+        if closers.contains(&ch) {
+            let content = &start[..start.len() - rest.len()];
+            return Ok((
+                &rest[ch.len_utf8()..],
+                Expr::Literal(Value::str(content.to_string())),
+            ));
+        }
         rest = &rest[ch.len_utf8()..];
     }
 }
@@ -2221,24 +2252,37 @@ pub(super) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
     Ok((rest, finalize_interpolation(parts, current)))
 }
 
-/// Parse a Unicode smart-quoted string `\u{201c}...\u{201d}` with interpolation support.
+/// Parse a Unicode smart-quoted string with interpolation support.
+/// Accepts \u{201C}...\u{201D}, \u{201E}...\u{201D}, \u{201E}...\u{201C},
+/// \u{201D}...\u{201D}, \u{201D}...\u{201C}
 pub(super) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
-    let (input, _) = parse_char(input, '“')?;
+    let first = input
+        .chars()
+        .next()
+        .ok_or_else(|| PError::expected("smart double quote"))?;
+    let closers: &[char] = match first {
+        '\u{201C}' => &['\u{201D}'],
+        '\u{201E}' => &['\u{201D}', '\u{201C}'],
+        '\u{201D}' => &['\u{201D}', '\u{201C}'],
+        _ => return Err(PError::expected("smart double quote")),
+    };
+    let input = &input[first.len_utf8()..];
     let mut parts: Vec<Expr> = Vec::new();
     let mut current = String::new();
     let mut rest = input;
 
     loop {
         if rest.is_empty() {
-            return Err(PError::expected("closing ”"));
+            return Err(PError::expected("closing smart double quote"));
         }
-        if rest.starts_with('”') {
-            rest = &rest['”'.len_utf8()..];
+        let next_ch = rest.chars().next().unwrap();
+        if closers.contains(&next_ch) {
+            rest = &rest[next_ch.len_utf8()..];
             break;
         }
         if rest.starts_with('\\') && rest.len() > 1 {
             if let Some((r, needs_continue)) =
-                process_escape_sequence(rest, &mut current, &['“', '{', '}'])
+                process_escape_sequence(rest, &mut current, &['\u{201D}', '{', '}'])
             {
                 rest = r;
                 if needs_continue {
@@ -2297,9 +2341,8 @@ pub(super) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
                 continue;
             }
         }
-        let ch = rest.chars().next().unwrap();
-        current.push(ch);
-        rest = &rest[ch.len_utf8()..];
+        current.push(next_ch);
+        rest = &rest[next_ch.len_utf8()..];
     }
 
     Ok((rest, finalize_interpolation(parts, current)))
