@@ -299,6 +299,22 @@ impl Interpreter {
             }
             return Ok(Value::str(format!("{}({})", kind_name, parts.join(", "))));
         }
+        // Enum type collection methods: .pairs, .keys, .values, .kv, .antipairs, .invert
+        if let Value::Package(pkg_name) = &target
+            && args.is_empty()
+            && matches!(
+                method,
+                "pairs" | "keys" | "values" | "kv" | "antipairs" | "invert"
+            )
+        {
+            if let Some(variants) = self.enum_types.get(&pkg_name.resolve()) {
+                let variants = variants.clone();
+                return self.dispatch_enum_type_collection(method, &variants);
+            }
+            // Non-enum Package types: return empty for collection methods
+            return Ok(Value::array(Vec::new()));
+        }
+
         if matches!(&target, Value::Instance { class_name, .. } if class_name == "IterationBuffer")
             && matches!(
                 method,
@@ -1764,25 +1780,26 @@ impl Interpreter {
             return self.builtin_leave_method(target, &args);
         }
 
-        // Bool/True/False.new should throw X::Constructor::BadType
+        // Enum.new should throw X::Constructor::BadType
         if method == "new" {
-            let is_bool_like = match &target {
-                Value::Package(name) if name == "Bool" => true,
-                Value::Bool(_) => true,
-                _ => false,
+            let enum_name = match &target {
+                Value::Package(name) if name == "Bool" => Some("Bool".to_string()),
+                Value::Bool(_) => Some("Bool".to_string()),
+                Value::Package(name) if self.enum_types.contains_key(&name.resolve()) => {
+                    Some(name.resolve())
+                }
+                Value::Enum { enum_type, .. } => Some(enum_type.resolve()),
+                _ => None,
             };
-            if is_bool_like {
+            if let Some(ename) = enum_name {
+                let msg = format!(
+                    "Enum '{}' is insufficiently type-like to be instantiated.  Did you mean 'class'?",
+                    ename
+                );
                 let mut attrs = HashMap::new();
-                attrs.insert(
-                    "message".to_string(),
-                    Value::str(
-                        "Enum 'Bool' is insufficiently type-like to be instantiated.  Did you mean 'class'?".to_string(),
-                    ),
-                );
+                attrs.insert("message".to_string(), Value::str(msg.clone()));
                 let ex = Value::make_instance(Symbol::intern("X::Constructor::BadType"), attrs);
-                let mut err = RuntimeError::new(
-                    "Enum 'Bool' is insufficiently type-like to be instantiated.  Did you mean 'class'?",
-                );
+                let mut err = RuntimeError::new(msg);
                 err.exception = Some(Box::new(ex));
                 return Err(err);
             }

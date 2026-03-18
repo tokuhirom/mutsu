@@ -281,19 +281,21 @@ impl ArrayKind {
     }
 }
 
-/// Value stored in an enum variant: either an integer or a string.
+/// Value stored in an enum variant: an integer, a string, or an arbitrary Value.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum EnumValue {
     Int(i64),
     Str(String),
+    /// Arbitrary value (e.g., Array for typed enums like `my Array enum ...`)
+    Generic(Box<Value>),
 }
 
 impl EnumValue {
-    /// Return the integer value, or 0 for string enums.
+    /// Return the integer value, or 0 for string/generic enums.
     pub fn as_i64(&self) -> i64 {
         match self {
             EnumValue::Int(i) => *i,
-            EnumValue::Str(_) => 0,
+            EnumValue::Str(_) | EnumValue::Generic(_) => 0,
         }
     }
 
@@ -302,6 +304,16 @@ impl EnumValue {
         match self {
             EnumValue::Int(i) => i.to_string(),
             EnumValue::Str(s) => s.clone(),
+            EnumValue::Generic(v) => v.to_str_context(),
+        }
+    }
+
+    /// Convert to a runtime Value.
+    pub fn to_value(&self) -> Value {
+        match self {
+            EnumValue::Int(i) => Value::Int(*i),
+            EnumValue::Str(s) => Value::str(s.clone()),
+            EnumValue::Generic(v) => v.as_ref().clone(),
         }
     }
 }

@@ -534,6 +534,8 @@ pub(crate) enum Stmt {
         name: Symbol,
         variants: Vec<(String, Option<Expr>)>,
         is_export: bool,
+        /// Base type constraint (e.g., `my Str enum ...` has base_type = Some("Str"))
+        base_type: Option<String>,
     },
     ClassDecl {
         name: Symbol,

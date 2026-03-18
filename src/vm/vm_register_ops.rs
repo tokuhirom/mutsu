@@ -656,11 +656,15 @@ impl VM {
             name,
             variants,
             is_export,
+            base_type,
         } = stmt
         {
-            let result =
-                self.interpreter
-                    .register_enum_decl(&name.resolve(), variants, *is_export)?;
+            let result = self.interpreter.register_enum_decl(
+                &name.resolve(),
+                variants,
+                *is_export,
+                base_type.as_deref(),
+            )?;
             // For anonymous enums, push the Map result onto the stack
             if name.resolve().is_empty() {
                 self.stack.push(result);

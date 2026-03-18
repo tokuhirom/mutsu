@@ -533,9 +533,22 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     let (mut rest, _) = ws1(rest)?;
 
     // my enum Foo <...>
+    // my Array enum Foo <...>  (typed enum — base type is accepted but currently ignored)
     if let Some(r) = keyword("enum", rest) {
         let (r, _) = ws1(r)?;
         return parse_enum_decl_body(r);
+    }
+    // Check for `my <Type> enum <Name> ...` (e.g., `my Array enum PageSizes «...»`)
+    {
+        let saved = rest;
+        if let Ok((after_type, type_name)) = ident(rest)
+            && let Ok((after_ws, _)) = ws1(after_type)
+            && let Some(r) = keyword("enum", after_ws)
+            && let Ok((r, _)) = ws1(r)
+        {
+            return parse_enum_decl_body_with_type(r, Some(type_name));
+        }
+        rest = saved;
     }
 
     // my/our proto ...
@@ -2116,7 +2129,7 @@ pub(crate) fn enum_decl(input: &str) -> PResult<'_, Stmt> {
 
 /// Parse anonymous enum body (after `enum` keyword with no name).
 fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
-    let (rest, variants) = if input.starts_with("<<") {
+    let (rest, variants) = if input.starts_with("<<") || input.starts_with('\u{ab}') {
         parse_double_angle_enum_variants(input)?
     } else if input.starts_with('<') {
         let (r, _) = parse_char(input, '<')?;
@@ -2166,41 +2179,71 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
             name: Symbol::intern(""),
             variants,
             is_export: false,
+            base_type: None,
         },
     ))
 }
 
-/// Parse `<< ... >>` enum variant list.
-/// Supports plain words and colonpairs like `:key<value>`.
+/// Parse `<< ... >>` or `\u{ab} ... \u{bb}` enum variant list.
+/// Supports plain words and colonpairs like `:key<value>` or `:key[expr, ...]`.
 fn parse_double_angle_enum_variants(input: &str) -> PResult<'_, Vec<(String, Option<Expr>)>> {
-    let r = input
-        .strip_prefix("<<")
-        .ok_or_else(|| PError::expected("<<"))?;
+    let (r, use_unicode_close) = if let Some(r) = input.strip_prefix("<<") {
+        (r, false)
+    } else if let Some(r) = input.strip_prefix('\u{ab}') {
+        // «
+        (r, true)
+    } else {
+        return Err(PError::expected("<< or \u{ab}"));
+    };
     let mut variants = Vec::new();
     let mut r = r;
     loop {
         // Skip whitespace (including newlines)
         let (r2, _) = ws(r)?;
         r = r2;
-        // Check for closing >>
-        if let Some(r2) = r.strip_prefix(">>") {
+        // Check for closing >> or »
+        if use_unicode_close {
+            if let Some(r2) = r.strip_prefix('\u{bb}') {
+                return Ok((r2, variants));
+            }
+        } else if let Some(r2) = r.strip_prefix(">>") {
             return Ok((r2, variants));
         }
-        // Colonpair: :key<value>
+        // Colonpair: :key<value> or :key[expr, ...] or :!key
         if r.starts_with(':') && !r.starts_with("::") {
             let after_colon = &r[1..];
+            // Handle :!key (negated boolean)
+            let (after_neg, negated) = if let Some(stripped) = after_colon.strip_prefix('!') {
+                (stripped, true)
+            } else {
+                (after_colon, false)
+            };
             // Parse the key (identifier)
-            let (after_key, key) = take_while1(after_colon, |c: char| {
+            let (after_key, key) = take_while1(after_neg, |c: char| {
                 c.is_alphanumeric() || c == '_' || c == '-'
             })?;
-            // Check for <value>
-            if let Some(after_open) = after_key.strip_prefix('<') {
+            if negated {
+                // :!key => value is 0 (false)
+                variants.push((key.to_string(), Some(Expr::Literal(Value::Int(0.into())))));
+                r = after_key;
+            } else if let Some(after_open) = after_key.strip_prefix('<') {
+                // :key<value>
                 let (after_val, val) = take_while1(after_open, |c: char| c != '>')?;
                 let after_close = after_val
                     .strip_prefix('>')
                     .ok_or_else(|| PError::expected(">"))?;
                 variants.push((key.to_string(), Some(Expr::Literal(Value::str_from(val)))));
                 r = after_close;
+            } else if after_key.starts_with('[') {
+                // :key[expr, ...] — parse as array expression
+                let (after_expr, expr) = expression(after_key)?;
+                variants.push((key.to_string(), Some(expr)));
+                r = after_expr;
+            } else if after_key.starts_with('(') {
+                // :key(expr) — parse as expression in parens
+                let (after_expr, expr) = expression(after_key)?;
+                variants.push((key.to_string(), Some(expr)));
+                r = after_expr;
             } else {
                 // :key with no value — treat as boolean true (no explicit value)
                 variants.push((key.to_string(), None));
@@ -2208,7 +2251,10 @@ fn parse_double_angle_enum_variants(input: &str) -> PResult<'_, Vec<(String, Opt
             }
         } else {
             // Plain word
-            let (r2, word) = take_while1(r, |c: char| !c.is_whitespace() && c != '>' && c != ':')?;
+            let close_char = if use_unicode_close { '\u{bb}' } else { '>' };
+            let (r2, word) = take_while1(r, |c: char| {
+                !c.is_whitespace() && c != close_char && c != '>' && c != ':'
+            })?;
             variants.push((word.to_string(), None));
             r = r2;
         }
@@ -2239,6 +2285,10 @@ fn parse_enum_variant_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> 
 }
 
 pub(super) fn parse_enum_decl_body(input: &str) -> PResult<'_, Stmt> {
+    parse_enum_decl_body_with_type(input, None)
+}
+
+fn parse_enum_decl_body_with_type(input: &str, base_type: Option<String>) -> PResult<'_, Stmt> {
     let (rest, name_str) = qualified_ident(input)?;
     let name = Symbol::intern(&name_str);
     let (rest, _) = ws(rest)?;
@@ -2256,8 +2306,8 @@ pub(super) fn parse_enum_decl_body(input: &str) -> PResult<'_, Stmt> {
         rest = r;
     }
 
-    // Enum variants in << >>, <> or ()
-    let (rest, variants) = if rest.starts_with("<<") {
+    // Enum variants in << >>, « », <> or ()
+    let (rest, variants) = if rest.starts_with("<<") || rest.starts_with('\u{ab}') {
         parse_double_angle_enum_variants(rest)?
     } else if rest.starts_with('<') {
         let (r, _) = parse_char(rest, '<')?;
@@ -2289,6 +2339,7 @@ pub(super) fn parse_enum_decl_body(input: &str) -> PResult<'_, Stmt> {
                         name,
                         variants: vec![("__DYNAMIC__".to_string(), Some(expr))],
                         is_export,
+                        base_type: base_type.clone(),
                     },
                 ));
             }
@@ -2303,6 +2354,7 @@ pub(super) fn parse_enum_decl_body(input: &str) -> PResult<'_, Stmt> {
                         name,
                         variants,
                         is_export,
+                        base_type: base_type.clone(),
                     },
                 ));
             }
@@ -2328,6 +2380,7 @@ pub(super) fn parse_enum_decl_body(input: &str) -> PResult<'_, Stmt> {
             name,
             variants,
             is_export,
+            base_type,
         },
     ))
 }

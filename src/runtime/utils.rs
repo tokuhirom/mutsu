@@ -2034,6 +2034,39 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
                 a.to_string_value().cmp(&b.to_string_value()) as i32
             }
         }
+        // Pair/ValuePair comparison: compare by key first, then by value
+        (Value::Pair(ak, av), Value::Pair(bk, bv)) => {
+            let key_cmp = compare_values(&Value::str(ak.clone()), &Value::str(bk.clone()));
+            if key_cmp != 0 {
+                key_cmp
+            } else {
+                compare_values(av, bv)
+            }
+        }
+        (Value::ValuePair(ak, av), Value::ValuePair(bk, bv)) => {
+            let key_cmp = compare_values(ak, bk);
+            if key_cmp != 0 {
+                key_cmp
+            } else {
+                compare_values(av, bv)
+            }
+        }
+        (Value::Pair(ak, av), Value::ValuePair(bk, bv)) => {
+            let key_cmp = compare_values(&Value::str(ak.clone()), bk);
+            if key_cmp != 0 {
+                key_cmp
+            } else {
+                compare_values(av, bv)
+            }
+        }
+        (Value::ValuePair(ak, av), Value::Pair(bk, bv)) => {
+            let key_cmp = compare_values(ak, &Value::str(bk.clone()));
+            if key_cmp != 0 {
+                key_cmp
+            } else {
+                compare_values(av, bv)
+            }
+        }
         _ => {
             if let (Some((an, ad)), Some((bn, bd))) = (to_rat_parts(a), to_rat_parts(b)) {
                 let cmp = compare_rat_parts((an, ad), (bn, bd)) as i32;
