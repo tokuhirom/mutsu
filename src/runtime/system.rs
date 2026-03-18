@@ -260,6 +260,8 @@ impl Interpreter {
         // Restore $_ so EVAL does not clobber the caller's topic variable
         if let Some(topic) = saved_topic {
             self.env.insert("_".to_string(), topic);
+        } else {
+            self.env.remove("_");
         }
         result
     }

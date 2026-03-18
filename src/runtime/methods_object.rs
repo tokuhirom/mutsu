@@ -1631,6 +1631,10 @@ impl Interpreter {
             if self.cunion_classes.contains(&cn_resolved) {
                 return self.construct_cunion_instance(&cn_resolved, &args);
             }
+            // Auto-pun role to class if needed (e.g., role COERCE calling self.new)
+            if !self.classes.contains_key(&cn_resolved) && self.roles.contains_key(&cn_resolved) {
+                self.ensure_role_punned_to_class(&cn_resolved);
+            }
             if self.classes.contains_key(&cn_resolved)
                 || type_args
                     .as_ref()
