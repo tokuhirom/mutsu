@@ -318,6 +318,13 @@ impl Interpreter {
         method_name: &str,
         arg_values: &[Value],
     ) -> Option<(String, MethodDef)> {
+        if arg_values.is_empty()
+            && let Some(cached) = self
+                .private_zeroarg_method_cache
+                .get(&(class_name.to_string(), method_name.to_string()))
+        {
+            return cached.clone();
+        }
         let mro = self.class_mro(class_name);
         // Fast path: when there are no positional args, avoid cloning the
         // overloads vector by scanning with a shared borrow first. This covers
@@ -342,7 +349,12 @@ impl Interpreter {
                             .iter()
                             .all(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"))
                         {
-                            return Some((cn.clone(), def.clone()));
+                            let resolved = Some((cn.clone(), def.clone()));
+                            self.private_zeroarg_method_cache.insert(
+                                (class_name.to_string(), method_name.to_string()),
+                                resolved.clone(),
+                            );
+                            return resolved;
                         }
                     }
                     // Second pass: include stubs
@@ -355,7 +367,12 @@ impl Interpreter {
                             .iter()
                             .all(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"))
                         {
-                            return Some((cn.clone(), def.clone()));
+                            let resolved = Some((cn.clone(), def.clone()));
+                            self.private_zeroarg_method_cache.insert(
+                                (class_name.to_string(), method_name.to_string()),
+                                resolved.clone(),
+                            );
+                            return resolved;
                         }
                     }
                 }

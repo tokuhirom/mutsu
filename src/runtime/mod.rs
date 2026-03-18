@@ -549,6 +549,7 @@ pub struct Interpreter {
     need_hidden_classes: HashSet<String>,
     closure_env_overrides: HashMap<u64, Env>,
     protect_block_cache: ProtectBlockCache,
+    private_zeroarg_method_cache: HashMap<(String, String), Option<(String, MethodDef)>>,
     module_load_stack: Vec<String>,
     /// Exported subroutine symbols by package and export tag.
     exported_subs: HashMap<String, HashMap<String, HashSet<String>>>,
@@ -2199,6 +2200,7 @@ impl Interpreter {
             need_hidden_classes: HashSet::new(),
             closure_env_overrides: HashMap::new(),
             protect_block_cache: HashMap::new(),
+            private_zeroarg_method_cache: HashMap::new(),
             module_load_stack: Vec::new(),
             exported_subs: HashMap::new(),
             exported_vars: HashMap::new(),
@@ -3510,6 +3512,7 @@ impl Interpreter {
             need_hidden_classes: self.need_hidden_classes.clone(),
             closure_env_overrides: self.closure_env_overrides.clone(),
             protect_block_cache: HashMap::new(),
+            private_zeroarg_method_cache: HashMap::new(),
             module_load_stack: Vec::new(),
             exported_subs: self.exported_subs.clone(),
             exported_vars: self.exported_vars.clone(),
@@ -3748,9 +3751,17 @@ impl Interpreter {
         let sv = self.shared_vars.read().unwrap();
         for name in names {
             if let Some(val) = sv.get(name) {
-                self.env.insert(name.to_string(), val.clone());
+                if matches!(val, Value::Array(..) | Value::Hash(..)) {
+                    self.env.remove(name);
+                } else {
+                    self.env.insert(name.to_string(), val.clone());
+                }
             }
         }
+    }
+
+    pub(crate) fn clear_private_zeroarg_method_cache(&mut self) {
+        self.private_zeroarg_method_cache.clear();
     }
 
     pub(crate) fn reset_atomic_var_key(&mut self, name: &str) {
