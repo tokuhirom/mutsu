@@ -1152,7 +1152,9 @@ pub(super) fn process_escape_sequence<'a>(
     current: &mut String,
     extra_escapes: &[char],
 ) -> Option<(&'a str, bool)> {
-    let c = rest.as_bytes()[1] as char;
+    let after_backslash = rest.strip_prefix('\\')?;
+    let c = after_backslash.chars().next()?;
+    let after_escape = &after_backslash[c.len_utf8()..];
     match c {
         'n' => current.push('\n'),
         't' => current.push('\t'),
@@ -1171,7 +1173,7 @@ pub(super) fn process_escape_sequence<'a>(
         '\'' => current.push('\''),
         ' ' => current.push(' '),
         'x' => {
-            let r = &rest[2..];
+            let r = after_escape;
             if r.starts_with('[') {
                 if let Some(end) = r.find(']') {
                     let content = &r[1..end];
@@ -1211,7 +1213,7 @@ pub(super) fn process_escape_sequence<'a>(
             return Some((r, true));
         }
         'o' => {
-            let r = &rest[2..];
+            let r = after_escape;
             if r.starts_with('[') {
                 if let Some(end) = r.find(']') {
                     let oct = &r[1..end];
@@ -1236,7 +1238,7 @@ pub(super) fn process_escape_sequence<'a>(
             return Some((r, true));
         }
         'c' => {
-            let r = &rest[2..];
+            let r = after_escape;
             if r.starts_with('[')
                 && let Some((s, after)) = parse_backslash_c_bracket(&r[1..])
             {
@@ -1291,7 +1293,7 @@ pub(super) fn process_escape_sequence<'a>(
             }
         }
     }
-    Some((&rest[2..], false))
+    Some((after_escape, false))
 }
 
 /// Try to parse a method call chain on an interpolated variable: "$var.method()" or "$var.method".
