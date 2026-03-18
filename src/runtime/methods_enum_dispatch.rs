@@ -41,7 +41,20 @@ impl Interpreter {
                 }
             },
             "WHAT" => Some(Ok(Value::Package(*enum_type))),
-            "raku" | "perl" => Some(Ok(Value::str(format!("{}::{}", enum_type, key)))),
+            "raku" | "perl" => {
+                let k = key.resolve();
+                let is_ident = k
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c == '_' || (c.is_alphabetic() && !c.is_numeric()))
+                    && k.chars()
+                        .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'');
+                if is_ident {
+                    Some(Ok(Value::str(format!("{}::{}", enum_type, k))))
+                } else {
+                    Some(Ok(Value::str(format!("{}::<{}>", enum_type, k))))
+                }
+            }
             "gist" => Some(Ok(Value::str(key.resolve()))),
             "Str" => match value {
                 EnumValue::Int(_) => Some(Ok(Value::str(key.resolve()))),
