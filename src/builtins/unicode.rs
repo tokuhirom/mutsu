@@ -10,6 +10,14 @@ pub(crate) fn unicode_titlecase_first(ch: char) -> String {
         '\u{01F3}' | '\u{01F1}' => "\u{01F2}".to_string(), // Dz
         // Sharp S: titlecase is "Ss", not "SS"
         '\u{00DF}' => "Ss".to_string(),
+        // Latin ligature titlecase mappings
+        '\u{FB00}' => "Ff".to_string(),  // ff
+        '\u{FB01}' => "Fi".to_string(),  // fi
+        '\u{FB02}' => "Fl".to_string(),  // fl
+        '\u{FB03}' => "Ffi".to_string(), // ffi
+        '\u{FB04}' => "Ffl".to_string(), // ffl
+        '\u{FB05}' => "St".to_string(),  // long st
+        '\u{FB06}' => "St".to_string(),  // st
         // Default: use uppercase
         _ => ch.to_uppercase().to_string(),
     }
@@ -329,8 +337,12 @@ pub(crate) fn unicode_char_name(ch: char) -> String {
         '\r' => "CARRIAGE RETURN (CR)".to_string(),
         '\t' => "CHARACTER TABULATION".to_string(),
         _ => {
-            // For other characters, return a generic name with codepoint
-            format!("U+{:04X}", ch as u32)
+            // Use unicode_names2 crate for full Unicode name lookup
+            if let Some(name) = unicode_names2::name(ch) {
+                name.to_string()
+            } else {
+                format!("U+{:04X}", ch as u32)
+            }
         }
     }
 }
@@ -554,14 +566,4 @@ pub(crate) fn unicode_script_name(ch: char) -> String {
         }
     }
     "Unknown".to_string()
-}
-
-/// Look up a Unicode property value for a character by property name.
-pub(crate) fn unicode_property(ch: char, prop: &str) -> String {
-    match prop {
-        "Script" | "sc" => unicode_script_name(ch),
-        "General_Category" | "gc" => unicode_general_category(ch),
-        "Block" | "blk" => "Unknown".to_string(), // TODO: implement Block property
-        _ => unicode_general_category(ch),        // default: general category
-    }
 }

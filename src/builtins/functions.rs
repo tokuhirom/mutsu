@@ -268,6 +268,38 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 Some(Ok(Value::Nil))
             }
         }
+        "uniprop" => {
+            // uniprop(target) — returns General_Category
+            match arg {
+                Value::Int(i) => {
+                    let cp = *i as u32;
+                    Some(Ok(super::uniprop::unicode_property_value_for_codepoint(
+                        cp, None,
+                    )))
+                }
+                Value::Package(_) => {
+                    // uniprop(Str) or uniprop(Int) — type object, not instance
+                    let msg = "Cannot resolve caller uniprop".to_string();
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("message".to_string(), Value::str(msg.clone()));
+                    let ex = Value::make_instance(
+                        crate::symbol::Symbol::intern("X::Multi::NoMatch"),
+                        attrs,
+                    );
+                    let mut err = RuntimeError::new(&msg);
+                    err.exception = Some(Box::new(ex));
+                    Some(Err(err))
+                }
+                _ => {
+                    let s = arg.to_string_value();
+                    if s.is_empty() {
+                        return Some(Ok(Value::Nil));
+                    }
+                    let ch = s.chars().next().unwrap();
+                    Some(Ok(Value::str(super::unicode::unicode_general_category(ch))))
+                }
+            }
+        }
         "is-prime" => Some(super::methods_0arg::coercion::value_is_prime(arg)),
         "lsb" => super::methods_0arg::native_method_0arg(arg, Symbol::intern("lsb")),
         "msb" => super::methods_0arg::native_method_0arg(arg, Symbol::intern("msb")),
@@ -1003,6 +1035,27 @@ fn native_function_2arg(
                 words.truncate(n);
             }
             Some(Ok(Value::Seq(std::sync::Arc::new(words))))
+        }
+        "uniprop" => {
+            // uniprop(target, property_name)
+            let prop_name = arg2.to_string_value();
+            match arg1 {
+                Value::Int(i) => {
+                    let cp = *i as u32;
+                    Some(Ok(super::uniprop::unicode_property_value_for_codepoint(
+                        cp,
+                        Some(&prop_name),
+                    )))
+                }
+                _ => {
+                    let s = arg1.to_string_value();
+                    if s.is_empty() {
+                        return Some(Ok(Value::Nil));
+                    }
+                    let ch = s.chars().next().unwrap();
+                    Some(Ok(super::uniprop::unicode_property_value(ch, &prop_name)))
+                }
+            }
         }
         _ => None,
     }

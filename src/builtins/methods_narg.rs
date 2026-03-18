@@ -264,19 +264,50 @@ pub(crate) fn native_method_1arg(
         }
         "uniprop" => {
             let prop_name = arg.to_string_value();
-            let ch = match target {
-                Value::Int(i) => char::from_u32(*i as u32),
-                _ => {
-                    let s = target.to_string_value();
-                    s.chars().next()
+            match target {
+                Value::Package(_) => {
+                    let msg = "Cannot resolve caller uniprop".to_string();
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("message".to_string(), Value::str(msg.clone()));
+                    let ex = Value::make_instance(
+                        crate::symbol::Symbol::intern("X::Multi::NoMatch"),
+                        attrs,
+                    );
+                    let mut err = RuntimeError::new(&msg);
+                    err.exception = Some(Box::new(ex));
+                    return Some(Err(err));
                 }
-            };
-            let Some(ch) = ch else {
-                return Some(Ok(Value::str_from("Unknown")));
-            };
-            Some(Ok(Value::str(crate::builtins::unicode::unicode_property(
+                Value::Int(i) => {
+                    let cp = *i as u32;
+                    return Some(Ok(
+                        crate::builtins::uniprop::unicode_property_value_for_codepoint(
+                            cp,
+                            Some(&prop_name),
+                        ),
+                    ));
+                }
+                _ => {}
+            }
+            let s = target.to_string_value();
+            if s.is_empty() {
+                return Some(Ok(Value::Nil));
+            }
+            let ch = s.chars().next().unwrap();
+            Some(Ok(crate::builtins::uniprop::unicode_property_value(
                 ch, &prop_name,
-            ))))
+            )))
+        }
+        "uniprops" => {
+            let prop_name = arg.to_string_value();
+            let s = target.to_string_value();
+            if s.is_empty() {
+                return Some(Ok(Value::array(vec![])));
+            }
+            let props: Vec<Value> = s
+                .chars()
+                .map(|ch| crate::builtins::uniprop::unicode_property_value(ch, &prop_name))
+                .collect();
+            Some(Ok(Value::array(props)))
         }
         "contains" => {
             if let Value::Package(type_name) = arg {
