@@ -681,7 +681,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             && !op.chars().any(|c| matches!(c, '$' | '@' | '%' | '&'))
             && !op
                 .chars()
-                .any(|c| matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>'))
+                .any(|c| matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>' | '"'))
             && after.chars().next().is_some_and(char::is_whitespace)
         {
             let (after, _) = ws(after)?;

@@ -1544,6 +1544,43 @@ impl Interpreter {
         }
     }
 
+    /// Recursively apply a block to every leaf element, preserving structure.
+    pub(crate) fn deepmap_iterate(
+        &mut self,
+        block: &Value,
+        target: &Value,
+    ) -> Result<Value, RuntimeError> {
+        match target {
+            Value::Array(items, kind) => {
+                let mut result = Vec::new();
+                for item in items.iter() {
+                    result.push(self.deepmap_iterate(block, item)?);
+                }
+                if kind.is_real_array() {
+                    Ok(Value::real_array(result))
+                } else {
+                    Ok(Value::array(result))
+                }
+            }
+            Value::Seq(items) => {
+                let mut result = Vec::new();
+                for item in items.iter() {
+                    result.push(self.deepmap_iterate(block, item)?);
+                }
+                Ok(Value::Seq(std::sync::Arc::new(result)))
+            }
+            Value::Hash(map) => {
+                let mut result = std::collections::HashMap::new();
+                for (k, v) in map.iter() {
+                    result.insert(k.clone(), self.deepmap_iterate(block, v)?);
+                }
+                Ok(Value::Hash(std::sync::Arc::new(result)))
+            }
+            // Leaf value: apply the block
+            _ => self.call_sub_value(block.clone(), vec![target.clone()], false),
+        }
+    }
+
     /// Apply duckmap to a single element: try the block, on failure descend.
     fn duckmap_element(&mut self, block: &Value, value: &Value) -> Result<Value, RuntimeError> {
         // Try to call the block with this value

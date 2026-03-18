@@ -2359,6 +2359,10 @@ impl Interpreter {
                 let block = args.first().cloned().unwrap_or(Value::Nil);
                 return self.duckmap_iterate(&block, &target);
             }
+            "deepmap" => {
+                let block = args.first().cloned().unwrap_or(Value::Nil);
+                return self.deepmap_iterate(&block, &target);
+            }
             "max" | "min" => {
                 if matches!(target, Value::Hash(_)) {
                     let mut call_args = vec![target.clone()];
