@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::Compiler;
 use crate::symbol::Symbol;
 
 impl VM {
@@ -15,10 +16,15 @@ impl VM {
                 "__mutsu_lazylist_from_gather".to_string(),
                 Value::Bool(true),
             );
+            // Compile the gather body to bytecode for VM-native forcing
+            let compiler = Compiler::new();
+            let (compiled_code, compiled_fns) = compiler.compile(body);
             let list = LazyList {
                 body: body.clone(),
                 env,
                 cache: std::sync::Mutex::new(None),
+                compiled_code: Some(std::sync::Arc::new(compiled_code)),
+                compiled_fns: Some(std::sync::Arc::new(compiled_fns)),
             };
             let val = Value::LazyList(std::sync::Arc::new(list));
             self.stack.push(val);

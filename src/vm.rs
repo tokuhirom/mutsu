@@ -1211,7 +1211,7 @@ impl VM {
             OpCode::Pop => {
                 if let Some(Value::LazyList(list)) = self.stack.pop() {
                     // Sink context must realize lazy gathers for side effects.
-                    self.interpreter.force_lazy_list_bridge(&list)?;
+                    self.force_lazy_list_vm(&list)?;
                     self.env_dirty = true;
                 }
                 *ip += 1;
@@ -1220,7 +1220,7 @@ impl VM {
                 if let Some(val) = self.stack.pop() {
                     match &val {
                         Value::LazyList(list) => {
-                            self.interpreter.force_lazy_list_bridge(list)?;
+                            self.force_lazy_list_vm(list)?;
                             self.env_dirty = true;
                         }
                         _ => {
@@ -1978,7 +1978,7 @@ impl VM {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
                 let result = match val {
                     Value::LazyList(ref ll) => {
-                        let items = self.interpreter.force_lazy_list_bridge(ll)?;
+                        let items = self.force_lazy_list_vm(ll)?;
                         // Sync interpreter env changes back to VM locals.
                         // This ensures side effects from gather bodies propagate
                         // to outer-scope variables (e.g., `$was-lazy = 0`).

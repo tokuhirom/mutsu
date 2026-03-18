@@ -747,11 +747,7 @@ fn native_function_2arg(
                     out.push(items[idx].clone());
                 }
                 return Some(Ok(Value::LazyList(std::sync::Arc::new(
-                    crate::value::LazyList {
-                        body: vec![],
-                        env: crate::env::Env::new(),
-                        cache: std::sync::Mutex::new(Some(out)),
-                    },
+                    crate::value::LazyList::new_cached(out),
                 ))));
             }
             let count = count.unwrap_or(0);

@@ -197,7 +197,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let iterable = self.stack.pop().unwrap();
         let items = if let Value::LazyList(ref ll) = iterable {
-            self.interpreter.force_lazy_list_bridge(ll)?
+            self.force_lazy_list_vm(ll)?
         } else {
             runtime::value_to_list(&iterable)
         };

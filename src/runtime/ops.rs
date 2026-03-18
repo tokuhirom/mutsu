@@ -1389,11 +1389,7 @@ impl Interpreter {
                 let items: Vec<Value> = std::iter::repeat_n(left.clone(), repeat).collect();
                 if lazy {
                     Ok(Value::LazyList(std::sync::Arc::new(
-                        crate::value::LazyList {
-                            body: Vec::new(),
-                            env: crate::env::Env::new(),
-                            cache: std::sync::Mutex::new(Some(items)),
-                        },
+                        crate::value::LazyList::new_cached(items),
                     )))
                 } else {
                     Ok(Value::Seq(std::sync::Arc::new(items)))

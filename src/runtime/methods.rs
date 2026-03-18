@@ -1228,11 +1228,7 @@ impl Interpreter {
                         out.push(pool[idx].clone());
                     }
                     return Ok(Value::LazyList(std::sync::Arc::new(
-                        crate::value::LazyList {
-                            body: vec![],
-                            env: crate::env::Env::new(),
-                            cache: std::sync::Mutex::new(Some(out)),
-                        },
+                        crate::value::LazyList::new_cached(out),
                     )));
                 };
                 if method == "pick" {
@@ -1312,11 +1308,7 @@ impl Interpreter {
                     out.push(chars[idx].clone());
                 }
                 return Ok(Value::LazyList(std::sync::Arc::new(
-                    crate::value::LazyList {
-                        body: vec![],
-                        env: crate::env::Env::new(),
-                        cache: std::sync::Mutex::new(Some(out)),
-                    },
+                    crate::value::LazyList::new_cached(out),
                 )));
             };
             if method == "pick" {

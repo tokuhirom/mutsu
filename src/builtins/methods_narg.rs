@@ -1013,11 +1013,9 @@ pub(crate) fn native_method_1arg(
                             out.push(v);
                         }
                     }
-                    return Some(Ok(Value::LazyList(Arc::new(crate::value::LazyList {
-                        body: vec![],
-                        env: crate::env::Env::new(),
-                        cache: std::sync::Mutex::new(Some(out)),
-                    }))));
+                    return Some(Ok(Value::LazyList(Arc::new(
+                        crate::value::LazyList::new_cached(out),
+                    ))));
                 }
                 let count = count.unwrap_or(0);
                 if count == 0 {
@@ -1126,11 +1124,9 @@ pub(crate) fn native_method_1arg(
                         out.push(items[idx].clone());
                     }
                 }
-                return Some(Ok(Value::LazyList(Arc::new(crate::value::LazyList {
-                    body: vec![],
-                    env: crate::env::Env::new(),
-                    cache: std::sync::Mutex::new(Some(out)),
-                }))));
+                return Some(Ok(Value::LazyList(Arc::new(
+                    crate::value::LazyList::new_cached(out),
+                ))));
             }
             let count = count.unwrap_or(0);
             if count == 0 || (!target.is_range() && items.is_empty()) {

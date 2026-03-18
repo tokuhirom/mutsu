@@ -696,10 +696,113 @@ impl VM {
         )
     }
 
+    /// Force a LazyList by running its compiled bytecode in the VM.
+    /// Falls back to interpreter if no compiled code is available.
+    pub(super) fn force_lazy_list_vm(
+        &mut self,
+        list: &LazyList,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        // Check cache first
+        if let Some(cached) = list.cache.lock().unwrap().clone() {
+            return Ok(cached);
+        }
+
+        // If no compiled code, fall back to interpreter
+        let (cc, fns) = match (&list.compiled_code, &list.compiled_fns) {
+            (Some(cc), Some(fns)) => (cc.clone(), fns.clone()),
+            _ => return self.interpreter.force_lazy_list_bridge(list),
+        };
+
+        // Save current VM state.
+        // Flush any pending locals→env writes so env is consistent.
+        // We do a manual sync rather than ensure_env_synced since we don't
+        // have the outer code here -- we'll restore locals directly.
+        let saved_env = self.interpreter.clone_env();
+        let saved_locals = std::mem::take(&mut self.locals);
+        let saved_stack = std::mem::take(&mut self.stack);
+        let saved_env_dirty = self.env_dirty;
+        let saved_locals_dirty = self.locals_dirty;
+
+        // Set up lazy list's environment
+        *self.interpreter.env_mut() = list.env.clone();
+
+        // Push gather items collector
+        let saved_gather_len = self.interpreter.gather_items_len();
+        self.interpreter.push_gather_items(Vec::new());
+        self.interpreter.push_gather_take_limit(None);
+
+        // Initialize locals for the compiled code
+        self.locals = vec![Value::Nil; cc.locals.len()];
+        for (i, name) in cc.locals.iter().enumerate() {
+            if let Some(val) = self.interpreter.env().get(name) {
+                self.locals[i] = val.clone();
+            }
+        }
+        self.env_dirty = false;
+        self.locals_dirty = false;
+        self.stack = Vec::new();
+
+        // Run the compiled code using the lazy list's own compiled_fns.
+        // Outer scope subs are available via the env as Value::Sub.
+        let run_fns = fns.as_ref();
+
+        let mut ip = 0;
+        let mut run_result = Ok(());
+        while ip < cc.ops.len() {
+            match self.exec_one(&cc, &mut ip, run_fns) {
+                Ok(()) => {}
+                Err(e) if e.is_warn => {
+                    if !self.interpreter.warning_suppressed() {
+                        self.interpreter.write_warn_to_stderr(&e.message);
+                    }
+                    ip += 1;
+                    continue;
+                }
+                Err(e) => {
+                    run_result = Err(e);
+                    break;
+                }
+            }
+            if self.interpreter.is_halted() {
+                break;
+            }
+        }
+
+        // Collect gather items
+        let items = self.interpreter.pop_gather_items().unwrap_or_default();
+        self.interpreter.pop_gather_take_limit();
+
+        // Clean up extra gather items if needed
+        while self.interpreter.gather_items_len() > saved_gather_len {
+            self.interpreter.pop_gather_items();
+            self.interpreter.pop_gather_take_limit();
+        }
+
+        // Merge env changes back (like the interpreter version does)
+        let mut merged_env = saved_env;
+        for (k, v) in self.interpreter.env().iter() {
+            merged_env.insert(k.clone(), v.clone());
+        }
+        *self.interpreter.env_mut() = merged_env;
+
+        // Restore VM state
+        self.locals = saved_locals;
+        self.stack = saved_stack;
+        self.env_dirty = saved_env_dirty;
+        self.locals_dirty = saved_locals_dirty;
+
+        // Check for errors
+        run_result?;
+
+        // Cache the result
+        *list.cache.lock().unwrap() = Some(items.clone());
+        Ok(items)
+    }
+
     /// Force a LazyList into a Seq by evaluating the gather body.
     fn force_lazy_if_needed(&mut self, val: Value) -> Result<Value, RuntimeError> {
         if let Value::LazyList(ll) = &val {
-            let items = self.interpreter.force_lazy_list_bridge(ll)?;
+            let items = self.force_lazy_list_vm(ll)?;
             Ok(Value::Seq(std::sync::Arc::new(items)))
         } else {
             Ok(val)

@@ -6,7 +6,7 @@ use std::sync::{Arc, Condvar, Mutex, OnceLock, Weak};
 
 use crate::ast::{ParamDef, Stmt};
 use crate::env::Env;
-use crate::opcode::CompiledCode;
+use crate::opcode::{CompiledCode, CompiledFunction};
 use crate::symbol::Symbol;
 use num_bigint::BigInt as NumBigInt;
 use num_integer::Integer;
@@ -457,6 +457,10 @@ pub(crate) struct LazyList {
     pub(crate) body: Vec<Stmt>,
     pub(crate) env: Env,
     pub(crate) cache: Mutex<Option<Vec<Value>>>,
+    /// Pre-compiled bytecode for the gather body (used by VM-native forcing).
+    pub(crate) compiled_code: Option<Arc<CompiledCode>>,
+    /// Compiled functions associated with the compiled code.
+    pub(crate) compiled_fns: Option<Arc<HashMap<String, CompiledFunction>>>,
 }
 
 impl Clone for LazyList {
@@ -465,6 +469,21 @@ impl Clone for LazyList {
             body: self.body.clone(),
             env: self.env.clone(),
             cache: Mutex::new(self.cache.lock().unwrap().clone()),
+            compiled_code: self.compiled_code.clone(),
+            compiled_fns: self.compiled_fns.clone(),
+        }
+    }
+}
+
+impl LazyList {
+    /// Create a pre-cached lazy list (no body to evaluate).
+    pub(crate) fn new_cached(items: Vec<Value>) -> Self {
+        Self {
+            body: Vec::new(),
+            env: crate::env::Env::new(),
+            cache: Mutex::new(Some(items)),
+            compiled_code: None,
+            compiled_fns: None,
         }
     }
 }
