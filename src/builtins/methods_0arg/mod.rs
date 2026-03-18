@@ -522,6 +522,18 @@ pub(crate) fn native_method_0arg(
                 attrs,
             )));
         }
+        // For allomorphic types, string-oriented methods should use the Str part.
+        if let Some(str_val) = mixins.get("Str") {
+            match method {
+                "comb" | "chars" | "codes" | "words" | "lines" | "chomp" | "chop" | "trim"
+                | "trim-leading" | "trim-trailing" | "uc" | "lc" | "tc" | "tclc" | "fc"
+                | "flip" | "samemark" | "samespace" | "uniname" | "uninames" | "unival"
+                | "univals" | "NFC" | "NFD" | "NFKC" | "NFKD" | "encode" => {
+                    return native_method_0arg(str_val, method_sym);
+                }
+                _ => {}
+            }
+        }
         return native_method_0arg(inner, method_sym);
     }
     // Cool numeric coercion: when a Str calls a numeric method, coerce to numeric first.
@@ -3239,6 +3251,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Enum { .. } | Value::Instance { .. } => None,
             Value::Int(i) => Some(Ok(Value::Int(i + 1))),
             Value::Num(f) => Some(Ok(Value::Num(f + 1.0))),
+            Value::Complex(r, i) => Some(Ok(Value::Complex(r + 1.0, *i))),
             Value::Rat(n, d) => Some(Ok(make_rat(n + d, *d))),
             Value::FatRat(n, d) => Some(Ok(Value::FatRat(n + d, *d))),
             Value::BigRat(n, d) => Some(Ok(Value::BigRat(n + d, d.clone()))),
@@ -3260,6 +3273,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Enum { .. } | Value::Instance { .. } => None,
             Value::Int(i) => Some(Ok(Value::Int(i - 1))),
             Value::Num(f) => Some(Ok(Value::Num(f - 1.0))),
+            Value::Complex(r, i) => Some(Ok(Value::Complex(r - 1.0, *i))),
             Value::Rat(n, d) => Some(Ok(make_rat(n - d, *d))),
             Value::FatRat(n, d) => Some(Ok(Value::FatRat(n - d, *d))),
             Value::BigRat(n, d) => Some(Ok(Value::BigRat(n - d, d.clone()))),

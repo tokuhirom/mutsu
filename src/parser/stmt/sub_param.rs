@@ -549,7 +549,27 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             p.slurpy = slurpy;
             return Ok((rest, p));
         }
-        if rest.starts_with(':') {
+        if rest.starts_with(':') && !rest.starts_with("::") {
+            // Check if this `:` is an invocant marker (followed by whitespace/sigil/paren)
+            // rather than a named-parameter marker.
+            // In `(::T: $ where Foo[T])`, the `:` after `::T` is the invocant separator.
+            let after_colon = &rest[1..];
+            let is_invocant_marker = after_colon.is_empty()
+                || after_colon.starts_with(' ')
+                || after_colon.starts_with('\t')
+                || after_colon.starts_with('\n')
+                || after_colon.starts_with('\r')
+                || after_colon.starts_with(')')
+                || after_colon.starts_with(',');
+            if is_invocant_marker {
+                // Return the bare ::T as a standalone param; leave `:` for the
+                // outer param-list loop to handle as the invocant marker.
+                let mut p = make_param(format!("__type_capture__{}", capture_name));
+                p.type_constraint = type_constraint;
+                p.named = named;
+                p.slurpy = slurpy;
+                return Ok((rest, p));
+            }
             named = true;
             rest = &rest[1..];
         }

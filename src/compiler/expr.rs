@@ -1820,6 +1820,23 @@ impl Compiler {
                     dwim_right: *dwim_right,
                 });
             }
+            // HyperFuncOp (>>[&func]<<): compile sub-expressions, delegate operation
+            Expr::HyperFuncOp {
+                func_name,
+                left,
+                right,
+                dwim_left,
+                dwim_right,
+            } => {
+                self.compile_expr(left);
+                self.compile_expr(right);
+                let name_idx = self.code.add_constant(Value::str(func_name.clone()));
+                self.code.emit(OpCode::HyperFuncOp {
+                    name_idx,
+                    dwim_left: *dwim_left,
+                    dwim_right: *dwim_right,
+                });
+            }
             // MetaOp (Rop, Xop, Zop): compile sub-expressions, delegate operation
             Expr::MetaOp {
                 meta,

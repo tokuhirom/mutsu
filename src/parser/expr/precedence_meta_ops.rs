@@ -6,7 +6,7 @@ use crate::ast::Expr;
 use crate::token_kind::TokenKind;
 
 use super::operators::*;
-use super::postfix::prefix_expr;
+use super::postfix::{postfix_expr_continue, prefix_expr};
 use super::precedence::parse_custom_infix_word;
 
 pub(super) fn parse_infix_func_op(input: &str) -> Option<(Option<String>, String, usize)> {
@@ -545,6 +545,56 @@ fn parse_hyper_op(input: &str) -> Option<(String, bool, bool, usize)> {
     None
 }
 
+/// Parse hyper operator with function reference: >>[&func]<<, <<[&func]>>, etc.
+/// Returns (func_name, dwim_left, dwim_right, total_consumed_length)
+fn parse_hyper_func_op(input: &str) -> Option<(String, bool, bool, usize)> {
+    // Determine left delimiter and dwim_left
+    let (dwim_left, left_len, after_left) = if let Some(r) = input.strip_prefix('\u{00BB}') {
+        (false, '\u{00BB}'.len_utf8(), r)
+    } else if let Some(r) = input.strip_prefix('\u{00AB}') {
+        (true, '\u{00AB}'.len_utf8(), r)
+    } else if let Some(r) = input.strip_prefix(">>") {
+        (false, 2, r)
+    } else if let Some(r) = input.strip_prefix("<<") {
+        (true, 2, r)
+    } else {
+        return None;
+    };
+
+    // Check for [&func] pattern
+    if !after_left.starts_with("[&") {
+        return None;
+    }
+    let bracket_content = &after_left[2..]; // skip "[&"
+    let end = bracket_content.find(']')?;
+    let name = &bracket_content[..end];
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
+        return None;
+    }
+    let after_bracket = &after_left[2 + end + 1..]; // skip "[&name]"
+    let bracket_len = 2 + end + 1;
+
+    // Determine right delimiter and dwim_right
+    let (dwim_right, right_len) = if let Some(_r) = after_bracket.strip_prefix('\u{00BB}') {
+        (true, '\u{00BB}'.len_utf8())
+    } else if let Some(_r) = after_bracket.strip_prefix('\u{00AB}') {
+        (false, '\u{00AB}'.len_utf8())
+    } else if after_bracket.starts_with(">>") {
+        (true, 2)
+    } else if after_bracket.starts_with("<<") {
+        (false, 2)
+    } else {
+        return None;
+    };
+
+    let total_len = left_len + bracket_len + right_len;
+    Some((name.to_string(), dwim_left, dwim_right, total_len))
+}
+
 /// Try to parse a custom infix word operator at a given precedence range.
 /// Returns Some(remaining_input) if a custom infix was parsed, None otherwise.
 /// `min_level` is exclusive, `max_level` is inclusive.
@@ -581,6 +631,27 @@ pub(super) fn concat_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = replication_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
+        // Hyper operators with function reference: >>[&func]<<, <<[&func]>>, etc.
+        if let Some((func_name, dwim_left, dwim_right, len)) = parse_hyper_func_op(r) {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = replication_expr(r).map_err(|err| {
+                enrich_expected_error(
+                    err,
+                    "expected expression after hyper function operator",
+                    r.len(),
+                )
+            })?;
+            left = Expr::HyperFuncOp {
+                func_name,
+                left: Box::new(left),
+                right: Box::new(right),
+                dwim_left,
+                dwim_right,
+            };
+            rest = r;
+            continue;
+        }
         // Hyper operators: >>op<<, >>op>>, <<op<<, <<op>>
         if let Some((op, dwim_left, dwim_right, len)) = parse_hyper_op(r) {
             let r = &r[len..];
@@ -806,15 +877,24 @@ pub(super) fn additive_expr(input: &str) -> PResult<'_, Expr> {
     Ok((rest, left))
 }
 
+/// Call `prefix_expr` and then apply whitespace-separated dotty method calls.
+/// This places ws-dot at a precedence level between prefix/power and multiplicative,
+/// so that `-2**2 . abs` parses as `(-(2**2)).abs` (ws-dot looser than prefix and **)
+/// while `-1 * -1 . abs` parses as `-1 * ((-1).abs)` (ws-dot tighter than *).
+fn prefix_expr_with_ws_dot(input: &str) -> PResult<'_, Expr> {
+    let (rest, expr) = prefix_expr(input)?;
+    postfix_expr_continue(rest, expr)
+}
+
 /// Multiplication/division: * / % div mod gcd lcm
 pub(super) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
-    let (mut rest, mut left) = prefix_expr(input)?;
+    let (mut rest, mut left) = prefix_expr_with_ws_dot(input)?;
     loop {
         let (r, _) = ws(rest)?;
         if let Some((op, len)) = parse_multiplicative_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = prefix_expr(r).map_err(|err| {
+            let (r, right) = prefix_expr_with_ws_dot(r).map_err(|err| {
                 enrich_expected_error(
                     err,
                     "expected expression after multiplicative operator",
@@ -838,7 +918,7 @@ pub(super) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
                 &mut left,
                 PREC_ADDITIVE,
                 PREC_MULTIPLICATIVE,
-                prefix_expr,
+                prefix_expr_with_ws_dot,
             )? {
                 rest = new_rest;
                 continue;
@@ -854,7 +934,7 @@ pub(super) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
         if let Some((meta, op, len)) = try_bracket_op_at_level(r, &OpPrecedence::Multiplicative) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = prefix_expr(r).map_err(|err| {
+            let (r, right) = prefix_expr_with_ws_dot(r).map_err(|err| {
                 enrich_expected_error(
                     err,
                     "expected expression after bracket multiplicative operator",
@@ -886,8 +966,11 @@ pub(super) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
 }
 
 /// Exponentiation: **
+/// Uses tight postfix (no whitespace-separated dotty) so that ws-dot
+/// method calls bind looser than `**` and prefix operators.
+/// e.g. `-2**2 . abs` parses as `(-(2**2)).abs` = `4`.
 pub(super) fn power_expr(input: &str) -> PResult<'_, Expr> {
-    power_expr_inner(input, super::postfix::postfix_expr)
+    power_expr_inner(input, super::postfix::postfix_expr_tight_pub)
 }
 
 /// Like `power_expr` but uses tight postfix parsing (no whitespace-separated
@@ -912,7 +995,7 @@ fn power_expr_inner(input: &str, base_parser: fn(&str) -> PResult<'_, Expr>) -> 
                 &mut base,
                 PREC_MULTIPLICATIVE,
                 PREC_PREFIX - 1,
-                super::postfix::postfix_expr,
+                super::postfix::postfix_expr_tight_pub,
             )? {
                 rest = new_rest;
                 continue;
