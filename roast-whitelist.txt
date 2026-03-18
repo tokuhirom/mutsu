@@ -738,6 +738,7 @@ roast/S32-num/rounders.t
 roast/S32-num/rshift_pos_amount.t
 roast/S32-num/sign.t
 roast/S32-num/sqrt.t
+roast/S32-num/stress.t
 roast/S32-num/stringify.t
 roast/S32-num/unpolar.t
 roast/S32-scalar/defined.t
