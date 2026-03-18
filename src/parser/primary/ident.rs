@@ -1023,6 +1023,10 @@ fn parse_listop_arg(input: &str) -> PResult<'_, Expr> {
         ));
     }
 
+    // Wrap WhateverCode expressions in listop arguments (e.g. `map *.abs, 1, 2`).
+    if crate::parser::expr::should_wrap_whatevercode(&left) {
+        return Ok((rest, crate::parser::expr::wrap_whatevercode(&left)));
+    }
     Ok((rest, left))
 }
 

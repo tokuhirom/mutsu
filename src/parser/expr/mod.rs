@@ -387,7 +387,7 @@ fn contains_whatever(expr: &Expr) -> bool {
             ..
         } => contains_whatever(left),
         Expr::Binary { left, right, .. } => contains_whatever(left) || contains_whatever(right),
-        Expr::Unary { expr, .. } => contains_whatever(expr),
+        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => contains_whatever(expr),
         // Pseudo-methods (.WHAT, .WHO, .HOW, etc.) are always evaluated immediately
         // on Whatever, they don't create WhateverCode. e.g. *.WHAT returns (Whatever).
         Expr::MethodCall { target, name, .. }
@@ -454,7 +454,7 @@ fn count_whatever(expr: &Expr) -> usize {
             ..
         } => count_whatever(left),
         Expr::Binary { left, right, .. } => count_whatever(left) + count_whatever(right),
-        Expr::Unary { expr, .. } => count_whatever(expr),
+        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => count_whatever(expr),
         Expr::MethodCall { target, .. } => count_whatever(target),
         Expr::CallOn { target, args } => {
             count_whatever(target) + args.iter().map(count_whatever).sum::<usize>()
@@ -556,6 +556,10 @@ fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Expr {
             op: op.clone(),
             expr: Box::new(replace_whatever_numbered(expr, counter)),
         },
+        Expr::PostfixOp { op, expr } => Expr::PostfixOp {
+            op: op.clone(),
+            expr: Box::new(replace_whatever_numbered(expr, counter)),
+        },
         Expr::MethodCall {
             target,
             name,
@@ -594,6 +598,10 @@ fn rename_var(expr: &Expr, old_name: &str, new_name: &str) -> Expr {
             right: Box::new(rename_var(right, old_name, new_name)),
         },
         Expr::Unary { op, expr } => Expr::Unary {
+            op: op.clone(),
+            expr: Box::new(rename_var(expr, old_name, new_name)),
+        },
+        Expr::PostfixOp { op, expr } => Expr::PostfixOp {
             op: op.clone(),
             expr: Box::new(rename_var(expr, old_name, new_name)),
         },
@@ -705,6 +713,10 @@ fn replace_whatever_single(expr: &Expr) -> Expr {
             right: Box::new(replace_whatever_single(right)),
         },
         Expr::Unary { op, expr } => Expr::Unary {
+            op: op.clone(),
+            expr: Box::new(replace_whatever_single(expr)),
+        },
+        Expr::PostfixOp { op, expr } => Expr::PostfixOp {
             op: op.clone(),
             expr: Box::new(replace_whatever_single(expr)),
         },
