@@ -6,7 +6,6 @@ use super::super::parse_result::{PError, merge_expected_messages};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ComparisonOp {
     StrictEq,
-    #[allow(dead_code)]
     StrictNe,
     NumEq,
     NotDivisibleBy,
@@ -411,6 +410,7 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
         && !input.starts_with("!!")
         && !input.starts_with("!~~")
         && !input.starts_with("!%%")
+        && !input.starts_with("!===")
     {
         Some((PrefixUnaryOp::Not, 1))
     } else if input.starts_with("?^") {

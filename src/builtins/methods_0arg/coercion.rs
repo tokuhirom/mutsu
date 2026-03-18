@@ -175,6 +175,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             ))),
             _ => None,
         },
+        "Capture" => Some(Ok(value_to_capture(target))),
         "Slip" => match target {
             Value::Array(items, ..) | Value::Seq(items) => Some(Ok(Value::Slip(items.clone()))),
             Value::Slip(_) => Some(Ok(target.clone())),
@@ -563,5 +564,70 @@ pub(crate) fn value_is_prime(target: &Value) -> Result<Value, RuntimeError> {
             Ok(Value::Bool(false))
         }
         _ => Ok(Value::Bool(false)),
+    }
+}
+
+/// Convert a value to a Capture.
+fn value_to_capture(target: &Value) -> Value {
+    match target {
+        // A Capture is already a Capture
+        Value::Capture { .. } => target.clone(),
+        // Pair.Capture → \(:key($pair.key), :value($pair.value))
+        Value::Pair(k, v) => {
+            let mut named = HashMap::new();
+            named.insert("key".to_string(), Value::str(k.clone()));
+            named.insert("value".to_string(), *v.clone());
+            Value::Capture {
+                positional: vec![],
+                named,
+            }
+        }
+        Value::ValuePair(k, v) => {
+            let mut named = HashMap::new();
+            named.insert("key".to_string(), *k.clone());
+            named.insert("value".to_string(), *v.clone());
+            Value::Capture {
+                positional: vec![],
+                named,
+            }
+        }
+        // Hash.Capture → named args from hash entries
+        Value::Hash(map) => {
+            let mut named = HashMap::new();
+            for (k, v) in map.iter() {
+                named.insert(k.clone(), v.clone());
+            }
+            Value::Capture {
+                positional: vec![],
+                named,
+            }
+        }
+        // Array/List.Capture → positional args, with Pair values becoming named
+        Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+            let mut positional = vec![];
+            let mut named = HashMap::new();
+            for item in items.iter() {
+                match item {
+                    Value::Pair(k, v) => {
+                        named.insert(k.clone(), *v.clone());
+                    }
+                    Value::ValuePair(k, v) => {
+                        named.insert(k.to_string_value(), *v.clone());
+                    }
+                    _ => positional.push(item.clone()),
+                }
+            }
+            Value::Capture { positional, named }
+        }
+        // Nil.Capture → empty capture
+        Value::Nil => Value::Capture {
+            positional: vec![],
+            named: HashMap::new(),
+        },
+        // Default: wrap in a single-positional capture
+        _ => Value::Capture {
+            positional: vec![target.clone()],
+            named: HashMap::new(),
+        },
     }
 }

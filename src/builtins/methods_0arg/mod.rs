@@ -632,7 +632,7 @@ fn dispatch_capture(
     method: &str,
 ) -> Option<Result<Value, RuntimeError>> {
     match method {
-        "hash" => {
+        "hash" | "Hash" => {
             let mut map = std::collections::HashMap::new();
             for (k, v) in named {
                 map.insert(k.clone(), v.clone());
