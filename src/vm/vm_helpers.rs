@@ -2602,10 +2602,11 @@ impl VM {
             return self.try_compiled_method_or_interpret(target, "CALL-ME", args);
         }
 
-        // Sub with empty body (no-op closure): fall back to interpreter
-        // This handles edge cases like Subs created via .assuming() with empty bodies
+        // Sub with empty body (no-op closure): call directly via interpreter's
+        // call_sub_value, avoiding the eval_call_on_value indirection since we
+        // already know the target is a Sub.
         if matches!(target, Value::Sub(_)) {
-            return self.interpreter.eval_call_on_value(target, args);
+            return self.interpreter.call_sub_value(target, args, true);
         }
 
         Ok(Value::Nil)

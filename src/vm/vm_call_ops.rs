@@ -2076,6 +2076,7 @@ impl VM {
     pub(super) fn exec_exec_call_pairs_op(
         &mut self,
         code: &CompiledCode,
+        compiled_fns: &HashMap<String, CompiledFunction>,
         name_idx: u32,
         arity: u32,
     ) -> Result<(), RuntimeError> {
@@ -2093,6 +2094,20 @@ impl VM {
         } else {
             self.auto_fetch_proxy_args(args)?
         };
+        // Try compiled function dispatch first
+        if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
+            let pkg = self.interpreter.current_package().to_string();
+            self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
+            self.env_dirty = true;
+            return Ok(());
+        }
+        // Try native function
+        if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
+            native_result?;
+            self.env_dirty = true;
+            return Ok(());
+        }
+        // Fall back to interpreter
         self.interpreter.exec_call_pairs_values(&name, args)?;
         self.env_dirty = true;
         Ok(())
@@ -2103,6 +2118,7 @@ impl VM {
     pub(super) fn exec_exec_call_slip_op(
         &mut self,
         code: &CompiledCode,
+        compiled_fns: &HashMap<String, CompiledFunction>,
         name_idx: u32,
         regular_arity: u32,
         _arg_sources_idx: Option<u32>,
@@ -2118,12 +2134,20 @@ impl VM {
         let regular_start = self.stack.len() - regular_arity as usize;
         let mut args: Vec<Value> = self.stack.drain(regular_start..).collect();
         Self::append_slip_value(&mut args, slip_val);
-        // Try native function first (same as non-slip call path)
+        // Try compiled function dispatch first
+        if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
+            let pkg = self.interpreter.current_package().to_string();
+            self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
+            self.env_dirty = true;
+            return Ok(());
+        }
+        // Try native function (same as non-slip call path)
         if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             self.stack.push(native_result?);
             self.env_dirty = true;
             return Ok(());
         }
+        // Fall back to interpreter
         self.interpreter.exec_call_pairs_values(&name, args)?;
         self.env_dirty = true;
         Ok(())
@@ -2146,6 +2170,8 @@ impl VM {
                 (block_cc, block_fns, Some(&data.env), captured_slots)
             }
             _ => {
+                // TODO: Handle non-Sub protect blocks (e.g. WeakSub, Routine)
+                // in the VM. Currently these are rare and delegate to interpreter.
                 return self.interpreter.call_protect_block(code_val);
             }
         };

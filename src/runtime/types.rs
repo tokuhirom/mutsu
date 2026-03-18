@@ -1342,6 +1342,12 @@ impl Interpreter {
         }
     }
 
+    /// Check if a value represents a role application (used by VM to decide
+    /// whether to fall back to the interpreter for `does` operations).
+    pub(crate) fn is_role_application(&self, rhs: &Value) -> bool {
+        self.extract_role_application(rhs).is_some()
+    }
+
     fn extract_role_application(&self, rhs: &Value) -> Option<(String, Vec<Value>)> {
         match rhs {
             Value::ParametricRole {
