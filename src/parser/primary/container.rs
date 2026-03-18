@@ -309,6 +309,9 @@ fn normalize_chained_zip_meta(expr: Expr) -> Expr {
         } if meta == "Z" => {
             let left = normalize_chained_zip_meta(*left);
             let right = normalize_chained_zip_meta(*right);
+
+            // Case 1: left is an ArrayLiteral whose last element is a nested Z MetaOp.
+            // e.g. (a, b Z+ c, d) Z+ (e, f)
             if let Expr::ArrayLiteral(mut left_items) = left.clone()
                 && let Expr::ArrayLiteral(right_items) = right.clone()
                 && let Some(Expr::MetaOp {
@@ -345,6 +348,33 @@ fn normalize_chained_zip_meta(expr: Expr) -> Expr {
                     args,
                 };
             }
+
+            // Case 2: left is itself a Z MetaOp with the same op.
+            // e.g. (A Z B Z C) where left = Z(A, B), right = C
+            // Collect all operands into a multi-way zip call.
+            if let Expr::MetaOp {
+                meta: ref inner_meta,
+                op: ref inner_op,
+                ..
+            } = left
+                && inner_meta == "Z"
+                && *inner_op == op
+            {
+                let mut args = collect_zip_operands(&left, &op);
+                args.push(right);
+                if !op.is_empty() {
+                    args.push(Expr::Binary {
+                        left: Box::new(Expr::Literal(Value::str_from("with"))),
+                        op: TokenKind::FatArrow,
+                        right: Box::new(Expr::CodeVar(format!("infix:<{}>", op))),
+                    });
+                }
+                return Expr::Call {
+                    name: Symbol::intern("zip"),
+                    args,
+                };
+            }
+
             Expr::MetaOp {
                 meta,
                 op,
@@ -354,6 +384,24 @@ fn normalize_chained_zip_meta(expr: Expr) -> Expr {
         }
         other => other,
     }
+}
+
+/// Collect all operands from a left-nested chain of Z MetaOps with the same op.
+fn collect_zip_operands(expr: &Expr, expected_op: &str) -> Vec<Expr> {
+    if let Expr::MetaOp {
+        meta,
+        op,
+        left,
+        right,
+    } = expr
+        && meta == "Z"
+        && op == expected_op
+    {
+        let mut operands = collect_zip_operands(left, expected_op);
+        operands.push(*right.clone());
+        return operands;
+    }
+    vec![expr.clone()]
 }
 
 fn lift_meta_ops_in_paren_list(items: Vec<Expr>) -> Vec<Expr> {
@@ -805,21 +853,15 @@ fn parse_quote_word_list<'a>(
     };
     let content = &input[..end];
     let rest = &input[end + close.len()..];
-    let exprs = if quoted_words {
-        split_quotish_words(content)?
-    } else {
-        split_angle_words(content)
-            .into_iter()
-            .map(angle_word_expr)
-            .collect()
-    };
     if quoted_words {
+        let exprs = split_quotish_words(content)?;
         return Ok((rest, super::string::make_word_result_expr(exprs)));
     }
-    if exprs.len() == 1 {
-        let expr = exprs.into_iter().next().unwrap();
+    let words = split_angle_words(content);
+    if words.len() == 1 {
+        let expr = angle_word_expr(words[0]);
         // Single-word angle brackets: <7+8i> produces plain Complex, not ComplexStr
-        // (Raku has no ComplexStr allomorph for single-element < >)
+        // and <2/3> produces plain Rat, not RatStr.
         let expr = match expr {
             Expr::Literal(Value::Mixin(inner, _))
                 if matches!(inner.as_ref(), Value::Complex(..)) =>
@@ -830,6 +872,11 @@ fn parse_quote_word_list<'a>(
         };
         Ok((rest, expr))
     } else {
+        // Multi-element lists: fractions also become allomorphic (RatStr)
+        let exprs = words
+            .iter()
+            .map(|w| Expr::Literal(angle_word_value_full_allomorphic(w)))
+            .collect();
         Ok((rest, Expr::ArrayLiteral(exprs)))
     }
 }
@@ -960,7 +1007,9 @@ fn split_quotish_words(content: &str) -> Result<Vec<Expr>, PError> {
             let expr = super::quote_adverbs::process_content_with_flags(word, &flags);
             words.push(quotewords_atom_expr(expr));
         } else {
-            words.push(angle_word_expr(word));
+            // «...» and <<...>> are equivalent to qqww:v, so fractions
+            // also produce allomorphic types (RatStr).
+            words.push(Expr::Literal(angle_word_value_full_allomorphic(word)));
         }
         rest = r;
     }
@@ -1091,36 +1140,61 @@ pub(crate) fn angle_word_expr(word: &str) -> Expr {
 }
 
 pub(crate) fn angle_word_value(word: &str) -> Value {
+    angle_word_value_impl(word, false)
+}
+
+/// Like `angle_word_value` but always produces allomorphic types for fractions.
+/// Used for multi-element word lists where `<2/3>` becomes RatStr, not plain Rat.
+pub(crate) fn angle_word_value_full_allomorphic(word: &str) -> Value {
+    angle_word_value_impl(word, true)
+}
+
+fn angle_word_value_impl(word: &str, fraction_allomorphic: bool) -> Value {
     // Raku `<...>` words produce allomorphic types: numeric-looking words
     // become IntStr, RatStr, NumStr, or ComplexStr — values that smartmatch
     // against both their numeric type and Str.
     // We represent allomorphs as Mixin(numeric_value, {"Str": Str(word)}).
-    // Fraction notation (e.g. <3/2>) produces a plain Rat, not RatStr.
-    if let Some((n, d)) = parse_angle_rat_word(word) {
-        return crate::value::make_rat(n, d);
+    // For single-element <2/3>, fraction notation produces a plain Rat, not RatStr.
+    // For multi-element lists, fractions produce RatStr.
+
+    // Normalize U+2212 MINUS SIGN to ASCII minus for numeric parsing.
+    // The allomorphic Str part retains the original word spelling.
+    let normalized;
+    let parse_word = if word.contains('\u{2212}') {
+        normalized = word.replace('\u{2212}', "-");
+        normalized.as_str()
+    } else {
+        word
+    };
+    if let Some((n, d)) = parse_angle_rat_word(parse_word) {
+        let rat = crate::value::make_rat(n, d);
+        if fraction_allomorphic {
+            return make_allomorphic_value(rat, word);
+        }
+        return rat;
     }
-    if let Some(complex) = parse_angle_complex(word) {
+    if let Some(complex) = parse_angle_complex(parse_word) {
         return make_allomorphic_value(complex, word);
     }
-    if let Ok((rest, expr)) = super::number::integer(word)
+    if let Ok((rest, expr)) = super::number::integer(parse_word)
         && rest.is_empty()
         && let Expr::Literal(val) = expr
     {
         return make_allomorphic_value(val, word);
     }
-    if let Ok((rest, expr)) = super::number::decimal(word)
+    if let Ok((rest, expr)) = super::number::decimal(parse_word)
         && rest.is_empty()
         && let Expr::Literal(val) = expr
     {
         return make_allomorphic_value(val, word);
     }
-    if let Ok((rest, expr)) = super::number::dot_decimal(word)
+    if let Ok((rest, expr)) = super::number::dot_decimal(parse_word)
         && rest.is_empty()
         && let Expr::Literal(val) = expr
     {
         return make_allomorphic_value(val, word);
     }
-    if let Some(val) = parse_angle_num(word) {
+    if let Some(val) = parse_angle_num(parse_word) {
         return make_allomorphic_value(val, word);
     }
     Value::str(word.to_string())

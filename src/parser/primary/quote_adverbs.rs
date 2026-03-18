@@ -19,6 +19,7 @@ pub(super) struct QuoteFlags {
     pub quotewords: bool, // :ww — split with quote protection
     pub heredoc: bool,    // :to — heredoc
     pub format: bool,     // :o / :format — sprintf format
+    pub val: bool,        // :v — produce allomorphic (val) types for words
     pub q_mode: bool,     // :q — single-quote semantics (\\ and \')
     pub qq_mode: bool,    // :qq — double-quote semantics (all interpolation)
     pub quote_open: Option<char>,
@@ -61,6 +62,7 @@ impl QuoteFlags {
             "ww" | "quotewords" => self.quotewords = true,
             "to" | "heredoc" => self.heredoc = true,
             "o" | "format" => self.format = true,
+            "v" | "val" => self.val = true,
             "q" | "single" => self.q_mode = true,
             "qq" | "double" => self.qq_mode = true,
             _ => {} // ignore unknown adverbs

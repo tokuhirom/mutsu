@@ -34,6 +34,10 @@ fn quotewords_literal_marker(s: String) -> Expr {
 }
 
 pub(super) fn quotewords_atom_expr(atom_expr: Expr) -> Expr {
+    quotewords_atom_expr_allomorphic(atom_expr, true)
+}
+
+pub(super) fn quotewords_atom_expr_allomorphic(atom_expr: Expr, allomorphic: bool) -> Expr {
     let args = match atom_expr {
         Expr::StringInterpolation(parts) => parts
             .into_iter()
@@ -44,8 +48,13 @@ pub(super) fn quotewords_atom_expr(atom_expr: Expr) -> Expr {
             .collect(),
         other => vec![other],
     };
+    let func_name = if allomorphic {
+        "__mutsu_quotewords_atom"
+    } else {
+        "__mutsu_words_atom"
+    };
     Expr::Call {
-        name: Symbol::intern("__mutsu_quotewords_atom"),
+        name: Symbol::intern(func_name),
         args,
     }
 }
@@ -333,16 +342,26 @@ fn apply_post_processing<'a>(
 
     if flags.words || flags.quotewords {
         if let Expr::Literal(Value::Str(ref s)) = expr {
-            let words: Vec<Expr> = s
-                .split_whitespace()
-                .map(|w| Expr::Literal(Value::str(w.to_string())))
-                .collect();
+            let words: Vec<Expr> = if flags.val {
+                s.split_whitespace()
+                    .map(|w| Expr::Literal(super::container::angle_word_value_full_allomorphic(w)))
+                    .collect()
+            } else {
+                s.split_whitespace()
+                    .map(|w| Expr::Literal(Value::str(w.to_string())))
+                    .collect()
+            };
             return Ok((after, make_word_result_expr(words)));
         }
+        let func_name = if flags.val {
+            "__mutsu_quotewords_atom"
+        } else {
+            "__mutsu_words_atom"
+        };
         return Ok((
             after,
             Expr::Call {
-                name: Symbol::intern("__mutsu_words_atom"),
+                name: Symbol::intern(func_name),
                 args: vec![expr],
             },
         ));
@@ -381,7 +400,7 @@ fn parse_quotewords_items(
         let atom_len = find_quotewords_atom_end(rest);
         let (atom, next) = rest.split_at(atom_len);
         let atom_expr = super::quote_adverbs::process_content_with_flags(atom, flags);
-        items.push(quotewords_atom_expr(atom_expr));
+        items.push(quotewords_atom_expr_allomorphic(atom_expr, flags.val));
         rest = next;
     }
     Ok(items)
