@@ -48,7 +48,7 @@ impl QuoteFlags {
         }
     }
 
-    /// Apply a named adverb.
+    /// Apply a named adverb (enable).
     pub fn apply_adverb(&mut self, name: &str) {
         match name {
             "b" | "backslash" => self.backslash = true,
@@ -65,6 +65,41 @@ impl QuoteFlags {
             "v" | "val" => self.val = true,
             "q" | "single" => self.q_mode = true,
             "qq" | "double" => self.qq_mode = true,
+            _ => {} // ignore unknown adverbs
+        }
+    }
+
+    /// Expand qq_mode into individual flags so that negated adverbs can
+    /// selectively disable specific interpolation features.
+    pub fn expand_qq_mode(&mut self) {
+        if self.qq_mode {
+            self.qq_mode = false;
+            self.backslash = true;
+            self.scalar = true;
+            self.array = true;
+            self.hash = true;
+            self.function = true;
+            self.closure = true;
+        }
+    }
+
+    /// Negate a named adverb (disable).
+    pub fn negate_adverb(&mut self, name: &str) {
+        match name {
+            "b" | "backslash" => self.backslash = false,
+            "s" | "scalar" => self.scalar = false,
+            "a" | "array" => self.array = false,
+            "h" | "hash" => self.hash = false,
+            "f" | "function" => self.function = false,
+            "c" | "closure" => self.closure = false,
+            "x" | "exec" | "execute" => self.execute = false,
+            "w" | "words" => self.words = false,
+            "ww" | "quotewords" => self.quotewords = false,
+            "to" | "heredoc" => self.heredoc = false,
+            "o" | "format" => self.format = false,
+            "v" | "val" => self.val = false,
+            "q" | "single" => self.q_mode = false,
+            "qq" | "double" => self.qq_mode = false,
             _ => {} // ignore unknown adverbs
         }
     }
@@ -120,6 +155,12 @@ pub(super) fn parse_colon_adverbs<'a>(mut input: &'a str, flags: &mut QuoteFlags
         let Some(r) = input.strip_prefix(':') else {
             break;
         };
+        // Handle negated adverbs (:!a, :!c, etc.)
+        let (negated, r) = if let Some(after_bang) = r.strip_prefix('!') {
+            (true, after_bang)
+        } else {
+            (false, r)
+        };
         let end = r
             .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
             .unwrap_or(r.len());
@@ -127,7 +168,15 @@ pub(super) fn parse_colon_adverbs<'a>(mut input: &'a str, flags: &mut QuoteFlags
             break;
         }
         let adverb_name = &r[..end];
-        flags.apply_adverb(adverb_name);
+        if negated {
+            // When negating in qq mode, expand qq_mode into individual flags first
+            // so that selective negation works (e.g. qq:!a:!c disables array+closure
+            // but keeps scalar, hash, function, backslash).
+            flags.expand_qq_mode();
+            flags.negate_adverb(adverb_name);
+        } else {
+            flags.apply_adverb(adverb_name);
+        }
         input = &r[end..];
     }
     input

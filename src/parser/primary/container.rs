@@ -84,7 +84,21 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
                 (r, var_expr)
             }
         } else {
-            (r, var_expr)
+            // Non-variable LHS compound assignment (e.g. `(* *= 2)` for WhateverCode)
+            if let Some((stripped, op)) = super::super::stmt::assign::parse_compound_assign_op(r2) {
+                let (r2, _) = ws(stripped)?;
+                let (r2, rhs) = expression(r2)?;
+                (
+                    r2,
+                    Expr::Binary {
+                        left: Box::new(var_expr),
+                        op: op.token_kind(),
+                        right: Box::new(rhs),
+                    },
+                )
+            } else {
+                (r, var_expr)
+            }
         }
     } else {
         expression_no_sequence(input)?
