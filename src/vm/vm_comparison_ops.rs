@@ -601,6 +601,7 @@ impl VM {
         self.interpreter
             .env_mut()
             .insert("_".to_string(), left.clone());
+        self.sync_regex_interpolation_env_from_locals(code);
         let saved_in_smartmatch_rhs = self.in_smartmatch_rhs;
         self.in_smartmatch_rhs = true;
         self.transliterate_in_smartmatch = false;

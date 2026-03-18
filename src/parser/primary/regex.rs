@@ -766,7 +766,7 @@ fn scan_to_delim_inner(
     None
 }
 
-pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
+pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // y/// is obsolete — reject with X::Obsolete
     if input.starts_with("y/")
         || input.starts_with("y[")

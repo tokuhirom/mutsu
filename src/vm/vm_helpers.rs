@@ -1154,6 +1154,20 @@ impl VM {
         }
     }
 
+    pub(super) fn sync_regex_interpolation_env_from_locals(&mut self, code: &CompiledCode) {
+        for (i, name) in code.locals.iter().enumerate() {
+            if name == "_"
+                || name == "/"
+                || name == "!"
+                || name == "¢"
+                || name.chars().all(|ch| ch.is_ascii_digit())
+            {
+                continue;
+            }
+            self.set_env_with_main_alias(name, self.locals[i].clone());
+        }
+    }
+
     /// Sync only simple locals to env (the ones whose SetLocal fast path
     /// skips env writes). Only runs when locals_dirty is set.
     pub(super) fn ensure_env_synced(&mut self, code: &CompiledCode) {

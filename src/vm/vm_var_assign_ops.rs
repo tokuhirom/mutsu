@@ -611,8 +611,9 @@ impl VM {
             .is_some_and(|t| t == "MixHash");
         let idx_val = self.stack.pop().unwrap_or(Value::Nil);
         let key = idx_val.to_string_value();
-        let current = if let Some(container) = self.interpreter.env().get(&name) {
-            match container {
+        let mut container = self.get_env_with_main_alias(&name);
+        let current = if let Some(container_value) = container.as_ref() {
+            match container_value {
                 Value::Hash(h) => h.get(&key).cloned().unwrap_or(Value::Nil),
                 Value::Array(arr, ..) => {
                     if let Ok(i) = key.parse::<usize>() {
@@ -639,12 +640,12 @@ impl VM {
         } else {
             Self::decrement_value(&effective)
         };
-        if let Some(container) = self.interpreter.env_mut().get_mut(&name) {
-            match *container {
-                Value::Hash(ref mut h) => {
+        if let Some(container_value) = container.as_mut() {
+            match container_value {
+                Value::Hash(h) => {
                     Arc::make_mut(h).insert(key, new_val.clone());
                 }
-                Value::Array(ref mut arr, ..) => {
+                Value::Array(arr, ..) => {
                     if let Ok(i) = idx_val.to_string_value().parse::<usize>() {
                         let a = Arc::make_mut(arr);
                         while a.len() <= i {
@@ -653,7 +654,7 @@ impl VM {
                         a[i] = new_val.clone();
                     }
                 }
-                Value::Mix(ref mut mix) => {
+                Value::Mix(mix) => {
                     let m = Arc::make_mut(mix);
                     if new_val.truthy() {
                         m.insert(key, Self::mix_assignment_weight(&new_val));
@@ -663,6 +664,8 @@ impl VM {
                 }
                 _ => {}
             }
+            self.set_env_with_main_alias(&name, container_value.clone());
+            self.update_local_if_exists(code, &name, container_value);
         }
         if return_new {
             self.stack.push(new_val);
