@@ -1379,7 +1379,7 @@ impl Interpreter {
         out
     }
 
-    pub(super) fn regex_find_first(&self, pattern: &str, text: &str) -> Option<(usize, usize)> {
+    pub(crate) fn regex_find_first(&self, pattern: &str, text: &str) -> Option<(usize, usize)> {
         let parsed = self.parse_regex(pattern)?;
         let pkg = self.current_package.clone();
 
@@ -3243,7 +3243,7 @@ impl Interpreter {
     }
 
     /// Find all non-overlapping regex matches, returning (start, end) char-index pairs.
-    pub(super) fn regex_find_all(&self, pattern: &str, text: &str) -> Vec<(usize, usize)> {
+    pub(crate) fn regex_find_all(&self, pattern: &str, text: &str) -> Vec<(usize, usize)> {
         let parsed = match self.parse_regex(pattern) {
             Some(p) => p,
             None => return Vec::new(),
