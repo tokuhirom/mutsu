@@ -1126,8 +1126,14 @@ fn check_duplicate_params(params: &[ParamDef]) -> Result<(), PError> {
     for p in params {
         let name = &p.name;
         // Skip anonymous, type-only, and literal parameters
+        // Anonymous names may be bare (__ANON_*) or sigil-prefixed (@__ANON_ARRAY__, etc.)
+        let name_without_sigil = name
+            .strip_prefix('@')
+            .or_else(|| name.strip_prefix('%'))
+            .or_else(|| name.strip_prefix('&'))
+            .unwrap_or(name);
         if name.is_empty()
-            || name.starts_with("__ANON_")
+            || name_without_sigil.starts_with("__ANON_")
             || name == "__type_only__"
             || name == "__literal__"
             || name == "__subsig__"

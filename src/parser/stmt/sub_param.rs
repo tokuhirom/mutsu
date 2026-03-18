@@ -969,21 +969,28 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         }
     }
 
-    // Anonymous optional scalar parameter: $?
-    if let Some(after_q) = rest.strip_prefix("$?")
-        && (after_q.is_empty()
-            || after_q.starts_with(',')
-            || after_q.starts_with(')')
-            || after_q.starts_with(' ')
-            || after_q.starts_with('\t')
-            || after_q.starts_with('\n'))
-    {
-        let mut p = make_param("__ANON_OPTIONAL__".to_string());
-        p.named = named;
-        p.slurpy = slurpy;
-        p.double_slurpy = double_slurpy;
-        p.type_constraint = type_constraint;
-        return Ok((after_q, p));
+    // Anonymous optional sigil parameters: $?, @?, %?
+    for (prefix, anon_name) in [
+        ("$?", "__ANON_OPTIONAL__"),
+        ("@?", "@__ANON_ARRAY__"),
+        ("%?", "%__ANON_HASH__"),
+    ] {
+        if let Some(after_q) = rest.strip_prefix(prefix)
+            && (after_q.is_empty()
+                || after_q.starts_with(',')
+                || after_q.starts_with(')')
+                || after_q.starts_with(' ')
+                || after_q.starts_with('\t')
+                || after_q.starts_with('\n'))
+        {
+            let mut p = make_param(anon_name.to_string());
+            p.named = named;
+            p.slurpy = slurpy;
+            p.double_slurpy = double_slurpy;
+            p.type_constraint = type_constraint;
+            p.optional_marker = true;
+            return Ok((after_q, p));
+        }
     }
 
     // Anonymous callable parameter with code signature: &:(Str --> Bool)
