@@ -847,12 +847,12 @@ impl VM {
                     if let Some(op_name) = infix_name {
                         let op_env_name = format!("&{}", op_name);
                         if let Some(code_val) = self.interpreter.env().get(&op_env_name).cloned() {
-                            return self.interpreter.eval_call_on_value(code_val, Vec::new());
+                            return self.vm_call_on_value(code_val, Vec::new(), None);
                         }
                     }
                     let bare_env_name = format!("&{}", name);
                     if let Some(code_val) = self.interpreter.env().get(&bare_env_name).cloned() {
-                        return self.interpreter.eval_call_on_value(code_val, Vec::new());
+                        return self.vm_call_on_value(code_val, Vec::new(), None);
                     }
                     let method_name = name
                         .strip_prefix("infix:<")
@@ -883,12 +883,12 @@ impl VM {
                     if let Some(op_name) = infix_name {
                         let op_env_name = format!("&{}", op_name);
                         if let Some(code_val) = self.interpreter.env().get(&op_env_name).cloned() {
-                            return self.interpreter.eval_call_on_value(code_val, call_args);
+                            return self.vm_call_on_value(code_val, call_args, None);
                         }
                     }
                     let bare_env_name = format!("&{}", name);
                     if let Some(code_val) = self.interpreter.env().get(&bare_env_name).cloned() {
-                        self.interpreter.eval_call_on_value(code_val, call_args)
+                        self.vm_call_on_value(code_val, call_args, None)
                     } else {
                         let method_name = name
                             .strip_prefix("infix:<")

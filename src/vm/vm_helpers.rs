@@ -932,7 +932,7 @@ impl VM {
                             | Value::Routine { .. }
                             | Value::Instance { .. }
                     ) {
-                        return self.interpreter.eval_call_on_value(callable, args);
+                        return self.vm_call_on_value(callable, args, None);
                     }
                 } else {
                     let infix_name = format!("infix:<{}>", normalized_op);
@@ -945,7 +945,7 @@ impl VM {
                         .get(&format!("&{}", infix_name))
                         .cloned()
                     {
-                        return self.interpreter.eval_call_on_value(callable, args.clone());
+                        return self.vm_call_on_value(callable, args.clone(), None);
                     }
                     if let Some(callable) = self
                         .interpreter
@@ -953,7 +953,7 @@ impl VM {
                         .get(&format!("&{}", normalized_op))
                         .cloned()
                     {
-                        return self.interpreter.eval_call_on_value(callable, args.clone());
+                        return self.vm_call_on_value(callable, args.clone(), None);
                     }
                 }
                 Err(err)
@@ -2385,6 +2385,118 @@ impl VM {
             }
             _ => val.truthy(),
         }
+    }
+
+    /// VM-native dispatch for calling a value (Sub, Routine, Junction, etc.).
+    ///
+    /// This avoids the interpreter's `eval_call_on_value` for common cases:
+    /// - Value::Sub with compiled_code → call_compiled_closure
+    /// - Value::Sub without compiled_code → compile on-the-fly, then call_compiled_closure
+    /// - Value::Routine → resolve to function name and dispatch
+    /// - Value::Junction → thread over values
+    /// - Value::WeakSub → upgrade to Sub and recurse
+    ///
+    /// Falls back to interpreter for Mixin (CALL-ME from roles) and Instance (CALL-ME).
+    pub(super) fn vm_call_on_value(
+        &mut self,
+        target: Value,
+        args: Vec<Value>,
+        compiled_fns: Option<&HashMap<String, CompiledFunction>>,
+    ) -> Result<Value, RuntimeError> {
+        // Upgrade WeakSub to Sub transparently
+        let target = if let Value::WeakSub(ref weak) = target {
+            match weak.upgrade() {
+                Some(strong) => Value::Sub(strong),
+                None => return Err(RuntimeError::new("Callable has been freed")),
+            }
+        } else {
+            target
+        };
+
+        // Fast path: Sub with compiled_code
+        if let Value::Sub(ref data) = target
+            && let Some(ref cc) = data.compiled_code
+        {
+            let cc = cc.clone();
+            let data = data.clone();
+            let empty_fns = HashMap::new();
+            let fns = compiled_fns.unwrap_or(&empty_fns);
+            return self.call_compiled_closure(&data, &cc, args, fns);
+        }
+
+        // Sub without compiled_code: compile on-the-fly then dispatch via VM
+        if let Value::Sub(ref data) = target
+            && !data.body.is_empty()
+        {
+            let cc = {
+                let mut compiler = crate::compiler::Compiler::new();
+                // Use routine closure body so `return` inside the sub works correctly
+                compiler.compile_routine_closure_body(&data.params, &data.param_defs, &data.body)
+            };
+            let data = data.clone();
+            let empty_fns = HashMap::new();
+            let fns = compiled_fns.unwrap_or(&empty_fns);
+            return self.call_compiled_closure(&data, &cc, args, fns);
+        }
+
+        // Routine: resolve to function name and dispatch
+        if let Value::Routine { package, name, .. } = &target {
+            let pkg = package.resolve();
+            let name_str = name.resolve();
+            if !pkg.is_empty() && pkg != "GLOBAL" {
+                let fq = format!("{pkg}::{name_str}");
+                if self.interpreter.has_function(&fq) {
+                    return self.interpreter.call_function(&fq, args);
+                }
+            }
+            return self.interpreter.call_function(&name_str, args);
+        }
+
+        // Junction: thread over values
+        if let Value::Junction { kind, values } = target {
+            let mut results = Vec::with_capacity(values.len());
+            for callable in values.iter() {
+                results.push(self.vm_call_on_value(
+                    callable.clone(),
+                    args.clone(),
+                    compiled_fns,
+                )?);
+            }
+            return Ok(Value::junction(kind, results));
+        }
+
+        // Mixin wrapping a Sub/Routine: try inner callable first
+        if let Value::Mixin(ref inner, ref mixins) = target {
+            // Check if any mixed-in role provides CALL-ME
+            for key in mixins.keys() {
+                if let Some(role_name) = key.strip_prefix("__mutsu_role__")
+                    && self.interpreter.role_has_method(role_name, "CALL-ME")
+                {
+                    // TODO: complex case — fall back to interpreter for CALL-ME on Mixin
+                    return self
+                        .interpreter
+                        .call_method_with_values(target, "CALL-ME", args);
+                }
+            }
+            // Delegate to inner callable
+            return self.vm_call_on_value(inner.as_ref().clone(), args, compiled_fns);
+        }
+
+        // Instance: CALL-ME — fall back to interpreter
+        // TODO: could be optimized by looking up CALL-ME method and dispatching natively
+        if matches!(target, Value::Instance { .. }) {
+            return self
+                .interpreter
+                .call_method_with_values(target, "CALL-ME", args);
+        }
+
+        // Sub with empty body (no-op closure): fall back to interpreter
+        // This handles edge cases like Subs created via .assuming() with empty bodies
+        if matches!(target, Value::Sub(_)) {
+            return self.interpreter.eval_call_on_value(target, args);
+        }
+
+        Ok(Value::Nil)
     }
 }
 
