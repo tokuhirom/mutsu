@@ -1196,6 +1196,26 @@ impl VM {
         crate::builtins::native_function(name_sym, args)
     }
 
+    /// Try compiled function dispatch first, then native, then interpreter fallback.
+    /// Returns the result of whichever path succeeds.
+    pub(super) fn call_function_compiled_first(
+        &mut self,
+        name: &str,
+        args: Vec<Value>,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<Value, RuntimeError> {
+        if let Some(cf) = self.find_compiled_function(compiled_fns, name, &args) {
+            let pkg = self.interpreter.current_package().to_string();
+            return self.call_compiled_function_named(cf, args, compiled_fns, &pkg, name);
+        }
+        if let Some(native_result) =
+            self.try_native_function(crate::symbol::Symbol::intern(name), &args)
+        {
+            return native_result;
+        }
+        self.interpreter.call_function(name, args)
+    }
+
     pub(super) fn find_compiled_function<'a>(
         &mut self,
         compiled_fns: &'a HashMap<String, CompiledFunction>,

@@ -1873,7 +1873,7 @@ impl VM {
                 right_arity,
                 modifier_idx,
             } => {
-                self.exec_infix_func_op(code, *name_idx, *right_arity, modifier_idx)?;
+                self.exec_infix_func_op(code, *name_idx, *right_arity, modifier_idx, compiled_fns)?;
                 *ip += 1;
             }
             OpCode::FlipFlopExpr {

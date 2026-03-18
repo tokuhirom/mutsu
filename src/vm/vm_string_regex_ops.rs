@@ -521,6 +521,7 @@ impl VM {
         name_idx: u32,
         right_arity: u32,
         modifier_idx: &Option<u32>,
+        compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let arity = right_arity as usize;
         let mut right_vals: Vec<Value> = Vec::with_capacity(arity);
@@ -582,6 +583,7 @@ impl VM {
                                 lookup_name.as_ref(),
                                 Some(&infix_name),
                                 vec![left, right],
+                                compiled_fns,
                             )?
                         };
                     if !pair_result.truthy() {
@@ -595,10 +597,20 @@ impl VM {
                 if let Some(result) = self.try_user_infix(&infix_name, &left_val, &right_val)? {
                     result
                 } else {
-                    self.call_infix_fallback(lookup_name.as_ref(), Some(&infix_name), call_args)?
+                    self.call_infix_fallback(
+                        lookup_name.as_ref(),
+                        Some(&infix_name),
+                        call_args,
+                        compiled_fns,
+                    )?
                 }
             } else {
-                self.call_infix_fallback(lookup_name.as_ref(), Some(&infix_name), call_args)?
+                self.call_infix_fallback(
+                    lookup_name.as_ref(),
+                    Some(&infix_name),
+                    call_args,
+                    compiled_fns,
+                )?
             }
         };
         self.stack.push(result);
@@ -779,6 +791,7 @@ impl VM {
         name: &str,
         infix_name: Option<&str>,
         call_args: Vec<Value>,
+        compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
         // When an infix operator is called with a single Iterable argument,
         // flatten it into elements (like a +@foo slurpy) and reduce over them.
@@ -821,11 +834,12 @@ impl VM {
         }
         if Self::should_retry_with_canonical_infix_name(name)
             && let Some(op_name) = infix_name
-            && let Ok(v) = self.interpreter.call_function(op_name, call_args.clone())
+            && let Ok(v) =
+                self.call_function_compiled_first(op_name, call_args.clone(), compiled_fns)
         {
             return Ok(v);
         }
-        match self.interpreter.call_function(name, call_args.clone()) {
+        match self.call_function_compiled_first(name, call_args.clone(), compiled_fns) {
             Ok(v) => Ok(v),
             Err(err) => {
                 // `for foo-bar() -> ...` currently produces an infix AST fallback call.
@@ -835,12 +849,14 @@ impl VM {
                     .starts_with("Too many positionals passed; expected 0 arguments but got more")
                     || err.message.starts_with("Unexpected named argument '");
                 if is_empty_sig_rejection {
-                    if let Ok(v) = self.interpreter.call_function(name, Vec::new()) {
+                    if let Ok(v) = self.call_function_compiled_first(name, Vec::new(), compiled_fns)
+                    {
                         return Ok(v);
                     }
                     if Self::should_retry_with_canonical_infix_name(name)
                         && let Some(op_name) = infix_name
-                        && let Ok(v) = self.interpreter.call_function(op_name, Vec::new())
+                        && let Ok(v) =
+                            self.call_function_compiled_first(op_name, Vec::new(), compiled_fns)
                     {
                         return Ok(v);
                     }
