@@ -880,6 +880,16 @@ impl Compiler {
                             }
                             continue;
                         }
+                        Stmt::VarDecl { name, .. } => {
+                            sub_compiler.compile_stmt(stmt);
+                            // VarDecl as last statement returns the variable value
+                            if let Some(&slot) = sub_compiler.local_map.get(name) {
+                                sub_compiler.code.emit(OpCode::GetLocal(slot));
+                            } else {
+                                sub_compiler.emit_nil_value();
+                            }
+                            continue;
+                        }
                         _ => {}
                     }
                 }

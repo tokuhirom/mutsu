@@ -359,7 +359,8 @@ pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
 
     // Handle `use v6`, `use v6.d`, etc.
-    if rest.starts_with('v') {
+    // Only match when 'v' is followed by a digit (version number), not other identifiers.
+    if rest.starts_with('v') && rest[1..].chars().next().is_some_and(|c| c.is_ascii_digit()) {
         let (r, version_token) = take_while1(rest, |c: char| {
             c.is_alphanumeric() || c == '.' || c == '*' || c == '+'
         })?;
@@ -379,6 +380,11 @@ pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
 
     let (rest, module) = qualified_ident(rest)?;
     let (rest, _) = ws(rest)?;
+
+    // Handle `use variables :D/:U/:_` pragma
+    if module == "variables" {
+        return parse_use_variables_pragma(rest);
+    }
 
     // `use newline :lf|:cr|:crlf` uses a colonpair argument and must be preserved.
     if module == "newline" && rest.starts_with(':') && !rest.starts_with("::") {
@@ -441,6 +447,136 @@ pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, Stmt::Use { module, arg }))
 }
 
+/// Parse `use variables :D/:U/:_` pragma.
+/// Validates the argument and emits the Use statement.
+fn parse_use_variables_pragma(input: &str) -> PResult<'_, Stmt> {
+    let rest = input;
+
+    // No argument → X::Pragma::MustOneOf
+    if rest.starts_with(';') || rest.is_empty() || rest.starts_with('}') {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("name".to_string(), Value::str("variables".to_string()));
+        attrs.insert(
+            "message".to_string(),
+            Value::str("Must use one of :D, :U, :_ with 'variables' pragma".to_string()),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::Pragma::MustOneOf"), attrs);
+        return Err(PError::fatal_with_exception(
+            "Must use one of :D, :U, :_ with 'variables' pragma".to_string(),
+            Box::new(ex),
+        ));
+    }
+
+    // Must start with ':'
+    if !rest.starts_with(':') {
+        // String argument like `use variables "bar"` → X::Pragma::UnknownArg
+        let (r, arg_expr) = expression(rest)?;
+        let arg_str = format!("{:?}", arg_expr);
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("name".to_string(), Value::str("variables".to_string()));
+        // Try to extract string value from the expression
+        let arg_val = if let Expr::Literal(Value::Str(ref s)) = arg_expr {
+            s.to_string()
+        } else {
+            arg_str
+        };
+        attrs.insert("arg".to_string(), Value::str(arg_val.clone()));
+        attrs.insert(
+            "message".to_string(),
+            Value::str(format!(
+                "Unknown argument '{}' to 'variables' pragma",
+                arg_val
+            )),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::Pragma::UnknownArg"), attrs);
+        let _ = r;
+        return Err(PError::fatal_with_exception(
+            format!("Unknown argument '{}' to 'variables' pragma", arg_val),
+            Box::new(ex),
+        ));
+    }
+
+    // Parse colonpair arguments
+    let mut smileys: Vec<String> = Vec::new();
+    let mut r = rest;
+    loop {
+        if !r.starts_with(':') || r.starts_with("::") {
+            break;
+        }
+        let after_colon = &r[1..];
+        if let Ok((r2, smiley_name)) = ident(after_colon) {
+            smileys.push(smiley_name.to_string());
+            let (r2, _) = ws(r2)?;
+            // Skip optional comma
+            let r2 = r2.strip_prefix(',').unwrap_or(r2);
+            let (r2, _) = ws(r2)?;
+            r = r2;
+        } else {
+            break;
+        }
+    }
+
+    // Validate smileys
+    if smileys.is_empty() {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("name".to_string(), Value::str("variables".to_string()));
+        let ex = Value::make_instance(Symbol::intern("X::Pragma::MustOneOf"), attrs);
+        return Err(PError::fatal_with_exception(
+            "Must use one of :D, :U, :_ with 'variables' pragma".to_string(),
+            Box::new(ex),
+        ));
+    }
+
+    // Check for invalid smileys
+    for s in &smileys {
+        if s != "D" && s != "U" && s != "_" {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("name".to_string(), Value::str(s.clone()));
+            attrs.insert(
+                "message".to_string(),
+                Value::str(format!(
+                    "Invalid type smiley ':{}' used, only ':D', ':U' and ':_' are allowed",
+                    s
+                )),
+            );
+            let ex = Value::make_instance(Symbol::intern("X::InvalidTypeSmiley"), attrs);
+            return Err(PError::fatal_with_exception(
+                format!(
+                    "Invalid type smiley ':{}' used, only ':D', ':U' and ':_' are allowed",
+                    s
+                ),
+                Box::new(ex),
+            ));
+        }
+    }
+
+    // Multiple smileys → X::Pragma::OnlyOne
+    if smileys.len() > 1 {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("name".to_string(), Value::str("variables".to_string()));
+        attrs.insert(
+            "message".to_string(),
+            Value::str("Can only use one of :D, :U, :_ with 'variables' pragma".to_string()),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::Pragma::OnlyOne"), attrs);
+        return Err(PError::fatal_with_exception(
+            "Can only use one of :D, :U, :_ with 'variables' pragma".to_string(),
+            Box::new(ex),
+        ));
+    }
+
+    let smiley = &smileys[0];
+    let (r, _) = ws(r)?;
+    let (r, _) = opt_char(r, ';');
+    Ok((
+        r,
+        Stmt::Use {
+            module: "variables".to_string(),
+            arg: Some(Expr::Literal(Value::str(format!(":{}", smiley)))),
+        },
+    ))
+}
+
 /// Parse `import Module [:TAG ...];`
 pub(super) fn import_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("import", input).ok_or_else(|| PError::expected("import statement"))?;
@@ -486,6 +622,22 @@ pub(super) fn no_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, module) = qualified_ident(rest)?;
     let (rest, _) = ws(rest)?;
+
+    // `no variables` is not allowed — throw X::Pragma::CannotWhat
+    if module == "variables" {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("what".to_string(), Value::str("no".to_string()));
+        attrs.insert("name".to_string(), Value::str("variables".to_string()));
+        attrs.insert(
+            "message".to_string(),
+            Value::str("Cannot use 'no' with the 'variables' pragma".to_string()),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::Pragma::CannotWhat"), attrs);
+        return Err(PError::fatal_with_exception(
+            "Cannot use 'no' with the 'variables' pragma".to_string(),
+            Box::new(ex),
+        ));
+    }
 
     let (rest, arg) = if rest.starts_with(';') || rest.is_empty() || rest.starts_with('}') {
         (rest, None)
@@ -765,6 +917,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 || r2.starts_with('%')
                 || r2.starts_with('&')
                 || r2.starts_with('\\')
+                || r2.starts_with('(')
                 || keyword("constant", r2).is_some()
             {
                 (r2, Some(tc))
@@ -775,6 +928,39 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             (saved, None)
         }
     };
+
+    // Check for invalid type smileys (e.g. Int:foo)
+    // Only check the last `:X` that is NOT part of `::` (namespace separator).
+    if let Some(ref tc) = type_constraint
+        && let Some(colon_pos) = tc.rfind(':')
+        && (colon_pos == 0 || tc.as_bytes()[colon_pos - 1] != b':')
+    {
+        let smiley = &tc[colon_pos + 1..];
+        if !smiley.is_empty()
+            && smiley != "D"
+            && smiley != "U"
+            && smiley != "_"
+            && smiley.chars().next().is_some_and(|c| c.is_alphabetic())
+        {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("name".to_string(), Value::str(smiley.to_string()));
+            attrs.insert(
+                "message".to_string(),
+                Value::str(format!(
+                    "Invalid type smiley ':{}' used, only ':D', ':U' and ':_' are allowed",
+                    smiley
+                )),
+            );
+            let ex = Value::make_instance(Symbol::intern("X::InvalidTypeSmiley"), attrs);
+            return Err(PError::fatal_with_exception(
+                format!(
+                    "Invalid type smiley ':{}' used, only ':D', ':U' and ':_' are allowed",
+                    smiley
+                ),
+                Box::new(ex),
+            ));
+        }
+    }
 
     // my <Type> constant <name> = <expr>
     if keyword("constant", rest).is_some() {
@@ -861,9 +1047,9 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         ));
     }
 
-    // Destructuring: my ($a, $b) = expr
+    // Destructuring: my ($a, $b) = expr  or  my Int:D ($x = 5)
     if rest.starts_with('(') {
-        return parse_destructuring_decl(rest, is_state);
+        return parse_destructuring_decl(rest, is_state, type_constraint);
     }
 
     // Parse variable
@@ -1508,9 +1694,15 @@ struct DestructureVar {
     is_optional: bool,
     /// Whether this is a named parameter (:@even)
     is_named: bool,
+    /// Per-variable default value (e.g. `$x = 5` inside grouped declaration)
+    default: Option<Expr>,
 }
 
-pub(super) fn parse_destructuring_decl(input: &str, is_state: bool) -> PResult<'_, Stmt> {
+pub(super) fn parse_destructuring_decl(
+    input: &str,
+    is_state: bool,
+    type_constraint: Option<String>,
+) -> PResult<'_, Stmt> {
     let (rest, _) = parse_char(input, '(')?;
     let (rest, _) = ws(rest)?;
     let mut vars: Vec<DestructureVar> = Vec::new();
@@ -1555,11 +1747,24 @@ pub(super) fn parse_destructuring_decl(input: &str, is_state: bool) -> PResult<'
             };
             let (r2, _) = ws(r2)?;
 
+            // Check for per-variable default value: ($x = 5)
+            let (r2, default) =
+                if r2.starts_with('=') && !r2.starts_with("==") && !r2.starts_with("=>") {
+                    let r3 = &r2[1..];
+                    let (r3, _) = ws(r3)?;
+                    let (r3, expr) = expression(r3)?;
+                    (r3, Some(expr))
+                } else {
+                    (r2, None)
+                };
+            let (r2, _) = ws(r2)?;
+
             vars.push(DestructureVar {
                 name: full_name,
                 is_slurpy,
                 is_optional,
                 is_named,
+                default,
             });
 
             if r2.starts_with(',') {
@@ -1638,7 +1843,7 @@ pub(super) fn parse_destructuring_decl(input: &str, is_state: bool) -> PResult<'
                         target: Box::new(Expr::HashVar(hash_bare.clone())),
                         index: Box::new(Expr::Literal(Value::str(bare_name.to_string()))),
                     },
-                    type_constraint: None,
+                    type_constraint: type_constraint.clone(),
                     is_state,
                     is_our: false,
                     is_dynamic: false,
@@ -1694,7 +1899,7 @@ pub(super) fn parse_destructuring_decl(input: &str, is_state: bool) -> PResult<'
             stmts.push(Stmt::VarDecl {
                 name: dvar.name.clone(),
                 expr,
-                type_constraint: None,
+                type_constraint: type_constraint.clone(),
                 is_state,
                 is_our: false,
                 is_dynamic: false,
@@ -1715,10 +1920,11 @@ pub(super) fn parse_destructuring_decl(input: &str, is_state: bool) -> PResult<'
     let (rest, _) = opt_char(rest, ';');
     let mut stmts = Vec::new();
     for dvar in &vars {
+        let expr = dvar.default.clone().unwrap_or(Expr::Literal(Value::Nil));
         stmts.push(Stmt::VarDecl {
             name: dvar.name.clone(),
-            expr: Expr::Literal(Value::Nil),
-            type_constraint: None,
+            expr,
+            type_constraint: type_constraint.clone(),
             is_state,
             is_our: false,
             is_dynamic: false,

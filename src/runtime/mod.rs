@@ -578,6 +578,9 @@ pub struct Interpreter {
     /// When target is read, the value of source is returned instead.
     /// Set up by $CALLER::target := $source binding.
     var_bindings: HashMap<String, String>,
+    /// `use variables :D/:U/:_` pragma — applies default smiley to unsmiley'd type constraints.
+    /// Empty string means no pragma active.
+    pub(crate) variables_pragma: String,
     /// Variable type constraints used to enforce typed re-assignment across closures.
     var_type_constraints: HashMap<String, String>,
     /// Variable default values set by `is default(...)` trait.
@@ -2212,6 +2215,7 @@ impl Interpreter {
             var_dynamic_flags: HashMap::new(),
             caller_env_stack: Vec::new(),
             var_bindings: HashMap::new(),
+            variables_pragma: String::new(),
             var_type_constraints: HashMap::new(),
             var_defaults: HashMap::new(),
             container_defaults: HashMap::new(),
@@ -3522,6 +3526,7 @@ impl Interpreter {
             var_dynamic_flags: self.var_dynamic_flags.clone(),
             caller_env_stack: Vec::new(),
             var_bindings: HashMap::new(),
+            variables_pragma: self.variables_pragma.clone(),
             var_type_constraints: self.var_type_constraints.clone(),
             var_defaults: self.var_defaults.clone(),
             container_defaults: self.container_defaults.clone(),
