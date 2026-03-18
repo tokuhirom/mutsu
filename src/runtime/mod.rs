@@ -3599,43 +3599,20 @@ impl Interpreter {
     ) -> Value {
         if key.starts_with('@') && self.shared_vars_active {
             // Drop env's copy of the Arc first so that shared_vars holds
-            // the only strong reference (refcount=1).  This allows
-            // Arc::make_mut to mutate the vector in-place (O(1)) instead
-            // of deep-copying it every time (which would make N pushes O(n²)).
+            // the only strong reference (refcount=1). This keeps repeated
+            // shared pushes in-place instead of degenerating into O(n²) COW.
             self.env.remove(key);
             let mut sv = self.shared_vars.write().unwrap();
-            if let Some(shared_value) = sv.remove(key) {
-                if let Value::Array(mut arc_items, kind) = shared_value {
-                    let items = Arc::make_mut(&mut arc_items);
-                    items.extend(values);
-                    let result = Value::Array(Arc::clone(&arc_items), kind);
-                    sv.insert(key.to_string(), Value::Array(arc_items, kind));
-                    drop(sv);
-                    self.env.insert(key.to_string(), result.clone());
-                    let needs_mark_dirty = self
-                        .shared_vars_dirty
-                        .read()
-                        .map(|dirty| !dirty.contains(key))
-                        .unwrap_or(false);
-                    if needs_mark_dirty && let Ok(mut dirty) = self.shared_vars_dirty.write() {
-                        dirty.insert(key.to_string());
-                    }
-                    return result;
-                }
-                sv.insert(key.to_string(), shared_value);
-            }
             if let Some(Value::Array(arc_items, kind)) = sv.get_mut(key) {
                 let items = Arc::make_mut(arc_items);
                 items.extend(values);
+                if *kind == ArrayKind::List {
+                    *kind = ArrayKind::Array;
+                }
                 let result = Value::Array(Arc::clone(arc_items), *kind);
                 drop(sv);
                 self.env.insert(key.to_string(), result.clone());
-                let needs_mark_dirty = self
-                    .shared_vars_dirty
-                    .read()
-                    .map(|dirty| !dirty.contains(key))
-                    .unwrap_or(false);
-                if needs_mark_dirty && let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                if let Ok(mut dirty) = self.shared_vars_dirty.write() {
                     dirty.insert(key.to_string());
                 }
                 return result;
