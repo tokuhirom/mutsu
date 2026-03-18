@@ -380,7 +380,19 @@ impl VM {
             if is_smartmatch {
                 results.push(Value::Bool(self.vm_smart_match(l, r)));
             } else {
-                results.push(self.eval_reduction_operator_values(&op, l, r)?);
+                // Try user-defined infix dispatch first when either operand
+                // is an instance, to avoid built-in ops silently coercing objects.
+                let mut resolved = false;
+                if matches!(l, Value::Instance { .. }) || matches!(r, Value::Instance { .. }) {
+                    let infix_name = format!("infix:<{}>", op);
+                    if let Some(v) = self.try_user_infix(&infix_name, l, r)? {
+                        results.push(v);
+                        resolved = true;
+                    }
+                }
+                if !resolved {
+                    results.push(self.eval_reduction_operator_values(&op, l, r)?);
+                }
             }
         }
         let result = Value::array(results);

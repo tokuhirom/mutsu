@@ -220,9 +220,29 @@ pub(super) fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
     if let Some((op, len)) = parse_meta_set_op(r) {
         return Some((meta.to_string(), op, 1 + len));
     }
+    // User-declared symbol infix operators: R⋅, Z⋅, X⋅, RT*, etc.
+    // Try this before word ops since declared symbols may start with a letter
+    // but extend with non-word chars (e.g. T* should match the declared infix,
+    // not just the word portion "T").
+    let user_sym = super::super::stmt::simple::match_user_declared_infix_symbol_op(r);
     // Custom word operators: Xwtf, Zfoo-bar, Rcustom-op
-    if let Some((name, len)) = parse_meta_word_op(r) {
-        return Some((meta.to_string(), name, 1 + len));
+    let word_op = parse_meta_word_op(r);
+    // Prefer the longer match between user-declared symbol and word ops
+    match (user_sym, word_op) {
+        (Some((sym, sym_len)), Some((word, word_len))) => {
+            if sym_len >= word_len {
+                return Some((meta.to_string(), sym, 1 + sym_len));
+            } else {
+                return Some((meta.to_string(), word, 1 + word_len));
+            }
+        }
+        (Some((sym, sym_len)), None) => {
+            return Some((meta.to_string(), sym, 1 + sym_len));
+        }
+        (None, Some((word, word_len))) => {
+            return Some((meta.to_string(), word, 1 + word_len));
+        }
+        (None, None) => {}
     }
     // Bare Z (zip with comma) or bare X (cross product) — followed by non-ident, non-operator char
     if (meta == "Z" || meta == "X") && !is_ident_char(r.as_bytes().first().copied()) {
@@ -315,6 +335,14 @@ pub(super) fn parse_bracket_infix_op(input: &str) -> Option<BracketInfix> {
         .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
     {
         return Some(BracketInfix::UserInfix(flattened, total_len));
+    }
+
+    // Check if it matches a user-declared infix symbol operator (e.g. [T+], [⋅])
+    if let Some((symbol, len)) =
+        super::super::stmt::simple::match_user_declared_infix_symbol_op(inner)
+        && len == inner.len()
+    {
+        return Some(BracketInfix::UserInfix(symbol, total_len));
     }
 
     None
