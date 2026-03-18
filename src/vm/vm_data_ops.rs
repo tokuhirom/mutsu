@@ -1,6 +1,20 @@
 use super::*;
 use crate::value::RuntimeError;
 
+/// Returns true if the value may have a custom `.gist`/`.Str` method that
+/// requires interpreter method dispatch.  For all other (primitive) types
+/// we can use the fast `gist_value()` / `to_string_value()` paths directly.
+fn needs_method_dispatch(v: &Value) -> bool {
+    matches!(
+        v,
+        Value::Instance { .. }
+            | Value::CustomType { .. }
+            | Value::CustomTypeInstance { .. }
+            | Value::Mixin(..)
+            | Value::Proxy { .. }
+    )
+}
+
 /// Check if a value is a Rat/FatRat/BigRat with zero denominator and throw
 /// X::Numeric::DivideByZero if so (Raku defers the error until the value is used).
 fn check_rat_divide_by_zero(v: &Value) -> Result<(), RuntimeError> {
@@ -119,7 +133,11 @@ impl VM {
         for v in &values {
             let v = self.interpreter.auto_fetch_proxy(v)?;
             check_rat_divide_by_zero(&v)?;
-            parts.push(self.interpreter.render_gist_value(&v));
+            if needs_method_dispatch(&v) {
+                parts.push(self.interpreter.render_gist_value(&v));
+            } else {
+                parts.push(runtime::gist_value(&v));
+            }
         }
         let line = parts.join("");
         self.interpreter
@@ -136,7 +154,11 @@ impl VM {
             let values: Vec<Value> = self.stack.drain(start..).collect();
             let mut parts = Vec::new();
             for v in &values {
-                parts.push(self.interpreter.render_gist_value(v));
+                if needs_method_dispatch(v) {
+                    parts.push(self.interpreter.render_gist_value(v));
+                } else {
+                    parts.push(runtime::gist_value(v));
+                }
             }
             parts.join("")
         };
@@ -153,7 +175,11 @@ impl VM {
         for v in &values {
             let v = self.interpreter.auto_fetch_proxy(v)?;
             check_rat_divide_by_zero(&v)?;
-            content.push_str(&self.interpreter.render_str_value(&v));
+            if needs_method_dispatch(&v) {
+                content.push_str(&self.interpreter.render_str_value(&v));
+            } else {
+                content.push_str(&v.to_string_value());
+            }
         }
         self.interpreter
             .write_to_named_handle("$*OUT", &content, true)?;
