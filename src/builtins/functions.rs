@@ -764,6 +764,11 @@ fn native_function_2arg(
             }
             Some(Ok(Value::array(result)))
         }
+        "pick" => {
+            // pick($count, @list) — sub form delegates to method .pick($count)
+            let list = Value::array(runtime::value_to_list(arg2));
+            super::native_method_1arg(&list, Symbol::intern("pick"), arg1)
+        }
         "atan2" => {
             // atan2(y, x)
             if matches!(arg1, Value::Instance { .. }) || matches!(arg2, Value::Instance { .. }) {

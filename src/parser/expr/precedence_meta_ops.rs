@@ -852,7 +852,19 @@ pub(super) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
 
 /// Exponentiation: **
 pub(super) fn power_expr(input: &str) -> PResult<'_, Expr> {
-    let (mut rest, mut base) = super::postfix::postfix_expr(input)?;
+    power_expr_inner(input, super::postfix::postfix_expr)
+}
+
+/// Like `power_expr` but uses tight postfix parsing (no whitespace-separated
+/// dotty method calls).  Used as the operand parser for prefix `^` so that
+/// `^2**64` correctly parses as `^(2**64)` while `^10 .batch(3)` still parses
+/// as `(^10).batch(3)`.
+pub(super) fn power_expr_tight(input: &str) -> PResult<'_, Expr> {
+    power_expr_inner(input, super::postfix::postfix_expr_tight_pub)
+}
+
+fn power_expr_inner(input: &str, base_parser: fn(&str) -> PResult<'_, Expr>) -> PResult<'_, Expr> {
+    let (mut rest, mut base) = base_parser(input)?;
     // Check for custom infixes at power level (tighter than multiplicative)
     loop {
         let (r, _) = ws(rest)?;
