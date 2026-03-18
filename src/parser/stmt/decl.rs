@@ -2266,6 +2266,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let mut is_rw = false;
     let mut is_readonly = false;
     let mut is_required: Option<Option<String>> = None;
+    let mut is_default_trait: Option<Expr> = None;
     while let Some(r) = keyword("is", rest) {
         let (r, _) = ws1(r)?;
         let (r, trait_name) = ident(r)?;
@@ -2273,6 +2274,22 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             is_rw = true;
         } else if trait_name == "readonly" {
             is_readonly = true;
+        } else if trait_name == "default" {
+            // `is default(expr)` — set the attribute's default value
+            let (r_ws, _) = ws(r)?;
+            if let Some(inner) = r_ws.strip_prefix('(') {
+                let (inner, _) = ws(inner)?;
+                let (inner, default_expr) = expression(inner)?;
+                let (inner, _) = ws(inner)?;
+                let inner = inner
+                    .strip_prefix(')')
+                    .ok_or_else(|| PError::expected("closing paren in is default"))?;
+                is_default_trait = Some(default_expr);
+                let (r2, _) = ws(inner)?;
+                rest = r2;
+                continue;
+            }
+            // `is default` without parens — just ignore (no-op)
         } else if trait_name == "required" {
             // Check for optional reason: `is required("reason")`
             let (r_ws, _) = ws(r)?;
@@ -2465,6 +2482,9 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         // Typed attribute with no explicit default → use type object as default
         // But not when `is required` — the attribute must be explicitly provided
         (rest, Some(Expr::BareWord(tc.clone())))
+    } else if let Some(default_expr) = is_default_trait {
+        // `is default(expr)` was used — apply it as the default value
+        (rest, Some(default_expr))
     } else {
         (rest, None)
     };
