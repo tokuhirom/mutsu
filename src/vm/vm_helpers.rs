@@ -989,6 +989,25 @@ impl VM {
         }
     }
 
+    /// Strip hyper operator delimiters (>>...<<, >>...>>, <<...<<, <<...>>)
+    /// and their Unicode variants, returning the inner operator if found.
+    fn strip_hyper_delimiters_str(s: &str) -> Option<&str> {
+        let after_left = s
+            .strip_prefix(">>")
+            .or_else(|| s.strip_prefix("<<"))
+            .or_else(|| s.strip_prefix('\u{00BB}'))
+            .or_else(|| s.strip_prefix('\u{00AB}'))?;
+        let inner = after_left
+            .strip_suffix(">>")
+            .or_else(|| after_left.strip_suffix("<<"))
+            .or_else(|| after_left.strip_suffix('\u{00BB}'))
+            .or_else(|| after_left.strip_suffix('\u{00AB}'))?;
+        if inner.is_empty() {
+            return None;
+        }
+        Some(inner)
+    }
+
     pub(super) fn eval_reduction_operator_values(
         &mut self,
         op: &str,
@@ -1032,6 +1051,38 @@ impl VM {
                     &left_list[i],
                     &right_list[i],
                 )?);
+            }
+            return Ok(Value::array(results));
+        }
+        // Hyper operator forms: >>op<<, >>op>>, <<op<<, <<op>>
+        // Apply inner op element-wise to two lists.
+        if let Some(inner_op) = Self::strip_hyper_delimiters_str(op) {
+            let left_list = runtime::value_to_list(left);
+            let right_list = runtime::value_to_list(right);
+            let dwim_left = op.starts_with("<<") || op.starts_with('\u{00AB}');
+            let dwim_right = op.ends_with(">>") || op.ends_with('\u{00BB}');
+            let len = if dwim_left && dwim_right {
+                left_list.len().max(right_list.len())
+            } else if dwim_left {
+                right_list.len()
+            } else if dwim_right {
+                left_list.len()
+            } else {
+                left_list.len().max(right_list.len())
+            };
+            let mut results = Vec::with_capacity(len);
+            for i in 0..len {
+                let l = if left_list.is_empty() {
+                    &Value::Int(0.into())
+                } else {
+                    &left_list[i % left_list.len()]
+                };
+                let r = if right_list.is_empty() {
+                    &Value::Int(0.into())
+                } else {
+                    &right_list[i % right_list.len()]
+                };
+                results.push(self.eval_reduction_operator_values(inner_op, l, r)?);
             }
             return Ok(Value::array(results));
         }

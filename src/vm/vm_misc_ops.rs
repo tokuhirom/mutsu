@@ -94,8 +94,17 @@ fn is_parameterized_core_type(name: &str) -> bool {
 
 impl VM {
     fn is_builtin_reduction_op(op: &str) -> bool {
-        if let Some(inner) = op.strip_prefix('R').or_else(|| op.strip_prefix('Z'))
+        if let Some(inner) = op
+            .strip_prefix('R')
+            .or_else(|| op.strip_prefix('Z'))
+            .or_else(|| op.strip_prefix('X'))
             && !inner.is_empty()
+            && Self::is_builtin_reduction_op(inner)
+        {
+            return true;
+        }
+        // Hyper operator forms: >>op<<, >>op>>, <<op<<, <<op>>
+        if let Some(inner) = Self::strip_hyper_delimiters(op)
             && Self::is_builtin_reduction_op(inner)
         {
             return true;
@@ -156,6 +165,11 @@ impl VM {
                 | "and"
                 | "or"
                 | "not"
+                | "andthen"
+                | "orelse"
+                | "xor"
+                | "="
+                | "minmax"
                 | ","
                 | "after"
                 | "before"
@@ -244,6 +258,25 @@ impl VM {
             return Some(callable);
         }
         None
+    }
+
+    /// Strip hyper operator delimiters (>>...<<, >>...>>, <<...<<, <<...>>)
+    /// and their Unicode variants, returning the inner operator if found.
+    fn strip_hyper_delimiters(s: &str) -> Option<&str> {
+        let after_left = s
+            .strip_prefix(">>")
+            .or_else(|| s.strip_prefix("<<"))
+            .or_else(|| s.strip_prefix('\u{00BB}'))
+            .or_else(|| s.strip_prefix('\u{00AB}'))?;
+        let inner = after_left
+            .strip_suffix(">>")
+            .or_else(|| after_left.strip_suffix("<<"))
+            .or_else(|| after_left.strip_suffix('\u{00BB}'))
+            .or_else(|| after_left.strip_suffix('\u{00AB}'))?;
+        if inner.is_empty() {
+            return None;
+        }
+        Some(inner)
     }
 
     fn reduction_callable_arity(&self, callable: &Value) -> usize {
@@ -947,9 +980,9 @@ impl VM {
             "+", "-", "*", "/", "%", "~", "||", "&&", "//", "%%", "**", "^^", "+&", "+|", "+^",
             "+<", "+>", "~&", "~|", "~^", "~<", "~>", "?&", "?|", "?^", "==", "!=", "<", ">", "<=",
             ">=", "<=>", "===", "=:=", "!=:=", "=>", "eqv", "eq", "ne", "lt", "gt", "le", "ge",
-            "leg", "cmp", "~~", "min", "max", "gcd", "lcm", "and", "or", "not", ",", "after",
-            "before", "X", "Z", "x", "xx", "&", "|", "^", "o", "∘", "(-)", "∖", "(|)", "∪", "(&)",
-            "∩", "(^)", "⊖", "(.)", "⊍", "(==)", "≡", "≢",
+            "leg", "cmp", "~~", "min", "max", "gcd", "lcm", "and", "or", "not", "andthen",
+            "orelse", "xor", "minmax", ",", "after", "before", "X", "Z", "x", "xx", "&", "|", "^",
+            "o", "∘", "(-)", "∖", "(|)", "∪", "(&)", "∩", "(^)", "⊖", "(.)", "⊍", "(==)", "≡", "≢",
         ];
         let (negate, base_op) = if let Some(stripped) = op_no_scan.strip_prefix('!')
             && KNOWN_BASE_OPS.contains(&stripped)
