@@ -986,14 +986,11 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         ));
     }
     // Optional type constraint before the variable
+    // Use parse_type_constraint_expr to handle coercion types (e.g., Numeric(Cool)),
+    // qualified names (Int::Odd), definedness markers (:D/:U), etc.
     let mut rest = input;
     let mut type_constraint = None;
-    rest = if let Ok((r, tc)) = ident(rest) {
-        let r = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
-            &r[2..]
-        } else {
-            r
-        };
+    rest = if let Some((r, tc)) = super::sub_param::parse_type_constraint_expr(rest) {
         let (r2, _) = ws(r)?;
         if r2.starts_with('$')
             || r2.starts_with('@')
