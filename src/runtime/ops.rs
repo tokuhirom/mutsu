@@ -1100,7 +1100,16 @@ impl Interpreter {
                 if is_fractional(left) || is_fractional(right) {
                     Ok(Value::Num(to_num(left) * to_num(right)))
                 } else {
-                    Ok(Value::Int(to_int(left) * to_int(right)))
+                    let a = to_int(left);
+                    let b = to_int(right);
+                    match a.checked_mul(b) {
+                        Some(result) => Ok(Value::Int(result)),
+                        None => {
+                            let big_a = num_bigint::BigInt::from(a);
+                            let big_b = num_bigint::BigInt::from(b);
+                            Ok(Value::from_bigint(big_a * big_b))
+                        }
+                    }
                 }
             }
             "/" => crate::builtins::arith_div(left.clone(), right.clone()),
@@ -1196,6 +1205,66 @@ impl Interpreter {
                 } else {
                     Ok(right.clone())
                 }
+            }
+            "andthen" => {
+                if crate::runtime::types::value_is_defined(left) && left.truthy() {
+                    Ok(right.clone())
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            "xor" => {
+                let lt = left.truthy();
+                let rt = right.truthy();
+                if lt && !rt {
+                    Ok(left.clone())
+                } else if !lt && rt {
+                    Ok(right.clone())
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            "minmax" => {
+                // Check if either operand is an array/list - if so, fall through to
+                // builtin_minmax which handles flattening. This path is only for
+                // scalar reduction like [minmax] 1, 2, 3.
+                if matches!(left, Value::Array(_, _) | Value::Seq(_))
+                    || matches!(right, Value::Array(_, _) | Value::Seq(_))
+                {
+                    return Err(RuntimeError::new(format!(
+                        "Unsupported reduction operator: {}",
+                        op
+                    )));
+                }
+                // Extract min/max from existing Ranges
+                let (left_lo, left_hi) = match left {
+                    Value::Range(a, b)
+                    | Value::RangeExcl(a, b)
+                    | Value::RangeExclStart(a, b)
+                    | Value::RangeExclBoth(a, b) => (Value::Int(*a), Value::Int(*b)),
+                    Value::GenericRange { start, end, .. } => ((**start).clone(), (**end).clone()),
+                    _ => (left.clone(), left.clone()),
+                };
+                let (right_lo, right_hi) = match right {
+                    Value::Range(a, b)
+                    | Value::RangeExcl(a, b)
+                    | Value::RangeExclStart(a, b)
+                    | Value::RangeExclBoth(a, b) => (Value::Int(*a), Value::Int(*b)),
+                    Value::GenericRange { start, end, .. } => ((**start).clone(), (**end).clone()),
+                    _ => (right.clone(), right.clone()),
+                };
+                let lo_n = to_num(&left_lo);
+                let ro_n = to_num(&right_lo);
+                let hi_l = to_num(&left_hi);
+                let hi_r = to_num(&right_hi);
+                let lo = if lo_n <= ro_n { left_lo } else { right_lo };
+                let hi = if hi_l >= hi_r { left_hi } else { right_hi };
+                Ok(Value::GenericRange {
+                    start: std::sync::Arc::new(lo),
+                    end: std::sync::Arc::new(hi),
+                    excl_start: false,
+                    excl_end: false,
+                })
             }
             "min" => {
                 if to_num(left) <= to_num(right) {
