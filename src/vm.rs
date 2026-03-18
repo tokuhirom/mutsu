@@ -1745,6 +1745,7 @@ impl VM {
                 global,
                 nth_idx,
                 x_count,
+                perl5,
             } => {
                 self.exec_subst_op(
                     code,
@@ -1754,6 +1755,7 @@ impl VM {
                     *global,
                     *nth_idx,
                     *x_count,
+                    *perl5,
                 )?;
                 *ip += 1;
             }
@@ -1764,6 +1766,7 @@ impl VM {
                 global,
                 nth_idx,
                 x_count,
+                perl5,
             } => {
                 self.exec_non_destructive_subst_op(
                     code,
@@ -1773,6 +1776,7 @@ impl VM {
                     *global,
                     *nth_idx,
                     *x_count,
+                    *perl5,
                 )?;
                 *ip += 1;
             }
