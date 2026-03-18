@@ -31,8 +31,8 @@ pub(super) fn set_original_source(source: &str) {
     });
 }
 
-pub(crate) fn angle_word_value(word: &str) -> Value {
-    container::angle_word_value(word)
+pub(crate) fn angle_word_value_full_allomorphic(word: &str) -> Value {
+    container::angle_word_value_full_allomorphic(word)
 }
 
 /// Compute the 1-based line number of `input` within the original source.
