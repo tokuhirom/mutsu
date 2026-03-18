@@ -32,6 +32,28 @@ If submodules are missing, run:
 - The `main` branch is protected by GitHub branch protection — only code that passes CI is merged.
 - **Never** check whether a failing test also fails on `main`. If `make test` or `make roast` fails on your feature branch, the problem is in your changes. Do not waste time or resources switching to `main` to "verify".
 
+## Architecture: No New Interpreter Fallbacks
+
+The execution pipeline is: Parser → Compiler → VM. The tree-walking `Interpreter` (`runtime/`) is **legacy code being eliminated**.
+
+**Do NOT add new calls from VM code to interpreter methods.** This includes:
+- `interpreter.call_method_with_values()`
+- `interpreter.run_instance_method()`
+- `interpreter.eval_block()`
+- Any other `self.interpreter.*` call from `src/vm/*.rs`
+
+**Why:** Duplicating logic between VM and interpreter causes:
+- AI agents to be confused about which path to modify
+- Bugs where one path is fixed but the other isn't
+- Performance overhead from crossing the VM/interpreter boundary
+
+**Instead:** Implement new features by:
+1. Adding bytecode opcodes in `src/opcode.rs`
+2. Compiling to those opcodes in `src/compiler/`
+3. Executing them in `src/vm/`
+
+Existing interpreter fallbacks are technical debt. When you encounter one while fixing a bug, consider migrating it to pure VM code if feasible.
+
 ## Testing Guidelines
 - Add or update tests for every behavior change, especially parser/runtime fixes.
 - Prefer targeted TAP regression tests in `t/` for language behavior changes.

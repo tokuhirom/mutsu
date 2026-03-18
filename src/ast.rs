@@ -104,6 +104,7 @@ pub(crate) enum Expr {
         global: bool,
         nth: Option<String>,
         x: Option<usize>,
+        perl5: bool,
     },
     NonDestructiveSubst {
         pattern: String,
@@ -112,6 +113,7 @@ pub(crate) enum Expr {
         global: bool,
         nth: Option<String>,
         x: Option<usize>,
+        perl5: bool,
     },
     Transliterate {
         from: String,
@@ -534,6 +536,8 @@ pub(crate) enum Stmt {
         name: Symbol,
         variants: Vec<(String, Option<Expr>)>,
         is_export: bool,
+        /// Base type constraint (e.g., `my Str enum ...` has base_type = Some("Str"))
+        base_type: Option<String>,
     },
     ClassDecl {
         name: Symbol,

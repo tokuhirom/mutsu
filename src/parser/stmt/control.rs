@@ -267,7 +267,13 @@ fn parse_elsif_chain(input: &str) -> PResult<'_, (Vec<IfChainClause>, Option<Els
 
 fn lower_if_chain(mut clauses: Vec<IfChainClause>, else_clause: Option<ElseClause>) -> Stmt {
     let mut else_branch = if let Some(else_clause) = else_clause {
-        lower_else_clause(&mut clauses, else_clause)
+        let mut body = lower_else_clause(&mut clauses, else_clause);
+        // An explicit `else {}` with an empty body should evaluate to Nil,
+        // not be indistinguishable from a missing else clause.
+        if body.is_empty() {
+            body.push(Stmt::Expr(Expr::Literal(crate::value::Value::Nil)));
+        }
+        body
     } else {
         Vec::new()
     };

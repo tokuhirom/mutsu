@@ -94,9 +94,7 @@ impl VM {
         if let Some(constraint) = self.interpreter.var_type_constraint_fast(name).cloned()
             && let Some(trait_name) = Self::quant_hash_trait_from_constraint(&constraint)
         {
-            return self
-                .interpreter
-                .call_method_with_values(value, trait_name, vec![]);
+            return self.try_compiled_method_or_interpret(value, trait_name, vec![]);
         }
         if self.interpreter.check_readonly_for_modify(name).is_err()
             && matches!(value, Value::Set(_) | Value::Bag(_) | Value::Mix(_))
@@ -174,7 +172,7 @@ impl VM {
                     (start..end).map(Value::Int).collect()
                 }
             }
-            Value::LazyList(list) => self.interpreter.force_lazy_list_bridge(list)?,
+            Value::LazyList(list) => self.force_lazy_list_vm(list)?,
             _ => vec![val.clone()],
         })
     }
@@ -432,9 +430,7 @@ impl VM {
                 && Self::is_buf_value(&v)
                 && attributes.contains_key("bytes")
             {
-                let str_result = self
-                    .interpreter
-                    .call_method_with_values(v, "Str", Vec::new())?;
+                let str_result = self.try_compiled_method_or_interpret(v, "Str", Vec::new())?;
                 result.push_str(&str_result.to_string_value());
                 continue;
             }
@@ -1281,6 +1277,11 @@ impl VM {
             {
                 return Err(err);
             }
+            // Also update env (and shared_vars if active) immediately so stale
+            // references don't keep old Instance values alive (preventing DESTROY
+            // from firing).
+            self.interpreter
+                .set_shared_var(name, self.locals[idx].clone());
             self.locals_dirty = true;
             return Ok(());
         }
@@ -1292,9 +1293,7 @@ impl VM {
             let mut assigned = if is_bind {
                 // `:=` binding preserves the container type (e.g. List stays List).
                 match raw_popped {
-                    Value::LazyList(list) => {
-                        Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?)
-                    }
+                    Value::LazyList(list) => Value::real_array(self.force_lazy_list_vm(&list)?),
                     other => other,
                 }
             } else {
@@ -1302,7 +1301,7 @@ impl VM {
                     Value::LazyList(list) => {
                         match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
                             Some(Value::Bool(true)) => Value::LazyList(list),
-                            _ => Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?),
+                            _ => Value::real_array(self.force_lazy_list_vm(&list)?),
                         }
                     }
                     other => runtime::coerce_to_array(other),
@@ -1323,7 +1322,7 @@ impl VM {
                         .into_iter()
                         .map(|v| Value::Int(runtime::to_int(&v)))
                         .collect::<Vec<_>>();
-                    assigned = self.interpreter.call_method_with_values(
+                    assigned = self.try_compiled_method_or_interpret(
                         Value::Package(class_name),
                         "new",
                         items,
@@ -1569,6 +1568,11 @@ impl VM {
             {
                 return Err(err);
             }
+            // Also update env (and shared_vars if active) immediately so stale
+            // references don't keep old Instance values alive (preventing DESTROY
+            // from firing).
+            self.interpreter
+                .set_shared_var(name, self.locals[idx].clone());
             self.locals_dirty = true;
             return Ok(());
         }
@@ -1582,7 +1586,7 @@ impl VM {
             let mut assigned = match raw_val {
                 Value::LazyList(list) => match list.env.get(Self::LAZY_ASSIGN_PRESERVE_MARKER) {
                     Some(Value::Bool(true)) => Value::LazyList(list),
-                    _ => Value::real_array(self.interpreter.force_lazy_list_bridge(&list)?),
+                    _ => Value::real_array(self.force_lazy_list_vm(&list)?),
                 },
                 other => runtime::coerce_to_array(other),
             };
@@ -1601,7 +1605,7 @@ impl VM {
                         .into_iter()
                         .map(|v| Value::Int(runtime::to_int(&v)))
                         .collect::<Vec<_>>();
-                    assigned = self.interpreter.call_method_with_values(
+                    assigned = self.try_compiled_method_or_interpret(
                         Value::Package(class_name),
                         "new",
                         items,

@@ -1858,16 +1858,20 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         return parse_statement_modifier(rest, stmt);
     }
 
-    // $/ cannot be assigned directly (only bound with :=)
+    // $/ = "string" or $/ = 'string' is rejected as a P5-ism
+    // ($/ = Nil, $/ = 42, etc. are allowed)
     if name == "/"
         && rest.starts_with('=')
         && !rest.starts_with("==")
         && !rest.starts_with("=>")
         && !rest.starts_with("=:")
     {
-        return Err(PError::fatal(
-            "Cannot modify an immutable Match (or Nil)".to_string(),
-        ));
+        let rhs_rest = rest[1..].trim_start();
+        if rhs_rest.starts_with('"') || rhs_rest.starts_with('\'') {
+            return Err(PError::fatal(
+                "Unsupported use of $/ variable; in Raku please use the filehandle's .nl-in attribute".to_string(),
+            ));
+        }
     }
 
     if (rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>"))

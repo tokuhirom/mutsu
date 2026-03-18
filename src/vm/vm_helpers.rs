@@ -616,6 +616,7 @@ impl VM {
                 | "ComplexStr"
                 | "Allomorph"
                 | "Attribute"
+                | "Cursor"
                 | "X"
         ) || {
             // Handle parameterized types like Buf[uint8], Array[Int], etc.
@@ -627,6 +628,15 @@ impl VM {
             } else {
                 false
             }
+        }
+    }
+
+    /// Resolve type aliases (e.g., Cursor -> Match).
+    /// Returns the canonical name if the input is an alias, or the input unchanged.
+    pub(super) fn resolve_type_alias(name: &str) -> &str {
+        match name {
+            "Cursor" => "Match",
+            _ => name,
         }
     }
 
@@ -696,10 +706,113 @@ impl VM {
         )
     }
 
+    /// Force a LazyList by running its compiled bytecode in the VM.
+    /// Falls back to interpreter if no compiled code is available.
+    pub(super) fn force_lazy_list_vm(
+        &mut self,
+        list: &LazyList,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        // Check cache first
+        if let Some(cached) = list.cache.lock().unwrap().clone() {
+            return Ok(cached);
+        }
+
+        // If no compiled code, fall back to interpreter
+        let (cc, fns) = match (&list.compiled_code, &list.compiled_fns) {
+            (Some(cc), Some(fns)) => (cc.clone(), fns.clone()),
+            _ => return self.interpreter.force_lazy_list_bridge(list),
+        };
+
+        // Save current VM state.
+        // Flush any pending locals→env writes so env is consistent.
+        // We do a manual sync rather than ensure_env_synced since we don't
+        // have the outer code here -- we'll restore locals directly.
+        let saved_env = self.interpreter.clone_env();
+        let saved_locals = std::mem::take(&mut self.locals);
+        let saved_stack = std::mem::take(&mut self.stack);
+        let saved_env_dirty = self.env_dirty;
+        let saved_locals_dirty = self.locals_dirty;
+
+        // Set up lazy list's environment
+        *self.interpreter.env_mut() = list.env.clone();
+
+        // Push gather items collector
+        let saved_gather_len = self.interpreter.gather_items_len();
+        self.interpreter.push_gather_items(Vec::new());
+        self.interpreter.push_gather_take_limit(None);
+
+        // Initialize locals for the compiled code
+        self.locals = vec![Value::Nil; cc.locals.len()];
+        for (i, name) in cc.locals.iter().enumerate() {
+            if let Some(val) = self.interpreter.env().get(name) {
+                self.locals[i] = val.clone();
+            }
+        }
+        self.env_dirty = false;
+        self.locals_dirty = false;
+        self.stack = Vec::new();
+
+        // Run the compiled code using the lazy list's own compiled_fns.
+        // Outer scope subs are available via the env as Value::Sub.
+        let run_fns = fns.as_ref();
+
+        let mut ip = 0;
+        let mut run_result = Ok(());
+        while ip < cc.ops.len() {
+            match self.exec_one(&cc, &mut ip, run_fns) {
+                Ok(()) => {}
+                Err(e) if e.is_warn => {
+                    if !self.interpreter.warning_suppressed() {
+                        self.interpreter.write_warn_to_stderr(&e.message);
+                    }
+                    ip += 1;
+                    continue;
+                }
+                Err(e) => {
+                    run_result = Err(e);
+                    break;
+                }
+            }
+            if self.interpreter.is_halted() {
+                break;
+            }
+        }
+
+        // Collect gather items
+        let items = self.interpreter.pop_gather_items().unwrap_or_default();
+        self.interpreter.pop_gather_take_limit();
+
+        // Clean up extra gather items if needed
+        while self.interpreter.gather_items_len() > saved_gather_len {
+            self.interpreter.pop_gather_items();
+            self.interpreter.pop_gather_take_limit();
+        }
+
+        // Merge env changes back (like the interpreter version does)
+        let mut merged_env = saved_env;
+        for (k, v) in self.interpreter.env().iter() {
+            merged_env.insert(k.clone(), v.clone());
+        }
+        *self.interpreter.env_mut() = merged_env;
+
+        // Restore VM state
+        self.locals = saved_locals;
+        self.stack = saved_stack;
+        self.env_dirty = saved_env_dirty;
+        self.locals_dirty = saved_locals_dirty;
+
+        // Check for errors
+        run_result?;
+
+        // Cache the result
+        *list.cache.lock().unwrap() = Some(items.clone());
+        Ok(items)
+    }
+
     /// Force a LazyList into a Seq by evaluating the gather body.
     fn force_lazy_if_needed(&mut self, val: Value) -> Result<Value, RuntimeError> {
         if let Value::LazyList(ll) = &val {
-            let items = self.interpreter.force_lazy_list_bridge(ll)?;
+            let items = self.force_lazy_list_vm(ll)?;
             Ok(Value::Seq(std::sync::Arc::new(items)))
         } else {
             Ok(val)
@@ -850,7 +963,7 @@ impl VM {
                 | Value::RegexWithAdverbs { .. }
                 | Value::Routine { is_regex: true, .. }
         );
-        let matched = self.interpreter.smart_match_values(&left, &right);
+        let matched = self.vm_smart_match(&left, &right);
         // Check for pending regex security error (set by regex parse/match)
         if let Some(err) = crate::runtime::Interpreter::take_pending_regex_error() {
             return Err(err);
@@ -932,7 +1045,7 @@ impl VM {
                             | Value::Routine { .. }
                             | Value::Instance { .. }
                     ) {
-                        return self.interpreter.eval_call_on_value(callable, args);
+                        return self.vm_call_on_value(callable, args, None);
                     }
                 } else {
                     let infix_name = format!("infix:<{}>", normalized_op);
@@ -945,7 +1058,7 @@ impl VM {
                         .get(&format!("&{}", infix_name))
                         .cloned()
                     {
-                        return self.interpreter.eval_call_on_value(callable, args.clone());
+                        return self.vm_call_on_value(callable, args.clone(), None);
                     }
                     if let Some(callable) = self
                         .interpreter
@@ -953,7 +1066,7 @@ impl VM {
                         .get(&format!("&{}", normalized_op))
                         .cloned()
                     {
-                        return self.interpreter.eval_call_on_value(callable, args.clone());
+                        return self.vm_call_on_value(callable, args.clone(), None);
                     }
                 }
                 Err(err)
@@ -1001,12 +1114,8 @@ impl VM {
         if !known_numeric && !has_numeric_method {
             return Ok(value);
         }
-        self.interpreter
-            .call_method_with_values(value.clone(), "Numeric", vec![])
-            .or_else(|_| {
-                self.interpreter
-                    .call_method_with_values(value.clone(), "Bridge", vec![])
-            })
+        self.try_compiled_method_or_interpret(value.clone(), "Numeric", vec![])
+            .or_else(|_| self.try_compiled_method_or_interpret(value.clone(), "Bridge", vec![]))
             .or(Ok(value))
     }
 
@@ -1194,6 +1303,26 @@ impl VM {
             return None;
         }
         crate::builtins::native_function(name_sym, args)
+    }
+
+    /// Try compiled function dispatch first, then native, then interpreter fallback.
+    /// Returns the result of whichever path succeeds.
+    pub(super) fn call_function_compiled_first(
+        &mut self,
+        name: &str,
+        args: Vec<Value>,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<Value, RuntimeError> {
+        if let Some(cf) = self.find_compiled_function(compiled_fns, name, &args) {
+            let pkg = self.interpreter.current_package().to_string();
+            return self.call_compiled_function_named(cf, args, compiled_fns, &pkg, name);
+        }
+        if let Some(native_result) =
+            self.try_native_function(crate::symbol::Symbol::intern(name), &args)
+        {
+            return native_result;
+        }
+        self.interpreter.call_function(name, args)
     }
 
     pub(super) fn find_compiled_function<'a>(
@@ -1980,7 +2109,7 @@ impl VM {
                                 .try_coerce_value_for_constraint(constraint, base.clone())
                                 .unwrap_or_else(|_| base.clone());
                             if !self.interpreter.type_matches_value(expected, &candidate)
-                                && let Ok(coerced) = self.interpreter.call_method_with_values(
+                                && let Ok(coerced) = self.try_compiled_method_or_interpret(
                                     base.clone(),
                                     expected,
                                     vec![],
@@ -2351,8 +2480,7 @@ impl VM {
                     .resolve_method_with_owner(&class_name, "Bool", &[])
                     .is_some()
                     && let Ok(result) =
-                        self.interpreter
-                            .call_method_with_values(val.clone(), "Bool", vec![])
+                        self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![])
                 {
                     return result.truthy();
                 }
@@ -2365,8 +2493,7 @@ impl VM {
                     .resolve_method_with_owner(&cn, "Bool", &[])
                     .is_some()
                     && let Ok(result) =
-                        self.interpreter
-                            .call_method_with_values(val.clone(), "Bool", vec![])
+                        self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![])
                 {
                     return result.truthy();
                 }
@@ -2381,10 +2508,118 @@ impl VM {
                     .get("_")
                     .cloned()
                     .unwrap_or(Value::Nil);
-                self.interpreter.smart_match_values(&topic, val)
+                self.vm_smart_match(&topic, val)
             }
             _ => val.truthy(),
         }
+    }
+
+    /// VM-native dispatch for calling a value (Sub, Routine, Junction, etc.).
+    ///
+    /// This avoids the interpreter's `eval_call_on_value` for common cases:
+    /// - Value::Sub with compiled_code → call_compiled_closure
+    /// - Value::Sub without compiled_code → compile on-the-fly, then call_compiled_closure
+    /// - Value::Routine → resolve to function name and dispatch
+    /// - Value::Junction → thread over values
+    /// - Value::WeakSub → upgrade to Sub and recurse
+    ///
+    /// Falls back to interpreter for Mixin (CALL-ME from roles) and Instance (CALL-ME).
+    pub(super) fn vm_call_on_value(
+        &mut self,
+        target: Value,
+        args: Vec<Value>,
+        compiled_fns: Option<&HashMap<String, CompiledFunction>>,
+    ) -> Result<Value, RuntimeError> {
+        // Upgrade WeakSub to Sub transparently
+        let target = if let Value::WeakSub(ref weak) = target {
+            match weak.upgrade() {
+                Some(strong) => Value::Sub(strong),
+                None => return Err(RuntimeError::new("Callable has been freed")),
+            }
+        } else {
+            target
+        };
+
+        // Fast path: Sub with compiled_code
+        if let Value::Sub(ref data) = target
+            && let Some(ref cc) = data.compiled_code
+        {
+            let cc = cc.clone();
+            let data = data.clone();
+            let empty_fns = HashMap::new();
+            let fns = compiled_fns.unwrap_or(&empty_fns);
+            return self.call_compiled_closure(&data, &cc, args, fns);
+        }
+
+        // Sub without compiled_code: compile on-the-fly then dispatch via VM
+        if let Value::Sub(ref data) = target
+            && !data.body.is_empty()
+        {
+            let cc = {
+                let mut compiler = crate::compiler::Compiler::new();
+                // Use routine closure body so `return` inside the sub works correctly
+                compiler.compile_routine_closure_body(&data.params, &data.param_defs, &data.body)
+            };
+            let data = data.clone();
+            let empty_fns = HashMap::new();
+            let fns = compiled_fns.unwrap_or(&empty_fns);
+            return self.call_compiled_closure(&data, &cc, args, fns);
+        }
+
+        // Routine: resolve to function name and dispatch
+        if let Value::Routine { package, name, .. } = &target {
+            let pkg = package.resolve();
+            let name_str = name.resolve();
+            if !pkg.is_empty() && pkg != "GLOBAL" {
+                let fq = format!("{pkg}::{name_str}");
+                if self.interpreter.has_function(&fq) {
+                    return self.interpreter.call_function(&fq, args);
+                }
+            }
+            return self.interpreter.call_function(&name_str, args);
+        }
+
+        // Junction: thread over values
+        if let Value::Junction { kind, values } = target {
+            let mut results = Vec::with_capacity(values.len());
+            for callable in values.iter() {
+                results.push(self.vm_call_on_value(
+                    callable.clone(),
+                    args.clone(),
+                    compiled_fns,
+                )?);
+            }
+            return Ok(Value::junction(kind, results));
+        }
+
+        // Mixin wrapping a Sub/Routine: try inner callable first
+        if let Value::Mixin(ref inner, ref mixins) = target {
+            // Check if any mixed-in role provides CALL-ME
+            for key in mixins.keys() {
+                if let Some(role_name) = key.strip_prefix("__mutsu_role__")
+                    && self.interpreter.role_has_method(role_name, "CALL-ME")
+                {
+                    // TODO: complex case — fall back to interpreter for CALL-ME on Mixin
+                    return self.try_compiled_method_or_interpret(target, "CALL-ME", args);
+                }
+            }
+            // Delegate to inner callable
+            return self.vm_call_on_value(inner.as_ref().clone(), args, compiled_fns);
+        }
+
+        // Instance: CALL-ME — try compiled method path first
+        if matches!(target, Value::Instance { .. }) {
+            return self.try_compiled_method_or_interpret(target, "CALL-ME", args);
+        }
+
+        // Sub with empty body (no-op closure): call directly via interpreter's
+        // call_sub_value, avoiding the eval_call_on_value indirection since we
+        // already know the target is a Sub.
+        if matches!(target, Value::Sub(_)) {
+            return self.interpreter.call_sub_value(target, args, true);
+        }
+
+        Ok(Value::Nil)
     }
 }
 

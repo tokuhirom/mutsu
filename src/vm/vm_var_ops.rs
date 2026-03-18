@@ -129,10 +129,7 @@ impl VM {
     }
 
     fn call_exists_pos(&mut self, instance: &Value, idx: Value) -> Result<bool, RuntimeError> {
-        match self
-            .interpreter
-            .call_method_with_values(instance.clone(), "EXISTS-POS", vec![idx])
-        {
+        match self.try_compiled_method_or_interpret(instance.clone(), "EXISTS-POS", vec![idx]) {
             Ok(value) => Ok(value.truthy()),
             Err(err) if Self::is_method_not_found(&err) => Ok(false),
             Err(err) => Err(err),
@@ -150,8 +147,7 @@ impl VM {
             Value::Array(items, ..) => {
                 if let [Value::Whatever] = items.as_slice() {
                     let elems = self
-                        .interpreter
-                        .call_method_with_values(instance.clone(), "elems", vec![])
+                        .try_compiled_method_or_interpret(instance.clone(), "elems", vec![])
                         .unwrap_or(Value::Int(0));
                     let len = crate::runtime::to_int(&elems).max(0) as usize;
                     let mut pairs = Vec::with_capacity(len);
@@ -163,8 +159,7 @@ impl VM {
                 } else if let [Value::Num(f)] = items.as_slice() {
                     if f.is_infinite() && f.is_sign_positive() {
                         let elems = self
-                            .interpreter
-                            .call_method_with_values(instance.clone(), "elems", vec![])
+                            .try_compiled_method_or_interpret(instance.clone(), "elems", vec![])
                             .unwrap_or(Value::Int(0));
                         let len = crate::runtime::to_int(&elems).max(0) as usize;
                         let mut pairs = Vec::with_capacity(len);
@@ -190,8 +185,7 @@ impl VM {
             }
             Value::Whatever => {
                 let elems = self
-                    .interpreter
-                    .call_method_with_values(instance.clone(), "elems", vec![])
+                    .try_compiled_method_or_interpret(instance.clone(), "elems", vec![])
                     .unwrap_or(Value::Int(0));
                 let len = crate::runtime::to_int(&elems).max(0) as usize;
                 let mut pairs = Vec::with_capacity(len);
@@ -203,8 +197,7 @@ impl VM {
             }
             Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
                 let elems = self
-                    .interpreter
-                    .call_method_with_values(instance.clone(), "elems", vec![])
+                    .try_compiled_method_or_interpret(instance.clone(), "elems", vec![])
                     .unwrap_or(Value::Int(0));
                 let len = crate::runtime::to_int(&elems).max(0) as usize;
                 let mut pairs = Vec::with_capacity(len);
@@ -656,16 +649,32 @@ impl VM {
             if matches!(v, Value::Enum { .. } | Value::Nil) {
                 v.clone()
             } else if self.interpreter.has_type(name) || Self::is_builtin_type(name) {
-                Value::Package(Symbol::intern(name))
+                Value::Package(Symbol::intern(Self::resolve_type_alias(name)))
             } else if name.contains("::")
                 && !name.starts_with('$')
                 && !name.starts_with('@')
                 && !name.starts_with('%')
                 && matches!(v, Value::Routine { .. } | Value::Sub(_) | Value::WeakSub(_))
             {
-                let result = self.interpreter.call_function(name, Vec::new())?;
-                self.env_dirty = true;
-                result
+                // Try compiled function dispatch first, then fall back to interpreter.
+                // Note: interpreter.call_function handles pseudo-package resolution
+                // (SETTING::, OUTER::, etc.) which vm_call_on_value does not.
+                if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
+                    let pkg = self.interpreter.current_package().to_string();
+                    let result = self.call_compiled_function_named(
+                        cf,
+                        Vec::new(),
+                        compiled_fns,
+                        &pkg,
+                        name,
+                    )?;
+                    self.env_dirty = true;
+                    result
+                } else {
+                    let result = self.interpreter.call_function(name, Vec::new())?;
+                    self.env_dirty = true;
+                    result
+                }
             } else if !name.starts_with('$') && !name.starts_with('@') && !name.starts_with('%') {
                 v.clone()
             } else {
@@ -689,7 +698,7 @@ impl VM {
             || Self::is_builtin_type(name)
             || Self::is_type_with_smiley(name, &self.interpreter)
         {
-            Value::Package(Symbol::intern(name))
+            Value::Package(Symbol::intern(Self::resolve_type_alias(name)))
         } else if let Some(callable) = self.interpreter.env().get(&format!("&{name}")).cloned()
             && matches!(
                 callable,
@@ -723,6 +732,7 @@ impl VM {
             result
         } else if self.interpreter.has_function(name)
             || Interpreter::is_implicit_zero_arg_builtin(name)
+            || self.interpreter.has_multi_function(name)
         {
             if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
                 let pkg = self.interpreter.current_package().to_string();
@@ -734,18 +744,6 @@ impl VM {
                 self.try_native_function(crate::symbol::Symbol::intern(name), &[])
             {
                 native_result?
-            } else {
-                let result = self.interpreter.call_function(name, Vec::new())?;
-                self.env_dirty = true;
-                result
-            }
-        } else if self.interpreter.has_multi_function(name) {
-            if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
-                let pkg = self.interpreter.current_package().to_string();
-                let result =
-                    self.call_compiled_function_named(cf, Vec::new(), compiled_fns, &pkg, name)?;
-                self.env_dirty = true;
-                result
             } else {
                 let result = self.interpreter.call_function(name, Vec::new())?;
                 self.env_dirty = true;
@@ -845,10 +843,10 @@ impl VM {
                     Value::RangeExcl(_, end) if *end > 0 => self
                         .interpreter
                         .force_lazy_list_prefix_bridge(ll, *end as usize)?,
-                    _ => self.interpreter.force_lazy_list_bridge(ll)?,
+                    _ => self.force_lazy_list_vm(ll)?,
                 }
             } else {
-                self.interpreter.force_lazy_list_bridge(ll)?
+                self.force_lazy_list_vm(ll)?
             };
             target = Value::array(forced);
         }
@@ -856,7 +854,7 @@ impl VM {
         // uniform handling in the match below.
         let is_lazy_index = matches!(&index, Value::LazyList(..));
         let index = if let Value::LazyList(ref ll) = index {
-            let items = self.interpreter.force_lazy_list_bridge(ll)?;
+            let items = self.force_lazy_list_vm(ll)?;
             Value::array(items)
         } else if let Value::Seq(items) = index {
             Value::Array(items, crate::value::ArrayKind::List)
@@ -1099,8 +1097,11 @@ impl VM {
             (instance @ Value::Instance { .. }, Value::Str(key)) => {
                 let default = self.typed_container_default(&instance);
                 let result = self
-                    .interpreter
-                    .call_method_with_values(instance, "AT-KEY", vec![Value::Str(key.clone())])
+                    .try_compiled_method_or_interpret(
+                        instance,
+                        "AT-KEY",
+                        vec![Value::Str(key.clone())],
+                    )
                     .unwrap_or(Value::Nil);
                 if matches!(result, Value::Nil) {
                     default
@@ -1112,10 +1113,9 @@ impl VM {
                 let default = self.typed_container_default(&instance);
                 let fallback = instance.clone();
                 let result = self
-                    .interpreter
-                    .call_method_with_values(instance, "AT-POS", vec![Value::Int(i)])
+                    .try_compiled_method_or_interpret(instance, "AT-POS", vec![Value::Int(i)])
                     .or_else(|_| {
-                        self.interpreter.call_method_with_values(
+                        self.try_compiled_method_or_interpret(
                             fallback,
                             "AT-KEY",
                             vec![Value::Int(i)],
@@ -1128,16 +1128,16 @@ impl VM {
                     result
                 }
             }
-            (instance @ Value::Instance { .. }, Value::Array(keys, ..)) => Value::array(
-                keys.iter()
-                    .cloned()
-                    .map(|k| {
-                        self.interpreter
-                            .call_method_with_values(instance.clone(), "AT-KEY", vec![k])
-                            .unwrap_or(Value::Nil)
-                    })
-                    .collect(),
-            ),
+            (instance @ Value::Instance { .. }, Value::Array(keys, ..)) => {
+                let mut results = Vec::with_capacity(keys.len());
+                for k in keys.iter().cloned() {
+                    results.push(
+                        self.try_compiled_method_or_interpret(instance.clone(), "AT-KEY", vec![k])
+                            .unwrap_or(Value::Nil),
+                    );
+                }
+                Value::array(results)
+            }
             (Value::Str(_), Value::Str(_)) => {
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert(

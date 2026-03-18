@@ -32,6 +32,87 @@ impl VM {
         }
     }
 
+    /// VM-native implementation of xx-repeat for thunks.
+    /// Compiles the thunk body once and runs it N times via `run_reuse`,
+    /// avoiding the interpreter roundtrip through `eval_xx_repeat_thunk`.
+    fn vm_xx_repeat_thunk(
+        &mut self,
+        data: &crate::value::SubData,
+        n: usize,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        // Save env keys that the thunk captures
+        let touched_keys: Vec<String> = data.env.keys().cloned().collect();
+        let saved: Vec<(String, Option<Value>)> = touched_keys
+            .iter()
+            .map(|k| (k.clone(), self.interpreter.env().get(k).cloned()))
+            .collect();
+
+        // Install captured env
+        for (k, v) in &data.env {
+            if matches!(self.interpreter.env().get(k), Some(Value::Array(..)))
+                && matches!(v, Value::Array(..))
+            {
+                continue;
+            }
+            self.interpreter.env_mut().insert(k.clone(), v.clone());
+        }
+
+        // Compile the thunk body
+        let compiler = crate::compiler::Compiler::new();
+        let (code, compiled_fns) = compiler.compile(&data.body);
+        let code = Arc::new(code);
+
+        // Run N times, collecting results
+        let mut out = Vec::with_capacity(n);
+        let saved_stack = std::mem::take(&mut self.stack);
+        let saved_locals = std::mem::take(&mut self.locals);
+
+        for _ in 0..n {
+            match self.run_reuse(&code, &compiled_fns) {
+                Ok(()) => {
+                    let val = self
+                        .interpreter
+                        .env()
+                        .get("_")
+                        .cloned()
+                        .unwrap_or(Value::Nil);
+                    out.push(val);
+                }
+                Err(e) => {
+                    self.stack = saved_stack;
+                    self.locals = saved_locals;
+                    // Restore env
+                    for (k, orig) in saved {
+                        match orig {
+                            Some(v) => {
+                                self.interpreter.env_mut().insert(k, v);
+                            }
+                            None => {
+                                self.interpreter.env_mut().remove(&k);
+                            }
+                        }
+                    }
+                    return Err(e);
+                }
+            }
+        }
+
+        self.stack = saved_stack;
+        self.locals = saved_locals;
+        // Restore env
+        for (k, orig) in saved {
+            match orig {
+                Some(v) => {
+                    self.interpreter.env_mut().insert(k, v);
+                }
+                None => {
+                    self.interpreter.env_mut().remove(&k);
+                }
+            }
+        }
+        Ok(out)
+    }
+
     pub(super) fn exec_add_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -78,6 +159,9 @@ impl VM {
 
     /// Try to dispatch a binary operation to a user-defined infix operator.
     /// Returns Some(result) if a user-defined candidate matched, None otherwise.
+    // TODO: Try compiled function dispatch before falling back to interpreter.
+    // Currently blocked because this is called from closures that don't have
+    // access to `compiled_fns`.
     pub(super) fn try_user_infix(
         &mut self,
         op_name: &str,
@@ -236,7 +320,7 @@ impl VM {
                     .get("_")
                     .cloned()
                     .unwrap_or(Value::Nil);
-                Value::Bool(self.interpreter.smart_match_values(&topic, &val))
+                Value::Bool(self.vm_smart_match(&topic, &val))
             }
             _ => Value::Bool(val.truthy()),
         };
@@ -480,9 +564,34 @@ impl VM {
     pub(super) fn exec_string_repeat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self
-            .interpreter
-            .call_function("infix:<x>", vec![left, right])?;
+
+        // Warn on uninitialized type object used as repeat count
+        if let Value::Package(name) = &right
+            && name == "Int"
+            && !self.interpreter.warning_suppressed()
+        {
+            self.interpreter.write_warn_to_stderr(&format!(
+                "Use of uninitialized value of type {} in numeric context",
+                name
+            ));
+        }
+
+        // Whatever on RHS produces a WhateverCode closure
+        if matches!(&right, Value::Whatever) {
+            self.stack.push(self.interpreter.make_x_whatevercode(left));
+            return Ok(());
+        }
+
+        let Some(n_raw) = crate::runtime::Interpreter::parse_repeat_count(&right)? else {
+            return Err(crate::runtime::Interpreter::repeat_error(
+                "X::Numeric::CannotConvert",
+                "Cannot convert Inf to Int".to_string(),
+            ));
+        };
+        let n = n_raw.max(0) as usize;
+        let repeated = crate::runtime::utils::coerce_to_str(&left).repeat(n);
+        // NFC-normalize after repetition
+        let result = Value::str(repeated.nfc().collect::<String>());
         self.stack.push(result);
         Ok(())
     }
@@ -490,6 +599,8 @@ impl VM {
     pub(super) fn exec_list_repeat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+
+        // Fast path for xx-reeval thunks (compiler-generated repeat blocks)
         let thunk = match &left {
             Value::Sub(data) => Some(data.clone()),
             Value::WeakSub(weak) => weak.upgrade(),
@@ -499,13 +610,64 @@ impl VM {
             && let Value::Int(n) = right
         {
             let n = n.max(0) as usize;
-            let items = self.interpreter.eval_xx_repeat_thunk(data.as_ref(), n)?;
+            let items = self.vm_xx_repeat_thunk(data.as_ref(), n)?;
             self.stack.push(Value::Seq(Arc::new(items)));
             return Ok(());
         }
-        let result = self
-            .interpreter
-            .call_function("infix:<xx>", vec![left, right])?;
+
+        // Warn on uninitialized type object used as repeat count
+        if let Value::Package(name) = &right
+            && name == "Int"
+            && !self.interpreter.warning_suppressed()
+        {
+            self.interpreter.write_warn_to_stderr(&format!(
+                "Use of uninitialized value of type {} in numeric context",
+                name
+            ));
+        }
+
+        const EAGER_LIMIT: usize = 10_000;
+        const LAZY_CACHE: usize = 4_096;
+        const LAZY_CACHE_CALLABLE: usize = 256;
+
+        let is_callable = matches!(
+            left,
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+        );
+        let lazy_cache = if is_callable {
+            LAZY_CACHE_CALLABLE
+        } else {
+            LAZY_CACHE
+        };
+
+        let count = crate::runtime::Interpreter::parse_repeat_count(&right)?;
+        let (repeat, lazy) = match count {
+            Some(n) if n <= 0 => (0usize, false),
+            Some(n) if (n as usize) <= EAGER_LIMIT => (n as usize, false),
+            Some(n) => ((n as usize).min(lazy_cache), true),
+            None => (lazy_cache, true),
+        };
+
+        let mut items = Vec::with_capacity(repeat);
+        if let Value::Slip(slip_items) = &left {
+            if slip_items.is_empty() {
+                items.extend(std::iter::repeat_n(Value::Nil, repeat));
+            } else {
+                for _ in 0..repeat {
+                    items.extend(slip_items.iter().cloned());
+                }
+            }
+        } else {
+            for _ in 0..repeat {
+                items.push(self.interpreter.repeat_lhs_once(&left)?);
+            }
+        }
+
+        let result = if lazy {
+            crate::runtime::Interpreter::make_repeat_lazy_cache(items)
+        } else {
+            Value::Seq(Arc::new(items))
+        };
         self.stack.push(result);
         Ok(())
     }
@@ -579,10 +741,23 @@ impl VM {
         self.stack.push(Value::Bool(result));
     }
 
+    /// VM-native `does` check. Inlines the pure `does_check` path and
+    /// only falls back to the interpreter for actual role composition.
+    fn vm_does_values(&mut self, left: Value, right: Value) -> Result<Value, RuntimeError> {
+        // Check if the RHS is a role that needs to be composed onto the value.
+        // If so, delegate to the interpreter which manages role state.
+        if self.interpreter.is_role_application(&right) {
+            return self.interpreter.eval_does_values(left, right);
+        }
+        // Pure check: does the value conform to the named role/type?
+        let role_name = right.to_string_value();
+        Ok(Value::Bool(left.does_check(&role_name)))
+    }
+
     pub(super) fn exec_does_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.interpreter.eval_does_values(left, right)?;
+        let result = self.vm_does_values(left, right)?;
         self.stack.push(result);
         Ok(())
     }
@@ -594,7 +769,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let updated = self.interpreter.eval_does_values(left, right)?;
+        let updated = self.vm_does_values(left, right)?;
         let name = Self::const_str(code, name_idx).to_string();
         self.interpreter
             .env_mut()

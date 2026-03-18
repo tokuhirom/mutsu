@@ -1330,11 +1330,7 @@ impl Interpreter {
         // When the endpoint is infinite (None), return a LazyList to preserve laziness
         if endpoint.is_none() && endpoint_kind.is_none() {
             Ok(Value::LazyList(std::sync::Arc::new(
-                crate::value::LazyList {
-                    body: vec![],
-                    env: crate::env::Env::new(),
-                    cache: std::sync::Mutex::new(Some(result)),
-                },
+                crate::value::LazyList::new_cached(result),
             )))
         } else {
             Ok(Value::array(result))

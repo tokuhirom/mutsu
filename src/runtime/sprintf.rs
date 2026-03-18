@@ -101,8 +101,17 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
         let plus_sign = flags.contains('+');
         let space_flag = flags.contains(' ');
         let hash_flag = flags.contains('#');
-        let arg = args.get(arg_index);
+        let raw_arg = args.get(arg_index);
         arg_index += 1;
+        // Unwrap Mixin (allomorphic types like IntStr) to get the inner value
+        let _mixin_storage: Value;
+        let arg = match raw_arg {
+            Some(Value::Mixin(inner, _)) => {
+                _mixin_storage = (**inner).clone();
+                Some(&_mixin_storage)
+            }
+            other => other,
+        };
         let int_val = || match arg {
             Some(Value::Int(i)) => *i,
             Some(Value::BigInt(bi)) => {

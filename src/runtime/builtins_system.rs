@@ -1146,6 +1146,25 @@ impl Interpreter {
         // Sync shared variables back from child threads
         self.sync_shared_vars_to_env();
 
+        // Process any pending instance destroys (e.g. objects that were nilled
+        // before the start block but whose DESTROY wasn't yet triggered).
+        self.closure_env_overrides.clear();
+        self.run_pending_instance_destroys()?;
+
+        // Drain shared thread output buffers (concurrent output interleaved in real order)
+        if let Some(ref shared) = self.shared_thread_output {
+            let drained = std::mem::take(&mut *shared.lock().unwrap());
+            if !drained.is_empty() {
+                self.emit_output(&drained);
+            }
+        }
+        if let Some(ref shared) = self.shared_thread_stderr {
+            let drained = std::mem::take(&mut *shared.lock().unwrap());
+            if !drained.is_empty() {
+                self.stderr_output.push_str(&drained);
+            }
+        }
+
         if results.len() == 1 {
             Ok(results.into_iter().next().unwrap())
         } else {

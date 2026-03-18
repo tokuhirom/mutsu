@@ -359,7 +359,8 @@ pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
 
     // Handle `use v6`, `use v6.d`, etc.
-    if rest.starts_with('v') {
+    // Only match when 'v' is followed by a digit (version number), not other identifiers.
+    if rest.starts_with('v') && rest[1..].chars().next().is_some_and(|c| c.is_ascii_digit()) {
         let (r, version_token) = take_while1(rest, |c: char| {
             c.is_alphanumeric() || c == '.' || c == '*' || c == '+'
         })?;
@@ -379,6 +380,11 @@ pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
 
     let (rest, module) = qualified_ident(rest)?;
     let (rest, _) = ws(rest)?;
+
+    // Handle `use variables :D/:U/:_` pragma
+    if module == "variables" {
+        return parse_use_variables_pragma(rest);
+    }
 
     // `use newline :lf|:cr|:crlf` uses a colonpair argument and must be preserved.
     if module == "newline" && rest.starts_with(':') && !rest.starts_with("::") {
@@ -441,6 +447,136 @@ pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, Stmt::Use { module, arg }))
 }
 
+/// Parse `use variables :D/:U/:_` pragma.
+/// Validates the argument and emits the Use statement.
+fn parse_use_variables_pragma(input: &str) -> PResult<'_, Stmt> {
+    let rest = input;
+
+    // No argument → X::Pragma::MustOneOf
+    if rest.starts_with(';') || rest.is_empty() || rest.starts_with('}') {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("name".to_string(), Value::str("variables".to_string()));
+        attrs.insert(
+            "message".to_string(),
+            Value::str("Must use one of :D, :U, :_ with 'variables' pragma".to_string()),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::Pragma::MustOneOf"), attrs);
+        return Err(PError::fatal_with_exception(
+            "Must use one of :D, :U, :_ with 'variables' pragma".to_string(),
+            Box::new(ex),
+        ));
+    }
+
+    // Must start with ':'
+    if !rest.starts_with(':') {
+        // String argument like `use variables "bar"` → X::Pragma::UnknownArg
+        let (r, arg_expr) = expression(rest)?;
+        let arg_str = format!("{:?}", arg_expr);
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("name".to_string(), Value::str("variables".to_string()));
+        // Try to extract string value from the expression
+        let arg_val = if let Expr::Literal(Value::Str(ref s)) = arg_expr {
+            s.to_string()
+        } else {
+            arg_str
+        };
+        attrs.insert("arg".to_string(), Value::str(arg_val.clone()));
+        attrs.insert(
+            "message".to_string(),
+            Value::str(format!(
+                "Unknown argument '{}' to 'variables' pragma",
+                arg_val
+            )),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::Pragma::UnknownArg"), attrs);
+        let _ = r;
+        return Err(PError::fatal_with_exception(
+            format!("Unknown argument '{}' to 'variables' pragma", arg_val),
+            Box::new(ex),
+        ));
+    }
+
+    // Parse colonpair arguments
+    let mut smileys: Vec<String> = Vec::new();
+    let mut r = rest;
+    loop {
+        if !r.starts_with(':') || r.starts_with("::") {
+            break;
+        }
+        let after_colon = &r[1..];
+        if let Ok((r2, smiley_name)) = ident(after_colon) {
+            smileys.push(smiley_name.to_string());
+            let (r2, _) = ws(r2)?;
+            // Skip optional comma
+            let r2 = r2.strip_prefix(',').unwrap_or(r2);
+            let (r2, _) = ws(r2)?;
+            r = r2;
+        } else {
+            break;
+        }
+    }
+
+    // Validate smileys
+    if smileys.is_empty() {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("name".to_string(), Value::str("variables".to_string()));
+        let ex = Value::make_instance(Symbol::intern("X::Pragma::MustOneOf"), attrs);
+        return Err(PError::fatal_with_exception(
+            "Must use one of :D, :U, :_ with 'variables' pragma".to_string(),
+            Box::new(ex),
+        ));
+    }
+
+    // Check for invalid smileys
+    for s in &smileys {
+        if s != "D" && s != "U" && s != "_" {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("name".to_string(), Value::str(s.clone()));
+            attrs.insert(
+                "message".to_string(),
+                Value::str(format!(
+                    "Invalid type smiley ':{}' used, only ':D', ':U' and ':_' are allowed",
+                    s
+                )),
+            );
+            let ex = Value::make_instance(Symbol::intern("X::InvalidTypeSmiley"), attrs);
+            return Err(PError::fatal_with_exception(
+                format!(
+                    "Invalid type smiley ':{}' used, only ':D', ':U' and ':_' are allowed",
+                    s
+                ),
+                Box::new(ex),
+            ));
+        }
+    }
+
+    // Multiple smileys → X::Pragma::OnlyOne
+    if smileys.len() > 1 {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("name".to_string(), Value::str("variables".to_string()));
+        attrs.insert(
+            "message".to_string(),
+            Value::str("Can only use one of :D, :U, :_ with 'variables' pragma".to_string()),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::Pragma::OnlyOne"), attrs);
+        return Err(PError::fatal_with_exception(
+            "Can only use one of :D, :U, :_ with 'variables' pragma".to_string(),
+            Box::new(ex),
+        ));
+    }
+
+    let smiley = &smileys[0];
+    let (r, _) = ws(r)?;
+    let (r, _) = opt_char(r, ';');
+    Ok((
+        r,
+        Stmt::Use {
+            module: "variables".to_string(),
+            arg: Some(Expr::Literal(Value::str(format!(":{}", smiley)))),
+        },
+    ))
+}
+
 /// Parse `import Module [:TAG ...];`
 pub(super) fn import_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("import", input).ok_or_else(|| PError::expected("import statement"))?;
@@ -486,6 +622,22 @@ pub(super) fn no_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, module) = qualified_ident(rest)?;
     let (rest, _) = ws(rest)?;
+
+    // `no variables` is not allowed — throw X::Pragma::CannotWhat
+    if module == "variables" {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("what".to_string(), Value::str("no".to_string()));
+        attrs.insert("name".to_string(), Value::str("variables".to_string()));
+        attrs.insert(
+            "message".to_string(),
+            Value::str("Cannot use 'no' with the 'variables' pragma".to_string()),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::Pragma::CannotWhat"), attrs);
+        return Err(PError::fatal_with_exception(
+            "Cannot use 'no' with the 'variables' pragma".to_string(),
+            Box::new(ex),
+        ));
+    }
 
     let (rest, arg) = if rest.starts_with(';') || rest.is_empty() || rest.starts_with('}') {
         (rest, None)
@@ -533,9 +685,22 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     let (mut rest, _) = ws1(rest)?;
 
     // my enum Foo <...>
+    // my Array enum Foo <...>  (typed enum — base type is accepted but currently ignored)
     if let Some(r) = keyword("enum", rest) {
         let (r, _) = ws1(r)?;
         return parse_enum_decl_body(r);
+    }
+    // Check for `my <Type> enum <Name> ...` (e.g., `my Array enum PageSizes «...»`)
+    {
+        let saved = rest;
+        if let Ok((after_type, type_name)) = ident(rest)
+            && let Ok((after_ws, _)) = ws1(after_type)
+            && let Some(r) = keyword("enum", after_ws)
+            && let Ok((r, _)) = ws1(r)
+        {
+            return parse_enum_decl_body_with_type(r, Some(type_name));
+        }
+        rest = saved;
     }
 
     // my/our proto ...
@@ -752,6 +917,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 || r2.starts_with('%')
                 || r2.starts_with('&')
                 || r2.starts_with('\\')
+                || r2.starts_with('(')
                 || keyword("constant", r2).is_some()
             {
                 (r2, Some(tc))
@@ -762,6 +928,39 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             (saved, None)
         }
     };
+
+    // Check for invalid type smileys (e.g. Int:foo)
+    // Only check the last `:X` that is NOT part of `::` (namespace separator).
+    if let Some(ref tc) = type_constraint
+        && let Some(colon_pos) = tc.rfind(':')
+        && (colon_pos == 0 || tc.as_bytes()[colon_pos - 1] != b':')
+    {
+        let smiley = &tc[colon_pos + 1..];
+        if !smiley.is_empty()
+            && smiley != "D"
+            && smiley != "U"
+            && smiley != "_"
+            && smiley.chars().next().is_some_and(|c| c.is_alphabetic())
+        {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("name".to_string(), Value::str(smiley.to_string()));
+            attrs.insert(
+                "message".to_string(),
+                Value::str(format!(
+                    "Invalid type smiley ':{}' used, only ':D', ':U' and ':_' are allowed",
+                    smiley
+                )),
+            );
+            let ex = Value::make_instance(Symbol::intern("X::InvalidTypeSmiley"), attrs);
+            return Err(PError::fatal_with_exception(
+                format!(
+                    "Invalid type smiley ':{}' used, only ':D', ':U' and ':_' are allowed",
+                    smiley
+                ),
+                Box::new(ex),
+            ));
+        }
+    }
 
     // my <Type> constant <name> = <expr>
     if keyword("constant", rest).is_some() {
@@ -848,9 +1047,9 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         ));
     }
 
-    // Destructuring: my ($a, $b) = expr
+    // Destructuring: my ($a, $b) = expr  or  my Int:D ($x = 5)
     if rest.starts_with('(') {
-        return parse_destructuring_decl(rest, is_state);
+        return parse_destructuring_decl(rest, is_state, type_constraint);
     }
 
     // Parse variable
@@ -1495,9 +1694,15 @@ struct DestructureVar {
     is_optional: bool,
     /// Whether this is a named parameter (:@even)
     is_named: bool,
+    /// Per-variable default value (e.g. `$x = 5` inside grouped declaration)
+    default: Option<Expr>,
 }
 
-pub(super) fn parse_destructuring_decl(input: &str, is_state: bool) -> PResult<'_, Stmt> {
+pub(super) fn parse_destructuring_decl(
+    input: &str,
+    is_state: bool,
+    type_constraint: Option<String>,
+) -> PResult<'_, Stmt> {
     let (rest, _) = parse_char(input, '(')?;
     let (rest, _) = ws(rest)?;
     let mut vars: Vec<DestructureVar> = Vec::new();
@@ -1542,11 +1747,24 @@ pub(super) fn parse_destructuring_decl(input: &str, is_state: bool) -> PResult<'
             };
             let (r2, _) = ws(r2)?;
 
+            // Check for per-variable default value: ($x = 5)
+            let (r2, default) =
+                if r2.starts_with('=') && !r2.starts_with("==") && !r2.starts_with("=>") {
+                    let r3 = &r2[1..];
+                    let (r3, _) = ws(r3)?;
+                    let (r3, expr) = expression(r3)?;
+                    (r3, Some(expr))
+                } else {
+                    (r2, None)
+                };
+            let (r2, _) = ws(r2)?;
+
             vars.push(DestructureVar {
                 name: full_name,
                 is_slurpy,
                 is_optional,
                 is_named,
+                default,
             });
 
             if r2.starts_with(',') {
@@ -1625,7 +1843,7 @@ pub(super) fn parse_destructuring_decl(input: &str, is_state: bool) -> PResult<'
                         target: Box::new(Expr::HashVar(hash_bare.clone())),
                         index: Box::new(Expr::Literal(Value::str(bare_name.to_string()))),
                     },
-                    type_constraint: None,
+                    type_constraint: type_constraint.clone(),
                     is_state,
                     is_our: false,
                     is_dynamic: false,
@@ -1681,7 +1899,7 @@ pub(super) fn parse_destructuring_decl(input: &str, is_state: bool) -> PResult<'
             stmts.push(Stmt::VarDecl {
                 name: dvar.name.clone(),
                 expr,
-                type_constraint: None,
+                type_constraint: type_constraint.clone(),
                 is_state,
                 is_our: false,
                 is_dynamic: false,
@@ -1702,10 +1920,11 @@ pub(super) fn parse_destructuring_decl(input: &str, is_state: bool) -> PResult<'
     let (rest, _) = opt_char(rest, ';');
     let mut stmts = Vec::new();
     for dvar in &vars {
+        let expr = dvar.default.clone().unwrap_or(Expr::Literal(Value::Nil));
         stmts.push(Stmt::VarDecl {
             name: dvar.name.clone(),
-            expr: Expr::Literal(Value::Nil),
-            type_constraint: None,
+            expr,
+            type_constraint: type_constraint.clone(),
             is_state,
             is_our: false,
             is_dynamic: false,
@@ -2116,7 +2335,7 @@ pub(crate) fn enum_decl(input: &str) -> PResult<'_, Stmt> {
 
 /// Parse anonymous enum body (after `enum` keyword with no name).
 fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
-    let (rest, variants) = if input.starts_with("<<") {
+    let (rest, variants) = if input.starts_with("<<") || input.starts_with('\u{ab}') {
         parse_double_angle_enum_variants(input)?
     } else if input.starts_with('<') {
         let (r, _) = parse_char(input, '<')?;
@@ -2166,41 +2385,71 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
             name: Symbol::intern(""),
             variants,
             is_export: false,
+            base_type: None,
         },
     ))
 }
 
-/// Parse `<< ... >>` enum variant list.
-/// Supports plain words and colonpairs like `:key<value>`.
+/// Parse `<< ... >>` or `\u{ab} ... \u{bb}` enum variant list.
+/// Supports plain words and colonpairs like `:key<value>` or `:key[expr, ...]`.
 fn parse_double_angle_enum_variants(input: &str) -> PResult<'_, Vec<(String, Option<Expr>)>> {
-    let r = input
-        .strip_prefix("<<")
-        .ok_or_else(|| PError::expected("<<"))?;
+    let (r, use_unicode_close) = if let Some(r) = input.strip_prefix("<<") {
+        (r, false)
+    } else if let Some(r) = input.strip_prefix('\u{ab}') {
+        // «
+        (r, true)
+    } else {
+        return Err(PError::expected("<< or \u{ab}"));
+    };
     let mut variants = Vec::new();
     let mut r = r;
     loop {
         // Skip whitespace (including newlines)
         let (r2, _) = ws(r)?;
         r = r2;
-        // Check for closing >>
-        if let Some(r2) = r.strip_prefix(">>") {
+        // Check for closing >> or »
+        if use_unicode_close {
+            if let Some(r2) = r.strip_prefix('\u{bb}') {
+                return Ok((r2, variants));
+            }
+        } else if let Some(r2) = r.strip_prefix(">>") {
             return Ok((r2, variants));
         }
-        // Colonpair: :key<value>
+        // Colonpair: :key<value> or :key[expr, ...] or :!key
         if r.starts_with(':') && !r.starts_with("::") {
             let after_colon = &r[1..];
+            // Handle :!key (negated boolean)
+            let (after_neg, negated) = if let Some(stripped) = after_colon.strip_prefix('!') {
+                (stripped, true)
+            } else {
+                (after_colon, false)
+            };
             // Parse the key (identifier)
-            let (after_key, key) = take_while1(after_colon, |c: char| {
+            let (after_key, key) = take_while1(after_neg, |c: char| {
                 c.is_alphanumeric() || c == '_' || c == '-'
             })?;
-            // Check for <value>
-            if let Some(after_open) = after_key.strip_prefix('<') {
+            if negated {
+                // :!key => value is 0 (false)
+                variants.push((key.to_string(), Some(Expr::Literal(Value::Int(0.into())))));
+                r = after_key;
+            } else if let Some(after_open) = after_key.strip_prefix('<') {
+                // :key<value>
                 let (after_val, val) = take_while1(after_open, |c: char| c != '>')?;
                 let after_close = after_val
                     .strip_prefix('>')
                     .ok_or_else(|| PError::expected(">"))?;
                 variants.push((key.to_string(), Some(Expr::Literal(Value::str_from(val)))));
                 r = after_close;
+            } else if after_key.starts_with('[') {
+                // :key[expr, ...] — parse as array expression
+                let (after_expr, expr) = expression(after_key)?;
+                variants.push((key.to_string(), Some(expr)));
+                r = after_expr;
+            } else if after_key.starts_with('(') {
+                // :key(expr) — parse as expression in parens
+                let (after_expr, expr) = expression(after_key)?;
+                variants.push((key.to_string(), Some(expr)));
+                r = after_expr;
             } else {
                 // :key with no value — treat as boolean true (no explicit value)
                 variants.push((key.to_string(), None));
@@ -2208,7 +2457,10 @@ fn parse_double_angle_enum_variants(input: &str) -> PResult<'_, Vec<(String, Opt
             }
         } else {
             // Plain word
-            let (r2, word) = take_while1(r, |c: char| !c.is_whitespace() && c != '>' && c != ':')?;
+            let close_char = if use_unicode_close { '\u{bb}' } else { '>' };
+            let (r2, word) = take_while1(r, |c: char| {
+                !c.is_whitespace() && c != close_char && c != '>' && c != ':'
+            })?;
             variants.push((word.to_string(), None));
             r = r2;
         }
@@ -2239,6 +2491,10 @@ fn parse_enum_variant_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> 
 }
 
 pub(super) fn parse_enum_decl_body(input: &str) -> PResult<'_, Stmt> {
+    parse_enum_decl_body_with_type(input, None)
+}
+
+fn parse_enum_decl_body_with_type(input: &str, base_type: Option<String>) -> PResult<'_, Stmt> {
     let (rest, name_str) = qualified_ident(input)?;
     let name = Symbol::intern(&name_str);
     let (rest, _) = ws(rest)?;
@@ -2256,8 +2512,8 @@ pub(super) fn parse_enum_decl_body(input: &str) -> PResult<'_, Stmt> {
         rest = r;
     }
 
-    // Enum variants in << >>, <> or ()
-    let (rest, variants) = if rest.starts_with("<<") {
+    // Enum variants in << >>, « », <> or ()
+    let (rest, variants) = if rest.starts_with("<<") || rest.starts_with('\u{ab}') {
         parse_double_angle_enum_variants(rest)?
     } else if rest.starts_with('<') {
         let (r, _) = parse_char(rest, '<')?;
@@ -2289,6 +2545,7 @@ pub(super) fn parse_enum_decl_body(input: &str) -> PResult<'_, Stmt> {
                         name,
                         variants: vec![("__DYNAMIC__".to_string(), Some(expr))],
                         is_export,
+                        base_type: base_type.clone(),
                     },
                 ));
             }
@@ -2303,6 +2560,7 @@ pub(super) fn parse_enum_decl_body(input: &str) -> PResult<'_, Stmt> {
                         name,
                         variants,
                         is_export,
+                        base_type: base_type.clone(),
                     },
                 ));
             }
@@ -2328,6 +2586,7 @@ pub(super) fn parse_enum_decl_body(input: &str) -> PResult<'_, Stmt> {
             name,
             variants,
             is_export,
+            base_type,
         },
     ))
 }

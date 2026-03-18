@@ -47,6 +47,9 @@ pub struct RuntimeError {
     pub is_proceed: bool,
     pub is_succeed: bool,
     pub is_fail: bool,
+    /// When true, the Failure produced from this fail error should be marked as handled.
+    /// Set when UNDO phasers run in response to the fail.
+    pub fail_handled: bool,
     pub is_warn: bool,
     pub is_leave: bool,
     pub is_resume: bool,
@@ -77,6 +80,7 @@ impl RuntimeError {
             is_proceed: false,
             is_succeed: false,
             is_fail: false,
+            fail_handled: false,
             is_warn: false,
             is_leave: false,
             is_resume: false,
@@ -126,6 +130,7 @@ impl RuntimeError {
             is_proceed: false,
             is_succeed: false,
             is_fail: false,
+            fail_handled: false,
             is_warn: false,
             is_leave: false,
             is_resume: false,
@@ -489,15 +494,25 @@ impl RuntimeError {
         Self::typed("X::ControlFlow::Return", attrs)
     }
 
-    /// X::TypeCheck::Assignment - Type check failed in assignment
-    pub(crate) fn typecheck_assignment(expected: &str, got: &str) -> Self {
-        let msg = format!(
-            "Type check failed in assignment; expected {}, got {}",
-            expected, got
-        );
+    /// X::TypeCheck::Assignment - Type check failed in assignment (with optional symbol)
+    pub(crate) fn typecheck_assignment(expected: &str, got: &str, symbol: Option<&str>) -> Self {
+        let msg = if let Some(sym) = symbol {
+            format!(
+                "Type check failed in assignment to {}; expected {}, got {}",
+                sym, expected, got
+            )
+        } else {
+            format!(
+                "Type check failed in assignment; expected {}, got {}",
+                expected, got
+            )
+        };
         let mut attrs = HashMap::new();
         attrs.insert("expected".to_string(), Value::str(expected.to_string()));
         attrs.insert("got".to_string(), Value::str(got.to_string()));
+        if let Some(sym) = symbol {
+            attrs.insert("symbol".to_string(), Value::str(sym.to_string()));
+        }
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         Self::typed("X::TypeCheck::Assignment", attrs)
     }

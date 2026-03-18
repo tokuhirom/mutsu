@@ -1176,10 +1176,12 @@ impl Interpreter {
                 other => Ok(Value::str(other.to_string_value())),
             },
             "name" if args.is_empty() => match target {
-                Value::Routine { name, .. } => Ok(Value::str(name.resolve())),
+                Value::Routine { name, .. } => {
+                    Ok(Value::str(format_operator_name(&name.resolve())))
+                }
                 Value::Package(name) => Ok(Value::str(name.resolve())),
                 Value::Str(name) => Ok(Value::Str(name.clone())),
-                Value::Sub(data) => Ok(Value::str(data.name.resolve())),
+                Value::Sub(data) => Ok(Value::str(format_operator_name(&data.name.resolve()))),
                 _ => Ok(Value::Nil),
             },
             "package" if args.is_empty() => match target {
@@ -1228,8 +1230,23 @@ impl Interpreter {
                 }
                 _ => Ok(Value::str_from("P6opaque")),
             },
-            "Str" | "Stringy" if args.is_empty() => match target {
+            "Str" | "Stringy" if args.is_empty() => match &target {
                 Value::Package(_) => Ok(Value::str(String::new())),
+                Value::Instance { class_name, .. } => {
+                    // When Stringy is requested but only Str is user-defined (or
+                    // vice versa), delegate to the available user method so that
+                    // custom stringification works through `~$obj`.
+                    let alt = if method == "Stringy" {
+                        "Str"
+                    } else {
+                        "Stringy"
+                    };
+                    if self.has_user_method(&class_name.resolve(), alt) {
+                        self.call_method_with_values(target, alt, vec![])
+                    } else {
+                        Ok(Value::str(target.to_string_value()))
+                    }
+                }
                 _ => Ok(Value::str(target.to_string_value())),
             },
             "Numeric" | "Real" if args.is_empty() => {
@@ -1549,5 +1566,54 @@ impl Interpreter {
             }
         }
         parts
+    }
+}
+
+/// Format an operator name for display.
+///
+/// Raku uses different delimiters depending on the operator symbol:
+/// - If the symbol contains characters special inside `\u{ab}\u{bb}` quoting
+///   (`$`, `@`, `%`, `&`, `{`, `\`, `\u{ab}`, `\u{bb}`), use `<>` delimiters
+///   and backslash-escape any `<` or `>` in the symbol.
+/// - Otherwise, if the symbol contains `<` or `>`, use `\u{ab}\u{bb}` delimiters.
+/// - Otherwise, use `<>` delimiters as-is.
+fn format_operator_name(name: &str) -> String {
+    // Check if this is a categorical name like "infix:<...>", "prefix:<...>", etc.
+    let Some(colon_pos) = name.find(":<") else {
+        return name.to_string();
+    };
+    let category = &name[..colon_pos];
+    let rest = &name[colon_pos + 2..];
+    // The rest should end with '>'
+    let Some(symbol) = rest.strip_suffix('>') else {
+        return name.to_string();
+    };
+
+    // Characters that are special inside «» quoting and force <> delimiters
+    let needs_angle_delims = symbol
+        .chars()
+        .any(|c| matches!(c, '$' | '@' | '%' | '&' | '{' | '\\' | '\u{ab}' | '\u{bb}'));
+    let has_angle = symbol.contains('<') || symbol.contains('>');
+
+    if needs_angle_delims {
+        // Must use <> delimiters; backslash-escape < and > in the symbol
+        if has_angle {
+            let mut escaped = String::with_capacity(symbol.len() + 4);
+            for ch in symbol.chars() {
+                if ch == '<' || ch == '>' {
+                    escaped.push('\\');
+                }
+                escaped.push(ch);
+            }
+            format!("{}:<{}>", category, escaped)
+        } else {
+            // No angle brackets to escape, just use <> as-is
+            name.to_string()
+        }
+    } else if has_angle {
+        // Use french quote delimiters
+        format!("{}:\u{ab}{}\u{bb}", category, symbol)
+    } else {
+        name.to_string()
     }
 }

@@ -305,14 +305,30 @@ pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
         // If we can't find the closing '>', fall through to return the base name
     }
     // Guillemet form: infix:«...» is equivalent to infix:<...>
-    if is_op_category
-        && let Some(after_open) = rest.strip_prefix(":\u{ab}")
-        && let Some(end_pos) = after_open.find('\u{bb}')
-    {
-        let op_symbol = after_open[..end_pos].trim();
-        let after_close = &after_open[end_pos + '\u{bb}'.len_utf8()..];
-        let full_name = format!("{}:<{}>", base, op_symbol);
-        return Ok((after_close, full_name));
+    // Supports backslash-escaped » inside the delimiters (e.g. «~~>\»»)
+    if is_op_category && let Some(after_open) = rest.strip_prefix(":\u{ab}") {
+        let mut chars = after_open.char_indices();
+        let mut found_end = None;
+        while let Some((i, c)) = chars.next() {
+            match c {
+                '\u{bb}' => {
+                    found_end = Some(i);
+                    break;
+                }
+                '\\' => {
+                    chars.next(); // skip escaped character
+                }
+                _ => {}
+            }
+        }
+        if let Some(end_pos) = found_end {
+            let raw_symbol = after_open[..end_pos].trim();
+            let after_close = &after_open[end_pos + '\u{bb}'.len_utf8()..];
+            // Unescape backslash sequences (e.g. \» → »)
+            let op_symbol = unescape_guillemet_content(raw_symbol);
+            let full_name = format!("{}:<{}>", base, op_symbol);
+            return Ok((after_close, full_name));
+        }
     }
     if is_op_category
         && rest.starts_with(":[")
@@ -378,6 +394,23 @@ fn resolve_operator_symbol(raw: &str) -> String {
         }
     }
     trimmed.to_string()
+}
+
+/// Unescape backslash sequences inside guillemet (« ») delimiters.
+/// In this context, backslash only escapes the closing » and itself.
+fn unescape_guillemet_content(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            if let Some(next) = chars.next() {
+                out.push(next);
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn unescape_operator_single_quoted(s: &str) -> String {

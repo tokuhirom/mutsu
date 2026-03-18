@@ -166,13 +166,27 @@ impl Interpreter {
         };
 
         match pattern {
-            Value::Regex(pat) => {
-                let all_captures = self.regex_match_all_with_captures(pat, &text);
+            Value::Regex(pat) | Value::RegexWithAdverbs { pattern: pat, .. } => {
+                let is_p5 = matches!(pattern, Value::RegexWithAdverbs { perl5: true, .. });
+                let pat_global =
+                    matches!(pattern, Value::RegexWithAdverbs { global: true, .. }) || global;
+                let all_captures = if is_p5 {
+                    #[cfg(feature = "pcre2")]
+                    {
+                        self.regex_match_all_with_captures_p5(pat, &text)
+                    }
+                    #[cfg(not(feature = "pcre2"))]
+                    {
+                        self.regex_match_all_with_captures(pat, &text)
+                    }
+                } else {
+                    self.regex_match_all_with_captures(pat, &text)
+                };
                 if all_captures.is_empty() {
                     return Ok(Value::str(text));
                 }
                 let chars: Vec<char> = text.chars().collect();
-                if global {
+                if pat_global {
                     let selected = self.select_non_overlapping_matches(all_captures);
                     let mut result = String::new();
                     let mut last_end = 0;
@@ -193,7 +207,33 @@ impl Interpreter {
                     let suffix: String = chars[last_end..].iter().collect();
                     result.push_str(&suffix);
                     Ok(Value::str(result))
-                } else if let Some(captures) = self.regex_match_with_captures(pat, &text) {
+                } else if let Some(captures) = {
+                    if is_p5 {
+                        #[cfg(feature = "pcre2")]
+                        {
+                            self.regex_match_with_captures_p5(pat, &text)
+                        }
+                        #[cfg(not(feature = "pcre2"))]
+                        {
+                            self.regex_match_with_captures(pat, &text)
+                        }
+                    } else {
+                        self.regex_match_with_captures(pat, &text)
+                    }
+                } {
+                    // Set $/ to the match object
+                    let match_obj = Value::make_match_object_full(
+                        captures.matched.clone(),
+                        captures.from as i64,
+                        captures.to as i64,
+                        &captures.positional,
+                        &captures.named,
+                        &captures.named_subcaps,
+                        &captures.positional_subcaps,
+                        &captures.positional_quantified,
+                        Some(&text),
+                    );
+                    self.env.insert("/".to_string(), match_obj);
                     let prefix: String = chars[..captures.from].iter().collect();
                     let suffix: String = chars[captures.to..].iter().collect();
                     let repl = self.eval_subst_replacement(

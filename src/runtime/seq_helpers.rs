@@ -1024,7 +1024,11 @@ impl Interpreter {
     }
 
     #[cfg(feature = "pcre2")]
-    fn regex_match_with_captures_p5(&self, pattern: &str, text: &str) -> Option<RegexCaptures> {
+    pub(super) fn regex_match_with_captures_p5(
+        &self,
+        pattern: &str,
+        text: &str,
+    ) -> Option<RegexCaptures> {
         let re = self.compile_p5_regex(pattern)?;
         let mut locs = re.capture_locations();
         let m0 = re.captures_read(&mut locs, text.as_bytes()).ok()??;
@@ -1059,7 +1063,11 @@ impl Interpreter {
     }
 
     #[cfg(feature = "pcre2")]
-    fn regex_match_all_with_captures_p5(&self, pattern: &str, text: &str) -> Vec<RegexCaptures> {
+    pub(super) fn regex_match_all_with_captures_p5(
+        &self,
+        pattern: &str,
+        text: &str,
+    ) -> Vec<RegexCaptures> {
         let Some(re) = self.compile_p5_regex(pattern) else {
             return Vec::new();
         };
@@ -1116,6 +1124,62 @@ impl Interpreter {
             out.push(item);
         }
         out
+    }
+
+    /// Find first P5 regex match, returning (byte_start, byte_end) converted to
+    /// char-index pairs for compatibility with `apply_substitutions`.
+    #[cfg(feature = "pcre2")]
+    pub(crate) fn regex_find_first_p5(&self, pattern: &str, text: &str) -> Option<(usize, usize)> {
+        let re = self.compile_p5_regex(pattern)?;
+        let bytes = text.as_bytes();
+        let mut locs = re.capture_locations();
+        let m0 = re.captures_read(&mut locs, bytes).ok()??;
+        let byte_start = m0.start();
+        let byte_end = m0.end();
+        // Convert byte offsets to char indices
+        let char_start = text[..byte_start].chars().count();
+        let char_end = text[..byte_end].chars().count();
+        Some((char_start, char_end))
+    }
+
+    #[cfg(not(feature = "pcre2"))]
+    pub(crate) fn regex_find_first_p5(&self, pattern: &str, text: &str) -> Option<(usize, usize)> {
+        // Fallback: convert P5 pattern and use Raku regex engine
+        self.regex_find_first(pattern, text)
+    }
+
+    /// Find all non-overlapping P5 regex matches, returning char-index pairs.
+    #[cfg(feature = "pcre2")]
+    pub(crate) fn regex_find_all_p5(&self, pattern: &str, text: &str) -> Vec<(usize, usize)> {
+        let Some(re) = self.compile_p5_regex(pattern) else {
+            return Vec::new();
+        };
+        let bytes = text.as_bytes();
+        let mut results = Vec::new();
+        let mut start = 0usize;
+        let mut locs = re.capture_locations();
+        while start <= bytes.len() {
+            let Ok(Some(m0)) = re.captures_read_at(&mut locs, bytes, start) else {
+                break;
+            };
+            let byte_start = m0.start();
+            let byte_end = m0.end();
+            let char_start = text[..byte_start].chars().count();
+            let char_end = text[..byte_end].chars().count();
+            results.push((char_start, char_end));
+            if m0.end() == start {
+                start += 1;
+            } else {
+                start = m0.end();
+            }
+        }
+        results
+    }
+
+    #[cfg(not(feature = "pcre2"))]
+    pub(crate) fn regex_find_all_p5(&self, pattern: &str, text: &str) -> Vec<(usize, usize)> {
+        // Fallback: use Raku regex engine
+        self.regex_find_all(pattern, text)
     }
 
     /// Extract the regex pattern string from a named token/regex definition.
@@ -1608,6 +1672,16 @@ impl Interpreter {
                         &captures.positional_quantified,
                         Some(&text),
                     );
+                    // If the original value is not a Str, store the original value
+                    // as the `orig` attribute so .orig preserves the type
+                    if !matches!(left, Value::Str(_))
+                        && let Value::Instance {
+                            ref mut attributes, ..
+                        } = match_obj
+                    {
+                        let attrs = std::sync::Arc::make_mut(attributes);
+                        attrs.insert("orig".to_string(), left.clone());
+                    }
                     // If `make` was called in a code block, set the ast attribute
                     if let Some(made_val) = self.env.get("made").cloned()
                         && let Value::Instance {
@@ -2303,7 +2377,7 @@ impl Interpreter {
     }
 
     /// Get raw bounds of a range as f64 (NOT adjusted for exclusivity).
-    fn range_raw_bounds_f64(v: &Value) -> (f64, f64) {
+    pub(crate) fn range_raw_bounds_f64(v: &Value) -> (f64, f64) {
         match v {
             Value::Range(a, b) => (*a as f64, *b as f64),
             Value::RangeExcl(a, b) => (*a as f64, *b as f64),
@@ -2315,7 +2389,7 @@ impl Interpreter {
     }
 
     /// Get exclusivity flags for a range: (start_val, end_val, excl_start, excl_end).
-    fn range_exclusivity(v: &Value) -> (f64, f64, bool, bool) {
+    pub(crate) fn range_exclusivity(v: &Value) -> (f64, f64, bool, bool) {
         match v {
             Value::Range(a, b) => (*a as f64, *b as f64, false, false),
             Value::RangeExcl(a, b) => (*a as f64, *b as f64, false, true),
@@ -2332,7 +2406,7 @@ impl Interpreter {
     }
 
     /// Check if a range has string endpoints.
-    fn range_has_string_endpoints(v: &Value) -> bool {
+    pub(crate) fn range_has_string_endpoints(v: &Value) -> bool {
         match v {
             Value::GenericRange { start, end, .. } => {
                 matches!(**start, Value::Str(_)) || matches!(**end, Value::Str(_))
@@ -2342,7 +2416,7 @@ impl Interpreter {
     }
 
     /// Get raw string bounds of a range.
-    fn range_raw_string_bounds(v: &Value) -> (String, String) {
+    pub(crate) fn range_raw_string_bounds(v: &Value) -> (String, String) {
         match v {
             Value::GenericRange { start, end, .. } => {
                 (start.to_string_value(), end.to_string_value())
@@ -2356,7 +2430,7 @@ impl Interpreter {
     }
 
     /// Compute element count of a range as f64.
-    fn range_elems_f64(v: &Value) -> f64 {
+    pub(crate) fn range_elems_f64(v: &Value) -> f64 {
         match v {
             Value::Range(a, b) => {
                 if *b == i64::MAX || *a == i64::MIN {
@@ -2403,7 +2477,7 @@ impl Interpreter {
     }
 
     /// Check if a value is contained within a range.
-    fn value_in_range(val: &Value, range: &Value) -> bool {
+    pub(crate) fn value_in_range(val: &Value, range: &Value) -> bool {
         let (r_min, r_max) = Self::range_raw_bounds_f64(range);
         let (_, _, r_es, r_ee) = Self::range_exclusivity(range);
 

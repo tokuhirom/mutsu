@@ -780,7 +780,7 @@ impl Interpreter {
                 match first {
                     Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
                         self.push_warn_suppression();
-                        let result = self.call_sub_value(first, Vec::new(), false);
+                        let result = self.call_sub_value(first, Vec::new(), true);
                         self.pop_warn_suppression();
                         match result {
                             Err(e) if e.is_warn => Ok(Value::Nil),
@@ -1093,44 +1093,30 @@ impl Interpreter {
 
         // Get the current container via the accessor
         let current = self.call_method_with_values(target.clone(), &method, Vec::new())?;
-        let key = index.to_string_value();
+
+        // Check if index is multi-dimensional (array of indices like [2, 1] from [2;1])
+        let dims: Vec<usize> = if let Value::Array(ref items, ..) = index {
+            items
+                .iter()
+                .map(|v| crate::runtime::to_int(v) as usize)
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // Modify the container
-        let updated = match current {
-            Value::Hash(ref h) => {
-                let mut new_hash = (**h).clone();
-                new_hash.insert(key, value.clone());
-                Value::hash(new_hash)
-            }
-            Value::Array(ref items, kind) => {
-                // Check for multi-dimensional index (e.g. $c.a[3;1] = val)
-                if let Value::Array(ref indices, ..) = index {
-                    let is_shaped = crate::runtime::utils::is_shaped_array(&current);
-                    if is_shaped || indices.len() > 1 {
-                        // Multi-dim assignment with bounds checking
-                        let mut updated =
-                            Value::Array(std::sync::Arc::new((**items).clone()), kind);
-                        Self::multidim_assign_recursive(
-                            &mut updated,
-                            indices.as_ref(),
-                            value.clone(),
-                        )?;
-                        updated
-                    } else if indices.len() == 1 {
-                        let idx = crate::runtime::to_int(&indices[0]) as usize;
-                        let mut new_items = (**items).clone();
-                        if idx >= new_items.len() {
-                            new_items.resize(
-                                idx + 1,
-                                Value::Package(crate::symbol::Symbol::intern("Any")),
-                            );
-                        }
-                        new_items[idx] = value.clone();
-                        Value::Array(std::sync::Arc::new(new_items), kind)
-                    } else {
-                        return Ok(value);
-                    }
-                } else {
+        let updated = if dims.len() >= 2 {
+            // Multi-dimensional index assignment (e.g., $c.a[2;1] = value)
+            Self::multidim_assign_nested(current, &dims, value.clone())?
+        } else {
+            let key = index.to_string_value();
+            match current {
+                Value::Hash(ref h) => {
+                    let mut new_hash = (**h).clone();
+                    new_hash.insert(key, value.clone());
+                    Value::hash(new_hash)
+                }
+                Value::Array(ref items, kind) => {
                     let idx = crate::runtime::to_int(&index) as usize;
                     let mut new_items = (**items).clone();
                     if idx >= new_items.len() {
@@ -1145,8 +1131,8 @@ impl Interpreter {
                     new_items[idx] = value.clone();
                     Value::Array(std::sync::Arc::new(new_items), kind)
                 }
+                _ => return Ok(value),
             }
-            _ => return Ok(value),
         };
 
         // Write back via the setter
@@ -1164,31 +1150,65 @@ impl Interpreter {
         Ok(value)
     }
 
-    /// Recursively assign a value into a multi-dimensional array at the given indices,
-    /// checking bounds at each level (shaped arrays must not grow).
-    fn multidim_assign_recursive(
-        target: &mut Value,
-        indices: &[Value],
-        val: Value,
-    ) -> Result<(), RuntimeError> {
-        if indices.is_empty() {
-            *target = val;
-            return Ok(());
+    /// Assign a value into a nested multi-dimensional array structure.
+    /// `dims` contains the indices for each dimension, e.g. [2, 1] for @a[2;1].
+    /// Checks bounds against the shaped array dimensions.
+    fn multidim_assign_nested(
+        container: Value,
+        dims: &[usize],
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        if dims.is_empty() {
+            return Ok(value);
         }
-        let i = crate::runtime::to_int(&indices[0]) as usize;
-        let Value::Array(items, ..) = target else {
-            return Err(RuntimeError::new("Index out of bounds"));
-        };
-        if i >= items.len() {
-            return Err(RuntimeError::new("Index out of bounds"));
+        // Check bounds against shape if this is a shaped array
+        let shape = crate::runtime::utils::shaped_array_shape(&container);
+        if let Some(ref shape) = shape {
+            for (i, &idx) in dims.iter().enumerate() {
+                if i < shape.len() && idx >= shape[i] {
+                    return Err(RuntimeError::new("Index out of bounds"));
+                }
+            }
         }
-        let arr = std::sync::Arc::make_mut(items);
-        if indices.len() == 1 {
-            arr[i] = val;
-        } else {
-            Self::multidim_assign_recursive(&mut arr[i], &indices[1..], val)?;
+        match container {
+            Value::Array(ref items, kind) => {
+                let idx = dims[0];
+                let mut new_items = (**items).clone();
+                if idx >= new_items.len() {
+                    new_items.resize(
+                        idx + 1,
+                        Value::Package(crate::symbol::Symbol::intern("Any")),
+                    );
+                }
+                if dims.len() == 1 {
+                    new_items[idx] = value;
+                } else {
+                    let inner = new_items[idx].clone();
+                    new_items[idx] = Self::multidim_assign_nested(inner, &dims[1..], value)?;
+                }
+                let result = Value::Array(std::sync::Arc::new(new_items), kind);
+                // Preserve the shape registration on the new Arc so subsequent
+                // bounds checks (via shaped_array_shape) still work.
+                if let Some(ref shape) = shape {
+                    crate::runtime::utils::mark_shaped_array(&result, Some(shape));
+                }
+                Ok(result)
+            }
+            _ => {
+                // If it's not an array, wrap the assignment in a fresh array
+                if dims.len() == 1 {
+                    let idx = dims[0];
+                    let mut new_items =
+                        vec![Value::Package(crate::symbol::Symbol::intern("Any")); idx + 1];
+                    new_items[idx] = value;
+                    Ok(Value::real_array(new_items))
+                } else {
+                    Err(RuntimeError::new(
+                        "Multi-dimensional index on non-array container",
+                    ))
+                }
+            }
         }
-        Ok(())
     }
 
     fn builtin_assign_method_lvalue(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -3110,6 +3130,7 @@ impl Interpreter {
                 | "atan2"
                 | "substr"
                 | "words"
+                | "rand"
         )
     }
 

@@ -538,6 +538,8 @@ pub(crate) fn native_method_0arg(
                     Value::Int(i)
                 } else if let Ok(f) = s.parse::<f64>() {
                     Value::Num(f)
+                } else if let Some(v) = parse_raku_int_from_str(s) {
+                    v
                 } else {
                     return None;
                 };
@@ -1236,7 +1238,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 return Some(Ok(attributes.get("ast").cloned().unwrap_or(Value::Nil)));
             }
             "prematch" => {
-                if let Some(Value::Str(orig)) = attributes.get("orig") {
+                if let Some(orig_val) = attributes.get("orig") {
+                    let orig = orig_val.to_string_value();
                     let from = match attributes.get("from") {
                         Some(Value::Int(n)) => *n as usize,
                         _ => 0,
@@ -1248,7 +1251,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 return Some(Ok(Value::str(String::new())));
             }
             "postmatch" => {
-                if let Some(Value::Str(orig)) = attributes.get("orig") {
+                if let Some(orig_val) = attributes.get("orig") {
+                    let orig = orig_val.to_string_value();
                     let to = match attributes.get("to") {
                         Some(Value::Int(n)) => *n as usize,
                         _ => 0,
@@ -2081,6 +2085,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     let v = from + builtin_rand() * (to - from);
                     return Some(Ok(Value::Num(v)));
                 }
+                // Cool types: numify first (e.g., List.rand returns rand in 0..^elems)
+                Value::Array(items, ..) => items.len() as f64,
+                Value::Seq(items) => items.len() as f64,
+                Value::Str(s) => s.parse::<f64>().unwrap_or(0.0),
+                Value::Bool(b) => {
+                    if *b {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
                 _ => return None,
             };
             Some(Ok(Value::Num(builtin_rand() * max)))
@@ -2558,6 +2573,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                             body: list.body.clone(),
                             env,
                             cache: std::sync::Mutex::new(cache),
+                            compiled_code: list.compiled_code.clone(),
+                            compiled_fns: list.compiled_fns.clone(),
                         },
                     ))));
                 }
@@ -2587,6 +2604,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     body: vec![],
                     env,
                     cache: std::sync::Mutex::new(Some(items)),
+                    compiled_code: None,
+                    compiled_fns: None,
                 },
             ))))
         }

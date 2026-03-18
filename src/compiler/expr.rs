@@ -574,14 +574,19 @@ impl Compiler {
                 }
 
                 if let Some(opcode) = Self::binary_opcode(op) {
-                    if matches!(op, TokenKind::Ident(name) if name == "does")
-                        && let Expr::Var(name) = left.as_ref()
-                    {
-                        self.compile_expr(left);
-                        self.compile_expr(right);
-                        let name_idx = self.code.add_constant(Value::str(name.clone()));
-                        self.code.emit(OpCode::DoesVar(name_idx));
-                        return;
+                    if matches!(op, TokenKind::Ident(name) if name == "does") {
+                        let var_name = match left.as_ref() {
+                            Expr::Var(name) => Some(name.clone()),
+                            Expr::BareWord(name) => Some(name.clone()),
+                            _ => None,
+                        };
+                        if let Some(name) = var_name {
+                            self.compile_expr(left);
+                            self.compile_expr(right);
+                            let name_idx = self.code.add_constant(Value::str(name));
+                            self.code.emit(OpCode::DoesVar(name_idx));
+                            return;
+                        }
                     }
                     self.compile_expr(left);
                     self.compile_expr(right);
@@ -1736,6 +1741,7 @@ impl Compiler {
                 global,
                 nth,
                 x,
+                perl5,
             } => {
                 let pattern_idx = self.code.add_constant(Value::str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::str(replacement.clone()));
@@ -1749,6 +1755,7 @@ impl Compiler {
                     global: *global,
                     nth_idx,
                     x_count: x.map(|n| n as u32),
+                    perl5: *perl5,
                 });
             }
             // S/// non-destructive substitution
@@ -1759,6 +1766,7 @@ impl Compiler {
                 global,
                 nth,
                 x,
+                perl5,
             } => {
                 let pattern_idx = self.code.add_constant(Value::str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::str(replacement.clone()));
@@ -1772,6 +1780,7 @@ impl Compiler {
                     global: *global,
                     nth_idx,
                     x_count: x.map(|n| n as u32),
+                    perl5: *perl5,
                 });
             }
             // tr/// transliteration
@@ -2163,9 +2172,22 @@ impl Compiler {
                         self.code.emit(OpCode::LoadNil);
                     }
                 }
-                Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
+                Stmt::Block(inner) => {
                     // Block in expression context: compile as scoped block
                     // that returns its last value, with scope isolation.
+                    self.compile_do_block_expr_scoped(inner, &None);
+                }
+                Stmt::SyntheticBlock(inner)
+                    if inner
+                        .last()
+                        .is_some_and(|s| matches!(s, Stmt::MarkSigillessReadonly(_))) =>
+                {
+                    // Sigilless var declarations (VarDecl + MarkSigillessReadonly)
+                    // should NOT isolate scope — the variable must be visible in
+                    // the enclosing scope.
+                    self.compile_block_inline(inner);
+                }
+                Stmt::SyntheticBlock(inner) => {
                     self.compile_do_block_expr_scoped(inner, &None);
                 }
                 _ => {

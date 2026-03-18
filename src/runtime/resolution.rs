@@ -577,75 +577,6 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Supply"), attrs)
     }
 
-    pub(crate) fn eval_xx_repeat_thunk(
-        &mut self,
-        data: &crate::value::SubData,
-        n: usize,
-    ) -> Result<Vec<Value>, RuntimeError> {
-        let mut touched_keys: Vec<String> = Vec::with_capacity(data.env.len());
-        for k in data.env.keys() {
-            touched_keys.push(k.clone());
-        }
-        let saved: Vec<(String, Option<Value>)> = touched_keys
-            .iter()
-            .map(|k| (k.clone(), self.env.get(k).cloned()))
-            .collect();
-
-        for (k, v) in &data.env {
-            if matches!(self.env.get(k), Some(Value::Array(..))) && matches!(v, Value::Array(..)) {
-                continue;
-            }
-            self.env.insert(k.clone(), v.clone());
-        }
-
-        let compiler = crate::compiler::Compiler::new();
-        let (code, compiled_fns) = compiler.compile(&data.body);
-        let interp = std::mem::take(self);
-        let mut vm = crate::vm::VM::new(interp);
-        let mut out = Vec::with_capacity(n);
-
-        for _ in 0..n {
-            match vm.run_reuse(&code, &compiled_fns) {
-                Ok(()) => {
-                    let val = vm
-                        .interpreter()
-                        .env()
-                        .get("_")
-                        .cloned()
-                        .unwrap_or(Value::Nil);
-                    out.push(val);
-                }
-                Err(e) => {
-                    *self = vm.into_interpreter();
-                    for (k, orig) in saved {
-                        match orig {
-                            Some(v) => {
-                                self.env.insert(k, v);
-                            }
-                            None => {
-                                self.env.remove(&k);
-                            }
-                        }
-                    }
-                    return Err(e);
-                }
-            }
-        }
-
-        *self = vm.into_interpreter();
-        for (k, orig) in saved {
-            match orig {
-                Some(v) => {
-                    self.env.insert(k, v);
-                }
-                None => {
-                    self.env.remove(&k);
-                }
-            }
-        }
-        Ok(out)
-    }
-
     pub(crate) fn call_sub_value(
         &mut self,
         func: Value,
@@ -969,6 +900,8 @@ impl Interpreter {
                         body: list.body.clone(),
                         env,
                         cache: std::sync::Mutex::new(list.cache.lock().unwrap().clone()),
+                        compiled_code: list.compiled_code.clone(),
+                        compiled_fns: list.compiled_fns.clone(),
                     }))
                 } else {
                     v
@@ -1170,33 +1103,27 @@ impl Interpreter {
         ProtectBlockCompiledFns,
         ProtectBlockCapturedSlots,
     ) {
-        if let Some(ref cc) = data.compiled_code {
-            let slots: Vec<usize> = cc
-                .locals
-                .iter()
-                .enumerate()
-                .filter_map(|(idx, name)| data.env.contains_key(name).then_some(idx))
-                .collect();
-            return (
-                cc.clone(),
-                std::sync::Arc::new(std::collections::HashMap::new()),
-                std::sync::Arc::new(slots),
-            );
-        }
         let entry = self.protect_block_cache.entry(data.id).or_insert_with(|| {
-            let compiler = crate::compiler::Compiler::new();
-            let (compiled, compiled_fns) = compiler.compile(&data.body);
+            let (compiled, compiled_fns) = if let Some(ref cc) = data.compiled_code {
+                (
+                    cc.clone(),
+                    std::sync::Arc::new(std::collections::HashMap::new()),
+                )
+            } else {
+                let compiler = crate::compiler::Compiler::new();
+                let (compiled, compiled_fns) = compiler.compile(&data.body);
+                (
+                    std::sync::Arc::new(compiled),
+                    std::sync::Arc::new(compiled_fns),
+                )
+            };
             let captured_slots: Vec<usize> = compiled
                 .locals
                 .iter()
                 .enumerate()
                 .filter_map(|(idx, name)| data.env.contains_key(name).then_some(idx))
                 .collect();
-            (
-                std::sync::Arc::new(compiled),
-                std::sync::Arc::new(compiled_fns),
-                std::sync::Arc::new(captured_slots),
-            )
+            (compiled, compiled_fns, std::sync::Arc::new(captured_slots))
         });
         (entry.0.clone(), entry.1.clone(), entry.2.clone())
     }

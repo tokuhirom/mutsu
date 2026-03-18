@@ -197,7 +197,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let iterable = self.stack.pop().unwrap();
         let items = if let Value::LazyList(ref ll) = iterable {
-            self.interpreter.force_lazy_list_bridge(ll)?
+            self.force_lazy_list_vm(ll)?
         } else {
             runtime::value_to_list(&iterable)
         };
@@ -924,10 +924,10 @@ impl VM {
                     } else {
                         // Builtin/proto callables without explicit signature metadata:
                         // keep smartmatch behavior.
-                        self.interpreter.smart_match_values(&topic, &cond_val)
+                        self.vm_smart_match(&topic, &cond_val)
                     }
                 }
-                _ => self.interpreter.smart_match_values(&topic, &cond_val),
+                _ => self.vm_smart_match(&topic, &cond_val),
             }
         };
         if matches {

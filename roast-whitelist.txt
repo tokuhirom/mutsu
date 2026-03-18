@@ -80,6 +80,7 @@ roast/S02-names/caller.t
 roast/S02-names/dynamic-scope.t
 roast/S02-names/identifier.t
 roast/S02-names/indirect.t
+roast/S02-names/name.t
 roast/S02-names/strict.t
 roast/S02-one-pass-parsing/less-than.t
 roast/S02-one-pass-parsing/misc.t
@@ -208,6 +209,7 @@ roast/S04-phasers/begin.t
 roast/S04-phasers/end.t
 roast/S04-phasers/exit-in-check.t
 roast/S04-phasers/first.t
+roast/S04-phasers/keep-undo.t
 roast/S04-phasers/next.t
 roast/S04-phasers/pre-post.t
 roast/S04-statement-modifiers/for.t
@@ -277,6 +279,7 @@ roast/S05-metasyntax/sequential-alternation.t
 roast/S05-metasyntax/single-quotes.t
 roast/S05-metasyntax/unicode-property-pair.t
 roast/S05-metasyntax/unknown.t
+roast/S05-modifier/Perl_0.t
 roast/S05-modifier/Perl_1.t
 roast/S05-modifier/Perl_10.t
 roast/S05-modifier/Perl_2.t
@@ -404,6 +407,7 @@ roast/S12-construction/BUILD.t
 roast/S12-construction/TWEAK.t
 roast/S12-construction/autopairs.t
 roast/S12-construction/construction.t
+roast/S12-construction/destruction.t
 roast/S12-construction/named-params-in-BUILD.t
 roast/S12-construction/new.t
 roast/S12-enums/anonymous.t
@@ -554,6 +558,7 @@ roast/S17-procasync/windows-arg-quoting.t
 roast/S17-promise/allof.t
 roast/S17-promise/anyof.t
 roast/S17-promise/at.t
+roast/S17-promise/basic.t
 roast/S17-promise/in.t
 roast/S17-promise/lock-async-stress.t
 roast/S17-promise/lock-async-stress2.t
@@ -712,6 +717,7 @@ roast/S32-list/map_function_return_values.t
 roast/S32-list/produce.t
 roast/S32-list/roll.t
 roast/S32-list/rotor.t
+roast/S32-list/sort.t
 roast/S32-list/squish.t
 roast/S32-list/tail.t
 roast/S32-list/unique.t
@@ -735,6 +741,7 @@ roast/S32-num/rounders.t
 roast/S32-num/rshift_pos_amount.t
 roast/S32-num/sign.t
 roast/S32-num/sqrt.t
+roast/S32-num/stress.t
 roast/S32-num/stringify.t
 roast/S32-num/unpolar.t
 roast/S32-scalar/defined.t
@@ -794,12 +801,14 @@ roast/S32-trig/sinh.t
 roast/S32-trig/tan.t
 roast/S32-trig/tanh.t
 roast/integration/advent2009-day01.t
+roast/integration/advent2009-day02.t
 roast/integration/advent2009-day03.t
 roast/integration/advent2009-day07.t
 roast/integration/advent2009-day13.t
 roast/integration/advent2009-day14.t
 roast/integration/advent2009-day15.t
 roast/integration/advent2009-day19.t
+roast/integration/advent2009-day22.t
 roast/integration/advent2010-day06.t
 roast/integration/advent2010-day08.t
 roast/integration/advent2010-day21.t
@@ -825,3 +834,5 @@ roast/integration/sequence.t
 roast/integration/substr-after-match-in-gather-in-for.t
 roast/integration/topic_in_double_loop.t
 roast/integration/variables-in-do.t
+roast/t/fudge.t
+roast/t/test-util/01-is-eqv.t

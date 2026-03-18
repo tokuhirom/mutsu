@@ -681,7 +681,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             && !op.chars().any(|c| matches!(c, '$' | '@' | '%' | '&'))
             && !op
                 .chars()
-                .any(|c| matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>'))
+                .any(|c| matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>' | '"'))
             && after.chars().next().is_some_and(char::is_whitespace)
         {
             let (after, _) = ws(after)?;
@@ -872,11 +872,13 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         return Ok((r, Expr::Eager(Box::new(expr))));
     }
     // ^expr — upto operator: ^5 means 0..^5
-    // Use postfix_expr_tight so that `^10 .batch(3)` parses as `(^10).batch(3)`,
-    // not `^(10.batch(3))`.  Only no-space method calls bind tighter than `^`.
+    // Use power_expr_tight so that `^2**64` parses as `^(2**64)` (** binds
+    // tighter than ^), while `^10 .batch(3)` still parses as `(^10).batch(3)`
+    // because whitespace-dotty is excluded from the tight variant.
     if input.starts_with('^') && !input.starts_with("^..") {
         let rest = &input[1..];
-        let parsed_operand = postfix_expr_tight(rest).or_else(|_| prefix_expr(rest));
+        let parsed_operand =
+            super::precedence_meta_ops::power_expr_tight(rest).or_else(|_| prefix_expr(rest));
         if let Ok((rest, expr)) = parsed_operand {
             return postfix_expr_continue(
                 rest,
@@ -921,6 +923,11 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
 /// `^10 .batch(3)` parses as `(^10).batch(3)` rather than `^(10.batch(3))`.
 fn postfix_expr_tight(input: &str) -> PResult<'_, Expr> {
     postfix_expr_inner(input, false)
+}
+
+/// Public wrapper for `postfix_expr_tight`, used by `power_expr_tight`.
+pub(super) fn postfix_expr_tight_pub(input: &str) -> PResult<'_, Expr> {
+    postfix_expr_tight(input)
 }
 
 /// Continue applying postfix operations (including whitespace-dotty) to an

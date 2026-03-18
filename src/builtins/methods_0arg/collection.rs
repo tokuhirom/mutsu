@@ -1,6 +1,6 @@
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::value::{EnumValue, RuntimeError, Value};
+use crate::value::{RuntimeError, Value};
 use num_bigint::BigInt as NumBigInt;
 use std::sync::Arc;
 
@@ -337,7 +337,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Value::Mix(m) => Some(Ok(Value::array(
                     m.keys().map(|k| Value::str(k.clone())).collect(),
                 ))),
-                Value::Package(_) => Some(Ok(Value::array(Vec::new()))),
+                Value::Package(_) => None, // let runtime handle (may be enum type)
                 v if v.is_range() => Some(Ok(Value::array(positional_keys(
                     &crate::runtime::utils::value_to_list(v),
                 )))),
@@ -369,7 +369,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Value::Mix(m) => Some(Ok(Value::array(
                     m.values().map(|v| Value::Num(*v)).collect(),
                 ))),
-                Value::Package(_) => Some(Ok(Value::array(Vec::new()))),
+                Value::Package(_) => None, // let runtime handle (may be enum type)
                 v if v.is_range() => {
                     Some(Ok(Value::array(crate::runtime::utils::value_to_list(v))))
                 }
@@ -432,12 +432,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 Value::Enum { key, value, .. } => Some(Ok(Value::Seq(Arc::new(vec![
                     Value::str(key.resolve()),
-                    match value {
-                        EnumValue::Int(i) => Value::Int(*i),
-                        EnumValue::Str(s) => Value::str(s.clone()),
-                    },
+                    value.to_value(),
                 ])))),
-                Value::Package(_) => Some(Ok(Value::array(Vec::new()))),
+                Value::Package(_) => None, // let runtime handle (may be enum type)
                 v if v.is_range() => Some(Ok(Value::array(positional_kv(
                     &crate::runtime::utils::value_to_list(v),
                 )))),
@@ -483,7 +480,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Value::Pair(_, _) | Value::ValuePair(_, _) => {
                     Some(Ok(Value::array(vec![target.clone()])))
                 }
-                Value::Package(_) => Some(Ok(Value::array(Vec::new()))),
+                Value::Package(_) => None, // let runtime handle (may be enum type)
                 v if v.is_range() => Some(Ok(Value::array(positional_pairs(
                     &crate::runtime::utils::value_to_list(v),
                 )))),
@@ -569,7 +566,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     })
                     .collect(),
             ))),
-            Value::Package(_) => Some(Ok(Value::array(Vec::new()))),
+            Value::Package(_) => None, // let runtime handle (may be enum type)
             v if v.is_range() => {
                 let values = crate::runtime::utils::value_to_list(v);
                 Some(Ok(Value::array(positional_antipairs(&values))))

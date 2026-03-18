@@ -6,7 +6,7 @@ use std::sync::{Arc, Condvar, Mutex, OnceLock, Weak};
 
 use crate::ast::{ParamDef, Stmt};
 use crate::env::Env;
-use crate::opcode::CompiledCode;
+use crate::opcode::{CompiledCode, CompiledFunction};
 use crate::symbol::Symbol;
 use num_bigint::BigInt as NumBigInt;
 use num_integer::Integer;
@@ -281,19 +281,21 @@ impl ArrayKind {
     }
 }
 
-/// Value stored in an enum variant: either an integer or a string.
+/// Value stored in an enum variant: an integer, a string, or an arbitrary Value.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum EnumValue {
     Int(i64),
     Str(String),
+    /// Arbitrary value (e.g., Array for typed enums like `my Array enum ...`)
+    Generic(Box<Value>),
 }
 
 impl EnumValue {
-    /// Return the integer value, or 0 for string enums.
+    /// Return the integer value, or 0 for string/generic enums.
     pub fn as_i64(&self) -> i64 {
         match self {
             EnumValue::Int(i) => *i,
-            EnumValue::Str(_) => 0,
+            EnumValue::Str(_) | EnumValue::Generic(_) => 0,
         }
     }
 
@@ -302,6 +304,16 @@ impl EnumValue {
         match self {
             EnumValue::Int(i) => i.to_string(),
             EnumValue::Str(s) => s.clone(),
+            EnumValue::Generic(v) => v.to_str_context(),
+        }
+    }
+
+    /// Convert to a runtime Value.
+    pub fn to_value(&self) -> Value {
+        match self {
+            EnumValue::Int(i) => Value::Int(*i),
+            EnumValue::Str(s) => Value::str(s.clone()),
+            EnumValue::Generic(v) => v.as_ref().clone(),
         }
     }
 }
@@ -457,6 +469,10 @@ pub(crate) struct LazyList {
     pub(crate) body: Vec<Stmt>,
     pub(crate) env: Env,
     pub(crate) cache: Mutex<Option<Vec<Value>>>,
+    /// Pre-compiled bytecode for the gather body (used by VM-native forcing).
+    pub(crate) compiled_code: Option<Arc<CompiledCode>>,
+    /// Compiled functions associated with the compiled code.
+    pub(crate) compiled_fns: Option<Arc<HashMap<String, CompiledFunction>>>,
 }
 
 impl Clone for LazyList {
@@ -465,6 +481,21 @@ impl Clone for LazyList {
             body: self.body.clone(),
             env: self.env.clone(),
             cache: Mutex::new(self.cache.lock().unwrap().clone()),
+            compiled_code: self.compiled_code.clone(),
+            compiled_fns: self.compiled_fns.clone(),
+        }
+    }
+}
+
+impl LazyList {
+    /// Create a pre-cached lazy list (no body to evaluate).
+    pub(crate) fn new_cached(items: Vec<Value>) -> Self {
+        Self {
+            body: Vec::new(),
+            env: crate::env::Env::new(),
+            cache: Mutex::new(Some(items)),
+            compiled_code: None,
+            compiled_fns: None,
         }
     }
 }

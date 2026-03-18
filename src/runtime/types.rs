@@ -1032,7 +1032,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn version_smart_match(
+    pub(crate) fn version_smart_match(
         left: &Value,
         right_parts: &[crate::value::VersionPart],
         right_plus: bool,
@@ -1087,7 +1087,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn value_is_nan(value: &Value) -> bool {
+    pub(crate) fn value_is_nan(value: &Value) -> bool {
         match value {
             Value::Num(f) => f.is_nan(),
             Value::Complex(r, i) => r.is_nan() || i.is_nan(),
@@ -1315,6 +1315,29 @@ impl Interpreter {
         false
     }
 
+    pub(crate) fn set_variables_pragma(&mut self, smiley: &str) {
+        // smiley is ":D", ":U", ":_", or empty
+        self.variables_pragma = smiley.to_string();
+    }
+
+    /// Apply the `use variables` pragma to a type constraint.
+    /// If the constraint has no explicit smiley and the pragma is active,
+    /// append the pragma smiley (e.g., `Int` → `Int:D` when `use variables :D`).
+    pub(crate) fn apply_variables_pragma<'a>(
+        &self,
+        constraint: &'a str,
+    ) -> std::borrow::Cow<'a, str> {
+        if self.variables_pragma.is_empty() || self.variables_pragma == ":_" {
+            return std::borrow::Cow::Borrowed(constraint);
+        }
+        let (_base, smiley) = strip_type_smiley(constraint);
+        if smiley.is_some() {
+            // Already has a smiley — don't override
+            return std::borrow::Cow::Borrowed(constraint);
+        }
+        std::borrow::Cow::Owned(format!("{}{}", constraint, self.variables_pragma))
+    }
+
     pub(crate) fn eval_does_values(
         &mut self,
         left: Value,
@@ -1340,6 +1363,12 @@ impl Interpreter {
             },
             _ => None,
         }
+    }
+
+    /// Check if a value represents a role application (used by VM to decide
+    /// whether to fall back to the interpreter for `does` operations).
+    pub(crate) fn is_role_application(&self, rhs: &Value) -> bool {
+        self.extract_role_application(rhs).is_some()
     }
 
     fn extract_role_application(&self, rhs: &Value) -> Option<(String, Vec<Value>)> {
@@ -2039,6 +2068,9 @@ impl Interpreter {
                     };
                     let saved = self.env.clone();
                     self.env.insert("_".to_string(), arg.clone());
+                    // Bind the parameter name so that `where {$param ...}` can
+                    // reference it during dispatch matching.
+                    self.env.insert(pd.name.clone(), arg.clone());
                     let ok = match where_expr.as_ref() {
                         Expr::AnonSub { body, .. } => self
                             .eval_block_value(body)

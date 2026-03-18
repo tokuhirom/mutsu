@@ -304,9 +304,7 @@ impl VM {
             return Ok(());
         }
         if let Some(callable) = call_me_override {
-            let result = self
-                .interpreter
-                .call_method_with_values(callable, "CALL-ME", args);
+            let result = self.try_compiled_method_or_interpret(callable, "CALL-ME", args);
             let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
             self.stack.push(result);
             self.env_dirty = true;
@@ -621,7 +619,7 @@ impl VM {
             && Self::lazy_list_needs_forcing(&method)
         {
             let saved_env = self.interpreter.env().clone();
-            let items = self.interpreter.force_lazy_list_bridge(ll)?;
+            let items = self.force_lazy_list_vm(ll)?;
             if !matches!(method.as_str(), "elems" | "hyper" | "race") {
                 *self.interpreter.env_mut() = saved_env;
             }
@@ -645,7 +643,7 @@ impl VM {
                 .get("_")
                 .cloned()
                 .unwrap_or(Value::Nil);
-            let matched = self.interpreter.smart_match_values(&topic, &target);
+            let matched = self.vm_smart_match(&topic, &target);
             self.stack.push(Value::Bool(matched));
             self.env_dirty = true;
             return Ok(());
@@ -705,6 +703,34 @@ impl VM {
                 self.env_dirty = true;
             }
             _ => {
+                // Nil method fallback: in Raku, calling most methods on Nil returns Nil.
+                // Certain mutating methods throw exceptions.
+                // This must be in the VM path (not the interpreter's call_method_with_values)
+                // to avoid affecting internal dispatch (e.g. max :by comparators).
+                if matches!(&target, Value::Nil) {
+                    match method.as_str() {
+                        "BIND-POS" | "BIND-KEY" | "ASSIGN-POS" | "ASSIGN-KEY" | "STORE"
+                        | "push" | "append" | "unshift" | "prepend" => {
+                            return Err(RuntimeError::new(format!(
+                                "Invocant of method '{}' must be an object instance of type \
+                                 'Any', not a type object of type 'Nil'.  Did you forget a \
+                                 '.new'?",
+                                method
+                            )));
+                        }
+                        "defined" | "Bool" | "so" | "not" | "gist" | "Str" | "raku" | "perl"
+                        | "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "VAR" | "DEFINITE"
+                        | "isa" | "does" | "can" | "^name" | "^mro" | "new" | "bless" | "clone"
+                        | "item" | "self" | "sink" => {
+                            // Fall through to normal dispatch
+                        }
+                        _ => {
+                            self.stack.push(Value::Nil);
+                            self.env_dirty = true;
+                            return Ok(());
+                        }
+                    }
+                }
                 let call_result = if !skip_native {
                     if let Some(native_result) =
                         self.try_native_method(&target, Symbol::intern(&method), &args)
@@ -732,7 +758,7 @@ impl VM {
     }
 
     /// Try compiled method fast path; fall back to interpreter.
-    fn try_compiled_method_or_interpret(
+    pub(super) fn try_compiled_method_or_interpret(
         &mut self,
         target: Value,
         method: &str,
@@ -1095,7 +1121,7 @@ impl VM {
             let mut call_args = Vec::with_capacity(args.len() + 1);
             call_args.push(target);
             call_args.extend(args);
-            self.interpreter.call_sub_value(name_val, call_args, false)
+            self.vm_call_on_value(name_val, call_args, None)
         } else {
             let method = name_val.to_string_value();
             if let Some(native_result) =
@@ -1146,8 +1172,7 @@ impl VM {
             let mut call_args = Vec::with_capacity(args.len() + 1);
             call_args.push(target);
             call_args.extend(args);
-            self.interpreter
-                .call_sub_value(name_val, call_args, false)?
+            self.vm_call_on_value(name_val, call_args, None)?
         } else {
             let method = name_val.to_string_value();
             self.interpreter
@@ -1434,29 +1459,13 @@ impl VM {
             target
         };
 
-        // Fast path: if target is a Sub with compiled_code, dispatch to compiled closure
-        if let Value::Sub(ref data) = target
-            && let Some(ref cc) = data.compiled_code
-        {
-            let cc = cc.clone();
-            let sub_is_rw = data.is_rw;
-            let data = data.clone();
-            self.interpreter.set_pending_call_arg_sources(arg_sources);
-            let result = self.call_compiled_closure(&data, &cc, args, compiled_fns);
-            self.interpreter.set_pending_call_arg_sources(None);
-            let result = self.interpreter.maybe_fetch_rw_proxy(result?, sub_is_rw)?;
-            self.stack.push(result);
-            self.env_dirty = true;
-            return Ok(());
-        }
-
         let sub_is_rw = if let Value::Sub(ref data) = target {
             data.is_rw
         } else {
             false
         };
         self.interpreter.set_pending_call_arg_sources(arg_sources);
-        let result = self.interpreter.eval_call_on_value(target, args);
+        let result = self.vm_call_on_value(target, args, Some(compiled_fns));
         self.interpreter.set_pending_call_arg_sources(None);
         let result = self.interpreter.maybe_fetch_rw_proxy(result?, sub_is_rw)?;
         self.stack.push(result);
@@ -1491,21 +1500,6 @@ impl VM {
         // resolve_code_var handles pseudo-package stripping internally
         let target = self.interpreter.resolve_code_var(&name);
         let result = if !matches!(target, Value::Nil) {
-            // Fast path: compiled closure dispatch
-            if let Value::Sub(ref data) = target
-                && let Some(ref cc) = data.compiled_code
-            {
-                let cc = cc.clone();
-                let sub_is_rw = data.is_rw;
-                let data = data.clone();
-                self.interpreter.set_pending_call_arg_sources(arg_sources);
-                let result = self.call_compiled_closure(&data, &cc, args, compiled_fns);
-                self.interpreter.set_pending_call_arg_sources(None);
-                let result = self.interpreter.maybe_fetch_rw_proxy(result?, sub_is_rw)?;
-                self.stack.push(result);
-                self.env_dirty = true;
-                return Ok(());
-            }
             let sub_is_rw = if let Value::Sub(ref data) = target {
                 data.is_rw
             } else {
@@ -1513,11 +1507,22 @@ impl VM {
             };
             self.interpreter
                 .set_pending_call_arg_sources(arg_sources.clone());
-            let result = self.interpreter.eval_call_on_value(target, args);
+            let result = self.vm_call_on_value(target, args, Some(compiled_fns));
             self.interpreter.set_pending_call_arg_sources(None);
             self.interpreter.maybe_fetch_rw_proxy(result?, sub_is_rw)?
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             native_result?
+        } else if !self.interpreter.has_proto(&name)
+            && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
+        {
+            let cf_auto_fetch = !cf.is_raw;
+            let pkg = self.interpreter.current_package().to_string();
+            self.interpreter
+                .set_pending_call_arg_sources(arg_sources.clone());
+            let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name);
+            self.interpreter.set_pending_call_arg_sources(None);
+            self.interpreter
+                .maybe_fetch_rw_proxy(result?, cf_auto_fetch)?
         } else {
             // Sync VM locals to env before spawning threads so closures capture them
             if name == "start" {
@@ -1884,32 +1889,20 @@ impl VM {
                 match modifier.as_deref() {
                     Some("?") => {
                         results.push(
-                            self.interpreter
-                                .call_sub_value(name_val.clone(), call_args, false)
+                            self.vm_call_on_value(name_val.clone(), call_args, None)
                                 .unwrap_or(Value::Package(Symbol::intern("Any"))),
                         );
                     }
                     Some("+") => {
-                        let val =
-                            self.interpreter
-                                .call_sub_value(name_val.clone(), call_args, false)?;
+                        let val = self.vm_call_on_value(name_val.clone(), call_args, None)?;
                         results.push(Value::array(vec![val]));
                     }
-                    Some("*") => {
-                        match self
-                            .interpreter
-                            .call_sub_value(name_val.clone(), call_args, false)
-                        {
-                            Ok(v) => results.push(Value::array(vec![v])),
-                            Err(_) => results.push(Value::array(vec![])),
-                        }
-                    }
+                    Some("*") => match self.vm_call_on_value(name_val.clone(), call_args, None) {
+                        Ok(v) => results.push(Value::array(vec![v])),
+                        Err(_) => results.push(Value::array(vec![])),
+                    },
                     _ => {
-                        results.push(self.interpreter.call_sub_value(
-                            name_val.clone(),
-                            call_args,
-                            false,
-                        )?);
+                        results.push(self.vm_call_on_value(name_val.clone(), call_args, None)?);
                     }
                 }
                 continue;
@@ -2083,6 +2076,7 @@ impl VM {
     pub(super) fn exec_exec_call_pairs_op(
         &mut self,
         code: &CompiledCode,
+        compiled_fns: &HashMap<String, CompiledFunction>,
         name_idx: u32,
         arity: u32,
     ) -> Result<(), RuntimeError> {
@@ -2100,6 +2094,20 @@ impl VM {
         } else {
             self.auto_fetch_proxy_args(args)?
         };
+        // Try compiled function dispatch first
+        if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
+            let pkg = self.interpreter.current_package().to_string();
+            self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
+            self.env_dirty = true;
+            return Ok(());
+        }
+        // Try native function
+        if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
+            native_result?;
+            self.env_dirty = true;
+            return Ok(());
+        }
+        // Fall back to interpreter
         self.interpreter.exec_call_pairs_values(&name, args)?;
         self.env_dirty = true;
         Ok(())
@@ -2110,6 +2118,7 @@ impl VM {
     pub(super) fn exec_exec_call_slip_op(
         &mut self,
         code: &CompiledCode,
+        compiled_fns: &HashMap<String, CompiledFunction>,
         name_idx: u32,
         regular_arity: u32,
         _arg_sources_idx: Option<u32>,
@@ -2125,12 +2134,20 @@ impl VM {
         let regular_start = self.stack.len() - regular_arity as usize;
         let mut args: Vec<Value> = self.stack.drain(regular_start..).collect();
         Self::append_slip_value(&mut args, slip_val);
-        // Try native function first (same as non-slip call path)
+        // Try compiled function dispatch first
+        if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
+            let pkg = self.interpreter.current_package().to_string();
+            self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
+            self.env_dirty = true;
+            return Ok(());
+        }
+        // Try native function (same as non-slip call path)
         if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             self.stack.push(native_result?);
             self.env_dirty = true;
             return Ok(());
         }
+        // Fall back to interpreter
         self.interpreter.exec_call_pairs_values(&name, args)?;
         self.env_dirty = true;
         Ok(())
@@ -2153,6 +2170,8 @@ impl VM {
                 (block_cc, block_fns, Some(&data.env), captured_slots)
             }
             _ => {
+                // TODO: Handle non-Sub protect blocks (e.g. WeakSub, Routine)
+                // in the VM. Currently these are rare and delegate to interpreter.
                 return self.interpreter.call_protect_block(code_val);
             }
         };

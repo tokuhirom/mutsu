@@ -356,11 +356,7 @@ impl Interpreter {
         {
             let mut map = HashMap::new();
             for (k, v) in variants {
-                let val = match v {
-                    EnumValue::Int(i) => Value::Int(*i),
-                    EnumValue::Str(s) => Value::str(s.clone()),
-                };
-                map.insert(k.clone(), val);
+                map.insert(k.clone(), v.to_value());
             }
             return Some(Ok(Value::hash(map)));
         }

@@ -1379,7 +1379,7 @@ impl Interpreter {
         out
     }
 
-    pub(super) fn regex_find_first(&self, pattern: &str, text: &str) -> Option<(usize, usize)> {
+    pub(crate) fn regex_find_first(&self, pattern: &str, text: &str) -> Option<(usize, usize)> {
         let parsed = self.parse_regex(pattern)?;
         let pkg = self.current_package.clone();
 
@@ -3125,7 +3125,9 @@ impl Interpreter {
                 &[],
                 &HashMap::new(),
             );
-            self.env.insert("/".to_string(), match_obj);
+            self.env.insert("/".to_string(), match_obj.clone());
+            // Set up $¢ (current match cursor) — same as $/ for in-progress match
+            self.env.insert("\u{00A2}".to_string(), match_obj);
             // Set up positional captures ($0, $1, ...)
             for (i, val) in ctx.positional.iter().enumerate() {
                 let pos_match = Value::make_match_object_with_captures(
@@ -3243,7 +3245,7 @@ impl Interpreter {
     }
 
     /// Find all non-overlapping regex matches, returning (start, end) char-index pairs.
-    pub(super) fn regex_find_all(&self, pattern: &str, text: &str) -> Vec<(usize, usize)> {
+    pub(crate) fn regex_find_all(&self, pattern: &str, text: &str) -> Vec<(usize, usize)> {
         let parsed = match self.parse_regex(pattern) {
             Some(p) => p,
             None => return Vec::new(),

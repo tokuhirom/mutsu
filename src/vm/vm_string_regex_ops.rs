@@ -99,6 +99,7 @@ impl VM {
         global: bool,
         nth_idx: Option<u32>,
         x_count: Option<u32>,
+        perl5: bool,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
         let replacement = normalize_subst_replacement(Self::const_str(code, replacement_idx));
@@ -113,7 +114,12 @@ impl VM {
         let text = target.to_string_value();
 
         if nth_spec.is_none() && x_count.is_none() && !global {
-            if let Some((start, end)) = self.interpreter.regex_find_first_bridge(&pattern, &text) {
+            let found = if perl5 {
+                self.interpreter.regex_find_first_p5(&pattern, &text)
+            } else {
+                self.interpreter.regex_find_first(&pattern, &text)
+            };
+            if let Some((start, end)) = found {
                 let out = Self::apply_substitutions(&text, &[(start, end)], &replacement, samemark);
                 let result = Value::str(out);
                 self.interpreter
@@ -127,7 +133,11 @@ impl VM {
             return Ok(());
         }
 
-        let all_matches = self.interpreter.regex_find_all_bridge(&pattern, &text);
+        let all_matches = if perl5 {
+            self.interpreter.regex_find_all_p5(&pattern, &text)
+        } else {
+            self.interpreter.regex_find_all(&pattern, &text)
+        };
         let ranges = if global && nth_spec.is_none() && x_count.is_none() {
             all_matches
         } else {
@@ -159,6 +169,7 @@ impl VM {
         global: bool,
         nth_idx: Option<u32>,
         x_count: Option<u32>,
+        perl5: bool,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
         let replacement = normalize_subst_replacement(Self::const_str(code, replacement_idx));
@@ -173,7 +184,12 @@ impl VM {
         let text = target.to_string_value();
 
         if nth_spec.is_none() && x_count.is_none() && !global {
-            if let Some((start, end)) = self.interpreter.regex_find_first_bridge(&pattern, &text) {
+            let found = if perl5 {
+                self.interpreter.regex_find_first_p5(&pattern, &text)
+            } else {
+                self.interpreter.regex_find_first(&pattern, &text)
+            };
+            if let Some((start, end)) = found {
                 let out = Self::apply_substitutions(&text, &[(start, end)], &replacement, samemark);
                 self.stack.push(Value::str(out));
             } else {
@@ -182,7 +198,11 @@ impl VM {
             return Ok(());
         }
 
-        let all_matches = self.interpreter.regex_find_all_bridge(&pattern, &text);
+        let all_matches = if perl5 {
+            self.interpreter.regex_find_all_p5(&pattern, &text)
+        } else {
+            self.interpreter.regex_find_all(&pattern, &text)
+        };
         let ranges = if global && nth_spec.is_none() && x_count.is_none() {
             all_matches
         } else {
@@ -280,27 +300,21 @@ impl VM {
         squash: bool,
         non_destructive: bool,
     ) -> Result<(), RuntimeError> {
-        let from = Self::const_str(code, from_idx).to_string();
-        let to = Self::const_str(code, to_idx).to_string();
+        let from = Self::const_str(code, from_idx);
+        let to = Self::const_str(code, to_idx);
         let target = self
             .interpreter
             .env()
             .get("_")
             .cloned()
             .unwrap_or(Value::Nil);
+        let text = target.to_string_value();
 
-        let mut args = vec![Value::Pair(from, Box::new(Value::str(to)))];
-        if delete {
-            args.push(Value::Pair("d".to_string(), Box::new(Value::Bool(true))));
-        }
-        if complement {
-            args.push(Value::Pair("c".to_string(), Box::new(Value::Bool(true))));
-        }
-        if squash {
-            args.push(Value::Pair("s".to_string(), Box::new(Value::Bool(true))));
-        }
+        let translated = crate::builtins::transliterate::transliterate(
+            &text, from, to, delete, squash, complement,
+        );
+        let result = Value::str(translated);
 
-        let result = self.interpreter.dispatch_trans(target, &args)?;
         // tr/// (lowercase) always modifies $_; TR/// (uppercase) only modifies
         // $_ in smartmatch context (so that $var ~~ TR/// writes back to $var).
         if !non_destructive || self.in_smartmatch_rhs {
@@ -364,7 +378,7 @@ impl VM {
                 &right_list[i % right_len]
             };
             if is_smartmatch {
-                results.push(Value::Bool(self.interpreter.smart_match_values(l, r)));
+                results.push(Value::Bool(self.vm_smart_match(l, r)));
             } else {
                 results.push(self.eval_reduction_operator_values(&op, l, r)?);
             }
@@ -391,7 +405,7 @@ impl VM {
                     self.interpreter
                         .eval_sequence_values(right, left, exclude_end)?
                 } else if op == "~~" {
-                    Value::Bool(self.interpreter.smart_match_values(&right, &left))
+                    Value::Bool(self.vm_smart_match(&right, &left))
                 } else {
                     self.eval_reduction_operator_values(&op, &right, &left)?
                 }
@@ -432,7 +446,7 @@ impl VM {
                 } else if op == "~~" {
                     for l in &left_list {
                         for r in &right_list {
-                            results.push(Value::Bool(self.interpreter.smart_match_values(l, r)));
+                            results.push(Value::Bool(self.vm_smart_match(l, r)));
                         }
                     }
                 } else {
@@ -443,11 +457,9 @@ impl VM {
                     }
                 }
                 if lazy_inputs {
-                    Value::LazyList(std::sync::Arc::new(crate::value::LazyList {
-                        body: Vec::new(),
-                        env: crate::env::Env::new(),
-                        cache: std::sync::Mutex::new(Some(results)),
-                    }))
+                    Value::LazyList(std::sync::Arc::new(crate::value::LazyList::new_cached(
+                        results,
+                    )))
                 } else if results.is_empty() {
                     Value::Seq(std::sync::Arc::new(Vec::new()))
                 } else {
@@ -527,6 +539,7 @@ impl VM {
         name_idx: u32,
         right_arity: u32,
         modifier_idx: &Option<u32>,
+        compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let arity = right_arity as usize;
         let mut right_vals: Vec<Value> = Vec::with_capacity(arity);
@@ -588,6 +601,7 @@ impl VM {
                                 lookup_name.as_ref(),
                                 Some(&infix_name),
                                 vec![left, right],
+                                compiled_fns,
                             )?
                         };
                     if !pair_result.truthy() {
@@ -601,10 +615,20 @@ impl VM {
                 if let Some(result) = self.try_user_infix(&infix_name, &left_val, &right_val)? {
                     result
                 } else {
-                    self.call_infix_fallback(lookup_name.as_ref(), Some(&infix_name), call_args)?
+                    self.call_infix_fallback(
+                        lookup_name.as_ref(),
+                        Some(&infix_name),
+                        call_args,
+                        compiled_fns,
+                    )?
                 }
             } else {
-                self.call_infix_fallback(lookup_name.as_ref(), Some(&infix_name), call_args)?
+                self.call_infix_fallback(
+                    lookup_name.as_ref(),
+                    Some(&infix_name),
+                    call_args,
+                    compiled_fns,
+                )?
             }
         };
         self.stack.push(result);
@@ -633,7 +657,7 @@ impl VM {
                     .get("_")
                     .cloned()
                     .unwrap_or(Value::Nil);
-                self.interpreter.smart_match_values(&topic, value)
+                self.vm_smart_match(&topic, value)
             }
             _ => value.truthy(),
         }
@@ -785,6 +809,7 @@ impl VM {
         name: &str,
         infix_name: Option<&str>,
         call_args: Vec<Value>,
+        compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
         // When an infix operator is called with a single Iterable argument,
         // flatten it into elements (like a +@foo slurpy) and reduce over them.
@@ -827,11 +852,12 @@ impl VM {
         }
         if Self::should_retry_with_canonical_infix_name(name)
             && let Some(op_name) = infix_name
-            && let Ok(v) = self.interpreter.call_function(op_name, call_args.clone())
+            && let Ok(v) =
+                self.call_function_compiled_first(op_name, call_args.clone(), compiled_fns)
         {
             return Ok(v);
         }
-        match self.interpreter.call_function(name, call_args.clone()) {
+        match self.call_function_compiled_first(name, call_args.clone(), compiled_fns) {
             Ok(v) => Ok(v),
             Err(err) => {
                 // `for foo-bar() -> ...` currently produces an infix AST fallback call.
@@ -841,24 +867,26 @@ impl VM {
                     .starts_with("Too many positionals passed; expected 0 arguments but got more")
                     || err.message.starts_with("Unexpected named argument '");
                 if is_empty_sig_rejection {
-                    if let Ok(v) = self.interpreter.call_function(name, Vec::new()) {
+                    if let Ok(v) = self.call_function_compiled_first(name, Vec::new(), compiled_fns)
+                    {
                         return Ok(v);
                     }
                     if Self::should_retry_with_canonical_infix_name(name)
                         && let Some(op_name) = infix_name
-                        && let Ok(v) = self.interpreter.call_function(op_name, Vec::new())
+                        && let Ok(v) =
+                            self.call_function_compiled_first(op_name, Vec::new(), compiled_fns)
                     {
                         return Ok(v);
                     }
                     if let Some(op_name) = infix_name {
                         let op_env_name = format!("&{}", op_name);
                         if let Some(code_val) = self.interpreter.env().get(&op_env_name).cloned() {
-                            return self.interpreter.eval_call_on_value(code_val, Vec::new());
+                            return self.vm_call_on_value(code_val, Vec::new(), None);
                         }
                     }
                     let bare_env_name = format!("&{}", name);
                     if let Some(code_val) = self.interpreter.env().get(&bare_env_name).cloned() {
-                        return self.interpreter.eval_call_on_value(code_val, Vec::new());
+                        return self.vm_call_on_value(code_val, Vec::new(), None);
                     }
                     let method_name = name
                         .strip_prefix("infix:<")
@@ -889,12 +917,12 @@ impl VM {
                     if let Some(op_name) = infix_name {
                         let op_env_name = format!("&{}", op_name);
                         if let Some(code_val) = self.interpreter.env().get(&op_env_name).cloned() {
-                            return self.interpreter.eval_call_on_value(code_val, call_args);
+                            return self.vm_call_on_value(code_val, call_args, None);
                         }
                     }
                     let bare_env_name = format!("&{}", name);
                     if let Some(code_val) = self.interpreter.env().get(&bare_env_name).cloned() {
-                        self.interpreter.eval_call_on_value(code_val, call_args)
+                        self.vm_call_on_value(code_val, call_args, None)
                     } else {
                         let method_name = name
                             .strip_prefix("infix:<")

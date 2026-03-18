@@ -287,7 +287,7 @@ impl VM {
                     .interpreter
                     .call_user_routine_direct(&name.resolve(), args);
             }
-            return self.interpreter.eval_call_on_value(callable.clone(), args);
+            return self.vm_call_on_value(callable.clone(), args, None);
         }
         debug_assert!(args.len() == 2);
         self.eval_reduction_operator_values(base_op, &args[0], &args[1])
@@ -482,15 +482,14 @@ impl VM {
         // If the value is an Instance, try calling the Numeric method
         if let Value::Instance { .. } = &val
             && let Ok(result) =
-                self.interpreter
-                    .call_method_with_values(val.clone(), "Numeric", vec![])
+                self.try_compiled_method_or_interpret(val.clone(), "Numeric", vec![])
         {
             self.stack.push(result);
             return Ok(());
         }
         // Force LazyList before numeric coercion so we can count elements
         let val = if let Value::LazyList(ll) = &val {
-            let items = self.interpreter.force_lazy_list_bridge(ll)?;
+            let items = self.force_lazy_list_vm(ll)?;
             Value::Seq(std::sync::Arc::new(items))
         } else {
             val
@@ -534,20 +533,22 @@ impl VM {
         if let Some(err) = self.interpreter.failure_to_runtime_error_if_unhandled(&val) {
             return Err(err);
         }
-        // If the value is an Instance, try calling the Stringy method
-        if let Value::Instance { .. } = &val
-            && let Ok(result) =
-                self.interpreter
-                    .call_method_with_values(val.clone(), "Stringy", vec![])
-        {
-            self.stack.push(result);
-            return Ok(());
+        // If the value is an Instance, try calling the Stringy method, then Str
+        if let Value::Instance { .. } = &val {
+            if let Ok(result) =
+                self.try_compiled_method_or_interpret(val.clone(), "Stringy", vec![])
+            {
+                self.stack.push(result);
+                return Ok(());
+            }
+            if let Ok(result) = self.try_compiled_method_or_interpret(val.clone(), "Str", vec![]) {
+                self.stack.push(result);
+                return Ok(());
+            }
         }
         // Force LazyList before stringification
         if let Value::LazyList(_) = &val {
-            let result = self
-                .interpreter
-                .call_method_with_values(val, "Str", vec![])?;
+            let result = self.try_compiled_method_or_interpret(val, "Str", vec![])?;
             self.stack.push(result);
             return Ok(());
         }
@@ -610,30 +611,24 @@ impl VM {
 
     pub(super) fn exec_get_capture_var_op(&mut self, code: &CompiledCode, name_idx: u32) {
         let name = Self::const_str(code, name_idx);
-        let val = self
-            .interpreter
-            .env()
-            .get(name)
-            .cloned()
-            .unwrap_or_else(|| {
-                // $<foo> is sugar for $/{'foo'}: fall back to looking up $/ and indexing
-                if let Some(key) = name.strip_prefix('<').and_then(|s| s.strip_suffix('>'))
-                    && let Some(match_val) = self.interpreter.env().get("$/").cloned()
-                {
-                    return match &match_val {
-                        Value::Hash(map) => map.get(key).cloned().unwrap_or(Value::Nil),
-                        _ => self
-                            .interpreter
-                            .call_method_with_values(
-                                match_val,
-                                "AT-KEY",
-                                vec![Value::str(key.to_string())],
-                            )
-                            .unwrap_or(Value::Nil),
-                    };
-                }
-                Value::Nil
-            });
+        let val = if let Some(v) = self.interpreter.env().get(name).cloned() {
+            v
+        } else if let Some(key) = name.strip_prefix('<').and_then(|s| s.strip_suffix('>'))
+            && let Some(match_val) = self.interpreter.env().get("$/").cloned()
+        {
+            match &match_val {
+                Value::Hash(map) => map.get(key).cloned().unwrap_or(Value::Nil),
+                _ => self
+                    .try_compiled_method_or_interpret(
+                        match_val,
+                        "AT-KEY",
+                        vec![Value::str(key.to_string())],
+                    )
+                    .unwrap_or(Value::Nil),
+            }
+        } else {
+            Value::Nil
+        };
         self.stack.push(val);
     }
 
@@ -757,7 +752,7 @@ impl VM {
                             .into_iter()
                             .map(|v| Value::Int(runtime::to_int(&v)))
                             .collect::<Vec<_>>();
-                        assigned = self.interpreter.call_method_with_values(
+                        assigned = self.try_compiled_method_or_interpret(
                             Value::Package(class_name),
                             "new",
                             items,
@@ -952,7 +947,7 @@ impl VM {
         };
         let list_value = self.stack.pop().unwrap_or(Value::Nil);
         let mut list = if let Value::LazyList(ref ll) = list_value {
-            self.interpreter.force_lazy_list_bridge(ll)?
+            self.force_lazy_list_vm(ll)?
         } else {
             runtime::value_to_list(&list_value)
         };
@@ -975,7 +970,7 @@ impl VM {
                 Value::Array(items, kind) if !kind.is_itemized() => items.iter().cloned().collect(),
                 Value::Seq(items) => items.iter().cloned().collect(),
                 Value::LazyList(ll) => {
-                    if let Ok(items) = self.interpreter.force_lazy_list_bridge(&ll) {
+                    if let Ok(items) = self.force_lazy_list_vm(&ll) {
                         items
                     } else {
                         vec![Value::LazyList(ll)]
@@ -1081,12 +1076,10 @@ impl VM {
                     if level < max_level {
                         let promoted = match max_level {
                             2 => self
-                                .interpreter
-                                .call_method_with_values(item.clone(), "Mix", vec![])
+                                .try_compiled_method_or_interpret(item.clone(), "Mix", vec![])
                                 .unwrap_or_else(|_| item.clone()),
                             1 => self
-                                .interpreter
-                                .call_method_with_values(item.clone(), "Bag", vec![])
+                                .try_compiled_method_or_interpret(item.clone(), "Bag", vec![])
                                 .unwrap_or_else(|_| item.clone()),
                             _ => item.clone(),
                         };
@@ -1239,8 +1232,13 @@ impl VM {
         &mut self,
         code: &CompiledCode,
         tc_idx: u32,
+        var_name_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        let constraint = Self::const_str(code, tc_idx);
+        let raw_constraint = Self::const_str(code, tc_idx);
+        let var_name: Option<&str> = var_name_idx.map(|idx| Self::const_str(code, idx));
+        // Apply `use variables :D/:U` pragma to the constraint
+        let effective_constraint = self.interpreter.apply_variables_pragma(raw_constraint);
+        let constraint: &str = &effective_constraint;
         let (base_constraint, _) = crate::runtime::types::strip_type_smiley(constraint);
         let declared_constraint = base_constraint
             .split_once('(')
@@ -1342,6 +1340,7 @@ impl VM {
                     return Err(RuntimeError::typecheck_assignment(
                         base_constraint,
                         crate::runtime::utils::value_type_name(&value),
+                        var_name,
                     ));
                 }
             }
@@ -1366,6 +1365,7 @@ impl VM {
             return Err(RuntimeError::typecheck_assignment(
                 constraint,
                 crate::runtime::utils::value_type_name(&value),
+                var_name,
             ));
         }
         if !matches!(value, Value::Nil) {
@@ -1439,7 +1439,7 @@ impl VM {
         self.interpreter.push_lexical_class_scope();
         let stack_base = self.stack.len();
         let topic_before = self.last_topic_value.clone();
-        let body_result = self.run_range(code, body_start, queue_start, compiled_fns);
+        let mut body_result = self.run_range(code, body_start, queue_start, compiled_fns);
         let body_value = if self.stack.len() > stack_base {
             self.stack.last().cloned()
         } else if self.last_topic_value != topic_before {
@@ -1447,11 +1447,23 @@ impl VM {
         } else {
             None
         };
-        let queue_res = if Self::should_run_success_queue(&body_result, body_value) {
+        let ran_undo = !Self::should_run_success_queue(&body_result, body_value);
+        let queue_res = if !ran_undo {
             self.run_range(code, keep_start, undo_start, compiled_fns)
         } else {
             self.run_range(code, undo_start, post_start, compiled_fns)
         };
+
+        // When UNDO phasers ran in response to a fail(), mark the error so the
+        // resulting Failure value will be created with handled=True (Raku semantics:
+        // UNDO acts as a handler for the failure).
+        if ran_undo
+            && undo_start < post_start
+            && let Err(ref mut e) = body_result
+            && e.is_fail
+        {
+            e.fail_handled = true;
+        }
 
         // Run POST phasers after LEAVE (regardless of success/failure path)
         // Set $_ to the return/result value so POST can inspect it

@@ -32,6 +32,13 @@ impl Interpreter {
                         None // fall through to runtime for proper error
                     }
                 }
+                EnumValue::Generic(v) => {
+                    if method == "value" {
+                        Some(Ok(v.as_ref().clone()))
+                    } else {
+                        None
+                    }
+                }
             },
             "WHAT" => Some(Ok(Value::Package(*enum_type))),
             "raku" | "perl" => Some(Ok(Value::str(format!("{}::{}", enum_type, key)))),
@@ -39,19 +46,14 @@ impl Interpreter {
             "Str" => match value {
                 EnumValue::Int(_) => Some(Ok(Value::str(key.resolve()))),
                 EnumValue::Str(s) => Some(Ok(Value::str(s.clone()))),
+                EnumValue::Generic(_) => Some(Ok(Value::str(key.resolve()))),
             },
             "kv" => {
-                let val = match value {
-                    EnumValue::Int(i) => Value::Int(*i),
-                    EnumValue::Str(s) => Value::str(s.clone()),
-                };
+                let val = value.to_value();
                 Some(Ok(Value::array(vec![Value::str(key.resolve()), val])))
             }
             "pair" => {
-                let val = match value {
-                    EnumValue::Int(i) => Value::Int(*i),
-                    EnumValue::Str(s) => Value::str(s.clone()),
-                };
+                let val = value.to_value();
                 Some(Ok(Value::Pair(key.resolve(), Box::new(val))))
             }
             "ACCEPTS" => {
@@ -98,6 +100,76 @@ impl Interpreter {
                 Some(Ok(Value::Nil))
             }
             _ => None,
+        }
+    }
+
+    /// Dispatch collection methods (.pairs, .keys, .values, .kv, .antipairs, .invert)
+    /// on an enum type object (Package value).
+    pub(super) fn dispatch_enum_type_collection(
+        &self,
+        method: &str,
+        variants: &[(String, EnumValue)],
+    ) -> Result<Value, RuntimeError> {
+        match method {
+            "pairs" => {
+                let pairs: Vec<Value> = variants
+                    .iter()
+                    .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.to_value())))
+                    .collect();
+                Ok(Value::array(pairs))
+            }
+            "keys" => {
+                let keys: Vec<Value> = variants
+                    .iter()
+                    .map(|(k, _)| Value::str(k.clone()))
+                    .collect();
+                Ok(Value::array(keys))
+            }
+            "values" => {
+                let values: Vec<Value> = variants.iter().map(|(_, v)| v.to_value()).collect();
+                Ok(Value::array(values))
+            }
+            "kv" => {
+                let mut kv = Vec::with_capacity(variants.len() * 2);
+                for (k, v) in variants {
+                    kv.push(Value::str(k.clone()));
+                    kv.push(v.to_value());
+                }
+                Ok(Value::array(kv))
+            }
+            "antipairs" => {
+                let pairs: Vec<Value> = variants
+                    .iter()
+                    .map(|(k, v)| {
+                        Value::ValuePair(Box::new(v.to_value()), Box::new(Value::str(k.clone())))
+                    })
+                    .collect();
+                Ok(Value::array(pairs))
+            }
+            "invert" => {
+                let mut pairs = Vec::new();
+                for (k, v) in variants {
+                    let val = v.to_value();
+                    match &val {
+                        Value::Array(items, _) => {
+                            for item in items.as_ref() {
+                                pairs.push(Value::ValuePair(
+                                    Box::new(item.clone()),
+                                    Box::new(Value::str(k.clone())),
+                                ));
+                            }
+                        }
+                        _ => {
+                            pairs.push(Value::ValuePair(
+                                Box::new(val),
+                                Box::new(Value::str(k.clone())),
+                            ));
+                        }
+                    }
+                }
+                Ok(Value::array(pairs))
+            }
+            _ => Ok(Value::array(Vec::new())),
         }
     }
 }

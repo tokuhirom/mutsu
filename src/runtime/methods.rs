@@ -299,6 +299,22 @@ impl Interpreter {
             }
             return Ok(Value::str(format!("{}({})", kind_name, parts.join(", "))));
         }
+        // Enum type collection methods: .pairs, .keys, .values, .kv, .antipairs, .invert
+        if let Value::Package(pkg_name) = &target
+            && args.is_empty()
+            && matches!(
+                method,
+                "pairs" | "keys" | "values" | "kv" | "antipairs" | "invert"
+            )
+        {
+            if let Some(variants) = self.enum_types.get(&pkg_name.resolve()) {
+                let variants = variants.clone();
+                return self.dispatch_enum_type_collection(method, &variants);
+            }
+            // Non-enum Package types: return empty for collection methods
+            return Ok(Value::array(Vec::new()));
+        }
+
         if matches!(&target, Value::Instance { class_name, .. } if class_name == "IterationBuffer")
             && matches!(
                 method,
@@ -479,7 +495,10 @@ impl Interpreter {
 
         // Early check: private method call on non-Instance, non-Package values
         if let Some(private_rest) = method.strip_prefix('!')
-            && !matches!(&target, Value::Instance { .. } | Value::Package(_))
+            && !matches!(
+                &target,
+                Value::Instance { .. } | Value::Package(_) | Value::Mixin(..)
+            )
         {
             // Owner-qualified: !Owner::method
             if let Some((owner_class, private_name)) = private_rest.split_once("::") {
@@ -962,12 +981,19 @@ impl Interpreter {
                 })
                 .collect();
             role_names.sort();
+            // Determine if this is a private method call (method starts with '!')
+            let is_private_call = method.starts_with('!');
+            let lookup_name = if is_private_call {
+                &method[1..]
+            } else {
+                method
+            };
             let mut role_has_method = false;
             for role_name in role_names {
                 let Some(role) = self.roles.get(&role_name).cloned() else {
                     continue;
                 };
-                let Some(overloads) = role.methods.get(method).cloned() else {
+                let Some(overloads) = role.methods.get(lookup_name).cloned() else {
                     continue;
                 };
                 role_has_method = true;
@@ -984,7 +1010,10 @@ impl Interpreter {
                     self.env.insert(name.clone(), value.clone());
                 }
                 for def in overloads {
-                    if def.is_private || !self.method_args_match(&args, &def.param_defs) {
+                    // For private calls, only match private methods; for public calls, skip private
+                    if is_private_call != def.is_private
+                        || !self.method_args_match(&args, &def.param_defs)
+                    {
                         continue;
                     }
                     let role_attrs: HashMap<String, Value> = mixins
@@ -1215,11 +1244,7 @@ impl Interpreter {
                         out.push(pool[idx].clone());
                     }
                     return Ok(Value::LazyList(std::sync::Arc::new(
-                        crate::value::LazyList {
-                            body: vec![],
-                            env: crate::env::Env::new(),
-                            cache: std::sync::Mutex::new(Some(out)),
-                        },
+                        crate::value::LazyList::new_cached(out),
                     )));
                 };
                 if method == "pick" {
@@ -1299,11 +1324,7 @@ impl Interpreter {
                     out.push(chars[idx].clone());
                 }
                 return Ok(Value::LazyList(std::sync::Arc::new(
-                    crate::value::LazyList {
-                        body: vec![],
-                        env: crate::env::Env::new(),
-                        cache: std::sync::Mutex::new(Some(out)),
-                    },
+                    crate::value::LazyList::new_cached(out),
                 )));
             };
             if method == "pick" {
@@ -1759,25 +1780,26 @@ impl Interpreter {
             return self.builtin_leave_method(target, &args);
         }
 
-        // Bool/True/False.new should throw X::Constructor::BadType
+        // Enum.new should throw X::Constructor::BadType
         if method == "new" {
-            let is_bool_like = match &target {
-                Value::Package(name) if name == "Bool" => true,
-                Value::Bool(_) => true,
-                _ => false,
+            let enum_name = match &target {
+                Value::Package(name) if name == "Bool" => Some("Bool".to_string()),
+                Value::Bool(_) => Some("Bool".to_string()),
+                Value::Package(name) if self.enum_types.contains_key(&name.resolve()) => {
+                    Some(name.resolve())
+                }
+                Value::Enum { enum_type, .. } => Some(enum_type.resolve()),
+                _ => None,
             };
-            if is_bool_like {
+            if let Some(ename) = enum_name {
+                let msg = format!(
+                    "Enum '{}' is insufficiently type-like to be instantiated.  Did you mean 'class'?",
+                    ename
+                );
                 let mut attrs = HashMap::new();
-                attrs.insert(
-                    "message".to_string(),
-                    Value::str(
-                        "Enum 'Bool' is insufficiently type-like to be instantiated.  Did you mean 'class'?".to_string(),
-                    ),
-                );
+                attrs.insert("message".to_string(), Value::str(msg.clone()));
                 let ex = Value::make_instance(Symbol::intern("X::Constructor::BadType"), attrs);
-                let mut err = RuntimeError::new(
-                    "Enum 'Bool' is insufficiently type-like to be instantiated.  Did you mean 'class'?",
-                );
+                let mut err = RuntimeError::new(msg);
                 err.exception = Some(Box::new(ex));
                 return Err(err);
             }
@@ -2336,6 +2358,10 @@ impl Interpreter {
             "duckmap" => {
                 let block = args.first().cloned().unwrap_or(Value::Nil);
                 return self.duckmap_iterate(&block, &target);
+            }
+            "deepmap" => {
+                let block = args.first().cloned().unwrap_or(Value::Nil);
+                return self.deepmap_iterate(&block, &target);
             }
             "max" | "min" => {
                 if matches!(target, Value::Hash(_)) {

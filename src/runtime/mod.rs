@@ -12,7 +12,7 @@ use std::os::windows::fs as windows_fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 
 static ROLE_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -578,6 +578,9 @@ pub struct Interpreter {
     /// When target is read, the value of source is returned instead.
     /// Set up by $CALLER::target := $source binding.
     var_bindings: HashMap<String, String>,
+    /// `use variables :D/:U/:_` pragma — applies default smiley to unsmiley'd type constraints.
+    /// Empty string means no pragma active.
+    pub(crate) variables_pragma: String,
     /// Variable type constraints used to enforce typed re-assignment across closures.
     var_type_constraints: HashMap<String, String>,
     /// Variable default values set by `is default(...)` trait.
@@ -665,6 +668,15 @@ pub struct Interpreter {
     precomp_enabled: bool,
     /// When true, `augment class` is allowed (set by `use MONKEY-TYPING` or `use MONKEY`).
     monkey_typing: bool,
+    /// Shared output buffer for concurrent threads (used by `start` blocks).
+    /// When set on a thread-cloned interpreter, `emit_output` writes here instead
+    /// of the per-interpreter buffer, preserving the real interleaving order of
+    /// concurrent `say`/`print` calls.
+    shared_thread_output: Option<Arc<Mutex<String>>>,
+    /// Shared stderr buffer for concurrent threads.
+    shared_thread_stderr: Option<Arc<Mutex<String>>>,
+    /// True when this interpreter is a thread clone (should use shared output).
+    is_thread_clone: bool,
 }
 
 /// Metadata stored per custom type created by Metamodel::Primitives.
@@ -2203,6 +2215,7 @@ impl Interpreter {
             var_dynamic_flags: HashMap::new(),
             caller_env_stack: Vec::new(),
             var_bindings: HashMap::new(),
+            variables_pragma: String::new(),
             var_type_constraints: HashMap::new(),
             var_defaults: HashMap::new(),
             container_defaults: HashMap::new(),
@@ -2240,6 +2253,9 @@ impl Interpreter {
             pending_regex_error: None,
             precomp_enabled: true,
             monkey_typing: false,
+            shared_thread_output: None,
+            shared_thread_stderr: None,
+            is_thread_clone: false,
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
@@ -2859,6 +2875,12 @@ impl Interpreter {
             use std::io::Write;
             let _ = std::io::stdout().write_all(text.as_bytes());
             let _ = std::io::stdout().flush();
+        } else if self.is_thread_clone
+            && let Some(ref shared) = self.shared_thread_output
+        {
+            // Thread clones write to the shared buffer so concurrent output is
+            // interleaved in real chronological order (not grouped per-promise).
+            shared.lock().unwrap().push_str(text);
         } else {
             self.output.push_str(text);
         }
@@ -2899,6 +2921,13 @@ impl Interpreter {
 
     pub(crate) fn write_warn_to_stderr(&mut self, message: &str) {
         let msg = format!("{}\n", message);
+        if self.is_thread_clone
+            && let Some(ref shared) = self.shared_thread_stderr
+        {
+            shared.lock().unwrap().push_str(&msg);
+            self.warn_output.push_str(&msg);
+            return;
+        }
         self.stderr_output.push_str(&msg);
         self.warn_output.push_str(&msg);
         eprint!("{}", msg);
@@ -3497,6 +3526,7 @@ impl Interpreter {
             var_dynamic_flags: self.var_dynamic_flags.clone(),
             caller_env_stack: Vec::new(),
             var_bindings: HashMap::new(),
+            variables_pragma: self.variables_pragma.clone(),
             var_type_constraints: self.var_type_constraints.clone(),
             var_defaults: self.var_defaults.clone(),
             container_defaults: self.container_defaults.clone(),
@@ -3534,6 +3564,19 @@ impl Interpreter {
             pending_regex_error: None,
             precomp_enabled: self.precomp_enabled,
             monkey_typing: self.monkey_typing,
+            shared_thread_output: {
+                let buf = self
+                    .shared_thread_output
+                    .get_or_insert_with(|| Arc::new(Mutex::new(String::new())));
+                Some(Arc::clone(buf))
+            },
+            shared_thread_stderr: {
+                let buf = self
+                    .shared_thread_stderr
+                    .get_or_insert_with(|| Arc::new(Mutex::new(String::new())));
+                Some(Arc::clone(buf))
+            },
+            is_thread_clone: true,
         };
         cloned.init_io_environment();
         cloned

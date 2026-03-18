@@ -172,7 +172,9 @@ impl Interpreter {
         });
         let mut failure_attrs = std::collections::HashMap::new();
         failure_attrs.insert("exception".to_string(), exception);
-        failure_attrs.insert("handled".to_string(), Value::Bool(false));
+        // When UNDO phasers ran for this fail, the Failure is marked as handled
+        // (Raku semantics: UNDO acts as a handler, so sinking the Failure won't throw).
+        failure_attrs.insert("handled".to_string(), Value::Bool(err.fail_handled));
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
@@ -449,6 +451,10 @@ impl Interpreter {
                 if let Some(arity) = Self::inferred_operator_arity(&name.resolve()) {
                     let params = (0..arity).map(|i| format!("arg{}", i)).collect();
                     return (params, Vec::new());
+                }
+                // Well-known 0-arity terms should report as having no parameters
+                if matches!(name.resolve().as_ref(), "rand" | "now" | "time") {
+                    return (Vec::new(), Vec::new());
                 }
                 (vec!["arg0".to_string()], Vec::new())
             }
@@ -858,7 +864,8 @@ impl Interpreter {
                     Value::str_from("Method"),
                 );
             }
-            Value::make_sub(
+            let empty_sig = def.empty_sig;
+            let mut sub_val = Value::make_sub(
                 def.package,
                 def.name,
                 def.params,
@@ -866,7 +873,15 @@ impl Interpreter {
                 def.body,
                 def.is_rw,
                 captured_env,
-            )
+            );
+            // Preserve empty_sig from the FunctionDef so that arity checks
+            // (e.g. sort rejecting 0-arity callables) work correctly.
+            if empty_sig && let Value::Sub(ref data) = sub_val {
+                let mut new_data = (**data).clone();
+                new_data.empty_sig = true;
+                sub_val = Value::Sub(Arc::new(new_data));
+            }
+            sub_val
         } else if Self::is_builtin_function(lookup_name) {
             Value::Routine {
                 package: Symbol::intern("GLOBAL"),
@@ -988,18 +1003,6 @@ impl Interpreter {
         )
     }
 
-    pub(crate) fn regex_find_first_bridge(
-        &self,
-        pattern: &str,
-        text: &str,
-    ) -> Option<(usize, usize)> {
-        self.regex_find_first(pattern, text)
-    }
-
-    pub(crate) fn regex_find_all_bridge(&self, pattern: &str, text: &str) -> Vec<(usize, usize)> {
-        self.regex_find_all(pattern, text)
-    }
-
     pub(crate) fn take_value(&mut self, val: Value) -> Result<(), RuntimeError> {
         if let Some(items) = self.gather_items.last_mut() {
             items.push(val);
@@ -1012,6 +1015,26 @@ impl Interpreter {
             }
         }
         Ok(())
+    }
+
+    pub(crate) fn gather_items_len(&self) -> usize {
+        self.gather_items.len()
+    }
+
+    pub(crate) fn push_gather_items(&mut self, items: Vec<Value>) {
+        self.gather_items.push(items);
+    }
+
+    pub(crate) fn pop_gather_items(&mut self) -> Option<Vec<Value>> {
+        self.gather_items.pop()
+    }
+
+    pub(crate) fn push_gather_take_limit(&mut self, limit: Option<usize>) {
+        self.gather_take_limits.push(limit);
+    }
+
+    pub(crate) fn pop_gather_take_limit(&mut self) {
+        self.gather_take_limits.pop();
     }
 
     pub(crate) fn current_package(&self) -> &str {

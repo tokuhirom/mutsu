@@ -262,6 +262,22 @@ pub(crate) fn native_method_1arg(
             let result: String = s.chars().take(keep).collect();
             Some(Ok(Value::str(result)))
         }
+        "uniprop" => {
+            let prop_name = arg.to_string_value();
+            let ch = match target {
+                Value::Int(i) => char::from_u32(*i as u32),
+                _ => {
+                    let s = target.to_string_value();
+                    s.chars().next()
+                }
+            };
+            let Some(ch) = ch else {
+                return Some(Ok(Value::str_from("Unknown")));
+            };
+            Some(Ok(Value::str(crate::builtins::unicode::unicode_property(
+                ch, &prop_name,
+            ))))
+        }
         "contains" => {
             if let Value::Package(type_name) = arg {
                 return Some(Err(RuntimeError::new(format!(
@@ -986,6 +1002,21 @@ pub(crate) fn native_method_1arg(
                         Value::array(result)
                     }
                 }
+                Value::Str(s) => {
+                    let count = s.trim().parse::<i64>().unwrap_or(0).max(0) as usize;
+                    if count == 0 || items.is_empty() {
+                        Value::array(Vec::new())
+                    } else {
+                        let mut result = Vec::with_capacity(count.min(items.len()));
+                        for _ in 0..count.min(items.len()) {
+                            let idx = (crate::builtins::rng::builtin_rand() * items.len() as f64)
+                                as usize
+                                % items.len();
+                            result.push(items.swap_remove(idx));
+                        }
+                        Value::array(result)
+                    }
+                }
                 _ => return None,
             }))
         }
@@ -1013,11 +1044,9 @@ pub(crate) fn native_method_1arg(
                             out.push(v);
                         }
                     }
-                    return Some(Ok(Value::LazyList(Arc::new(crate::value::LazyList {
-                        body: vec![],
-                        env: crate::env::Env::new(),
-                        cache: std::sync::Mutex::new(Some(out)),
-                    }))));
+                    return Some(Ok(Value::LazyList(Arc::new(
+                        crate::value::LazyList::new_cached(out),
+                    ))));
                 }
                 let count = count.unwrap_or(0);
                 if count == 0 {
@@ -1126,11 +1155,9 @@ pub(crate) fn native_method_1arg(
                         out.push(items[idx].clone());
                     }
                 }
-                return Some(Ok(Value::LazyList(Arc::new(crate::value::LazyList {
-                    body: vec![],
-                    env: crate::env::Env::new(),
-                    cache: std::sync::Mutex::new(Some(out)),
-                }))));
+                return Some(Ok(Value::LazyList(Arc::new(
+                    crate::value::LazyList::new_cached(out),
+                ))));
             }
             let count = count.unwrap_or(0);
             if count == 0 || (!target.is_range() && items.is_empty()) {

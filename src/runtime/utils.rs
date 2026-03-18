@@ -594,10 +594,17 @@ pub(crate) fn gist_value(value: &Value) -> String {
                 }
             }
         }
-        Value::Array(items, ..) => format!(
-            "[{}]",
-            items.iter().map(gist_value).collect::<Vec<_>>().join(" ")
-        ),
+        Value::Array(items, kind) => {
+            let inner = items.iter().map(gist_value).collect::<Vec<_>>().join(" ");
+            match kind {
+                crate::value::ArrayKind::Array | crate::value::ArrayKind::Shaped => {
+                    format!("[{}]", inner)
+                }
+                crate::value::ArrayKind::List => format!("({})", inner),
+                crate::value::ArrayKind::ItemArray => format!("$[{}]", inner),
+                crate::value::ArrayKind::ItemList => format!("$({})", inner),
+            }
+        }
         Value::Hash(items) => items
             .iter()
             .map(|(k, v)| format!("{}\t{}", k, gist_value(v)))
@@ -605,6 +612,12 @@ pub(crate) fn gist_value(value: &Value) -> String {
             .join("\n"),
         Value::Pair(k, v) => format!("{} => {}", k, gist_value(v)),
         Value::ValuePair(k, v) => format!("{} => {}", gist_value(k), gist_value(v)),
+        Value::Seq(items) | Value::Slip(items) => {
+            format!(
+                "({})",
+                items.iter().map(gist_value).collect::<Vec<_>>().join(" ")
+            )
+        }
         Value::Version { .. } => format!("v{}", value.to_string_value()),
         Value::Nil => "Nil".to_string(),
         // Range gist shows the range notation, not the expanded elements
@@ -2019,6 +2032,39 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
                 -ord
             } else {
                 a.to_string_value().cmp(&b.to_string_value()) as i32
+            }
+        }
+        // Pair/ValuePair comparison: compare by key first, then by value
+        (Value::Pair(ak, av), Value::Pair(bk, bv)) => {
+            let key_cmp = compare_values(&Value::str(ak.clone()), &Value::str(bk.clone()));
+            if key_cmp != 0 {
+                key_cmp
+            } else {
+                compare_values(av, bv)
+            }
+        }
+        (Value::ValuePair(ak, av), Value::ValuePair(bk, bv)) => {
+            let key_cmp = compare_values(ak, bk);
+            if key_cmp != 0 {
+                key_cmp
+            } else {
+                compare_values(av, bv)
+            }
+        }
+        (Value::Pair(ak, av), Value::ValuePair(bk, bv)) => {
+            let key_cmp = compare_values(&Value::str(ak.clone()), bk);
+            if key_cmp != 0 {
+                key_cmp
+            } else {
+                compare_values(av, bv)
+            }
+        }
+        (Value::ValuePair(ak, av), Value::Pair(bk, bv)) => {
+            let key_cmp = compare_values(ak, &Value::str(bk.clone()));
+            if key_cmp != 0 {
+                key_cmp
+            } else {
+                compare_values(av, bv)
             }
         }
         _ => {

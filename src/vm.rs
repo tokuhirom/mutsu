@@ -20,6 +20,7 @@ mod vm_helpers;
 mod vm_misc_ops;
 mod vm_register_ops;
 mod vm_set_ops;
+mod vm_smart_match;
 mod vm_string_regex_ops;
 mod vm_var_assign_ops;
 mod vm_var_ops;
@@ -215,11 +216,6 @@ impl VM {
                 self.interpreter.pop_once_scope();
                 return (self.interpreter, Err(e));
             }
-            if let Err(e) = self.interpreter.run_pending_instance_destroys() {
-                self.sync_state_locals(code);
-                self.interpreter.pop_once_scope();
-                return (self.interpreter, Err(e));
-            }
             if self.interpreter.is_halted() {
                 break;
             }
@@ -278,7 +274,6 @@ impl VM {
                 self.interpreter.pop_once_scope();
                 return Err(e);
             }
-            self.interpreter.run_pending_instance_destroys()?;
             if self.interpreter.is_halted() {
                 break;
             }
@@ -1210,7 +1205,7 @@ impl VM {
             OpCode::Pop => {
                 if let Some(Value::LazyList(list)) = self.stack.pop() {
                     // Sink context must realize lazy gathers for side effects.
-                    self.interpreter.force_lazy_list_bridge(&list)?;
+                    self.force_lazy_list_vm(&list)?;
                     self.env_dirty = true;
                 }
                 *ip += 1;
@@ -1219,7 +1214,7 @@ impl VM {
                 if let Some(val) = self.stack.pop() {
                     match &val {
                         Value::LazyList(list) => {
-                            self.interpreter.force_lazy_list_bridge(list)?;
+                            self.force_lazy_list_vm(list)?;
                             self.env_dirty = true;
                         }
                         _ => {
@@ -1395,7 +1390,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::ExecCallPairs { name_idx, arity } => {
-                self.exec_exec_call_pairs_op(code, *name_idx, *arity)?;
+                self.exec_exec_call_pairs_op(code, compiled_fns, *name_idx, *arity)?;
                 *ip += 1;
             }
             OpCode::ExecCallSlip {
@@ -1403,7 +1398,13 @@ impl VM {
                 regular_arity,
                 arg_sources_idx,
             } => {
-                self.exec_exec_call_slip_op(code, *name_idx, *regular_arity, *arg_sources_idx)?;
+                self.exec_exec_call_slip_op(
+                    code,
+                    compiled_fns,
+                    *name_idx,
+                    *regular_arity,
+                    *arg_sources_idx,
+                )?;
                 *ip += 1;
             }
 
@@ -1744,6 +1745,7 @@ impl VM {
                 global,
                 nth_idx,
                 x_count,
+                perl5,
             } => {
                 self.exec_subst_op(
                     code,
@@ -1753,6 +1755,7 @@ impl VM {
                     *global,
                     *nth_idx,
                     *x_count,
+                    *perl5,
                 )?;
                 *ip += 1;
             }
@@ -1763,6 +1766,7 @@ impl VM {
                 global,
                 nth_idx,
                 x_count,
+                perl5,
             } => {
                 self.exec_non_destructive_subst_op(
                     code,
@@ -1772,6 +1776,7 @@ impl VM {
                     *global,
                     *nth_idx,
                     *x_count,
+                    *perl5,
                 )?;
                 *ip += 1;
             }
@@ -1872,7 +1877,7 @@ impl VM {
                 right_arity,
                 modifier_idx,
             } => {
-                self.exec_infix_func_op(code, *name_idx, *right_arity, modifier_idx)?;
+                self.exec_infix_func_op(code, *name_idx, *right_arity, modifier_idx, compiled_fns)?;
                 *ip += 1;
             }
             OpCode::FlipFlopExpr {
@@ -1897,8 +1902,18 @@ impl VM {
             }
 
             // -- Type checking --
-            OpCode::TypeCheck(tc_idx) => {
-                self.exec_type_check_op(code, *tc_idx)?;
+            OpCode::TypeCheck(tc_idx, var_name_idx) => {
+                self.exec_type_check_op(code, *tc_idx, *var_name_idx)?;
+                *ip += 1;
+            }
+            OpCode::SetPragma(name_idx) => {
+                let value = self.stack.pop().unwrap_or(Value::Nil);
+                let name = Self::const_str(code, *name_idx);
+                if name == "variables"
+                    && let Value::Str(ref s) = value
+                {
+                    self.interpreter.set_variables_pragma(s);
+                }
                 *ip += 1;
             }
             OpCode::IndirectTypeLookup => {
@@ -1977,7 +1992,7 @@ impl VM {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
                 let result = match val {
                     Value::LazyList(ref ll) => {
-                        let items = self.interpreter.force_lazy_list_bridge(ll)?;
+                        let items = self.force_lazy_list_vm(ll)?;
                         // Sync interpreter env changes back to VM locals.
                         // This ensures side effects from gather bodies propagate
                         // to outer-scope variables (e.g., `$was-lazy = 0`).

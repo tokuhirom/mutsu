@@ -475,6 +475,7 @@ pub(crate) enum OpCode {
         global: bool,
         nth_idx: Option<u32>,
         x_count: Option<u32>,
+        perl5: bool,
     },
 
     // -- Non-destructive substitution (S///) --
@@ -485,6 +486,7 @@ pub(crate) enum OpCode {
         global: bool,
         nth_idx: Option<u32>,
         x_count: Option<u32>,
+        perl5: bool,
     },
 
     // -- Transliteration (tr///) --
@@ -620,8 +622,13 @@ pub(crate) enum OpCode {
 
     // -- Type checking --
     /// Check that the value on top of stack matches the given type constraint.
-    /// The u32 is a constant index for the type name string.
-    TypeCheck(u32),
+    /// First u32 is a constant index for the type name string.
+    /// Optional second u32 is a constant index for the variable name (for error messages).
+    TypeCheck(u32, Option<u32>),
+
+    /// Set a pragma value. Pops the value from the stack.
+    /// The u32 is a constant index for the pragma name.
+    SetPragma(u32),
 
     /// State variable initialization.
     /// slot = local slot index, key_idx = constant index for unique state key.
