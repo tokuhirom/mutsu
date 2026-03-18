@@ -1277,6 +1277,11 @@ impl VM {
             {
                 return Err(err);
             }
+            // Also update env (and shared_vars if active) immediately so stale
+            // references don't keep old Instance values alive (preventing DESTROY
+            // from firing).
+            self.interpreter
+                .set_shared_var(name, self.locals[idx].clone());
             self.locals_dirty = true;
             return Ok(());
         }
@@ -1563,6 +1568,11 @@ impl VM {
             {
                 return Err(err);
             }
+            // Also update env (and shared_vars if active) immediately so stale
+            // references don't keep old Instance values alive (preventing DESTROY
+            // from firing).
+            self.interpreter
+                .set_shared_var(name, self.locals[idx].clone());
             self.locals_dirty = true;
             return Ok(());
         }
