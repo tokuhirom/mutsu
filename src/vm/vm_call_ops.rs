@@ -2182,21 +2182,35 @@ impl VM {
         _outer_code: &CompiledCode,
         code_val: &Value,
     ) -> Result<Value, RuntimeError> {
-        let (block_cc, block_fns, captured_env, captured_slots) = match code_val {
-            Value::Sub(data) => {
-                let (block_cc, block_fns, captured_slots) = self
-                    .interpreter
-                    .get_or_compile_protect_block_with_slots(data);
-                self.interpreter
-                    .sync_shared_vars_for_names(data.env.keys().map(|name| name.as_str()));
-                (block_cc, block_fns, Some(&data.env), captured_slots)
-            }
-            _ => {
-                // TODO: Handle non-Sub protect blocks (e.g. WeakSub, Routine)
-                // in the VM. Currently these are rare and delegate to interpreter.
-                return self.interpreter.call_protect_block(code_val);
-            }
-        };
+        let (block_cc, block_fns, captured_env, captured_bindings, writeback_bindings) =
+            match code_val {
+                Value::Sub(data) => {
+                    let (
+                        block_cc,
+                        block_fns,
+                        captured_bindings,
+                        writeback_bindings,
+                        captured_names,
+                    ) = self
+                        .interpreter
+                        .get_or_compile_protect_block_with_slots(data);
+                    self.interpreter.sync_shared_vars_for_names(
+                        captured_names.iter().map(|name| name.as_str()),
+                    );
+                    (
+                        block_cc,
+                        block_fns,
+                        Some(&data.env),
+                        captured_bindings,
+                        writeback_bindings,
+                    )
+                }
+                _ => {
+                    // TODO: Handle non-Sub protect blocks (e.g. WeakSub, Routine)
+                    // in the VM. Currently these are rare and delegate to interpreter.
+                    return self.interpreter.call_protect_block(code_val);
+                }
+            };
 
         // Save/swap stack and locals for the block
         let saved_locals = std::mem::take(&mut self.locals);
@@ -2204,13 +2218,10 @@ impl VM {
 
         // Initialize locals for the block
         self.locals = vec![Value::Nil; block_cc.locals.len()];
-        if let Some(captured) = captured_env {
-            for i in captured_slots.iter().copied() {
-                if let Some(name) = block_cc.locals.get(i)
-                    && captured.contains_key(name)
-                    && let Some(val) = self.interpreter.env().get(name)
-                {
-                    self.locals[i] = val.clone();
+        if captured_env.is_some() {
+            for (slot, name) in captured_bindings.iter() {
+                if let Some(val) = self.interpreter.env().get(name) {
+                    self.locals[*slot] = val.clone();
                 }
             }
         }
@@ -2227,9 +2238,8 @@ impl VM {
 
         // Sync locals back to env
         if let Some(captured) = captured_env {
-            for i in captured_slots.iter().copied() {
-                if let Some(name) = block_cc.locals.get(i)
-                    && captured.contains_key(name)
+            for (slot, name) in writeback_bindings.iter() {
+                if captured.contains_key(name)
                     && !matches!(
                         self.interpreter.get_shared_var(name),
                         Some(Value::Array(..) | Value::Hash(..))
@@ -2237,7 +2247,7 @@ impl VM {
                 {
                     self.interpreter
                         .env_mut()
-                        .insert(name.clone(), self.locals[i].clone());
+                        .insert(name.clone(), self.locals[*slot].clone());
                 }
             }
         }
