@@ -221,6 +221,19 @@ impl Interpreter {
                         self.regex_match_with_captures(pat, &text)
                     }
                 } {
+                    // Set $/ to the match object
+                    let match_obj = Value::make_match_object_full(
+                        captures.matched.clone(),
+                        captures.from as i64,
+                        captures.to as i64,
+                        &captures.positional,
+                        &captures.named,
+                        &captures.named_subcaps,
+                        &captures.positional_subcaps,
+                        &captures.positional_quantified,
+                        Some(&text),
+                    );
+                    self.env.insert("/".to_string(), match_obj);
                     let prefix: String = chars[..captures.from].iter().collect();
                     let suffix: String = chars[captures.to..].iter().collect();
                     let repl = self.eval_subst_replacement(

@@ -1238,7 +1238,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 return Some(Ok(attributes.get("ast").cloned().unwrap_or(Value::Nil)));
             }
             "prematch" => {
-                if let Some(Value::Str(orig)) = attributes.get("orig") {
+                if let Some(orig_val) = attributes.get("orig") {
+                    let orig = orig_val.to_string_value();
                     let from = match attributes.get("from") {
                         Some(Value::Int(n)) => *n as usize,
                         _ => 0,
@@ -1250,7 +1251,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 return Some(Ok(Value::str(String::new())));
             }
             "postmatch" => {
-                if let Some(Value::Str(orig)) = attributes.get("orig") {
+                if let Some(orig_val) = attributes.get("orig") {
+                    let orig = orig_val.to_string_value();
                     let to = match attributes.get("to") {
                         Some(Value::Int(n)) => *n as usize,
                         _ => 0,

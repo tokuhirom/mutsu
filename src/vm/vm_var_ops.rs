@@ -649,7 +649,7 @@ impl VM {
             if matches!(v, Value::Enum { .. } | Value::Nil) {
                 v.clone()
             } else if self.interpreter.has_type(name) || Self::is_builtin_type(name) {
-                Value::Package(Symbol::intern(name))
+                Value::Package(Symbol::intern(Self::resolve_type_alias(name)))
             } else if name.contains("::")
                 && !name.starts_with('$')
                 && !name.starts_with('@')
@@ -698,7 +698,7 @@ impl VM {
             || Self::is_builtin_type(name)
             || Self::is_type_with_smiley(name, &self.interpreter)
         {
-            Value::Package(Symbol::intern(name))
+            Value::Package(Symbol::intern(Self::resolve_type_alias(name)))
         } else if let Some(callable) = self.interpreter.env().get(&format!("&{name}")).cloned()
             && matches!(
                 callable,

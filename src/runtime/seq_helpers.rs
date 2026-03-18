@@ -1672,6 +1672,16 @@ impl Interpreter {
                         &captures.positional_quantified,
                         Some(&text),
                     );
+                    // If the original value is not a Str, store the original value
+                    // as the `orig` attribute so .orig preserves the type
+                    if !matches!(left, Value::Str(_))
+                        && let Value::Instance {
+                            ref mut attributes, ..
+                        } = match_obj
+                    {
+                        let attrs = std::sync::Arc::make_mut(attributes);
+                        attrs.insert("orig".to_string(), left.clone());
+                    }
                     // If `make` was called in a code block, set the ast attribute
                     if let Some(made_val) = self.env.get("made").cloned()
                         && let Value::Instance {

@@ -616,6 +616,7 @@ impl VM {
                 | "ComplexStr"
                 | "Allomorph"
                 | "Attribute"
+                | "Cursor"
                 | "X"
         ) || {
             // Handle parameterized types like Buf[uint8], Array[Int], etc.
@@ -627,6 +628,15 @@ impl VM {
             } else {
                 false
             }
+        }
+    }
+
+    /// Resolve type aliases (e.g., Cursor -> Match).
+    /// Returns the canonical name if the input is an alias, or the input unchanged.
+    pub(super) fn resolve_type_alias(name: &str) -> &str {
+        match name {
+            "Cursor" => "Match",
+            _ => name,
         }
     }
 
