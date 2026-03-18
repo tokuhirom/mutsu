@@ -342,6 +342,13 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 value: Box::new(rhs),
             },
         )),
+        Expr::BareWord(name) => Ok((
+            r,
+            Expr::AssignExpr {
+                name,
+                expr: Box::new(rhs),
+            },
+        )),
         Expr::CallOn { target, args } => Ok((
             r,
             if args.is_empty() {
