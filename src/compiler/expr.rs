@@ -575,17 +575,15 @@ impl Compiler {
 
                 if let Some(opcode) = Self::binary_opcode(op) {
                     if matches!(op, TokenKind::Ident(name) if name == "does") {
-                        if let Expr::Var(name) = left.as_ref() {
+                        let var_name = match left.as_ref() {
+                            Expr::Var(name) => Some(name.clone()),
+                            Expr::BareWord(name) => Some(name.clone()),
+                            _ => None,
+                        };
+                        if let Some(name) = var_name {
                             self.compile_expr(left);
                             self.compile_expr(right);
-                            let name_idx = self.code.add_constant(Value::str(name.clone()));
-                            self.code.emit(OpCode::DoesVar(name_idx));
-                            return;
-                        }
-                        if let Expr::BareWord(name) = left.as_ref() {
-                            self.compile_expr(left);
-                            self.compile_expr(right);
-                            let name_idx = self.code.add_constant(Value::str(name.clone()));
+                            let name_idx = self.code.add_constant(Value::str(name));
                             self.code.emit(OpCode::DoesVar(name_idx));
                             return;
                         }
