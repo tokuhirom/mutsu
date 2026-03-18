@@ -893,6 +893,10 @@ impl VM {
             } => {
                 self.exec_smart_match_expr_op(code, ip, *rhs_end, *negate, lhs_var, compiled_fns)?;
             }
+            OpCode::ScalarizeRegexMatchResult => {
+                self.exec_scalarize_regex_match_result_op()?;
+                *ip += 1;
+            }
 
             // -- Divisibility --
             OpCode::DivisibleBy => {

@@ -1,6 +1,6 @@
 use Test;
 
-plan 4;
+plan 6;
 
 my $path = "/path//to///a//////file";
 $path ~~ s:Perl5:g{/+} = '/';
@@ -16,3 +16,9 @@ my $rule3 = 'r+';
 my $bar = "barrrr";
 $bar ~~ s:P5:g{$rule3} = 'z';
 is $bar, "baz", 'P5 substitution interpolates lexical variable';
+
+my $count = "hello world" ~~ m:P5:g/(\w+)/;
+is $count, 2, 'scalar assignment of P5 global match returns match count';
+
+my @vals = "hello world" ~~ m:P5:g/(\w+)/;
+is +@vals, 2, 'array assignment of P5 global match keeps matched values';

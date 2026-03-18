@@ -89,6 +89,8 @@ pub(crate) enum OpCode {
         /// Variable name for LHS (to write back after s/// substitution)
         lhs_var: Option<String>,
     },
+    /// Scalarize a multi-match regex result: Nil -> 0, Positional -> elems, Match -> 1.
+    ScalarizeRegexMatchResult,
 
     // -- Divisibility --
     DivisibleBy,

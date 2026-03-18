@@ -648,6 +648,32 @@ impl VM {
         Ok(())
     }
 
+    pub(super) fn exec_scalarize_regex_match_result_op(&mut self) -> Result<(), RuntimeError> {
+        let value = self.stack.pop().unwrap_or(Value::Nil);
+        let scalarized = match value {
+            Value::Nil => Value::Int(0),
+            Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => {
+                Value::Int(items.len() as i64)
+            }
+            Value::Capture { positional, .. } => Value::Int(positional.len() as i64),
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Match" => {
+                if let Some(Value::Array(items, _)) = attributes.get("list") {
+                    Value::Int(items.len() as i64)
+                } else {
+                    Value::Int(1)
+                }
+            }
+            other if other.truthy() => Value::Int(1),
+            _ => Value::Int(0),
+        };
+        self.stack.push(scalarized);
+        Ok(())
+    }
+
     pub(super) fn exec_divisible_by_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
