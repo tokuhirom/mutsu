@@ -780,7 +780,7 @@ impl Interpreter {
                 match first {
                     Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
                         self.push_warn_suppression();
-                        let result = self.call_sub_value(first, Vec::new(), false);
+                        let result = self.call_sub_value(first, Vec::new(), true);
                         self.pop_warn_suppression();
                         match result {
                             Err(e) if e.is_warn => Ok(Value::Nil),

@@ -10,6 +10,7 @@ class Foo {
 
 my $foo = Foo.new;
 $foo = Nil;
+quietly $*VM.request-garbage-collection;
 is-deeply @events, ["foo"], "DESTROY runs when the last reference is dropped";
 
 class Base {
@@ -21,7 +22,8 @@ class Child is Base {
 
 my $child = Child.new;
 $child = Nil;
-is-deeply @events, ["foo"], "DESTROY submethods are not inherited";
+quietly $*VM.request-garbage-collection;
+is-deeply @events, ["foo", "base"], "DESTROY submethods walk MRO (DESTROYALL)";
 
 class ChildWithDestroy is Base {
     submethod DESTROY { @events.push("child") }
@@ -29,4 +31,5 @@ class ChildWithDestroy is Base {
 
 my $child_with_destroy = ChildWithDestroy.new;
 $child_with_destroy = Nil;
-is-deeply @events, ["foo", "child"], "a subclass DESTROY runs when declared on that class";
+quietly $*VM.request-garbage-collection;
+is-deeply @events, ["foo", "base", "child", "base"], "DESTROYALL calls DESTROY on each class in MRO";

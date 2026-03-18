@@ -5,28 +5,37 @@ impl Interpreter {
     pub(crate) fn run_pending_instance_destroys(&mut self) -> Result<(), RuntimeError> {
         let pending = take_pending_instance_destroys();
         for item in pending {
-            let Some(class_def) = self.classes.get(&item.class_name.resolve()) else {
-                continue;
-            };
-            let Some(overloads) = class_def.methods.get("DESTROY").cloned() else {
-                continue;
-            };
-            let Some(method_def) = overloads.into_iter().find(|def| {
-                def.is_my && !def.is_private && self.method_args_match(&[], &def.param_defs)
-            }) else {
-                continue;
-            };
-            let class_name = item.class_name.resolve();
-            let invocant =
-                Value::make_instance_without_destroy(item.class_name, item.attributes.clone());
-            let _ = self.run_instance_method_resolved(
-                &class_name,
-                &class_name,
-                method_def,
-                item.attributes,
-                Vec::new(),
-                Some(invocant),
-            )?;
+            let instance_class = item.class_name.resolve();
+            // Collect the MRO so we call DESTROY on each class in order (child → parent).
+            let mro: Vec<String> = self
+                .classes
+                .get(&instance_class)
+                .map(|cd| cd.mro.clone())
+                .unwrap_or_default();
+            // Walk the MRO; submethods are per-class, not inherited.
+            for mro_class in &mro {
+                let Some(class_def) = self.classes.get(mro_class) else {
+                    continue;
+                };
+                let Some(overloads) = class_def.methods.get("DESTROY").cloned() else {
+                    continue;
+                };
+                let Some(method_def) = overloads.into_iter().find(|def| {
+                    def.is_my && !def.is_private && self.method_args_match(&[], &def.param_defs)
+                }) else {
+                    continue;
+                };
+                let invocant =
+                    Value::make_instance_without_destroy(item.class_name, item.attributes.clone());
+                let _ = self.run_instance_method_resolved(
+                    mro_class,
+                    &instance_class,
+                    method_def,
+                    item.attributes.clone(),
+                    Vec::new(),
+                    Some(invocant),
+                )?;
+            }
         }
         Ok(())
     }
