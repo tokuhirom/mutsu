@@ -70,6 +70,7 @@ pub(super) fn op_str_to_token_kind(op: &str) -> Option<TokenKind> {
         "~|" => Some(TokenKind::Ident("~|".to_string())),
         "~^" => Some(TokenKind::Ident("~^".to_string())),
         "(|)" | "∪" => Some(TokenKind::SetUnion),
+        "(+)" | "⊎" => Some(TokenKind::SetAddition),
         "(&)" | "∩" => Some(TokenKind::SetIntersect),
         "(.)" | "⊍" => Some(TokenKind::SetMultiply),
         "(^)" | "⊖" => Some(TokenKind::SetSymDiff),
@@ -134,8 +135,8 @@ const KNOWN_OPS: &[&str] = &[
     "...^", "...", "…^", "…", "**", "==", "!=", "=:=", "!=:=", "<=", ">=", "<=>", "===", "~~",
     "%%", "//", "||", "&&", "~&", "~|", "~^", "~", "+", "-", "*", "/", "%", "<", ">", "+&", "+|",
     "+^", "?&", "?|", "?^", "cmp", "min", "max", "eq", "ne", "lt", "gt", "le", "ge", "leg", "and",
-    "or", "not", "after", "before", "gcd", "lcm", ",", "(|)", "(&)", "(.)", "(^)", "(elem)",
-    "(cont)", "∪", "∩", "⊍", "⊖", "∈", "∋",
+    "or", "not", "after", "before", "gcd", "lcm", ",", "(|)", "(&)", "(.)", "(+)", "(^)", "(elem)",
+    "(cont)", "∪", "∩", "⊍", "⊎", "⊖", "∈", "∋",
 ];
 
 fn parse_meta_set_op(input: &str) -> Option<(String, usize)> {
@@ -143,6 +144,7 @@ fn parse_meta_set_op(input: &str) -> Option<(String, usize)> {
         ("(|)", "(|)"),
         ("(&)", "(&)"),
         ("(.)", "(.)"),
+        ("(+)", "(+)"),
         ("(-)", "(-)"),
         ("(^)", "(^)"),
         ("(elem)", "(elem)"),
@@ -150,6 +152,7 @@ fn parse_meta_set_op(input: &str) -> Option<(String, usize)> {
         ("∪", "∪"),
         ("∩", "∩"),
         ("⊍", "(.)"),
+        ("⊎", "(+)"),
         ("∖", "(-)"),
         ("⊖", "⊖"),
         ("∈", "∈"),
@@ -367,6 +370,10 @@ fn parse_set_op(input: &str) -> Option<(TokenKind, usize)> {
         Some((TokenKind::SetMultiply, 3))
     } else if input.starts_with('⊍') {
         Some((TokenKind::SetMultiply, '⊍'.len_utf8()))
+    } else if input.starts_with("(+)") {
+        Some((TokenKind::SetAddition, 3))
+    } else if input.starts_with('⊎') {
+        Some((TokenKind::SetAddition, '⊎'.len_utf8()))
     } else if input.starts_with("(-)") {
         Some((TokenKind::SetDiff, 3))
     } else if input.starts_with('∖') {
