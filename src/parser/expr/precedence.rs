@@ -601,7 +601,9 @@ fn not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     {
         let r = &input[3..];
         let (r, _) = ws(r)?;
-        let (r, expr) = not_expr_mode(r, mode)?;
+        // Use assign_not_expr_mode so that `not $x = 42` parses as `not($x = 42)`
+        // since item assignment is tighter than loose unary not/so.
+        let (r, expr) = assign_not_expr_mode(r, mode)?;
         return Ok((
             r,
             Expr::Unary {
@@ -616,7 +618,9 @@ fn not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     {
         let r = &input[2..];
         let (r, _) = ws(r)?;
-        let (r, expr) = not_expr_mode(r, mode)?;
+        // Use assign_not_expr_mode so that `so $x = 42` parses as `so($x = 42)`
+        // since item assignment is tighter than loose unary not/so.
+        let (r, expr) = assign_not_expr_mode(r, mode)?;
         return Ok((
             r,
             Expr::Unary {
