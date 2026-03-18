@@ -2040,6 +2040,26 @@ impl Interpreter {
                 {
                     return false;
                 }
+                // Sigil-based dispatch: @ params require Positional args
+                if pd.name.starts_with('@')
+                    && !pd.slurpy
+                    && pd.type_constraint.is_none()
+                    && let Some(arg) = arg_for_checks.as_ref()
+                    && !matches!(arg, Value::Array(..) | Value::Slip(..) | Value::Nil)
+                    && !self.type_matches_value("Positional", arg)
+                {
+                    return false;
+                }
+                // Sigil-based dispatch: % params require Associative args
+                if pd.name.starts_with('%')
+                    && !pd.slurpy
+                    && pd.type_constraint.is_none()
+                    && let Some(arg) = arg_for_checks.as_ref()
+                    && !matches!(arg, Value::Hash(..) | Value::Nil)
+                    && !self.type_matches_value("Associative", arg)
+                {
+                    return false;
+                }
                 if pd.name.starts_with('&')
                     && let Some(arg) = arg_for_checks.as_ref()
                     && !self.type_matches_value("Callable", arg)
