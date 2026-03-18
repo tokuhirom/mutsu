@@ -3125,7 +3125,9 @@ impl Interpreter {
                 &[],
                 &HashMap::new(),
             );
-            self.env.insert("/".to_string(), match_obj);
+            self.env.insert("/".to_string(), match_obj.clone());
+            // Set up $¢ (current match cursor) — same as $/ for in-progress match
+            self.env.insert("\u{00A2}".to_string(), match_obj);
             // Set up positional captures ($0, $1, ...)
             for (i, val) in ctx.positional.iter().enumerate() {
                 let pos_match = Value::make_match_object_with_captures(

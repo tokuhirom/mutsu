@@ -123,6 +123,10 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     if let Some(stripped) = input.strip_prefix('/') {
         return Ok((stripped, Expr::Var("/".to_string())));
     }
+    // Handle $¢ (current match cursor variable)
+    if let Some(stripped) = input.strip_prefix('\u{00A2}') {
+        return Ok((stripped, Expr::Var("\u{00A2}".to_string())));
+    }
     // Handle $! (exception variable) — bare $! without name after it
     if let Some(after) = input.strip_prefix('!') {
         // If next char is alphanumeric or _, it's a twigil (e.g. $!attr)
