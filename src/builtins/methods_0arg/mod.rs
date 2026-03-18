@@ -10,6 +10,17 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use super::rng::builtin_rand;
 
+/// Create an X::Multi::NoMatch error for a method called on a type object.
+fn make_no_match_error(method_name: &str) -> RuntimeError {
+    let msg = format!("Cannot resolve caller {}", method_name);
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    let ex = Value::make_instance(Symbol::intern("X::Multi::NoMatch"), attrs);
+    let mut err = RuntimeError::new(&msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
 ///// Raku-style rounding: round half toward positive infinity (ceiling).
 fn raku_round(x: f64) -> f64 {
     (x + 0.5).floor()
@@ -528,7 +539,8 @@ pub(crate) fn native_method_0arg(
                 "comb" | "chars" | "codes" | "words" | "lines" | "chomp" | "chop" | "trim"
                 | "trim-leading" | "trim-trailing" | "uc" | "lc" | "tc" | "tclc" | "fc"
                 | "flip" | "samemark" | "samespace" | "uniname" | "uninames" | "unival"
-                | "univals" | "NFC" | "NFD" | "NFKC" | "NFKD" | "encode" => {
+                | "univals" | "uniprop" | "uniprops" | "NFC" | "NFD" | "NFKC" | "NFKD"
+                | "encode" => {
                     return native_method_0arg(str_val, method_sym);
                 }
                 _ => {}
@@ -1840,19 +1852,55 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Some(Ok(Value::array(ords)))
         }
         "uniprop" => {
-            let ch = match target {
-                Value::Int(i) => char::from_u32(*i as u32),
-                _ => {
-                    let s = target.to_string_value();
-                    s.chars().next()
+            match target {
+                Value::Package(_) => {
+                    return Some(Err(make_no_match_error("uniprop")));
                 }
-            };
-            let Some(ch) = ch else {
-                return Some(Ok(Value::str_from("Cn")));
-            };
+                Value::Int(i) => {
+                    let cp = *i as u32;
+                    return Some(Ok(
+                        crate::builtins::uniprop::unicode_property_value_for_codepoint(cp, None),
+                    ));
+                }
+                _ => {}
+            }
+            let s = target.to_string_value();
+            if s.is_empty() {
+                return Some(Ok(Value::Nil));
+            }
+            let ch = s.chars().next().unwrap();
             Some(Ok(Value::str(
                 crate::builtins::unicode::unicode_general_category(ch),
             )))
+        }
+        "uniname" => {
+            let s = target.to_string_value();
+            if s.is_empty() {
+                return Some(Ok(Value::Nil));
+            }
+            let ch = s.chars().next().unwrap();
+            Some(Ok(Value::str(crate::builtins::unicode::unicode_char_name(
+                ch,
+            ))))
+        }
+        "uninames" => {
+            let s = target.to_string_value();
+            let names: Vec<Value> = s
+                .chars()
+                .map(|ch| Value::str(crate::builtins::unicode::unicode_char_name(ch)))
+                .collect();
+            Some(Ok(Value::array(names)))
+        }
+        "uniprops" => {
+            let s = target.to_string_value();
+            if s.is_empty() {
+                return Some(Ok(Value::array(vec![])));
+            }
+            let props: Vec<Value> = s
+                .chars()
+                .map(|ch| Value::str(crate::builtins::unicode::unicode_general_category(ch)))
+                .collect();
+            Some(Ok(Value::array(props)))
         }
         "unival" => {
             let ch = match target {

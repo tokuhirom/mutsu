@@ -10,6 +10,8 @@ pub(crate) mod split;
 pub(crate) mod transliterate;
 pub(crate) mod unicode;
 pub(crate) mod unicode_numval_table;
+pub(crate) mod uniprop;
+mod uniprop_tables;
 use crate::value::{RuntimeError, Value};
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};

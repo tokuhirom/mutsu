@@ -2060,6 +2060,23 @@ pub(super) fn single_quoted_string(input: &str) -> PResult<'_, Expr> {
             return Err(PError::expected("closing '"));
         }
         if let Some(after_quote) = rest.strip_prefix('\'') {
+            // A quote followed by a combining mark forms a single grapheme cluster,
+            // so it is string content, not a closing delimiter.
+            if let Some(next_ch) = after_quote.chars().next()
+                && unicode_normalization::char::is_combining_mark(next_ch)
+            {
+                // Skip over the quote + combining mark(s) as content
+                rest = &after_quote[next_ch.len_utf8()..];
+                // Skip any additional combining marks
+                while let Some(ch) = rest.chars().next() {
+                    if unicode_normalization::char::is_combining_mark(ch) {
+                        rest = &rest[ch.len_utf8()..];
+                    } else {
+                        break;
+                    }
+                }
+                continue;
+            }
             let content = &start[..start.len() - rest.len()];
             return Ok((after_quote, parse_single_quote_qq(content)));
         }
@@ -2199,7 +2216,26 @@ pub(super) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
             return Err(PError::expected("closing \""));
         }
         if rest.starts_with('"') {
-            rest = &rest[1..];
+            // A quote followed by a combining mark forms a single grapheme cluster,
+            // so it is string content, not a closing delimiter.
+            let after_quote = &rest[1..];
+            if let Some(next_ch) = after_quote.chars().next()
+                && unicode_normalization::char::is_combining_mark(next_ch)
+            {
+                current.push('"');
+                current.push(next_ch);
+                rest = &after_quote[next_ch.len_utf8()..];
+                while let Some(ch) = rest.chars().next() {
+                    if unicode_normalization::char::is_combining_mark(ch) {
+                        current.push(ch);
+                        rest = &rest[ch.len_utf8()..];
+                    } else {
+                        break;
+                    }
+                }
+                continue;
+            }
+            rest = after_quote;
             break;
         }
         if rest.starts_with('\\') && rest.len() > 1 {
