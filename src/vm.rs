@@ -1396,7 +1396,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::ExecCallPairs { name_idx, arity } => {
-                self.exec_exec_call_pairs_op(code, *name_idx, *arity)?;
+                self.exec_exec_call_pairs_op(code, compiled_fns, *name_idx, *arity)?;
                 *ip += 1;
             }
             OpCode::ExecCallSlip {
@@ -1404,7 +1404,13 @@ impl VM {
                 regular_arity,
                 arg_sources_idx,
             } => {
-                self.exec_exec_call_slip_op(code, *name_idx, *regular_arity, *arg_sources_idx)?;
+                self.exec_exec_call_slip_op(
+                    code,
+                    compiled_fns,
+                    *name_idx,
+                    *regular_arity,
+                    *arg_sources_idx,
+                )?;
                 *ip += 1;
             }
 
