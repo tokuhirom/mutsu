@@ -1003,18 +1003,6 @@ impl Interpreter {
         )
     }
 
-    pub(crate) fn regex_find_first_bridge(
-        &self,
-        pattern: &str,
-        text: &str,
-    ) -> Option<(usize, usize)> {
-        self.regex_find_first(pattern, text)
-    }
-
-    pub(crate) fn regex_find_all_bridge(&self, pattern: &str, text: &str) -> Vec<(usize, usize)> {
-        self.regex_find_all(pattern, text)
-    }
-
     pub(crate) fn take_value(&mut self, val: Value) -> Result<(), RuntimeError> {
         if let Some(items) = self.gather_items.last_mut() {
             items.push(val);
