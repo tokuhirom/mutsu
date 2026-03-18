@@ -169,7 +169,7 @@ pub(in crate::parser) fn term_expr(input: &str) -> PResult<'_, Expr> {
     postfix::prefix_expr(input)
 }
 
-fn should_wrap_whatevercode(expr: &Expr) -> bool {
+pub(in crate::parser) fn should_wrap_whatevercode(expr: &Expr) -> bool {
     if !contains_whatever(expr) || is_whatever(expr) {
         return false;
     }
@@ -629,7 +629,7 @@ fn rename_var(expr: &Expr, old_name: &str, new_name: &str) -> Expr {
 }
 
 /// Build a WhateverCode lambda from an expression containing Whatever placeholders.
-fn wrap_whatevercode(expr: &Expr) -> Expr {
+pub(in crate::parser) fn wrap_whatevercode(expr: &Expr) -> Expr {
     if let Expr::CallOn { target, args } = expr
         && should_wrap_whatevercode(target)
         && !args.iter().any(contains_whatever)
