@@ -1,8 +1,8 @@
 use super::super::helpers::{is_ident_char, ws};
 use super::super::parse_result::{PError, PResult, merge_expected_messages, parse_char, parse_tag};
 use super::super::stmt::assign::{
-    compound_assign_op_from_name, compound_assigned_value_expr, parse_assign_expr_or_comma,
-    parse_meta_compound_assign_op,
+    build_compound_assign_expr, compound_assign_op_from_name, compound_assigned_value_expr,
+    parse_assign_expr_or_comma, parse_compound_assign_op, parse_meta_compound_assign_op,
 };
 
 use crate::ast::{Expr, Stmt};
@@ -257,6 +257,17 @@ fn and_expr_no_assign_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
 fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let (rest, expr) = not_expr_mode(input, mode)?;
     let (r, _) = ws(rest)?;
+
+    // Try compound assignment operators (+=, *=, //=, etc.) before simple =
+    if let Some((after_op, op)) = parse_compound_assign_op(r) {
+        let (after_ws, _) = ws(after_op)?;
+        if let Ok((r, rhs)) = parse_assignment_rhs_mode(after_ws, mode)
+            && let Ok(result) = build_compound_assign_expr(expr.clone(), op, rhs)
+        {
+            return Ok((r, result));
+        }
+    }
+
     if !(r.starts_with('=') && !r.starts_with("==") && !r.starts_with("=>")) {
         return Ok((rest, expr));
     }
@@ -2113,6 +2124,8 @@ fn parse_comparison_op(r: &str) -> Option<(ComparisonOp, usize)> {
         Some((ComparisonOp::NumEq, 2))
     } else if r.starts_with("!%%") {
         Some((ComparisonOp::NotDivisibleBy, 3))
+    } else if r.starts_with("!===") {
+        Some((ComparisonOp::StrictNe, 4))
     } else if r.starts_with("!=") {
         Some((ComparisonOp::NumNe, 2))
     } else if r.starts_with("!~~") {

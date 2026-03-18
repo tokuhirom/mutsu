@@ -674,16 +674,25 @@ where
     }
 }
 
-fn build_compound_assign_expr(lhs: Expr, op: CompoundAssignOp, rhs: Expr) -> Result<Expr, PError> {
+pub(crate) fn build_compound_assign_expr(
+    lhs: Expr,
+    op: CompoundAssignOp,
+    rhs: Expr,
+) -> Result<Expr, PError> {
     Ok(match lhs {
-        Expr::AssignExpr { name, expr } => Expr::AssignExpr {
-            name: name.clone(),
-            expr: Box::new(compound_assigned_value_expr(
-                Expr::AssignExpr { name, expr },
-                op,
-                rhs,
-            )),
-        },
+        Expr::AssignExpr { name, expr } => {
+            // ($x += 2) *= 3 → first evaluate inner assign, then apply outer op
+            // to the variable's value and assign back.
+            // This becomes: { let _ = ($x = $x + 2); $x = $x * 3 }
+            Expr::AssignExpr {
+                name: name.clone(),
+                expr: Box::new(Expr::Binary {
+                    left: Box::new(Expr::AssignExpr { name, expr }),
+                    op: op.token_kind(),
+                    right: Box::new(rhs),
+                }),
+            }
+        }
         Expr::Var(name) => Expr::AssignExpr {
             name: name.clone(),
             expr: Box::new(compound_assigned_value_expr(Expr::Var(name), op, rhs)),
