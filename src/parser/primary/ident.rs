@@ -700,6 +700,8 @@ pub(super) fn is_listop(name: &str) -> bool {
             | "open"
             | "elems"
             | "end"
+            | "uniprop"
+            | "uniname"
     ) || is_expr_listop(name)
 }
 
