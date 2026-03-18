@@ -545,6 +545,13 @@ pub(crate) enum OpCode {
         dwim_right: bool,
     },
 
+    // -- HyperFuncOp (>>[&func]<<) --
+    HyperFuncOp {
+        name_idx: u32,
+        dwim_left: bool,
+        dwim_right: bool,
+    },
+
     // -- MetaOp (Rop, Xop, Zop) --
     MetaOp {
         meta_idx: u32,
