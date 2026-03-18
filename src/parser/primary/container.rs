@@ -871,12 +871,24 @@ fn find_quote_word_close(input: &str, close: &str) -> Option<usize> {
             } else if ch == quote {
                 quoted_by = None;
             }
-        } else if ch == '"' || ch == '\'' || ch == '“' || ch == '‘' {
+        } else if ch == '"'
+            || ch == '\''
+            || ch == '“'
+            || ch == '”'
+            || ch == '„'
+            || ch == '‘'
+            || ch == '’'
+            || ch == '‚'
+        {
             quoted_by = Some(match ch {
                 '"' => '"',
                 '\'' => '\'',
                 '“' => '”',
+                '”' => '”',
+                '„' => '”',
                 '‘' => '’',
+                '’' => '’',
+                '‚' => '’',
                 _ => unreachable!(),
             });
         } else if close == ">>" {
@@ -986,7 +998,11 @@ fn skip_quotish_embedded_comment(input: &str) -> Option<&str> {
         '<' => '>',
         '«' => '»',
         '“' => '”',
+        '”' => '”',
+        '„' => '”',
         '‘' => '’',
+        '’' => '’',
+        '‚' => '’',
         _ => return None,
     };
     let mut count = 1usize;
