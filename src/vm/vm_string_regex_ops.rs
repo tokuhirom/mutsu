@@ -280,27 +280,21 @@ impl VM {
         squash: bool,
         non_destructive: bool,
     ) -> Result<(), RuntimeError> {
-        let from = Self::const_str(code, from_idx).to_string();
-        let to = Self::const_str(code, to_idx).to_string();
+        let from = Self::const_str(code, from_idx);
+        let to = Self::const_str(code, to_idx);
         let target = self
             .interpreter
             .env()
             .get("_")
             .cloned()
             .unwrap_or(Value::Nil);
+        let text = target.to_string_value();
 
-        let mut args = vec![Value::Pair(from, Box::new(Value::str(to)))];
-        if delete {
-            args.push(Value::Pair("d".to_string(), Box::new(Value::Bool(true))));
-        }
-        if complement {
-            args.push(Value::Pair("c".to_string(), Box::new(Value::Bool(true))));
-        }
-        if squash {
-            args.push(Value::Pair("s".to_string(), Box::new(Value::Bool(true))));
-        }
+        let translated = crate::builtins::transliterate::transliterate(
+            &text, from, to, delete, squash, complement,
+        );
+        let result = Value::str(translated);
 
-        let result = self.interpreter.dispatch_trans(target, &args)?;
         // tr/// (lowercase) always modifies $_; TR/// (uppercase) only modifies
         // $_ in smartmatch context (so that $var ~~ TR/// writes back to $var).
         if !non_destructive || self.in_smartmatch_rhs {
