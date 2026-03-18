@@ -1077,7 +1077,7 @@ impl VM {
         // In Raku, [(-)] [Set, Set, Mix] first promotes all to Mix, then reduces.
         if matches!(
             base_op.as_str(),
-            "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖" | "(.)" | "⊍"
+            "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖" | "(.)" | "⊍" | "(+)" | "⊎"
         ) && list.len() > 2
         {
             let set_level = |v: &Value| -> u8 {

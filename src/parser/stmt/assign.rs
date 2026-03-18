@@ -341,7 +341,9 @@ pub(crate) fn parse_set_compound_assign_op(input: &str) -> Option<(&str, TokenKi
     } else if input.starts_with("(^)") {
         (TokenKind::SetSymDiff, 3)
     } else if input.starts_with("(+)") {
-        (TokenKind::SetUnion, 3) // Bag union
+        (TokenKind::SetAddition, 3)
+    } else if input.starts_with('⊎') {
+        (TokenKind::SetAddition, '⊎'.len_utf8())
     } else if input.starts_with('∪') {
         (TokenKind::SetUnion, '∪'.len_utf8())
     } else if input.starts_with('∩') {

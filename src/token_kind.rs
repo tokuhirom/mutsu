@@ -106,6 +106,7 @@ pub(crate) enum TokenKind {
     BitShiftRight,
     LtEqGt,
     SetUnion,
+    SetAddition,
     SetIntersect,
     SetMultiply,
     SetDiff,

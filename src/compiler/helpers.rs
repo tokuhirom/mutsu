@@ -53,6 +53,7 @@ pub(super) fn token_kind_to_op_name(op: &TokenKind) -> String {
         TokenKind::BangBang => "!!".to_string(),
         TokenKind::QuestionQuestion => "??".to_string(),
         TokenKind::SetUnion => "(|)".to_string(),
+        TokenKind::SetAddition => "(+)".to_string(),
         TokenKind::SetIntersect => "(&)".to_string(),
         TokenKind::SetMultiply => "(.)".to_string(),
         TokenKind::SetDiff => "(-)".to_string(),
