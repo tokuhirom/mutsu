@@ -1232,8 +1232,13 @@ impl VM {
         &mut self,
         code: &CompiledCode,
         tc_idx: u32,
+        var_name_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        let constraint = Self::const_str(code, tc_idx);
+        let raw_constraint = Self::const_str(code, tc_idx);
+        let var_name: Option<&str> = var_name_idx.map(|idx| Self::const_str(code, idx));
+        // Apply `use variables :D/:U` pragma to the constraint
+        let effective_constraint = self.interpreter.apply_variables_pragma(raw_constraint);
+        let constraint: &str = &effective_constraint;
         let (base_constraint, _) = crate::runtime::types::strip_type_smiley(constraint);
         let declared_constraint = base_constraint
             .split_once('(')
@@ -1335,6 +1340,7 @@ impl VM {
                     return Err(RuntimeError::typecheck_assignment(
                         base_constraint,
                         crate::runtime::utils::value_type_name(&value),
+                        var_name,
                     ));
                 }
             }
@@ -1359,6 +1365,7 @@ impl VM {
             return Err(RuntimeError::typecheck_assignment(
                 constraint,
                 crate::runtime::utils::value_type_name(&value),
+                var_name,
             ));
         }
         if !matches!(value, Value::Nil) {

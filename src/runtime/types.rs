@@ -1315,6 +1315,29 @@ impl Interpreter {
         false
     }
 
+    pub(crate) fn set_variables_pragma(&mut self, smiley: &str) {
+        // smiley is ":D", ":U", ":_", or empty
+        self.variables_pragma = smiley.to_string();
+    }
+
+    /// Apply the `use variables` pragma to a type constraint.
+    /// If the constraint has no explicit smiley and the pragma is active,
+    /// append the pragma smiley (e.g., `Int` → `Int:D` when `use variables :D`).
+    pub(crate) fn apply_variables_pragma<'a>(
+        &self,
+        constraint: &'a str,
+    ) -> std::borrow::Cow<'a, str> {
+        if self.variables_pragma.is_empty() || self.variables_pragma == ":_" {
+            return std::borrow::Cow::Borrowed(constraint);
+        }
+        let (_base, smiley) = strip_type_smiley(constraint);
+        if smiley.is_some() {
+            // Already has a smiley — don't override
+            return std::borrow::Cow::Borrowed(constraint);
+        }
+        std::borrow::Cow::Owned(format!("{}{}", constraint, self.variables_pragma))
+    }
+
     pub(crate) fn eval_does_values(
         &mut self,
         left: Value,

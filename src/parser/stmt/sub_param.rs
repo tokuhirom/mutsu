@@ -110,6 +110,20 @@ pub(super) fn parse_type_constraint_expr(input: &str) -> Option<(&str, String)> 
     if rest.starts_with(":D") || rest.starts_with(":U") || rest.starts_with(":_") {
         type_name.push_str(&rest[..2]);
         rest = &rest[2..];
+    } else if rest.starts_with(':')
+        && rest[1..]
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+    {
+        // Invalid type smiley like :foo — include it in the type name
+        // so the caller can detect and report it as X::InvalidTypeSmiley
+        let smiley_rest = &rest[1..];
+        let end = smiley_rest
+            .find(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-')
+            .unwrap_or(smiley_rest.len());
+        type_name.push_str(&rest[..end + 1]);
+        rest = &rest[end + 1..];
     }
 
     // Handle "of" keyword: `Array of Callable` → `Array[Callable]`

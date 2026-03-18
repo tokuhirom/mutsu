@@ -299,7 +299,11 @@ impl Compiler {
                     name_idx,
                     dynamic: is_dynamic,
                 });
-                if let Some(tc) = type_constraint {
+                let has_default_trait = custom_traits.iter().any(|(n, _)| n == "default");
+                // Register type constraint early (for assignment checking) unless
+                // `is default` trait is present — in that case defer until after
+                // the trait is applied so the default value can be set first.
+                if !has_default_trait && let Some(tc) = type_constraint {
                     let tc_idx = self.code.add_constant(Value::str(tc.clone()));
                     self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
                 }
@@ -310,9 +314,21 @@ impl Compiler {
                 let is_hash = name.starts_with('%');
                 if let Some(tc) = type_constraint
                     && !is_hash
+                    && !has_default_trait
                 {
                     let tc_idx = self.code.add_constant(Value::str(tc.clone()));
-                    self.code.emit(OpCode::TypeCheck(tc_idx));
+                    // Build the display name for error messages (e.g. "a" -> "$a")
+                    let display_name = if name.starts_with('@')
+                        || name.starts_with('%')
+                        || name.starts_with('&')
+                    {
+                        name.clone()
+                    } else {
+                        format!("${}", name)
+                    };
+                    let var_name_idx = self.code.add_constant(Value::str(display_name));
+                    self.code
+                        .emit(OpCode::TypeCheck(tc_idx, Some(var_name_idx)));
                 }
                 let slot = self.alloc_local(name);
                 if *is_state {
@@ -360,6 +376,11 @@ impl Compiler {
                         trait_name_idx,
                         has_arg: trait_arg.is_some(),
                     });
+                }
+                // Deferred type constraint registration after traits are applied
+                if has_default_trait && let Some(tc) = type_constraint {
+                    let tc_idx = self.code.add_constant(Value::str(tc.clone()));
+                    self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
                 }
             }
             Stmt::Assign {
@@ -1212,6 +1233,17 @@ impl Compiler {
                         arg_sources_idx: None,
                     });
                 }
+            }
+            Stmt::Use { module, arg } if module == "variables" => {
+                // `use variables :D/:U/:_` pragma — emit a SetVariablesPragma opcode
+                if let Some(arg_expr) = arg {
+                    self.compile_expr(arg_expr);
+                } else {
+                    let nil_idx = self.code.add_constant(Value::Nil);
+                    self.code.emit(OpCode::LoadConst(nil_idx));
+                }
+                let name_idx = self.code.add_constant(Value::str("variables".to_string()));
+                self.code.emit(OpCode::SetPragma(name_idx));
             }
             Stmt::Use { module, .. }
                 if module == "v6"

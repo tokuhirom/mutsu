@@ -1902,8 +1902,18 @@ impl VM {
             }
 
             // -- Type checking --
-            OpCode::TypeCheck(tc_idx) => {
-                self.exec_type_check_op(code, *tc_idx)?;
+            OpCode::TypeCheck(tc_idx, var_name_idx) => {
+                self.exec_type_check_op(code, *tc_idx, *var_name_idx)?;
+                *ip += 1;
+            }
+            OpCode::SetPragma(name_idx) => {
+                let value = self.stack.pop().unwrap_or(Value::Nil);
+                let name = Self::const_str(code, *name_idx);
+                if name == "variables"
+                    && let Value::Str(ref s) = value
+                {
+                    self.interpreter.set_variables_pragma(s);
+                }
                 *ip += 1;
             }
             OpCode::IndirectTypeLookup => {
