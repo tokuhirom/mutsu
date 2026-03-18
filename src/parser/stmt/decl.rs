@@ -42,8 +42,24 @@ fn strip_type_smiley_suffix(type_name: &str) -> &str {
 }
 
 fn typed_default_expr(type_name: &str) -> Expr {
-    if strip_type_smiley_suffix(type_name) == "Mu" {
+    let base = strip_type_smiley_suffix(type_name);
+    if base == "Mu" {
         Expr::BareWord("Mu".to_string())
+    } else if base == "int"
+        || base == "int8"
+        || base == "int16"
+        || base == "int32"
+        || base == "int64"
+        || base == "uint"
+        || base == "uint8"
+        || base == "uint16"
+        || base == "uint32"
+        || base == "uint64"
+        || base == "byte"
+    {
+        Expr::Literal(Value::Int(0))
+    } else if base == "num" || base == "num32" || base == "num64" {
+        Expr::Literal(Value::Num(0.0))
     } else {
         Expr::Literal(Value::Nil)
     }
@@ -752,6 +768,19 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             }
             return Ok((r, stmt));
         }
+        // Check for multiple prefix constraints on routine: `our Int Str sub foo()`
+        if let Some((after_second_type, _second_tc)) = parse_type_constraint_expr(after_type) {
+            let (after_second_type, _) = ws(after_second_type)?;
+            if keyword("sub", after_second_type).is_some()
+                || keyword("multi", after_second_type).is_some()
+            {
+                return Err(PError::raw(
+                    "FATAL:X::Comp::NYI: Multiple prefix constraints not yet implemented. Sorry."
+                        .to_string(),
+                    Some(after_type.len()),
+                ));
+            }
+        }
     }
 
     // my multi [sub] name(...) { ... }
@@ -922,6 +951,23 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             {
                 (r2, Some(tc))
             } else {
+                // Check for multiple prefix type constraints (e.g. `my Int Str $x`)
+                // where the second type name is followed by a sigil
+                if let Some((r3, _second_tc)) = parse_type_constraint_expr(r2) {
+                    let (r4, _) = ws(r3).unwrap_or((r3, ()));
+                    if r4.starts_with('$')
+                        || r4.starts_with('@')
+                        || r4.starts_with('%')
+                        || r4.starts_with('&')
+                        || r4.starts_with('\\')
+                    {
+                        return Err(PError::raw(
+                            "FATAL:X::Comp::NYI: Multiple prefix constraints not yet implemented. Sorry."
+                                .to_string(),
+                            Some(r2.len()),
+                        ));
+                    }
+                }
                 (saved, None)
             }
         } else {

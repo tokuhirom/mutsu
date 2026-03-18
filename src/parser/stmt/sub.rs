@@ -664,6 +664,8 @@ pub(super) fn sub_decl_body(
     };
     // Detect forward declaration: `sub name(...);`.
     if let Some(rest) = rest.strip_prefix(';') {
+        // Merge return type for forward declarations too
+        let fwd_return_type = return_type.clone().or(traits.return_type.clone());
         if allow_main_semicolon_decl && name == "MAIN" && !multi {
             return Ok((
                 rest,
@@ -672,7 +674,7 @@ pub(super) fn sub_decl_body(
                     name_expr,
                     params,
                     param_defs,
-                    return_type,
+                    return_type: fwd_return_type,
                     associativity: traits.associativity.clone(),
                     signature_alternates,
                     body: Vec::new(),
@@ -712,7 +714,7 @@ pub(super) fn sub_decl_body(
                 name_expr,
                 params,
                 param_defs,
-                return_type,
+                return_type: fwd_return_type,
                 associativity: traits.associativity.clone(),
                 signature_alternates,
                 body: Vec::new(),
@@ -762,6 +764,8 @@ pub(super) fn sub_decl_body(
     } else {
         (params, param_defs)
     };
+    // Merge return type: `-->` from inside params has priority, then `returns`/`of` traits
+    let merged_return_type = return_type.or(traits.return_type);
     Ok((
         rest,
         Stmt::SubDecl {
@@ -769,7 +773,7 @@ pub(super) fn sub_decl_body(
             name_expr,
             params,
             param_defs,
-            return_type,
+            return_type: merged_return_type,
             associativity: traits.associativity,
             signature_alternates,
             body,
@@ -1377,6 +1381,30 @@ pub(super) fn parse_return_type_annotation(input: &str) -> PResult<'_, String> {
     let annotation = rest[..idx].trim().to_string();
     if annotation.is_empty() {
         return Err(PError::expected("return type annotation"));
+    }
+    // Detect multiple prefix constraints in return type (e.g. `--> Int Str`)
+    if let Some(space_pos) = annotation.find(' ') {
+        let first = &annotation[..space_pos];
+        let second = annotation[space_pos..].trim();
+        if !first.is_empty()
+            && !second.is_empty()
+            && first.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+            && second
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_uppercase())
+            && first
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == ':' || c == '_')
+            && second
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == ':' || c == '_')
+        {
+            return Err(PError::raw(
+                "FATAL:Multiple prefix constraints not yet implemented. Sorry.".to_string(),
+                Some(rest[idx..].len()),
+            ));
+        }
     }
     let (tail, _) = ws(&rest[idx..])?;
     Ok((tail, annotation))
