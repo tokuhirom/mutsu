@@ -1873,6 +1873,16 @@ impl VM {
                 *ip += 1;
             }
 
+            // -- HyperFuncOp --
+            OpCode::HyperFuncOp {
+                name_idx,
+                dwim_left,
+                dwim_right,
+            } => {
+                self.exec_hyper_func_op(code, *name_idx, *dwim_left, *dwim_right, compiled_fns)?;
+                *ip += 1;
+            }
+
             // -- MetaOp --
             OpCode::MetaOp { meta_idx, op_idx } => {
                 self.exec_meta_op(code, *meta_idx, *op_idx)?;

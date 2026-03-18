@@ -331,6 +331,26 @@ impl VM {
         Ok(())
     }
 
+    /// Check if a value is "listy" (array, hash, range, seq, etc.) for hyper op purposes.
+    /// Scalars return false, meaning the hyper result should not be wrapped in an array.
+    fn is_listy(val: &Value) -> bool {
+        matches!(
+            val,
+            Value::Array(..)
+                | Value::Seq(..)
+                | Value::Hash(..)
+                | Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::GenericRange { .. }
+                | Value::LazyList(..)
+                | Value::Set(..)
+                | Value::Bag(..)
+                | Value::Mix(..)
+        )
+    }
+
     pub(super) fn exec_hyper_op(
         &mut self,
         code: &CompiledCode,
@@ -341,6 +361,7 @@ impl VM {
         let right = self.stack.pop().unwrap_or(Value::Nil);
         let left = self.stack.pop().unwrap_or(Value::Nil);
         let op = Self::const_str(code, op_idx).to_string();
+        let both_scalar = !Self::is_listy(&left) && !Self::is_listy(&right);
         let left_list = Interpreter::value_to_list(&left);
         let right_list = Interpreter::value_to_list(&right);
         let left_len = left_list.len();
@@ -395,7 +416,73 @@ impl VM {
                 }
             }
         }
-        let result = Value::array(results);
+        let result = if both_scalar && results.len() == 1 {
+            results.into_iter().next().unwrap()
+        } else {
+            Value::real_array(results)
+        };
+        self.stack.push(result);
+        Ok(())
+    }
+
+    pub(super) fn exec_hyper_func_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        dwim_left: bool,
+        dwim_right: bool,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
+        let right = self.stack.pop().unwrap_or(Value::Nil);
+        let left = self.stack.pop().unwrap_or(Value::Nil);
+        let name = Self::const_str(code, name_idx).to_string();
+        let both_scalar = !Self::is_listy(&left) && !Self::is_listy(&right);
+        let left_list = Interpreter::value_to_list(&left);
+        let right_list = Interpreter::value_to_list(&right);
+        let left_len = left_list.len();
+        let right_len = right_list.len();
+        if left_len == 0 && right_len == 0 {
+            self.stack.push(Value::array(Vec::new()));
+            return Ok(());
+        }
+        let result_len = if !dwim_left && !dwim_right {
+            if left_len != right_len {
+                return Err(RuntimeError::new(format!(
+                    "Non-dwimmy hyper operator: left has {} elements, right has {}",
+                    left_len, right_len
+                )));
+            }
+            left_len
+        } else if dwim_left && dwim_right {
+            std::cmp::max(left_len, right_len)
+        } else if dwim_right {
+            left_len
+        } else {
+            right_len
+        };
+        // Look up the function by name (&name variable or compiled function)
+        let mut results = Vec::with_capacity(result_len);
+        for i in 0..result_len {
+            let l = if left_len == 0 {
+                &Value::Int(0)
+            } else {
+                &left_list[i % left_len]
+            };
+            let r = if right_len == 0 {
+                &Value::Int(0)
+            } else {
+                &right_list[i % right_len]
+            };
+            let call_args = vec![l.clone(), r.clone()];
+            let result =
+                self.call_function_compiled_first(&name, call_args.clone(), compiled_fns)?;
+            results.push(result);
+        }
+        let result = if both_scalar && results.len() == 1 {
+            results.into_iter().next().unwrap()
+        } else {
+            Value::real_array(results)
+        };
         self.stack.push(result);
         Ok(())
     }

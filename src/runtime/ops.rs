@@ -1595,6 +1595,12 @@ impl Interpreter {
             "(^)" | "⊖" => Ok(set_sym_diff_values(left, right)),
             "(==)" | "≡" => Ok(Value::Bool(Self::apply_set_equality(left, right)?)),
             "≢" => Ok(Value::Bool(!Self::apply_set_equality(left, right)?)),
+            _ if op.ends_with('=') && op.len() > 1 => {
+                // Compound assignment operator (e.g., "~=", "+=", "-=", "*=")
+                // Apply the base operator and return the result.
+                let base_op = &op[..op.len() - 1];
+                Self::apply_reduction_op(base_op, left, right)
+            }
             _ => Err(RuntimeError::new(format!(
                 "Unsupported reduction operator: {}",
                 op
