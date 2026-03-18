@@ -653,6 +653,8 @@ pub(super) fn is_keyword(name: &str) -> bool {
             | "start"
             | "quietly"
             | "sink"
+            | "list"
+            | "cache"
             | "let"
     )
 }
@@ -1507,6 +1509,23 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 Expr::Call {
                     name: Symbol::intern(&name),
                     args: vec![expr],
+                },
+            ));
+        }
+        "list" | "cache" if !rest.starts_with('(') => {
+            let (r, _) = ws(rest)?;
+            // list/cache take a comma expression as a single argument
+            // e.g. `list 1,2,4...16` → `list((1,2,4)...16)`
+            let (r, expr) = super::super::stmt::assign::parse_comma_or_expr(r)?;
+            let args = match expr {
+                Expr::ArrayLiteral(items) => items,
+                other => vec![other],
+            };
+            return Ok((
+                r,
+                Expr::Call {
+                    name: Symbol::intern(&name),
+                    args,
                 },
             ));
         }

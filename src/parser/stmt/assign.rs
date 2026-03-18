@@ -1433,7 +1433,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
 }
 
 /// Parse a comma expression (may produce a list).
-pub(super) fn parse_comma_or_expr(input: &str) -> PResult<'_, Expr> {
+pub(in crate::parser) fn parse_comma_or_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, first) = expression(input)?;
     let (r, _) = ws(rest)?;
     if r.starts_with(',') && !r.starts_with(",,") {

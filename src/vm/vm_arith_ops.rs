@@ -222,6 +222,15 @@ impl VM {
 
     pub(super) fn exec_negate_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
+        // Type objects (Mu, Any, etc.) cannot be negated
+        if let Value::Package(name) = &val
+            && matches!(name.resolve().as_str(), "Mu" | "Any")
+        {
+            return Err(RuntimeError::new(format!(
+                "Cannot resolve caller prefix:<->({}:U); none of these signatures matches:\n    (\\a)",
+                name.resolve()
+            )));
+        }
         let val = self.coerce_numeric_bridge_value(val)?;
         self.stack.push(crate::builtins::arith_negate(val)?);
         Ok(())
