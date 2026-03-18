@@ -1439,7 +1439,7 @@ impl VM {
         self.interpreter.push_lexical_class_scope();
         let stack_base = self.stack.len();
         let topic_before = self.last_topic_value.clone();
-        let body_result = self.run_range(code, body_start, queue_start, compiled_fns);
+        let mut body_result = self.run_range(code, body_start, queue_start, compiled_fns);
         let body_value = if self.stack.len() > stack_base {
             self.stack.last().cloned()
         } else if self.last_topic_value != topic_before {
@@ -1447,11 +1447,23 @@ impl VM {
         } else {
             None
         };
-        let queue_res = if Self::should_run_success_queue(&body_result, body_value) {
+        let ran_undo = !Self::should_run_success_queue(&body_result, body_value);
+        let queue_res = if !ran_undo {
             self.run_range(code, keep_start, undo_start, compiled_fns)
         } else {
             self.run_range(code, undo_start, post_start, compiled_fns)
         };
+
+        // When UNDO phasers ran in response to a fail(), mark the error so the
+        // resulting Failure value will be created with handled=True (Raku semantics:
+        // UNDO acts as a handler for the failure).
+        if ran_undo
+            && undo_start < post_start
+            && let Err(ref mut e) = body_result
+            && e.is_fail
+        {
+            e.fail_handled = true;
+        }
 
         // Run POST phasers after LEAVE (regardless of success/failure path)
         // Set $_ to the return/result value so POST can inspect it

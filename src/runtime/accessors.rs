@@ -172,7 +172,9 @@ impl Interpreter {
         });
         let mut failure_attrs = std::collections::HashMap::new();
         failure_attrs.insert("exception".to_string(), exception);
-        failure_attrs.insert("handled".to_string(), Value::Bool(false));
+        // When UNDO phasers ran for this fail, the Failure is marked as handled
+        // (Raku semantics: UNDO acts as a handler, so sinking the Failure won't throw).
+        failure_attrs.insert("handled".to_string(), Value::Bool(err.fail_handled));
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
