@@ -180,6 +180,7 @@ impl Interpreter {
 
     pub(super) fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
         let routine_snapshot = self.snapshot_routine_registry();
+        let saved_topic = self.env.get("_").cloned();
         let trimmed = code.trim();
         if trimmed == "<>" || trimmed == "<STDIN>" {
             return Err(RuntimeError::new(
@@ -256,6 +257,10 @@ impl Interpreter {
             self.env.remove("=pod");
         }
         self.restore_routine_registry(routine_snapshot);
+        // Restore $_ so EVAL does not clobber the caller's topic variable
+        if let Some(topic) = saved_topic {
+            self.env.insert("_".to_string(), topic);
+        }
         result
     }
 
