@@ -603,6 +603,7 @@ impl Interpreter {
             "join" => self.builtin_join(&args),
             "item" => Ok(args.first().cloned().unwrap_or(Value::Nil)),
             "list" => self.builtin_list(&args),
+            "cache" => self.builtin_cache(&args),
             "circumfix:<[ ]>" => Ok(Value::real_array(args.clone())),
             "lol" => Ok(Value::array(args.clone())),
             "flat" => self.builtin_flat(&args),

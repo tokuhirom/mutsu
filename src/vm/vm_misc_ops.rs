@@ -471,6 +471,15 @@ impl VM {
         let val = self.stack.pop().unwrap();
         // Auto-FETCH Proxy containers
         let val = self.interpreter.auto_fetch_proxy(&val)?;
+        // Type objects (Mu, Any, etc.) cannot be numerically coerced
+        if let Value::Package(name) = &val
+            && matches!(name.resolve().as_str(), "Mu" | "Any")
+        {
+            return Err(RuntimeError::new(format!(
+                "Cannot resolve caller prefix:<+>({}:U); none of these signatures matches:\n    (\\a)",
+                name.resolve()
+            )));
+        }
         if matches!(
             &val,
             Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
@@ -529,6 +538,15 @@ impl VM {
         let val = self.stack.pop().unwrap();
         // Auto-FETCH Proxy containers
         let val = self.interpreter.auto_fetch_proxy(&val)?;
+        // Type objects (Mu, Any, etc.) cannot be string-coerced
+        if let Value::Package(name) = &val
+            && matches!(name.resolve().as_str(), "Mu" | "Any")
+        {
+            return Err(RuntimeError::new(format!(
+                "Cannot resolve caller prefix:<~>({}:U); none of these signatures matches:\n    (\\a)",
+                name.resolve()
+            )));
+        }
         // Stringifying an unhandled Failure throws
         if let Some(err) = self.interpreter.failure_to_runtime_error_if_unhandled(&val) {
             return Err(err);
