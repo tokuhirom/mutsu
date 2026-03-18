@@ -358,7 +358,7 @@ impl VM {
                 &right_list[i % right_len]
             };
             if is_smartmatch {
-                results.push(Value::Bool(self.interpreter.smart_match_values(l, r)));
+                results.push(Value::Bool(self.vm_smart_match(l, r)));
             } else {
                 results.push(self.eval_reduction_operator_values(&op, l, r)?);
             }
@@ -385,7 +385,7 @@ impl VM {
                     self.interpreter
                         .eval_sequence_values(right, left, exclude_end)?
                 } else if op == "~~" {
-                    Value::Bool(self.interpreter.smart_match_values(&right, &left))
+                    Value::Bool(self.vm_smart_match(&right, &left))
                 } else {
                     self.eval_reduction_operator_values(&op, &right, &left)?
                 }
@@ -426,7 +426,7 @@ impl VM {
                 } else if op == "~~" {
                     for l in &left_list {
                         for r in &right_list {
-                            results.push(Value::Bool(self.interpreter.smart_match_values(l, r)));
+                            results.push(Value::Bool(self.vm_smart_match(l, r)));
                         }
                     }
                 } else {
@@ -627,7 +627,7 @@ impl VM {
                     .get("_")
                     .cloned()
                     .unwrap_or(Value::Nil);
-                self.interpreter.smart_match_values(&topic, value)
+                self.vm_smart_match(&topic, value)
             }
             _ => value.truthy(),
         }

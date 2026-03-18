@@ -924,10 +924,10 @@ impl VM {
                     } else {
                         // Builtin/proto callables without explicit signature metadata:
                         // keep smartmatch behavior.
-                        self.interpreter.smart_match_values(&topic, &cond_val)
+                        self.vm_smart_match(&topic, &cond_val)
                     }
                 }
-                _ => self.interpreter.smart_match_values(&topic, &cond_val),
+                _ => self.vm_smart_match(&topic, &cond_val),
             }
         };
         if matches {

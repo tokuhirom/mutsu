@@ -1032,7 +1032,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn version_smart_match(
+    pub(crate) fn version_smart_match(
         left: &Value,
         right_parts: &[crate::value::VersionPart],
         right_plus: bool,
@@ -1087,7 +1087,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn value_is_nan(value: &Value) -> bool {
+    pub(crate) fn value_is_nan(value: &Value) -> bool {
         match value {
             Value::Num(f) => f.is_nan(),
             Value::Complex(r, i) => r.is_nan() || i.is_nan(),

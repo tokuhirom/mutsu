@@ -850,7 +850,7 @@ impl VM {
                 | Value::RegexWithAdverbs { .. }
                 | Value::Routine { is_regex: true, .. }
         );
-        let matched = self.interpreter.smart_match_values(&left, &right);
+        let matched = self.vm_smart_match(&left, &right);
         // Check for pending regex security error (set by regex parse/match)
         if let Some(err) = crate::runtime::Interpreter::take_pending_regex_error() {
             return Err(err);
@@ -2381,7 +2381,7 @@ impl VM {
                     .get("_")
                     .cloned()
                     .unwrap_or(Value::Nil);
-                self.interpreter.smart_match_values(&topic, val)
+                self.vm_smart_match(&topic, val)
             }
             _ => val.truthy(),
         }
