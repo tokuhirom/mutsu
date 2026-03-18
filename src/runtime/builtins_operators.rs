@@ -801,7 +801,7 @@ impl Interpreter {
         Ok(acc)
     }
 
-    pub(super) fn repeat_error(class_name: &str, message: String) -> RuntimeError {
+    pub(crate) fn repeat_error(class_name: &str, message: String) -> RuntimeError {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::str(message.clone()));
         let ex = Value::make_instance(Symbol::intern(class_name), attrs);
@@ -810,7 +810,7 @@ impl Interpreter {
         err
     }
 
-    pub(super) fn parse_repeat_count(value: &Value) -> Result<Option<i64>, RuntimeError> {
+    pub(crate) fn parse_repeat_count(value: &Value) -> Result<Option<i64>, RuntimeError> {
         let mut current = value;
         while let Value::Mixin(inner, _) = current {
             current = inner;
@@ -915,7 +915,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn make_repeat_lazy_cache(items: Vec<Value>) -> Value {
+    pub(crate) fn make_repeat_lazy_cache(items: Vec<Value>) -> Value {
         Value::LazyList(std::sync::Arc::new(crate::value::LazyList {
             body: Vec::new(),
             env: crate::env::Env::new(),
@@ -923,7 +923,7 @@ impl Interpreter {
         }))
     }
 
-    pub(super) fn repeat_lhs_once(&mut self, left: &Value) -> Result<Value, RuntimeError> {
+    pub(crate) fn repeat_lhs_once(&mut self, left: &Value) -> Result<Value, RuntimeError> {
         match left {
             Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
                 let saved_topic = self.env.get("_").cloned();
@@ -944,7 +944,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn make_x_whatevercode(&self, left: Value) -> Value {
+    pub(crate) fn make_x_whatevercode(&self, left: Value) -> Value {
         let mut env = crate::env::Env::new();
         env.insert(
             "__mutsu_callable_type".to_string(),

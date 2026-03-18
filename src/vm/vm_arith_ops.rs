@@ -480,9 +480,34 @@ impl VM {
     pub(super) fn exec_string_repeat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self
-            .interpreter
-            .call_function("infix:<x>", vec![left, right])?;
+
+        // Warn on uninitialized type object used as repeat count
+        if let Value::Package(name) = &right
+            && name == "Int"
+            && !self.interpreter.warning_suppressed()
+        {
+            self.interpreter.write_warn_to_stderr(&format!(
+                "Use of uninitialized value of type {} in numeric context",
+                name
+            ));
+        }
+
+        // Whatever on RHS produces a WhateverCode closure
+        if matches!(&right, Value::Whatever) {
+            self.stack.push(self.interpreter.make_x_whatevercode(left));
+            return Ok(());
+        }
+
+        let Some(n_raw) = crate::runtime::Interpreter::parse_repeat_count(&right)? else {
+            return Err(crate::runtime::Interpreter::repeat_error(
+                "X::Numeric::CannotConvert",
+                "Cannot convert Inf to Int".to_string(),
+            ));
+        };
+        let n = n_raw.max(0) as usize;
+        let repeated = crate::runtime::utils::coerce_to_str(&left).repeat(n);
+        // NFC-normalize after repetition
+        let result = Value::str(repeated.nfc().collect::<String>());
         self.stack.push(result);
         Ok(())
     }
@@ -490,6 +515,8 @@ impl VM {
     pub(super) fn exec_list_repeat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+
+        // Fast path for xx-reeval thunks (compiler-generated repeat blocks)
         let thunk = match &left {
             Value::Sub(data) => Some(data.clone()),
             Value::WeakSub(weak) => weak.upgrade(),
@@ -503,9 +530,60 @@ impl VM {
             self.stack.push(Value::Seq(Arc::new(items)));
             return Ok(());
         }
-        let result = self
-            .interpreter
-            .call_function("infix:<xx>", vec![left, right])?;
+
+        // Warn on uninitialized type object used as repeat count
+        if let Value::Package(name) = &right
+            && name == "Int"
+            && !self.interpreter.warning_suppressed()
+        {
+            self.interpreter.write_warn_to_stderr(&format!(
+                "Use of uninitialized value of type {} in numeric context",
+                name
+            ));
+        }
+
+        const EAGER_LIMIT: usize = 10_000;
+        const LAZY_CACHE: usize = 4_096;
+        const LAZY_CACHE_CALLABLE: usize = 256;
+
+        let is_callable = matches!(
+            left,
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+        );
+        let lazy_cache = if is_callable {
+            LAZY_CACHE_CALLABLE
+        } else {
+            LAZY_CACHE
+        };
+
+        let count = crate::runtime::Interpreter::parse_repeat_count(&right)?;
+        let (repeat, lazy) = match count {
+            Some(n) if n <= 0 => (0usize, false),
+            Some(n) if (n as usize) <= EAGER_LIMIT => (n as usize, false),
+            Some(n) => ((n as usize).min(lazy_cache), true),
+            None => (lazy_cache, true),
+        };
+
+        let mut items = Vec::with_capacity(repeat);
+        if let Value::Slip(slip_items) = &left {
+            if slip_items.is_empty() {
+                items.extend(std::iter::repeat_n(Value::Nil, repeat));
+            } else {
+                for _ in 0..repeat {
+                    items.extend(slip_items.iter().cloned());
+                }
+            }
+        } else {
+            for _ in 0..repeat {
+                items.push(self.interpreter.repeat_lhs_once(&left)?);
+            }
+        }
+
+        let result = if lazy {
+            crate::runtime::Interpreter::make_repeat_lazy_cache(items)
+        } else {
+            Value::Seq(Arc::new(items))
+        };
         self.stack.push(result);
         Ok(())
     }
