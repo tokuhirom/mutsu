@@ -1126,6 +1126,7 @@ impl Interpreter {
                 nested.suppressed_names = self.suppressed_names.clone();
                 nested.lexical_class_scopes = self.lexical_class_scopes.clone();
                 nested.var_dynamic_flags = self.var_dynamic_flags.clone();
+                nested.restore_var_type_constraints(self.snapshot_var_type_constraints());
                 for (k, v) in &self.env {
                     if k.contains("::") {
                         continue;

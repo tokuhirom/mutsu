@@ -443,6 +443,8 @@ impl Interpreter {
                 | "∩"
                 | "(.)"
                 | "⊍"
+                | "(+)"
+                | "⊎"
                 | "(^)"
                 | "⊖"
                 | "(elem)"
@@ -542,7 +544,7 @@ impl Interpreter {
                 return Ok(Value::str(crate::runtime::utils::coerce_to_str(&args[0])));
             }
             // Set operators with single arg: coerce to appropriate set type
-            if op == "(.)" || op == "⊍" {
+            if matches!(op, "(.)" | "⊍" | "(+)" | "⊎") {
                 let arg0 = match &args[0] {
                     Value::Scalar(inner) => inner.as_ref(),
                     other => other,
@@ -1222,6 +1224,7 @@ impl Interpreter {
             "+|" => TokenKind::BitOr,
             "+^" => TokenKind::BitXor,
             "(|)" | "∪" => TokenKind::SetUnion,
+            "(+)" | "⊎" => TokenKind::SetAddition,
             "(&)" | "∩" => TokenKind::SetIntersect,
             "(.)" | "⊍" => TokenKind::SetMultiply,
             "(-)" | "∖" => TokenKind::SetDiff,

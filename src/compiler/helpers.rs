@@ -53,6 +53,7 @@ pub(super) fn token_kind_to_op_name(op: &TokenKind) -> String {
         TokenKind::BangBang => "!!".to_string(),
         TokenKind::QuestionQuestion => "??".to_string(),
         TokenKind::SetUnion => "(|)".to_string(),
+        TokenKind::SetAddition => "(+)".to_string(),
         TokenKind::SetIntersect => "(&)".to_string(),
         TokenKind::SetMultiply => "(.)".to_string(),
         TokenKind::SetDiff => "(-)".to_string(),
@@ -2257,5 +2258,84 @@ impl Compiler {
         // If last statement wasn't an expression, push Nil
         self.code.emit(OpCode::LoadNil);
         self.pop_dynamic_scope_lexical(saved);
+    }
+
+    /// Check if assigning a numeric literal to a typed variable produces a
+    /// compile-time `X::Syntax::Number::LiteralType` error.  Returns `Some(error_value)`
+    /// when a mismatch is detected, `None` otherwise.
+    pub(super) fn check_literal_type_mismatch(&self, var_name: &str, expr: &Expr) -> Option<Value> {
+        // Only check plain assignment of literal values
+        let (lit_type, lit_repr) = match expr {
+            Expr::Literal(Value::Int(n)) => ("Int", format!("{}", n)),
+            Expr::Literal(Value::Num(n)) => ("Num", format!("{:?}", n)),
+            Expr::Literal(Value::Rat(n, d)) => {
+                let r = *n as f64 / *d as f64;
+                ("Rat", format!("{}", r))
+            }
+            Expr::Literal(Value::Complex(re, im)) => ("Complex", format!("<{}+{}i>", re, im)),
+            _ => return None,
+        };
+
+        // Look up the variable's type constraint
+        let constraint = self.local_types.get(var_name)?;
+        let base = constraint
+            .strip_suffix(":D")
+            .or_else(|| constraint.strip_suffix(":U"))
+            .unwrap_or(constraint);
+
+        // All numeric types (boxed and native) for cross-checking
+        let is_numeric_constraint =
+            matches!(base, "Int" | "Num" | "Rat" | "Complex" | "int" | "num");
+        if !is_numeric_constraint {
+            return None;
+        }
+
+        // Check if the literal type matches the constraint
+        let matches = match base {
+            "Int" | "int" => lit_type == "Int",
+            "Num" | "num" => lit_type == "Num",
+            "Rat" => lit_type == "Rat",
+            "Complex" => lit_type == "Complex",
+            _ => true,
+        };
+
+        if matches {
+            return None;
+        }
+
+        // Build the error message matching Raku's format
+        let is_native = base == "int" || base == "num";
+        let message = if is_native {
+            format!(
+                "Cannot assign a literal of type {} ({}) to a native variable of type {}. \
+                 You can declare the variable to be of type Real, or try to coerce the value with {}.{} or {}({})",
+                lit_type,
+                lit_repr,
+                base,
+                lit_repr,
+                if base == "int" { "Int" } else { "Num" },
+                if base == "int" { "Int" } else { "Num" },
+                lit_repr,
+            )
+        } else {
+            let hint = match (base, lit_type) {
+                ("Num", "Int") => format!(", or just write the value as {}e0", lit_repr),
+                ("Int", "Num") => String::new(),
+                ("Rat", "Int") => format!(", or just write the value as {}.0", lit_repr),
+                _ => String::new(),
+            };
+            format!(
+                "Cannot assign a literal of type {} ({}) to a variable of type {}. \
+                 You can declare the variable to be of type Real, or try to coerce the value with {}.{} or {}({}){}",
+                lit_type, lit_repr, base, lit_repr, base, base, lit_repr, hint,
+            )
+        };
+
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::str(message));
+        Some(Value::make_instance(
+            Symbol::intern("X::Syntax::Number::LiteralType"),
+            attrs,
+        ))
     }
 }
