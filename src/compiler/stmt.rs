@@ -2,6 +2,43 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Compiler {
+    fn regex_match_returns_multiple(expr: &Expr) -> bool {
+        let Expr::Binary { op, right, .. } = expr else {
+            return false;
+        };
+        if !matches!(op, TokenKind::SmartMatch | TokenKind::BangTilde) {
+            return false;
+        }
+        let regex = match right.as_ref() {
+            Expr::MatchRegex(v) | Expr::Literal(v) => v,
+            _ => return false,
+        };
+        matches!(
+            regex,
+            Value::RegexWithAdverbs { global: true, .. }
+                | Value::RegexWithAdverbs { overlap: true, .. }
+                | Value::RegexWithAdverbs {
+                    exhaustive: true,
+                    ..
+                }
+                | Value::RegexWithAdverbs {
+                    repeat: Some(_),
+                    ..
+                }
+        )
+    }
+
+    fn compile_assignment_rhs_for_target(&mut self, name: &str, expr: &Expr) {
+        self.compile_expr(expr);
+        if !name.starts_with('@')
+            && !name.starts_with('%')
+            && !name.starts_with('&')
+            && Self::regex_match_returns_multiple(expr)
+        {
+            self.code.emit(OpCode::ScalarizeRegexMatchResult);
+        }
+    }
+
     fn compile_condition_expr(&mut self, cond: &Expr) {
         match cond {
             Expr::Literal(Value::Regex(_)) | Expr::Literal(Value::RegexWithAdverbs { .. }) => {
@@ -311,7 +348,7 @@ impl Compiler {
                 if let Some(tc) = type_constraint {
                     self.local_types.insert(name.clone(), tc.clone());
                 }
-                self.compile_expr(expr);
+                self.compile_assignment_rhs_for_target(name, expr);
                 // Skip TypeCheck for hash declarations: the type constraint
                 // applies to element values, not to the collection itself.
                 // TODO: enforce per-element type constraints at assignment time.
@@ -449,7 +486,7 @@ impl Compiler {
                     }
                     self.compile_call_arg(expr);
                 } else {
-                    self.compile_expr(expr);
+                    self.compile_assignment_rhs_for_target(name, expr);
                 }
                 self.emit_set_named_var(name);
             }

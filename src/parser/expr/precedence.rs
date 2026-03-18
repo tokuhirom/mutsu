@@ -1628,6 +1628,13 @@ fn parse_comma_list_of_range<'a>(input: &'a str) -> PResult<'a, Vec<Expr>> {
 
 /// Comparison: ==, !=, <, >, <=, >=, eq, ne, lt, gt, le, ge, ~~, !~~, ===, <=>
 fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
+    fn regex_rhs_needs_more_parsing(rest: &str) -> bool {
+        let Ok((rest, _)) = ws(rest) else {
+            return false;
+        };
+        parse_junctive_op(rest).is_some() || parse_junction_infix_op(rest).is_some()
+    }
+
     let (rest, left) = junctive_expr_mode(input, mode)?;
     let (r, _) = ws(rest)?;
     // Detect Perl 5 =~ and !~ brainos (only when followed by space or m/)
@@ -1825,7 +1832,50 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     if let Some((op, len)) = parse_comparison_op(r) {
         let r = &r[len..];
         let (r, _) = ws(r)?;
-        let (r, mut right) = if mode == ExprMode::Full {
+        let (r, mut right) = if matches!(op, ComparisonOp::SmartMatch | ComparisonOp::SmartNotMatch)
+        {
+            if let Ok((rest, expr)) = crate::parser::primary::regex::regex_lit(r) {
+                if regex_rhs_needs_more_parsing(rest) {
+                    if mode == ExprMode::Full {
+                        junctive_expr_mode(r, mode).map_err(|err| {
+                            // Preserve fatal errors with structured exceptions (e.g., X::Obsolete)
+                            if err.is_fatal() && err.exception.is_some() {
+                                return err;
+                            }
+                            PError {
+                                messages: merge_expected_messages(
+                                    "expected expression after comparison operator",
+                                    &err.messages,
+                                ),
+                                remaining_len: err.remaining_len.or(Some(r.len())),
+                                exception: None,
+                            }
+                        })?
+                    } else {
+                        junctive_expr_mode(r, mode)?
+                    }
+                } else {
+                    (rest, expr)
+                }
+            } else if mode == ExprMode::Full {
+                junctive_expr_mode(r, mode).map_err(|err| {
+                    // Preserve fatal errors with structured exceptions (e.g., X::Obsolete)
+                    if err.is_fatal() && err.exception.is_some() {
+                        return err;
+                    }
+                    PError {
+                        messages: merge_expected_messages(
+                            "expected expression after comparison operator",
+                            &err.messages,
+                        ),
+                        remaining_len: err.remaining_len.or(Some(r.len())),
+                        exception: None,
+                    }
+                })?
+            } else {
+                junctive_expr_mode(r, mode)?
+            }
+        } else if mode == ExprMode::Full {
             junctive_expr_mode(r, mode).map_err(|err| {
                 // Preserve fatal errors with structured exceptions (e.g., X::Obsolete)
                 if err.is_fatal() && err.exception.is_some() {
