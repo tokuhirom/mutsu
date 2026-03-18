@@ -15,6 +15,8 @@ mod stmt;
 pub(crate) struct Compiler {
     code: CompiledCode,
     local_map: HashMap<String, u32>,
+    /// Track type constraints for local variables (for compile-time literal checks).
+    local_types: HashMap<String, String>,
     compiled_functions: HashMap<String, CompiledFunction>,
     current_package: String,
     tmp_counter: usize,
@@ -34,6 +36,7 @@ impl Compiler {
         Self {
             code: CompiledCode::new(),
             local_map: HashMap::new(),
+            local_types: HashMap::new(),
             compiled_functions: HashMap::new(),
             current_package: "GLOBAL".to_string(),
             tmp_counter: 0,

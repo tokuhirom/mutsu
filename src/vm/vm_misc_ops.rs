@@ -1294,11 +1294,16 @@ impl VM {
                 constraint
             )));
         }
-        // Native integer type check: validate value is an integer in range
+        // Native integer type check: validate value is an integer in range.
+        // Native types cannot hold Nil/type objects — reject them.
         if crate::runtime::native_types::is_native_int_type(base_constraint) {
-            if !matches!(value, Value::Nil) {
-                self.validate_native_int_assignment(base_constraint, &value)?;
+            if matches!(value, Value::Nil) {
+                return Err(RuntimeError::new(format!(
+                    "Cannot unbox a type object (Nil) to {}.",
+                    base_constraint
+                )));
             }
+            self.validate_native_int_assignment(base_constraint, &value)?;
             return Ok(());
         }
         if runtime::is_known_type_constraint(base_constraint) {
