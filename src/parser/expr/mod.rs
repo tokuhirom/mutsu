@@ -778,6 +778,59 @@ mod tests {
     }
 
     #[test]
+    fn parse_smartmatch_with_p5_subst_rhs() {
+        let (rest, expr) = expression("$path ~~ s:Perl5:g{/+} = '/'").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Binary {
+                op: TokenKind::SmartMatch,
+                right,
+                ..
+            } if matches!(
+                &*right,
+                Expr::Subst {
+                    pattern,
+                    replacement,
+                    global: true,
+                    perl5: true,
+                    ..
+                } if pattern == "/+" && replacement == "/"
+            )
+        ));
+    }
+
+    #[test]
+    fn parse_smartmatch_with_p5_subst_rhs_and_qq_replacement() {
+        let (rest, expr) = expression("$bar ~~ s:P5:g{$rule3}=qq{$subst}").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Binary {
+                op: TokenKind::SmartMatch,
+                right,
+                ..
+            } if matches!(
+                &*right,
+                Expr::AssignExpr { name, .. } if name == "_"
+            )
+        ));
+    }
+
+    #[test]
+    fn parse_smartmatch_with_regex_junction_rhs() {
+        let (rest, expr) = expression("'testing' ~~ /t/ & /s/ & /g/").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Binary {
+                op: TokenKind::SmartMatch,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn parse_method_call() {
         let (rest, expr) = expression("$x.defined").unwrap();
         assert_eq!(rest, "");

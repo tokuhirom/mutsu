@@ -601,6 +601,7 @@ impl VM {
         self.interpreter
             .env_mut()
             .insert("_".to_string(), left.clone());
+        self.sync_regex_interpolation_env_from_locals(code);
         let saved_in_smartmatch_rhs = self.in_smartmatch_rhs;
         self.in_smartmatch_rhs = true;
         self.transliterate_in_smartmatch = false;
@@ -644,6 +645,32 @@ impl VM {
         self.stack.push(out);
         self.env_dirty = true;
         *ip = rhs_end;
+        Ok(())
+    }
+
+    pub(super) fn exec_scalarize_regex_match_result_op(&mut self) -> Result<(), RuntimeError> {
+        let value = self.stack.pop().unwrap_or(Value::Nil);
+        let scalarized = match value {
+            Value::Nil => Value::Int(0),
+            Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => {
+                Value::Int(items.len() as i64)
+            }
+            Value::Capture { positional, .. } => Value::Int(positional.len() as i64),
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Match" => {
+                if let Some(Value::Array(items, _)) = attributes.get("list") {
+                    Value::Int(items.len() as i64)
+                } else {
+                    Value::Int(1)
+                }
+            }
+            other if other.truthy() => Value::Int(1),
+            _ => Value::Int(0),
+        };
+        self.stack.push(scalarized);
         Ok(())
     }
 

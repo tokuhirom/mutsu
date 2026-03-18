@@ -6,7 +6,7 @@ use crate::ast::Expr;
 use crate::token_kind::TokenKind;
 
 use super::operators::*;
-use super::postfix::prefix_expr;
+use super::postfix::{postfix_expr_continue, prefix_expr};
 use super::precedence::parse_custom_infix_word;
 
 pub(super) fn parse_infix_func_op(input: &str) -> Option<(Option<String>, String, usize)> {
@@ -806,15 +806,24 @@ pub(super) fn additive_expr(input: &str) -> PResult<'_, Expr> {
     Ok((rest, left))
 }
 
+/// Call `prefix_expr` and then apply whitespace-separated dotty method calls.
+/// This places ws-dot at a precedence level between prefix/power and multiplicative,
+/// so that `-2**2 . abs` parses as `(-(2**2)).abs` (ws-dot looser than prefix and **)
+/// while `-1 * -1 . abs` parses as `-1 * ((-1).abs)` (ws-dot tighter than *).
+fn prefix_expr_with_ws_dot(input: &str) -> PResult<'_, Expr> {
+    let (rest, expr) = prefix_expr(input)?;
+    postfix_expr_continue(rest, expr)
+}
+
 /// Multiplication/division: * / % div mod gcd lcm
 pub(super) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
-    let (mut rest, mut left) = prefix_expr(input)?;
+    let (mut rest, mut left) = prefix_expr_with_ws_dot(input)?;
     loop {
         let (r, _) = ws(rest)?;
         if let Some((op, len)) = parse_multiplicative_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = prefix_expr(r).map_err(|err| {
+            let (r, right) = prefix_expr_with_ws_dot(r).map_err(|err| {
                 enrich_expected_error(
                     err,
                     "expected expression after multiplicative operator",
@@ -838,7 +847,7 @@ pub(super) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
                 &mut left,
                 PREC_ADDITIVE,
                 PREC_MULTIPLICATIVE,
-                prefix_expr,
+                prefix_expr_with_ws_dot,
             )? {
                 rest = new_rest;
                 continue;
@@ -854,7 +863,7 @@ pub(super) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
         if let Some((meta, op, len)) = try_bracket_op_at_level(r, &OpPrecedence::Multiplicative) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = prefix_expr(r).map_err(|err| {
+            let (r, right) = prefix_expr_with_ws_dot(r).map_err(|err| {
                 enrich_expected_error(
                     err,
                     "expected expression after bracket multiplicative operator",
@@ -886,8 +895,11 @@ pub(super) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
 }
 
 /// Exponentiation: **
+/// Uses tight postfix (no whitespace-separated dotty) so that ws-dot
+/// method calls bind looser than `**` and prefix operators.
+/// e.g. `-2**2 . abs` parses as `(-(2**2)).abs` = `4`.
 pub(super) fn power_expr(input: &str) -> PResult<'_, Expr> {
-    power_expr_inner(input, super::postfix::postfix_expr)
+    power_expr_inner(input, super::postfix::postfix_expr_tight_pub)
 }
 
 /// Like `power_expr` but uses tight postfix parsing (no whitespace-separated
@@ -912,7 +924,7 @@ fn power_expr_inner(input: &str, base_parser: fn(&str) -> PResult<'_, Expr>) -> 
                 &mut base,
                 PREC_MULTIPLICATIVE,
                 PREC_PREFIX - 1,
-                super::postfix::postfix_expr,
+                super::postfix::postfix_expr_tight_pub,
             )? {
                 rest = new_rest;
                 continue;

@@ -413,6 +413,8 @@ impl VM {
                 Value::Rat(nn, dd) => Value::FatRat(nn, dd),
                 other => other,
             },
+            Value::Num(f) => Value::Num(f + 1.0),
+            Value::Complex(r, i) => Value::Complex(r + 1.0, *i),
             Value::Str(s) => {
                 if let Some(next) = Self::superscript_succ(s) {
                     Value::str(next)
@@ -446,6 +448,8 @@ impl VM {
                 Value::Rat(nn, dd) => Value::FatRat(nn, dd),
                 other => other,
             },
+            Value::Num(f) => Value::Num(f - 1.0),
+            Value::Complex(r, i) => Value::Complex(r - 1.0, *i),
             Value::Str(s) => {
                 if let Some(prev) = Self::superscript_pred(s) {
                     Value::str(prev)
@@ -1150,6 +1154,20 @@ impl VM {
 
     pub(super) fn sync_env_from_locals(&mut self, code: &CompiledCode) {
         for (i, name) in code.locals.iter().enumerate() {
+            self.set_env_with_main_alias(name, self.locals[i].clone());
+        }
+    }
+
+    pub(super) fn sync_regex_interpolation_env_from_locals(&mut self, code: &CompiledCode) {
+        for (i, name) in code.locals.iter().enumerate() {
+            if name == "_"
+                || name == "/"
+                || name == "!"
+                || name == "¢"
+                || name.chars().all(|ch| ch.is_ascii_digit())
+            {
+                continue;
+            }
             self.set_env_with_main_alias(name, self.locals[i].clone());
         }
     }

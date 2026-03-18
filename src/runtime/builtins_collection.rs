@@ -249,10 +249,16 @@ impl Interpreter {
 
 /// Raku `val()` builtin: convert a string into an allomorphic type.
 pub(super) fn builtin_val(args: &[Value]) -> Value {
-    let original = match args.first() {
-        Some(v) => v.to_string_value(),
+    let arg = match args.first() {
+        Some(v) => v,
         None => return Value::Nil,
     };
+    // val() on non-Str types (List, Slip, Array) returns the value unchanged.
+    match arg {
+        Value::Array(..) | Value::Seq(_) | Value::Slip(_) => return arg.clone(),
+        _ => {}
+    }
+    let original = arg.to_string_value();
     let word = original.trim();
 
     fn make_allomorphic(val: Value, original: &str) -> Value {
@@ -316,14 +322,24 @@ pub(super) fn builtin_val(args: &[Value]) -> Value {
 }
 
 fn try_parse_complex(word: &str) -> Option<Value> {
-    if !word.ends_with('i') {
+    // Handle both "1+2i" and "1+Inf\i" / "1-Inf\i" / "1+NaN\i" forms
+    let (without_i, backslash_i) = if let Some(stripped) = word.strip_suffix("\\i") {
+        (stripped, true)
+    } else if let Some(stripped) = word.strip_suffix('i') {
+        (stripped, false)
+    } else {
         return None;
-    }
-    let without_i = &word[..word.len() - 1];
+    };
+
     // Pure imaginary
     if let Ok(imag) = without_i.parse::<f64>() {
         return Some(Value::Complex(0.0, imag));
     }
+    // Handle pure imaginary with special values: "Inf\i", "-Inf\i", "NaN\i"
+    if backslash_i && let Some(imag) = parse_special_float(without_i) {
+        return Some(Value::Complex(0.0, imag));
+    }
+
     // real+imag i
     let bytes = without_i.as_bytes();
     let mut split_pos = None;
@@ -333,9 +349,25 @@ fn try_parse_complex(word: &str) -> Option<Value> {
         }
     }
     let split_pos = split_pos?;
-    let real: f64 = without_i[..split_pos].parse().ok()?;
-    let imag: f64 = without_i[split_pos..].parse().ok()?;
+    let real_str = &without_i[..split_pos];
+    let imag_str = &without_i[split_pos..];
+    let real: f64 = real_str.parse().ok()?;
+    let imag: f64 = if backslash_i {
+        // For \i form, imaginary part may be special float like "+Inf", "-Inf", "+NaN"
+        parse_special_float(imag_str).or_else(|| imag_str.parse().ok())?
+    } else {
+        imag_str.parse().ok()?
+    };
     Some(Value::Complex(real, imag))
+}
+
+fn parse_special_float(s: &str) -> Option<f64> {
+    match s {
+        "Inf" | "+Inf" => Some(f64::INFINITY),
+        "-Inf" => Some(f64::NEG_INFINITY),
+        "NaN" | "+NaN" | "-NaN" => Some(f64::NAN),
+        _ => None,
+    }
 }
 
 impl Interpreter {

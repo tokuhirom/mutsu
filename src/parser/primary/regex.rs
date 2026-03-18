@@ -766,7 +766,7 @@ fn scan_to_delim_inner(
     None
 }
 
-pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
+pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // y/// is obsolete — reject with X::Obsolete
     if input.starts_with("y/")
         || input.starts_with("y[")
@@ -1250,6 +1250,11 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         let (spec, mut adverbs) = parse_match_adverbs(after_m)?;
         let spec = parse_compact_match_adverbs(spec, &mut adverbs);
         let (spec, _) = ws(spec)?;
+        // After stripping whitespace, check if this is a fat arrow pair (e.g., `m => 1000`).
+        // The initial `=>` check above only catches `m=>` without whitespace.
+        if spec.starts_with("=>") {
+            return Err(PError::expected("regex literal"));
+        }
         if let Some(open_ch) = spec.chars().next() {
             let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
             if is_delim {

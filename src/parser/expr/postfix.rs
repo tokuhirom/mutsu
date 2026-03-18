@@ -1264,6 +1264,8 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 }
             }
             // Parse method name
+            // Allow whitespace between dot and method name: `$x . abs` or `$x. abs`
+            let r = ws(r).map_or(r, |(r_ws, _)| r_ws);
             if let Ok((r, parsed_name)) =
                 take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
             {

@@ -167,8 +167,19 @@ impl Value {
             | (Value::Promise(_), Value::Promise(_))
             | (Value::Channel(_), Value::Channel(_))
             | (Value::Uni { .. }, Value::Uni { .. }) => self == other,
-            // Mixin (allomorphs): compare base values with eqv
-            (Value::Mixin(a, _), Value::Mixin(b, _)) => a.eqv(b),
+            // Mixin (allomorphs): compare both base values and mixin maps with eqv
+            (Value::Mixin(a, a_mix), Value::Mixin(b, b_mix)) => {
+                if !a.eqv(b) {
+                    return false;
+                }
+                // Compare mixin maps (e.g. Str part of allomorphs)
+                if a_mix.len() != b_mix.len() {
+                    return false;
+                }
+                a_mix
+                    .iter()
+                    .all(|(k, v)| b_mix.get(k).is_some_and(|bv| v.eqv(bv)))
+            }
             // Cross-type comparisons always return false for eqv
             _ => false,
         }

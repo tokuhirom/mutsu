@@ -43,8 +43,21 @@ impl Interpreter {
     fn candidate_dispatch_shape(&self, def: &FunctionDef) -> Vec<DispatchShape> {
         Self::dispatch_visible_params(def)
             .map(|p| {
+                // Include sigil-based implicit type constraint in the shape
+                // so that @-param and $-param are distinguishable.
+                let effective_type = if p.type_constraint.is_some() {
+                    p.type_constraint.clone()
+                } else if !p.slurpy && p.name.starts_with('@') {
+                    Some("__sigil_@__".to_string())
+                } else if !p.slurpy && p.name.starts_with('%') {
+                    Some("__sigil_%__".to_string())
+                } else if p.name.starts_with('&') {
+                    Some("__sigil_&__".to_string())
+                } else {
+                    None
+                };
                 (
-                    p.type_constraint.clone(),
+                    effective_type,
                     p.named,
                     p.sub_signature.is_some(),
                     p.literal_value.is_some(),
@@ -159,7 +172,13 @@ impl Interpreter {
             })
             .count();
         let typed_param_count = Self::dispatch_visible_params(def)
-            .filter(|p| p.type_constraint.is_some())
+            .filter(|p| {
+                p.type_constraint.is_some()
+                    || (!p.slurpy
+                        && (p.name.starts_with('@')
+                            || p.name.starts_with('%')
+                            || p.name.starts_with('&')))
+            })
             .count();
         let subsig_count = Self::dispatch_visible_params(def)
             .filter(|p| p.sub_signature.is_some())
