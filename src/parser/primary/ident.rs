@@ -1946,8 +1946,10 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || next == '"'
             || next == '‘'
             || next == '’'
+            || next == '‚'
             || next == '“'
             || next == '”'
+            || next == '„'
             || next == '｢'
             || next == '('
             || next.is_ascii_digit()

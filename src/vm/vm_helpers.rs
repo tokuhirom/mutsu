@@ -2621,8 +2621,8 @@ impl VM {
             return self.vm_call_on_value(inner.as_ref().clone(), args, compiled_fns);
         }
 
-        // Instance: CALL-ME — try compiled method path first
-        if matches!(target, Value::Instance { .. }) {
+        // Instance or Package (type object): CALL-ME — try compiled method path first
+        if matches!(target, Value::Instance { .. } | Value::Package(_)) {
             return self.try_compiled_method_or_interpret(target, "CALL-ME", args);
         }
 
