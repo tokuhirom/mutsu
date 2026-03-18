@@ -405,6 +405,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         }
         // Sigilless capture variable name: |c, |args, optionally followed by
         // a capture sub-signature: |c ($a, $b?)
+        // or a where constraint: |c where { ... }
         if let Ok((r_ident, name)) = ident(r)
             && !matches!(name.as_str(), "where" | "is")
         {
@@ -421,6 +422,15 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 p.sub_signature = Some(sub_params);
                 return Ok((r_ident, p));
             }
+            // Check for where constraint on named capture: |c where { ... }
+            let (r_ident, where_constraint) = if let Some(r2) = keyword("where", r_ident) {
+                let (r2, _) = ws1(r2)?;
+                let (r2, constraint) = parse_where_constraint_expr(r2)?;
+                (r2, Some(Box::new(constraint)))
+            } else {
+                (r_ident, None)
+            };
+            p.where_constraint = where_constraint;
             return Ok((r_ident, p));
         }
         // Bare |, possibly followed by traits/where
