@@ -481,7 +481,7 @@ impl Interpreter {
         if let Some(private_rest) = method.strip_prefix('!')
             && !matches!(
                 &target,
-                Value::Instance { .. } | Value::Package(_) | Value::Mixin(_, _)
+                Value::Instance { .. } | Value::Package(_) | Value::Mixin(..)
             )
         {
             // Owner-qualified: !Owner::method
@@ -994,11 +994,10 @@ impl Interpreter {
                     self.env.insert(name.clone(), value.clone());
                 }
                 for def in overloads {
-                    if is_private_call {
-                        if !def.is_private {
-                            continue;
-                        }
-                    } else if def.is_private || !self.method_args_match(&args, &def.param_defs) {
+                    // For private calls, only match private methods; for public calls, skip private
+                    if is_private_call != def.is_private
+                        || !self.method_args_match(&args, &def.param_defs)
+                    {
                         continue;
                     }
                     let role_attrs: HashMap<String, Value> = mixins
