@@ -336,9 +336,7 @@ fn try_parse_complex(word: &str) -> Option<Value> {
         return Some(Value::Complex(0.0, imag));
     }
     // Handle pure imaginary with special values: "Inf\i", "-Inf\i", "NaN\i"
-    if backslash_i
-        && let Some(imag) = parse_special_float(without_i)
-    {
+    if backslash_i && let Some(imag) = parse_special_float(without_i) {
         return Some(Value::Complex(0.0, imag));
     }
 
