@@ -136,9 +136,7 @@ fn apply_complement(
             if delete {
                 // Skip character
             } else if squeeze {
-                if !last_was_complement
-                    && let Some(rc) = complement_replacement
-                {
+                if !last_was_complement && let Some(rc) = complement_replacement {
                     result.push(rc);
                 }
             } else if let Some(rc) = complement_replacement {
