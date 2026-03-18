@@ -2230,6 +2230,10 @@ impl VM {
             for i in captured_slots.iter().copied() {
                 if let Some(name) = block_cc.locals.get(i)
                     && captured.contains_key(name)
+                    && !matches!(
+                        self.interpreter.get_shared_var(name),
+                        Some(Value::Array(..) | Value::Hash(..))
+                    )
                 {
                     self.interpreter
                         .env_mut()

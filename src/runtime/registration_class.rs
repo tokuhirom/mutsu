@@ -258,6 +258,7 @@ impl Interpreter {
         modifiers: ClassDeclModifiers<'_>,
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
+        self.clear_private_zeroarg_method_cache();
         let ClassDeclModifiers {
             class_is_rw,
             is_hidden,
@@ -1234,6 +1235,7 @@ impl Interpreter {
     /// Augment an existing class by adding methods (and attributes) from the body.
     /// This implements `augment class ClassName { ... }` (monkey-patching).
     pub(crate) fn augment_class(&mut self, name: &str, body: &[Stmt]) -> Result<(), RuntimeError> {
+        self.clear_private_zeroarg_method_cache();
         // Check if the class exists (user-defined or builtin)
         let is_builtin = !self.classes.contains_key(name);
         if is_builtin {
@@ -1462,6 +1464,7 @@ impl Interpreter {
         type_param_defs: &[ParamDef],
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
+        self.clear_private_zeroarg_method_cache();
         // Clean up stale punned class entry for this role name.
         self.classes.remove(name);
         self.hidden_classes.remove(name);
@@ -1807,6 +1810,7 @@ impl Interpreter {
     }
 
     pub(crate) fn register_cunion_class(&mut self, name: &str) {
+        self.clear_private_zeroarg_method_cache();
         self.cunion_classes.insert(name.to_string());
     }
 
@@ -1941,6 +1945,7 @@ impl Interpreter {
         if self.classes.contains_key(role_name) {
             return;
         }
+        self.clear_private_zeroarg_method_cache();
         let role_def = match self.roles.get(role_name) {
             Some(r) => r.clone(),
             None => return,
