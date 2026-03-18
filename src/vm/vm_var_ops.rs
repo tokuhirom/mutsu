@@ -129,10 +129,7 @@ impl VM {
     }
 
     fn call_exists_pos(&mut self, instance: &Value, idx: Value) -> Result<bool, RuntimeError> {
-        match self
-            .interpreter
-            .call_method_with_values(instance.clone(), "EXISTS-POS", vec![idx])
-        {
+        match self.try_compiled_method_or_interpret(instance.clone(), "EXISTS-POS", vec![idx]) {
             Ok(value) => Ok(value.truthy()),
             Err(err) if Self::is_method_not_found(&err) => Ok(false),
             Err(err) => Err(err),
@@ -150,8 +147,7 @@ impl VM {
             Value::Array(items, ..) => {
                 if let [Value::Whatever] = items.as_slice() {
                     let elems = self
-                        .interpreter
-                        .call_method_with_values(instance.clone(), "elems", vec![])
+                        .try_compiled_method_or_interpret(instance.clone(), "elems", vec![])
                         .unwrap_or(Value::Int(0));
                     let len = crate::runtime::to_int(&elems).max(0) as usize;
                     let mut pairs = Vec::with_capacity(len);
@@ -163,8 +159,7 @@ impl VM {
                 } else if let [Value::Num(f)] = items.as_slice() {
                     if f.is_infinite() && f.is_sign_positive() {
                         let elems = self
-                            .interpreter
-                            .call_method_with_values(instance.clone(), "elems", vec![])
+                            .try_compiled_method_or_interpret(instance.clone(), "elems", vec![])
                             .unwrap_or(Value::Int(0));
                         let len = crate::runtime::to_int(&elems).max(0) as usize;
                         let mut pairs = Vec::with_capacity(len);
@@ -190,8 +185,7 @@ impl VM {
             }
             Value::Whatever => {
                 let elems = self
-                    .interpreter
-                    .call_method_with_values(instance.clone(), "elems", vec![])
+                    .try_compiled_method_or_interpret(instance.clone(), "elems", vec![])
                     .unwrap_or(Value::Int(0));
                 let len = crate::runtime::to_int(&elems).max(0) as usize;
                 let mut pairs = Vec::with_capacity(len);
@@ -203,8 +197,7 @@ impl VM {
             }
             Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
                 let elems = self
-                    .interpreter
-                    .call_method_with_values(instance.clone(), "elems", vec![])
+                    .try_compiled_method_or_interpret(instance.clone(), "elems", vec![])
                     .unwrap_or(Value::Int(0));
                 let len = crate::runtime::to_int(&elems).max(0) as usize;
                 let mut pairs = Vec::with_capacity(len);
@@ -1104,8 +1097,11 @@ impl VM {
             (instance @ Value::Instance { .. }, Value::Str(key)) => {
                 let default = self.typed_container_default(&instance);
                 let result = self
-                    .interpreter
-                    .call_method_with_values(instance, "AT-KEY", vec![Value::Str(key.clone())])
+                    .try_compiled_method_or_interpret(
+                        instance,
+                        "AT-KEY",
+                        vec![Value::Str(key.clone())],
+                    )
                     .unwrap_or(Value::Nil);
                 if matches!(result, Value::Nil) {
                     default
@@ -1117,10 +1113,9 @@ impl VM {
                 let default = self.typed_container_default(&instance);
                 let fallback = instance.clone();
                 let result = self
-                    .interpreter
-                    .call_method_with_values(instance, "AT-POS", vec![Value::Int(i)])
+                    .try_compiled_method_or_interpret(instance, "AT-POS", vec![Value::Int(i)])
                     .or_else(|_| {
-                        self.interpreter.call_method_with_values(
+                        self.try_compiled_method_or_interpret(
                             fallback,
                             "AT-KEY",
                             vec![Value::Int(i)],
@@ -1133,16 +1128,16 @@ impl VM {
                     result
                 }
             }
-            (instance @ Value::Instance { .. }, Value::Array(keys, ..)) => Value::array(
-                keys.iter()
-                    .cloned()
-                    .map(|k| {
-                        self.interpreter
-                            .call_method_with_values(instance.clone(), "AT-KEY", vec![k])
-                            .unwrap_or(Value::Nil)
-                    })
-                    .collect(),
-            ),
+            (instance @ Value::Instance { .. }, Value::Array(keys, ..)) => {
+                let mut results = Vec::with_capacity(keys.len());
+                for k in keys.iter().cloned() {
+                    results.push(
+                        self.try_compiled_method_or_interpret(instance.clone(), "AT-KEY", vec![k])
+                            .unwrap_or(Value::Nil),
+                    );
+                }
+                Value::array(results)
+            }
             (Value::Str(_), Value::Str(_)) => {
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert(

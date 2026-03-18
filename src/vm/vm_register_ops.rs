@@ -579,9 +579,7 @@ impl VM {
                         .collect(),
                     _ => Vec::new(),
                 };
-                let buf = self
-                    .interpreter
-                    .call_method_with_values(buf_type, "new", items)?;
+                let buf = self.try_compiled_method_or_interpret(buf_type, "new", items)?;
                 let name_str = name.to_string();
                 self.locals_set_by_name(code, &name_str, buf.clone());
                 self.set_env_with_main_alias(&name_str, buf);

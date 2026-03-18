@@ -304,9 +304,7 @@ impl VM {
             return Ok(());
         }
         if let Some(callable) = call_me_override {
-            let result = self
-                .interpreter
-                .call_method_with_values(callable, "CALL-ME", args);
+            let result = self.try_compiled_method_or_interpret(callable, "CALL-ME", args);
             let result = self.interpreter.maybe_fetch_rw_proxy(result?, true)?;
             self.stack.push(result);
             self.env_dirty = true;
@@ -760,7 +758,7 @@ impl VM {
     }
 
     /// Try compiled method fast path; fall back to interpreter.
-    fn try_compiled_method_or_interpret(
+    pub(super) fn try_compiled_method_or_interpret(
         &mut self,
         target: Value,
         method: &str,

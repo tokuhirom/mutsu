@@ -482,8 +482,7 @@ impl VM {
         // If the value is an Instance, try calling the Numeric method
         if let Value::Instance { .. } = &val
             && let Ok(result) =
-                self.interpreter
-                    .call_method_with_values(val.clone(), "Numeric", vec![])
+                self.try_compiled_method_or_interpret(val.clone(), "Numeric", vec![])
         {
             self.stack.push(result);
             return Ok(());
@@ -537,25 +536,19 @@ impl VM {
         // If the value is an Instance, try calling the Stringy method, then Str
         if let Value::Instance { .. } = &val {
             if let Ok(result) =
-                self.interpreter
-                    .call_method_with_values(val.clone(), "Stringy", vec![])
+                self.try_compiled_method_or_interpret(val.clone(), "Stringy", vec![])
             {
                 self.stack.push(result);
                 return Ok(());
             }
-            if let Ok(result) = self
-                .interpreter
-                .call_method_with_values(val.clone(), "Str", vec![])
-            {
+            if let Ok(result) = self.try_compiled_method_or_interpret(val.clone(), "Str", vec![]) {
                 self.stack.push(result);
                 return Ok(());
             }
         }
         // Force LazyList before stringification
         if let Value::LazyList(_) = &val {
-            let result = self
-                .interpreter
-                .call_method_with_values(val, "Str", vec![])?;
+            let result = self.try_compiled_method_or_interpret(val, "Str", vec![])?;
             self.stack.push(result);
             return Ok(());
         }
@@ -618,30 +611,24 @@ impl VM {
 
     pub(super) fn exec_get_capture_var_op(&mut self, code: &CompiledCode, name_idx: u32) {
         let name = Self::const_str(code, name_idx);
-        let val = self
-            .interpreter
-            .env()
-            .get(name)
-            .cloned()
-            .unwrap_or_else(|| {
-                // $<foo> is sugar for $/{'foo'}: fall back to looking up $/ and indexing
-                if let Some(key) = name.strip_prefix('<').and_then(|s| s.strip_suffix('>'))
-                    && let Some(match_val) = self.interpreter.env().get("$/").cloned()
-                {
-                    return match &match_val {
-                        Value::Hash(map) => map.get(key).cloned().unwrap_or(Value::Nil),
-                        _ => self
-                            .interpreter
-                            .call_method_with_values(
-                                match_val,
-                                "AT-KEY",
-                                vec![Value::str(key.to_string())],
-                            )
-                            .unwrap_or(Value::Nil),
-                    };
-                }
-                Value::Nil
-            });
+        let val = if let Some(v) = self.interpreter.env().get(name).cloned() {
+            v
+        } else if let Some(key) = name.strip_prefix('<').and_then(|s| s.strip_suffix('>'))
+            && let Some(match_val) = self.interpreter.env().get("$/").cloned()
+        {
+            match &match_val {
+                Value::Hash(map) => map.get(key).cloned().unwrap_or(Value::Nil),
+                _ => self
+                    .try_compiled_method_or_interpret(
+                        match_val,
+                        "AT-KEY",
+                        vec![Value::str(key.to_string())],
+                    )
+                    .unwrap_or(Value::Nil),
+            }
+        } else {
+            Value::Nil
+        };
         self.stack.push(val);
     }
 
@@ -765,7 +752,7 @@ impl VM {
                             .into_iter()
                             .map(|v| Value::Int(runtime::to_int(&v)))
                             .collect::<Vec<_>>();
-                        assigned = self.interpreter.call_method_with_values(
+                        assigned = self.try_compiled_method_or_interpret(
                             Value::Package(class_name),
                             "new",
                             items,
@@ -1089,12 +1076,10 @@ impl VM {
                     if level < max_level {
                         let promoted = match max_level {
                             2 => self
-                                .interpreter
-                                .call_method_with_values(item.clone(), "Mix", vec![])
+                                .try_compiled_method_or_interpret(item.clone(), "Mix", vec![])
                                 .unwrap_or_else(|_| item.clone()),
                             1 => self
-                                .interpreter
-                                .call_method_with_values(item.clone(), "Bag", vec![])
+                                .try_compiled_method_or_interpret(item.clone(), "Bag", vec![])
                                 .unwrap_or_else(|_| item.clone()),
                             _ => item.clone(),
                         };
