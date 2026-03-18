@@ -4,7 +4,9 @@ use crate::symbol::Symbol;
 type CompiledFnMap = std::collections::HashMap<String, crate::opcode::CompiledFunction>;
 type ProtectBlockCompiled = std::sync::Arc<crate::opcode::CompiledCode>;
 type ProtectBlockCompiledFns = std::sync::Arc<CompiledFnMap>;
-type ProtectBlockCapturedSlots = std::sync::Arc<Vec<usize>>;
+type ProtectBlockCapturedBindings = std::sync::Arc<Vec<(usize, String)>>;
+type ProtectBlockWritebackBindings = std::sync::Arc<Vec<(usize, String)>>;
+type ProtectBlockCapturedNames = std::sync::Arc<Vec<String>>;
 /// (pre_phasers, enter_phasers, success_queue, failure_queue, post_phasers, body_main)
 pub(super) type SplitPhasers = (
     Vec<Stmt>,
@@ -1103,9 +1105,9 @@ impl Interpreter {
     /// caller.
     pub(crate) fn call_protect_block(&mut self, code: &Value) -> Result<Value, RuntimeError> {
         if let Value::Sub(data) = code {
-            let (compiled, compiled_fns, _captured_slots) =
+            let (compiled, compiled_fns, _captured_bindings, _writeback_bindings, captured_names) =
                 self.get_or_compile_protect_block_with_slots(data);
-            self.sync_shared_vars_for_names(data.env.keys().map(|name| name.as_str()));
+            self.sync_shared_vars_for_names(captured_names.iter().map(|name| name.as_str()));
             self.run_compiled_block(&compiled, compiled_fns.as_ref())
         } else {
             self.call_sub_value(code.clone(), Vec::new(), true)
@@ -1118,7 +1120,9 @@ impl Interpreter {
     ) -> (
         ProtectBlockCompiled,
         ProtectBlockCompiledFns,
-        ProtectBlockCapturedSlots,
+        ProtectBlockCapturedBindings,
+        ProtectBlockWritebackBindings,
+        ProtectBlockCapturedNames,
     ) {
         let entry = self.protect_block_cache.entry(data.id).or_insert_with(|| {
             let (compiled, compiled_fns) = if let Some(ref cc) = data.compiled_code {
@@ -1134,15 +1138,48 @@ impl Interpreter {
                     std::sync::Arc::new(compiled_fns),
                 )
             };
-            let captured_slots: Vec<usize> = compiled
+            let captured_bindings: Vec<(usize, String)> = compiled
                 .locals
                 .iter()
                 .enumerate()
-                .filter_map(|(idx, name)| data.env.contains_key(name).then_some(idx))
+                .filter(|(_, name)| data.env.contains_key(*name))
+                .map(|(idx, name)| (idx, name.clone()))
                 .collect();
-            (compiled, compiled_fns, std::sync::Arc::new(captured_slots))
+            let mut assigned_slots = std::collections::HashSet::new();
+            for op in &compiled.ops {
+                match op {
+                    crate::opcode::OpCode::SetLocal(slot)
+                    | crate::opcode::OpCode::AssignExprLocal(slot)
+                    | crate::opcode::OpCode::PreIncrement(slot)
+                    | crate::opcode::OpCode::PreDecrement(slot)
+                    | crate::opcode::OpCode::PostIncrement(slot)
+                    | crate::opcode::OpCode::PostDecrement(slot) => {
+                        assigned_slots.insert(*slot as usize);
+                    }
+                    _ => {}
+                }
+            }
+            let writeback_bindings: Vec<(usize, String)> = captured_bindings
+                .iter()
+                .filter(|(slot, _)| assigned_slots.contains(slot))
+                .cloned()
+                .collect();
+            let captured_names = data.env.keys().cloned().collect();
+            (
+                compiled,
+                compiled_fns,
+                std::sync::Arc::new(captured_bindings),
+                std::sync::Arc::new(writeback_bindings),
+                std::sync::Arc::new(captured_names),
+            )
         });
-        (entry.0.clone(), entry.1.clone(), entry.2.clone())
+        (
+            entry.0.clone(),
+            entry.1.clone(),
+            entry.2.clone(),
+            entry.3.clone(),
+            entry.4.clone(),
+        )
     }
 
     /// Run pre-compiled bytecode and return the `$_` topic value.

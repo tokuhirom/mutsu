@@ -88,7 +88,9 @@ fn current_process_id() -> i64 {
 type ProtectBlockCacheEntry = (
     Arc<CompiledCode>,
     Arc<HashMap<String, CompiledFunction>>,
-    Arc<Vec<usize>>,
+    Arc<Vec<(usize, String)>>,
+    Arc<Vec<(usize, String)>>,
+    Arc<Vec<String>>,
 );
 type ProtectBlockCache = HashMap<u64, ProtectBlockCacheEntry>;
 
