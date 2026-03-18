@@ -299,30 +299,46 @@ pub(crate) fn parse_compound_assign_op(input: &str) -> Option<(&str, CompoundAss
 }
 
 pub(crate) fn parse_custom_compound_assign_op(input: &str) -> Option<(&str, String)> {
+    // Try word-like custom operators (alphabetic/underscore start)
     let mut chars = input.char_indices();
     let (_, first) = chars.next()?;
-    if !first.is_alphabetic() && first != '_' {
-        return None;
-    }
-    let mut end = first.len_utf8();
-    for (idx, ch) in chars {
-        if ch.is_alphanumeric() || ch == '_' || ch == '-' {
-            end = idx + ch.len_utf8();
-        } else {
-            break;
+    if first.is_alphabetic() || first == '_' {
+        let mut end = first.len_utf8();
+        for (idx, ch) in chars {
+            if ch.is_alphanumeric() || ch == '_' || ch == '-' {
+                end = idx + ch.len_utf8();
+            } else {
+                break;
+            }
+        }
+        let name = &input[..end];
+        if !matches!(
+            name,
+            "if" | "unless"
+                | "for"
+                | "while"
+                | "until"
+                | "given"
+                | "when"
+                | "with"
+                | "without"
+                | "not"
+        ) {
+            let rest = &input[end..];
+            if let Some(rest) = rest.strip_prefix('=') {
+                return Some((rest, name.to_string()));
+            }
         }
     }
-    let name = &input[..end];
-    if matches!(
-        name,
-        "if" | "unless" | "for" | "while" | "until" | "given" | "when" | "with" | "without" | "not"
-    ) {
-        return None;
+
+    // Try user-declared symbol infix operators (e.g. ⋅= for infix:<⋅>)
+    if let Some((symbol, len)) = super::simple::match_user_declared_infix_symbol_op(input) {
+        let rest = &input[len..];
+        if let Some(rest) = rest.strip_prefix('=') {
+            return Some((rest, symbol));
+        }
     }
-    let rest = &input[end..];
-    if let Some(rest) = rest.strip_prefix('=') {
-        return Some((rest, name.to_string()));
-    }
+
     None
 }
 
