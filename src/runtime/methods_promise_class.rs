@@ -15,29 +15,7 @@ impl Interpreter {
         }
         if let Some(cls) = self.promise_class_name(target) {
             let block = args.first().cloned().unwrap_or(Value::Nil);
-            let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
-            let ret = Value::Promise(promise.clone());
-            let mut thread_interp = self.clone_for_thread();
-            std::thread::spawn(
-                move || match thread_interp.call_sub_value(block, vec![], false) {
-                    Ok(result) => {
-                        let output = std::mem::take(&mut thread_interp.output);
-                        let stderr = std::mem::take(&mut thread_interp.stderr_output);
-                        promise.keep(result, output, stderr);
-                    }
-                    Err(e) => {
-                        let output = std::mem::take(&mut thread_interp.output);
-                        let stderr = std::mem::take(&mut thread_interp.stderr_output);
-                        let error_val = if let Some(ex) = e.exception {
-                            *ex
-                        } else {
-                            Value::str(e.message)
-                        };
-                        promise.break_with(error_val, output, stderr);
-                    }
-                },
-            );
-            return Some(Ok(ret));
+            return Some(Ok(self.spawn_callable_promise(block, Symbol::intern(&cls))));
         }
         // Thread.start
         if let Value::Package(class_name) = target
