@@ -1514,6 +1514,17 @@ impl VM {
             self.interpreter.maybe_fetch_rw_proxy(result?, sub_is_rw)?
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             native_result?
+        } else if !self.interpreter.has_proto(&name)
+            && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
+        {
+            let cf_auto_fetch = !cf.is_raw;
+            let pkg = self.interpreter.current_package().to_string();
+            self.interpreter
+                .set_pending_call_arg_sources(arg_sources.clone());
+            let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name);
+            self.interpreter.set_pending_call_arg_sources(None);
+            self.interpreter
+                .maybe_fetch_rw_proxy(result?, cf_auto_fetch)?
         } else {
             // Sync VM locals to env before spawning threads so closures capture them
             if name == "start" {
