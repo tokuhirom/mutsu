@@ -99,6 +99,7 @@ impl VM {
         global: bool,
         nth_idx: Option<u32>,
         x_count: Option<u32>,
+        perl5: bool,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
         let replacement = normalize_subst_replacement(Self::const_str(code, replacement_idx));
@@ -113,7 +114,12 @@ impl VM {
         let text = target.to_string_value();
 
         if nth_spec.is_none() && x_count.is_none() && !global {
-            if let Some((start, end)) = self.interpreter.regex_find_first(&pattern, &text) {
+            let found = if perl5 {
+                self.interpreter.regex_find_first_p5(&pattern, &text)
+            } else {
+                self.interpreter.regex_find_first(&pattern, &text)
+            };
+            if let Some((start, end)) = found {
                 let out = Self::apply_substitutions(&text, &[(start, end)], &replacement, samemark);
                 let result = Value::str(out);
                 self.interpreter
@@ -127,7 +133,11 @@ impl VM {
             return Ok(());
         }
 
-        let all_matches = self.interpreter.regex_find_all(&pattern, &text);
+        let all_matches = if perl5 {
+            self.interpreter.regex_find_all_p5(&pattern, &text)
+        } else {
+            self.interpreter.regex_find_all(&pattern, &text)
+        };
         let ranges = if global && nth_spec.is_none() && x_count.is_none() {
             all_matches
         } else {
@@ -159,6 +169,7 @@ impl VM {
         global: bool,
         nth_idx: Option<u32>,
         x_count: Option<u32>,
+        perl5: bool,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
         let replacement = normalize_subst_replacement(Self::const_str(code, replacement_idx));
@@ -173,7 +184,12 @@ impl VM {
         let text = target.to_string_value();
 
         if nth_spec.is_none() && x_count.is_none() && !global {
-            if let Some((start, end)) = self.interpreter.regex_find_first(&pattern, &text) {
+            let found = if perl5 {
+                self.interpreter.regex_find_first_p5(&pattern, &text)
+            } else {
+                self.interpreter.regex_find_first(&pattern, &text)
+            };
+            if let Some((start, end)) = found {
                 let out = Self::apply_substitutions(&text, &[(start, end)], &replacement, samemark);
                 self.stack.push(Value::str(out));
             } else {
@@ -182,7 +198,11 @@ impl VM {
             return Ok(());
         }
 
-        let all_matches = self.interpreter.regex_find_all(&pattern, &text);
+        let all_matches = if perl5 {
+            self.interpreter.regex_find_all_p5(&pattern, &text)
+        } else {
+            self.interpreter.regex_find_all(&pattern, &text)
+        };
         let ranges = if global && nth_spec.is_none() && x_count.is_none() {
             all_matches
         } else {

@@ -104,6 +104,7 @@ pub(crate) enum Expr {
         global: bool,
         nth: Option<String>,
         x: Option<usize>,
+        perl5: bool,
     },
     NonDestructiveSubst {
         pattern: String,
@@ -112,6 +113,7 @@ pub(crate) enum Expr {
         global: bool,
         nth: Option<String>,
         x: Option<usize>,
+        perl5: bool,
     },
     Transliterate {
         from: String,

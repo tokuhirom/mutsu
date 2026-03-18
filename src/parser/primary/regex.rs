@@ -214,7 +214,7 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
             adverbs.pos = true;
         } else if name == "c" || name == "continue" {
             adverbs.continue_ = true;
-        } else if name.eq_ignore_ascii_case("p5") {
+        } else if name.eq_ignore_ascii_case("p5") || name.eq_ignore_ascii_case("perl5") {
             adverbs.perl5 = true;
         } else if name == "nth" {
             if let Some(raw) = arg {
@@ -368,6 +368,7 @@ fn has_unescaped_statement_boundary(input: &str) -> bool {
 }
 
 fn parse_subst_replacement_expr(input: &str) -> PResult<'_, String> {
+    let (input, _) = ws(input)?;
     let (rest, expr) = super::primary(input)?;
     let replacement = match expr {
         Expr::Literal(value) => value.to_string_value(),
@@ -391,11 +392,22 @@ fn build_topic_subst_expr(
         ));
     }
 
-    let pattern = apply_inline_match_adverbs(pattern, adverbs);
-    validate_regex_pattern_or_perror(&pattern)?;
+    let pattern = if adverbs.perl5 {
+        pattern
+    } else {
+        let p = apply_inline_match_adverbs(pattern, adverbs);
+        validate_regex_pattern_or_perror(&p)?;
+        p
+    };
+
+    let regex_value = if adverbs.perl5 {
+        build_regex_with_adverbs(pattern, adverbs)
+    } else {
+        Value::Regex(Arc::new(pattern))
+    };
 
     let mut args = vec![
-        Expr::Literal(Value::Regex(Arc::new(pattern))),
+        Expr::Literal(regex_value),
         Expr::AnonSub {
             body: vec![Stmt::Expr(replacement)],
             is_rw: false,
@@ -903,6 +915,8 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         } else {
             (after_s, MatchAdverbs::default())
         };
+        // Allow whitespace between adverbs and delimiter (e.g. s:Perl5 /pattern/)
+        let spec = if first_ch == ':' { ws(spec)?.0 } else { spec };
         if let Some(open_ch) = spec.chars().next() {
             let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
             // Don't treat s.identifier as substitution when the identifier is 2+ chars
@@ -920,7 +934,12 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     other => (other, false),
                 };
                 let r = &spec[open_ch.len_utf8()..];
-                if let Some((pattern, after_pat)) = scan_to_delim(r, open_ch, close_ch, is_paired) {
+                let scan_fn = if adverbs.perl5 {
+                    scan_to_delim_p5
+                } else {
+                    scan_to_delim
+                };
+                if let Some((pattern, after_pat)) = scan_fn(r, open_ch, close_ch, is_paired) {
                     // For paired delimiters, skip optional whitespace and opening delimiter
                     let r2 = if is_paired {
                         let (r2, _) = ws(after_pat)?;
@@ -941,8 +960,13 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         {
                             return Err(PError::expected("substitution"));
                         }
-                        let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
-                        validate_regex_pattern_or_perror(&pattern)?;
+                        let pattern = if adverbs.perl5 {
+                            pattern.to_string()
+                        } else {
+                            let p = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                            validate_regex_pattern_or_perror(&p)?;
+                            p
+                        };
                         return Ok((
                             rest,
                             Expr::Subst {
@@ -952,36 +976,43 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 global: adverbs.global,
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
+                                perl5: adverbs.perl5,
                             },
                         ));
                     }
                     let (after_pat_ws, _) = ws(after_pat)?;
                     if let Some(after_eq) = after_pat_ws.strip_prefix('=') {
-                        let (rest, replacement) = parse_subst_replacement_expr(after_eq)?;
-                        if !is_paired
-                            && open_ch == '-'
-                            && (has_unescaped_statement_boundary(pattern)
-                                || has_unescaped_statement_boundary(&replacement))
-                        {
-                            return Err(PError::expected("substitution"));
+                        // Try literal replacement first; fall back to expression
+                        if let Ok((rest, replacement)) = parse_subst_replacement_expr(after_eq) {
+                            if !is_paired
+                                && open_ch == '-'
+                                && (has_unescaped_statement_boundary(pattern)
+                                    || has_unescaped_statement_boundary(&replacement))
+                            {
+                                return Err(PError::expected("substitution"));
+                            }
+                            let pattern = if adverbs.perl5 {
+                                pattern.to_string()
+                            } else {
+                                let p = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                                validate_regex_pattern_or_perror(&p)?;
+                                p
+                            };
+                            return Ok((
+                                rest,
+                                Expr::Subst {
+                                    pattern,
+                                    replacement,
+                                    samemark: adverbs.samemark,
+                                    global: adverbs.global,
+                                    nth: adverbs.nth.clone(),
+                                    x: adverbs.repeat,
+                                    perl5: adverbs.perl5,
+                                },
+                            ));
                         }
-                        let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
-                        validate_regex_pattern_or_perror(&pattern)?;
-                        return Ok((
-                            rest,
-                            Expr::Subst {
-                                pattern,
-                                replacement,
-                                samemark: adverbs.samemark,
-                                global: adverbs.global,
-                                nth: adverbs.nth.clone(),
-                                x: adverbs.repeat,
-                            },
-                        ));
-                    }
-                    let (after_pat_ws, _) = ws(after_pat)?;
-                    if let Some(after_eq) = after_pat_ws.strip_prefix('=') {
-                        let (rest, replacement) = expression(after_eq)?;
+                        let (after_eq_ws, _) = ws(after_eq)?;
+                        let (rest, replacement) = expression(after_eq_ws)?;
                         return Ok((
                             rest,
                             build_topic_subst_expr(pattern.to_string(), replacement, &adverbs)?,
@@ -1015,7 +1046,12 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     other => (other, false),
                 };
                 let r = &spec[open_ch.len_utf8()..];
-                if let Some((pattern, after_pat)) = scan_to_delim(r, open_ch, close_ch, is_paired) {
+                let scan_fn = if adverbs.perl5 {
+                    scan_to_delim_p5
+                } else {
+                    scan_to_delim
+                };
+                if let Some((pattern, after_pat)) = scan_fn(r, open_ch, close_ch, is_paired) {
                     let r2 = if is_paired {
                         let (r2, _) = ws(after_pat)?;
                         r2.strip_prefix(open_ch).unwrap_or(r2)
@@ -1035,7 +1071,11 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         {
                             return Err(PError::expected("substitution"));
                         }
-                        let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                        let pattern = if adverbs.perl5 {
+                            pattern.to_string()
+                        } else {
+                            apply_inline_match_adverbs(pattern.to_string(), &adverbs)
+                        };
                         return Ok((
                             rest,
                             Expr::NonDestructiveSubst {
@@ -1045,6 +1085,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 global: adverbs.global,
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
+                                perl5: adverbs.perl5,
                             },
                         ));
                     }
@@ -1058,7 +1099,11 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         {
                             return Err(PError::expected("substitution"));
                         }
-                        let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                        let pattern = if adverbs.perl5 {
+                            pattern.to_string()
+                        } else {
+                            apply_inline_match_adverbs(pattern.to_string(), &adverbs)
+                        };
                         return Ok((
                             rest,
                             Expr::NonDestructiveSubst {
@@ -1068,6 +1113,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 global: adverbs.global,
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
+                                perl5: adverbs.perl5,
                             },
                         ));
                     }
@@ -1119,6 +1165,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     global: false,
                     nth: None,
                     x: None,
+                    perl5: false,
                 },
             ));
         }

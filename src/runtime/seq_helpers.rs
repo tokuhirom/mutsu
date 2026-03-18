@@ -1024,7 +1024,11 @@ impl Interpreter {
     }
 
     #[cfg(feature = "pcre2")]
-    fn regex_match_with_captures_p5(&self, pattern: &str, text: &str) -> Option<RegexCaptures> {
+    pub(super) fn regex_match_with_captures_p5(
+        &self,
+        pattern: &str,
+        text: &str,
+    ) -> Option<RegexCaptures> {
         let re = self.compile_p5_regex(pattern)?;
         let mut locs = re.capture_locations();
         let m0 = re.captures_read(&mut locs, text.as_bytes()).ok()??;
@@ -1059,7 +1063,11 @@ impl Interpreter {
     }
 
     #[cfg(feature = "pcre2")]
-    fn regex_match_all_with_captures_p5(&self, pattern: &str, text: &str) -> Vec<RegexCaptures> {
+    pub(super) fn regex_match_all_with_captures_p5(
+        &self,
+        pattern: &str,
+        text: &str,
+    ) -> Vec<RegexCaptures> {
         let Some(re) = self.compile_p5_regex(pattern) else {
             return Vec::new();
         };
@@ -1116,6 +1124,62 @@ impl Interpreter {
             out.push(item);
         }
         out
+    }
+
+    /// Find first P5 regex match, returning (byte_start, byte_end) converted to
+    /// char-index pairs for compatibility with `apply_substitutions`.
+    #[cfg(feature = "pcre2")]
+    pub(crate) fn regex_find_first_p5(&self, pattern: &str, text: &str) -> Option<(usize, usize)> {
+        let re = self.compile_p5_regex(pattern)?;
+        let bytes = text.as_bytes();
+        let mut locs = re.capture_locations();
+        let m0 = re.captures_read(&mut locs, bytes).ok()??;
+        let byte_start = m0.start();
+        let byte_end = m0.end();
+        // Convert byte offsets to char indices
+        let char_start = text[..byte_start].chars().count();
+        let char_end = text[..byte_end].chars().count();
+        Some((char_start, char_end))
+    }
+
+    #[cfg(not(feature = "pcre2"))]
+    pub(crate) fn regex_find_first_p5(&self, pattern: &str, text: &str) -> Option<(usize, usize)> {
+        // Fallback: convert P5 pattern and use Raku regex engine
+        self.regex_find_first(pattern, text)
+    }
+
+    /// Find all non-overlapping P5 regex matches, returning char-index pairs.
+    #[cfg(feature = "pcre2")]
+    pub(crate) fn regex_find_all_p5(&self, pattern: &str, text: &str) -> Vec<(usize, usize)> {
+        let Some(re) = self.compile_p5_regex(pattern) else {
+            return Vec::new();
+        };
+        let bytes = text.as_bytes();
+        let mut results = Vec::new();
+        let mut start = 0usize;
+        let mut locs = re.capture_locations();
+        while start <= bytes.len() {
+            let Ok(Some(m0)) = re.captures_read_at(&mut locs, bytes, start) else {
+                break;
+            };
+            let byte_start = m0.start();
+            let byte_end = m0.end();
+            let char_start = text[..byte_start].chars().count();
+            let char_end = text[..byte_end].chars().count();
+            results.push((char_start, char_end));
+            if m0.end() == start {
+                start += 1;
+            } else {
+                start = m0.end();
+            }
+        }
+        results
+    }
+
+    #[cfg(not(feature = "pcre2"))]
+    pub(crate) fn regex_find_all_p5(&self, pattern: &str, text: &str) -> Vec<(usize, usize)> {
+        // Fallback: use Raku regex engine
+        self.regex_find_all(pattern, text)
     }
 
     /// Extract the regex pattern string from a named token/regex definition.
