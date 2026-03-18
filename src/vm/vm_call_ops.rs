@@ -2179,7 +2179,7 @@ impl VM {
     /// of creating a new VM.
     fn exec_protect_block_inline(
         &mut self,
-        _outer_code: &CompiledCode,
+        outer_code: &CompiledCode,
         code_val: &Value,
     ) -> Result<Value, RuntimeError> {
         let (block_cc, block_fns, captured_env, captured_bindings, writeback_bindings) =
@@ -2213,13 +2213,31 @@ impl VM {
             };
 
         // Save/swap stack and locals for the block
-        let saved_locals = std::mem::take(&mut self.locals);
+        let mut saved_locals = std::mem::take(&mut self.locals);
         let saved_stack = std::mem::take(&mut self.stack);
+        let outer_local_slots: std::collections::HashMap<&str, usize> = outer_code
+            .locals
+            .iter()
+            .enumerate()
+            .map(|(idx, name)| (name.as_str(), idx))
+            .collect();
 
         // Initialize locals for the block
         self.locals = vec![Value::Nil; block_cc.locals.len()];
         if captured_env.is_some() {
             for (slot, name) in captured_bindings.iter() {
+                if (name.starts_with('@') || name.starts_with('%'))
+                    && let Some(val) = self.interpreter.get_shared_var(name)
+                {
+                    self.locals[*slot] = val;
+                    continue;
+                }
+                if let Some(outer_slot) = outer_local_slots.get(name.as_str())
+                    && let Some(val) = saved_locals.get(*outer_slot)
+                {
+                    self.locals[*slot] = val.clone();
+                    continue;
+                }
                 if let Some(val) = self.interpreter.env().get(name) {
                     self.locals[*slot] = val.clone();
                 }
@@ -2239,6 +2257,11 @@ impl VM {
         // Sync locals back to env
         if let Some(captured) = captured_env {
             for (slot, name) in writeback_bindings.iter() {
+                if let Some(outer_slot) = outer_local_slots.get(name.as_str())
+                    && let Some(target) = saved_locals.get_mut(*outer_slot)
+                {
+                    *target = self.locals[*slot].clone();
+                }
                 if captured.contains_key(name)
                     && !matches!(
                         self.interpreter.get_shared_var(name),

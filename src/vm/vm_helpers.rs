@@ -1930,6 +1930,10 @@ impl VM {
         self.interpreter.pop_routine();
         self.interpreter.pop_block();
 
+        if self.env_dirty {
+            self.sync_locals_from_env(cc);
+        }
+
         // Sync locals back to env so captured variable changes are visible
         for (i, local_name) in cc.locals.iter().enumerate() {
             if !local_name.is_empty() {
