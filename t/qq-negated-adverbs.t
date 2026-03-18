@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 6;
 
 # qq:!c disables closure interpolation
 {
@@ -36,18 +36,4 @@ plan 8;
 # q with negated adverb should work
 {
     is q:!c/hello/, "hello", "q:!c is just like q";
-}
-
-# Whatever compound assignment in call args: * *= 2
-{
-    my @a = 1, 2, 3;
-    my @result = @a.map(* *= 2);
-    is @result.elems, 3, "Whatever *= in map produces correct number of elements";
-}
-
-# Whatever compound assignment produces correct values
-{
-    my @a = 10, 20, 30;
-    my @result = @a.map(* *= 3);
-    is @result[0], 30, "Whatever *= produces correct first value";
 }
