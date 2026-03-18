@@ -11,6 +11,38 @@ struct ProcOptions {
 }
 
 impl Interpreter {
+    pub(crate) fn spawn_callable_promise(&mut self, block: Value, class_name: Symbol) -> Value {
+        use crate::value::SharedPromise;
+
+        let promise = SharedPromise::new_with_class(class_name);
+        let ret = Value::Promise(promise.clone());
+        let thread_interp = self.clone_for_thread();
+
+        std::thread::spawn(move || {
+            let vm = crate::vm::VM::new(thread_interp);
+            let (mut thread_interp, result) = vm.call_value(block, vec![]);
+            match result {
+                Ok(result) => {
+                    let output = std::mem::take(&mut thread_interp.output);
+                    let stderr = std::mem::take(&mut thread_interp.stderr_output);
+                    promise.keep(result, output, stderr);
+                }
+                Err(e) => {
+                    let output = std::mem::take(&mut thread_interp.output);
+                    let stderr = std::mem::take(&mut thread_interp.stderr_output);
+                    let error_val = if let Some(ex) = e.exception {
+                        *ex
+                    } else {
+                        Value::str(e.message)
+                    };
+                    promise.break_with(error_val, output, stderr);
+                }
+            }
+        });
+
+        ret
+    }
+
     fn missing_symbol_name_from_failure(value: &Value) -> Option<String> {
         let Value::Instance {
             class_name,
@@ -1005,34 +1037,8 @@ impl Interpreter {
 
     /// `start { ... }` — spawn a thread to execute the block and return a Promise.
     pub(super) fn builtin_start(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
-        use crate::value::SharedPromise;
-
         let block = args.into_iter().next().unwrap_or(Value::Nil);
-        let promise = SharedPromise::new();
-        let ret = Value::Promise(promise.clone());
-        let mut thread_interp = self.clone_for_thread();
-
-        std::thread::spawn(
-            move || match thread_interp.call_sub_value(block, vec![], false) {
-                Ok(result) => {
-                    let output = std::mem::take(&mut thread_interp.output);
-                    let stderr = std::mem::take(&mut thread_interp.stderr_output);
-                    promise.keep(result, output, stderr);
-                }
-                Err(e) => {
-                    let output = std::mem::take(&mut thread_interp.output);
-                    let stderr = std::mem::take(&mut thread_interp.stderr_output);
-                    let error_val = if let Some(ex) = e.exception {
-                        *ex
-                    } else {
-                        Value::str(e.message)
-                    };
-                    promise.break_with(error_val, output, stderr);
-                }
-            },
-        );
-
-        Ok(ret)
+        Ok(self.spawn_callable_promise(block, Symbol::intern("Promise")))
     }
 
     /// `await` — block until Promise(s) resolve, then return their results.

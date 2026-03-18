@@ -232,6 +232,17 @@ impl VM {
         )
     }
 
+    /// Invoke a callable value using the VM fast paths when available and
+    /// return the interpreter state to the caller.
+    pub(crate) fn call_value(
+        mut self,
+        target: Value,
+        args: Vec<Value>,
+    ) -> (Interpreter, Result<Value, RuntimeError>) {
+        let result = self.vm_call_on_value(target, args, None);
+        (self.interpreter, result)
+    }
+
     /// Run compiled bytecode without consuming self.
     /// Used by map/grep to avoid VM creation/destruction per iteration.
     pub(crate) fn run_reuse(
