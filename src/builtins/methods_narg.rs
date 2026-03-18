@@ -262,6 +262,22 @@ pub(crate) fn native_method_1arg(
             let result: String = s.chars().take(keep).collect();
             Some(Ok(Value::str(result)))
         }
+        "uniprop" => {
+            let prop_name = arg.to_string_value();
+            let ch = match target {
+                Value::Int(i) => char::from_u32(*i as u32),
+                _ => {
+                    let s = target.to_string_value();
+                    s.chars().next()
+                }
+            };
+            let Some(ch) = ch else {
+                return Some(Ok(Value::str_from("Unknown")));
+            };
+            Some(Ok(Value::str(crate::builtins::unicode::unicode_property(
+                ch, &prop_name,
+            ))))
+        }
         "contains" => {
             if let Value::Package(type_name) = arg {
                 return Some(Err(RuntimeError::new(format!(
