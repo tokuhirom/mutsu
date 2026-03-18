@@ -1002,6 +1002,21 @@ pub(crate) fn native_method_1arg(
                         Value::array(result)
                     }
                 }
+                Value::Str(s) => {
+                    let count = s.trim().parse::<i64>().unwrap_or(0).max(0) as usize;
+                    if count == 0 || items.is_empty() {
+                        Value::array(Vec::new())
+                    } else {
+                        let mut result = Vec::with_capacity(count.min(items.len()));
+                        for _ in 0..count.min(items.len()) {
+                            let idx = (crate::builtins::rng::builtin_rand() * items.len() as f64)
+                                as usize
+                                % items.len();
+                            result.push(items.swap_remove(idx));
+                        }
+                        Value::array(result)
+                    }
+                }
                 _ => return None,
             }))
         }
