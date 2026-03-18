@@ -2083,6 +2083,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     let v = from + builtin_rand() * (to - from);
                     return Some(Ok(Value::Num(v)));
                 }
+                // Cool types: numify first (e.g., List.rand returns rand in 0..^elems)
+                Value::Array(items, ..) => items.len() as f64,
+                Value::Seq(items) => items.len() as f64,
+                Value::Str(s) => s.parse::<f64>().unwrap_or(0.0),
+                Value::Bool(b) => {
+                    if *b {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
                 _ => return None,
             };
             Some(Ok(Value::Num(builtin_rand() * max)))

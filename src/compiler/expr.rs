@@ -2168,9 +2168,22 @@ impl Compiler {
                         self.code.emit(OpCode::LoadNil);
                     }
                 }
-                Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
+                Stmt::Block(inner) => {
                     // Block in expression context: compile as scoped block
                     // that returns its last value, with scope isolation.
+                    self.compile_do_block_expr_scoped(inner, &None);
+                }
+                Stmt::SyntheticBlock(inner)
+                    if inner
+                        .last()
+                        .is_some_and(|s| matches!(s, Stmt::MarkSigillessReadonly(_))) =>
+                {
+                    // Sigilless var declarations (VarDecl + MarkSigillessReadonly)
+                    // should NOT isolate scope — the variable must be visible in
+                    // the enclosing scope.
+                    self.compile_block_inline(inner);
+                }
+                Stmt::SyntheticBlock(inner) => {
                     self.compile_do_block_expr_scoped(inner, &None);
                 }
                 _ => {

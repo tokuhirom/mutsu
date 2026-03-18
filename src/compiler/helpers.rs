@@ -2150,6 +2150,15 @@ impl Compiler {
             let is_last = i == stmts.len() - 1;
             if is_last {
                 match stmt {
+                    // MarkSigillessReadonly at block-final position: compile
+                    // the mark statement, then load the variable's value so
+                    // `my \x = 42` used in expression context returns 42.
+                    Stmt::MarkSigillessReadonly(name) => {
+                        self.compile_stmt(stmt);
+                        self.compile_expr(&Expr::BareWord(name.clone()));
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
                     Stmt::Expr(expr) => {
                         self.compile_expr(expr);
                         // Don't emit Pop — leave value on stack as block's return value

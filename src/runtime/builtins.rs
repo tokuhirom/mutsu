@@ -3130,6 +3130,7 @@ impl Interpreter {
                 | "atan2"
                 | "substr"
                 | "words"
+                | "rand"
         )
     }
 
