@@ -487,9 +487,28 @@ fn build_regex_with_adverbs(pattern: String, adverbs: &MatchAdverbs) -> Value {
 /// is collected into an `Array` node, producing one arg per group.
 pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Expr>> {
     fn parse_call_arg_expr(input: &str) -> PResult<'_, Expr> {
-        crate::parser::primary::misc::reduction_call_style_expr(input)
+        let (rest, expr) = crate::parser::primary::misc::reduction_call_style_expr(input)
             .or_else(|_| try_parse_assign_expr(input))
-            .or_else(|_| expression(input))
+            .or_else(|_| expression(input))?;
+        // Handle compound assignment on non-variable expressions in argument position
+        // (e.g., `* *= 2` creates WhateverCode that mutates via compound assign).
+        let (rest_ws, _) = crate::parser::helpers::ws(rest)?;
+        if let Some((stripped, op)) = crate::parser::stmt::assign::parse_compound_assign_op(rest_ws)
+        {
+            let (r, _) = crate::parser::helpers::ws(stripped)?;
+            let (r, rhs) = expression(r)?;
+            let mut compound_expr = Expr::Binary {
+                left: Box::new(expr),
+                op: op.token_kind(),
+                right: Box::new(rhs),
+            };
+            // Apply WhateverCode wrapping (e.g., `* *= 2` → WhateverCode lambda)
+            if crate::parser::expr::should_wrap_whatevercode(&compound_expr) {
+                compound_expr = crate::parser::expr::wrap_whatevercode(&compound_expr);
+            }
+            return Ok((r, compound_expr));
+        }
+        Ok((rest, expr))
     }
 
     if input.starts_with(')') {

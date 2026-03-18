@@ -508,6 +508,30 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
         remaining_len: err.remaining_len.or(Some(input.len())),
         exception: None,
     })?;
+    // Handle compound assignment on non-variable expressions in argument position
+    // (e.g., `* *= 2` creates WhateverCode that mutates via compound assign).
+    let (rest_ws, _) = ws(rest)?;
+    if let Some((stripped, op)) = super::assign::parse_compound_assign_op(rest_ws) {
+        let (r, _) = ws(stripped)?;
+        let (r, rhs) = expression(r).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected right-hand expression after compound assignment",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
+        })?;
+        let mut compound_expr = Expr::Binary {
+            left: Box::new(expr),
+            op: op.token_kind(),
+            right: Box::new(rhs),
+        };
+        // Apply WhateverCode wrapping (e.g., `* *= 2` → WhateverCode lambda)
+        if crate::parser::expr::should_wrap_whatevercode(&compound_expr) {
+            compound_expr = crate::parser::expr::wrap_whatevercode(&compound_expr);
+        }
+        return Ok((r, CallArg::Positional(compound_expr)));
+    }
     Ok((rest, CallArg::Positional(expr)))
 }
 
