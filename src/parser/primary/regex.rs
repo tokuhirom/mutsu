@@ -487,9 +487,26 @@ fn build_regex_with_adverbs(pattern: String, adverbs: &MatchAdverbs) -> Value {
 /// is collected into an `Array` node, producing one arg per group.
 pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Expr>> {
     fn parse_call_arg_expr(input: &str) -> PResult<'_, Expr> {
-        let (rest, expr) = crate::parser::primary::misc::reduction_call_style_expr(input)
-            .or_else(|_| try_parse_assign_expr(input))
-            .or_else(|_| expression(input))?;
+        let (rest, expr) =
+            if let Ok(result) = crate::parser::primary::misc::reduction_call_style_expr(input) {
+                result
+            } else if let Ok((rest, assign_expr)) = try_parse_assign_expr(input) {
+                // Only take the assignment fast path when it reaches an argument
+                // boundary. Otherwise a parenthesized assignment like `($x = 10)`
+                // can be consumed too early inside a larger expression.
+                let trimmed = rest.trim_start();
+                if trimmed.is_empty()
+                    || trimmed.starts_with(',')
+                    || trimmed.starts_with(')')
+                    || trimmed.starts_with(';')
+                {
+                    (rest, assign_expr)
+                } else {
+                    expression(input)?
+                }
+            } else {
+                expression(input)?
+            };
         // Handle compound assignment on non-variable expressions in argument position
         // (e.g., `* *= 2` creates WhateverCode that mutates via compound assign).
         let (rest_ws, _) = crate::parser::helpers::ws(rest)?;
@@ -502,7 +519,7 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
                 op: op.token_kind(),
                 right: Box::new(rhs),
             };
-            // Apply WhateverCode wrapping (e.g., `* *= 2` → WhateverCode lambda)
+            // Apply WhateverCode wrapping (e.g., `* *= 2` -> WhateverCode lambda)
             if crate::parser::expr::should_wrap_whatevercode(&compound_expr) {
                 compound_expr = crate::parser::expr::wrap_whatevercode(&compound_expr);
             }
