@@ -1,6 +1,7 @@
 use super::*;
 
 const TEST_CALLSITE_LINE_KEY: &str = "__mutsu_test_callsite_line";
+const BACKEND_TODO_PREFIX: &str = "__mutsu_backend_todo__:";
 
 impl Interpreter {
     pub(crate) fn set_pending_call_arg_sources(&mut self, sources: Option<Vec<Option<String>>>) {
@@ -51,6 +52,8 @@ impl Interpreter {
                 .iter()
                 .find(|range| state.ran >= range.start && state.ran <= range.end)
                 .map(|range| range.reason.as_str());
+            let is_backend_todo =
+                forced_reason.is_some_and(|reason| reason.starts_with(BACKEND_TODO_PREFIX));
             let todo = todo || forced_reason.is_some();
             if !success && !todo {
                 state.failed += 1;
@@ -65,9 +68,11 @@ impl Interpreter {
             if !desc.is_empty() {
                 line.push_str(desc);
             }
-            if todo {
+            let show_todo = todo && (!is_backend_todo || !success);
+            if show_todo {
                 match forced_reason {
                     Some(reason) if !reason.is_empty() => {
+                        let reason = reason.strip_prefix(BACKEND_TODO_PREFIX).unwrap_or(reason);
                         line.push_str(" # TODO ");
                         line.push_str(reason);
                     }
