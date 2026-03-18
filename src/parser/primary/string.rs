@@ -142,7 +142,8 @@ pub(super) fn read_bracketed(
         }
         let ch = rest.chars().next().unwrap();
         if allow_escape && ch == '\\' && rest.len() > 1 {
-            rest = &rest[2..]; // skip escape
+            let next_ch = rest[1..].chars().next().unwrap();
+            rest = &rest[1 + next_ch.len_utf8()..];
             continue;
         }
         if ch == open {
