@@ -452,6 +452,10 @@ impl Interpreter {
                     let params = (0..arity).map(|i| format!("arg{}", i)).collect();
                     return (params, Vec::new());
                 }
+                // Well-known 0-arity terms should report as having no parameters
+                if matches!(name.resolve().as_ref(), "rand" | "now" | "time") {
+                    return (Vec::new(), Vec::new());
+                }
                 (vec!["arg0".to_string()], Vec::new())
             }
             _ => (vec!["arg0".to_string()], Vec::new()),
@@ -860,7 +864,8 @@ impl Interpreter {
                     Value::str_from("Method"),
                 );
             }
-            Value::make_sub(
+            let empty_sig = def.empty_sig;
+            let mut sub_val = Value::make_sub(
                 def.package,
                 def.name,
                 def.params,
@@ -868,7 +873,15 @@ impl Interpreter {
                 def.body,
                 def.is_rw,
                 captured_env,
-            )
+            );
+            // Preserve empty_sig from the FunctionDef so that arity checks
+            // (e.g. sort rejecting 0-arity callables) work correctly.
+            if empty_sig && let Value::Sub(ref data) = sub_val {
+                let mut new_data = (**data).clone();
+                new_data.empty_sig = true;
+                sub_val = Value::Sub(Arc::new(new_data));
+            }
+            sub_val
         } else if Self::is_builtin_function(lookup_name) {
             Value::Routine {
                 package: Symbol::intern("GLOBAL"),
