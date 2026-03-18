@@ -756,17 +756,28 @@ pub(crate) fn build_compound_assign_expr(
             op: op.token_kind(),
             right: Box::new(rhs),
         },
-        other => Expr::DoBlock {
-            body: vec![
-                Stmt::Expr(other),
-                Stmt::Expr(rhs),
-                Stmt::Expr(Expr::Call {
-                    name: Symbol::intern("__mutsu_assignment_ro"),
-                    args: Vec::new(),
-                }),
-            ],
-            label: None,
-        },
+        other => {
+            let compound_expr = Expr::Binary {
+                left: Box::new(other.clone()),
+                op: op.token_kind(),
+                right: Box::new(rhs.clone()),
+            };
+            if crate::parser::expr::should_wrap_whatevercode(&compound_expr) {
+                compound_expr
+            } else {
+                Expr::DoBlock {
+                    body: vec![
+                        Stmt::Expr(other),
+                        Stmt::Expr(rhs),
+                        Stmt::Expr(Expr::Call {
+                            name: Symbol::intern("__mutsu_assignment_ro"),
+                            args: Vec::new(),
+                        }),
+                    ],
+                    label: None,
+                }
+            }
+        }
     })
 }
 

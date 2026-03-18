@@ -765,6 +765,13 @@ mod tests {
     }
 
     #[test]
+    fn parse_whatever_compound_assign_as_whatevercode() {
+        let (rest, expr) = expression("(* *= 2)").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Lambda { .. }));
+    }
+
+    #[test]
     fn parse_not_smartmatch() {
         let (rest, expr) = expression("\"abc\" !~~ \"xyz\"").unwrap();
         assert_eq!(rest, "");
