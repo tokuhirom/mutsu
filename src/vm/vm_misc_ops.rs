@@ -471,6 +471,15 @@ impl VM {
         let val = self.stack.pop().unwrap();
         // Auto-FETCH Proxy containers
         let val = self.interpreter.auto_fetch_proxy(&val)?;
+        // Type objects (Mu, Any, etc.) cannot be numerically coerced
+        if let Value::Package(name) = &val
+            && matches!(name.resolve().as_str(), "Mu" | "Any")
+        {
+            return Err(RuntimeError::new(format!(
+                "Cannot resolve caller prefix:<+>({}:U); none of these signatures matches:\n    (\\a)",
+                name.resolve()
+            )));
+        }
         if matches!(
             &val,
             Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
@@ -529,6 +538,15 @@ impl VM {
         let val = self.stack.pop().unwrap();
         // Auto-FETCH Proxy containers
         let val = self.interpreter.auto_fetch_proxy(&val)?;
+        // Type objects (Mu, Any, etc.) cannot be string-coerced
+        if let Value::Package(name) = &val
+            && matches!(name.resolve().as_str(), "Mu" | "Any")
+        {
+            return Err(RuntimeError::new(format!(
+                "Cannot resolve caller prefix:<~>({}:U); none of these signatures matches:\n    (\\a)",
+                name.resolve()
+            )));
+        }
         // Stringifying an unhandled Failure throws
         if let Some(err) = self.interpreter.failure_to_runtime_error_if_unhandled(&val) {
             return Err(err);
@@ -1059,7 +1077,7 @@ impl VM {
         // In Raku, [(-)] [Set, Set, Mix] first promotes all to Mix, then reduces.
         if matches!(
             base_op.as_str(),
-            "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖" | "(.)" | "⊍"
+            "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖" | "(.)" | "⊍" | "(+)" | "⊎"
         ) && list.len() > 2
         {
             let set_level = |v: &Value| -> u8 {
@@ -1294,11 +1312,16 @@ impl VM {
                 constraint
             )));
         }
-        // Native integer type check: validate value is an integer in range
+        // Native integer type check: validate value is an integer in range.
+        // Native types cannot hold Nil/type objects — reject them.
         if crate::runtime::native_types::is_native_int_type(base_constraint) {
-            if !matches!(value, Value::Nil) {
-                self.validate_native_int_assignment(base_constraint, &value)?;
+            if matches!(value, Value::Nil) {
+                return Err(RuntimeError::new(format!(
+                    "Cannot unbox a type object (Nil) to {}.",
+                    base_constraint
+                )));
             }
+            self.validate_native_int_assignment(base_constraint, &value)?;
             return Ok(());
         }
         if runtime::is_known_type_constraint(base_constraint) {

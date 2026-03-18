@@ -160,6 +160,7 @@ roast/S03-operators/reduce-le1arg.t
 roast/S03-operators/relational.t
 roast/S03-operators/repeat.t
 roast/S03-operators/scalar-assign.t
+roast/S03-operators/set_addition.t
 roast/S03-operators/set_difference.t
 roast/S03-operators/set_elem.t
 roast/S03-operators/set_equality.t

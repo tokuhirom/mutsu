@@ -147,6 +147,16 @@ fn is_custom_reduction_op(op: &str) -> bool {
     if let Some(name) = op.strip_prefix('&') {
         return is_callable_reduction_name(name);
     }
+    // Check if it's a user-declared infix symbol operator (e.g. T+, ⋅)
+    if let Some((symbol, len)) =
+        crate::parser::stmt::simple::match_user_declared_infix_symbol_op(op)
+    {
+        if len == op.len() {
+            return true;
+        }
+        // Also accept the symbol as a prefix of op (shouldn't happen for reduction, but be safe)
+        let _ = symbol;
+    }
     if !op
         .chars()
         .next()

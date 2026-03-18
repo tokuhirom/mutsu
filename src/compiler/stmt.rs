@@ -344,6 +344,10 @@ impl Compiler {
                     let tc_idx = self.code.add_constant(Value::str(tc.clone()));
                     self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
                 }
+                // Record type constraint for compile-time literal type checks
+                if let Some(tc) = type_constraint {
+                    self.local_types.insert(name.clone(), tc.clone());
+                }
                 self.compile_assignment_rhs_for_target(name, expr);
                 // Skip TypeCheck for hash declarations: the type constraint
                 // applies to element values, not to the collection itself.
@@ -460,6 +464,17 @@ impl Compiler {
                     && !self.local_map.contains_key(name.as_str())
                 {
                     self.code.emit(OpCode::AssignReadOnly);
+                    return;
+                }
+                // Compile-time check: assigning a numeric literal to a typed
+                // numeric variable with a mismatched type (e.g. `my Num $n; $n = 42`)
+                // should produce X::Syntax::Number::LiteralType.
+                if matches!(op, AssignOp::Assign)
+                    && let Some(err) = self.check_literal_type_mismatch(name, expr)
+                {
+                    let idx = self.code.add_constant(err);
+                    self.code.emit(OpCode::LoadConst(idx));
+                    self.code.emit(OpCode::Die);
                     return;
                 }
                 // Emit readonly check for assignment to potentially readonly params

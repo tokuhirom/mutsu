@@ -700,6 +700,21 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_list(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // `list` on a single Seq is a no-op (returns the Seq as-is)
+        if args.len() == 1
+            && let Value::Seq(_) = &args[0]
+        {
+            return Ok(args[0].clone());
+        }
+        let mut result = Vec::new();
+        for arg in args {
+            result.extend(Self::value_to_list(arg));
+        }
+        Ok(Value::array(result))
+    }
+
+    pub(super) fn builtin_cache(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // `cache` eagerly evaluates and caches the values into a List
         let mut result = Vec::new();
         for arg in args {
             result.extend(Self::value_to_list(arg));

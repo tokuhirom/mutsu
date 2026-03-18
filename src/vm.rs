@@ -1028,6 +1028,10 @@ impl VM {
                 self.exec_set_union_op()?;
                 *ip += 1;
             }
+            OpCode::SetAddition => {
+                self.exec_set_addition_op()?;
+                *ip += 1;
+            }
             OpCode::SetIntersect => {
                 self.exec_set_intersect_op()?;
                 *ip += 1;

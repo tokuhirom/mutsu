@@ -464,6 +464,181 @@ impl Interpreter {
         Ok(Value::bag(result))
     }
 
+    /// Coerce a value to bag-like weights for the (+) operator.
+    /// Unlike union_bag_counts, this properly handles Hash and Pair values.
+    fn addition_bag_counts(
+        value: &Value,
+    ) -> Result<std::collections::HashMap<String, i64>, RuntimeError> {
+        if Self::union_is_lazy_input(value) {
+            return Err(RuntimeError::new("X::Cannot::Lazy"));
+        }
+        match value {
+            Value::Bag(b) => Ok((**b).clone()),
+            Value::Mix(m) => Ok(m
+                .iter()
+                .filter_map(|(k, w)| {
+                    if *w != 0.0 {
+                        Some((k.clone(), *w as i64))
+                    } else {
+                        None
+                    }
+                })
+                .collect()),
+            Value::Set(s) => Ok(s.iter().map(|k| (k.clone(), 1)).collect()),
+            Value::Hash(map) => {
+                let mut result = std::collections::HashMap::new();
+                for (k, v) in map.iter() {
+                    let weight = v.to_f64() as i64;
+                    if weight != 0 {
+                        result.insert(k.clone(), weight);
+                    }
+                }
+                Ok(result)
+            }
+            _ if value.as_list_items().is_some() => {
+                let mut result = std::collections::HashMap::new();
+                for item in value.as_list_items().unwrap().iter() {
+                    match item {
+                        Value::Pair(k, v) => {
+                            let weight = v.to_f64() as i64;
+                            *result.entry(k.clone()).or_insert(0) += weight;
+                        }
+                        Value::ValuePair(k, v) => {
+                            let weight = v.to_f64() as i64;
+                            *result.entry(k.to_string_value()).or_insert(0) += weight;
+                        }
+                        other => {
+                            let key = other.to_string_value();
+                            if !key.is_empty() {
+                                *result.entry(key).or_insert(0) += 1;
+                            }
+                        }
+                    }
+                }
+                result.retain(|_, v| *v != 0);
+                Ok(result)
+            }
+            Value::Pair(k, v) => {
+                let mut result = std::collections::HashMap::new();
+                let weight = v.to_f64() as i64;
+                if weight != 0 {
+                    result.insert(k.clone(), weight);
+                }
+                Ok(result)
+            }
+            other => {
+                let set = Self::union_set_keys(other)?;
+                Ok(set.into_iter().map(|k| (k, 1)).collect())
+            }
+        }
+    }
+
+    /// Coerce a value to mix-like weights for the (+) operator.
+    fn addition_mix_weights(
+        value: &Value,
+    ) -> Result<std::collections::HashMap<String, f64>, RuntimeError> {
+        if Self::union_is_lazy_input(value) {
+            return Err(RuntimeError::new("X::Cannot::Lazy"));
+        }
+        match value {
+            Value::Mix(m) => Ok((**m).clone()),
+            Value::Bag(b) => Ok(b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect()),
+            Value::Set(s) => Ok(s.iter().map(|k| (k.clone(), 1.0)).collect()),
+            Value::Hash(map) => {
+                let mut result = std::collections::HashMap::new();
+                for (k, v) in map.iter() {
+                    let weight = v.to_f64();
+                    if weight != 0.0 {
+                        result.insert(k.clone(), weight);
+                    }
+                }
+                Ok(result)
+            }
+            _ if value.as_list_items().is_some() => {
+                let mut result = std::collections::HashMap::new();
+                for item in value.as_list_items().unwrap().iter() {
+                    match item {
+                        Value::Pair(k, v) => {
+                            let weight = v.to_f64();
+                            *result.entry(k.clone()).or_insert(0.0) += weight;
+                        }
+                        Value::ValuePair(k, v) => {
+                            let weight = v.to_f64();
+                            *result.entry(k.to_string_value()).or_insert(0.0) += weight;
+                        }
+                        other => {
+                            let key = other.to_string_value();
+                            if !key.is_empty() {
+                                *result.entry(key).or_insert(0.0) += 1.0;
+                            }
+                        }
+                    }
+                }
+                result.retain(|_, v| *v != 0.0);
+                Ok(result)
+            }
+            Value::Pair(k, v) => {
+                let mut result = std::collections::HashMap::new();
+                let weight = v.to_f64();
+                if weight != 0.0 {
+                    result.insert(k.clone(), weight);
+                }
+                Ok(result)
+            }
+            other => {
+                let set = Self::union_set_keys(other)?;
+                Ok(set.into_iter().map(|k| (k, 1.0)).collect())
+            }
+        }
+    }
+
+    fn apply_set_addition(left: &Value, right: &Value) -> Result<Value, RuntimeError> {
+        let left = match left {
+            Value::Scalar(inner) => inner.as_ref(),
+            other => other,
+        };
+        let right = match right {
+            Value::Scalar(inner) => inner.as_ref(),
+            other => other,
+        };
+        if matches!(left, Value::Instance { class_name, .. } if class_name == "Failure")
+            || matches!(right, Value::Instance { class_name, .. } if class_name == "Failure")
+        {
+            return Err(RuntimeError::new("Exception"));
+        }
+        // Determine type level: Mix > Bag > Set, minimum is Bag for (+)
+        let type_level = |v: &Value| -> u8 {
+            match v {
+                Value::Mix(_) => 2,
+                Value::Bag(_) => 1,
+                Value::Package(sym) => match sym.resolve().as_str() {
+                    "Mix" | "MixHash" => 2,
+                    "Bag" | "BagHash" => 1,
+                    _ => 0,
+                },
+                _ => 0,
+            }
+        };
+        let result_level = type_level(left).max(type_level(right)).max(1);
+
+        if result_level >= 2 {
+            let mut l = Self::addition_mix_weights(left)?;
+            let r = Self::addition_mix_weights(right)?;
+            for (k, v) in r {
+                let e = l.entry(k).or_insert(0.0);
+                *e += v;
+            }
+            return Ok(Value::mix(l));
+        }
+        let mut l = Self::addition_bag_counts(left)?;
+        let r = Self::addition_bag_counts(right)?;
+        for (k, v) in r {
+            let e = l.entry(k).or_insert(0);
+            *e += v;
+        }
+        Ok(Value::bag(l))
+    }
+
     fn reduction_repeat_error(class_name: &str, message: &str) -> RuntimeError {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::str(message.to_string()));
@@ -1413,6 +1588,7 @@ impl Interpreter {
                 Ok(Value::array(items))
             }
             "(|)" | "∪" => Self::apply_set_union(left, right),
+            "(+)" | "⊎" => Self::apply_set_addition(left, right),
             "(.)" | "⊍" => Self::apply_set_multiply(left, right),
             "(-)" | "∖" => Ok(set_diff_values(left, right)),
             "(&)" | "∩" => Ok(set_intersect_values(left, right)),
