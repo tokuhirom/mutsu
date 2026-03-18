@@ -94,9 +94,7 @@ impl VM {
         if let Some(constraint) = self.interpreter.var_type_constraint_fast(name).cloned()
             && let Some(trait_name) = Self::quant_hash_trait_from_constraint(&constraint)
         {
-            return self
-                .interpreter
-                .call_method_with_values(value, trait_name, vec![]);
+            return self.try_compiled_method_or_interpret(value, trait_name, vec![]);
         }
         if self.interpreter.check_readonly_for_modify(name).is_err()
             && matches!(value, Value::Set(_) | Value::Bag(_) | Value::Mix(_))
@@ -432,9 +430,7 @@ impl VM {
                 && Self::is_buf_value(&v)
                 && attributes.contains_key("bytes")
             {
-                let str_result = self
-                    .interpreter
-                    .call_method_with_values(v, "Str", Vec::new())?;
+                let str_result = self.try_compiled_method_or_interpret(v, "Str", Vec::new())?;
                 result.push_str(&str_result.to_string_value());
                 continue;
             }
@@ -1321,7 +1317,7 @@ impl VM {
                         .into_iter()
                         .map(|v| Value::Int(runtime::to_int(&v)))
                         .collect::<Vec<_>>();
-                    assigned = self.interpreter.call_method_with_values(
+                    assigned = self.try_compiled_method_or_interpret(
                         Value::Package(class_name),
                         "new",
                         items,
@@ -1599,7 +1595,7 @@ impl VM {
                         .into_iter()
                         .map(|v| Value::Int(runtime::to_int(&v)))
                         .collect::<Vec<_>>();
-                    assigned = self.interpreter.call_method_with_values(
+                    assigned = self.try_compiled_method_or_interpret(
                         Value::Package(class_name),
                         "new",
                         items,

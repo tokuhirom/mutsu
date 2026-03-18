@@ -1104,12 +1104,8 @@ impl VM {
         if !known_numeric && !has_numeric_method {
             return Ok(value);
         }
-        self.interpreter
-            .call_method_with_values(value.clone(), "Numeric", vec![])
-            .or_else(|_| {
-                self.interpreter
-                    .call_method_with_values(value.clone(), "Bridge", vec![])
-            })
+        self.try_compiled_method_or_interpret(value.clone(), "Numeric", vec![])
+            .or_else(|_| self.try_compiled_method_or_interpret(value.clone(), "Bridge", vec![]))
             .or(Ok(value))
     }
 
@@ -2103,7 +2099,7 @@ impl VM {
                                 .try_coerce_value_for_constraint(constraint, base.clone())
                                 .unwrap_or_else(|_| base.clone());
                             if !self.interpreter.type_matches_value(expected, &candidate)
-                                && let Ok(coerced) = self.interpreter.call_method_with_values(
+                                && let Ok(coerced) = self.try_compiled_method_or_interpret(
                                     base.clone(),
                                     expected,
                                     vec![],
@@ -2474,8 +2470,7 @@ impl VM {
                     .resolve_method_with_owner(&class_name, "Bool", &[])
                     .is_some()
                     && let Ok(result) =
-                        self.interpreter
-                            .call_method_with_values(val.clone(), "Bool", vec![])
+                        self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![])
                 {
                     return result.truthy();
                 }
@@ -2488,8 +2483,7 @@ impl VM {
                     .resolve_method_with_owner(&cn, "Bool", &[])
                     .is_some()
                     && let Ok(result) =
-                        self.interpreter
-                            .call_method_with_values(val.clone(), "Bool", vec![])
+                        self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![])
                 {
                     return result.truthy();
                 }
@@ -2596,21 +2590,16 @@ impl VM {
                     && self.interpreter.role_has_method(role_name, "CALL-ME")
                 {
                     // TODO: complex case — fall back to interpreter for CALL-ME on Mixin
-                    return self
-                        .interpreter
-                        .call_method_with_values(target, "CALL-ME", args);
+                    return self.try_compiled_method_or_interpret(target, "CALL-ME", args);
                 }
             }
             // Delegate to inner callable
             return self.vm_call_on_value(inner.as_ref().clone(), args, compiled_fns);
         }
 
-        // Instance: CALL-ME — fall back to interpreter
-        // TODO: could be optimized by looking up CALL-ME method and dispatching natively
+        // Instance: CALL-ME — try compiled method path first
         if matches!(target, Value::Instance { .. }) {
-            return self
-                .interpreter
-                .call_method_with_values(target, "CALL-ME", args);
+            return self.try_compiled_method_or_interpret(target, "CALL-ME", args);
         }
 
         // Sub with empty body (no-op closure): fall back to interpreter
