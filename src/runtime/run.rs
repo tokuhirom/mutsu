@@ -409,9 +409,9 @@ impl Interpreter {
                 continue;
             }
 
-            // #?rakudo todo 'reason' or #?rakudo N todo 'reason' — mark tests as todo.
-            // Although mutsu is not rakudo, we honor todo directives because
-            // they indicate known spec issues that also affect mutsu.
+            // #?rakudo todo 'reason' or #?rakudo N todo 'reason' remain TODOs for
+            // failing assertions, but passing assertions should be reported as
+            // normal passes rather than "ok ... # TODO".
             if trimmed.starts_with("#?rakudo")
                 && !trimmed.contains(".jvm")
                 && !trimmed.contains(".js")
@@ -445,7 +445,7 @@ impl Interpreter {
                 } else {
                     "todo"
                 };
-                pending_todo = Some((reason.to_string(), count));
+                pending_todo = Some((format!("__mutsu_backend_todo__:{reason}"), count));
                 output.push('\n');
                 continue;
             }
@@ -993,6 +993,14 @@ mod tests {
     }
 
     #[test]
+    fn preprocess_rakudo_todo_marks_backend_specific_todo() {
+        let src = "#?rakudo todo 'NYI'\nok True, 'still runs';\n#?rakudo 2 todo 'later'\nis 42, 42, 'also runs';\n";
+        let out = Interpreter::preprocess_roast_directives(src);
+        assert!(out.contains("todo '__mutsu_backend_todo__:NYI';"));
+        assert!(out.contains("todo '__mutsu_backend_todo__:later';"));
+    }
+
+    #[test]
     fn eval_q_bracket_statement_list_runs_declaration_then_assertion() {
         let mut interp = Interpreter::new();
         interp.set_immediate_stdout(false);
@@ -1005,6 +1013,28 @@ mod tests {
             interp.output.contains("ok 1 - q-bracket eval"),
             "output: {}",
             interp.output
+        );
+    }
+
+    #[test]
+    fn rakudo_todo_passes_without_todo_annotation() {
+        let mut interp = Interpreter::new();
+        interp.set_immediate_stdout(false);
+        let result = interp.run("use Test; plan 1;\n#?rakudo todo 'NYI'\nok True, 'pass';");
+        assert!(result.is_ok(), "run failed: {:?}", result.err());
+        assert_eq!(interp.output, "1..1\nok 1 - pass\n");
+    }
+
+    #[test]
+    fn rakudo_todo_failures_keep_todo_annotation() {
+        let mut interp = Interpreter::new();
+        interp.set_immediate_stdout(false);
+        let result = interp.run("use Test; plan 1;\n#?rakudo todo 'NYI'\nok False, 'fail';");
+        assert!(result.is_ok(), "run failed: {:?}", result.err());
+        assert!(
+            interp
+                .output
+                .starts_with("1..1\nnot ok 1 - fail # TODO NYI\n")
         );
     }
 
