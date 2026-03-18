@@ -974,9 +974,34 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         &rest[1..]
     };
     let (rest, _) = ws(rest)?;
+    // Parse RHS: try chained assignment first, then comma-separated list for multi-value
+    // assignment (e.g. `(%h{|| @a} = 42,666)`).
     let (rest, rhs) = match try_parse_assign_expr(rest) {
         Ok(r) => r,
-        Err(_) => expression_no_sequence(rest)?,
+        Err(_) => {
+            let (r, first) = expression_no_sequence(rest)?;
+            let (r2, _) = ws(r)?;
+            if r2.starts_with(',') && !r2.starts_with(",,") {
+                // Comma-separated RHS: collect into an ArrayLiteral
+                let mut items = vec![first];
+                let mut r = r2;
+                while r.starts_with(',') && !r.starts_with(",,") {
+                    let (r2, _) = parse_char(r, ',')?;
+                    let (r2, _) = ws(r2)?;
+                    if r2.starts_with(')') {
+                        r = r2;
+                        break;
+                    }
+                    let (r2, item) = expression_no_sequence(r2)?;
+                    items.push(item);
+                    let (r2, _) = ws(r2)?;
+                    r = r2;
+                }
+                (r, Expr::ArrayLiteral(items))
+            } else {
+                (r, first)
+            }
+        }
     };
     let (rest, _) = ws(rest)?;
     let (rest, _) = parse_char(rest, ')')?;
@@ -1052,7 +1077,12 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                 return Err(PError::expected("assignment expression"));
             }
         }
-        _ => return Err(PError::expected("assignment expression")),
+        Expr::BareWord(name) => Expr::AssignExpr {
+            name,
+            expr: Box::new(rhs),
+        },
+        // Fallback for other lvalue expressions (e.g. HyperIndex %h{|| @a})
+        other => callable_lvalue_assign_expr(other, Vec::new(), rhs),
     };
     if is_atomic {
         if let Expr::AssignExpr { name, expr } = expr {

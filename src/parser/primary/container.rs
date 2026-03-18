@@ -13,6 +13,11 @@ use super::string::{parse_quotewords_quoted_atom, quotewords_atom_expr};
 
 /// Parse a parenthesized expression or list.
 pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
+    // Try the comprehensive parenthesized assignment parser first.
+    // This handles complex LHS forms like %hash{...}, @arr[...], method calls, etc.
+    if let Ok((rest, assign_expr)) = super::super::stmt::assign::try_parse_assign_expr(input) {
+        return Ok((rest, assign_expr));
+    }
     let (input, _) = parse_char(input, '(')?;
     let (input, _) = ws(input)?;
     let content_start = input;
@@ -36,6 +41,7 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Var(name) => Some((name.clone(), Expr::Var(name.clone()))),
             Expr::ArrayVar(name) => Some((format!("@{}", name), Expr::ArrayVar(name.clone()))),
             Expr::HashVar(name) => Some((format!("%{}", name), Expr::HashVar(name.clone()))),
+            Expr::BareWord(name) => Some((name.clone(), Expr::BareWord(name.clone()))),
             _ => None,
         };
         if let Some((assign_name, lhs_expr)) = assign_target {
