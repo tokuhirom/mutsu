@@ -199,6 +199,7 @@ impl Value {
             Value::Enum { value, .. } => match value {
                 EnumValue::Int(i) => *i != 0,
                 EnumValue::Str(s) => !s.is_empty(),
+                EnumValue::Generic(v) => v.as_ref().truthy(),
             },
             Value::CompUnitDepSpec { .. } => true,
             Value::Package(_) | Value::ParametricRole { .. } => false,

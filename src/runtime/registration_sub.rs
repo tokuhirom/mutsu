@@ -668,6 +668,7 @@ impl Interpreter {
         name: &str,
         variants: &[(String, Option<Expr>)],
         is_export: bool,
+        base_type: Option<&str>,
     ) -> Result<Value, RuntimeError> {
         // Handle dynamic enum body: `enum Stuff (@variable)`
         let expanded;
@@ -709,14 +710,9 @@ impl Interpreter {
                         next_str_value = Some(string_increment(&s));
                         ev
                     }
-                    _ => {
-                        if let Some(ref s) = next_str_value {
-                            let ev = EnumValue::Str(s.clone());
-                            next_str_value = Some(string_increment(s));
-                            ev
-                        } else {
-                            EnumValue::Int(next_int_value)
-                        }
+                    other => {
+                        next_str_value = None;
+                        EnumValue::Generic(Box::new(other))
                     }
                 }
             } else if let Some(ref s) = next_str_value {
@@ -730,7 +726,7 @@ impl Interpreter {
                 EnumValue::Int(i) => {
                     next_int_value = i + 1;
                 }
-                EnumValue::Str(_) => {}
+                EnumValue::Str(_) | EnumValue::Generic(_) => {}
             }
             enum_variants.push((key.clone(), val));
         }
@@ -748,6 +744,31 @@ impl Interpreter {
                 ));
             }
         }
+        // Validate base type constraint if specified
+        if let Some(bt) = base_type {
+            for (key, val) in &enum_variants {
+                let type_ok = match (bt, val) {
+                    ("Int", EnumValue::Int(_)) => true,
+                    ("Str", EnumValue::Str(_)) => true,
+                    ("Array", EnumValue::Generic(v)) => matches!(v.as_ref(), Value::Array(..)),
+                    ("Cool", _) => true, // Cool covers both Int and Str
+                    _ => false,
+                };
+                if !type_ok {
+                    return Err(RuntimeError::new(format!(
+                        "Type check failed in assignment to enum value '{}'; expected {} but got {}",
+                        key,
+                        bt,
+                        match val {
+                            EnumValue::Int(_) => "Int",
+                            EnumValue::Str(_) => "Str",
+                            EnumValue::Generic(_) => "other",
+                        }
+                    )));
+                }
+            }
+        }
+
         let is_anonymous = name.is_empty();
         let enum_type_name = if is_anonymous { "__ANON_ENUM__" } else { name };
         self.enum_types
@@ -802,11 +823,7 @@ impl Interpreter {
         if is_anonymous {
             let mut map = HashMap::new();
             for (key, val) in &enum_variants {
-                let v = match val {
-                    EnumValue::Int(i) => Value::Int(*i),
-                    EnumValue::Str(s) => Value::str(s.clone()),
-                };
-                map.insert(key.clone(), v);
+                map.insert(key.clone(), val.to_value());
             }
             Ok(Value::hash(map))
         } else {

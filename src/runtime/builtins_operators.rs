@@ -74,7 +74,7 @@ impl Interpreter {
             let msg = format!("No value '{}' found in enum {}", value_str, name);
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("message".to_string(), Value::str(msg.clone()));
-            attrs.insert("type".to_string(), Value::str(name.to_string()));
+            attrs.insert("type".to_string(), Value::Package(Symbol::intern(name)));
             attrs.insert("value".to_string(), first);
             let ex = Value::make_instance(Symbol::intern("X::Enum::NoValue"), attrs);
             let mut err = RuntimeError::new(msg);
