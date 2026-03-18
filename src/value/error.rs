@@ -47,6 +47,9 @@ pub struct RuntimeError {
     pub is_proceed: bool,
     pub is_succeed: bool,
     pub is_fail: bool,
+    /// When true, the Failure produced from this fail error should be marked as handled.
+    /// Set when UNDO phasers run in response to the fail.
+    pub fail_handled: bool,
     pub is_warn: bool,
     pub is_leave: bool,
     pub is_resume: bool,
@@ -77,6 +80,7 @@ impl RuntimeError {
             is_proceed: false,
             is_succeed: false,
             is_fail: false,
+            fail_handled: false,
             is_warn: false,
             is_leave: false,
             is_resume: false,
@@ -126,6 +130,7 @@ impl RuntimeError {
             is_proceed: false,
             is_succeed: false,
             is_fail: false,
+            fail_handled: false,
             is_warn: false,
             is_leave: false,
             is_resume: false,
