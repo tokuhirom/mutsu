@@ -9,8 +9,8 @@ use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
-use super::expression;
 use super::operators::{PrefixUnaryOp, parse_postfix_update_op, parse_prefix_unary_op};
+use super::{expression, expression_no_sequence};
 
 /// When a prefix operator is applied to a WhateverCode (Lambda or AnonSubParams),
 /// compose the prefix into the body so that `+(* + 1)` becomes `-> $_ { +($_ + 1) }`
@@ -1845,14 +1845,40 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             continue;
         }
 
-        // Hash hyperindex: %hash{||@keys}
+        // Hash hyperindex: %hash{||@keys} or %hash{|| <a b>, "d"}
         if rest.starts_with("{||")
             && matches!(&expr, Expr::HashVar(_) | Expr::Var(_) | Expr::Index { .. })
         {
             let r = &rest[3..];
             let (r, _) = ws(r)?;
-            let (r, keys_expr) = expression(r)?;
+            let (r, first) = expression_no_sequence(r)?;
             let (r, _) = ws(r)?;
+            // Check for comma-separated list of dimension keys
+            let keys_expr = if r.starts_with(',') {
+                let mut items = vec![first];
+                let mut r = r;
+                while r.starts_with(',') {
+                    let (r2, _) = parse_char(r, ',')?;
+                    let (r2, _) = ws(r2)?;
+                    if r2.starts_with('}') {
+                        r = r2;
+                        break;
+                    }
+                    let (r2, item) = expression_no_sequence(r2)?;
+                    items.push(item);
+                    let (r2, _) = ws(r2)?;
+                    r = r2;
+                }
+                let (r2, _) = parse_char(r, '}')?;
+                expr = Expr::HyperIndex {
+                    target: Box::new(expr),
+                    keys: Box::new(Expr::ArrayLiteral(items)),
+                };
+                rest = r2;
+                continue;
+            } else {
+                first
+            };
             let (r, _) = parse_char(r, '}')?;
             expr = Expr::HyperIndex {
                 target: Box::new(expr),
