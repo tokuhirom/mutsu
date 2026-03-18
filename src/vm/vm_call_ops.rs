@@ -1123,7 +1123,7 @@ impl VM {
             let mut call_args = Vec::with_capacity(args.len() + 1);
             call_args.push(target);
             call_args.extend(args);
-            self.interpreter.call_sub_value(name_val, call_args, false)
+            self.vm_call_on_value(name_val, call_args, None)
         } else {
             let method = name_val.to_string_value();
             if let Some(native_result) =
@@ -1174,8 +1174,7 @@ impl VM {
             let mut call_args = Vec::with_capacity(args.len() + 1);
             call_args.push(target);
             call_args.extend(args);
-            self.interpreter
-                .call_sub_value(name_val, call_args, false)?
+            self.vm_call_on_value(name_val, call_args, None)?
         } else {
             let method = name_val.to_string_value();
             self.interpreter
@@ -1881,32 +1880,20 @@ impl VM {
                 match modifier.as_deref() {
                     Some("?") => {
                         results.push(
-                            self.interpreter
-                                .call_sub_value(name_val.clone(), call_args, false)
+                            self.vm_call_on_value(name_val.clone(), call_args, None)
                                 .unwrap_or(Value::Package(Symbol::intern("Any"))),
                         );
                     }
                     Some("+") => {
-                        let val =
-                            self.interpreter
-                                .call_sub_value(name_val.clone(), call_args, false)?;
+                        let val = self.vm_call_on_value(name_val.clone(), call_args, None)?;
                         results.push(Value::array(vec![val]));
                     }
-                    Some("*") => {
-                        match self
-                            .interpreter
-                            .call_sub_value(name_val.clone(), call_args, false)
-                        {
-                            Ok(v) => results.push(Value::array(vec![v])),
-                            Err(_) => results.push(Value::array(vec![])),
-                        }
-                    }
+                    Some("*") => match self.vm_call_on_value(name_val.clone(), call_args, None) {
+                        Ok(v) => results.push(Value::array(vec![v])),
+                        Err(_) => results.push(Value::array(vec![])),
+                    },
                     _ => {
-                        results.push(self.interpreter.call_sub_value(
-                            name_val.clone(),
-                            call_args,
-                            false,
-                        )?);
+                        results.push(self.vm_call_on_value(name_val.clone(), call_args, None)?);
                     }
                 }
                 continue;
