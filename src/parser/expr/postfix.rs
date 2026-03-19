@@ -1972,6 +1972,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         }
 
         // Hash indexing with braces: %hash{"key"}, %hash{$var}, @a[0]{"key"}, etc.
+        // Also handle postcircumfix on literals/expressions: 5{"c"} should throw at runtime.
         if rest.starts_with('{')
             && matches!(
                 &expr,
@@ -1980,6 +1981,9 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     | Expr::Index { .. }
                     | Expr::MethodCall { .. }
                     | Expr::Call { .. }
+                    | Expr::Literal(_)
+                    | Expr::ArrayLiteral(_)
+                    | Expr::Hash(_)
             )
         {
             let r = &rest[1..];

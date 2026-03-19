@@ -1259,6 +1259,11 @@ impl VM {
                 return Ok(());
             }
             if let Some(constraint) = self.interpreter.var_type_constraint_fast(&name).cloned() {
+                // Nil's type object IS Nil — return Value::Nil, not Package("Nil")
+                if constraint == "Nil" {
+                    self.stack.push(Value::Nil);
+                    return Ok(());
+                }
                 let nominal = self
                     .interpreter
                     .nominal_type_object_name_for_constraint(&constraint);
@@ -1307,6 +1312,20 @@ impl VM {
                     return Err(RuntimeError::new(
                         runtime::utils::type_check_assignment_error(name, &constraint, &val),
                     ));
+                }
+                // Native int range validation: BigInt values must fit in the native range
+                let base_constraint = crate::runtime::types::strip_type_smiley(&constraint).0;
+                if !matches!(val, Value::Nil)
+                    && crate::runtime::native_types::is_native_int_type(base_constraint)
+                    && let Value::BigInt(ref n) = val
+                {
+                    let bits = n.bits();
+                    if !crate::runtime::native_types::is_in_native_range(base_constraint, n) {
+                        return Err(RuntimeError::new(format!(
+                            "Cannot unbox {} bit wide bigint into native integer",
+                            bits
+                        )));
+                    }
                 }
                 let val = if !matches!(val, Value::Nil) {
                     self.interpreter
@@ -1406,6 +1425,20 @@ impl VM {
                 return Err(RuntimeError::new(
                     runtime::utils::type_check_assignment_error(name, &constraint, &val),
                 ));
+            }
+            // Native int range validation: BigInt values must fit in the native range
+            let base_constraint = crate::runtime::types::strip_type_smiley(&constraint).0;
+            if !matches!(val, Value::Nil)
+                && crate::runtime::native_types::is_native_int_type(base_constraint)
+                && let Value::BigInt(ref n) = val
+            {
+                let bits = n.bits();
+                if !crate::runtime::native_types::is_in_native_range(base_constraint, n) {
+                    return Err(RuntimeError::new(format!(
+                        "Cannot unbox {} bit wide bigint into native integer",
+                        bits
+                    )));
+                }
             }
             if !matches!(val, Value::Nil) {
                 val = self
