@@ -12,6 +12,9 @@ impl Interpreter {
         match crate::parser::parse_program_with_operators(src, op_names, op_assoc, imported_names) {
             Ok((stmts, _)) => {
                 self.check_eval_class_redeclarations(&stmts)?;
+                // If EVAL contains a method declaration and we're inside a class,
+                // register the method on the current class.
+                self.eval_method_decls_in_class_context(&stmts)?;
                 let value = self.eval_block_value(&stmts)?;
                 if self.eval_result_is_unresolved_bareword(&stmts, &value) {
                     return Err(RuntimeError::undeclared_symbols("Undeclared name"));
@@ -79,6 +82,62 @@ impl Interpreter {
                 }
                 Some(true) => {
                     seen_classes.insert(name.to_string(), false);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// When EVAL contains method declarations and we're inside a class body,
+    /// register the methods on the current class (mimics Raku's EVAL-in-class behavior).
+    fn eval_method_decls_in_class_context(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        let current_pkg = self.current_package.clone();
+        if current_pkg == "GLOBAL" || !self.has_class(&current_pkg) {
+            return Ok(());
+        }
+        for stmt in stmts {
+            if let Stmt::MethodDecl {
+                name: method_name,
+                params: _,
+                param_defs,
+                body: method_body,
+                multi,
+                is_rw,
+                is_private,
+                is_my,
+                return_type,
+                ..
+            } = stmt
+            {
+                let resolved_name = method_name.resolve();
+                let effective_param_defs = Self::effective_method_param_defs(param_defs, false);
+                let effective_params: Vec<String> = effective_param_defs
+                    .iter()
+                    .map(|p| p.name.clone())
+                    .collect();
+                let def = super::MethodDef {
+                    params: effective_params,
+                    param_defs: effective_param_defs,
+                    body: std::sync::Arc::new(method_body.clone()),
+                    is_rw: *is_rw,
+                    is_private: *is_private,
+                    is_multi: *multi,
+                    is_my: *is_my,
+                    role_origin: None,
+                    original_role: None,
+                    return_type: return_type.clone(),
+                    compiled_code: None,
+                };
+                if let Some(class_def) = self.classes.get_mut(&current_pkg) {
+                    if *multi {
+                        class_def
+                            .methods
+                            .entry(resolved_name)
+                            .or_default()
+                            .push(def);
+                    } else {
+                        class_def.methods.insert(resolved_name, vec![def]);
+                    }
                 }
             }
         }

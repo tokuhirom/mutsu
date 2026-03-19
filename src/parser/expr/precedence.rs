@@ -394,6 +394,7 @@ fn assignment_ro_expr(lhs: Expr, rhs: Expr) -> Expr {
 
 fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
     match target {
+        Expr::Var(ref name) if name == "self" => assignment_ro_expr(target, value),
         Expr::Var(name) => Expr::AssignExpr {
             name,
             expr: Box::new(value),

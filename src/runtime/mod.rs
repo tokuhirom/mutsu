@@ -1985,6 +1985,7 @@ impl Interpreter {
         register_x("X::Syntax::Variable::ConflictingTypes", "X::Syntax");
         register_x("X::Syntax::Number::LiteralType", "X::Syntax");
         register_x("X::Syntax::Regex::Adverb", "X::Syntax");
+        register_x("X::Syntax::Type::Adverb", "X::Syntax");
         register_x("X::Backslash::UnrecognizedSequence", "X::Backslash");
         register_x("X::Syntax::Regex::SolitaryQuantifier", "X::Syntax");
         register_x("X::Syntax::Regex::NullRegex", "X::Syntax");

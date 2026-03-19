@@ -744,8 +744,13 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
     };
     let mut stmts = Vec::new();
     for (trait_name, trait_value) in traits {
-        if trait_name == "ver" || trait_name == "auth" {
+        if trait_name == "ver" || trait_name == "auth" || trait_name == "api" {
             stmts.push(meta_setter_stmt(&name, &trait_name, trait_value));
+        } else {
+            return Err(PError::fatal(format!(
+                "X::Syntax::Type::Adverb: Cannot use adverb ':{}' on a class declaration",
+                trait_name
+            )));
         }
     }
     if stmts.is_empty() {
