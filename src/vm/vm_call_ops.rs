@@ -731,7 +731,27 @@ impl VM {
                         }
                     }
                 }
-                let call_result = if !skip_native {
+                // Fast path for shift/pop on array values in the non-mutating
+                // (CallMethod) path. Returns the removed element without modifying
+                // any variable. This handles cases like [1,2,3].shift where there
+                // is no variable to mutate. The CallMethodMut path handles variable
+                // targets separately.
+                let call_result = if matches!(method.as_str(), "shift" | "pop")
+                    && args.is_empty()
+                    && matches!(&target, Value::Array(_, kind) if kind.is_real_array())
+                {
+                    if let Value::Array(items, _) = &target {
+                        Ok(if items.is_empty() {
+                            crate::runtime::make_empty_array_failure(&method)
+                        } else if method == "shift" {
+                            items[0].clone()
+                        } else {
+                            items[items.len() - 1].clone()
+                        })
+                    } else {
+                        unreachable!()
+                    }
+                } else if !skip_native {
                     if let Some(native_result) =
                         self.try_native_method(&target, Symbol::intern(&method), &args)
                     {

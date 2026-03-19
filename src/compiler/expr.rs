@@ -1149,30 +1149,71 @@ impl Compiler {
                 } = target.as_ref()
                 {
                     let var_name = Self::postfix_index_name(idx_target).unwrap_or_default();
-                    // 1. Compile the index expression to get the element value
-                    self.compile_expr(target);
-                    // 2. Compile method arguments
+                    let name_resolved = name.resolve();
                     let arity = args.len() as u32;
-                    for arg in args {
-                        self.compile_method_arg(arg);
-                    }
-                    // 3. Emit CallMethod to invoke the method (non-mutating,
-                    //    returns a modified copy of the array)
-                    let name_idx = self.code.add_constant(Value::str(name.resolve()));
                     let modifier_idx =
                         modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
-                    self.code.emit(OpCode::CallMethod {
-                        name_idx,
-                        arity,
-                        modifier_idx,
-                        quoted: *quoted,
-                    });
-                    // 4. Emit writeback: write the modified value back to the
-                    //    container at the same index.
-                    //    IndexAssignExprNamed expects stack: [val, idx] with idx on top.
-                    self.compile_expr(idx_key);
-                    let var_name_idx = self.code.add_constant(Value::str(var_name));
-                    self.code.emit(OpCode::IndexAssignExprNamed(var_name_idx));
+                    if matches!(name_resolved.as_str(), "pop" | "shift") {
+                        let tmp_target_name = format!(
+                            "__mutsu_tmp_index_method_target_{}",
+                            self.code.constants.len()
+                        );
+                        let tmp_result_name = format!(
+                            "__mutsu_tmp_index_method_result_{}",
+                            self.code.constants.len()
+                        );
+                        let tmp_target_idx =
+                            self.code.add_constant(Value::str(tmp_target_name.clone()));
+                        let tmp_result_idx =
+                            self.code.add_constant(Value::str(tmp_result_name.clone()));
+                        let name_idx = self.code.add_constant(Value::str(name_resolved));
+                        let var_name_idx = self.code.add_constant(Value::str(var_name));
+
+                        // Save the indexed container value into a temp so CallMethodMut can
+                        // mutate it, while preserving the removed element as the expression
+                        // result and writing the updated array back to the original index.
+                        self.compile_expr(target);
+                        self.code.emit(OpCode::SetGlobal(tmp_target_idx));
+                        self.code.emit(OpCode::GetGlobal(tmp_target_idx));
+                        for arg in args {
+                            self.compile_method_arg(arg);
+                        }
+                        self.code.emit(OpCode::CallMethodMut {
+                            name_idx,
+                            arity,
+                            target_name_idx: tmp_target_idx,
+                            modifier_idx,
+                            quoted: *quoted,
+                        });
+                        self.code.emit(OpCode::SetGlobal(tmp_result_idx));
+                        self.code.emit(OpCode::GetGlobal(tmp_target_idx));
+                        self.compile_expr(idx_key);
+                        self.code.emit(OpCode::IndexAssignExprNamed(var_name_idx));
+                        self.code.emit(OpCode::Pop);
+                        self.code.emit(OpCode::GetGlobal(tmp_result_idx));
+                    } else {
+                        // 1. Compile the index expression to get the element value
+                        self.compile_expr(target);
+                        // 2. Compile method arguments
+                        for arg in args {
+                            self.compile_method_arg(arg);
+                        }
+                        // 3. Emit CallMethod to invoke the method (non-mutating,
+                        //    returns a modified copy of the array)
+                        let name_idx = self.code.add_constant(Value::str(name_resolved));
+                        self.code.emit(OpCode::CallMethod {
+                            name_idx,
+                            arity,
+                            modifier_idx,
+                            quoted: *quoted,
+                        });
+                        // 4. Emit writeback: write the modified value back to the
+                        //    container at the same index.
+                        //    IndexAssignExprNamed expects stack: [val, idx] with idx on top.
+                        self.compile_expr(idx_key);
+                        let var_name_idx = self.code.add_constant(Value::str(var_name));
+                        self.code.emit(OpCode::IndexAssignExprNamed(var_name_idx));
+                    }
                 } else {
                     unreachable!()
                 }

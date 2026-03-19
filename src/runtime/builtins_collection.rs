@@ -628,6 +628,21 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_shift(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.is_empty() {
+            let msg = "X::TypeCheck::Argument: Calling shift(Any) will never work with declared signature ($)".to_string();
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), Value::str(msg.clone()));
+            let ex = Value::make_instance(Symbol::intern("X::TypeCheck::Argument"), attrs);
+            let mut err = RuntimeError::new(msg);
+            err.exception = Some(Box::new(ex));
+            return Err(err);
+        }
+        if args.len() > 1 {
+            return Err(RuntimeError::new(format!(
+                "Too many positionals passed; expected 1 argument but got {}",
+                args.len()
+            )));
+        }
         Ok(match args.first().cloned() {
             Some(Value::Array(mut items, ..)) => {
                 if items.is_empty() {

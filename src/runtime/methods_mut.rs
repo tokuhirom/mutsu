@@ -1293,6 +1293,12 @@ impl Interpreter {
                     return Ok(out);
                 }
                 "shift" => {
+                    if !args.is_empty() {
+                        return Err(RuntimeError::new(format!(
+                            "Too many positionals passed; expected 1 argument but got {}",
+                            args.len() + 1
+                        )));
+                    }
                     if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);
                         let out = if items.is_empty() {
@@ -1541,6 +1547,12 @@ impl Interpreter {
                     return Ok(result);
                 }
                 "shift" => {
+                    if !args.is_empty() {
+                        return Err(RuntimeError::new(format!(
+                            "Too many positionals passed; expected 1 argument but got {}",
+                            args.len() + 1
+                        )));
+                    }
                     if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);
                         let out = if items.is_empty() {
