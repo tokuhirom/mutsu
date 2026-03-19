@@ -104,6 +104,14 @@ pub(crate) enum TokenKind {
     StrBitNeg,  // ~^ prefix string/buffer bitwise negation
     BitShiftLeft,
     BitShiftRight,
+    StrBitAnd,     // ~& string bitwise AND
+    StrBitOr,      // ~| string bitwise OR
+    StrBitXor,     // ~^ (infix) string bitwise XOR
+    StrShiftLeft,  // ~< string bitwise shift left
+    StrShiftRight, // ~> string bitwise shift right
+    BoolBitAnd,    // ?& boolean bitwise AND
+    BoolBitOr,     // ?| boolean bitwise OR
+    BoolBitXor,    // ?^ (infix) boolean bitwise XOR
     LtEqGt,
     SetUnion,
     SetAddition,
