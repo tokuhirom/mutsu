@@ -425,10 +425,18 @@ fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
                 value,
             ],
         },
-        Expr::CallOn { target, args } => Expr::Call {
-            name: Symbol::intern("__mutsu_assign_callable_lvalue"),
-            args: vec![*target, Expr::ArrayLiteral(args), value],
-        },
+        Expr::CallOn { target, args } => {
+            if args.is_empty()
+                && let Expr::ArrayLiteral(items) = *target.clone()
+                && let Some(expr) = list_lvalue_assign_expr(items, value.clone())
+            {
+                return expr;
+            }
+            Expr::Call {
+                name: Symbol::intern("__mutsu_assign_callable_lvalue"),
+                args: vec![*target, Expr::ArrayLiteral(args), value],
+            }
+        }
         Expr::SymbolicDeref { sigil, expr } => Expr::SymbolicDerefAssign {
             sigil,
             expr,
@@ -567,36 +575,89 @@ fn build_compound_assign_target_expr(target: Expr, op_name: &str, value: Expr) -
 fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Expr> {
     let mut saw_whatever = false;
     let mut lvalues: Vec<Expr> = Vec::new();
-    for item in items {
+    for item in &items {
         if matches!(item, Expr::Whatever) {
             saw_whatever = true;
-            continue;
+        } else {
+            lvalues.push(item.clone());
         }
-        lvalues.push(item);
     }
-    if !saw_whatever || lvalues.len() != 1 {
-        return None;
+    if saw_whatever && lvalues.len() == 1 {
+        return match lvalues.into_iter().next()? {
+            Expr::Var(name) => Some(Expr::AssignExpr {
+                name,
+                expr: Box::new(rhs),
+            }),
+            Expr::ArrayVar(name) => Some(Expr::AssignExpr {
+                name: format!("@{}", name),
+                expr: Box::new(rhs),
+            }),
+            Expr::HashVar(name) => Some(Expr::AssignExpr {
+                name: format!("%{}", name),
+                expr: Box::new(rhs),
+            }),
+            Expr::Index { target, index, .. } => Some(Expr::IndexAssign {
+                target,
+                index,
+                value: Box::new(rhs),
+            }),
+            _ => None,
+        };
     }
-    match lvalues.into_iter().next()? {
-        Expr::Var(name) => Some(Expr::AssignExpr {
-            name,
-            expr: Box::new(rhs),
-        }),
-        Expr::ArrayVar(name) => Some(Expr::AssignExpr {
-            name: format!("@{}", name),
-            expr: Box::new(rhs),
-        }),
-        Expr::HashVar(name) => Some(Expr::AssignExpr {
-            name: format!("%{}", name),
-            expr: Box::new(rhs),
-        }),
-        Expr::Index { target, index, .. } => Some(Expr::IndexAssign {
-            target,
-            index,
-            value: Box::new(rhs),
-        }),
-        _ => None,
+
+    // Handle list assignment: ($a, $b, $c) = expr
+    // All items must be simple assignable lvalues.
+    if !saw_whatever
+        && items.len() > 1
+        && items
+            .iter()
+            .all(|item| matches!(item, Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)))
+    {
+        // Desugar into: do { my @__tmp = rhs; $a = @__tmp[0]; $b = @__tmp[1]; ... }
+        let tmp_name = "__destructure_assign_tmp__";
+        let tmp_array_name = format!("@{}", tmp_name);
+        let mut stmts = vec![Stmt::VarDecl {
+            name: tmp_array_name,
+            expr: rhs,
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: Vec::new(),
+            where_constraint: None,
+        }];
+        for (i, item) in items.iter().enumerate() {
+            let index_expr = Expr::Index {
+                target: Box::new(Expr::ArrayVar(tmp_name.to_string())),
+                index: Box::new(Expr::Literal(Value::Int(i as i64))),
+                is_associative: false,
+            };
+            let assign = match item {
+                Expr::Var(name) => Stmt::Expr(Expr::AssignExpr {
+                    name: name.clone(),
+                    expr: Box::new(index_expr),
+                }),
+                Expr::ArrayVar(name) => Stmt::Expr(Expr::AssignExpr {
+                    name: format!("@{}", name),
+                    expr: Box::new(index_expr),
+                }),
+                Expr::HashVar(name) => Stmt::Expr(Expr::AssignExpr {
+                    name: format!("%{}", name),
+                    expr: Box::new(index_expr),
+                }),
+                _ => unreachable!(),
+            };
+            stmts.push(assign);
+        }
+        return Some(Expr::DoBlock {
+            body: stmts,
+            label: None,
+        });
     }
+
+    None
 }
 
 fn parse_assignment_rhs_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {

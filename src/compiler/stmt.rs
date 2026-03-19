@@ -638,6 +638,7 @@ impl Compiler {
                     Vec::new()
                 };
                 let kv_mode = has_rw && Self::for_iterable_is_kv(iterable);
+                let source_var_names = Self::for_iterable_var_names(iterable);
                 let loop_idx = self.code.emit(OpCode::ForLoop {
                     param_idx,
                     param_local,
@@ -653,6 +654,7 @@ impl Compiler {
                     do_writeback: has_rw && !has_copy,
                     rw_param_names,
                     kv_mode,
+                    source_var_names,
                 });
                 self.compile_body_with_implicit_try(&loop_body);
                 self.code.patch_loop_end(loop_idx);

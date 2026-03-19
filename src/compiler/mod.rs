@@ -313,6 +313,24 @@ impl Compiler {
         }
     }
 
+    /// Extract per-element variable names when the iterable is a list of
+    /// scalar variables (e.g. `($a, $b, $c)`). Returns an empty vec otherwise.
+    fn for_iterable_var_names(iterable: &Expr) -> Vec<String> {
+        if let Expr::ArrayLiteral(items) = iterable {
+            let names: Vec<String> = items
+                .iter()
+                .filter_map(|item| match item {
+                    Expr::Var(name) => Some(name.clone()),
+                    _ => None,
+                })
+                .collect();
+            if names.len() == items.len() {
+                return names;
+            }
+        }
+        Vec::new()
+    }
+
     /// Detect if the iterable is a `.kv` method call (key-value pairs).
     fn for_iterable_is_kv(iterable: &Expr) -> bool {
         matches!(

@@ -428,6 +428,9 @@ pub(crate) enum OpCode {
         /// When true, the iterable is from .kv (key-value pairs).
         /// Writeback only applies to value params (odd-indexed in the chunk).
         kv_mode: bool,
+        /// Variable names for per-element writeback when the iterable is a list
+        /// of scalar variables (e.g. `for ($a, $b, $c) { $_++ }`).
+        source_var_names: Vec<String>,
     },
     /// C-style loop: [cond opcodes][body opcodes][step opcodes].
     /// Layout after CStyleLoop: cond at [ip+1..cond_end), body at [cond_end..step_start),

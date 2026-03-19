@@ -614,41 +614,91 @@ fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Option<Expr> {
 fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Expr> {
     let mut saw_whatever = false;
     let mut lvalues: Vec<Expr> = Vec::new();
-    for item in items {
+    for item in &items {
         if matches!(item, Expr::Whatever) {
             saw_whatever = true;
-            continue;
+        } else {
+            lvalues.push(item.clone());
         }
-        lvalues.push(item);
     }
 
-    if lvalues.len() != 1 {
-        return None;
-    }
-    if !saw_whatever {
-        return None;
+    if saw_whatever && lvalues.len() == 1 {
+        return match lvalues.into_iter().next()? {
+            Expr::Var(name) => Some(Expr::AssignExpr {
+                name,
+                expr: Box::new(rhs),
+            }),
+            Expr::ArrayVar(name) => Some(Expr::AssignExpr {
+                name: format!("@{}", name),
+                expr: Box::new(rhs),
+            }),
+            Expr::HashVar(name) => Some(Expr::AssignExpr {
+                name: format!("%{}", name),
+                expr: Box::new(rhs),
+            }),
+            Expr::Index { target, index, .. } => Some(Expr::IndexAssign {
+                target,
+                index,
+                value: Box::new(rhs),
+            }),
+            _ => None,
+        };
     }
 
-    match lvalues.into_iter().next()? {
-        Expr::Var(name) => Some(Expr::AssignExpr {
-            name,
-            expr: Box::new(rhs),
-        }),
-        Expr::ArrayVar(name) => Some(Expr::AssignExpr {
-            name: format!("@{}", name),
-            expr: Box::new(rhs),
-        }),
-        Expr::HashVar(name) => Some(Expr::AssignExpr {
-            name: format!("%{}", name),
-            expr: Box::new(rhs),
-        }),
-        Expr::Index { target, index, .. } => Some(Expr::IndexAssign {
-            target,
-            index,
-            value: Box::new(rhs),
-        }),
-        _ => None,
+    // Handle list assignment: ($a, $b, $c) = expr
+    if !saw_whatever
+        && items.len() > 1
+        && items
+            .iter()
+            .all(|item| matches!(item, Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)))
+    {
+        let tmp_name = "__destructure_assign_tmp__";
+        let tmp_array_name = format!("@{}", tmp_name);
+        let mut stmts = vec![Stmt::VarDecl {
+            name: tmp_array_name,
+            expr: rhs,
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: Vec::new(),
+            where_constraint: None,
+        }];
+        for (i, item) in items.iter().enumerate() {
+            let index_expr = Expr::Index {
+                target: Box::new(Expr::ArrayVar(tmp_name.to_string())),
+                index: Box::new(Expr::Literal(Value::Int(i as i64))),
+                is_associative: false,
+            };
+            let assign = match item {
+                Expr::Var(name) => Stmt::Assign {
+                    name: name.clone(),
+                    expr: index_expr,
+                    op: AssignOp::Assign,
+                },
+                Expr::ArrayVar(name) => Stmt::Assign {
+                    name: format!("@{}", name),
+                    expr: index_expr,
+                    op: AssignOp::Assign,
+                },
+                Expr::HashVar(name) => Stmt::Assign {
+                    name: format!("%{}", name),
+                    expr: index_expr,
+                    op: AssignOp::Assign,
+                },
+                _ => unreachable!(),
+            };
+            stmts.push(assign);
+        }
+        return Some(Expr::DoBlock {
+            body: stmts,
+            label: None,
+        });
     }
+
+    None
 }
 
 fn compound_index_assign_expr<F>(target: Expr, index: Expr, build_assigned_value: F) -> Expr
