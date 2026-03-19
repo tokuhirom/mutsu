@@ -2264,22 +2264,30 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             if after_hyper.starts_with(".=") {
                 break;
             }
-            // Hyper postfix update: expr>>++ / expr>>--
-            if let Some((op, len)) = parse_postfix_update_op(after_hyper) {
-                let name = match op.token_kind() {
-                    TokenKind::PlusPlus => "postfix:<++>",
-                    TokenKind::MinusMinus => "postfix:<-->",
-                    _ => unreachable!("postfix update parser returned unexpected token"),
-                };
-                expr = Expr::HyperMethodCall {
-                    target: Box::new(expr),
-                    name: Symbol::intern(name),
-                    args: Vec::new(),
-                    modifier: None,
-                    quoted: false,
-                };
-                rest = &after_hyper[len..];
-                continue;
+            // Hyper postfix update: expr>>++ / expr>>-- / expr>>.++ / expr>>.--
+            {
+                let (update_input, dot_prefix) =
+                    if let Some(stripped) = after_hyper.strip_prefix('.') {
+                        (stripped, 1)
+                    } else {
+                        (after_hyper, 0)
+                    };
+                if let Some((op, len)) = parse_postfix_update_op(update_input) {
+                    let name = match op.token_kind() {
+                        TokenKind::PlusPlus => "postfix:<++>",
+                        TokenKind::MinusMinus => "postfix:<-->",
+                        _ => unreachable!("postfix update parser returned unexpected token"),
+                    };
+                    expr = Expr::HyperMethodCall {
+                        target: Box::new(expr),
+                        name: Symbol::intern(name),
+                        args: Vec::new(),
+                        modifier: None,
+                        quoted: false,
+                    };
+                    rest = &after_hyper[dot_prefix + len..];
+                    continue;
+                }
             }
             // Check for hyper + superscript exponent: »²
             if let Some((exp, len)) = parse_superscript_exp(after_hyper) {
@@ -2317,18 +2325,66 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = r;
                 continue;
             }
+            // Hyper postfix with user-declared postfix operator: »??? / >>???
+            // Only match when NOT preceded by dot (dotted form is a method call)
+            if !after_hyper.starts_with('.')
+                && let Some((full_name, consumed)) =
+                    super::super::stmt::simple::match_user_declared_postfix_op(after_hyper)
+            {
+                expr = Expr::HyperMethodCall {
+                    target: Box::new(expr),
+                    name: Symbol::intern(&full_name),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                };
+                rest = &after_hyper[consumed..];
+                continue;
+            }
+
             // Check for ».method / >>.method and modifier forms like ».?method, ».+method, »!Type::meth.
             let r = after_hyper.strip_prefix('.').unwrap_or(after_hyper);
+            // Only consume a modifier character if followed by a valid method name
+            // start (alphanumeric, _, $, @, %, &, ", <, (). This avoids
+            // misinterpreting user-defined postfix operators like ??? where the
+            // leading ? is not a modifier.
+            let modifier_followed_by_name = |stripped: &str| -> bool {
+                stripped.chars().next().is_some_and(|c| {
+                    c.is_alphanumeric()
+                        || matches!(c, '_' | '$' | '@' | '%' | '&' | '"' | '<' | '(')
+                })
+            };
             let (r, modifier) = if let Some(stripped) = r.strip_prefix('?') {
-                (stripped, Some('?'))
+                if modifier_followed_by_name(stripped) {
+                    (stripped, Some('?'))
+                } else {
+                    (r, None)
+                }
             } else if let Some(stripped) = r.strip_prefix('^') {
-                (stripped, Some('^'))
+                if modifier_followed_by_name(stripped) {
+                    (stripped, Some('^'))
+                } else {
+                    (r, None)
+                }
             } else if let Some(stripped) = r.strip_prefix('+') {
-                (stripped, Some('+'))
+                if modifier_followed_by_name(stripped) {
+                    (stripped, Some('+'))
+                } else {
+                    (r, None)
+                }
             } else if r.starts_with('*') && !r.starts_with("**") {
-                (&r[1..], Some('*'))
+                let stripped = &r[1..];
+                if modifier_followed_by_name(stripped) {
+                    (stripped, Some('*'))
+                } else {
+                    (r, None)
+                }
             } else if let Some(stripped) = r.strip_prefix('!') {
-                (stripped, Some('!'))
+                if modifier_followed_by_name(stripped) {
+                    (stripped, Some('!'))
+                } else {
+                    (r, None)
+                }
             } else {
                 (r, None)
             };
@@ -2386,6 +2442,22 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         continue;
                     }
                 }
+            }
+
+            // User-declared postfix operator in dotted form: ».??? / >>.???
+            if modifier.is_none()
+                && let Some((full_name, consumed)) =
+                    super::super::stmt::simple::match_user_declared_postfix_op(r)
+            {
+                expr = Expr::HyperMethodCall {
+                    target: Box::new(expr),
+                    name: Symbol::intern(&full_name),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                };
+                rest = &r[consumed..];
+                continue;
             }
 
             // Static method names (includes private owner qualification in `!Type::method`)
