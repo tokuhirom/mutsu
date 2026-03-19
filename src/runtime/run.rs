@@ -167,14 +167,12 @@ impl Interpreter {
     /// body), merge all subsequent method/sub declarations into the class body.
     pub(super) fn merge_unit_class(stmts: Vec<Stmt>) -> Vec<Stmt> {
         // Find the index of a ClassDecl with empty body
-        let class_idx = stmts
-            .iter()
-            .position(|s| {
-                matches!(
-                    s,
-                    Stmt::ClassDecl { body, .. } if crate::ast::body_is_semantically_empty(body)
-                )
-            });
+        let class_idx = stmts.iter().position(|s| {
+            matches!(
+                s,
+                Stmt::ClassDecl { body, .. } if crate::ast::body_is_semantically_empty(body)
+            )
+        });
         if let Some(idx) = class_idx {
             let mut result: Vec<Stmt> = stmts[..idx].to_vec();
             if let Stmt::ClassDecl {
