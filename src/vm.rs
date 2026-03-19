@@ -1961,6 +1961,14 @@ impl VM {
                 self.exec_symbolic_deref_op(code, *sigil_idx);
                 *ip += 1;
             }
+            OpCode::SymbolicDerefStore(sigil_idx) => {
+                self.exec_symbolic_deref_store_op(code, *sigil_idx);
+                *ip += 1;
+            }
+            OpCode::IndirectTypeLookupStore => {
+                self.exec_indirect_type_lookup_store_op(code);
+                *ip += 1;
+            }
             OpCode::StateVarInit(slot, key_idx) => {
                 self.exec_state_var_init_op(code, *slot, *key_idx);
                 *ip += 1;

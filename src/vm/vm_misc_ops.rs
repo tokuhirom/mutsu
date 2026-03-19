@@ -721,6 +721,27 @@ impl VM {
             self.stack.push(val);
             return;
         }
+        // Handle CALLER:: prefix(es) for dynamic variable lookup
+        let mut remaining = name.as_str();
+        let mut caller_depth = 0usize;
+        while let Some(rest) = remaining.strip_prefix("CALLER::") {
+            caller_depth += 1;
+            remaining = rest;
+        }
+        if caller_depth > 0 {
+            let bare_name = match sigil.as_str() {
+                "$" => remaining.to_string(),
+                "@" => format!("@{}", remaining),
+                "%" => format!("%{}", remaining),
+                _ => remaining.to_string(),
+            };
+            let val = self
+                .interpreter
+                .get_caller_var(&bare_name, caller_depth)
+                .unwrap_or(Value::Nil);
+            self.stack.push(val);
+            return;
+        }
         let lookup_name = match sigil.as_str() {
             "$" => name.to_string(),
             "@" => format!("@{}", name),
@@ -731,6 +752,53 @@ impl VM {
             .get_env_with_main_alias(&lookup_name)
             .unwrap_or(Value::Nil);
         self.stack.push(val);
+    }
+
+    pub(super) fn exec_symbolic_deref_store_op(&mut self, code: &CompiledCode, sigil_idx: u32) {
+        let sigil = Self::const_str(code, sigil_idx).to_string();
+        let name_val = self.stack.pop().unwrap_or(Value::Nil);
+        let name = name_val.to_string_value();
+        // Stack: [value] (already below name)
+        let raw_value = self.stack.pop().unwrap_or(Value::Nil);
+        let store_name = match sigil.as_str() {
+            "$" => name.to_string(),
+            "@" => format!("@{}", name),
+            "%" => format!("%{}", name),
+            _ => name.to_string(),
+        };
+        // For $ sigil (item context), take only first element if value is a list.
+        let value = if sigil == "$" {
+            match &raw_value {
+                Value::Array(items, ..) => items.first().cloned().unwrap_or(Value::Nil),
+                _ => raw_value,
+            }
+        } else {
+            raw_value
+        };
+        self.interpreter
+            .env_mut()
+            .insert(store_name.clone(), value.clone());
+        self.update_local_if_exists(code, &store_name, &value);
+        self.stack.push(value);
+    }
+
+    pub(super) fn exec_indirect_type_lookup_store_op(&mut self, code: &CompiledCode) {
+        let name_val = self.stack.pop().unwrap_or(Value::Nil);
+        let name = name_val.to_string_value();
+        let value = self.stack.pop().unwrap_or(Value::Nil);
+        // ::('$x') stores into the variable named $x.
+        // Scalars are stored without the '$' sigil, so strip it.
+        // Arrays (@) and hashes (%) are stored with their sigil.
+        let store_name = if let Some(bare) = name.strip_prefix('$') {
+            bare.to_string()
+        } else {
+            name.to_string()
+        };
+        self.interpreter
+            .env_mut()
+            .insert(store_name.clone(), value.clone());
+        self.update_local_if_exists(code, &store_name, &value);
+        self.stack.push(value);
     }
 
     pub(super) fn exec_assign_expr_op(
