@@ -381,6 +381,115 @@ fn parse_subst_replacement_expr(input: &str) -> PResult<'_, String> {
     Ok((rest, replacement))
 }
 
+/// Try to strip a compound assignment operator (e.g. `+=`, `x=`, `~=`) from the input.
+/// Returns the operator string (without `=`) and the remaining input after `=`.
+fn try_strip_subst_compound_assign(input: &str) -> Option<(&str, &str)> {
+    // Multi-char operators first
+    for op in &["**", "//", "||", "&&", "+|", "+&", "+^", "~|", "~&", "~^"] {
+        if let Some(rest) = input.strip_prefix(op)
+            && let Some(after_eq) = rest.strip_prefix('=')
+        {
+            return Some((op, after_eq));
+        }
+    }
+    // Single-char operators
+    for op in &["+", "-", "*", "/", "~", "%"] {
+        if let Some(rest) = input.strip_prefix(op)
+            && let Some(after_eq) = rest.strip_prefix('=')
+            // Make sure it's not `==`
+            && !after_eq.starts_with('=')
+        {
+            return Some((op, after_eq));
+        }
+    }
+    // Word operators: x=, fromplus=, etc. — any identifier followed by =
+    let mut i = 0;
+    let bytes = input.as_bytes();
+    if i < bytes.len() && (bytes[i].is_ascii_alphabetic() || bytes[i] == b'_') {
+        i += 1;
+        while i < bytes.len()
+            && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'-')
+        {
+            i += 1;
+        }
+        if i < bytes.len() && bytes[i] == b'=' && (i + 1 >= bytes.len() || bytes[i + 1] != b'=') {
+            return Some((&input[..i], &input[i + 1..]));
+        }
+    }
+    None
+}
+
+/// Build an expression for `s[pattern] op= value` compound substitution.
+/// This is equivalent to `$_.subst(pattern, { $/ op value })` applied to `$_`.
+fn build_topic_subst_compound_expr(
+    pattern: String,
+    op: &str,
+    rhs: Expr,
+    adverbs: &MatchAdverbs,
+) -> Result<Expr, PError> {
+    use crate::token_kind::TokenKind;
+
+    let match_var = Expr::Var("/".to_string());
+
+    let op_token = match op {
+        "+" => Some(TokenKind::Plus),
+        "-" => Some(TokenKind::Minus),
+        "*" => Some(TokenKind::Star),
+        "/" => Some(TokenKind::Slash),
+        "~" => Some(TokenKind::Tilde),
+        "x" => Some(TokenKind::Ident("x".to_string())),
+        "%" => Some(TokenKind::Percent),
+        "**" => Some(TokenKind::StarStar),
+        "//" => Some(TokenKind::SlashSlash),
+        "||" => Some(TokenKind::OrOr),
+        "&&" => Some(TokenKind::AndAnd),
+        _ => None,
+    };
+
+    // Build: { $/ op rhs }
+    // Note: $/ is stored as Var("/") in the AST (the parser strips the sigil)
+    let body_expr = if let Some(op_token) = op_token {
+        Expr::Binary {
+            left: Box::new(match_var),
+            op: op_token,
+            right: Box::new(rhs),
+        }
+    } else {
+        // User-defined infix operator: call infix:<op>($/, rhs)
+        Expr::Call {
+            name: Symbol::intern(&format!("infix:<{op}>")),
+            args: vec![match_var, rhs],
+        }
+    };
+
+    let regex_value = Value::Regex(Arc::new(pattern));
+
+    let mut args = vec![
+        Expr::Literal(regex_value),
+        Expr::AnonSub {
+            body: vec![Stmt::Expr(body_expr)],
+            is_rw: false,
+        },
+    ];
+    if adverbs.global {
+        args.push(Expr::Literal(Value::Pair(
+            "g".to_string(),
+            Box::new(Value::Bool(true)),
+        )));
+    }
+
+    Ok(Expr::AssignExpr {
+        name: "_".to_string(),
+        expr: Box::new(Expr::MethodCall {
+            target: Box::new(Expr::Var("_".to_string())),
+            name: Symbol::intern("subst"),
+            args,
+            modifier: None,
+            quoted: false,
+        }),
+    })
+}
+
 fn build_topic_subst_expr(
     pattern: String,
     replacement: Expr,
@@ -487,9 +596,26 @@ fn build_regex_with_adverbs(pattern: String, adverbs: &MatchAdverbs) -> Value {
 /// is collected into an `Array` node, producing one arg per group.
 pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Expr>> {
     fn parse_call_arg_expr(input: &str) -> PResult<'_, Expr> {
-        let (rest, expr) = crate::parser::primary::misc::reduction_call_style_expr(input)
-            .or_else(|_| try_parse_assign_expr(input))
-            .or_else(|_| expression(input))?;
+        let (rest, expr) =
+            if let Ok(result) = crate::parser::primary::misc::reduction_call_style_expr(input) {
+                result
+            } else if let Ok((rest, assign_expr)) = try_parse_assign_expr(input) {
+                // Only take the assignment fast path when it reaches an argument
+                // boundary. Otherwise a parenthesized assignment like `($x = 10)`
+                // can be consumed too early inside a larger expression.
+                let trimmed = rest.trim_start();
+                if trimmed.is_empty()
+                    || trimmed.starts_with(',')
+                    || trimmed.starts_with(')')
+                    || trimmed.starts_with(';')
+                {
+                    (rest, assign_expr)
+                } else {
+                    expression(input)?
+                }
+            } else {
+                expression(input)?
+            };
         // Handle compound assignment on non-variable expressions in argument position
         // (e.g., `* *= 2` creates WhateverCode that mutates via compound assign).
         let (rest_ws, _) = crate::parser::helpers::ws(rest)?;
@@ -502,7 +628,7 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
                 op: op.token_kind(),
                 right: Box::new(rhs),
             };
-            // Apply WhateverCode wrapping (e.g., `* *= 2` → WhateverCode lambda)
+            // Apply WhateverCode wrapping (e.g., `* *= 2` -> WhateverCode lambda)
             if crate::parser::expr::should_wrap_whatevercode(&compound_expr) {
                 compound_expr = crate::parser::expr::wrap_whatevercode(&compound_expr);
             }
@@ -921,12 +1047,89 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         ));
     }
 
+    // ss/pattern/replacement/ — shorthand for s:ss/.../.../
+    // Also supports adverbs: ss:g/pattern/replacement/
+    if let Some(after_ss) = input.strip_prefix("ss")
+        && !crate::parser::stmt::simple::is_user_declared_sub("ss")
+        && let Some(first_ch) = after_ss.chars().next()
+        && (first_ch == ':'
+            || (!first_ch.is_alphanumeric() && first_ch != '_' && !first_ch.is_whitespace()))
+    {
+        let (spec, mut adverbs) = if first_ch == ':' {
+            parse_match_adverbs(after_ss)?
+        } else {
+            (after_ss, MatchAdverbs::default())
+        };
+        // ss implies :ss (:samespace + :sigspace)
+        adverbs.samespace = true;
+        adverbs.sigspace = true;
+        let spec = if first_ch == ':' { ws(spec)?.0 } else { spec };
+        if let Some(open_ch) = spec.chars().next() {
+            let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
+            let looks_like_method = open_ch == '.'
+                && spec.len() > 2
+                && spec[1..].starts_with(|c: char| c.is_alphabetic() || c == '_')
+                && spec[2..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-');
+            if is_delim && !looks_like_method {
+                let (close_ch, is_paired) = match open_ch {
+                    '{' => ('}', true),
+                    '[' => (']', true),
+                    '(' => (')', true),
+                    '<' => ('>', true),
+                    other => (other, false),
+                };
+                let r = &spec[open_ch.len_utf8()..];
+                let scan_fn = if adverbs.perl5 {
+                    scan_to_delim_p5
+                } else {
+                    scan_to_delim
+                };
+                if let Some((pattern, after_pat)) = scan_fn(r, open_ch, close_ch, is_paired) {
+                    let r2 = if is_paired {
+                        let (r2, _) = ws(after_pat)?;
+                        r2.strip_prefix(open_ch).unwrap_or(r2)
+                    } else {
+                        after_pat
+                    };
+                    let replacement_scan = if is_paired && !r2.starts_with(open_ch) {
+                        None
+                    } else {
+                        scan_to_delim(r2, open_ch, close_ch, is_paired)
+                    };
+                    if let Some((replacement, rest)) = replacement_scan {
+                        let pattern = if adverbs.perl5 {
+                            pattern.to_string()
+                        } else {
+                            let p = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                            validate_regex_pattern_or_perror(&p)?;
+                            p
+                        };
+                        return Ok((
+                            rest,
+                            Expr::Subst {
+                                pattern,
+                                replacement: replacement.to_string(),
+                                samemark: adverbs.samemark,
+                                samespace: adverbs.samespace,
+                                global: adverbs.global,
+                                nth: adverbs.nth.clone(),
+                                x: adverbs.repeat,
+                                perl5: adverbs.perl5,
+                            },
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
     // s with arbitrary delimiter: s/pattern/replacement/, s^pattern^replacement^, etc.
     // Also supports adverbs: s:mm/pattern/replacement/, s:i:g/pattern/replacement/
-    // Skip if 's' has been declared as a user sub — it should be parsed as a function call.
+    // Skip if 's' has been declared as a user sub — UNLESS followed by ':', which is always
+    // substitution (per Raku spec: `s:` is always a substitution even when `sub s` exists).
     if let Some(after_s) = input.strip_prefix('s')
-        && !crate::parser::stmt::simple::is_user_declared_sub("s")
         && let Some(first_ch) = after_s.chars().next()
+        && (!crate::parser::stmt::simple::is_user_declared_sub("s") || first_ch == ':')
     {
         // Parse optional adverbs between s and delimiter
         let (spec, adverbs) = if first_ch == ':' {
@@ -992,6 +1195,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 pattern,
                                 replacement: replacement.to_string(),
                                 samemark: adverbs.samemark,
+                                samespace: adverbs.samespace,
                                 global: adverbs.global,
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
@@ -1000,6 +1204,30 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         ));
                     }
                     let (after_pat_ws, _) = ws(after_pat)?;
+                    // Check for compound assignment: s[pattern] op= value
+                    // Try op= forms (+=, -=, x=, ~=, etc.) before bare =
+                    if let Some((op_str, after_op_eq)) =
+                        try_strip_subst_compound_assign(after_pat_ws)
+                    {
+                        let (after_eq_ws, _) = ws(after_op_eq)?;
+                        let (rest, rhs_expr) = expression(after_eq_ws)?;
+                        let pattern_str = if adverbs.perl5 {
+                            pattern.to_string()
+                        } else {
+                            let p = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                            validate_regex_pattern_or_perror(&p)?;
+                            p
+                        };
+                        return Ok((
+                            rest,
+                            build_topic_subst_compound_expr(
+                                pattern_str,
+                                op_str,
+                                rhs_expr,
+                                &adverbs,
+                            )?,
+                        ));
+                    }
                     if let Some(after_eq) = after_pat_ws.strip_prefix('=') {
                         // Try literal replacement first; fall back to expression
                         if let Ok((rest, replacement)) = parse_subst_replacement_expr(after_eq) {
@@ -1023,6 +1251,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                     pattern,
                                     replacement,
                                     samemark: adverbs.samemark,
+                                    samespace: adverbs.samespace,
                                     global: adverbs.global,
                                     nth: adverbs.nth.clone(),
                                     x: adverbs.repeat,
@@ -1101,6 +1330,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 pattern,
                                 replacement: replacement.to_string(),
                                 samemark: adverbs.samemark,
+                                samespace: adverbs.samespace,
                                 global: adverbs.global,
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
@@ -1129,6 +1359,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 pattern,
                                 replacement,
                                 samemark: adverbs.samemark,
+                                samespace: adverbs.samespace,
                                 global: adverbs.global,
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
@@ -1181,6 +1412,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     pattern: pattern.to_string(),
                     replacement: replacement.to_string(),
                     samemark: false,
+                    samespace: false,
                     global: false,
                     nth: None,
                     x: None,

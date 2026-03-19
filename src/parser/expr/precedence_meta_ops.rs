@@ -965,6 +965,32 @@ pub(super) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
     Ok((rest, left))
 }
 
+/// Autoincrement prefix: ++expr, --expr
+/// Binds tighter than ** (exponentiation) but looser than postfix.
+/// e.g. `++$i ** 2` parses as `(++$i) ** 2`.
+fn autoincrement_expr(
+    input: &str,
+    base_parser: fn(&str) -> PResult<'_, Expr>,
+) -> PResult<'_, Expr> {
+    use super::operators::PrefixUnaryOp;
+    use super::operators::parse_prefix_unary_op;
+    if let Some((op @ (PrefixUnaryOp::PreInc | PrefixUnaryOp::PreDec), len)) =
+        parse_prefix_unary_op(input)
+    {
+        let rest = &input[len..];
+        // Recurse to allow nested ++/-- (e.g. ++++$x)
+        let (rest, expr) = autoincrement_expr(rest, base_parser)?;
+        return Ok((
+            rest,
+            Expr::Unary {
+                op: op.token_kind(),
+                expr: Box::new(expr),
+            },
+        ));
+    }
+    base_parser(input)
+}
+
 /// Exponentiation: **
 /// Uses tight postfix (no whitespace-separated dotty) so that ws-dot
 /// method calls bind looser than `**` and prefix operators.
@@ -982,7 +1008,7 @@ pub(super) fn power_expr_tight(input: &str) -> PResult<'_, Expr> {
 }
 
 fn power_expr_inner(input: &str, base_parser: fn(&str) -> PResult<'_, Expr>) -> PResult<'_, Expr> {
-    let (mut rest, mut base) = base_parser(input)?;
+    let (mut rest, mut base) = autoincrement_expr(input, base_parser)?;
     // Check for custom infixes at power level (tighter than multiplicative)
     loop {
         let (r, _) = ws(rest)?;

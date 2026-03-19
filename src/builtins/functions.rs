@@ -497,11 +497,33 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 "sech" => 1.0 / x.cosh(),
                 "cosech" => 1.0 / x.sinh(),
                 "cotanh" => 1.0 / x.tanh(),
-                "asinh" => x.asinh(),
-                "acosh" => x.acosh(),
+                // Use formula-based computation for asinh to match Raku's
+                // behavior: for very large inputs (e.g. 1e200), the intermediate
+                // x^2 overflows to Inf, producing Inf as the result (matching Raku).
+                // Handle negative values via sign to avoid cancellation error.
+                "asinh" => {
+                    let sign = x.signum();
+                    let ax = x.abs();
+                    sign * (ax + (ax * ax + 1.0).sqrt()).ln()
+                }
+                // acosh: use native for correctness (NaN for x < 1), but match
+                // Raku's Inf for very large positive inputs via formula fallback.
+                "acosh" => {
+                    if x < 1.0 {
+                        f64::NAN
+                    } else {
+                        (x + (x * x - 1.0).sqrt()).ln()
+                    }
+                }
                 "atanh" => x.atanh(),
-                "asech" => (1.0 / x).acosh(),
-                "acosech" => (1.0 / x).asinh(),
+                "asech" => {
+                    let y = 1.0 / x;
+                    (y + (y * y - 1.0).sqrt()).ln()
+                }
+                "acosech" => {
+                    let y = 1.0 / x;
+                    (y + (y * y + 1.0).sqrt()).ln()
+                }
                 "acotanh" => (1.0 / x).atanh(),
                 _ => 0.0,
             };

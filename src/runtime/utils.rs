@@ -795,7 +795,9 @@ pub(crate) fn reduction_identity(op: &str) -> Value {
         "&&" | "and" | "?&" => Value::Bool(true),
         "||" | "or" | "?|" | "^^" => Value::Bool(false),
         "?^" => Value::Bool(false),
-        "//" => Value::Package(Symbol::intern("Any")),
+        "//" | "orelse" => Value::Package(Symbol::intern("Any")),
+        "andthen" => Value::Bool(true),
+        "xor" => Value::Bool(false),
         "min" => Value::Num(f64::INFINITY),
         "max" => Value::Num(f64::NEG_INFINITY),
         // Junction operators
@@ -816,8 +818,32 @@ pub(crate) fn reduction_identity(op: &str) -> Value {
         "(.)" | "⊍" | "(+)" | "⊎" => Value::bag(HashMap::new()),
         // Comma/zip: empty list
         "," | "Z" => Value::Array(std::sync::Arc::new(Vec::new()), ArrayKind::List),
-        _ => Value::Nil,
+        _ => {
+            // Hyper operator forms: >>op<<, >>op>>, <<op<<, <<op>>
+            if let Some(inner) = strip_hyper_delimiters_for_identity(op) {
+                return reduction_identity(inner);
+            }
+            Value::Nil
+        }
     }
+}
+
+/// Strip hyper operator delimiters to find the inner operator for identity lookup.
+fn strip_hyper_delimiters_for_identity(s: &str) -> Option<&str> {
+    let after_left = s
+        .strip_prefix(">>")
+        .or_else(|| s.strip_prefix("<<"))
+        .or_else(|| s.strip_prefix('\u{00BB}'))
+        .or_else(|| s.strip_prefix('\u{00AB}'))?;
+    let inner = after_left
+        .strip_suffix(">>")
+        .or_else(|| after_left.strip_suffix("<<"))
+        .or_else(|| after_left.strip_suffix('\u{00BB}'))
+        .or_else(|| after_left.strip_suffix('\u{00AB}'))?;
+    if inner.is_empty() {
+        return None;
+    }
+    Some(inner)
 }
 
 pub(crate) fn char_idx_to_byte(text: &str, idx: usize) -> usize {
@@ -1202,6 +1228,37 @@ pub(crate) fn parse_radix_number_body(body: &str, base: u32) -> Option<Value> {
     Some(crate::value::make_big_rat(numerator, denominator))
 }
 
+/// Parse `0x`, `0o`, `0b`, `0d` prefixed integer literals from strings.
+/// E.g. `"0xFF"` → 255, `"0o77"` → 63, `"0b1010"` → 10, `"0d42"` → 42.
+pub(crate) fn parse_0_prefixed_radix_literal(s: &str) -> Option<Value> {
+    let s = s.trim();
+    if !s.starts_with('0') || s.len() < 3 {
+        return None;
+    }
+    let (base, digits) = match s.as_bytes()[1] {
+        b'x' | b'X' => (16, &s[2..]),
+        b'o' | b'O' => (8, &s[2..]),
+        b'b' | b'B' => (2, &s[2..]),
+        b'd' | b'D' => (10, &s[2..]),
+        _ => return None,
+    };
+    // Strip underscores (Raku allows underscores in numeric literals)
+    let clean: String = digits.chars().filter(|&c| c != '_').collect();
+    if clean.is_empty() {
+        return None;
+    }
+    i64::from_str_radix(&clean, base)
+        .ok()
+        .map(Value::Int)
+        .or_else(|| {
+            use num_bigint::BigInt;
+            use num_traits::Num;
+            BigInt::from_str_radix(&clean, base)
+                .ok()
+                .map(|b| Value::BigInt(std::sync::Arc::new(b)))
+        })
+}
+
 pub(crate) fn parse_prefixed_generic_radix_literal(s: &str) -> Option<Value> {
     let rest = s.strip_prefix(':')?;
     let (rest, base_clean) = parse_unicode_decimal_digits(rest)?;
@@ -1229,6 +1286,8 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
         Value::Str(ref s) => {
             let s = s.trim();
             if let Some(v) = parse_prefixed_generic_radix_literal(s) {
+                v
+            } else if let Some(v) = parse_0_prefixed_radix_literal(s) {
                 v
             } else if let Ok(i) = s.parse::<i64>() {
                 Value::Int(i)

@@ -1983,7 +1983,24 @@ impl Interpreter {
                         Ok(Value::Int(int_val))
                     }
                     "Str" => Ok(Value::str(String::new())),
-                    "Num" => Ok(Value::Num(0.0)),
+                    "Num" => {
+                        if let Some(arg) = args.first() {
+                            // Type objects (e.g. anonymous class {}) cannot coerce to Num
+                            if matches!(arg, Value::Package(_)) {
+                                return Err(RuntimeError::new(
+                                    "Cannot coerce to Num: no .Num method found",
+                                ));
+                            }
+                            match crate::runtime::to_float_value(arg) {
+                                Some(f) => Ok(Value::Num(f)),
+                                None => Err(RuntimeError::new(
+                                    "Cannot coerce to Num: no .Num method found",
+                                )),
+                            }
+                        } else {
+                            Ok(Value::Num(0.0))
+                        }
+                    }
                     "Bool" => Ok(Value::Bool(false)),
                     "Attribute" => {
                         // Attribute.new(:name<...>, :type(Int), :package<Foo>)

@@ -430,8 +430,35 @@ impl VM {
 
     pub(super) fn normalize_incdec_source(value: Value) -> Value {
         match value {
-            Value::Nil | Value::Package(_) => Value::Int(0),
+            Value::Nil => Value::Int(0),
+            Value::Package(name) => match name.resolve().as_str() {
+                "Num" | "num" => Value::Num(0.0),
+                "Rat" => crate::value::make_rat(0, 1),
+                "Complex" => Value::Complex(0.0, 0.0),
+                _ => Value::Int(0),
+            },
             other => other,
+        }
+    }
+
+    /// Like normalize_incdec_source, but also checks the variable's type
+    /// constraint when the value is Nil. This ensures that e.g. `my Num $v; ++$v`
+    /// starts from Num(0.0) rather than Int(0).
+    pub(super) fn normalize_incdec_source_with_type(&self, var_name: &str, value: Value) -> Value {
+        match &value {
+            Value::Nil => {
+                if let Some(tc) = self.interpreter.var_type_constraint(var_name) {
+                    match tc.as_str() {
+                        "Num" | "num" => Value::Num(0.0),
+                        "Rat" => crate::value::make_rat(0, 1),
+                        "Complex" => Value::Complex(0.0, 0.0),
+                        _ => Value::Int(0),
+                    }
+                } else {
+                    Value::Int(0)
+                }
+            }
+            _ => Self::normalize_incdec_source(value),
         }
     }
 
@@ -989,6 +1016,25 @@ impl VM {
         }
     }
 
+    /// Strip hyper operator delimiters (>>...<<, >>...>>, <<...<<, <<...>>)
+    /// and their Unicode variants, returning the inner operator if found.
+    fn strip_hyper_delimiters_str(s: &str) -> Option<&str> {
+        let after_left = s
+            .strip_prefix(">>")
+            .or_else(|| s.strip_prefix("<<"))
+            .or_else(|| s.strip_prefix('\u{00BB}'))
+            .or_else(|| s.strip_prefix('\u{00AB}'))?;
+        let inner = after_left
+            .strip_suffix(">>")
+            .or_else(|| after_left.strip_suffix("<<"))
+            .or_else(|| after_left.strip_suffix('\u{00BB}'))
+            .or_else(|| after_left.strip_suffix('\u{00AB}'))?;
+        if inner.is_empty() {
+            return None;
+        }
+        Some(inner)
+    }
+
     pub(super) fn eval_reduction_operator_values(
         &mut self,
         op: &str,
@@ -1032,6 +1078,38 @@ impl VM {
                     &left_list[i],
                     &right_list[i],
                 )?);
+            }
+            return Ok(Value::array(results));
+        }
+        // Hyper operator forms: >>op<<, >>op>>, <<op<<, <<op>>
+        // Apply inner op element-wise to two lists.
+        if let Some(inner_op) = Self::strip_hyper_delimiters_str(op) {
+            let left_list = runtime::value_to_list(left);
+            let right_list = runtime::value_to_list(right);
+            let dwim_left = op.starts_with("<<") || op.starts_with('\u{00AB}');
+            let dwim_right = op.ends_with(">>") || op.ends_with('\u{00BB}');
+            let len = if dwim_left && dwim_right {
+                left_list.len().max(right_list.len())
+            } else if dwim_left {
+                right_list.len()
+            } else if dwim_right {
+                left_list.len()
+            } else {
+                left_list.len().max(right_list.len())
+            };
+            let mut results = Vec::with_capacity(len);
+            for i in 0..len {
+                let l = if left_list.is_empty() {
+                    &Value::Int(0.into())
+                } else {
+                    &left_list[i % left_list.len()]
+                };
+                let r = if right_list.is_empty() {
+                    &Value::Int(0.into())
+                } else {
+                    &right_list[i % right_list.len()]
+                };
+                results.push(self.eval_reduction_operator_values(inner_op, l, r)?);
             }
             return Ok(Value::array(results));
         }

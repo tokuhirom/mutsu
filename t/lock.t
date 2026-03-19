@@ -1,6 +1,6 @@
 use Test;
 
-plan 9;
+plan 10;
 
 my $lock = Lock.new;
 is $lock.WHAT, "(Lock)", "Lock.new returns a Lock";
@@ -35,3 +35,16 @@ $lock.protect({
     $cond.signal_all;
 });
 pass "signal and signal_all are callable";
+
+{
+    my @target;
+    await start {
+        for ^200 -> $i {
+            $async-lock.protect: {
+                push @target, $i;
+            }
+        }
+    } xx 2;
+    is [+](@target), 2 * [+](^200),
+        "Lock::Async protects shared array pushes";
+}

@@ -342,6 +342,13 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 value: Box::new(rhs),
             },
         )),
+        Expr::BareWord(name) => Ok((
+            r,
+            Expr::AssignExpr {
+                name,
+                expr: Box::new(rhs),
+            },
+        )),
         Expr::CallOn { target, args } => Ok((
             r,
             if args.is_empty() {
@@ -1650,7 +1657,7 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         parse_junctive_op(rest).is_some() || parse_junction_infix_op(rest).is_some()
     }
 
-    let (rest, left) = junctive_expr_mode(input, mode)?;
+    let (rest, mut left) = junctive_expr_mode(input, mode)?;
     let (r, _) = ws(rest)?;
     // Detect Perl 5 =~ and !~ brainos (only when followed by space or m/)
     if r.starts_with("=~") && !r.starts_with("=~=") && !r.starts_with("=:=") {
@@ -1910,6 +1917,12 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         };
         if matches!(op, ComparisonOp::SmartMatch | ComparisonOp::SmartNotMatch) {
             right = wrap_smartmatch_rhs(right);
+            // Wrap LHS WhateverCode subexpressions (e.g. `*.abs ~~ Code`).
+            // SmartMatch suppresses top-level WhateverCode wrapping, but the LHS
+            // should still be curried when it contains Whatever.
+            if super::should_wrap_whatevercode(&left) {
+                left = super::wrap_whatevercode(&left);
+            }
         }
         let mut operands = vec![left, right];
         let mut chain_ops: Vec<(TokenKind, bool)> = vec![(op.token_kind(), false)];

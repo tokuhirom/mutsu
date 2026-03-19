@@ -93,6 +93,9 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(number::integer(input));
         try_primary!(number::generic_radix(input));
         try_primary!(number::unicode_numeric_literal(input));
+        // User-declared term symbols must be checked before keyword literals so
+        // that e.g. `\term:<e²ˣ>` shadows the built-in constant `e`.
+        try_primary!(ident::declared_term_symbol(input));
         try_primary!(string::single_quoted_string(input));
         try_primary!(string::smart_single_quoted_string(input));
         try_primary!(string::double_quoted_string(input));
@@ -134,7 +137,6 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         // anonymous grammar: grammar { ... }
         try_primary!(misc::anon_grammar_expr(input));
         try_primary!(ident::declared_circumfix_op(input));
-        try_primary!(ident::declared_term_symbol(input));
 
         match ident::identifier_or_call(input) {
             Ok(r) => Ok(r),
