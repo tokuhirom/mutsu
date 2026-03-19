@@ -1161,7 +1161,15 @@ impl Interpreter {
         if constraint == "Numeric"
             && matches!(
                 value_type,
-                "Int" | "Num" | "Rat" | "FatRat" | "Complex" | "Bool" | "UInt"
+                "Int"
+                    | "Num"
+                    | "Rat"
+                    | "FatRat"
+                    | "Complex"
+                    | "Bool"
+                    | "UInt"
+                    | "Duration"
+                    | "Instant"
             )
         {
             return true;
@@ -1169,7 +1177,7 @@ impl Interpreter {
         if constraint == "Real"
             && matches!(
                 value_type,
-                "Int" | "Num" | "Rat" | "FatRat" | "Bool" | "UInt"
+                "Int" | "Num" | "Rat" | "FatRat" | "Bool" | "UInt" | "Duration" | "Instant"
             )
         {
             return true;

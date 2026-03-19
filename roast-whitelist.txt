@@ -99,6 +99,7 @@ roast/S02-types/fatrat.t
 roast/S02-types/hash_ref.t
 roast/S02-types/hyperwhatever.t
 roast/S02-types/infinity.t
+roast/S02-types/instants-and-durations.t
 roast/S02-types/int-uint.t
 roast/S02-types/lazy-lists.t
 roast/S02-types/mu.t
