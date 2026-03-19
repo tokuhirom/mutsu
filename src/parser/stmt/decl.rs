@@ -768,6 +768,43 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             }
             return Ok((r, stmt));
         }
+        // `my Str subset MyStr [where ...]` — shorthand subset with prefix base type
+        if let Some(r) = keyword("subset", after_type) {
+            let (r, _) = ws1(r)?;
+            let (r, name) = qualified_ident(r)?;
+            let (mut r, _) = ws(r)?;
+            // Parse optional traits (e.g. `is export`)
+            while let Some(r2) = keyword("is", r) {
+                let (r2, _) = ws1(r2)?;
+                let (r2, trait_name) = ident(r2)?;
+                let (r2, _) = ws(r2)?;
+                if trait_name == "export" {
+                    r = skip_balanced_parens(r2);
+                    let (r2, _) = ws(r)?;
+                    r = r2;
+                } else {
+                    r = r2;
+                }
+            }
+            let (r, predicate) = if let Some(r2) = keyword("where", r) {
+                let (r2, _) = ws1(r2)?;
+                let (r2, pred) = expression(r2)?;
+                (r2, Some(pred))
+            } else {
+                (r, None)
+            };
+            let (r, _) = ws(r)?;
+            let (r, _) = opt_char(r, ';');
+            return Ok((
+                r,
+                Stmt::SubsetDecl {
+                    name: Symbol::intern(&name),
+                    base: routine_type,
+                    predicate,
+                    version: super::simple::current_language_version(),
+                },
+            ));
+        }
         // Check for multiple prefix constraints on routine: `our Int Str sub foo()`
         if let Some((after_second_type, _second_tc)) = parse_type_constraint_expr(after_type) {
             let (after_second_type, _) = ws(after_second_type)?;
@@ -1742,6 +1779,14 @@ struct DestructureVar {
     is_named: bool,
     /// Per-variable default value (e.g. `$x = 5` inside grouped declaration)
     default: Option<Expr>,
+    /// Type constraint for this particular variable (e.g. `Foo $d`)
+    per_var_type_constraint: Option<String>,
+    /// Where constraint (e.g. `$a where 2`)
+    where_constraint: Option<Expr>,
+    /// Whether this is a sigilless variable (\c)
+    sigilless: bool,
+    /// Literal match value (e.g. `"foo"`)
+    literal_value: Option<Expr>,
 }
 
 pub(super) fn parse_destructuring_decl(
@@ -1773,6 +1818,84 @@ pub(super) fn parse_destructuring_decl(
             r = after;
         }
 
+        // Try to parse a type constraint before the variable (e.g. `Foo $d`)
+        let mut per_var_type_constraint = None;
+        if let Some((after_tc, tc)) = parse_type_constraint_expr(r) {
+            let (after_tc_ws, _) = ws(after_tc)?;
+            // Only treat as type if followed by a sigil or sigilless backslash
+            if after_tc_ws.starts_with('$')
+                || after_tc_ws.starts_with('@')
+                || after_tc_ws.starts_with('%')
+                || after_tc_ws.starts_with('&')
+                || after_tc_ws.starts_with('\\')
+            {
+                per_var_type_constraint = Some(tc);
+                r = after_tc_ws;
+            }
+        }
+
+        // Sigilless variable: \c or \name
+        if let Some(after_backslash) = r.strip_prefix('\\') {
+            let (r2, name) = ident(after_backslash)?;
+            register_term_symbol_from_decl_name(&name);
+            let (r2, _) = ws(r2)?;
+            // Parse optional where constraint
+            let (r2, where_constraint) = if keyword("where", r2).is_some() {
+                let r3 = keyword("where", r2).unwrap();
+                let (r3, _) = ws1(r3)?;
+                let (r3, expr) = expression(r3)?;
+                (r3, Some(expr))
+            } else {
+                (r2, None)
+            };
+            let (r2, _) = ws(r2)?;
+            vars.push(DestructureVar {
+                name,
+                is_slurpy,
+                is_optional: false,
+                is_named,
+                default: None,
+                per_var_type_constraint,
+                where_constraint,
+                sigilless: true,
+                literal_value: None,
+            });
+            if r2.starts_with(',') {
+                let (r2, _) = parse_char(r2, ',')?;
+                let (r2, _) = ws(r2)?;
+                r = r2;
+            } else {
+                r = r2;
+            }
+            continue;
+        }
+
+        // Literal value: "foo" or 'bar' — acts as a match constraint
+        if r.starts_with('"') || r.starts_with('\'') {
+            let (r2, lit_expr) = expression(r)?;
+            let (r2, _) = ws(r2)?;
+            let anon_name = format!("__literal_match_{}", vars.len());
+            vars.push(DestructureVar {
+                name: anon_name,
+                is_slurpy: false,
+                is_optional: false,
+                is_named: false,
+                default: None,
+                per_var_type_constraint: None,
+                where_constraint: None,
+                sigilless: false,
+                literal_value: Some(lit_expr),
+            });
+            if r2.starts_with(',') {
+                let (r2, _) = parse_char(r2, ',')?;
+                let (r2, _) = ws(r2)?;
+                r = r2;
+            } else {
+                r = r2;
+            }
+            continue;
+        }
+
         let sigil = r.as_bytes().first().copied().unwrap_or(0);
         if sigil == b'$' || sigil == b'@' || sigil == b'%' || sigil == b'&' {
             let prefix = match sigil {
@@ -1790,6 +1913,17 @@ pub(super) fn parse_destructuring_decl(
                 (after, true)
             } else {
                 (r2, false)
+            };
+            let (r2, _) = ws(r2)?;
+
+            // Parse optional where constraint: $a where 2
+            let (r2, where_constraint) = if keyword("where", r2).is_some() {
+                let r3 = keyword("where", r2).unwrap();
+                let (r3, _) = ws1(r3)?;
+                let (r3, expr) = expression(r3)?;
+                (r3, Some(expr))
+            } else {
+                (r2, None)
             };
             let (r2, _) = ws(r2)?;
 
@@ -1811,6 +1945,10 @@ pub(super) fn parse_destructuring_decl(
                 is_optional,
                 is_named,
                 default,
+                per_var_type_constraint,
+                where_constraint,
+                sigilless: false,
+                literal_value: None,
             });
 
             if r2.starts_with(',') {
@@ -1821,7 +1959,9 @@ pub(super) fn parse_destructuring_decl(
                 r = r2;
             }
         } else {
-            return Err(PError::expected("variable sigil ($, @, %, &)"));
+            return Err(PError::expected(
+                "variable sigil ($, @, %, &), sigilless (\\name), or literal",
+            ));
         }
     }
     let (rest, _) = parse_char(r, ')')?;
@@ -1919,6 +2059,12 @@ pub(super) fn parse_destructuring_decl(
         }];
         let has_explicit_slurpy = vars.iter().any(|v| v.is_slurpy);
         for (i, dvar) in vars.iter().enumerate() {
+            // Literal match values just consume a slot — no variable declaration
+            if dvar.literal_value.is_some() {
+                // TODO: enforce that the RHS value at this position matches the literal
+                continue;
+            }
+
             // An @-sigiled variable that is the last non-slurpy variable
             // should consume all remaining elements (implicit slurpy behavior).
             let is_implicit_slurpy = !has_explicit_slurpy
@@ -1942,18 +2088,29 @@ pub(super) fn parse_destructuring_decl(
                     index: Box::new(Expr::Literal(Value::Int(i as i64))),
                 }
             };
+            // Use per-variable type constraint if present, else fall back to
+            // the outer type constraint from `my Type (...)`.
+            let effective_tc = dvar
+                .per_var_type_constraint
+                .clone()
+                .or_else(|| type_constraint.clone());
+            let effective_where = dvar.where_constraint.clone().map(Box::new);
             stmts.push(Stmt::VarDecl {
                 name: dvar.name.clone(),
                 expr,
-                type_constraint: type_constraint.clone(),
+                type_constraint: effective_tc,
                 is_state,
                 is_our: false,
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
-                where_constraint: None,
+                where_constraint: effective_where,
             });
+            // For sigilless variables, mark as readonly
+            if dvar.sigilless {
+                stmts.push(Stmt::MarkSigillessReadonly(dvar.name.clone()));
+            }
             // For := binding, mark scalar variables as readonly
             if is_binding && dvar.name.starts_with(|c: char| c != '@' && c != '%') {
                 stmts.push(Stmt::MarkReadonly(dvar.name.clone()));
@@ -2109,6 +2266,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let mut is_rw = false;
     let mut is_readonly = false;
     let mut is_required: Option<Option<String>> = None;
+    let mut is_default_trait: Option<Expr> = None;
     while let Some(r) = keyword("is", rest) {
         let (r, _) = ws1(r)?;
         let (r, trait_name) = ident(r)?;
@@ -2116,6 +2274,22 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             is_rw = true;
         } else if trait_name == "readonly" {
             is_readonly = true;
+        } else if trait_name == "default" {
+            // `is default(expr)` — set the attribute's default value
+            let (r_ws, _) = ws(r)?;
+            if let Some(inner) = r_ws.strip_prefix('(') {
+                let (inner, _) = ws(inner)?;
+                let (inner, default_expr) = expression(inner)?;
+                let (inner, _) = ws(inner)?;
+                let inner = inner
+                    .strip_prefix(')')
+                    .ok_or_else(|| PError::expected("closing paren in is default"))?;
+                is_default_trait = Some(default_expr);
+                let (r2, _) = ws(inner)?;
+                rest = r2;
+                continue;
+            }
+            // `is default` without parens — just ignore (no-op)
         } else if trait_name == "required" {
             // Check for optional reason: `is required("reason")`
             let (r_ws, _) = ws(r)?;
@@ -2308,6 +2482,9 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         // Typed attribute with no explicit default → use type object as default
         // But not when `is required` — the attribute must be explicitly provided
         (rest, Some(Expr::BareWord(tc.clone())))
+    } else if let Some(default_expr) = is_default_trait {
+        // `is default(expr)` was used — apply it as the default value
+        (rest, Some(default_expr))
     } else {
         (rest, None)
     };

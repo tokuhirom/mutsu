@@ -9,8 +9,8 @@ use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
-use super::expression;
 use super::operators::{PrefixUnaryOp, parse_postfix_update_op, parse_prefix_unary_op};
+use super::{expression, expression_no_sequence};
 
 /// When a prefix operator is applied to a WhateverCode (Lambda or AnonSubParams),
 /// compose the prefix into the body so that `+(* + 1)` becomes `-> $_ { +($_ + 1) }`
@@ -697,48 +697,57 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     }
 
     if let Some((name, len)) = crate::parser::stmt::simple::match_user_declared_prefix_op(input) {
-        let rest = &input[len..];
-        let (rest, _) = ws(rest)?;
-        // Check if this prefix has a custom precedence level
-        let prec_level = crate::parser::stmt::simple::lookup_prefix_precedence(&name);
-        let (mut rest, arg) = match prec_level {
-            Some(level) if level <= crate::parser::stmt::simple::PREC_ADDITIVE => {
-                // Looser than additive: grab everything up to additive level
-                super::precedence::loose_prefix_operand(rest, level)?
-            }
-            Some(level) if level <= crate::parser::stmt::simple::PREC_MULTIPLICATIVE => {
-                // Between additive and multiplicative
-                super::precedence::multiplicative_operand(rest)?
-            }
-            Some(level) if level <= crate::parser::stmt::simple::PREC_POWER => {
-                // Between multiplicative and power
-                super::precedence::power_operand(rest)?
-            }
-            _ => prefix_expr(rest)?,
-        };
-        let mut result = Expr::Call {
-            name: Symbol::intern(&name),
-            args: vec![arg],
-        };
-        // Apply loose postfix operators (declared `is looser(&prefix:<...>)`)
-        loop {
-            if let Some((post_name, post_len)) =
-                crate::parser::stmt::simple::match_user_declared_postfix_op(rest)
-            {
-                let post_prec = crate::parser::stmt::simple::lookup_postfix_precedence(&post_name);
-                if post_prec.is_some_and(|p| p < crate::parser::stmt::simple::PREC_PREFIX) {
-                    let after = &rest[post_len..];
-                    result = Expr::Call {
-                        name: Symbol::intern(&post_name),
-                        args: vec![result],
-                    };
-                    rest = after;
-                    continue;
+        let after_op = &input[len..];
+        // If the text immediately after the operator is a hyper marker (<< or «),
+        // fall through to the hyper prefix handler instead of treating as a regular call.
+        let is_hyper = after_op.starts_with("<<") || after_op.starts_with('\u{00AB}');
+        if is_hyper {
+            // Fall through to hyper prefix metaop handling below
+        } else {
+            let rest = after_op;
+            let (rest, _) = ws(rest)?;
+            // Check if this prefix has a custom precedence level
+            let prec_level = crate::parser::stmt::simple::lookup_prefix_precedence(&name);
+            let (mut rest, arg) = match prec_level {
+                Some(level) if level <= crate::parser::stmt::simple::PREC_ADDITIVE => {
+                    // Looser than additive: grab everything up to additive level
+                    super::precedence::loose_prefix_operand(rest, level)?
                 }
+                Some(level) if level <= crate::parser::stmt::simple::PREC_MULTIPLICATIVE => {
+                    // Between additive and multiplicative
+                    super::precedence::multiplicative_operand(rest)?
+                }
+                Some(level) if level <= crate::parser::stmt::simple::PREC_POWER => {
+                    // Between multiplicative and power
+                    super::precedence::power_operand(rest)?
+                }
+                _ => prefix_expr(rest)?,
+            };
+            let mut result = Expr::Call {
+                name: Symbol::intern(&name),
+                args: vec![arg],
+            };
+            // Apply loose postfix operators (declared `is looser(&prefix:<...>)`)
+            loop {
+                if let Some((post_name, post_len)) =
+                    crate::parser::stmt::simple::match_user_declared_postfix_op(rest)
+                {
+                    let post_prec =
+                        crate::parser::stmt::simple::lookup_postfix_precedence(&post_name);
+                    if post_prec.is_some_and(|p| p < crate::parser::stmt::simple::PREC_PREFIX) {
+                        let after = &rest[post_len..];
+                        result = Expr::Call {
+                            name: Symbol::intern(&post_name),
+                            args: vec![result],
+                        };
+                        rest = after;
+                        continue;
+                    }
+                }
+                break;
             }
-            break;
-        }
-        return Ok((rest, result));
+            return Ok((rest, result));
+        } // end of !is_hyper else block
     }
 
     // Hyper prefix metaop: -« expr / -<< expr / +« expr / ?« expr ...
@@ -1845,14 +1854,40 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             continue;
         }
 
-        // Hash hyperindex: %hash{||@keys}
+        // Hash hyperindex: %hash{||@keys} or %hash{|| <a b>, "d"}
         if rest.starts_with("{||")
             && matches!(&expr, Expr::HashVar(_) | Expr::Var(_) | Expr::Index { .. })
         {
             let r = &rest[3..];
             let (r, _) = ws(r)?;
-            let (r, keys_expr) = expression(r)?;
+            let (r, first) = expression_no_sequence(r)?;
             let (r, _) = ws(r)?;
+            // Check for comma-separated list of dimension keys
+            let keys_expr = if r.starts_with(',') {
+                let mut items = vec![first];
+                let mut r = r;
+                while r.starts_with(',') {
+                    let (r2, _) = parse_char(r, ',')?;
+                    let (r2, _) = ws(r2)?;
+                    if r2.starts_with('}') {
+                        r = r2;
+                        break;
+                    }
+                    let (r2, item) = expression_no_sequence(r2)?;
+                    items.push(item);
+                    let (r2, _) = ws(r2)?;
+                    r = r2;
+                }
+                let (r2, _) = parse_char(r, '}')?;
+                expr = Expr::HyperIndex {
+                    target: Box::new(expr),
+                    keys: Box::new(Expr::ArrayLiteral(items)),
+                };
+                rest = r2;
+                continue;
+            } else {
+                first
+            };
             let (r, _) = parse_char(r, '}')?;
             expr = Expr::HyperIndex {
                 target: Box::new(expr),

@@ -47,6 +47,56 @@ fn samemark_per_word(target: &str, source: &str) -> String {
     result
 }
 
+/// Apply samespace: replace whitespace runs in the replacement with corresponding
+/// whitespace runs from the matched text.
+fn samespace_replace(replacement: &str, matched: &str) -> String {
+    // Split matched text into whitespace runs
+    let mut ws_runs: Vec<&str> = Vec::new();
+    let mut i = 0;
+    let bytes = matched.as_bytes();
+    while i < bytes.len() {
+        // Skip non-whitespace
+        while i < bytes.len() && !matched[i..].starts_with(|c: char| c.is_whitespace()) {
+            i += matched[i..].chars().next().map_or(1, |c| c.len_utf8());
+        }
+        if i >= bytes.len() {
+            break;
+        }
+        let start = i;
+        while i < bytes.len() && matched[i..].starts_with(|c: char| c.is_whitespace()) {
+            i += matched[i..].chars().next().map_or(1, |c| c.len_utf8());
+        }
+        ws_runs.push(&matched[start..i]);
+    }
+
+    // Now replace whitespace runs in the replacement with runs from the matched text
+    let mut result = String::new();
+    let mut ws_idx = 0;
+    let mut j = 0;
+    let repl_bytes = replacement.as_bytes();
+    while j < repl_bytes.len() {
+        let ch = replacement[j..].chars().next().unwrap();
+        if ch.is_whitespace() {
+            // Skip the whitespace run in the replacement
+            while j < repl_bytes.len() && replacement[j..].starts_with(|c: char| c.is_whitespace())
+            {
+                j += replacement[j..].chars().next().map_or(1, |c| c.len_utf8());
+            }
+            // Insert the corresponding whitespace run from the matched text
+            if ws_idx < ws_runs.len() {
+                result.push_str(ws_runs[ws_idx]);
+                ws_idx += 1;
+            } else {
+                result.push(' ');
+            }
+        } else {
+            result.push(ch);
+            j += ch.len_utf8();
+        }
+    }
+    result
+}
+
 fn normalize_subst_replacement(template: &str) -> String {
     let mut out = String::new();
     let mut chars = template.chars().peekable();
@@ -90,12 +140,14 @@ impl VM {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_subst_op(
         &mut self,
         code: &CompiledCode,
         pattern_idx: u32,
         replacement_idx: u32,
         samemark: bool,
+        samespace: bool,
         global: bool,
         nth_idx: Option<u32>,
         x_count: Option<u32>,
@@ -120,7 +172,13 @@ impl VM {
                 self.interpreter.regex_find_first(&pattern, &text)
             };
             if let Some((start, end)) = found {
-                let out = Self::apply_substitutions(&text, &[(start, end)], &replacement, samemark);
+                let out = Self::apply_substitutions(
+                    &text,
+                    &[(start, end)],
+                    &replacement,
+                    samemark,
+                    samespace,
+                );
                 let result = Value::str(out);
                 self.interpreter
                     .env_mut()
@@ -148,7 +206,7 @@ impl VM {
             return Ok(());
         }
 
-        let out = Self::apply_substitutions(&text, &ranges, &replacement, samemark);
+        let out = Self::apply_substitutions(&text, &ranges, &replacement, samemark, samespace);
         let result = Value::str(out);
         self.interpreter
             .env_mut()
@@ -166,6 +224,7 @@ impl VM {
         pattern_idx: u32,
         replacement_idx: u32,
         samemark: bool,
+        samespace: bool,
         global: bool,
         nth_idx: Option<u32>,
         x_count: Option<u32>,
@@ -190,7 +249,13 @@ impl VM {
                 self.interpreter.regex_find_first(&pattern, &text)
             };
             if let Some((start, end)) = found {
-                let out = Self::apply_substitutions(&text, &[(start, end)], &replacement, samemark);
+                let out = Self::apply_substitutions(
+                    &text,
+                    &[(start, end)],
+                    &replacement,
+                    samemark,
+                    samespace,
+                );
                 self.stack.push(Value::str(out));
             } else {
                 self.stack.push(Value::str(text));
@@ -212,7 +277,7 @@ impl VM {
             self.stack.push(Value::str(text));
             return Ok(());
         }
-        let out = Self::apply_substitutions(&text, &ranges, &replacement, samemark);
+        let out = Self::apply_substitutions(&text, &ranges, &replacement, samemark, samespace);
         self.stack.push(Value::str(out));
         Ok(())
     }
@@ -263,6 +328,7 @@ impl VM {
         ranges: &[(usize, usize)],
         replacement: &str,
         samemark: bool,
+        samespace: bool,
     ) -> String {
         let mut out = String::new();
         let mut prev_end_b = 0usize;
@@ -271,7 +337,7 @@ impl VM {
             let end_b = runtime::char_idx_to_byte(text, *end);
             out.push_str(&text[prev_end_b..start_b]);
             let matched_text = &text[start_b..end_b];
-            let repl = if samemark {
+            let mut repl = if samemark {
                 if matched_text.contains(char::is_whitespace)
                     && replacement.contains(char::is_whitespace)
                 {
@@ -282,6 +348,9 @@ impl VM {
             } else {
                 replacement.to_string()
             };
+            if samespace {
+                repl = samespace_replace(&repl, matched_text);
+            }
             out.push_str(&repl);
             prev_end_b = end_b;
         }

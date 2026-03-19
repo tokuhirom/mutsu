@@ -31,9 +31,9 @@ fn skip_pointy_return_type(mut r: &str) -> PResult<'_, Option<String>> {
 const REDUCTION_OPS: &[&str] = &[
     "+", "-", "*", "/", "%", "~", "||", "&&", "//", "%%", "**", "^^", "+&", "+|", "+^", "+<", "+>",
     "~&", "~|", "~^", "~<", "~>", "?&", "?|", "?^", "==", "!=", "<", ">", "<=", ">=", "<=>", "===",
-    "=:=", "!=:=", "=>", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg", "cmp", "~~", "min",
-    "max", "gcd", "lcm", "and", "or", "not", ",", "after", "before", "X", "Z", "x", "xx", "&", "|",
-    "^", "o", "∘", "⊍",
+    "=:=", "!=:=", "=>", "=", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg", "cmp", "~~", "min",
+    "max", "gcd", "lcm", "and", "or", "not", "andthen", "orelse", "xor", ",", "after", "before",
+    "X", "Z", "x", "xx", "&", "|", "^", "o", "∘", "⊍", "div", "mod", "minmax",
 ];
 
 /// Find the matching `]` for a `[` at position 0, respecting nesting.
@@ -100,7 +100,9 @@ fn is_valid_reduction_op(op: &str) -> bool {
     }
     // Also support scan form (\op) and negated operators (!after),
     // while keeping operators that genuinely start with '!' (e.g. '!=').
-    let s = s.strip_prefix('\\').unwrap_or(s);
+    if let Some(after_scan) = s.strip_prefix('\\') {
+        return is_valid_reduction_op(after_scan);
+    }
     let s = if s == "∘" { "o" } else { s };
     if REDUCTION_OPS.contains(&s) {
         return true;
@@ -140,7 +142,30 @@ fn is_valid_reduction_op(op: &str) -> bool {
     {
         return true;
     }
+    // Hyper operator forms: >>op<<, >>op>>, <<op<<, <<op>>, and Unicode variants
+    if let Some(inner) = strip_hyper_delimiters(s) {
+        return is_valid_reduction_op(inner);
+    }
     is_custom_reduction_op(s)
+}
+
+/// Strip hyper operator delimiters (>>...<<, >>...>>, <<...<<, <<...>>)
+/// and their Unicode variants, returning the inner operator if found.
+fn strip_hyper_delimiters(s: &str) -> Option<&str> {
+    let after_left = s
+        .strip_prefix(">>")
+        .or_else(|| s.strip_prefix("<<"))
+        .or_else(|| s.strip_prefix('\u{00BB}'))
+        .or_else(|| s.strip_prefix('\u{00AB}'))?;
+    let inner = after_left
+        .strip_suffix(">>")
+        .or_else(|| after_left.strip_suffix("<<"))
+        .or_else(|| after_left.strip_suffix('\u{00BB}'))
+        .or_else(|| after_left.strip_suffix('\u{00AB}'))?;
+    if inner.is_empty() {
+        return None;
+    }
+    Some(inner)
 }
 
 fn is_custom_reduction_op(op: &str) -> bool {
@@ -212,7 +237,18 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
     let r = &input[end + 1..];
     let call_style_operand = r.starts_with('(');
     // Zero-argument reduction: [op] with no operands → identity element
-    if r.is_empty() || r.starts_with(';') || r.starts_with('}') || r.starts_with(')') {
+    // Also accept comma-separated context when the operator is clearly a symbolic op
+    // (not an identifier that could be an array element like [Exception]).
+    let is_symbol_op = !op
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_alphabetic() || c == '_');
+    if r.is_empty()
+        || r.starts_with(';')
+        || r.starts_with('}')
+        || r.starts_with(')')
+        || (r.starts_with(',') && is_symbol_op)
+    {
         return Ok((
             r,
             Expr::Reduction {
