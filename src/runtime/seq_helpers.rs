@@ -6,6 +6,68 @@ use pcre2::bytes::{Regex as PcreRegex, RegexBuilder as PcreRegexBuilder};
 use std::collections::HashMap;
 
 impl Interpreter {
+    pub(super) fn interpolate_regex_pattern(&self, pattern: &str) -> String {
+        fn take_regex_interpolation_name(input: &str) -> Option<(&str, String)> {
+            let mut chars = input.char_indices();
+            let mut end = if let Some((_, first)) = chars.next() {
+                if matches!(first, '*' | '?' | '!' | '^')
+                    || first.is_ascii_alphabetic()
+                    || first == '_'
+                {
+                    first.len_utf8()
+                } else {
+                    return None;
+                }
+            } else {
+                return None;
+            };
+            for (idx, ch) in chars {
+                if ch.is_ascii_alphanumeric() || matches!(ch, '_' | ':' | '-') {
+                    end = idx + ch.len_utf8();
+                } else {
+                    break;
+                }
+            }
+            let name = input[..end].to_string();
+            Some((&input[end..], name))
+        }
+
+        let mut out = String::new();
+        let mut i = 0usize;
+        while i < pattern.len() {
+            let rest = &pattern[i..];
+            if let Some(escaped) = rest.strip_prefix('\\')
+                && let Some(ch) = escaped.chars().next()
+            {
+                out.push('\\');
+                out.push(ch);
+                i += 1 + ch.len_utf8();
+                continue;
+            }
+            if let Some(after_dollar) = rest.strip_prefix("${")
+                && let Some(close_idx) = after_dollar.find('}')
+            {
+                let name = &after_dollar[..close_idx];
+                let value = self.env.get(name).cloned().unwrap_or(Value::Nil);
+                out.push_str(&value.to_string_value());
+                i += 2 + close_idx + 1;
+                continue;
+            }
+            if let Some(after_dollar) = rest.strip_prefix('$')
+                && let Some((var_rest, name)) = take_regex_interpolation_name(after_dollar)
+            {
+                let value = self.env.get(&name).cloned().unwrap_or(Value::Nil);
+                out.push_str(&value.to_string_value());
+                i += 1 + after_dollar.len() - var_rest.len();
+                continue;
+            }
+            let ch = rest.chars().next().unwrap();
+            out.push(ch);
+            i += ch.len_utf8();
+        }
+        out
+    }
+
     fn parse_parametric_spec(spec: &str) -> (String, Vec<String>) {
         if let Some((base, rest)) = spec.split_once('[') {
             let inner = rest.strip_suffix(']').unwrap_or(rest);
@@ -1385,17 +1447,22 @@ impl Interpreter {
                 },
             ) => {
                 let text = left.to_string_value();
+                let pattern = if *perl5 {
+                    self.interpolate_regex_pattern(pattern)
+                } else {
+                    pattern.to_string()
+                };
                 let all = if *perl5 {
                     #[cfg(feature = "pcre2")]
                     {
-                        self.regex_match_all_with_captures_p5(pattern, &text)
+                        self.regex_match_all_with_captures_p5(&pattern, &text)
                     }
                     #[cfg(not(feature = "pcre2"))]
                     {
-                        self.regex_match_all_with_captures(pattern, &text)
+                        self.regex_match_all_with_captures(&pattern, &text)
                     }
                 } else {
-                    self.regex_match_all_with_captures(pattern, &text)
+                    self.regex_match_all_with_captures(&pattern, &text)
                 };
                 let non_overlapping = self.select_non_overlapping_matches(all);
                 let resolved = match self.resolve_nth_indices(raw_nth, non_overlapping.len()) {
@@ -1439,8 +1506,9 @@ impl Interpreter {
                 },
             ) => {
                 let text = left.to_string_value();
+                let pat = pat.to_string();
                 let start_pos = self.get_match_to_position();
-                if let Some(captures) = self.regex_match_with_captures_at(pat, &text, start_pos) {
+                if let Some(captures) = self.regex_match_with_captures_at(&pat, &text, start_pos) {
                     self.apply_single_regex_captures(&captures);
                     return true;
                 }
@@ -1462,17 +1530,22 @@ impl Interpreter {
                 },
             ) => {
                 let text = left.to_string_value();
+                let pattern = if *perl5 {
+                    self.interpolate_regex_pattern(pattern)
+                } else {
+                    pattern.to_string()
+                };
                 let all = if *perl5 {
                     #[cfg(feature = "pcre2")]
                     {
-                        self.regex_match_all_with_captures_p5(pattern, &text)
+                        self.regex_match_all_with_captures_p5(&pattern, &text)
                     }
                     #[cfg(not(feature = "pcre2"))]
                     {
-                        self.regex_match_all_with_captures(pattern, &text)
+                        self.regex_match_all_with_captures(&pattern, &text)
                     }
                 } else {
-                    self.regex_match_all_with_captures(pattern, &text)
+                    self.regex_match_all_with_captures(&pattern, &text)
                 };
                 let non_overlapping = self.select_non_overlapping_matches(all);
                 let Some(selected) =
@@ -1498,17 +1571,22 @@ impl Interpreter {
                 },
             ) => {
                 let text = left.to_string_value();
+                let pattern = if *perl5 {
+                    self.interpolate_regex_pattern(pattern)
+                } else {
+                    pattern.to_string()
+                };
                 let all = if *perl5 {
                     #[cfg(feature = "pcre2")]
                     {
-                        self.regex_match_all_with_captures_p5(pattern, &text)
+                        self.regex_match_all_with_captures_p5(&pattern, &text)
                     }
                     #[cfg(not(feature = "pcre2"))]
                     {
-                        self.regex_match_all_with_captures(pattern, &text)
+                        self.regex_match_all_with_captures(&pattern, &text)
                     }
                 } else {
-                    self.regex_match_all_with_captures(pattern, &text)
+                    self.regex_match_all_with_captures(&pattern, &text)
                 };
                 // Filter to non-overlapping: take longest match at each position,
                 // then skip matches that overlap with already-selected ones
@@ -1540,17 +1618,22 @@ impl Interpreter {
                 },
             ) => {
                 let text = left.to_string_value();
+                let pattern = if *perl5 {
+                    self.interpolate_regex_pattern(pattern)
+                } else {
+                    pattern.to_string()
+                };
                 let all = if *perl5 {
                     #[cfg(feature = "pcre2")]
                     {
-                        self.regex_match_all_with_captures_p5(pattern, &text)
+                        self.regex_match_all_with_captures_p5(&pattern, &text)
                     }
                     #[cfg(not(feature = "pcre2"))]
                     {
-                        self.regex_match_all_with_captures(pattern, &text)
+                        self.regex_match_all_with_captures(&pattern, &text)
                     }
                 } else {
-                    self.regex_match_all_with_captures(pattern, &text)
+                    self.regex_match_all_with_captures(&pattern, &text)
                 };
                 if all.is_empty() {
                     self.env.insert("/".to_string(), Value::Nil);
@@ -1584,17 +1667,22 @@ impl Interpreter {
                 },
             ) => {
                 let text = left.to_string_value();
+                let pattern = if *perl5 {
+                    self.interpolate_regex_pattern(pattern)
+                } else {
+                    pattern.to_string()
+                };
                 let mut all = if *perl5 {
                     #[cfg(feature = "pcre2")]
                     {
-                        self.regex_match_all_with_captures_p5(pattern, &text)
+                        self.regex_match_all_with_captures_p5(&pattern, &text)
                     }
                     #[cfg(not(feature = "pcre2"))]
                     {
-                        self.regex_match_all_with_captures(pattern, &text)
+                        self.regex_match_all_with_captures(&pattern, &text)
                     }
                 } else {
-                    self.regex_match_all_with_captures(pattern, &text)
+                    self.regex_match_all_with_captures(&pattern, &text)
                 };
                 if all.is_empty() {
                     self.env.insert("/".to_string(), Value::Nil);
@@ -1652,7 +1740,8 @@ impl Interpreter {
                 },
             ) => {
                 let text = left.to_string_value();
-                if let Some(captures) = self.regex_match_with_captures(pat, &text) {
+                let pat = pat.to_string();
+                if let Some(captures) = self.regex_match_with_captures(&pat, &text) {
                     // Set positional captures as strings first (needed by code blocks)
                     for (i, v) in captures.positional.iter().enumerate() {
                         self.env.insert(i.to_string(), Value::str(v.clone()));
@@ -1727,10 +1816,11 @@ impl Interpreter {
                 },
             ) => {
                 let text = left.to_string_value();
+                let pat = self.interpolate_regex_pattern(pat);
                 #[cfg(feature = "pcre2")]
-                let result = self.regex_match_with_captures_p5(pat, &text);
+                let result = self.regex_match_with_captures_p5(&pat, &text);
                 #[cfg(not(feature = "pcre2"))]
-                let result = self.regex_match_with_captures(pat, &text);
+                let result = self.regex_match_with_captures(&pat, &text);
                 if let Some(captures) = result {
                     self.apply_single_regex_captures(&captures);
                     return true;

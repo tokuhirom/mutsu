@@ -168,19 +168,24 @@ impl Interpreter {
         match pattern {
             Value::Regex(pat) | Value::RegexWithAdverbs { pattern: pat, .. } => {
                 let is_p5 = matches!(pattern, Value::RegexWithAdverbs { perl5: true, .. });
+                let pat = if is_p5 {
+                    self.interpolate_regex_pattern(pat)
+                } else {
+                    pat.to_string()
+                };
                 let pat_global =
                     matches!(pattern, Value::RegexWithAdverbs { global: true, .. }) || global;
                 let all_captures = if is_p5 {
                     #[cfg(feature = "pcre2")]
                     {
-                        self.regex_match_all_with_captures_p5(pat, &text)
+                        self.regex_match_all_with_captures_p5(&pat, &text)
                     }
                     #[cfg(not(feature = "pcre2"))]
                     {
-                        self.regex_match_all_with_captures(pat, &text)
+                        self.regex_match_all_with_captures(&pat, &text)
                     }
                 } else {
-                    self.regex_match_all_with_captures(pat, &text)
+                    self.regex_match_all_with_captures(&pat, &text)
                 };
                 if all_captures.is_empty() {
                     return Ok(Value::str(text));
@@ -211,14 +216,14 @@ impl Interpreter {
                     if is_p5 {
                         #[cfg(feature = "pcre2")]
                         {
-                            self.regex_match_with_captures_p5(pat, &text)
+                            self.regex_match_with_captures_p5(&pat, &text)
                         }
                         #[cfg(not(feature = "pcre2"))]
                         {
-                            self.regex_match_with_captures(pat, &text)
+                            self.regex_match_with_captures(&pat, &text)
                         }
                     } else {
-                        self.regex_match_with_captures(pat, &text)
+                        self.regex_match_with_captures(&pat, &text)
                     }
                 } {
                     // Set $/ to the match object
