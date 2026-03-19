@@ -124,6 +124,7 @@ roast/S03-metaops/eager-hyper.t
 roast/S03-metaops/misc.t
 roast/S03-metaops/not.t
 roast/S03-metaops/reverse.t
+roast/S03-operators/adverbial-modifiers.t
 roast/S03-operators/also.t
 roast/S03-operators/andthen.t
 roast/S03-operators/arith.t
