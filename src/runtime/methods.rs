@@ -1658,6 +1658,7 @@ impl Interpreter {
                     | "compose"
                     | "archetypes"
                     | "name"
+                    | "shortname"
                     | "ver"
                     | "auth"
                     | "mro"
