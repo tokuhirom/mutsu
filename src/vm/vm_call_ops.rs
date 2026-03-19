@@ -2226,13 +2226,13 @@ impl VM {
                         block_fns,
                         captured_bindings,
                         writeback_bindings,
-                        captured_names,
+                        _captured_names,
+                        sync_names,
                     ) = self
                         .interpreter
                         .get_or_compile_protect_block_with_slots(data);
-                    self.interpreter.sync_shared_vars_for_names(
-                        captured_names.iter().map(|name| name.as_str()),
-                    );
+                    self.interpreter
+                        .sync_shared_vars_for_names(sync_names.iter().map(|name| name.as_str()));
                     (
                         block_cc,
                         block_fns,

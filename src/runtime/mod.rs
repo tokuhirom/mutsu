@@ -91,6 +91,7 @@ type ProtectBlockCacheEntry = (
     Arc<Vec<(usize, String)>>,
     Arc<Vec<(usize, String)>>,
     Arc<Vec<String>>,
+    Arc<Vec<String>>,
 );
 type ProtectBlockCache = HashMap<u64, ProtectBlockCacheEntry>;
 
@@ -4094,7 +4095,7 @@ mod tests {
         });
 
         let mut interp = Interpreter::new();
-        let (_, _, captured_bindings, _, captured_names) =
+        let (_, _, captured_bindings, _, captured_names, sync_names) =
             interp.get_or_compile_protect_block_with_slots(&block);
 
         assert_eq!(
@@ -4108,6 +4109,10 @@ mod tests {
                 "@noise".to_string(),
                 "$target".to_string(),
             ]
+        );
+        assert_eq!(
+            sync_names.as_ref(),
+            &vec!["used".to_string(), "$target".to_string()]
         );
     }
 }
