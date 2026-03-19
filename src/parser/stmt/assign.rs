@@ -1220,8 +1220,54 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         _ => "",
     };
     // .= mutating method call: $var .= method(args) => $var = $var.method(args)
+    // Also supports quoted method names: $var.="method"(args) / $var.="$name"(args)
     if let Some(stripped) = r2.strip_prefix(".=") {
         let (r, _) = ws(stripped)?;
+        // Try quoted method name first
+        let name = format!("{}{}", prefix, var);
+        let method_target = match sigil {
+            b'@' => Expr::ArrayVar(var.to_string()),
+            b'%' => Expr::HashVar(var.to_string()),
+            _ => Expr::Var(var.to_string()),
+        };
+        if let Some((r_after_quote, qname)) =
+            crate::parser::expr::postfix::parse_quoted_method_name(r)
+        {
+            if !r_after_quote.starts_with('(') {
+                return Err(PError::expected_at(
+                    "parenthesized arguments after quoted method name with '.='",
+                    r_after_quote,
+                ));
+            }
+            let (r2, _) = parse_char(r_after_quote, '(')?;
+            let (r2, _) = ws(r2)?;
+            let (r2, args) = parse_call_arg_list(r2)?;
+            let (r2, _) = ws(r2)?;
+            let (rest, _) = parse_char(r2, ')')?;
+            let rhs = match qname {
+                crate::parser::expr::postfix::QuotedMethodName::Static(mname) => Expr::MethodCall {
+                    target: Box::new(method_target),
+                    name: Symbol::intern(&mname),
+                    args,
+                    modifier: None,
+                    quoted: true,
+                },
+                crate::parser::expr::postfix::QuotedMethodName::Dynamic(name_expr) => {
+                    Expr::DynamicMethodCall {
+                        target: Box::new(method_target),
+                        name_expr: Box::new(name_expr),
+                        args,
+                    }
+                }
+            };
+            return Ok((
+                rest,
+                Expr::AssignExpr {
+                    name,
+                    expr: Box::new(rhs),
+                },
+            ));
+        }
         // Parse method name
         let (r, method_name) =
             take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
@@ -1287,12 +1333,6 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             (r_inner, args)
         } else {
             (r, vec![])
-        };
-        let name = format!("{}{}", prefix, var);
-        let method_target = match sigil {
-            b'@' => Expr::ArrayVar(var.to_string()),
-            b'%' => Expr::HashVar(var.to_string()),
-            _ => Expr::Var(var.to_string()),
         };
         return Ok((
             rest,
@@ -1803,8 +1843,54 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     }
 
     // Mutating method call: $x.=method or $x .= method(args)
+    // Also supports quoted method names: $x.="method"(args) / $x.="$name"(args)
     if let Some(stripped) = rest.strip_prefix(".=") {
         let (stripped, _) = ws(stripped)?;
+        let var_expr = if sigil == b'@' {
+            Expr::ArrayVar(var.clone())
+        } else if sigil == b'%' {
+            Expr::HashVar(var.clone())
+        } else {
+            Expr::Var(var.clone())
+        };
+        // Try quoted method name first
+        if let Some((r_after_quote, qname)) =
+            crate::parser::expr::postfix::parse_quoted_method_name(stripped)
+        {
+            if !r_after_quote.starts_with('(') {
+                return Err(PError::expected_at(
+                    "parenthesized arguments after quoted method name with '.='",
+                    r_after_quote,
+                ));
+            }
+            let (r2, _) = parse_char(r_after_quote, '(')?;
+            let (r2, _) = ws(r2)?;
+            let (r2, args) = parse_call_arg_list(r2)?;
+            let (r2, _) = ws(r2)?;
+            let (r2, _) = parse_char(r2, ')')?;
+            let rhs = match qname {
+                crate::parser::expr::postfix::QuotedMethodName::Static(mname) => Expr::MethodCall {
+                    target: Box::new(var_expr),
+                    name: Symbol::intern(&mname),
+                    args,
+                    modifier: None,
+                    quoted: true,
+                },
+                crate::parser::expr::postfix::QuotedMethodName::Dynamic(name_expr) => {
+                    Expr::DynamicMethodCall {
+                        target: Box::new(var_expr),
+                        name_expr: Box::new(name_expr),
+                        args,
+                    }
+                }
+            };
+            let stmt = Stmt::Assign {
+                name,
+                expr: rhs,
+                op: AssignOp::Assign,
+            };
+            return parse_statement_modifier(r2, stmt);
+        }
         let (r, method_name) = take_while1(stripped, |c: char| {
             c.is_alphanumeric() || c == '_' || c == '-'
         })
@@ -1860,13 +1946,6 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             (r_inner, args)
         } else {
             (r, Vec::new())
-        };
-        let var_expr = if sigil == b'@' {
-            Expr::ArrayVar(var.clone())
-        } else if sigil == b'%' {
-            Expr::HashVar(var.clone())
-        } else {
-            Expr::Var(var.clone())
         };
         let expr = Expr::MethodCall {
             target: Box::new(var_expr),

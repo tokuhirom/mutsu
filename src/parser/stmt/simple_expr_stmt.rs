@@ -196,11 +196,49 @@ fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stmt> {
 
 /// Parse an expression statement (fallback).
 pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
-    // Topic mutating method call: .=method(args)
+    // Topic mutating method call: .=method(args) or .="method"(args)
     if let Some(stripped) = input.strip_prefix(".=") {
-        let (rest, _) = ws(stripped)?;
-        let (rest, method_name) =
-            take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+        let (after_ws, _) = ws(stripped)?;
+        // Try quoted method name first
+        if let Some((r, qname)) = crate::parser::expr::postfix::parse_quoted_method_name(after_ws) {
+            if !r.starts_with('(') {
+                return Err(PError::expected_at(
+                    "parenthesized arguments after quoted method name with '.='",
+                    r,
+                ));
+            }
+            let (r, _) = parse_char(r, '(')?;
+            let (r, _) = ws(r)?;
+            let (r, args) = super::super::primary::parse_call_arg_list(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, ')')?;
+            let target = Box::new(Expr::Var("_".to_string()));
+            let rhs = match qname {
+                crate::parser::expr::postfix::QuotedMethodName::Static(name) => Expr::MethodCall {
+                    target,
+                    name: Symbol::intern(&name),
+                    args,
+                    modifier: None,
+                    quoted: true,
+                },
+                crate::parser::expr::postfix::QuotedMethodName::Dynamic(name_expr) => {
+                    Expr::DynamicMethodCall {
+                        target,
+                        name_expr: Box::new(name_expr),
+                        args,
+                    }
+                }
+            };
+            let stmt = Stmt::Assign {
+                name: "_".to_string(),
+                expr: rhs,
+                op: AssignOp::Assign,
+            };
+            return parse_statement_modifier(r, stmt);
+        }
+        let (rest, method_name) = take_while1(after_ws, |c: char| {
+            c.is_alphanumeric() || c == '_' || c == '-'
+        })?;
         let method_name = method_name.to_string();
         let (rest, args) = if rest.starts_with('(') {
             let (r, _) = parse_char(rest, '(')?;
@@ -212,13 +250,17 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         } else {
             (rest, Vec::new())
         };
-        let stmt = Stmt::Expr(Expr::MethodCall {
-            target: Box::new(Expr::Var("_".to_string())),
-            name: Symbol::intern(&method_name),
-            args,
-            modifier: None,
-            quoted: false,
-        });
+        let stmt = Stmt::Assign {
+            name: "_".to_string(),
+            expr: Expr::MethodCall {
+                target: Box::new(Expr::Var("_".to_string())),
+                name: Symbol::intern(&method_name),
+                args,
+                modifier: None,
+                quoted: false,
+            },
+            op: AssignOp::Assign,
+        };
         return parse_statement_modifier(rest, stmt);
     }
 
@@ -398,31 +440,72 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     if let Some(stripped) = rest.strip_prefix(".=") {
         let (stripped, _) = ws(stripped)?;
-        let (r, method_name) = take_while1(stripped, |c: char| {
-            c.is_alphanumeric() || c == '_' || c == '-'
-        })
-        .map_err(|err| PError {
-            messages: merge_expected_messages("expected method name after '.='", &err.messages),
-            remaining_len: err.remaining_len.or(Some(stripped.len())),
-            exception: None,
-        })?;
-        let method_name = method_name.to_string();
-        let (r, method_args) = if r.starts_with('(') {
+        // Try quoted method name first, then fall back to identifier
+        enum DotAssignMethod {
+            Static(String),
+            Dynamic(Expr),
+        }
+        let (r, method, method_args) = if let Some((r, qname)) =
+            crate::parser::expr::postfix::parse_quoted_method_name(stripped)
+        {
+            // Quoted method names require parenthesized arguments
+            if !r.starts_with('(') {
+                return Err(PError::expected_at(
+                    "parenthesized arguments after quoted method name with '.='",
+                    r,
+                ));
+            }
             let (r, _) = parse_char(r, '(')?;
             let (r, _) = ws(r)?;
             let (r, args) = super::super::primary::parse_call_arg_list(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ')')?;
-            (r, args)
+            let method = match qname {
+                crate::parser::expr::postfix::QuotedMethodName::Static(name) => {
+                    DotAssignMethod::Static(name)
+                }
+                crate::parser::expr::postfix::QuotedMethodName::Dynamic(name_expr) => {
+                    DotAssignMethod::Dynamic(name_expr)
+                }
+            };
+            (r, method, args)
         } else {
-            (r, Vec::new())
+            let (r, method_name) = take_while1(stripped, |c: char| {
+                c.is_alphanumeric() || c == '_' || c == '-'
+            })
+            .map_err(|err| PError {
+                messages: merge_expected_messages("expected method name after '.='", &err.messages),
+                remaining_len: err.remaining_len.or(Some(stripped.len())),
+                exception: None,
+            })?;
+            let method_name = method_name.to_string();
+            let (r, args) = if r.starts_with('(') {
+                let (r, _) = parse_char(r, '(')?;
+                let (r, _) = ws(r)?;
+                let (r, args) = super::super::primary::parse_call_arg_list(r)?;
+                let (r, _) = ws(r)?;
+                let (r, _) = parse_char(r, ')')?;
+                (r, args)
+            } else {
+                (r, Vec::new())
+            };
+            (r, DotAssignMethod::Static(method_name), args)
         };
-        let make_rhs = |target: Expr| Expr::MethodCall {
-            target: Box::new(target),
-            name: Symbol::intern(&method_name),
-            args: method_args.clone(),
-            modifier: None,
-            quoted: false,
+        let make_rhs = |target: Expr| -> Expr {
+            match &method {
+                DotAssignMethod::Static(name) => Expr::MethodCall {
+                    target: Box::new(target),
+                    name: Symbol::intern(name),
+                    args: method_args.clone(),
+                    modifier: None,
+                    quoted: false,
+                },
+                DotAssignMethod::Dynamic(name_expr) => Expr::DynamicMethodCall {
+                    target: Box::new(target),
+                    name_expr: Box::new(name_expr.clone()),
+                    args: method_args.clone(),
+                },
+            }
         };
         match expr {
             Expr::Var(name) => {

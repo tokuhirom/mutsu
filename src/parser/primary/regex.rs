@@ -1669,6 +1669,81 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    // .=method — topic mutating method call in expression context
+    // e.g. `$x notandthen .=new` or `$x andthen .=uc`
+    if r.starts_with('=') && !r.starts_with("==") {
+        let r = &r[1..]; // skip '='
+        let (r, _) = ws(r)?;
+        // Parse method name (identifier)
+        let (r, method_name) =
+            take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-').map_err(
+                |err| PError {
+                    messages: vec!["expected method name after '.='".to_string()],
+                    remaining_len: err.remaining_len,
+                    exception: None,
+                },
+            )?;
+        let method_name = method_name.to_string();
+        // Parse optional args
+        let (r, args) = if r.starts_with('(') {
+            let (r, _) = parse_char(r, '(')?;
+            let (r, _) = ws(r)?;
+            let (r, args) = parse_call_arg_list(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, ')')?;
+            (r, args)
+        } else if r.starts_with(':') && !r.starts_with("::") {
+            // Colon-arg syntax: .=method: arg or .=new :42key
+            let r = &r[1..];
+            let (r, _) = ws(r)?;
+            let (r, first_arg) =
+                crate::parser::primary::misc::colonpair_expr(r).or_else(|_| expression(r))?;
+            let mut args = vec![first_arg];
+            let mut r_inner = r;
+            loop {
+                let (r2, _) = ws(r_inner)?;
+                // Adjacent colonpairs without comma
+                if r2.starts_with(':')
+                    && !r2.starts_with("::")
+                    && let Ok((r3, arg)) = crate::parser::primary::misc::colonpair_expr(r2)
+                {
+                    args.push(arg);
+                    r_inner = r3;
+                    continue;
+                }
+                if !r2.starts_with(',') {
+                    break;
+                }
+                let r2 = &r2[1..];
+                let (r2, _) = ws(r2)?;
+                if r2.starts_with(';') || r2.starts_with('}') || r2.is_empty() {
+                    r_inner = r2;
+                    break;
+                }
+                let (r2, next) =
+                    crate::parser::primary::misc::colonpair_expr(r2).or_else(|_| expression(r2))?;
+                args.push(next);
+                r_inner = r2;
+            }
+            (r_inner, args)
+        } else {
+            (r, Vec::new())
+        };
+        let rhs = Expr::MethodCall {
+            target: Box::new(Expr::Var("_".to_string())),
+            name: Symbol::intern(&method_name),
+            args,
+            modifier: None,
+            quoted: false,
+        };
+        return Ok((
+            r,
+            Expr::AssignExpr {
+                name: "_".to_string(),
+                expr: Box::new(rhs),
+            },
+        ));
+    }
     // .() — invoke topic as callable
     if r.starts_with('(') {
         let (r, _) = parse_char(r, '(')?;
