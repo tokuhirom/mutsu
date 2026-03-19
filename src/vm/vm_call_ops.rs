@@ -2182,6 +2182,10 @@ impl VM {
         outer_code: &CompiledCode,
         code_val: &Value,
     ) -> Result<Value, RuntimeError> {
+        fn outer_local_slot(outer_code: &CompiledCode, name: &str) -> Option<usize> {
+            outer_code.locals.iter().position(|local| local == name)
+        }
+
         let (block_cc, block_fns, captured_env, captured_bindings, writeback_bindings) =
             match code_val {
                 Value::Sub(data) => {
@@ -2215,15 +2219,13 @@ impl VM {
         // Save/swap stack and locals for the block
         let mut saved_locals = std::mem::take(&mut self.locals);
         let saved_stack = std::mem::take(&mut self.stack);
-        let outer_local_slots: std::collections::HashMap<&str, usize> = outer_code
-            .locals
-            .iter()
-            .enumerate()
-            .map(|(idx, name)| (name.as_str(), idx))
-            .collect();
+        let saved_env_dirty = self.env_dirty;
+        let saved_locals_dirty = self.locals_dirty;
 
         // Initialize locals for the block
         self.locals = vec![Value::Nil; block_cc.locals.len()];
+        self.env_dirty = false;
+        self.locals_dirty = false;
         if captured_env.is_some() {
             for (slot, name) in captured_bindings.iter() {
                 if (name.starts_with('@') || name.starts_with('%'))
@@ -2233,8 +2235,8 @@ impl VM {
                     // GetLocal will read the shared value on demand.
                     continue;
                 }
-                if let Some(outer_slot) = outer_local_slots.get(name.as_str())
-                    && let Some(val) = saved_locals.get(*outer_slot)
+                if let Some(outer_slot) = outer_local_slot(outer_code, name)
+                    && let Some(val) = saved_locals.get(outer_slot)
                 {
                     self.locals[*slot] = val.clone();
                     continue;
@@ -2264,8 +2266,8 @@ impl VM {
                 ) {
                     continue;
                 }
-                if let Some(outer_slot) = outer_local_slots.get(name.as_str())
-                    && let Some(target) = saved_locals.get_mut(*outer_slot)
+                if let Some(outer_slot) = outer_local_slot(outer_code, name)
+                    && let Some(target) = saved_locals.get_mut(outer_slot)
                 {
                     *target = self.locals[*slot].clone();
                 }
@@ -2288,7 +2290,8 @@ impl VM {
         // Restore outer state
         self.locals = saved_locals;
         self.stack = saved_stack;
-        self.env_dirty = true;
+        self.env_dirty = saved_env_dirty;
+        self.locals_dirty = saved_locals_dirty;
 
         match exec_err {
             Some(e) => Err(e),
