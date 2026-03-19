@@ -212,6 +212,17 @@ impl Interpreter {
         if let Value::Scalar(inner) = target {
             return self.call_method_with_values(*inner, method, args);
         }
+        // Deprecation.report: return the deprecation report and clear tracked call sites
+        if method == "report" {
+            let is_deprecation = match &target {
+                Value::Package(pkg_name) => pkg_name.resolve() == "Deprecation",
+                Value::Str(s) => s.as_str() == "Deprecation",
+                _ => false,
+            };
+            if is_deprecation {
+                return Ok(self.deprecation_report());
+            }
+        }
         // Unhandled Failure explosion: calling a non-Failure method on an unhandled
         // Failure should throw the stored exception (Raku behavior).
         if let Value::Instance {

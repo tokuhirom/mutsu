@@ -471,7 +471,7 @@ impl Interpreter {
     }
 
     fn rw_method_attribute_target(body: &[Stmt]) -> Option<String> {
-        let first = body.first()?;
+        let first = crate::ast::semantic_body_single_stmt(body)?;
         let extract_attr = |expr: &Expr| -> Option<String> {
             match expr {
                 Expr::Var(name) if name.starts_with('!') && name.len() > 1 => {

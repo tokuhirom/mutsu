@@ -602,6 +602,10 @@ pub(crate) enum OpCode {
     Die,
     Fail,
 
+    // -- Source line tracking --
+    /// Set the current source line for deprecation and error reporting.
+    SetSourceLine(u32),
+
     // -- Functions --
     Return,
     /// Return used outside a routine — throws X::ControlFlow::Return exception.

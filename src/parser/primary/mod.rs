@@ -20,6 +20,9 @@ thread_local! {
     static PRIMARY_MEMO_STATS_TLS: RefCell<MemoStats> = RefCell::new(MemoStats::default());
     /// Original source pointer and length, set at parse_program start for $?LINE computation.
     static ORIGINAL_SOURCE: RefCell<(usize, usize)> = const { RefCell::new((0, 0)) };
+    /// Line offset adjustment for synthesized strings (e.g., after heredoc parsing).
+    /// Maps leaked string pointer ranges to (base_line, offset_within_leaked_string).
+    static HEREDOC_LINE_OFFSETS: RefCell<Vec<(usize, usize, i64)>> = const { RefCell::new(Vec::new()) };
 }
 
 static PRIMARY_MEMO: ParseMemo<Expr> = ParseMemo::new(&PRIMARY_MEMO_TLS, &PRIMARY_MEMO_STATS_TLS);
@@ -44,7 +47,22 @@ pub(in crate::parser) fn current_line_number(input: &str) -> i64 {
         }
         let input_ptr = input.as_ptr() as usize;
         if input_ptr < src_ptr || input_ptr > src_ptr + src_len {
-            return 1;
+            // Check if this is a synthesized string from heredoc parsing
+            return HEREDOC_LINE_OFFSETS.with(|offsets| {
+                for &(leaked_ptr, leaked_len, base_line) in offsets.borrow().iter() {
+                    if input_ptr >= leaked_ptr && input_ptr <= leaked_ptr + leaked_len {
+                        let offset = input_ptr - leaked_ptr;
+                        let leaked_slice = unsafe {
+                            std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+                                leaked_ptr as *const u8,
+                                offset,
+                            ))
+                        };
+                        return base_line + leaked_slice.matches('\n').count() as i64;
+                    }
+                }
+                1
+            });
         }
         let offset = input_ptr - src_ptr;
         // SAFETY: offset is within the original source bounds
@@ -53,6 +71,16 @@ pub(in crate::parser) fn current_line_number(input: &str) -> i64 {
         };
         (src_slice.matches('\n').count() + 1) as i64
     })
+}
+
+/// Register a leaked (synthesized) string with its base line number for $?LINE tracking.
+/// Called by heredoc parsing when it creates a combined rest-of-line + after-terminator string.
+pub(in crate::parser) fn register_heredoc_line_offset(leaked: &str, base_line: i64) {
+    HEREDOC_LINE_OFFSETS.with(|offsets| {
+        offsets
+            .borrow_mut()
+            .push((leaked.as_ptr() as usize, leaked.len(), base_line));
+    });
 }
 
 pub(super) fn reset_primary_memo() {

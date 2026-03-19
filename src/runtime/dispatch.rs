@@ -724,7 +724,7 @@ impl Interpreter {
             .push((def.package.resolve(), def.name.resolve()));
         self.proto_dispatch_stack
             .push((proto_name.to_string(), args.to_vec()));
-        let result = if def.body.is_empty() {
+        let result = if crate::ast::body_is_semantically_empty(&def.body) {
             // Bodyless proto behaves as implicit {*} dispatch.
             self.call_proto_dispatch()
         } else {
@@ -957,7 +957,10 @@ impl Interpreter {
     fn rewrite_proto_dispatch_expr(expr: &Expr) -> Expr {
         match expr {
             Expr::AnonSub { body, .. }
-                if body.len() == 1 && matches!(body[0], Stmt::Expr(Expr::Whatever)) =>
+                if matches!(
+                    crate::ast::semantic_body_single_stmt(body),
+                    Some(Stmt::Expr(Expr::Whatever))
+                ) =>
             {
                 Expr::Call {
                     name: Symbol::intern("__PROTO_DISPATCH__"),

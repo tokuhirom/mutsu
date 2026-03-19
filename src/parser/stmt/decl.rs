@@ -1356,6 +1356,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_alias: false,
             is_our,
             is_my: !is_our && !is_state,
+            deprecated: None,
         };
         if apply_modifier {
             return parse_statement_modifier(after_name, stmt);
@@ -2375,6 +2376,7 @@ fn has_decl_list(input: &str) -> PResult<'_, Stmt> {
             is_alias,
             is_our: false,
             is_my: false,
+            deprecated: None,
         });
         let (r, _) = ws(rest)?;
         rest = r;
@@ -2457,6 +2459,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let mut is_readonly = false;
     let mut is_required: Option<Option<String>> = None;
     let mut is_default_trait: Option<Expr> = None;
+    let mut deprecated: Option<Option<String>> = None;
     while let Some(r) = keyword("is", rest) {
         let (r, _) = ws1(r)?;
         let (r, trait_name) = ident(r)?;
@@ -2519,6 +2522,52 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                 }
             }
             is_required = Some(None);
+        } else if trait_name == "DEPRECATED" {
+            // Check for optional message: `is DEPRECATED("message")`
+            let (r_ws, _) = ws(r)?;
+            if let Some(inner) = r_ws.strip_prefix('(') {
+                let (inner, _) = ws(inner)?;
+                if let Some(double_quoted) = inner.strip_prefix('"') {
+                    let end = double_quoted.find('"').ok_or_else(|| {
+                        PError::expected("closing quote in is DEPRECATED message")
+                    })?;
+                    let msg = double_quoted[..end].to_string();
+                    let after = &double_quoted[end + 1..];
+                    let (after, _) = ws(after)?;
+                    let after = after
+                        .strip_prefix(')')
+                        .ok_or_else(|| PError::expected("closing paren in is DEPRECATED"))?;
+                    deprecated = Some(Some(msg));
+                    rest = after;
+                    let (r2, _) = ws(rest)?;
+                    rest = r2;
+                    continue;
+                } else if let Some(single_quoted) = inner.strip_prefix('\'') {
+                    let end = single_quoted.find('\'').ok_or_else(|| {
+                        PError::expected("closing quote in is DEPRECATED message")
+                    })?;
+                    let msg = single_quoted[..end].to_string();
+                    let after = &single_quoted[end + 1..];
+                    let (after, _) = ws(after)?;
+                    let after = after
+                        .strip_prefix(')')
+                        .ok_or_else(|| PError::expected("closing paren in is DEPRECATED"))?;
+                    deprecated = Some(Some(msg));
+                    rest = after;
+                    let (r2, _) = ws(rest)?;
+                    rest = r2;
+                    continue;
+                } else {
+                    // Non-string arg — skip balanced parens
+                    let r_after = crate::parser::helpers::skip_balanced_parens(r_ws);
+                    deprecated = Some(None);
+                    rest = r_after;
+                    let (r2, _) = ws(rest)?;
+                    rest = r2;
+                    continue;
+                }
+            }
+            deprecated = Some(None);
         }
         let (r, _) = ws(r)?;
         rest = r;
@@ -2716,6 +2765,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             is_alias,
             is_our: false,
             is_my: false,
+            deprecated,
         },
     ))
 }

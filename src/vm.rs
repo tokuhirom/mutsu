@@ -37,6 +37,7 @@ pub(super) struct VmCallFrame {
     pub saved_readonly: HashSet<String>,
     pub saved_env_dirty: bool,
     pub saved_locals_dirty: bool,
+    pub saved_source_line: i64,
 }
 
 pub(crate) struct VM {
@@ -67,6 +68,8 @@ pub(crate) struct VM {
     resume_ip: Option<usize>,
     /// When true, the next SetLocal is a `:=` bind (preserves container type for `@` vars).
     bind_context: bool,
+    /// Current source line number (set by SetSourceLine opcode, used for deprecation tracking).
+    current_source_line: i64,
 }
 
 impl VM {
@@ -172,6 +175,7 @@ impl VM {
             locals_dirty: false,
             resume_ip: None,
             bind_context: false,
+            current_source_line: 0,
         }
     }
 
@@ -1702,6 +1706,10 @@ impl VM {
             }
 
             // -- Error handling --
+            OpCode::SetSourceLine(line) => {
+                self.current_source_line = *line as i64;
+                *ip += 1;
+            }
             OpCode::Die => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
                 // Store the resume point (instruction after Die) for .resume support

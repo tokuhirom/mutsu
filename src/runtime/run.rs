@@ -50,14 +50,12 @@ impl Interpreter {
 
     fn should_skip_runtime_for_use_only_module(stmts: &[crate::ast::Stmt]) -> bool {
         if stmts.is_empty()
-            || !stmts
-                .iter()
+            || !crate::ast::semantic_body_stmts(stmts)
                 .all(|stmt| matches!(stmt, crate::ast::Stmt::Use { .. }))
         {
             return false;
         }
-        let non_version_use_count = stmts
-            .iter()
+        let non_version_use_count = crate::ast::semantic_body_stmts(stmts)
             .filter_map(|stmt| match stmt {
                 crate::ast::Stmt::Use { module, .. } => Some(module.as_str()),
                 _ => None,
@@ -98,7 +96,7 @@ impl Interpreter {
                 ..
             } = stmt
             {
-                if *multi || !body.is_empty() {
+                if *multi || !crate::ast::body_is_semantically_empty(body) {
                     continue;
                 }
                 forward_sigs.insert(format!("{}|{:?}|{:?}", name, params, param_defs));
@@ -122,7 +120,7 @@ impl Interpreter {
                 ..
             } = stmt
             {
-                if *multi || body.is_empty() {
+                if *multi || crate::ast::body_is_semantically_empty(body) {
                     continue;
                 }
                 let sig_key = format!("{}|{:?}|{:?}", name, params, param_defs);
@@ -143,6 +141,7 @@ impl Interpreter {
                     *is_test_assertion,
                     *supersede,
                     &[],
+                    &None,
                 )?;
                 if *is_export {
                     self.register_sub_decl_as_global(
@@ -168,9 +167,12 @@ impl Interpreter {
     /// body), merge all subsequent method/sub declarations into the class body.
     pub(super) fn merge_unit_class(stmts: Vec<Stmt>) -> Vec<Stmt> {
         // Find the index of a ClassDecl with empty body
-        let class_idx = stmts
-            .iter()
-            .position(|s| matches!(s, Stmt::ClassDecl { body, .. } if body.is_empty()));
+        let class_idx = stmts.iter().position(|s| {
+            matches!(
+                s,
+                Stmt::ClassDecl { body, .. } if crate::ast::body_is_semantically_empty(body)
+            )
+        });
         if let Some(idx) = class_idx {
             let mut result: Vec<Stmt> = stmts[..idx].to_vec();
             if let Stmt::ClassDecl {

@@ -2391,6 +2391,7 @@ impl Compiler {
                         is_test_assertion: false,
                         supersede: false,
                         custom_traits: Vec::new(),
+                        deprecated: None,
                     });
                     self.code.emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx)));
                 } else {
@@ -2444,6 +2445,7 @@ impl Compiler {
                     is_test_assertion: false,
                     supersede: false,
                     custom_traits: Vec::new(),
+                    deprecated: None,
                 });
                 self.code.emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx)));
             }
@@ -2472,6 +2474,7 @@ impl Compiler {
                     is_test_assertion: false,
                     supersede: false,
                     custom_traits: Vec::new(),
+                    deprecated: None,
                 });
                 self.code.emit(OpCode::MakeLambda(idx, Some(cc_idx)));
             }

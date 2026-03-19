@@ -286,6 +286,11 @@ impl VM {
             self.auto_fetch_proxy_args(args)?
         };
         self.interpreter.set_pending_callsite_line(callsite_line);
+        // Check deprecation for function calls
+        if self.current_source_line > 0 {
+            self.interpreter
+                .check_function_deprecation(&name, self.current_source_line);
+        }
         // Check if there's a CALL-ME override from trait_mod mixin
         let call_me_override = self
             .interpreter
@@ -433,6 +438,32 @@ impl VM {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethod target".to_string())
         })?;
+        // Check deprecation for method calls.
+        if self.current_source_line > 0 {
+            let class_name = match &target {
+                Value::Instance { class_name, .. } => Some(class_name.resolve()),
+                Value::Package(name) => Some(name.resolve()),
+                _ => None,
+            };
+            if let Some(cn) = class_name {
+                self.interpreter
+                    .check_method_deprecation(&cn, &method, self.current_source_line);
+            }
+        }
+        // Deprecation.report is a built-in class method.
+        if method == "report" {
+            let is_deprecation = match &target {
+                Value::Package(pkg_name) => pkg_name.resolve() == "Deprecation",
+                Value::Str(s) => s.as_str() == "Deprecation",
+                _ => false,
+            };
+            if is_deprecation {
+                let report = self.interpreter.deprecation_report();
+                self.stack.push(report);
+                self.env_dirty = true;
+                return Ok(());
+            }
+        }
         // Junction auto-threading: thread method calls over junction values.
         // Skip methods that should NOT auto-thread: .gist, .raku/.perl return a
         // single string representation of the junction. .WHAT, .^name, .THREAD
@@ -1253,6 +1284,20 @@ impl VM {
         let mut target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethodMut target".to_string())
         })?;
+        // Deprecation.report — built-in class method
+        if method == "report" {
+            let is_deprecation = match &target {
+                Value::Package(pkg_name) => pkg_name.resolve() == "Deprecation",
+                Value::Str(s) => s.as_str() == "Deprecation",
+                _ => false,
+            };
+            if is_deprecation {
+                let report = self.interpreter.deprecation_report();
+                self.stack.push(report);
+                self.env_dirty = true;
+                return Ok(());
+            }
+        }
         // Junction auto-threading: thread method calls over junction values
         if let Value::Junction { kind, values } = &target
             && !matches!(
