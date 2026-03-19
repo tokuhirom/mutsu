@@ -693,18 +693,21 @@ impl VM {
                 self.interpreter
                     .set_var_type_constraint(&name, Some(constraint.clone()));
                 // For scalar variables, if the current value is Nil, set it to the type object.
+                // Exception: Nil type constraint should keep Value::Nil (Nil's type object IS Nil).
                 if !name.starts_with('@') && !name.starts_with('%') {
-                    let is_nil =
-                        matches!(self.interpreter.env().get(&name), Some(Value::Nil) | None);
-                    if is_nil {
-                        let type_obj = Value::Package(Symbol::intern(
-                            &self
-                                .interpreter
-                                .var_type_constraint(&name)
-                                .unwrap_or(constraint.clone()),
-                        ));
-                        self.set_env_with_main_alias(&name, type_obj.clone());
-                        self.update_local_if_exists(code, &name, &type_obj);
+                    if constraint != "Nil" {
+                        let is_nil =
+                            matches!(self.interpreter.env().get(&name), Some(Value::Nil) | None);
+                        if is_nil {
+                            let type_obj = Value::Package(Symbol::intern(
+                                &self
+                                    .interpreter
+                                    .var_type_constraint(&name)
+                                    .unwrap_or(constraint.clone()),
+                            ));
+                            self.set_env_with_main_alias(&name, type_obj.clone());
+                            self.update_local_if_exists(code, &name, &type_obj);
+                        }
                     }
                 } else if let Some(value) = self.get_env_with_main_alias(&name) {
                     let info = crate::runtime::ContainerTypeInfo {
