@@ -57,6 +57,15 @@ pub(crate) enum CompoundAssignOp {
     IntDiv,
     Lcm,
     Gcd,
+    StrBitAnd,
+    StrBitOr,
+    StrBitXor,
+    StrShiftLeft,
+    StrShiftRight,
+    BoolBitAnd,
+    BoolBitOr,
+    BoolBitXor,
+    XorXor,
 }
 
 impl CompoundAssignOp {
@@ -89,6 +98,15 @@ impl CompoundAssignOp {
             CompoundAssignOp::IntDiv => "div=",
             CompoundAssignOp::Lcm => "lcm=",
             CompoundAssignOp::Gcd => "gcd=",
+            CompoundAssignOp::StrBitAnd => "~&=",
+            CompoundAssignOp::StrBitOr => "~|=",
+            CompoundAssignOp::StrBitXor => "~^=",
+            CompoundAssignOp::StrShiftLeft => "~<=",
+            CompoundAssignOp::StrShiftRight => "~>=",
+            CompoundAssignOp::BoolBitAnd => "?&=",
+            CompoundAssignOp::BoolBitOr => "?|=",
+            CompoundAssignOp::BoolBitXor => "?^=",
+            CompoundAssignOp::XorXor => "^^=",
         }
     }
 
@@ -122,6 +140,15 @@ impl CompoundAssignOp {
             "div" => Some(CompoundAssignOp::IntDiv),
             "lcm" => Some(CompoundAssignOp::Lcm),
             "gcd" => Some(CompoundAssignOp::Gcd),
+            "~&" => Some(CompoundAssignOp::StrBitAnd),
+            "~|" => Some(CompoundAssignOp::StrBitOr),
+            "~^" => Some(CompoundAssignOp::StrBitXor),
+            "~<" => Some(CompoundAssignOp::StrShiftLeft),
+            "~>" => Some(CompoundAssignOp::StrShiftRight),
+            "?&" => Some(CompoundAssignOp::BoolBitAnd),
+            "?|" => Some(CompoundAssignOp::BoolBitOr),
+            "?^" => Some(CompoundAssignOp::BoolBitXor),
+            "^^" => Some(CompoundAssignOp::XorXor),
             _ => None,
         }
     }
@@ -155,6 +182,15 @@ impl CompoundAssignOp {
             CompoundAssignOp::IntDiv => TokenKind::Ident("div".to_string()),
             CompoundAssignOp::Lcm => TokenKind::Ident("lcm".to_string()),
             CompoundAssignOp::Gcd => TokenKind::Ident("gcd".to_string()),
+            CompoundAssignOp::StrBitAnd => TokenKind::StrBitAnd,
+            CompoundAssignOp::StrBitOr => TokenKind::StrBitOr,
+            CompoundAssignOp::StrBitXor => TokenKind::StrBitXor,
+            CompoundAssignOp::StrShiftLeft => TokenKind::StrShiftLeft,
+            CompoundAssignOp::StrShiftRight => TokenKind::StrShiftRight,
+            CompoundAssignOp::BoolBitAnd => TokenKind::BoolBitAnd,
+            CompoundAssignOp::BoolBitOr => TokenKind::BoolBitOr,
+            CompoundAssignOp::BoolBitXor => TokenKind::BoolBitXor,
+            CompoundAssignOp::XorXor => TokenKind::XorXor,
         }
     }
 }
@@ -252,9 +288,16 @@ pub(super) const COMPOUND_ASSIGN_OPS: &[CompoundAssignOp] = &[
     CompoundAssignOp::DefinedOr,
     CompoundAssignOp::LogicalOr,
     CompoundAssignOp::LogicalAnd,
-    CompoundAssignOp::Power, // **= before *= to match longest first
+    CompoundAssignOp::XorXor, // ^^= before ^=
+    CompoundAssignOp::Power,  // **= before *= to match longest first
     CompoundAssignOp::Add,
     CompoundAssignOp::Sub,
+    // String bitwise ops before ~= to match longest first
+    CompoundAssignOp::StrBitAnd,     // ~&=
+    CompoundAssignOp::StrBitOr,      // ~|=
+    CompoundAssignOp::StrBitXor,     // ~^=
+    CompoundAssignOp::StrShiftLeft,  // ~<=
+    CompoundAssignOp::StrShiftRight, // ~>=
     CompoundAssignOp::Concat,
     CompoundAssignOp::Mul,
     CompoundAssignOp::Div,
@@ -266,15 +309,19 @@ pub(super) const COMPOUND_ASSIGN_OPS: &[CompoundAssignOp] = &[
     CompoundAssignOp::BitXor,
     CompoundAssignOp::BitShiftLeft,  // +<=
     CompoundAssignOp::BitShiftRight, // +>=
-    CompoundAssignOp::Min,           // min= (word boundary checked in parse_compound_assign_op)
-    CompoundAssignOp::Max,           // max= (word boundary checked in parse_compound_assign_op)
-    CompoundAssignOp::Orelse,        // orelse= before or= to match longest first
-    CompoundAssignOp::KeywordOr,     // or=
-    CompoundAssignOp::Andthen,       // andthen= before and= to match longest first
-    CompoundAssignOp::KeywordAnd,    // and=
-    CompoundAssignOp::IntDiv,        // div=
-    CompoundAssignOp::Lcm,           // lcm=
-    CompoundAssignOp::Gcd,           // gcd=
+    // Boolean bitwise ops
+    CompoundAssignOp::BoolBitAnd, // ?&=
+    CompoundAssignOp::BoolBitOr,  // ?|=
+    CompoundAssignOp::BoolBitXor, // ?^=
+    CompoundAssignOp::Min,        // min=
+    CompoundAssignOp::Max,        // max=
+    CompoundAssignOp::Orelse,     // orelse= before or= to match longest first
+    CompoundAssignOp::KeywordOr,  // or=
+    CompoundAssignOp::Andthen,    // andthen= before and= to match longest first
+    CompoundAssignOp::KeywordAnd, // and=
+    CompoundAssignOp::IntDiv,     // div=
+    CompoundAssignOp::Lcm,        // lcm=
+    CompoundAssignOp::Gcd,        // gcd=
 ];
 
 pub(crate) fn compound_assign_op_from_name(op: &str) -> Option<CompoundAssignOp> {
@@ -441,7 +488,10 @@ fn parse_bracket_meta_assign_op(input: &str) -> Option<(&str, String, String)> {
     } else if let Some(op) = flattened.strip_prefix('Z') {
         ("Z", op)
     } else {
-        return None;
+        // Plain reduction compound assignment: [+]= is like +=
+        // The reduction of a binary op on two values is just the op itself.
+        let rest = &after_bracket[1..];
+        return Some((rest, "reduce".to_string(), flattened));
     };
     let rest = &after_bracket[1..];
     Some((rest, meta.to_string(), op.to_string()))
@@ -756,17 +806,49 @@ pub(crate) fn build_compound_assign_expr(
             op: op.token_kind(),
             right: Box::new(rhs),
         },
-        other => Expr::DoBlock {
-            body: vec![
-                Stmt::Expr(other),
-                Stmt::Expr(rhs),
-                Stmt::Expr(Expr::Call {
-                    name: Symbol::intern("__mutsu_assignment_ro"),
-                    args: Vec::new(),
-                }),
-            ],
-            label: None,
-        },
+        other => {
+            // For short-circuit operators (or=, and=, ||=, &&=, //=, orelse=,
+            // andthen=), preserve short-circuit semantics so that when the LHS
+            // triggers short-circuit the RHS is never evaluated and no
+            // assignment error is raised.
+            if matches!(
+                op,
+                CompoundAssignOp::KeywordOr
+                    | CompoundAssignOp::KeywordAnd
+                    | CompoundAssignOp::LogicalOr
+                    | CompoundAssignOp::LogicalAnd
+                    | CompoundAssignOp::DefinedOr
+                    | CompoundAssignOp::Orelse
+                    | CompoundAssignOp::Andthen
+            ) {
+                Expr::Binary {
+                    left: Box::new(other),
+                    op: op.token_kind(),
+                    right: Box::new(Expr::DoBlock {
+                        body: vec![
+                            Stmt::Expr(rhs),
+                            Stmt::Expr(Expr::Call {
+                                name: Symbol::intern("__mutsu_assignment_ro"),
+                                args: Vec::new(),
+                            }),
+                        ],
+                        label: None,
+                    }),
+                }
+            } else {
+                Expr::DoBlock {
+                    body: vec![
+                        Stmt::Expr(other),
+                        Stmt::Expr(rhs),
+                        Stmt::Expr(Expr::Call {
+                            name: Symbol::intern("__mutsu_assignment_ro"),
+                            args: Vec::new(),
+                        }),
+                    ],
+                    label: None,
+                }
+            }
+        }
     })
 }
 
@@ -818,6 +900,12 @@ fn build_custom_compound_assign_expr(
 }
 
 fn build_meta_assign_expr(lhs: Expr, meta: String, op: String, rhs: Expr) -> Result<Expr, PError> {
+    // For "reduce" meta (plain [op]=), reduce on two values is just the base op.
+    if meta == "reduce"
+        && let Some(compound_op) = CompoundAssignOp::from_op_name(&op)
+    {
+        return build_compound_assign_expr(lhs, compound_op, rhs);
+    }
     Ok(match lhs {
         Expr::Var(name) => Expr::AssignExpr {
             name: name.clone(),
@@ -873,6 +961,64 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         let (rest_inner, _) = ws(rest_inner)?;
         if let Ok((rest_after_paren, _)) = parse_char(rest_inner, ')') {
             return Ok((rest_after_paren, inner_assign));
+        }
+        // If the inner assignment consumed part but left comma-separated items before ')',
+        // collect them into a list (e.g. `(@a[1,2] := "a","b")` where RHS is a list).
+        if rest_inner.starts_with(',') && !rest_inner.starts_with(",,") {
+            // Re-wrap: the inner assignment's RHS should include the remaining items
+            if let Expr::IndexAssign {
+                target,
+                index,
+                value,
+            } = inner_assign
+            {
+                let mut items = vec![*value];
+                let mut r = rest_inner;
+                while r.starts_with(',') && !r.starts_with(",,") {
+                    let (r2, _) = parse_char(r, ',')?;
+                    let (r2, _) = ws(r2)?;
+                    if r2.starts_with(')') {
+                        r = r2;
+                        break;
+                    }
+                    let (r2, item) = expression_no_sequence(r2)?;
+                    items.push(item);
+                    let (r2, _) = ws(r2)?;
+                    r = r2;
+                }
+                let (r, _) = parse_char(r, ')')?;
+                return Ok((
+                    r,
+                    Expr::IndexAssign {
+                        target,
+                        index,
+                        value: Box::new(Expr::ArrayLiteral(items)),
+                    },
+                ));
+            } else if let Expr::AssignExpr { name, expr } = inner_assign {
+                let mut items = vec![*expr];
+                let mut r = rest_inner;
+                while r.starts_with(',') && !r.starts_with(",,") {
+                    let (r2, _) = parse_char(r, ',')?;
+                    let (r2, _) = ws(r2)?;
+                    if r2.starts_with(')') {
+                        r = r2;
+                        break;
+                    }
+                    let (r2, item) = expression_no_sequence(r2)?;
+                    items.push(item);
+                    let (r2, _) = ws(r2)?;
+                    r = r2;
+                }
+                let (r, _) = parse_char(r, ')')?;
+                return Ok((
+                    r,
+                    Expr::AssignExpr {
+                        name,
+                        expr: Box::new(Expr::ArrayLiteral(items)),
+                    },
+                ));
+            }
         }
     }
     let (rest, lhs) = expression_no_sequence(rest)?;
@@ -931,7 +1077,29 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         let (rest, _) = ws(stripped)?;
         let (rest, rhs) = match try_parse_assign_expr(rest) {
             Ok(r) => r,
-            Err(_) => expression_no_sequence(rest)?,
+            Err(_) => {
+                let (r, first) = expression_no_sequence(rest)?;
+                let (r2, _) = ws(r)?;
+                if r2.starts_with(',') && !r2.starts_with(",,") {
+                    let mut items = vec![first];
+                    let mut r = r2;
+                    while r.starts_with(',') && !r.starts_with(",,") {
+                        let (r2, _) = parse_char(r, ',')?;
+                        let (r2, _) = ws(r2)?;
+                        if r2.starts_with(')') {
+                            r = r2;
+                            break;
+                        }
+                        let (r2, item) = expression_no_sequence(r2)?;
+                        items.push(item);
+                        let (r2, _) = ws(r2)?;
+                        r = r2;
+                    }
+                    (r, Expr::ArrayLiteral(items))
+                } else {
+                    (r, first)
+                }
+            }
         };
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
@@ -1178,10 +1346,53 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         };
         let (r_idx, _) = parse_char(r, r.as_bytes()[0] as char)?;
         let (r_idx, _) = ws(r_idx)?;
-        let (r_idx, index_expr) = expression(r_idx)?;
-        let (r_idx, _) = ws(r_idx)?;
+        // Parse comma-separated index expressions inside brackets
+        let (r_idx, first_expr) = expression(r_idx)?;
+        let (mut r_idx, _) = ws(r_idx)?;
+        let index_expr = if r_idx.starts_with(',') {
+            let mut items = vec![first_expr];
+            while r_idx.starts_with(',') {
+                let (r2, _) = parse_char(r_idx, ',')?;
+                let (r2, _) = ws(r2)?;
+                if r2.starts_with(closing) {
+                    r_idx = r2;
+                    break;
+                }
+                let (r2, next) = expression(r2)?;
+                items.push(next);
+                let (r2, _) = ws(r2)?;
+                r_idx = r2;
+            }
+            Expr::ArrayLiteral(items)
+        } else {
+            first_expr
+        };
         let (r_idx, _) = parse_char(r_idx, closing)?;
         let (r_after, _) = ws(r_idx)?;
+        // Check for binding assignment (:= or ::=)
+        if let Some(stripped) = r_after
+            .strip_prefix("::=")
+            .or_else(|| r_after.strip_prefix(":="))
+        {
+            let (rest, _) = ws(stripped)?;
+            let (rest, rhs) = match try_parse_assign_expr(rest) {
+                Ok(r) => r,
+                Err(_) => expression(rest)?,
+            };
+            let target = match sigil {
+                b'@' => Expr::ArrayVar(var.to_string()),
+                b'%' => Expr::HashVar(var.to_string()),
+                _ => Expr::Var(var.to_string()),
+            };
+            return Ok((
+                rest,
+                Expr::IndexAssign {
+                    target: Box::new(target),
+                    index: Box::new(index_expr),
+                    value: Box::new(rhs),
+                },
+            ));
+        }
         // Check for simple assignment
         if (r_after.starts_with('=') && !r_after.starts_with("==") && !r_after.starts_with("=>"))
             || r_after.starts_with("⚛=")
@@ -1688,9 +1899,23 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     }
 
     // Meta-op assignment: @a [X+]= @b → @a = @a X+ @b
+    // Meta-op assignment: @a [X+]= @b → @a = @a X+ @b
+    // Also handles reduction assignment: $x [+]= 6 → $x += 6
     if let Some((after_eq, meta, op)) = parse_bracket_meta_assign_op(rest) {
         let (after_eq, _) = ws(after_eq)?;
         let (rest, rhs) = parse_assign_expr_or_comma(after_eq)?;
+        // For "reduce" meta (plain [op]=), reduce on two values is just the base op.
+        if meta == "reduce"
+            && let Some(compound_op) = CompoundAssignOp::from_op_name(&op)
+        {
+            let expr = compound_assigned_value_expr(var_expr, compound_op, rhs);
+            let stmt = Stmt::Assign {
+                name,
+                expr,
+                op: AssignOp::Assign,
+            };
+            return parse_statement_modifier(rest, stmt);
+        }
         let expr = Expr::MetaOp {
             meta,
             op,

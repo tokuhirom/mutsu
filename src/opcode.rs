@@ -137,6 +137,11 @@ pub(crate) enum OpCode {
     BoolBitOr,
     BoolBitAnd,
     BoolBitXor,
+    StrBitAnd,
+    StrBitOr,
+    StrBitXor,
+    StrShiftLeft,
+    StrShiftRight,
 
     // -- Set operations --
     SetElem,
