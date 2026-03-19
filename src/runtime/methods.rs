@@ -3041,6 +3041,12 @@ impl Interpreter {
                 }
             }
             "shift" => {
+                if !args.is_empty() {
+                    return Err(RuntimeError::new(format!(
+                        "Too many positionals passed; expected 1 argument but got {}",
+                        args.len() + 1
+                    )));
+                }
                 if items.is_empty() {
                     Ok(Value::Array(Arc::new(items), kind))
                 } else {
