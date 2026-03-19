@@ -418,6 +418,7 @@ pub(super) fn whatever(input: &str) -> PResult<'_, Expr> {
         // **<digit> or **$ would be power op, but **) or **, or end is HyperWhatever
         if !after.is_empty()
             && !after.starts_with(')')
+            && !after.starts_with(']')
             && !after.starts_with(',')
             && !after.starts_with(';')
             && !after.starts_with('}')
