@@ -59,7 +59,14 @@ pub(crate) enum OpCode {
     NumGt,
     NumGe,
     ApproxEq,
-    ContainerEq,
+    /// Container identity (`=:=`).
+    /// The `u8` flags encode containerisation of operands:
+    /// bit 0 = left operand is containerised,
+    /// bit 1 = right operand is containerised.
+    /// When an operand is containerised (came from a variable / index),
+    /// non-reference values on the stack can never be the same container,
+    /// so the operator returns False for non-Arc value types.
+    ContainerEq(u8),
 
     // -- String comparison --
     StrEq,

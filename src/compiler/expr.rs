@@ -573,6 +573,21 @@ impl Compiler {
                     _ => {}
                 }
 
+                // Special-case: =:= (container identity)
+                // Detect whether operands are containerised (from variables/indexing)
+                // vs bare values (literals, method returns, type objects) so the VM
+                // can distinguish "same container" from "same value".
+                if matches!(op, TokenKind::Ident(name) if name == "=:=") {
+                    let left_fresh = Self::expr_is_fresh_container(left);
+                    let right_fresh = Self::expr_is_fresh_container(right);
+                    let flags = (if left_fresh { 1u8 } else { 0u8 })
+                        | (if right_fresh { 2u8 } else { 0u8 });
+                    self.compile_expr(left);
+                    self.compile_expr(right);
+                    self.code.emit(OpCode::ContainerEq(flags));
+                    return;
+                }
+
                 if let Some(opcode) = Self::binary_opcode(op) {
                     if matches!(op, TokenKind::Ident(name) if name == "does") {
                         let var_name = match left.as_ref() {
@@ -1324,6 +1339,12 @@ impl Compiler {
                 self.compile_expr(target);
                 self.compile_expr(keys);
                 self.code.emit(OpCode::HyperIndex);
+            }
+            // Deferred heredoc interpolation: parse content at compile time
+            // so variables are resolved in the current scope.
+            Expr::HeredocInterpolation(content) => {
+                let resolved = crate::parser::interpolate_heredoc_content(content);
+                self.compile_expr(&resolved);
             }
             // String interpolation
             Expr::StringInterpolation(parts) => {
@@ -2583,7 +2604,8 @@ impl Compiler {
             TokenKind::BangEqEqEq => Some(OpCode::StrictNe),
             TokenKind::Ident(name) if name == "eqv" => Some(OpCode::Eqv),
             TokenKind::Ident(name) if name == "=~=" => Some(OpCode::ApproxEq),
-            TokenKind::Ident(name) if name == "=:=" => Some(OpCode::ContainerEq),
+            // =:= is handled as a special case in compile_expr (needs containerisation flags)
+            TokenKind::Ident(name) if name == "=:=" => None,
             // Divisibility
             TokenKind::PercentPercent => Some(OpCode::DivisibleBy),
             TokenKind::BangPercentPercent => Some(OpCode::NotDivisibleBy),
@@ -2631,6 +2653,26 @@ impl Compiler {
             TokenKind::DotDotDot => Some(OpCode::Sequence { exclude_end: false }),
             TokenKind::DotDotDotCaret => Some(OpCode::Sequence { exclude_end: true }),
             _ => None,
+        }
+    }
+
+    /// Returns `true` when `expr` provably produces a fresh container
+    /// — i.e. the result is a copy that cannot share identity with any
+    /// existing container.
+    ///
+    /// The key case is indexing into an array constructed with `[…]`:
+    /// `[$foo][0]` always yields a new Scalar container that is never
+    /// `=:=` to `$foo`.
+    ///
+    /// We intentionally do **not** mark `Expr::Var` here because a
+    /// bare variable may be a `:=` binding that shares identity with
+    /// its target.
+    fn expr_is_fresh_container(expr: &Expr) -> bool {
+        match expr {
+            // Indexing into an array/hash element produces a value that
+            // was copied into the array, hence a distinct container.
+            Expr::Index { .. } => true,
+            _ => false,
         }
     }
 

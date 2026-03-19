@@ -89,6 +89,11 @@ pub(crate) enum Expr {
     HyperWhatever,
     BareWord(String),
     StringInterpolation(Vec<Expr>),
+    /// Deferred heredoc interpolation: stores raw content to be interpolated
+    /// at compile time in the scope where the AST node appears, not where
+    /// the qq:to declaration was parsed. This is needed because Raku resolves
+    /// heredoc body variables in the scope of the terminator, not the declaration.
+    HeredocInterpolation(String),
     Var(String),
     CaptureVar(String),
     ArrayVar(String),

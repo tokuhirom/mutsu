@@ -683,8 +683,11 @@ fn parse_to_heredoc(input: &str, interpolate: bool) -> PResult<'_, Expr> {
             .strip_prefix('\n')
             .unwrap_or(after_terminator);
         // qq:to interpolates like double-quoted strings.
+        // Use HeredocInterpolation to defer variable resolution to compile time,
+        // so variables are resolved in the scope where the terminator appears
+        // (not where qq:to is declared).
         let expr = if interpolate {
-            interpolate_heredoc_content(&content)
+            Expr::HeredocInterpolation(content)
         // q:to keeps content literal; only process explicit \qq escapes.
         } else if content.contains("\\qq") {
             parse_single_quote_qq(&content)
@@ -703,13 +706,6 @@ fn parse_to_heredoc(input: &str, interpolate: bool) -> PResult<'_, Expr> {
         return Ok((leaked, expr));
     }
     Err(PError::expected("heredoc terminator"))
-}
-
-fn interpolate_heredoc_content(content: &str) -> Expr {
-    super::quote_adverbs::process_content_with_flags(
-        content,
-        &super::quote_adverbs::QuoteFlags::qq_double(),
-    )
 }
 
 fn parse_to_heredoc_delimiter(input: &str) -> PResult<'_, &'_ str> {
@@ -943,7 +939,7 @@ fn parse_to_heredoc_with_flags<'a>(
 
         // Process content based on flags
         let expr = if interpolate {
-            interpolate_heredoc_content(&content)
+            Expr::HeredocInterpolation(content)
         } else if flags.closure || flags.words || flags.backslash {
             // Use flags-based processing for heredoc with adverbs
             process_content_with_flags(&content, flags)
