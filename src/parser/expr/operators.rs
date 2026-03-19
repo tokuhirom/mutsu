@@ -581,17 +581,22 @@ pub(super) fn parse_negated_logical_op(input: &str) -> Option<(LogicalOp, usize)
 }
 
 pub(super) fn parse_word_logical_op(input: &str) -> Option<(LogicalOp, usize)> {
-    if input.starts_with("orelse") && !is_ident_char(input.as_bytes().get(6).copied()) {
+    // Helper: check that the keyword is followed by a word boundary AND is not
+    // immediately followed by `=` (which would make it a compound assignment
+    // like `or=`, `and=`, `orelse=`, etc.).
+    let is_op_boundary =
+        |b: Option<&u8>| -> bool { !is_ident_char(b.copied()) && b != Some(&b'=') };
+    if input.starts_with("orelse") && is_op_boundary(input.as_bytes().get(6)) {
         Some((LogicalOp::OrElse, 6))
-    } else if input.starts_with("or") && !is_ident_char(input.as_bytes().get(2).copied()) {
+    } else if input.starts_with("or") && is_op_boundary(input.as_bytes().get(2)) {
         Some((LogicalOp::Or, 2))
-    } else if input.starts_with("xor") && !is_ident_char(input.as_bytes().get(3).copied()) {
+    } else if input.starts_with("xor") && is_op_boundary(input.as_bytes().get(3)) {
         Some((LogicalOp::XorXor, 3))
-    } else if input.starts_with("andthen") && !is_ident_char(input.as_bytes().get(7).copied()) {
+    } else if input.starts_with("andthen") && is_op_boundary(input.as_bytes().get(7)) {
         Some((LogicalOp::AndThen, 7))
-    } else if input.starts_with("notandthen") && !is_ident_char(input.as_bytes().get(10).copied()) {
+    } else if input.starts_with("notandthen") && is_op_boundary(input.as_bytes().get(10)) {
         Some((LogicalOp::NotAndThen, 10))
-    } else if input.starts_with("and") && !is_ident_char(input.as_bytes().get(3).copied()) {
+    } else if input.starts_with("and") && is_op_boundary(input.as_bytes().get(3)) {
         Some((LogicalOp::And, 3))
     } else {
         None

@@ -994,6 +994,33 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 op: op.token_kind(),
                 right: Box::new(rhs),
             })
+        } else if matches!(
+            op,
+            super::assign::CompoundAssignOp::KeywordOr
+                | super::assign::CompoundAssignOp::KeywordAnd
+                | super::assign::CompoundAssignOp::LogicalOr
+                | super::assign::CompoundAssignOp::LogicalAnd
+                | super::assign::CompoundAssignOp::DefinedOr
+                | super::assign::CompoundAssignOp::Orelse
+                | super::assign::CompoundAssignOp::Andthen
+        ) {
+            // Short-circuit compound assignment on non-lvalue: preserve
+            // short-circuit semantics so the RHS is not evaluated when
+            // the LHS triggers short-circuit.
+            Stmt::Expr(Expr::Binary {
+                left: Box::new(expr),
+                op: op.token_kind(),
+                right: Box::new(Expr::DoBlock {
+                    body: vec![
+                        Stmt::Expr(rhs),
+                        Stmt::Expr(Expr::Call {
+                            name: Symbol::intern("__mutsu_assignment_ro"),
+                            args: Vec::new(),
+                        }),
+                    ],
+                    label: None,
+                }),
+            })
         } else {
             Stmt::Expr(Expr::DoBlock {
                 body: vec![

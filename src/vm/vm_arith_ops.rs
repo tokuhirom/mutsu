@@ -976,4 +976,74 @@ impl VM {
         let left = self.stack.pop().unwrap();
         self.stack.push(Value::Bool(left.truthy() ^ right.truthy()));
     }
+
+    /// String bitwise AND (~&): AND corresponding bytes of two strings.
+    pub(super) fn exec_str_bit_and_op(&mut self) {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let l = left.to_string_value();
+        let r = right.to_string_value();
+        let lb = l.as_bytes();
+        let rb = r.as_bytes();
+        let len = lb.len().min(rb.len());
+        let result: Vec<u8> = (0..len).map(|i| lb[i] & rb[i]).collect();
+        self.stack
+            .push(Value::str(String::from_utf8_lossy(&result).into_owned()));
+    }
+
+    /// String bitwise OR (~|): OR corresponding bytes of two strings.
+    pub(super) fn exec_str_bit_or_op(&mut self) {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let l = left.to_string_value();
+        let r = right.to_string_value();
+        let lb = l.as_bytes();
+        let rb = r.as_bytes();
+        let len = lb.len().max(rb.len());
+        let result: Vec<u8> = (0..len)
+            .map(|i| {
+                let a = lb.get(i).copied().unwrap_or(0);
+                let b = rb.get(i).copied().unwrap_or(0);
+                a | b
+            })
+            .collect();
+        self.stack
+            .push(Value::str(String::from_utf8_lossy(&result).into_owned()));
+    }
+
+    /// String bitwise XOR (~^): XOR corresponding bytes of two strings.
+    pub(super) fn exec_str_bit_xor_op(&mut self) {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let l = left.to_string_value();
+        let r = right.to_string_value();
+        let lb = l.as_bytes();
+        let rb = r.as_bytes();
+        let len = lb.len().max(rb.len());
+        let result: Vec<u8> = (0..len)
+            .map(|i| {
+                let a = lb.get(i).copied().unwrap_or(0);
+                let b = rb.get(i).copied().unwrap_or(0);
+                a ^ b
+            })
+            .collect();
+        self.stack
+            .push(Value::str(String::from_utf8_lossy(&result).into_owned()));
+    }
+
+    /// String bitwise shift left (~<): not yet implemented in Raku either.
+    /// TODO: Implement when Raku spec is finalized for this operator.
+    pub(super) fn exec_str_shift_left_op(&mut self) {
+        let _right = self.stack.pop().unwrap();
+        let _left = self.stack.pop().unwrap();
+        self.stack.push(Value::Nil);
+    }
+
+    /// String bitwise shift right (~>): not yet implemented in Raku either.
+    /// TODO: Implement when Raku spec is finalized for this operator.
+    pub(super) fn exec_str_shift_right_op(&mut self) {
+        let _right = self.stack.pop().unwrap();
+        let _left = self.stack.pop().unwrap();
+        self.stack.push(Value::Nil);
+    }
 }
