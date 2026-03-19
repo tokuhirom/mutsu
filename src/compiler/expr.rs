@@ -1340,6 +1340,12 @@ impl Compiler {
                 self.compile_expr(keys);
                 self.code.emit(OpCode::HyperIndex);
             }
+            // Deferred heredoc interpolation: parse content at compile time
+            // so variables are resolved in the current scope.
+            Expr::HeredocInterpolation(content) => {
+                let resolved = crate::parser::interpolate_heredoc_content(content);
+                self.compile_expr(&resolved);
+            }
             // String interpolation
             Expr::StringInterpolation(parts) => {
                 let n = parts.len() as u32;
