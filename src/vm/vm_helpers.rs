@@ -1009,6 +1009,14 @@ impl VM {
                     .cloned()
                     .unwrap_or(Value::Nil))
             } else {
+                // Clear capture variables ($0, $1, ...) and $/ on failed match
+                self.interpreter
+                    .env_mut()
+                    .insert("/".to_string(), Value::Nil);
+                for i in 0..10 {
+                    self.interpreter.env_mut().remove(&i.to_string());
+                }
+                self.env_dirty = true;
                 Ok(Value::Nil)
             }
         } else {

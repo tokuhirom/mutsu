@@ -977,7 +977,12 @@ fn raku_value(v: &Value) -> String {
                 }
             }
             let key_repr = match key.as_ref() {
-                Value::Pair(_, _) | Value::ValuePair(_, _) => format!("({})", raku_value(key)),
+                // Non-string keys that would be ambiguous as barewords need parens
+                Value::Pair(_, _)
+                | Value::ValuePair(_, _)
+                | Value::Package(_)
+                | Value::Nil
+                | Value::Bool(_) => format!("({})", raku_value(key)),
                 _ => raku_value(key),
             };
             format!("{} => {}", key_repr, raku_value(value))
