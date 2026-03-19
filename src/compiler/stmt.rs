@@ -28,6 +28,21 @@ impl Compiler {
         )
     }
 
+    /// Returns true if the expression contains a state variable declaration
+    /// (recursively). Used to decide whether `StateVarInitGuard` can safely
+    /// skip evaluation of a state variable's RHS initializer.
+    fn expr_has_state_decl(expr: &Expr) -> bool {
+        match expr {
+            Expr::DoStmt(stmt) => {
+                if let Stmt::VarDecl { is_state: true, .. } = stmt.as_ref() {
+                    return true;
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
     fn compile_assignment_rhs_for_target(&mut self, name: &str, expr: &Expr) {
         self.compile_expr(expr);
         if !name.starts_with('@')
@@ -348,6 +363,25 @@ impl Compiler {
                 if let Some(tc) = type_constraint {
                     self.local_types.insert(name.clone(), tc.clone());
                 }
+                // For state variables, emit a guard that skips the RHS evaluation
+                // when the state is already initialized (avoiding side effects).
+                // Skip the guard if the RHS contains nested state declarations
+                // (e.g. `state $a = state $b = 42`) since the inner state var
+                // needs its StateVarInit to run on every call.
+                let state_guard_idx = if *is_state && !Self::expr_has_state_decl(expr) {
+                    // Pre-compute the state key early so the guard can reference it.
+                    // We use a placeholder IP that will be unique enough.
+                    let placeholder_ip = self.code.ops.len();
+                    let key = format!(
+                        "__state_{}::{}@{}",
+                        self.current_package, name, placeholder_ip
+                    );
+                    let key_idx = self.code.add_constant(Value::str(key.clone()));
+                    let guard_idx = self.code.emit(OpCode::StateVarInitGuard(key_idx, 0));
+                    Some((guard_idx, key, key_idx))
+                } else {
+                    None
+                };
                 self.compile_assignment_rhs_for_target(name, expr);
                 // Skip TypeCheck for hash declarations: the type constraint
                 // applies to element values, not to the collection itself.
@@ -373,11 +407,22 @@ impl Compiler {
                 }
                 let slot = self.alloc_local(name);
                 if *is_state {
-                    let ip = self.code.ops.len();
-                    let key = format!("__state_{}::{}@{}", self.current_package, name, ip);
-                    let key_idx = self.code.add_constant(Value::str(key.clone()));
-                    self.code.state_locals.push((slot as usize, key.clone()));
-                    self.code.emit(OpCode::StateVarInit(slot, key_idx));
+                    if let Some((guard_idx, key, key_idx)) = state_guard_idx {
+                        // Patch the guard jump target to the StateVarInit instruction
+                        let state_init_ip = self.code.ops.len();
+                        self.code.ops[guard_idx] =
+                            OpCode::StateVarInitGuard(key_idx, state_init_ip as u32);
+                        self.code.state_locals.push((slot as usize, key.clone()));
+                        self.code.emit(OpCode::StateVarInit(slot, key_idx));
+                    } else {
+                        // No guard (e.g., chained state declarations) — use the
+                        // original approach where RHS is always evaluated.
+                        let ip = self.code.ops.len();
+                        let key = format!("__state_{}::{}@{}", self.current_package, name, ip);
+                        let key_idx = self.code.add_constant(Value::str(key.clone()));
+                        self.code.state_locals.push((slot as usize, key.clone()));
+                        self.code.emit(OpCode::StateVarInit(slot, key_idx));
+                    }
                 } else {
                     if *is_our {
                         self.code.emit(OpCode::Dup);

@@ -1996,6 +1996,19 @@ impl VM {
                 self.exec_state_var_init_op(code, *slot, *key_idx);
                 *ip += 1;
             }
+            OpCode::StateVarInitGuard(key_idx, jump_to) => {
+                let key = Self::const_str(code, *key_idx);
+                if self.interpreter.get_state_var(key).is_some() {
+                    // State already initialized: push a placeholder value on the
+                    // stack (StateVarInit will discard it and use the stored value)
+                    // and skip the RHS initializer.
+                    self.stack.push(Value::Nil);
+                    *ip = *jump_to as usize;
+                } else {
+                    // State not yet initialized: fall through to compile RHS
+                    *ip += 1;
+                }
+            }
 
             // -- Block scope --
             OpCode::BlockScope {

@@ -983,8 +983,33 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         ));
     }
 
+    // Handle type capture: my ::a $a — `::name` captures the type of the variable.
+    // We treat it as a type constraint string starting with "::" to distinguish
+    // it from normal type constraints at runtime.
+    let (rest, type_constraint) = if rest.starts_with("::")
+        && !rest.starts_with("::=")
+        && rest[2..]
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_alphabetic() || c == '_')
+    {
+        let ident_start = &rest[2..];
+        let end = ident_start
+            .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+            .unwrap_or(ident_start.len());
+        let capture_name = &ident_start[..end];
+        let tc = format!("::{}", capture_name);
+        let r = &ident_start[end..];
+        let (r, _) = ws(r)?;
+        (r, Some(tc))
+    } else {
+        (rest, None)
+    };
+
     // Optional type constraint: my Int $x or my Str(Match) $x (coercion type)
-    let (rest, mut type_constraint) = {
+    let (rest, mut type_constraint) = if type_constraint.is_some() {
+        (rest, type_constraint)
+    } else {
         // Try to parse a type name followed by a sigil or \ or `constant`
         let saved = rest;
         if let Some((r, tc)) = parse_type_constraint_expr(rest) {
