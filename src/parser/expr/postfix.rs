@@ -350,6 +350,40 @@ fn append_call_arg(expr: &mut Expr, arg: Expr) -> bool {
     }
 }
 
+/// Check if an expression is a negative literal integer (e.g., `-1`).
+/// Raku forbids bare negative integer subscripts like `@a[-1]` — use `*-1` instead.
+fn is_negative_int_literal(expr: &Expr) -> Option<i64> {
+    if let Expr::Unary {
+        op: TokenKind::Minus,
+        expr: inner,
+    } = expr
+        && let Expr::Literal(Value::Int(n)) = inner.as_ref()
+    {
+        return Some(-n);
+    }
+    None
+}
+
+/// Check if an expression contains a negative literal subscript that should be rejected.
+/// Returns the negative value if found.
+fn check_negative_subscript(expr: &Expr) -> Option<i64> {
+    // Direct negative literal: @a[-1]
+    if let Some(n) = is_negative_int_literal(expr) {
+        return Some(n);
+    }
+    // Range ending with negative literal: @a[0..-1]
+    if let Expr::Binary {
+        op: TokenKind::DotDot | TokenKind::DotDotCaret,
+        right,
+        ..
+    } = expr
+        && let Some(n) = is_negative_int_literal(right)
+    {
+        return Some(n);
+    }
+    None
+}
+
 /// Result of parsing bracket indices — either a single-dimension index or
 /// a multi-dimensional (semicolon-separated) index.
 enum ParsedBracketIndex {
@@ -1780,6 +1814,17 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             let (r, parsed) = parse_bracket_indices_inner(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ']')?;
+            // Reject negative literal subscripts: @a[-1], @a[0..-1], etc.
+            // Raku requires *-1 instead.
+            if let ParsedBracketIndex::Single(ref index) = parsed
+                && let Some(n) = check_negative_subscript(index)
+            {
+                return Err(PError::fatal(format!(
+                    "X::Obsolete: Unsupported use of a negative {} subscript to index from the end. \
+                     In Raku please use: a function such as *{}.",
+                    n, n
+                )));
+            }
             match parsed {
                 ParsedBracketIndex::Single(index) => {
                     expr = Expr::Index {

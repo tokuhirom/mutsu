@@ -937,7 +937,7 @@ impl VM {
                                     }
                                 }
                             } else {
-                                return Err(RuntimeError::new("Index out of bounds"));
+                                return Err(Self::make_out_of_range_error(&idx));
                             }
                             self.mark_initialized_index(&var_name, encoded_idx.clone());
                             if bind_mode {

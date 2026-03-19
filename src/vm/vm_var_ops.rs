@@ -472,13 +472,13 @@ impl VM {
             return Err(RuntimeError::new("Index out of bounds"));
         }
         let Some(i) = Self::index_to_usize(&indices[0]) else {
-            return Err(RuntimeError::new("Index out of bounds"));
+            return Err(Self::make_out_of_range_error(&indices[0]));
         };
         let Value::Array(items, ..) = target else {
-            return Err(RuntimeError::new("Index out of bounds"));
+            return Err(Self::make_out_of_range_error(&indices[0]));
         };
         if i >= items.len() {
-            return Err(RuntimeError::new("Index out of bounds"));
+            return Err(Self::make_out_of_range_error(&indices[0]));
         }
         let arr = Arc::make_mut(items);
         if indices.len() == 1 {
@@ -1624,6 +1624,24 @@ impl VM {
         let mut failure_attrs = std::collections::HashMap::new();
         failure_attrs.insert("exception".to_string(), ex);
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+    }
+
+    /// Create an X::OutOfRange RuntimeError from an index value.
+    pub(super) fn make_out_of_range_error(idx: &Value) -> RuntimeError {
+        let got = match idx {
+            Value::Int(i) => *i,
+            Value::Num(n) => *n as i64,
+            _ => 0,
+        };
+        let msg = format!("Index out of range. Is: {}, should be in 0..^Inf", got);
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("got".to_string(), Value::Int(got));
+        attrs.insert("range".to_string(), Value::str_from("0..^Inf"));
+        let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
+        let mut err = RuntimeError::new(msg);
+        err.exception = Some(Box::new(ex));
+        err
     }
 
     /// Resolve WhateverCode indices for array deletion.
