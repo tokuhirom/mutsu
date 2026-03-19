@@ -834,8 +834,9 @@ impl VM {
                 self.exec_approx_eq_op()?;
                 *ip += 1;
             }
-            OpCode::ContainerEq => {
-                self.exec_container_eq_op();
+            OpCode::ContainerEq(flags) => {
+                let flags = *flags;
+                self.exec_container_eq_op(flags);
                 *ip += 1;
             }
 
