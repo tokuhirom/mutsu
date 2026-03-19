@@ -762,6 +762,32 @@ impl Compiler {
                     });
                     return;
                 }
+                // Rewrite __mutsu_assign_named_sub_lvalue("undefine", [$var], value)
+                // → $var = Nil; $var = value (undefine is rw)
+                if name == "__mutsu_assign_named_sub_lvalue"
+                    && args.len() == 3
+                    && matches!(&args[0], Expr::Literal(Value::Str(s)) if **s == *"undefine")
+                    && let Expr::ArrayLiteral(call_args) = &args[1]
+                    && call_args.len() == 1
+                    && let Some(var_name) = match &call_args[0] {
+                        Expr::Var(n) => Some(n.clone()),
+                        Expr::ArrayVar(n) => Some(format!("@{}", n)),
+                        Expr::HashVar(n) => Some(format!("%{}", n)),
+                        Expr::CodeVar(n) => Some(format!("&{}", n)),
+                        _ => None,
+                    }
+                {
+                    // First undefine: $var = Nil
+                    self.code.emit(OpCode::LoadNil);
+                    let name_idx = self.code.add_constant(Value::str(var_name.clone()));
+                    self.code.emit(OpCode::AssignExpr(name_idx));
+                    self.code.emit(OpCode::Pop);
+                    // Then assign the value: $var = value
+                    self.compile_expr(&args[2]);
+                    let name_idx2 = self.code.add_constant(Value::str(var_name));
+                    self.code.emit(OpCode::AssignExpr(name_idx2));
+                    return;
+                }
                 // Rewrite undefine($var) → $var = Nil (assign Nil to the variable)
                 if name == "undefine" && args.len() == 1 {
                     let var_name = match &args[0] {
@@ -776,8 +802,25 @@ impl Compiler {
                         self.code.emit(OpCode::LoadNil);
                         let name_idx = self.code.add_constant(Value::str(vname));
                         self.code.emit(OpCode::AssignExpr(name_idx));
+                    } else if let Expr::Index { target, index } = &args[0] {
+                        // undefine %hash<key> or undefine @arr[idx]
+                        // Compile as IndexAssign with Nil value
+                        let assign_expr = Expr::IndexAssign {
+                            target: target.clone(),
+                            index: index.clone(),
+                            value: Box::new(Expr::Literal(Value::Nil)),
+                        };
+                        self.compile_expr(&assign_expr);
                     } else {
-                        self.code.emit(OpCode::LoadNil);
+                        // For other expressions (e.g. function calls), just call
+                        // undefine as a regular function
+                        self.compile_expr(&args[0]);
+                        let call_name_idx = self.code.add_constant(Value::str(name.resolve()));
+                        self.code.emit(OpCode::CallFunc {
+                            name_idx: call_name_idx,
+                            arity: 1,
+                            arg_sources_idx: None,
+                        });
                     }
                 }
                 // Rewrite shift(@arr)/pop(@arr) → @arr.shift()/@arr.pop() for mutability

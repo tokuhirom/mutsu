@@ -828,7 +828,29 @@ impl VM {
                 // Check if the target is an array variable — use numeric index assignment
                 let key = idx.to_string_value();
                 let array_elem_constraint = self.interpreter.var_type_constraint(&var_name);
+                // Skip element type check for scalar ($) variables with container-type
+                // constraints (Hash, Array). E.g. `my Hash $h; $h<key> = 1` should
+                // not check that `1` is a Hash — the constraint applies to the whole
+                // container, not individual elements.
+                let is_scalar_container_constraint = !var_name.starts_with('@')
+                    && !var_name.starts_with('%')
+                    && array_elem_constraint.as_deref().is_some_and(|c| {
+                        matches!(
+                            c,
+                            "Hash"
+                                | "Array"
+                                | "List"
+                                | "Seq"
+                                | "Bag"
+                                | "Set"
+                                | "Mix"
+                                | "BagHash"
+                                | "SetHash"
+                                | "MixHash"
+                        )
+                    });
                 if let Some(constraint) = array_elem_constraint
+                    && !is_scalar_container_constraint
                     && !matches!(val, Value::Nil)
                     && !self.interpreter.type_matches_value(&constraint, &val)
                 {
@@ -846,6 +868,17 @@ impl VM {
                 let mut range_initialized_marks: Vec<String> = Vec::new();
                 let mut pending_source_update: Option<(String, Value)> = None;
                 let mut pending_varref_update: Option<(String, Option<usize>, Value)> = None;
+                // Auto-vivify Package type objects to empty containers for subscript assignment
+                if let Some(container) = self.interpreter.env_mut().get_mut(&var_name)
+                    && let Value::Package(pkg_name) = container
+                {
+                    let type_name = pkg_name.resolve().to_string();
+                    if type_name == "Hash" {
+                        *container = Value::hash(std::collections::HashMap::new());
+                    } else if type_name == "Array" {
+                        *container = Value::real_array(vec![]);
+                    }
+                }
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
                     match *container {
                         Value::Hash(ref mut hash) => {
