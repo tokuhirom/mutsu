@@ -1996,6 +1996,7 @@ impl Interpreter {
 
         // X::Cannot::Lazy
         register_x("X::Cannot::Lazy", "Exception");
+        register_x("X::Cannot::New", "Exception");
         register_x("X::Cannot::Capture", "Exception");
 
         // X::Match::Bool

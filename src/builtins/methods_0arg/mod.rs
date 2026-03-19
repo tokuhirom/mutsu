@@ -824,6 +824,27 @@ fn raku_array_wrap(inner: &str, kind: ArrayKind) -> String {
     raku_array_wrap_counted(inner, kind, 2) // count=2 to avoid trailing comma
 }
 
+/// Format a numeric value for Instant/Duration .raku output.
+/// Always includes a decimal point (e.g. "42.0", "-400.2").
+fn format_temporal_num(f: f64) -> String {
+    if f.is_nan() {
+        return "NaN".to_string();
+    }
+    if f.is_infinite() {
+        return if f > 0.0 {
+            "Inf".to_string()
+        } else {
+            "-Inf".to_string()
+        };
+    }
+    let s = format!("{}", f);
+    if s.contains('.') {
+        s
+    } else {
+        format!("{}.0", s)
+    }
+}
+
 fn raku_value(v: &Value) -> String {
     match v {
         Value::Array(items, kind) => {
@@ -1044,6 +1065,19 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
         }
         _ => {}
+    }
+
+    // Instant.Instant returns self (identity coercion)
+    if method == "Instant" {
+        match target {
+            Value::Instance { class_name, .. } if class_name == "Instant" => {
+                return Some(Ok(target.clone()));
+            }
+            Value::Package(name) if name == "Instant" => {
+                return Some(Ok(target.clone()));
+            }
+            _ => {}
+        }
     }
 
     // Buf/Blob.Str throws X::Buf::AsStr
@@ -2927,6 +2961,29 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 } else {
                     Some(Ok(Value::str(format!("{}()", class_name))))
                 }
+            }
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Instant" && (method == "raku" || method == "perl") => {
+                let tai = attributes.get("value").map(|v| v.to_f64()).unwrap_or(0.0);
+                let posix = crate::builtins::methods_0arg::temporal::instant_to_posix(tai);
+                Some(Ok(Value::str(format!(
+                    "Instant.from-posix({})",
+                    format_temporal_num(posix)
+                ))))
+            }
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Duration" && (method == "raku" || method == "perl") => {
+                let val = attributes.get("value").cloned().unwrap_or(Value::Num(0.0));
+                Some(Ok(Value::str(format!(
+                    "Duration.new({})",
+                    format_temporal_num(val.to_f64())
+                ))))
             }
             Value::Package(_) | Value::Instance { .. } | Value::Enum { .. } => None,
             Value::Version {
