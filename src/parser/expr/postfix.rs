@@ -777,37 +777,42 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     }
 
     if let Some((op, len)) = parse_prefix_unary_op(input) {
-        let mut rest = &input[len..];
-        if op.consumes_ws() {
-            let (r, _) = ws(rest)?;
-            rest = r;
+        // Skip prefix ++ and -- here: they are handled at the autoincrement
+        // level inside power_expr, which binds tighter than ** but looser than
+        // postfix. This ensures `++$i ** 2` parses as `(++$i) ** 2`.
+        if !matches!(op, PrefixUnaryOp::PreInc | PrefixUnaryOp::PreDec) {
+            let mut rest = &input[len..];
+            if op.consumes_ws() {
+                let (r, _) = ws(rest)?;
+                rest = r;
+            }
+            let (rest, expr) = if op.parses_postfix_target() {
+                postfix_expr(rest)?
+            } else {
+                prefix_expr(rest)?
+            };
+            // Detect precedence confusion: `!%h<a>:exists` should be `:!exists`
+            // Only trigger when the operand was NOT parenthesized (i.e., not `!(%h<a>:exists)`)
+            if op == PrefixUnaryOp::Not
+                && matches!(&expr, Expr::Exists { .. })
+                && !input[len..].trim_start().starts_with('(')
+            {
+                return Ok((
+                    rest,
+                    Expr::Call {
+                        name: Symbol::intern("die"),
+                        args: vec![Expr::Literal(Value::str(
+                            "Precedence issue with ! and :exists, perhaps you meant :!exists?"
+                                .to_string(),
+                        ))],
+                    },
+                ));
+            }
+            // If the operand is a WhateverCode (Lambda or AnonSubParams), compose
+            // the prefix operator into its body instead of wrapping it.
+            let result = compose_prefix_into_whatevercode(op.token_kind(), expr);
+            return Ok((rest, result));
         }
-        let (rest, expr) = if op.parses_postfix_target() {
-            postfix_expr(rest)?
-        } else {
-            prefix_expr(rest)?
-        };
-        // Detect precedence confusion: `!%h<a>:exists` should be `:!exists`
-        // Only trigger when the operand was NOT parenthesized (i.e., not `!(%h<a>:exists)`)
-        if op == PrefixUnaryOp::Not
-            && matches!(&expr, Expr::Exists { .. })
-            && !input[len..].trim_start().starts_with('(')
-        {
-            return Ok((
-                rest,
-                Expr::Call {
-                    name: Symbol::intern("die"),
-                    args: vec![Expr::Literal(Value::str(
-                        "Precedence issue with ! and :exists, perhaps you meant :!exists?"
-                            .to_string(),
-                    ))],
-                },
-            ));
-        }
-        // If the operand is a WhateverCode (Lambda or AnonSubParams), compose
-        // the prefix operator into its body instead of wrapping it.
-        let result = compose_prefix_into_whatevercode(op.token_kind(), expr);
-        return Ok((rest, result));
     }
     // not(expr) — tight-binding form: not followed by ( without space
     if input.starts_with("not(") {
