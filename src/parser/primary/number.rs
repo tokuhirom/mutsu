@@ -238,14 +238,18 @@ pub(super) fn decimal(input: &str) -> PResult<'_, Expr> {
             return Ok((&rest[1..], Expr::Literal(Value::Complex(0.0, n))));
         }
         // Produce Rat: numerator = int_part * 10^frac_digits + frac_part, denominator = 10^frac_digits
-        // For very large frac_digits, fall back to Num to avoid overflow
         let frac_digits = frac_clean.len() as u32;
         if frac_digits > 18 {
-            // Too many decimal places for i64 — produce a Num instead
-            let n: f64 = format!("{}.{}", int_clean, frac_clean)
-                .parse()
-                .unwrap_or(0.0);
-            return Ok((rest, Expr::Literal(Value::Num(n))));
+            // Too many decimal places for i64 — use BigInt to produce an exact Rat
+            use num_bigint::BigInt;
+            let int_val: BigInt = int_clean.parse().unwrap_or_default();
+            let frac_val: BigInt = frac_clean.parse().unwrap_or_default();
+            let denom: BigInt = BigInt::from(10).pow(frac_digits);
+            let numer = int_val * &denom + frac_val;
+            return Ok((
+                rest,
+                Expr::Literal(crate::value::make_big_rat(numer, denom)),
+            ));
         }
         let denom = 10i64.pow(frac_digits);
         let int_val: i64 = int_clean.parse().unwrap_or(0);
@@ -256,10 +260,16 @@ pub(super) fn decimal(input: &str) -> PResult<'_, Expr> {
         match numer {
             Some(numer) => Ok((rest, Expr::Literal(crate::value::make_rat(numer, denom)))),
             None => {
-                let n: f64 = format!("{}.{}", int_clean, frac_clean)
-                    .parse()
-                    .unwrap_or(0.0);
-                Ok((rest, Expr::Literal(Value::Num(n))))
+                // i64 overflow — use BigInt for exact Rat
+                use num_bigint::BigInt;
+                let int_val: BigInt = int_clean.parse().unwrap_or_default();
+                let frac_val: BigInt = frac_clean.parse().unwrap_or_default();
+                let denom_big: BigInt = BigInt::from(10).pow(frac_digits);
+                let numer_big = int_val * &denom_big + frac_val;
+                Ok((
+                    rest,
+                    Expr::Literal(crate::value::make_big_rat(numer_big, denom_big)),
+                ))
             }
         }
     }

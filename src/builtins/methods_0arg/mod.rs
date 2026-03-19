@@ -3451,11 +3451,27 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 "sech" => 1.0 / x.cosh(),
                 "cosech" => 1.0 / x.sinh(),
                 "cotanh" => 1.0 / x.tanh(),
-                "asinh" => x.asinh(),
-                "acosh" => x.acosh(),
+                "asinh" => {
+                    let sign = x.signum();
+                    let ax = x.abs();
+                    sign * (ax + (ax * ax + 1.0).sqrt()).ln()
+                }
+                "acosh" => {
+                    if x < 1.0 {
+                        f64::NAN
+                    } else {
+                        (x + (x * x - 1.0).sqrt()).ln()
+                    }
+                }
                 "atanh" => x.atanh(),
-                "asech" => (1.0 / x).acosh(),
-                "acosech" => (1.0 / x).asinh(),
+                "asech" => {
+                    let y = 1.0 / x;
+                    (y + (y * y - 1.0).sqrt()).ln()
+                }
+                "acosech" => {
+                    let y = 1.0 / x;
+                    (y + (y * y + 1.0).sqrt()).ln()
+                }
                 "acotanh" => (1.0 / x).atanh(),
                 _ => f64::NAN,
             };

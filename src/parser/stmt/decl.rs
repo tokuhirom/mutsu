@@ -61,7 +61,10 @@ fn typed_default_expr(type_name: &str) -> Expr {
     } else if base == "num" || base == "num32" || base == "num64" {
         Expr::Literal(Value::Num(0.0))
     } else {
-        Expr::Literal(Value::Nil)
+        // For typed declarations (e.g. `my Num $x`), the default is the type object
+        // itself, not Nil. This ensures that ++/-- and other operations preserve
+        // the type identity (e.g. ++Num gives 1e0, not 1).
+        Expr::Literal(Value::Package(Symbol::intern(base)))
     }
 }
 
@@ -1522,7 +1525,13 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 }
             }
         }
-        let (rest, expr) = parse_assign_expr_or_comma(rest)?;
+        // Scalar declarations stop at comma (my $x = 1, 2 → $x gets 1).
+        // Array/hash declarations consume the full comma list (my @a = 1, 2 → @a gets [1, 2]).
+        let (rest, expr) = if is_array || is_hash {
+            parse_assign_expr_or_comma(rest)?
+        } else {
+            expression(rest)?
+        };
         // For shaped array declarations with assignment (e.g. my @b[3] = <a b c>),
         // create a shaped array and populate it with the assigned data.
         let expr = if let Some(dims) = shape_dims {
