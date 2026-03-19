@@ -1594,6 +1594,27 @@ pub(super) fn try_interpolate_var<'a>(
 
     if rest.starts_with('$') && rest.len() > 1 {
         let next = rest.as_bytes()[1] as char;
+        // Detect Perl 5 deref syntax: "${$var}" or "${@var}"
+        if next == '{' {
+            let after_brace = &rest[2..];
+            if let Some(close_pos) = after_brace.find('}') {
+                let inner = after_brace[..close_pos].trim();
+                if inner.starts_with('$') || inner.starts_with('@') || inner.starts_with('%') {
+                    if !current.is_empty() {
+                        parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                    }
+                    parts.push(Expr::Call {
+                        name: crate::symbol::Symbol::intern("die"),
+                        args: vec![Expr::Literal(Value::str(format!(
+                            "X::Obsolete: Unsupported use of ${{{inner}}}. \
+                             In Raku please use: $({inner}) for hard ref or \
+                             $::({inner}) for symbolic ref."
+                        )))],
+                    });
+                    return Some(&after_brace[close_pos + 1..]);
+                }
+            }
+        }
         // Special variable $/ (match variable)
         if next == '/' {
             if !current.is_empty() {
@@ -1741,6 +1762,27 @@ pub(super) fn try_interpolate_var<'a>(
     }
     if rest.starts_with('@') && rest.len() > 1 {
         let next = rest.as_bytes()[1] as char;
+        // Detect Perl 5 deref syntax: "@{$var}" or "@{@var}"
+        if next == '{' {
+            let after_brace = &rest[2..];
+            if let Some(close_pos) = after_brace.find('}') {
+                let inner = after_brace[..close_pos].trim();
+                if inner.starts_with('$') || inner.starts_with('@') || inner.starts_with('%') {
+                    if !current.is_empty() {
+                        parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                    }
+                    parts.push(Expr::Call {
+                        name: crate::symbol::Symbol::intern("die"),
+                        args: vec![Expr::Literal(Value::str(format!(
+                            "X::Obsolete: Unsupported use of @{{{inner}}}. \
+                             In Raku please use: @({inner}) for hard ref or \
+                             @::({inner}) for symbolic ref."
+                        )))],
+                    });
+                    return Some(&after_brace[close_pos + 1..]);
+                }
+            }
+        }
         if next.is_alphabetic() || next == '_' {
             let var_rest = &rest[1..];
             let end = var_rest

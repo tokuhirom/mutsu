@@ -590,6 +590,25 @@ pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
     {
         return Ok((r2, Expr::ArrayVar(name)));
     }
+    // Detect Perl 5 deref syntax: @{$var}, @{@var}, @{%var}
+    if twigil.is_empty()
+        && rest.starts_with('{')
+        && (rest[1..].trim_start().starts_with('$')
+            || rest[1..].trim_start().starts_with('@')
+            || rest[1..].trim_start().starts_with('%'))
+    {
+        let after_brace = &rest[1..];
+        if let Some(close_pos) = after_brace.find('}') {
+            let inner = after_brace[..close_pos].trim();
+            if inner.starts_with('$') || inner.starts_with('@') || inner.starts_with('%') {
+                return Err(PError::fatal(format!(
+                    "X::Obsolete: Unsupported use of @{{{inner}}}. \
+                     In Raku please use: @({inner}) for hard ref or \
+                     @::({inner}) for symbolic ref."
+                )));
+            }
+        }
+    }
     // Bare @ (anonymous array variable)
     let next_is_ident =
         !rest.is_empty() && rest.chars().next().is_some_and(is_raku_identifier_start);
@@ -648,6 +667,19 @@ pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
         && let Ok((r2, Expr::Var(name))) = scalar_var(rest)
     {
         return Ok((r2, Expr::HashVar(name)));
+    }
+    // %{expr} — hash contextualizer: coerce block/expr result to Hash
+    // In Raku, bare %{...} constructs a hash from the block result.
+    if twigil.is_empty() && rest.starts_with('{') {
+        let (rest, inner) = super::misc::block_or_hash_expr(rest)?;
+        // Wrap in hash() call to coerce at runtime
+        return Ok((
+            rest,
+            Expr::Call {
+                name: Symbol::intern("hash"),
+                args: vec![inner],
+            },
+        ));
     }
     // Bare % (anonymous hash variable)
     let next_is_ident =
