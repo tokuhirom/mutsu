@@ -1373,6 +1373,15 @@ impl VM {
                     .interpreter
                     .is_native_method(&class_name.resolve(), &method_name));
         // Proxy containers must auto-FETCH before dispatching methods (except meta-methods)
+        let bypass_array_subclass = matches!(target, Value::Instance { class_name, .. }
+            if self.interpreter.class_inherits_array(&class_name.resolve())
+                && !self.interpreter.has_user_method(&class_name.resolve(), &method_name)
+                && !matches!(method_name.as_ref(),
+                    "WHAT" | "HOW" | "WHO" | "WHY" | "WHICH" | "WHERE" | "DEFINITE"
+                    | "VAR" | "REPR" | "new" | "bless" | "clone" | "isa" | "does" | "can"
+                    | "^name" | "^mro" | "^parents" | "^methods" | "^roles" | "^attributes"
+                    | "defined" | "Bool" | "so" | "not" | "gist" | "Str" | "raku" | "perl"
+                    | "ACCEPTS" | "Numeric" | "Int" | "sink" | "self" | "item"));
         let bypass_proxy = matches!(target, Value::Proxy { .. })
             && !matches!(
                 method_sym.resolve().as_ref(),
@@ -1386,6 +1395,7 @@ impl VM {
             || bypass_tail_fastpath
             || bypass_numeric_bridge_instance_fastpath
             || bypass_runtime_native_instance_fastpath
+            || bypass_array_subclass
             || bypass_proxy
         {
             return None;
