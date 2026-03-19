@@ -1372,6 +1372,42 @@ impl VM {
         if skip_native {
             self.interpreter.skip_pseudo_method_native = Some(method.clone());
         }
+        // Auto-vivification: when a mutating method is called on a type object
+        // (Package("Array") or Package("Hash")), vivify to an empty instance and
+        // store it back in the variable.
+        let target = if let Value::Package(name) = &target {
+            let type_name = name.resolve();
+            let is_mutating = matches!(
+                method.as_str(),
+                "push"
+                    | "pop"
+                    | "shift"
+                    | "unshift"
+                    | "append"
+                    | "prepend"
+                    | "splice"
+                    | "STORE"
+                    | "ASSIGN-POS"
+                    | "ASSIGN-KEY"
+                    | "BIND-POS"
+                    | "BIND-KEY"
+            );
+            if is_mutating && (type_name == "Array" || type_name == "Hash") {
+                let vivified = if type_name == "Array" {
+                    Value::real_array(vec![])
+                } else {
+                    Value::hash(std::collections::HashMap::new())
+                };
+                self.interpreter
+                    .env_insert(target_name.clone(), vivified.clone());
+                self.env_dirty = true;
+                vivified
+            } else {
+                target
+            }
+        } else {
+            target
+        };
         // For .* and .+ modifiers, skip the single-dispatch call and go
         // directly to the all-methods-in-MRO path to avoid double execution.
         match modifier.as_deref() {
