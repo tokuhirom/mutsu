@@ -227,29 +227,99 @@ fn lower_else_binding(source_binding: &str, else_clause: ElseClause) -> Vec<Stmt
 fn parse_elsif_chain(input: &str) -> PResult<'_, (Vec<IfChainClause>, Option<ElseClause>)> {
     let mut rest = input;
     let mut clauses = Vec::new();
+    let mut last_orwith_cond: Option<Expr> = None;
 
-    while let Some(r) = keyword("elsif", rest) {
-        let (r, _) = ws1(r)?;
-        let (r, cond) = conditional_expr(r)?;
-        let (r, _) = ws(r)?;
-        let (r, binding_params) = parse_if_binding_params(r)?;
-        let (r, _) = ws(r)?;
-        let (r, raw_then_branch) = block(r)?;
-        let (r, _) = ws(r)?;
-        let (binding_var, then_branch) = lower_if_clause_binding(binding_params, raw_then_branch);
-        clauses.push(IfChainClause {
-            cond,
-            then_branch,
-            binding_var,
-        });
-        rest = r;
+    loop {
+        if let Some(r) = keyword("elsif", rest) {
+            let (r, _) = ws1(r)?;
+            let (r, cond) = conditional_expr(r)?;
+            let (r, _) = ws(r)?;
+            let (r, binding_params) = parse_if_binding_params(r)?;
+            let (r, _) = ws(r)?;
+            let (r, raw_then_branch) = block(r)?;
+            let (r, _) = ws(r)?;
+            let (binding_var, then_branch) =
+                lower_if_clause_binding(binding_params, raw_then_branch);
+            clauses.push(IfChainClause {
+                cond,
+                then_branch,
+                binding_var,
+            });
+            last_orwith_cond = None;
+            rest = r;
+            continue;
+        }
+        if let Some(r) = keyword("orwith", rest) {
+            let (r, _) = ws1(r)?;
+            let (r, orwith_cond_expr) = condition_expr(r)?;
+            let (r, _) = ws(r)?;
+            // Check for optional pointy block: orwith EXPR -> $param { ... }
+            let (r, orwith_param_name) = if let Some(r2) = r.strip_prefix("->") {
+                let (r2, _) = ws(r2)?;
+                if let Some(r_after_sigil) = r2.strip_prefix('$') {
+                    let end = r_after_sigil
+                        .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                        .unwrap_or(r_after_sigil.len());
+                    let name = &r_after_sigil[..end];
+                    let r2 = &r_after_sigil[end..];
+                    let (r2, _) = ws(r2)?;
+                    (r2, Some(name.to_string()))
+                } else {
+                    (r, None)
+                }
+            } else {
+                (r, None)
+            };
+            let (r, orwith_body) = block(r)?;
+            // Topicalize $_ and optional param in the orwith body
+            let mut orwith_then = vec![topicalize(&orwith_cond_expr)];
+            if let Some(ref pname) = orwith_param_name {
+                orwith_then.push(Stmt::VarDecl {
+                    name: pname.clone(),
+                    expr: orwith_cond_expr.clone(),
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
+                    where_constraint: None,
+                });
+            }
+            orwith_then.extend(orwith_body);
+            // orwith uses .defined as the condition
+            last_orwith_cond = Some(orwith_cond_expr.clone());
+            let orwith_cond = Expr::MethodCall {
+                target: Box::new(orwith_cond_expr),
+                name: Symbol::intern("defined"),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+            };
+            let (r, _) = ws(r)?;
+            clauses.push(IfChainClause {
+                cond: orwith_cond,
+                then_branch: orwith_then,
+                binding_var: None,
+            });
+            rest = r;
+            continue;
+        }
+        break;
     }
 
     if let Some(r) = keyword("else", rest) {
         let (r, _) = ws(r)?;
         let (r, binding_params) = parse_if_binding_params(r)?;
         let (r, _) = ws(r)?;
-        let (r, body) = block(r)?;
+        let (r, mut body) = block(r)?;
+        // If the last clause was `orwith`, topicalize $_ in the else body
+        if let Some(ref orwith_expr) = last_orwith_cond {
+            let mut topicalized = vec![topicalize(orwith_expr)];
+            topicalized.append(&mut body);
+            body = topicalized;
+        }
         return Ok((
             r,
             (
@@ -1864,6 +1934,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     with_body.extend(body);
 
+    let cond_expr_clone = cond_expr.clone();
     let cond = Expr::MethodCall {
         target: Box::new(cond_expr),
         name: Symbol::intern("defined"),
@@ -1881,18 +1952,74 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     };
 
     // Parse orwith / else chains
+    let rest_before_ws = rest;
     let (rest, _) = ws(rest)?;
+
+    // `without` cannot have `else`, `orwith`, or `elsif` chains (Raku spec)
+    if is_without {
+        for kw in &["else", "orwith", "elsif"] {
+            if keyword(kw, rest).is_some() {
+                return Err(PError::fatal(format!(
+                    "X::Syntax::WithoutElse: '{}' is not allowed on 'without'",
+                    kw
+                )));
+            }
+        }
+    }
+
     let (rest, else_branch) = if keyword("orwith", rest).is_some() {
         let r = keyword("orwith", rest).unwrap();
         let (r, _) = ws1(r)?;
         let (r, orwith_cond_expr) = condition_expr(r)?;
         let (r, _) = ws(r)?;
+
+        // Check for optional pointy block on orwith: orwith EXPR -> $param { ... }
+        let (r, orwith_param_name) = if let Some(r2) = r.strip_prefix("->") {
+            let (r2, _) = ws(r2)?;
+            if let Some(r_after_sigil) = r2.strip_prefix('$') {
+                let end = r_after_sigil
+                    .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                    .unwrap_or(r_after_sigil.len());
+                let name = &r_after_sigil[..end];
+                let r2 = &r_after_sigil[end..];
+                let (r2, _) = ws(r2)?;
+                (r2, Some(name.to_string()))
+            } else if let Some(r_after_backslash) = r2.strip_prefix('\\') {
+                let end = r_after_backslash
+                    .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                    .unwrap_or(r_after_backslash.len());
+                let name = &r_after_backslash[..end];
+                let r2 = &r_after_backslash[end..];
+                let (r2, _) = ws(r2)?;
+                (r2, Some(name.to_string()))
+            } else {
+                (r, None)
+            }
+        } else {
+            (r, None)
+        };
+
         let (r, orwith_body) = block(r)?;
 
         // Prepend $_ = <orwith_cond_expr> to the body
         let mut orwith_with_body = vec![topicalize(&orwith_cond_expr)];
+        if let Some(ref pname) = orwith_param_name {
+            orwith_with_body.push(Stmt::VarDecl {
+                name: pname.clone(),
+                expr: orwith_cond_expr.clone(),
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+                where_constraint: None,
+            });
+        }
         orwith_with_body.extend(orwith_body);
 
+        let orwith_cond_expr_clone = orwith_cond_expr.clone();
         let orwith_cond = Expr::MethodCall {
             target: Box::new(orwith_cond_expr),
             name: Symbol::intern("defined"),
@@ -1900,14 +2027,49 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             modifier: None,
             quoted: false,
         };
+        let r_before_else_ws = r;
         let (r, _) = ws(r)?;
         let (r, orwith_else) = if keyword("else", r).is_some() {
             let r2 = keyword("else", r).unwrap();
             let (r2, _) = ws(r2)?;
+            // Check for optional pointy block on else: else -> $param { ... }
+            let (r2, else_param) = if let Some(r3) = r2.strip_prefix("->") {
+                let (r3, _) = ws(r3)?;
+                if let Some(r_after_sigil) = r3.strip_prefix('$') {
+                    let end = r_after_sigil
+                        .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                        .unwrap_or(r_after_sigil.len());
+                    let name = &r_after_sigil[..end];
+                    let r3 = &r_after_sigil[end..];
+                    let (r3, _) = ws(r3)?;
+                    (r3, Some(name.to_string()))
+                } else {
+                    (r2, None)
+                }
+            } else {
+                (r2, None)
+            };
             let (r2, else_body) = block(r2)?;
-            (r2, else_body)
+            // Topicalize $_ in else branch to the orwith condition
+            let mut else_with_topic = vec![topicalize(&orwith_cond_expr_clone)];
+            if let Some(ref pname) = else_param {
+                else_with_topic.push(Stmt::VarDecl {
+                    name: pname.clone(),
+                    expr: orwith_cond_expr_clone.clone(),
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
+                    where_constraint: None,
+                });
+            }
+            else_with_topic.extend(else_body);
+            (r2, else_with_topic)
         } else {
-            (r, Vec::new())
+            (r_before_else_ws, Vec::new())
         };
         (
             r,
@@ -1918,13 +2080,55 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                 binding_var: None,
             }],
         )
+    } else if keyword("elsif", rest).is_some() {
+        // Handle elsif/else chains (reuse if-chain infrastructure)
+        let (r, (elsif_clauses, else_clause)) = parse_elsif_chain(rest)?;
+        let elsif_stmt = lower_if_chain(elsif_clauses, else_clause);
+        (r, vec![elsif_stmt])
     } else if keyword("else", rest).is_some() {
         let r = keyword("else", rest).unwrap();
         let (r, _) = ws(r)?;
+        // Check for optional pointy block on else: else -> $param { ... }
+        let (r, else_param) = if let Some(r2) = r.strip_prefix("->") {
+            let (r2, _) = ws(r2)?;
+            if let Some(r_after_sigil) = r2.strip_prefix('$') {
+                let end = r_after_sigil
+                    .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                    .unwrap_or(r_after_sigil.len());
+                let name = &r_after_sigil[..end];
+                let r2 = &r_after_sigil[end..];
+                let (r2, _) = ws(r2)?;
+                (r2, Some(name.to_string()))
+            } else {
+                (r, None)
+            }
+        } else {
+            (r, None)
+        };
         let (r, else_body) = block(r)?;
-        (r, else_body)
+        // Topicalize $_ in else branch to the with/without condition
+        let mut else_with_topic = vec![topicalize(&cond_expr_clone)];
+        if let Some(ref pname) = else_param {
+            else_with_topic.push(Stmt::VarDecl {
+                name: pname.clone(),
+                expr: cond_expr_clone.clone(),
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+                where_constraint: None,
+            });
+        }
+        else_with_topic.extend(else_body);
+        (r, else_with_topic)
     } else {
-        (rest, Vec::new())
+        // No orwith/else found — don't consume whitespace/newlines past the
+        // closing brace, so the caller sees the statement boundary correctly
+        // (e.g. `do with X { ... }\nsay ...` should not absorb `say`).
+        (rest_before_ws, Vec::new())
     };
 
     Ok((
