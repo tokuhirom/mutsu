@@ -1125,11 +1125,14 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
 
     // s with arbitrary delimiter: s/pattern/replacement/, s^pattern^replacement^, etc.
     // Also supports adverbs: s:mm/pattern/replacement/, s:i:g/pattern/replacement/
-    // Skip if 's' has been declared as a user sub — UNLESS followed by ':', which is always
-    // substitution (per Raku spec: `s:` is always a substitution even when `sub s` exists).
+    // Skip if 's' has been declared as a user sub or term symbol (sigilless variable) —
+    // UNLESS followed by ':', which is always substitution (per Raku spec: `s:` is always
+    // a substitution even when `sub s` exists).
     if let Some(after_s) = input.strip_prefix('s')
         && let Some(first_ch) = after_s.chars().next()
-        && (!crate::parser::stmt::simple::is_user_declared_sub("s") || first_ch == ':')
+        && (!(crate::parser::stmt::simple::is_user_declared_sub("s")
+            || crate::parser::stmt::simple::is_user_declared_term_symbol("s"))
+            || first_ch == ':')
     {
         // Parse optional adverbs between s and delimiter
         let (spec, adverbs) = if first_ch == ':' {
