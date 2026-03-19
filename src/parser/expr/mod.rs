@@ -211,7 +211,7 @@ fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
             contains_xx_with_bare_whatever(target)
                 || args.iter().any(contains_xx_with_bare_whatever)
         }
-        Expr::Index { target, index } => {
+        Expr::Index { target, index, .. } => {
             contains_xx_with_bare_whatever(target) || contains_xx_with_bare_whatever(index)
         }
         Expr::Call { args, .. } => args.iter().any(contains_xx_with_bare_whatever),
@@ -326,9 +326,14 @@ fn wrap_composition_operands(expr: Expr) -> Expr {
             target: Box::new(wrap_composition_operands(*target)),
             args: args.into_iter().map(wrap_composition_operands).collect(),
         },
-        Expr::Index { target, index } => Expr::Index {
+        Expr::Index {
+            target,
+            index,
+            is_associative,
+        } => Expr::Index {
             target: Box::new(wrap_composition_operands(*target)),
             index: Box::new(wrap_composition_operands(*index)),
+            is_associative,
         },
         other => other,
     }
@@ -580,9 +585,14 @@ fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Expr {
                 .map(|a| replace_whatever_numbered(a, counter))
                 .collect(),
         },
-        Expr::Index { target, index } => Expr::Index {
+        Expr::Index {
+            target,
+            index,
+            is_associative,
+        } => Expr::Index {
             target: Box::new(replace_whatever_numbered(target, counter)),
             index: index.clone(),
+            is_associative: *is_associative,
         },
         _ => expr.clone(),
     }
@@ -628,9 +638,14 @@ fn rename_var(expr: &Expr, old_name: &str, new_name: &str) -> Expr {
                 .map(|a| rename_var(a, old_name, new_name))
                 .collect(),
         },
-        Expr::Index { target, index } => Expr::Index {
+        Expr::Index {
+            target,
+            index,
+            is_associative,
+        } => Expr::Index {
             target: Box::new(rename_var(target, old_name, new_name)),
             index: Box::new(rename_var(index, old_name, new_name)),
+            is_associative: *is_associative,
         },
         _ => expr.clone(),
     }
@@ -737,9 +752,14 @@ fn replace_whatever_single(expr: &Expr) -> Expr {
             target: Box::new(replace_whatever_single(target)),
             args: args.iter().map(replace_whatever_single).collect(),
         },
-        Expr::Index { target, index } => Expr::Index {
+        Expr::Index {
+            target,
+            index,
+            is_associative,
+        } => Expr::Index {
             target: Box::new(replace_whatever_single(target)),
             index: index.clone(),
+            is_associative: *is_associative,
         },
         _ => expr.clone(),
     }

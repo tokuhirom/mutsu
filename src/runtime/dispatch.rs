@@ -1012,9 +1012,10 @@ impl Interpreter {
                     .map(Self::rewrite_proto_dispatch_expr)
                     .collect(),
             ),
-            Expr::Index { target, index } => Expr::Index {
+            Expr::Index { target, index, .. } => Expr::Index {
                 target: Box::new(Self::rewrite_proto_dispatch_expr(target)),
                 index: Box::new(Self::rewrite_proto_dispatch_expr(index)),
+                is_associative: false,
             },
             Expr::IndexAssign {
                 target,

@@ -185,7 +185,7 @@ fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stmt> {
             expr: rhs,
             op: AssignOp::Assign,
         },
-        Expr::Index { target, index } => Stmt::Expr(Expr::IndexAssign {
+        Expr::Index { target, index, .. } => Stmt::Expr(Expr::IndexAssign {
             target,
             index,
             value: Box::new(rhs),
@@ -398,7 +398,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 };
                 return parse_statement_modifier(r, stmt);
             }
-            Expr::Index { target, index } => {
+            Expr::Index { target, index, .. } => {
                 let tmp_idx = format!(
                     "__mutsu_idx_{}",
                     TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
@@ -407,6 +407,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 let lhs_expr = Expr::Index {
                     target: target.clone(),
                     index: Box::new(tmp_idx_expr.clone()),
+                    is_associative: false,
                 };
                 let assigned_value = make_rhs(lhs_expr);
                 let stmt = Stmt::Expr(Expr::DoBlock {
@@ -532,7 +533,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 };
                 return parse_statement_modifier(r, stmt);
             }
-            Expr::Index { target, index } => {
+            Expr::Index { target, index, .. } => {
                 let tmp_idx = format!(
                     "__mutsu_idx_{}",
                     TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
@@ -541,6 +542,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 let lhs_expr = Expr::Index {
                     target: target.clone(),
                     index: Box::new(tmp_idx_expr.clone()),
+                    is_associative: false,
                 };
                 let assigned_value = make_rhs(lhs_expr);
                 let stmt = Stmt::Expr(Expr::DoBlock {
@@ -611,7 +613,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             });
             return parse_statement_modifier(rest, stmt);
         }
-        if let Expr::Index { target, index } = expr {
+        if let Expr::Index { target, index, .. } = expr {
             if let Expr::Call { name, args } = target.as_ref()
                 && name == "__mutsu_subscript_adverb"
                 && args.len() >= 3
@@ -633,7 +635,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             return parse_statement_modifier(rest, stmt);
         }
     }
-    if let Expr::Index { target, index } = expr.clone()
+    if let Expr::Index { target, index, .. } = expr.clone()
         && let Some(rest) = parse_hyper_assign_op(rest)
     {
         let (rest, _) = ws(rest)?;
@@ -669,7 +671,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             args: vec![value, source_meta],
         };
         match expr {
-            Expr::Index { target, index } => {
+            Expr::Index { target, index, .. } => {
                 let stmt = Stmt::Expr(Expr::IndexAssign {
                     target,
                     index,
@@ -992,7 +994,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
-        if let Expr::Index { target, index } = &expr {
+        if let Expr::Index { target, index, .. } = &expr {
             let tmp_idx = format!(
                 "__mutsu_idx_{}",
                 TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
@@ -1001,6 +1003,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             let lhs_expr = Expr::Index {
                 target: target.clone(),
                 index: Box::new(tmp_idx_expr.clone()),
+                is_associative: false,
             };
             let assigned_value = if matches!(op, super::assign::CompoundAssignOp::DefinedOr) {
                 Expr::Ternary {

@@ -1803,6 +1803,7 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
                     Expr::Index {
                         target: Box::new(Expr::Var("_".to_string())),
                         index: Box::new(index_expr),
+                        is_associative: true,
                     },
                 ));
             }
@@ -1819,6 +1820,7 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
             Expr::Index {
                 target: Box::new(Expr::Var("_".to_string())),
                 index: Box::new(index),
+                is_associative: false,
             },
         ));
     }
@@ -1833,6 +1835,7 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
             Expr::Index {
                 target: Box::new(Expr::Var("_".to_string())),
                 index: Box::new(index),
+                is_associative: true,
             },
         ));
     }
