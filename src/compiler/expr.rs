@@ -690,7 +690,26 @@ impl Compiler {
             }
             // Expression-level function call
             Expr::Call { name, args } => {
-                if name == "atomic-fetch"
+                // (state $x) = expr  /  (state @x) = expr  /  (state %x) = expr
+                // The parser emits __mutsu_assign_callable_lvalue(DoStmt(VarDecl{..}), [], rhs).
+                // We compile this as: declare the state var, then unconditionally assign the RHS.
+                if name == "__mutsu_assign_callable_lvalue"
+                    && args.len() == 3
+                    && let Expr::DoStmt(stmt) = &args[0]
+                    && let Stmt::VarDecl { name: var_name, .. } = stmt.as_ref()
+                {
+                    // 1. Compile the VarDecl (handles state init)
+                    self.compile_stmt(stmt);
+                    // VarDecl doesn't push to stack, so no pop needed.
+                    // 2. Compile the RHS value
+                    self.compile_expr(&args[2]);
+                    // 3. Dup so the assignment result is left on the stack
+                    self.code.emit(OpCode::Dup);
+                    // 4. Assign to the variable
+                    let name_idx = self.code.add_constant(Value::str(var_name.clone()));
+                    self.code.emit(OpCode::AssignExpr(name_idx));
+                    return;
+                } else if name == "atomic-fetch"
                     && args.len() == 1
                     && let Expr::Var(var_name) = &args[0]
                 {
@@ -1130,30 +1149,71 @@ impl Compiler {
                 } = target.as_ref()
                 {
                     let var_name = Self::postfix_index_name(idx_target).unwrap_or_default();
-                    // 1. Compile the index expression to get the element value
-                    self.compile_expr(target);
-                    // 2. Compile method arguments
+                    let name_resolved = name.resolve();
                     let arity = args.len() as u32;
-                    for arg in args {
-                        self.compile_method_arg(arg);
-                    }
-                    // 3. Emit CallMethod to invoke the method (non-mutating,
-                    //    returns a modified copy of the array)
-                    let name_idx = self.code.add_constant(Value::str(name.resolve()));
                     let modifier_idx =
                         modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
-                    self.code.emit(OpCode::CallMethod {
-                        name_idx,
-                        arity,
-                        modifier_idx,
-                        quoted: *quoted,
-                    });
-                    // 4. Emit writeback: write the modified value back to the
-                    //    container at the same index.
-                    //    IndexAssignExprNamed expects stack: [val, idx] with idx on top.
-                    self.compile_expr(idx_key);
-                    let var_name_idx = self.code.add_constant(Value::str(var_name));
-                    self.code.emit(OpCode::IndexAssignExprNamed(var_name_idx));
+                    if matches!(name_resolved.as_str(), "pop" | "shift") {
+                        let tmp_target_name = format!(
+                            "__mutsu_tmp_index_method_target_{}",
+                            self.code.constants.len()
+                        );
+                        let tmp_result_name = format!(
+                            "__mutsu_tmp_index_method_result_{}",
+                            self.code.constants.len()
+                        );
+                        let tmp_target_idx =
+                            self.code.add_constant(Value::str(tmp_target_name.clone()));
+                        let tmp_result_idx =
+                            self.code.add_constant(Value::str(tmp_result_name.clone()));
+                        let name_idx = self.code.add_constant(Value::str(name_resolved));
+                        let var_name_idx = self.code.add_constant(Value::str(var_name));
+
+                        // Save the indexed container value into a temp so CallMethodMut can
+                        // mutate it, while preserving the removed element as the expression
+                        // result and writing the updated array back to the original index.
+                        self.compile_expr(target);
+                        self.code.emit(OpCode::SetGlobal(tmp_target_idx));
+                        self.code.emit(OpCode::GetGlobal(tmp_target_idx));
+                        for arg in args {
+                            self.compile_method_arg(arg);
+                        }
+                        self.code.emit(OpCode::CallMethodMut {
+                            name_idx,
+                            arity,
+                            target_name_idx: tmp_target_idx,
+                            modifier_idx,
+                            quoted: *quoted,
+                        });
+                        self.code.emit(OpCode::SetGlobal(tmp_result_idx));
+                        self.code.emit(OpCode::GetGlobal(tmp_target_idx));
+                        self.compile_expr(idx_key);
+                        self.code.emit(OpCode::IndexAssignExprNamed(var_name_idx));
+                        self.code.emit(OpCode::Pop);
+                        self.code.emit(OpCode::GetGlobal(tmp_result_idx));
+                    } else {
+                        // 1. Compile the index expression to get the element value
+                        self.compile_expr(target);
+                        // 2. Compile method arguments
+                        for arg in args {
+                            self.compile_method_arg(arg);
+                        }
+                        // 3. Emit CallMethod to invoke the method (non-mutating,
+                        //    returns a modified copy of the array)
+                        let name_idx = self.code.add_constant(Value::str(name_resolved));
+                        self.code.emit(OpCode::CallMethod {
+                            name_idx,
+                            arity,
+                            modifier_idx,
+                            quoted: *quoted,
+                        });
+                        // 4. Emit writeback: write the modified value back to the
+                        //    container at the same index.
+                        //    IndexAssignExprNamed expects stack: [val, idx] with idx on top.
+                        self.compile_expr(idx_key);
+                        let var_name_idx = self.code.add_constant(Value::str(var_name));
+                        self.code.emit(OpCode::IndexAssignExprNamed(var_name_idx));
+                    }
                 } else {
                     unreachable!()
                 }
@@ -2631,9 +2691,17 @@ impl Compiler {
             TokenKind::Ident(name) if name == "?|" => Some(OpCode::BoolBitOr),
             TokenKind::Ident(name) if name == "?&" => Some(OpCode::BoolBitAnd),
             TokenKind::Ident(name) if name == "?^" => Some(OpCode::BoolBitXor),
+            TokenKind::BoolBitOr => Some(OpCode::BoolBitOr),
+            TokenKind::BoolBitAnd => Some(OpCode::BoolBitAnd),
+            TokenKind::BoolBitXor => Some(OpCode::BoolBitXor),
             TokenKind::BitXor => Some(OpCode::BitXor),
             TokenKind::BitShiftLeft => Some(OpCode::BitShiftLeft),
             TokenKind::BitShiftRight => Some(OpCode::BitShiftRight),
+            TokenKind::StrBitAnd => Some(OpCode::StrBitAnd),
+            TokenKind::StrBitOr => Some(OpCode::StrBitOr),
+            TokenKind::StrBitXor => Some(OpCode::StrBitXor),
+            TokenKind::StrShiftLeft => Some(OpCode::StrShiftLeft),
+            TokenKind::StrShiftRight => Some(OpCode::StrShiftRight),
             // Set operations
             TokenKind::SetElem => Some(OpCode::SetElem),
             TokenKind::SetCont => Some(OpCode::SetCont),

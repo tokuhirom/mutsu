@@ -1026,6 +1026,26 @@ impl VM {
                 self.exec_bool_bit_xor_op();
                 *ip += 1;
             }
+            OpCode::StrBitAnd => {
+                self.exec_str_bit_and_op();
+                *ip += 1;
+            }
+            OpCode::StrBitOr => {
+                self.exec_str_bit_or_op();
+                *ip += 1;
+            }
+            OpCode::StrBitXor => {
+                self.exec_str_bit_xor_op();
+                *ip += 1;
+            }
+            OpCode::StrShiftLeft => {
+                self.exec_str_shift_left_op();
+                *ip += 1;
+            }
+            OpCode::StrShiftRight => {
+                self.exec_str_shift_right_op();
+                *ip += 1;
+            }
 
             // -- Set operations --
             OpCode::SetElem => {
@@ -1975,6 +1995,19 @@ impl VM {
             OpCode::StateVarInit(slot, key_idx) => {
                 self.exec_state_var_init_op(code, *slot, *key_idx);
                 *ip += 1;
+            }
+            OpCode::StateVarInitGuard(key_idx, jump_to) => {
+                let key = Self::const_str(code, *key_idx);
+                if self.interpreter.get_state_var(key).is_some() {
+                    // State already initialized: push a placeholder value on the
+                    // stack (StateVarInit will discard it and use the stored value)
+                    // and skip the RHS initializer.
+                    self.stack.push(Value::Nil);
+                    *ip = *jump_to as usize;
+                } else {
+                    // State not yet initialized: fall through to compile RHS
+                    *ip += 1;
+                }
             }
 
             // -- Block scope --

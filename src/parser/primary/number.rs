@@ -7,6 +7,24 @@ fn decimal_digit_value(c: char) -> Option<u32> {
     crate::builtins::unicode::unicode_decimal_digit_value(c)
 }
 
+/// Build a fatal parse error with X::Str::Numeric exception for invalid radix digits.
+fn make_radix_digit_error(base: u32, body: &str, pos: usize) -> PError {
+    let message = format!(
+        "Cannot convert string to number: malformed base-{} number in '{}'",
+        base, body
+    );
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("pos".to_string(), Value::Int(pos as i64));
+    attrs.insert("message".to_string(), Value::str(message.clone()));
+    attrs.insert("source".to_string(), Value::str(body.to_string()));
+    attrs.insert(
+        "reason".to_string(),
+        Value::str(format!("malformed base-{} number", base)),
+    );
+    let exception = Value::make_instance(crate::symbol::Symbol::intern("X::Str::Numeric"), attrs);
+    PError::fatal_with_exception(message, Box::new(exception))
+}
+
 fn hex_alpha_value(c: char) -> Option<u32> {
     match c {
         'a'..='f' => Some(10 + (c as u32 - 'a' as u32)),
@@ -98,6 +116,32 @@ fn parse_prefixed_radix<'a>(
         return Some(Err(PError::expected(
             "confused by Unicode numeric character after radix literal",
         )));
+    }
+    // Reject ambiguous forms like 0b1.1e10 (binary with decimal-like exponent)
+    if let Some(after_dot) = remaining.strip_prefix('.') {
+        // Check if it looks like a decimal fraction followed by exponent
+        let has_digits = after_dot.chars().next().is_some_and(|c| c.is_ascii_digit());
+        if has_digits {
+            let digit_end_offset = after_dot
+                .char_indices()
+                .take_while(|(_, c)| c.is_ascii_digit() || *c == '_')
+                .last()
+                .map(|(i, c)| i + c.len_utf8())
+                .unwrap_or(0);
+            let after_frac = &after_dot[digit_end_offset..];
+            if digit_end_offset > 0 && (after_frac.starts_with('e') || after_frac.starts_with('E'))
+            {
+                let msg = "Ambiguous use of radix prefix with fractional exponent".to_string();
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("what".to_string(), Value::str("postfix".to_string()));
+                attrs.insert("message".to_string(), Value::str(msg.clone()));
+                let exception = Value::make_instance(
+                    crate::symbol::Symbol::intern("X::Syntax::Malformed"),
+                    attrs,
+                );
+                return Some(Err(PError::fatal_with_exception(msg, Box::new(exception))));
+            }
+        }
     }
     Some(Ok((remaining, parse_int_radix(&clean, radix))))
 }
@@ -348,30 +392,48 @@ pub(super) fn generic_radix(input: &str) -> PResult<'_, Expr> {
     if body.is_empty() {
         return Err(PError::expected("generic radix digits"));
     }
-    let (digits_body, exponent_scale) = if let Some((digits, exp_part)) = body.split_once("*10**") {
-        let exp_part = exp_part.trim();
-        if exp_part.is_empty() {
-            return Err(PError::expected("generic radix exponent"));
-        }
-        let (sign, after_sign) = if let Some(rest) = exp_part.strip_prefix('+') {
-            (1_i64, rest)
-        } else if let Some(rest) = exp_part.strip_prefix('-') {
-            (-1_i64, rest)
+    // Parse exponent notation: digits*<base>**<exp>
+    // The base can be any decimal number (e.g., *10**, *16**, *2**)
+    let (digits_body, exponent_base, exponent_scale) = if let Some(star_pos) = body.find('*') {
+        let digits = &body[..star_pos];
+        let after_star = &body[star_pos + 1..];
+        // Parse the exponent base number
+        if let Some((after_base, exp_base_clean)) = scan_decimal_digits(after_star) {
+            if let Some(after_double_star) = after_base.strip_prefix("**") {
+                let exp_part = after_double_star.trim();
+                if exp_part.is_empty() {
+                    return Err(PError::expected("generic radix exponent"));
+                }
+                let (sign, after_sign) = if let Some(rest) = exp_part.strip_prefix('+') {
+                    (1_i64, rest)
+                } else if let Some(rest) = exp_part.strip_prefix('-') {
+                    (-1_i64, rest)
+                } else {
+                    (1_i64, exp_part)
+                };
+                let Some((exp_rest, exp_clean)) = scan_decimal_digits(after_sign) else {
+                    return Err(PError::expected("generic radix exponent"));
+                };
+                if !exp_rest.is_empty() {
+                    return Err(PError::expected("generic radix exponent"));
+                }
+                let exp_base: u32 = exp_base_clean
+                    .parse()
+                    .map_err(|_| PError::expected("generic radix exponent base"))?;
+                let exp_abs: i64 = exp_clean
+                    .parse()
+                    .map_err(|_| PError::expected("generic radix exponent"))?;
+                (digits.trim(), exp_base, sign * exp_abs)
+            } else {
+                // No ** after base number — not exponent notation
+                (body.trim(), 10_u32, 0_i64)
+            }
         } else {
-            (1_i64, exp_part)
-        };
-        let Some((exp_rest, exp_clean)) = scan_decimal_digits(after_sign) else {
-            return Err(PError::expected("generic radix exponent"));
-        };
-        if !exp_rest.is_empty() {
-            return Err(PError::expected("generic radix exponent"));
+            // No digits after * — not exponent notation
+            (body.trim(), 10_u32, 0_i64)
         }
-        let exp_abs: i64 = exp_clean
-            .parse()
-            .map_err(|_| PError::expected("generic radix exponent"))?;
-        (digits.trim(), sign * exp_abs)
     } else {
-        (body.trim(), 0_i64)
+        (body.trim(), 10_u32, 0_i64)
     };
     if digits_body.is_empty() {
         return Err(PError::expected("generic radix digits"));
@@ -393,10 +455,26 @@ pub(super) fn generic_radix(input: &str) -> PResult<'_, Expr> {
             continue;
         }
         let Some(value) = decimal_digit_value(c).or_else(|| radix_alpha_value(c)) else {
-            return Err(PError::expected("generic radix digits"));
+            // Character is not a recognized radix digit at all → X::Syntax::Malformed
+            let msg = format!(
+                "Cannot convert string to number: malformed base-{} number",
+                base
+            );
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("what".to_string(), Value::str("radix number".to_string()));
+            attrs.insert("message".to_string(), Value::str(msg.clone()));
+            let exception =
+                Value::make_instance(crate::symbol::Symbol::intern("X::Syntax::Malformed"), attrs);
+            return Err(PError::fatal_with_exception(msg, Box::new(exception)));
         };
         if value >= base {
-            return Err(PError::expected("generic radix digits"));
+            // Character is a valid digit but for a higher base → X::Str::Numeric with pos
+            let digit_pos = if saw_dot {
+                int_clean.len() + 1 + frac_clean.len()
+            } else {
+                int_clean.len()
+            };
+            return Err(make_radix_digit_error(base, digits_body, digit_pos));
         }
         saw_digit = true;
         let digit = char::from_digit(value, 36).unwrap();
@@ -434,11 +512,11 @@ pub(super) fn generic_radix(input: &str) -> PResult<'_, Expr> {
 
     if exponent_scale != 0 {
         let exp_abs = exponent_scale.unsigned_abs() as u32;
-        let scale10 = num_bigint::BigInt::from(10_u32).pow(exp_abs);
+        let scale = num_bigint::BigInt::from(exponent_base).pow(exp_abs);
         if exponent_scale > 0 {
-            numerator *= scale10;
+            numerator *= scale;
         } else {
-            denominator *= scale10;
+            denominator *= scale;
         }
     }
 

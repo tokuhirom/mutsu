@@ -54,6 +54,7 @@ roast/S02-literals/numeric.t
 roast/S02-literals/pair-boolean.t
 roast/S02-literals/quoting-unicode.t
 roast/S02-literals/quoting.t
+roast/S02-literals/radix.t
 roast/S02-literals/subscript.t
 roast/S02-literals/types.t
 roast/S02-literals/version.t
@@ -662,6 +663,7 @@ roast/S32-array/keys_values.t
 roast/S32-array/kv.t
 roast/S32-array/pairs.t
 roast/S32-array/rotate.t
+roast/S32-array/shift.t
 roast/S32-basics/pairup.t
 roast/S32-basics/xxPOS-native.t
 roast/S32-container/cat.t

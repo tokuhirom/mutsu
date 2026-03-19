@@ -16,7 +16,9 @@ fn is_superscript_digit(c: char) -> bool {
 }
 
 use super::super::expr::{expression, expression_no_sequence, or_expr_pub};
-use super::super::helpers::{is_loop_label_name, normalize_raku_identifier, ws, ws1};
+use super::super::helpers::{
+    consume_unspace, is_loop_label_name, normalize_raku_identifier, ws, ws1,
+};
 use super::current_line_number;
 use super::misc::parse_block_body;
 use super::regex::{parse_call_arg_list, scan_to_delim};
@@ -418,6 +420,7 @@ pub(super) fn whatever(input: &str) -> PResult<'_, Expr> {
         // **<digit> or **$ would be power op, but **) or **, or end is HyperWhatever
         if !after.is_empty()
             && !after.starts_with(')')
+            && !after.starts_with(']')
             && !after.starts_with(',')
             && !after.starts_with(';')
             && !after.starts_with('}')
@@ -820,6 +823,25 @@ fn is_stmt_modifier_ahead(input: &str) -> bool {
         }
     }
     false
+}
+
+/// Check if input starts with unspace (`\`) followed by a postfix operator.
+/// This prevents `foo\.method` from being parsed as `foo(\(.method))`.
+fn is_unspace_before_postfix(input: &str) -> bool {
+    if !input.starts_with('\\') {
+        return false;
+    }
+    let scan = consume_unspace(input);
+    if std::ptr::eq(scan, input) {
+        return false;
+    }
+    // Check if what follows is a postfix operator
+    (scan.starts_with('.') && !scan.starts_with(".."))
+        || scan.starts_with('(')
+        || scan.starts_with('[')
+        || scan.starts_with('{')
+        || scan.starts_with("++")
+        || scan.starts_with("--")
 }
 
 /// Parse expression listop arguments: comma-separated full expressions.
@@ -1830,6 +1852,9 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     // Bareword followed by => — Pair constructor (higher precedence than operators)
     // e.g., b => "foo" should parse as Pair even in `%a ~~ b => "foo"`
     let (r, _) = ws(rest)?;
+    // If ws() consumed unspace (e.g., `foo\ .lc` → r = ".lc"), record this so
+    // we can prevent parsing `.lc` as a listop argument below.
+    let ws_consumed_unspace = rest.starts_with('\\') && !std::ptr::eq(r, rest);
     if r.starts_with("=>") && !r.starts_with("==>") {
         let r2 = &r[2..];
         let (r2, _) = ws(r2)?;
@@ -1909,6 +1934,8 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && !r.starts_with(']')
         && !r.starts_with(',')
         && !rest.starts_with('.')
+        && !(ws_consumed_unspace && r.starts_with('.') && !r.starts_with(".."))
+        && !is_unspace_before_postfix(r)
     {
         // Check if next token is a statement modifier keyword
         if !is_stmt_modifier_ahead(r) {
@@ -1966,7 +1993,9 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && !r.starts_with(']')
         && !r.starts_with(',')
         && !rest.starts_with('.')
+        && !(ws_consumed_unspace && r.starts_with('.') && !r.starts_with(".."))
         && !is_stmt_modifier_ahead(r)
+        && !is_unspace_before_postfix(r)
     {
         let is_user_sub = crate::parser::stmt::simple::is_user_declared_sub(&name);
         let is_user_prefix_sub = crate::parser::stmt::simple::is_user_declared_prefix_sub(&name);

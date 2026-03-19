@@ -731,7 +731,27 @@ impl VM {
                         }
                     }
                 }
-                let call_result = if !skip_native {
+                // Fast path for shift/pop on array values in the non-mutating
+                // (CallMethod) path. Returns the removed element without modifying
+                // any variable. This handles cases like [1,2,3].shift where there
+                // is no variable to mutate. The CallMethodMut path handles variable
+                // targets separately.
+                let call_result = if matches!(method.as_str(), "shift" | "pop")
+                    && args.is_empty()
+                    && matches!(&target, Value::Array(_, kind) if kind.is_real_array())
+                {
+                    if let Value::Array(items, _) = &target {
+                        Ok(if items.is_empty() {
+                            crate::runtime::make_empty_array_failure(&method)
+                        } else if method == "shift" {
+                            items[0].clone()
+                        } else {
+                            items[items.len() - 1].clone()
+                        })
+                    } else {
+                        unreachable!()
+                    }
+                } else if !skip_native {
                     if let Some(native_result) =
                         self.try_native_method(&target, Symbol::intern(&method), &args)
                     {
@@ -1586,6 +1606,18 @@ impl VM {
                 results.push(val);
                 continue;
             }
+            // Special case: user-defined postfix:<...> operators applied via hyper (»op / >>op).
+            // These are function calls, not method calls.
+            // Exclude built-in postfix operators (++, --) which are handled by method dispatch.
+            if method.starts_with("postfix:<")
+                && !matches!(method.as_str(), "postfix:<++>" | "postfix:<-->")
+            {
+                let mut call_args = vec![item.clone()];
+                call_args.extend(args.clone());
+                let val = self.interpreter.call_function(&method, call_args)?;
+                results.push(val);
+                continue;
+            }
             let mut skip_native = method == "VAR"
                 || (quoted
                     && matches!(
@@ -2182,10 +2214,6 @@ impl VM {
         outer_code: &CompiledCode,
         code_val: &Value,
     ) -> Result<Value, RuntimeError> {
-        fn outer_local_slot(outer_code: &CompiledCode, name: &str) -> Option<usize> {
-            outer_code.locals.iter().position(|local| local == name)
-        }
-
         let (block_cc, block_fns, captured_env, captured_bindings, writeback_bindings) =
             match code_val {
                 Value::Sub(data) => {
@@ -2235,7 +2263,7 @@ impl VM {
                     // GetLocal will read the shared value on demand.
                     continue;
                 }
-                if let Some(outer_slot) = outer_local_slot(outer_code, name)
+                if let Some(outer_slot) = outer_code.locals.iter().rposition(|local| local == name)
                     && let Some(val) = saved_locals.get(outer_slot)
                 {
                     self.locals[*slot] = val.clone();
@@ -2266,7 +2294,7 @@ impl VM {
                 ) {
                     continue;
                 }
-                if let Some(outer_slot) = outer_local_slot(outer_code, name)
+                if let Some(outer_slot) = outer_code.locals.iter().rposition(|local| local == name)
                     && let Some(target) = saved_locals.get_mut(outer_slot)
                 {
                     *target = self.locals[*slot].clone();
