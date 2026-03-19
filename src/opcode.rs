@@ -663,6 +663,11 @@ pub(crate) enum OpCode {
     /// If state_vars has key: set locals[slot] = stored value (discard init).
     /// If not: set locals[slot] = init value, store in state_vars.
     StateVarInit(u32, u32),
+    /// Guard for state variable initialization.
+    /// Check if state key (arg 0) exists.  If yes: push stored value and jump
+    /// to the absolute instruction offset (arg 1).  If no: fall through so the
+    /// RHS initializer can be compiled next.
+    StateVarInitGuard(u32, u32),
     /// Mark whether a declared variable should report `.VAR.dynamic` true.
     SetVarDynamic {
         name_idx: u32,

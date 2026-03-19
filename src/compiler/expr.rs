@@ -690,7 +690,26 @@ impl Compiler {
             }
             // Expression-level function call
             Expr::Call { name, args } => {
-                if name == "atomic-fetch"
+                // (state $x) = expr  /  (state @x) = expr  /  (state %x) = expr
+                // The parser emits __mutsu_assign_callable_lvalue(DoStmt(VarDecl{..}), [], rhs).
+                // We compile this as: declare the state var, then unconditionally assign the RHS.
+                if name == "__mutsu_assign_callable_lvalue"
+                    && args.len() == 3
+                    && let Expr::DoStmt(stmt) = &args[0]
+                    && let Stmt::VarDecl { name: var_name, .. } = stmt.as_ref()
+                {
+                    // 1. Compile the VarDecl (handles state init)
+                    self.compile_stmt(stmt);
+                    // VarDecl doesn't push to stack, so no pop needed.
+                    // 2. Compile the RHS value
+                    self.compile_expr(&args[2]);
+                    // 3. Dup so the assignment result is left on the stack
+                    self.code.emit(OpCode::Dup);
+                    // 4. Assign to the variable
+                    let name_idx = self.code.add_constant(Value::str(var_name.clone()));
+                    self.code.emit(OpCode::AssignExpr(name_idx));
+                    return;
+                } else if name == "atomic-fetch"
                     && args.len() == 1
                     && let Expr::Var(var_name) = &args[0]
                 {
