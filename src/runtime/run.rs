@@ -244,6 +244,7 @@ impl Interpreter {
             "pass(",
             "flunk ",
             "is-deeply",
+            "is-approx",
             "is-primed-sig",
             "is-primed-call",
             "priming-fails-bind-ok",

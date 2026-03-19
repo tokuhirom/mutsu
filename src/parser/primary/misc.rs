@@ -464,6 +464,22 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
     if digit_end > 0 && r[digit_end..].starts_with('<') {
         return Err(PError::expected("generic radix literal"));
     }
+    // :2 or :36 alone (digits with no <, (, or [ suffix) is a malformed radix literal.
+    // Only trigger this when the remaining part doesn't start with an identifier char
+    // (to avoid blocking :123name colonpairs).
+    if digit_end > 0 {
+        let after = &r[digit_end..];
+        let next_ch = after.chars().next();
+        let is_ident_follow =
+            next_ch.is_some_and(|c| c.is_alphabetic() || c == '_' || c == '-' || c == '\'');
+        if !is_ident_follow
+            && !after.starts_with('<')
+            && !after.starts_with('(')
+            && !after.starts_with('[')
+        {
+            return Err(PError::expected("generic radix literal"));
+        }
+    }
     // :{ ... }: typed hash literal (Hash[Mu,Any]).
     // For now we treat it like a regular hash literal.
     if r.starts_with('{') {
@@ -603,9 +619,6 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 let (r_args, mut args) = parse_call_arg_list(r_args)?;
                 let (r_args, _) = ws(r_args)?;
                 let (r_args, _) = parse_char(r_args, ')')?;
-                if args.is_empty() {
-                    return Err(PError::expected("known call arguments"));
-                }
                 let mut call_args = vec![Expr::Literal(Value::Int(base as i64))];
                 call_args.append(&mut args);
                 return Ok((
@@ -615,6 +628,43 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                         args: call_args,
                     },
                 ));
+            }
+            // :N[list] — radix list notation (equivalent to RADIX_LIST(N, list...))
+            // The list form supports any base >= 2 (no 36 limit since digits are numeric values)
+            if let Some(after_bracket) = after_digits.strip_prefix('[') {
+                let base: u64 = base_clean.parse().unwrap_or(0);
+                if base >= 2 {
+                    let (r_items, _) = ws(after_bracket)?;
+                    let mut items = Vec::new();
+                    let mut r_items = r_items;
+                    while !r_items.starts_with(']') {
+                        let (r2, item) = expression(r_items)?;
+                        items.push(item);
+                        let (r2, _) = ws(r2)?;
+                        if r2.starts_with(',') {
+                            let (r2, _) = parse_char(r2, ',')?;
+                            let (r2, _) = ws(r2)?;
+                            r_items = r2;
+                        } else {
+                            r_items = r2;
+                        }
+                    }
+                    let (r_items, _) = parse_char(r_items, ']')?;
+                    let base_expr = if let Ok(b) = i64::try_from(base) {
+                        Expr::Literal(Value::Int(b))
+                    } else {
+                        Expr::Literal(Value::bigint(num_bigint::BigInt::from(base)))
+                    };
+                    let mut call_args = vec![base_expr];
+                    call_args.extend(items);
+                    return Ok((
+                        r_items,
+                        Expr::Call {
+                            name: Symbol::intern("RADIX_LIST"),
+                            args: call_args,
+                        },
+                    ));
+                }
             }
         }
     }
