@@ -547,9 +547,13 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if input.starts_with("rand")
         && !input[4..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
     {
-        // rand() and rand(N) are Perl 5 syntax — throw X::Obsolete
         let after_rand = &input[4..];
         let after_ws = after_rand.trim_start();
+        // Reject if followed by `=>` (pair key context — auto-quote as bareword)
+        if after_ws.starts_with("=>") && !after_ws.starts_with("==>") {
+            return Err(PError::expected("not a pair key"));
+        }
+        // rand() and rand(N) are Perl 5 syntax — throw X::Obsolete
         if after_ws.starts_with('(') {
             return Err(PError::fatal(
                 "X::Obsolete: Unsupported use of rand().  In Raku please use: rand.".to_string(),
@@ -567,6 +571,11 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if input.starts_with("now")
         && !input[3..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
     {
+        // Reject if followed by `=>` (pair key context — auto-quote as bareword)
+        let after_now = input[3..].trim_start();
+        if after_now.starts_with("=>") && !after_now.starts_with("==>") {
+            return Err(PError::expected("not a pair key"));
+        }
         return Ok((
             &input[3..],
             Expr::Call {
@@ -579,6 +588,11 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if input.starts_with("time")
         && !input[4..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
     {
+        // Reject if followed by `=>` (pair key context — auto-quote as bareword)
+        let after_time = input[4..].trim_start();
+        if after_time.starts_with("=>") && !after_time.starts_with("==>") {
+            return Err(PError::expected("not a pair key"));
+        }
         return Ok((
             &input[4..],
             Expr::Call {
@@ -1208,6 +1222,13 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     let name = normalize_raku_identifier(name);
 
     // Handle special expression keywords before qualified name resolution
+    // Many keyword branches below need a `=>` lookahead to treat the keyword as a
+    // bareword when used as a pair key (e.g. `my => 1`, `sub => 1`).
+    let followed_by_fat_arrow = {
+        let trimmed = rest.trim_start();
+        trimmed.starts_with("=>") && !trimmed.starts_with("==>")
+    };
+
     match name.as_str() {
         "infix" | "prefix" | "postfix" | "circumfix" | "postcircumfix" => {
             // infix:<OP>(args) — operator reference
@@ -1365,12 +1386,14 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
         }
         "my" | "our" | "state" => {
-            // my/our/state declaration in expression context
-            // e.g., (my $x = 5) or (state $x = 3)
-            match super::super::stmt::my_decl_expr_pub(input) {
-                Ok((r, stmt)) => return Ok((r, Expr::DoStmt(Box::new(stmt)))),
-                Err(err) if err.is_fatal() => return Err(err),
-                Err(_) => {}
+            if !followed_by_fat_arrow {
+                // my/our/state declaration in expression context
+                // e.g., (my $x = 5) or (state $x = 3)
+                match super::super::stmt::my_decl_expr_pub(input) {
+                    Ok((r, stmt)) => return Ok((r, Expr::DoStmt(Box::new(stmt)))),
+                    Err(err) if err.is_fatal() => return Err(err),
+                    Err(_) => {}
+                }
             }
         }
         "constant" => {
@@ -1434,7 +1457,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 }
             }
         }
-        "sub" => {
+        "sub" if !followed_by_fat_arrow => {
             let (r, _) = ws(rest)?;
             if r.starts_with('{') {
                 let (r, body) = parse_block_body(r)?;
