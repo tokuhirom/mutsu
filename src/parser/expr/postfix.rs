@@ -1015,26 +1015,27 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             }
         }
 
-        // Unspace: backslash + whitespace collapses to nothing, allowing
-        // `foo\ .method` to parse as `foo.method` and
-        // `foo\ (args)` to parse as `foo(args)`.
+        // Unspace: backslash + optional whitespace/comments collapses to nothing,
+        // allowing `foo\ .method`, `foo\.method`, `foo\ (args)`, `foo\(args)`,
+        // `foo\#`(comment).method`, etc.
         if rest.starts_with('\\') {
-            let after_bs = &rest[1..];
-            if let Some(c) = after_bs.chars().next()
-                && c.is_whitespace()
-            {
-                // Peek ahead: consume unspace only if followed by a postfix operator
-                let mut scan = &after_bs[c.len_utf8()..];
-                while let Some(c2) = scan.chars().next() {
-                    if c2.is_whitespace() {
-                        scan = &scan[c2.len_utf8()..];
-                    } else {
-                        break;
-                    }
-                }
+            let scan = consume_unspace(rest);
+            if !std::ptr::eq(scan, rest) {
+                // Only consume unspace if followed by a postfix operator
                 if (scan.starts_with('.') && !scan.starts_with(".."))
                     || scan.starts_with('(')
                     || scan.starts_with('[')
+                    || scan.starts_with('{')
+                    || (scan.starts_with('<')
+                        && !scan.starts_with("<=")
+                        && !scan.starts_with("<<")
+                        && !scan.starts_with("<=>"))
+                    || scan.starts_with(',')
+                    || (scan.starts_with(':') && !scan.starts_with("::"))
+                    || scan.starts_with("++")
+                    || scan.starts_with("--")
+                    || scan.starts_with(">>")
+                    || scan.starts_with('\u{00BB}')
                 {
                     rest = scan;
                 }
@@ -1052,6 +1053,8 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         if rest.starts_with('.') && !rest.starts_with("..") {
             expr = auto_invoke_bareword_method_target(expr);
             let r = &rest[1..];
+            // Consume unspace after dot: `.\ method` or `.\ (args)`
+            let r = consume_unspace(r);
             // `.=` is handled by statement-level assignment parsing, not postfix
             // method-call parsing. Stop postfix parsing and let the caller consume it.
             if r.starts_with('=') {
@@ -1063,17 +1066,17 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = r;
                 continue;
             }
-            // Check for .[index] syntax: object.[expr]
-            if let Some(r) = r.strip_prefix('[') {
-                let (r, _) = ws(r)?;
-                let (r, index) = expression(r)?;
-                let (r, _) = ws(r)?;
-                let (r, _) = parse_char(r, ']')?;
+            // Check for .[index] syntax: object.[expr] or .[expr1, expr2, ...]
+            if let Some(r_inner) = r.strip_prefix('[') {
+                let (r_inner, _) = ws(r_inner)?;
+                let (r_inner, index) = parse_bracket_indices(r_inner)?;
+                let (r_inner, _) = ws(r_inner)?;
+                let (r_inner, _) = parse_char(r_inner, ']')?;
                 expr = Expr::Index {
                     target: Box::new(expr),
                     index: Box::new(index),
                 };
-                rest = r;
+                rest = r_inner;
                 continue;
             }
             // Check for .{index} syntax: object.{$expr}
@@ -2344,6 +2347,23 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
 
             // Check for ».method / >>.method and modifier forms like ».?method, ».+method, »!Type::meth.
             let r = after_hyper.strip_prefix('.').unwrap_or(after_hyper);
+            // Hyper dotted postfix update: >>.++ / >>.--
+            if let Some((op, len)) = parse_postfix_update_op(r) {
+                let name = match op.token_kind() {
+                    TokenKind::PlusPlus => "postfix:<++>",
+                    TokenKind::MinusMinus => "postfix:<-->",
+                    _ => unreachable!("postfix update parser returned unexpected token"),
+                };
+                expr = Expr::HyperMethodCall {
+                    target: Box::new(expr),
+                    name: Symbol::intern(name),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                };
+                rest = &r[len..];
+                continue;
+            }
             // Only consume a modifier character if followed by a valid method name
             // start (alphanumeric, _, $, @, %, &, ", <, (). This avoids
             // misinterpreting user-defined postfix operators like ??? where the
