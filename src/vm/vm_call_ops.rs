@@ -792,8 +792,8 @@ impl VM {
                         }
                         "defined" | "Bool" | "so" | "not" | "gist" | "Str" | "raku" | "perl"
                         | "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "VAR" | "DEFINITE"
-                        | "isa" | "does" | "can" | "^name" | "^mro" | "new" | "bless" | "clone"
-                        | "item" | "self" | "sink" => {
+                        | "isa" | "does" | "can" | "^name" | "^mro" | "^pun" | "new" | "bless"
+                        | "clone" | "item" | "self" | "sink" => {
                             // Fall through to normal dispatch
                         }
                         _ => {

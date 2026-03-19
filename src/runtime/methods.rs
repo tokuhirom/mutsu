@@ -1745,6 +1745,7 @@ impl Interpreter {
                     | "curried_role"
                     | "enum_value_list"
                     | "coerce"
+                    | "pun"
             )
         {
             let mut how_args = args.to_vec();
