@@ -1205,7 +1205,14 @@ impl Interpreter {
             return self.buf_mutate_method(target_var, target, method, args);
         }
 
-        if target_var.starts_with('@') {
+        // If an @-variable holds an Instance of a class inheriting from Array,
+        // skip the normal @-variable handling and let the Instance-based delegation
+        // (below) handle it instead, preserving the class identity.
+        let at_var_holds_array_subclass = target_var.starts_with('@')
+            && matches!(&target, Value::Instance { class_name, .. }
+                if self.class_inherits_array(&class_name.resolve()));
+
+        if target_var.starts_with('@') && !at_var_holds_array_subclass {
             // Check for shaped (multidimensional) arrays - these don't support
             // mutating operations like push/pop/shift/unshift/splice/append/prepend
             if matches!(
@@ -1564,6 +1571,133 @@ impl Interpreter {
                     return Ok(out);
                 }
                 _ => {}
+            }
+        }
+
+        // Delegation for classes inheriting from Array:
+        // Mutating methods (push, pop, etc.) operate on internal array storage.
+        if let Value::Instance {
+            class_name,
+            attributes,
+            id: target_id,
+        } = &target
+        {
+            let cn = class_name.resolve();
+            if self.class_inherits_array(&cn)
+                && !self.has_user_method(&cn, method)
+                && !matches!(
+                    method,
+                    "WHAT"
+                        | "HOW"
+                        | "WHO"
+                        | "WHY"
+                        | "WHICH"
+                        | "WHERE"
+                        | "DEFINITE"
+                        | "VAR"
+                        | "REPR"
+                        | "new"
+                        | "bless"
+                        | "clone"
+                        | "isa"
+                        | "does"
+                        | "can"
+                        | "^name"
+                        | "^mro"
+                        | "^parents"
+                        | "^methods"
+                        | "^roles"
+                        | "^attributes"
+                        | "defined"
+                        | "Bool"
+                        | "so"
+                        | "not"
+                        | "gist"
+                        | "Str"
+                        | "raku"
+                        | "perl"
+                        | "ACCEPTS"
+                        | "Numeric"
+                        | "Int"
+                        | "sink"
+                        | "self"
+                        | "item"
+                )
+            {
+                let storage_key = "__mutsu_array_storage";
+                let mut items: Vec<Value> = match attributes.get(storage_key) {
+                    Some(Value::Array(values, ..)) => values.to_vec(),
+                    _ => Vec::new(),
+                };
+                let is_mutating = matches!(
+                    method,
+                    "push"
+                        | "pop"
+                        | "shift"
+                        | "unshift"
+                        | "append"
+                        | "prepend"
+                        | "splice"
+                        | "BIND-POS"
+                        | "ASSIGN-POS"
+                );
+                if is_mutating {
+                    let result = match method {
+                        "push" => {
+                            let normalized = Self::normalize_push_unshift_args(args);
+                            items.extend(normalized);
+                            Value::real_array(items.clone())
+                        }
+                        "pop" => {
+                            if items.is_empty() {
+                                make_empty_array_failure("pop")
+                            } else {
+                                items.pop().unwrap_or(Value::Nil)
+                            }
+                        }
+                        "shift" => {
+                            if items.is_empty() {
+                                make_empty_array_failure("shift")
+                            } else {
+                                items.remove(0)
+                            }
+                        }
+                        "unshift" | "prepend" => {
+                            let normalized = Self::normalize_push_unshift_args(args);
+                            for (i, arg) in normalized.iter().enumerate() {
+                                items.insert(i, arg.clone());
+                            }
+                            Value::real_array(items.clone())
+                        }
+                        "append" => {
+                            let flat = flatten_append_args(args);
+                            items.extend(flat);
+                            Value::real_array(items.clone())
+                        }
+                        "BIND-POS" | "ASSIGN-POS" if args.len() == 2 => {
+                            let idx = super::to_int(&args[0]) as usize;
+                            if idx >= items.len() {
+                                items.resize(idx + 1, Value::Nil);
+                            }
+                            items[idx] = args[1].clone();
+                            args[1].clone()
+                        }
+                        _ => Value::Nil,
+                    };
+                    let mut updated_attrs = (**attributes).clone();
+                    updated_attrs.insert(storage_key.to_string(), Value::real_array(items));
+                    let updated_instance = Value::make_instance_with_id(
+                        *class_name,
+                        updated_attrs.clone(),
+                        *target_id,
+                    );
+                    self.overwrite_instance_bindings_by_identity(&cn, *target_id, updated_attrs);
+                    self.env.insert(target_var.to_string(), updated_instance);
+                    return Ok(result);
+                }
+                // Non-mutating methods: delegate to the array value
+                let array_val = Value::real_array(items);
+                return self.call_method_with_values(array_val, method, args);
             }
         }
 

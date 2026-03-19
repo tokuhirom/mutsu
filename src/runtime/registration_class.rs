@@ -367,6 +367,7 @@ impl Interpreter {
             "Grammar",
             "Proxy",
             "Stash",
+            "Parameter",
         ];
         for parent in parents {
             // Strip type arguments for validation (e.g., "R[Str:D(Numeric)]" -> "R")
@@ -395,10 +396,23 @@ impl Interpreter {
                         parent
                     )));
                 }
-                return Err(RuntimeError::new(format!(
-                    "X::Inheritance::UnknownParent: class '{}' specifies unknown parent class '{}'",
-                    name, parent
-                )));
+                {
+                    let msg = format!(
+                        "X::Inheritance::UnknownParent: class '{}' specifies unknown parent class '{}'",
+                        name, parent
+                    );
+                    let mut attrs = HashMap::new();
+                    attrs.insert("child".to_string(), Value::str(name.to_string()));
+                    attrs.insert("parent".to_string(), Value::str(parent.to_string()));
+                    attrs.insert("message".to_string(), Value::str(msg.clone()));
+                    let ex = Value::make_instance(
+                        crate::symbol::Symbol::intern("X::Inheritance::UnknownParent"),
+                        attrs,
+                    );
+                    let mut err = RuntimeError::new(msg);
+                    err.exception = Some(Box::new(ex));
+                    return Err(err);
+                }
             }
             // Check if parent is a stub (not yet composed)
             if self.class_stubs.contains(resolved_parent) {

@@ -108,6 +108,14 @@ impl Interpreter {
         result
     }
 
+    /// Check if a class inherits from Array (i.e., "Array" is in its MRO).
+    pub(crate) fn class_inherits_array(&self, class_name: &str) -> bool {
+        if class_name == "Array" {
+            return false; // Array itself doesn't "inherit from" Array in this sense
+        }
+        self.mro_readonly(class_name).iter().any(|p| p == "Array")
+    }
+
     pub(crate) fn resolve_token_defs(&self, name: &str) -> Option<Vec<FunctionDef>> {
         if name.contains("::") {
             let mut defs = Vec::new();

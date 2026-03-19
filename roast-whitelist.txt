@@ -399,6 +399,7 @@ roast/S12-class/augment-supersede.t
 roast/S12-class/declaration-order.t
 roast/S12-class/extending-arrays.t
 roast/S12-class/inheritance-class-methods.t
+roast/S12-class/inheritance.t
 roast/S12-class/interface-consistency.t
 roast/S12-class/lexical.t
 roast/S12-class/literal.t

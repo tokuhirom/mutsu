@@ -641,6 +641,26 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
                 let (r2, _) = ws(r)?;
                 r = r2;
                 continue;
+            } else if !matches!(
+                parent.as_str(),
+                "rw" | "hidden"
+                    | "repr"
+                    | "copy"
+                    | "raw"
+                    | "required"
+                    | "default"
+                    | "built"
+                    | "export"
+                    | "DEPRECATED"
+            ) {
+                // Unknown lowercase name after `is` — treat as parent class
+                // so validation can produce X::Inheritance::UnknownParent.
+                let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
+                parents.push(format!("{}{}", parent, bracket_suffix));
+                r = r2;
+                let (r2, _) = ws(r)?;
+                r = r2;
+                continue;
             }
             let (r2, _) = ws(r2)?;
             r = r2;
