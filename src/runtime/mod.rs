@@ -3859,7 +3859,13 @@ impl TestState {
 #[cfg(test)]
 mod tests {
     use super::Interpreter;
+    use crate::ast::{Expr, Stmt};
+    use crate::env::Env;
+    use crate::opcode::{CompiledCode, OpCode};
+    use crate::symbol::Symbol;
+    use crate::value::{SubData, Value};
     use std::fs;
+    use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -4042,6 +4048,67 @@ mod tests {
             .run("sub foo($a, $b); say foo(1, 2); sub foo($a, $b) { $a + $b }")
             .unwrap();
         assert_eq!(output, "3\n");
+    }
+
+    #[test]
+    fn protect_block_cache_tracks_only_captured_lexicals() {
+        let mut env = Env::new();
+        env.insert("used".to_string(), Value::Int(1));
+        env.insert("unused".to_string(), Value::Int(2));
+        env.insert("$target".to_string(), Value::Int(0));
+        env.insert("@noise".to_string(), Value::array(vec![Value::Int(3)]));
+
+        let mut compiled = CompiledCode::new();
+        compiled.constants = vec![
+            Value::str("$target".to_string()),
+            Value::str("@noise".to_string()),
+            Value::str("$unused".to_string()),
+        ];
+        compiled.locals = vec![
+            "used".to_string(),
+            "@noise".to_string(),
+            "$temp".to_string(),
+        ];
+        compiled.simple_locals = vec![true, false, true];
+        compiled.ops = vec![
+            OpCode::GetGlobal(0),
+            OpCode::GetArrayVar(1),
+            OpCode::SetGlobal(0),
+            OpCode::SetLocal(2),
+        ];
+
+        let block = Arc::new(SubData {
+            package: Symbol::intern("GLOBAL"),
+            name: Symbol::intern("__protect_test__"),
+            params: vec![],
+            param_defs: vec![],
+            body: vec![Stmt::Expr(Expr::Literal(Value::Int(0)))],
+            is_rw: false,
+            is_raw: false,
+            env,
+            assumed_positional: vec![],
+            assumed_named: std::collections::HashMap::new(),
+            id: 1,
+            empty_sig: false,
+            compiled_code: Some(Arc::new(compiled)),
+        });
+
+        let mut interp = Interpreter::new();
+        let (_, _, captured_bindings, _, captured_names) =
+            interp.get_or_compile_protect_block_with_slots(&block);
+
+        assert_eq!(
+            captured_bindings.as_ref(),
+            &vec![(0, "used".to_string()), (1, "@noise".to_string())]
+        );
+        assert_eq!(
+            captured_names.as_ref(),
+            &vec![
+                "used".to_string(),
+                "@noise".to_string(),
+                "$target".to_string(),
+            ]
+        );
     }
 }
 
