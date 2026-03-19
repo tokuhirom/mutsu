@@ -624,7 +624,23 @@ impl Interpreter {
             "roundrobin" => self.builtin_roundrobin(&args),
             // List operations
             "join" => self.builtin_join(&args),
-            "item" => Ok(args.first().cloned().unwrap_or(Value::Nil)),
+            "item" => {
+                if args.len() <= 1 {
+                    let val = args.first().cloned().unwrap_or(Value::Nil);
+                    // Apply .item semantics: itemize arrays/hashes
+                    Ok(match val {
+                        Value::Array(items, kind) => Value::Array(items, kind.itemize()),
+                        Value::Hash(_) => Value::Scalar(Box::new(val)),
+                        other => other,
+                    })
+                } else {
+                    // item($a, $b) returns an itemized List
+                    Ok(Value::Array(
+                        std::sync::Arc::new(args.clone()),
+                        crate::value::ArrayKind::ItemList,
+                    ))
+                }
+            }
             "list" => self.builtin_list(&args),
             "cache" => self.builtin_cache(&args),
             "circumfix:<[ ]>" => Ok(Value::real_array(args.clone())),

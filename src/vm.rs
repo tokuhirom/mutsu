@@ -536,7 +536,17 @@ impl VM {
                             .and_then(|bare| self.interpreter.env().get(bare).cloned())
                     })
                     .unwrap_or(Value::Nil);
-                self.stack.push(val);
+                // Coerce Array/List to Hash when accessed via % sigil
+                let coerced = match &val {
+                    Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                        match crate::runtime::utils::build_hash_from_items(items.to_vec()) {
+                            Ok(h) => h,
+                            Err(_) => val,
+                        }
+                    }
+                    _ => val,
+                };
+                self.stack.push(coerced);
                 *ip += 1;
             }
             OpCode::GetBareWord(name_idx) => {
