@@ -12,6 +12,28 @@ use crate::value::Value;
 use super::operators::{PrefixUnaryOp, parse_postfix_update_op, parse_prefix_unary_op};
 use super::{expression, expression_no_sequence};
 
+/// Check if a character is valid inside an angle-bracket word key (`<key>`).
+/// Raku allows any non-whitespace character that isn't `>` in angle bracket words.
+/// We allow: alphanumeric, common ASCII punctuation used in identifiers/keys,
+/// non-breaking spaces, and any non-ASCII Unicode character that isn't whitespace.
+fn is_angle_key_char(c: char) -> bool {
+    c.is_alphanumeric()
+        || c == '_'
+        || c == '-'
+        || c == '!'
+        || c == '.'
+        || c == ':'
+        || c == '?'
+        || c == '+'
+        || c == '/'
+        || c == '$'
+        || c == '@'
+        || c == '%'
+        || c == '&'
+        || is_non_breaking_space(c)
+        || (!c.is_ascii() && !c.is_whitespace())
+}
+
 /// When a prefix operator is applied to a WhateverCode (Lambda or AnonSubParams),
 /// compose the prefix into the body so that `+(* + 1)` becomes `-> $_ { +($_ + 1) }`
 /// instead of trying to numify the closure itself.
@@ -1078,24 +1100,9 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     let content = &r2[..end];
                     let keys = split_angle_words(content);
                     if !keys.is_empty()
-                        && keys.iter().all(|key| {
-                            !key.is_empty()
-                                && key.chars().all(|c| {
-                                    c.is_alphanumeric()
-                                        || c == '_'
-                                        || c == '-'
-                                        || c == '!'
-                                        || c == '.'
-                                        || c == ':'
-                                        || c == '?'
-                                        || c == '+'
-                                        || c == '/'
-                                        || c == '$'
-                                        || c == '@'
-                                        || c == '%'
-                                        || c == '&'
-                                })
-                        })
+                        && keys
+                            .iter()
+                            .all(|key| !key.is_empty() && key.chars().all(is_angle_key_char))
                     {
                         let r2 = &r2[end + 1..];
                         let index_expr = if keys.len() == 1 {
@@ -1728,25 +1735,9 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             let keys = split_angle_words(content);
             let is_zen_angle = keys.is_empty();
             if !is_zen_angle
-                && keys.iter().any(|key| {
-                    key.is_empty()
-                        || !key.chars().all(|c| {
-                            c.is_alphanumeric()
-                                || c == '_'
-                                || c == '-'
-                                || c == '!'
-                                || c == '.'
-                                || c == ':'
-                                || c == '?'
-                                || c == '+'
-                                || c == '/'
-                                || c == '$'
-                                || c == '@'
-                                || c == '%'
-                                || c == '&'
-                                || is_non_breaking_space(c)
-                        })
-                })
+                && keys
+                    .iter()
+                    .any(|key| key.is_empty() || !key.chars().all(is_angle_key_char))
             {
                 return Err(PError::expected_at("angle index key", r));
             }
@@ -2371,12 +2362,9 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     let content = &r2[..end];
                     let keys = split_angle_words(content);
                     if !keys.is_empty()
-                        && keys.iter().all(|key| {
-                            !key.is_empty()
-                                && key.chars().all(|c| {
-                                    c.is_alphanumeric() || c == '_' || c == '-' || c == ':'
-                                })
-                        })
+                        && keys
+                            .iter()
+                            .all(|key| !key.is_empty() && key.chars().all(is_angle_key_char))
                     {
                         let args = if keys.len() == 1 {
                             vec![Expr::Literal(Value::str(keys[0].to_string()))]
