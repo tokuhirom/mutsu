@@ -484,6 +484,19 @@ impl VM {
                         Value::Nil
                     }
                 });
+                // Private attribute access ($!attr) outside of a class/method
+                // context: throw X::Syntax::NoSelf if the variable is not found.
+                if matches!(val, Value::Nil)
+                    && name.starts_with('!')
+                    && name.len() > 1
+                    && name != "!"
+                    && self.get_env_with_main_alias("self").is_none()
+                {
+                    return Err(RuntimeError::new(format!(
+                        "X::Syntax::NoSelf: Variable ${} used where no 'self' is available",
+                        name
+                    )));
+                }
                 // When the value is Nil and the variable has a type constraint,
                 // return the type object (consistent with GetLocal behavior).
                 let val = if matches!(val, Value::Nil) {
