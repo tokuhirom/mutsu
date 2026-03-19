@@ -1340,7 +1340,9 @@ impl VM {
             }
             // Infinite ranges and non-matching types fall through to normal check
         }
-        if matches!(value, Value::Nil) && self.interpreter.is_definite_constraint(constraint) {
+        if !crate::runtime::types::value_is_defined(&value)
+            && self.interpreter.is_definite_constraint(constraint)
+        {
             return Err(RuntimeError::new(format!(
                 "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
                 constraint
@@ -1425,7 +1427,7 @@ impl VM {
                 var_name,
             ));
         }
-        if !matches!(value, Value::Nil) {
+        if !matches!(value, Value::Nil | Value::Package(_)) {
             let coerced = self
                 .interpreter
                 .try_coerce_value_for_constraint(constraint, value.clone())?;

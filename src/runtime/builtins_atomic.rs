@@ -73,8 +73,24 @@ impl Interpreter {
                     crate::runtime::utils::type_check_assignment_error(name, &constraint, &value),
                 ));
             }
+            if !crate::runtime::types::value_is_defined(&value)
+                && self.is_definite_constraint(&constraint)
+            {
+                return Err(RuntimeError::new(format!(
+                    "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
+                    constraint
+                )));
+            }
             if !matches!(value, Value::Nil | Value::Package(_)) {
-                value = self.try_coerce_value_for_constraint(&constraint, value)?;
+                value = self
+                    .try_coerce_value_for_constraint(&constraint, value.clone())
+                    .map_err(|_| {
+                        RuntimeError::new(crate::runtime::utils::type_check_assignment_error(
+                            name,
+                            &constraint,
+                            &value,
+                        ))
+                    })?;
             }
         }
         Ok(value)

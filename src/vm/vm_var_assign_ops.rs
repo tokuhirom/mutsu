@@ -1248,7 +1248,8 @@ impl VM {
                 val = def.clone();
             }
             if let Some(constraint) = self.interpreter.var_type_constraint_fast(name).cloned() {
-                if matches!(val, Value::Nil) && self.interpreter.is_definite_constraint(&constraint)
+                if !crate::runtime::types::value_is_defined(&val)
+                    && self.interpreter.is_definite_constraint(&constraint)
                 {
                     return Err(RuntimeError::new(format!(
                         "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
@@ -1262,9 +1263,16 @@ impl VM {
                         runtime::utils::type_check_assignment_error(name, &constraint, &val),
                     ));
                 }
-                let val = if !matches!(val, Value::Nil) {
+                let val = if !matches!(val, Value::Nil | Value::Package(_)) {
                     self.interpreter
-                        .try_coerce_value_for_constraint(&constraint, val)?
+                        .try_coerce_value_for_constraint(&constraint, val.clone())
+                        .map_err(|_| {
+                            RuntimeError::new(runtime::utils::type_check_assignment_error(
+                                name,
+                                &constraint,
+                                &val,
+                            ))
+                        })?
                 } else {
                     val
                 };
@@ -1349,7 +1357,9 @@ impl VM {
             && !name.starts_with('%')
             && !name.starts_with('@')
         {
-            if matches!(val, Value::Nil) && self.interpreter.is_definite_constraint(&constraint) {
+            if !crate::runtime::types::value_is_defined(&val)
+                && self.interpreter.is_definite_constraint(&constraint)
+            {
                 return Err(RuntimeError::new(format!(
                     "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
                     constraint
@@ -1361,10 +1371,17 @@ impl VM {
                     runtime::utils::type_check_assignment_error(name, &constraint, &val),
                 ));
             }
-            if !matches!(val, Value::Nil) {
+            if !matches!(val, Value::Nil | Value::Package(_)) {
                 val = self
                     .interpreter
-                    .try_coerce_value_for_constraint(&constraint, val)?;
+                    .try_coerce_value_for_constraint(&constraint, val.clone())
+                    .map_err(|_| {
+                        RuntimeError::new(runtime::utils::type_check_assignment_error(
+                            name,
+                            &constraint,
+                            &val,
+                        ))
+                    })?;
             }
         }
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
@@ -1547,16 +1564,38 @@ impl VM {
                             .nominal_type_object_name_for_constraint(&constraint);
                         Value::Package(Symbol::intern(&nominal))
                     }
+                } else if !crate::runtime::types::value_is_defined(&val)
+                    && self.interpreter.is_definite_constraint(&constraint)
+                {
+                    return Err(RuntimeError::new(format!(
+                        "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
+                        constraint
+                    )));
                 } else if !self.interpreter.type_matches_value(&constraint, &val) {
                     return Err(RuntimeError::new(
                         runtime::utils::type_check_assignment_error(name, &constraint, &val),
                     ));
                 } else if !matches!(val, Value::Nil | Value::Package(_)) {
                     self.interpreter
-                        .try_coerce_value_for_constraint(&constraint, val)?
+                        .try_coerce_value_for_constraint(&constraint, val.clone())
+                        .map_err(|_| {
+                            RuntimeError::new(runtime::utils::type_check_assignment_error(
+                                name,
+                                &constraint,
+                                &val,
+                            ))
+                        })?
                 } else {
                     val
                 };
+                if !crate::runtime::types::value_is_defined(&val)
+                    && self.interpreter.is_definite_constraint(&constraint)
+                {
+                    return Err(RuntimeError::new(format!(
+                        "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
+                        constraint
+                    )));
+                }
                 self.locals[idx] = val.clone();
                 self.stack.push(val);
             } else {
@@ -1644,10 +1683,25 @@ impl VM {
                     runtime::utils::type_check_assignment_error(name, &constraint, &val),
                 ));
             }
+            if !crate::runtime::types::value_is_defined(&val)
+                && self.interpreter.is_definite_constraint(&constraint)
+            {
+                return Err(RuntimeError::new(format!(
+                    "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
+                    constraint
+                )));
+            }
             if !matches!(val, Value::Nil | Value::Package(_)) {
                 val = self
                     .interpreter
-                    .try_coerce_value_for_constraint(&constraint, val)?;
+                    .try_coerce_value_for_constraint(&constraint, val.clone())
+                    .map_err(|_| {
+                        RuntimeError::new(runtime::utils::type_check_assignment_error(
+                            name,
+                            &constraint,
+                            &val,
+                        ))
+                    })?;
             }
         }
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
