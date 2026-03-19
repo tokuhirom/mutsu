@@ -731,35 +731,27 @@ impl VM {
                         }
                     }
                 }
-                // Fast path for shift/pop on non-variable array values (e.g. [1,2,3].shift).
-                // These should return the removed element, not the modified array.
-                // The CallMethodMut path handles variable targets with writeback.
-                if matches!(method.as_str(), "shift" | "pop")
+                // Fast path for shift/pop on array values in the non-mutating
+                // (CallMethod) path. Returns the removed element without modifying
+                // any variable. This handles cases like [1,2,3].shift where there
+                // is no variable to mutate. The CallMethodMut path handles variable
+                // targets separately.
+                let call_result = if matches!(method.as_str(), "shift" | "pop")
+                    && args.is_empty()
                     && matches!(&target, Value::Array(_, kind) if kind.is_real_array())
                 {
-                    if !args.is_empty() {
-                        return Err(RuntimeError::new(format!(
-                            "Too many positionals passed; expected 1 argument but got {}",
-                            args.len() + 1
-                        )));
-                    }
-                    let result = if let Value::Array(items, _) = &target {
-                        if items.is_empty() {
+                    if let Value::Array(items, _) = &target {
+                        Ok(if items.is_empty() {
                             crate::runtime::make_empty_array_failure(&method)
                         } else if method == "shift" {
                             items[0].clone()
                         } else {
-                            // pop
                             items[items.len() - 1].clone()
-                        }
+                        })
                     } else {
                         unreachable!()
-                    };
-                    self.stack.push(result);
-                    self.env_dirty = true;
-                    return Ok(());
-                }
-                let call_result = if !skip_native {
+                    }
+                } else if !skip_native {
                     if let Some(native_result) =
                         self.try_native_method(&target, Symbol::intern(&method), &args)
                     {
