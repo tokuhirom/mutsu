@@ -39,6 +39,10 @@ fn flatten_append_args(args: Vec<Value>) -> Vec<Value> {
     if args.len() == 1 {
         match &args[0] {
             Value::Array(vals, kind) if !kind.is_itemized() => vals.to_vec(),
+            Value::Hash(map) => map
+                .iter()
+                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                .collect(),
             _ => args,
         }
     } else {

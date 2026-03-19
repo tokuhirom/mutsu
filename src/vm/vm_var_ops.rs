@@ -391,6 +391,8 @@ impl VM {
                 let f = runtime::to_float_value(idx)?;
                 (f >= 0.0).then_some(f as usize)
             }
+            // Itemized array ($[...]) numifies to its element count
+            Value::Array(items, kind) if kind.is_itemized() => Some(items.len()),
             _ => idx.to_string_value().parse::<usize>().ok(),
         }
     }
@@ -887,6 +889,33 @@ impl VM {
                     Self::resolve_array_entry(&items, is_arr, i as usize, default)
                 }
             }
+            // Itemized array ($[...]) used as array index: numify to element count
+            (Value::Array(items, is_arr), Value::Array(idx_items, idx_kind))
+                if idx_kind.is_itemized() =>
+            {
+                let i = idx_items.len() as i64;
+                if i < 0 {
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("what".to_string(), Value::str_from("Index"));
+                    attrs.insert("got".to_string(), Value::Int(i));
+                    attrs.insert("range".to_string(), Value::str_from("0..^Inf"));
+                    attrs.insert(
+                        "message".to_string(),
+                        Value::str(format!(
+                            "Index out of range. Is: {}, should be in 0..^Inf",
+                            i
+                        )),
+                    );
+                    let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
+                    let mut failure_attrs = std::collections::HashMap::new();
+                    failure_attrs.insert("exception".to_string(), ex);
+                    Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+                } else {
+                    let default =
+                        self.typed_container_default(&Value::Array(items.clone(), is_arr));
+                    Self::resolve_array_entry(&items, is_arr, i as usize, default)
+                }
+            }
             (target @ Value::Array(..), Value::Array(indices, ..)) => {
                 let depth = Self::array_depth(&target);
                 if depth <= 1 && indices.len() > 1 {
@@ -1034,6 +1063,13 @@ impl VM {
                 Value::array(items.values().cloned().collect())
             }
             (Value::Hash(items), Value::Nil) => Value::Hash(items),
+            (Value::Hash(items), Value::Array(keys, kind)) if kind.is_itemized() => {
+                // Itemized array ($[...]) used as hash key: stringify to a single key
+                let default = self.typed_container_default(&Value::Hash(items.clone()));
+                let key_str = Value::Array(keys, kind).to_string_value();
+                let v = self.resolve_hash_entry(&items, &key_str);
+                if matches!(v, Value::Nil) { default } else { v }
+            }
             (Value::Hash(items), Value::Array(keys, ..)) => {
                 let default = self.typed_container_default(&Value::Hash(items.clone()));
                 Value::array(
