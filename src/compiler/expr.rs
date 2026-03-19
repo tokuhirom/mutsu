@@ -37,7 +37,7 @@ impl Compiler {
             Expr::ArrayVar(name) => Some(format!("@{}", name)),
             Expr::HashVar(name) => Some(format!("%{}", name)),
             Expr::CodeVar(name) => Some(format!("&{}", name)),
-            Expr::Index { target, index }
+            Expr::Index { target, index, .. }
                 if matches!(target.as_ref(), Expr::PseudoStash(_))
                     && matches!(index.as_ref(), Expr::Literal(Value::Str(_))) =>
             {
@@ -219,7 +219,7 @@ impl Compiler {
                         self.code.emit(OpCode::Pop);
                         let name_idx = self.code.add_constant(Value::str(var_name));
                         self.code.emit(OpCode::PreIncrement(name_idx));
-                    } else if let Expr::Index { target, index } = expr.as_ref() {
+                    } else if let Expr::Index { target, index, .. } = expr.as_ref() {
                         if let Some(name) = Self::postfix_index_name(target) {
                             self.compile_expr(index);
                             let name_idx = self.code.add_constant(Value::str(name));
@@ -250,7 +250,7 @@ impl Compiler {
                         self.code.emit(OpCode::Pop);
                         let name_idx = self.code.add_constant(Value::str(var_name));
                         self.code.emit(OpCode::PreDecrement(name_idx));
-                    } else if let Expr::Index { target, index } = expr.as_ref() {
+                    } else if let Expr::Index { target, index, .. } = expr.as_ref() {
                         if let Some(name) = Self::postfix_index_name(target) {
                             self.compile_expr(index);
                             let name_idx = self.code.add_constant(Value::str(name));
@@ -802,7 +802,7 @@ impl Compiler {
                         self.code.emit(OpCode::LoadNil);
                         let name_idx = self.code.add_constant(Value::str(vname));
                         self.code.emit(OpCode::AssignExpr(name_idx));
-                    } else if let Expr::Index { target, index } = &args[0] {
+                    } else if let Expr::Index { target, index, .. } = &args[0] {
                         // undefine %hash<key> or undefine @arr[idx]
                         // Compile as IndexAssign with Nil value
                         let assign_expr = Expr::IndexAssign {
@@ -911,7 +911,7 @@ impl Compiler {
                             expr: args[2].clone(),
                             op: AssignOp::Assign,
                         }),
-                        Expr::Index { target, index } => Some(Stmt::Expr(Expr::IndexAssign {
+                        Expr::Index { target, index, .. } => Some(Stmt::Expr(Expr::IndexAssign {
                             target: target.clone(),
                             index: index.clone(),
                             value: Box::new(args[2].clone()),
@@ -1102,6 +1102,7 @@ impl Compiler {
                 if let Expr::Index {
                     target: index_target,
                     index,
+                    ..
                 } = target.as_ref()
                     && let Some(source_name) = Self::index_assign_target_name(index_target)
                 {
@@ -1182,6 +1183,7 @@ impl Compiler {
                 if let Expr::Index {
                     target: idx_target,
                     index: idx_key,
+                    ..
                 } = target.as_ref()
                 {
                     let var_name = Self::postfix_index_name(idx_target).unwrap_or_default();
@@ -1228,6 +1230,7 @@ impl Compiler {
                     && let Expr::Index {
                         target: delete_target,
                         index: delete_index,
+                        ..
                     } = target.as_ref()
                 {
                     if let Some(var_name) = Self::postfix_index_name(delete_target) {
@@ -1354,7 +1357,11 @@ impl Compiler {
                 });
             }
             // Indexing
-            Expr::Index { target, index } => {
+            Expr::Index {
+                target,
+                index,
+                is_associative,
+            } => {
                 // Special case: %*ENV<key> compiles to GetEnvIndex
                 if let Expr::HashVar(name) = target.as_ref() {
                     if name == "*ENV" {
@@ -1365,24 +1372,24 @@ impl Compiler {
                             // Dynamic key - compile as runtime hash + index
                             self.compile_expr(target);
                             self.compile_expr(index);
-                            self.code.emit(OpCode::Index);
+                            self.code.emit(OpCode::Index(*is_associative));
                         }
                     } else {
                         self.compile_expr(target);
                         self.compile_expr(index);
-                        self.code.emit(OpCode::Index);
+                        self.code.emit(OpCode::Index(*is_associative));
                     }
                 } else {
                     self.compile_expr(target);
                     self.compile_expr(index);
-                    self.code.emit(OpCode::Index);
+                    self.code.emit(OpCode::Index(*is_associative));
                 }
             }
             // Multi-dimensional indexing: @a[$x;$y;$z]
             Expr::MultiDimIndex { target, dimensions } => {
                 self.compile_expr(target);
                 self.compile_expr(&Expr::ArrayLiteral(dimensions.clone()));
-                self.code.emit(OpCode::Index);
+                self.code.emit(OpCode::Index(false));
             }
             // Hash hyperslice: %hash{**}:adverb
             Expr::HyperSlice { target, adverb } => {
@@ -1438,7 +1445,7 @@ impl Compiler {
                     self.code.emit(OpCode::Pop);
                     let name_idx = self.code.add_constant(Value::str(var_name));
                     self.code.emit(OpCode::PostIncrement(name_idx));
-                } else if let Expr::Index { target, index } = expr.as_ref() {
+                } else if let Expr::Index { target, index, .. } = expr.as_ref() {
                     if let Some(name) = Self::postfix_index_name(target) {
                         self.compile_expr(index);
                         let name_idx = self.code.add_constant(Value::str(name));
@@ -1514,7 +1521,7 @@ impl Compiler {
                     self.code.emit(OpCode::Pop);
                     let name_idx = self.code.add_constant(Value::str(var_name));
                     self.code.emit(OpCode::PostDecrement(name_idx));
-                } else if let Expr::Index { target, index } = expr.as_ref() {
+                } else if let Expr::Index { target, index, .. } = expr.as_ref() {
                     if let Some(name) = Self::postfix_index_name(target) {
                         self.compile_expr(index);
                         let name_idx = self.code.add_constant(Value::str(name));
@@ -1733,7 +1740,9 @@ impl Compiler {
                     Expr::ZenSlice(inner) => {
                         self.compile_expr(inner);
                     }
-                    Expr::Index { target: t, index } => {
+                    Expr::Index {
+                        target: t, index, ..
+                    } => {
                         self.compile_expr(t);
                         self.compile_expr(index);
                     }
@@ -1750,6 +1759,7 @@ impl Compiler {
                     && let Expr::Index {
                         target: delete_target,
                         index: delete_index,
+                        ..
                     } = target.as_ref()
                 {
                     if let Some(var_name) = Self::postfix_index_name(delete_target) {

@@ -1169,7 +1169,7 @@ impl Interpreter {
                         || expr_contains_last(then_expr)
                         || expr_contains_last(else_expr)
                 }
-                Expr::Index { target, index } => {
+                Expr::Index { target, index, .. } => {
                     expr_contains_last(target) || expr_contains_last(index)
                 }
                 Expr::Exists { target, arg, .. } => {
