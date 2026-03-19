@@ -2098,21 +2098,27 @@ impl Interpreter {
         attrs: &HashMap<String, Value>,
     ) -> Result<(), RuntimeError> {
         let type_constraints = self.collect_attribute_type_constraints(class_name);
-        for (attr_name, _is_public, _default, _is_rw, _is_required, _sigil, where_constraint) in
+        for (attr_name, _is_public, _default, _is_rw, _is_required, sigil, where_constraint) in
             class_attrs_info
         {
             if let Some(constraint) = type_constraints.get(attr_name)
                 && (constraint.starts_with(char::is_uppercase) || constraint.starts_with("::"))
                 && let Some(value) = attrs.get(attr_name)
                 && !matches!(value, Value::Nil)
-                && !self.type_matches_value(constraint, value)
             {
-                return Err(RuntimeError::new(format!(
-                    "Type check failed in assignment to $!{}; expected {}, got {}",
-                    attr_name,
-                    constraint,
-                    super::value_type_name(value)
-                )));
+                // For array/hash attributes, the type constraint applies to
+                // elements/values, not to the container itself.
+                if *sigil == '@' || *sigil == '%' {
+                    // Skip container-level type check for @ and % attributes;
+                    // element-level checking happens at assignment time.
+                } else if !self.type_matches_value(constraint, value) {
+                    return Err(RuntimeError::new(format!(
+                        "Type check failed in assignment to $!{}; expected {}, got {}",
+                        attr_name,
+                        constraint,
+                        super::value_type_name(value)
+                    )));
+                }
             }
             let Some(pred) = where_constraint else {
                 continue;

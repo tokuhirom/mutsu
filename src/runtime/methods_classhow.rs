@@ -103,6 +103,7 @@ impl Interpreter {
                 | "roles"
                 | "concretization"
                 | "curried_role"
+                | "pun"
         ) {
             return Some(Value::str(method_name.to_string()));
         }
@@ -507,6 +508,15 @@ impl Interpreter {
                 Ok(Value::array(values))
             }
             "parents" if !args.is_empty() => self.dispatch_classhow_parents(&args),
+            "pun" if !args.is_empty() => {
+                let role_name = match &args[0] {
+                    Value::Package(name) => name.resolve(),
+                    Value::Instance { class_name, .. } => class_name.resolve(),
+                    other => other.to_string_value(),
+                };
+                self.ensure_role_punned_to_class(&role_name);
+                Ok(Value::Package(Symbol::intern(&role_name)))
+            }
             "roles" if !args.is_empty() => self.dispatch_classhow_roles(&args),
             "candidates" if !args.is_empty() => {
                 let base_name = match &args[0] {

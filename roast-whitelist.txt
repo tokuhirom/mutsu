@@ -406,6 +406,7 @@ roast/S12-class/parent_attributes.t
 roast/S12-class/rw.t
 roast/S12-class/self-inheritance.t
 roast/S12-class/type-object.t
+roast/S12-coercion/coercion-methods.t
 roast/S12-coercion/coercion-return.t
 roast/S12-coercion/coercion-types.t
 roast/S12-coercion/parameterized.t

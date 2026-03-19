@@ -132,11 +132,38 @@ impl Interpreter {
             return matches.into_iter().next();
         }
 
+        // Sort matches by specificity rank (primary, DESC) then type hierarchy
+        // distance (secondary, ASC) so that subset types win over plain types,
+        // and among equal-rank candidates, more specific types (e.g. Bool:D)
+        // are preferred over less specific ones (e.g. Numeric:D).
+        {
+            let mut ranked: Vec<(usize, _)> = matches
+                .iter()
+                .enumerate()
+                .map(|(i, def)| {
+                    let rank = self.candidate_specificity_rank(def);
+                    let dist = self.candidate_type_distance(args, def);
+                    (i, (rank, dist))
+                })
+                .collect();
+            ranked.sort_by(|a, b| {
+                // Higher rank first, then lower distance
+                b.1.0.cmp(&a.1.0).then(a.1.1.cmp(&b.1.1))
+            });
+            let sorted_matches: Vec<FunctionDef> =
+                ranked.iter().map(|(i, _)| matches[*i].clone()).collect();
+            matches = sorted_matches;
+        }
+
         let best_rank = self.candidate_specificity_rank(&matches[0]);
         let best_shape = self.candidate_dispatch_shape(&matches[0]);
+        let best_distance = self.candidate_type_distance(args, &matches[0]);
         let tied: Vec<FunctionDef> = matches
             .iter()
-            .take_while(|def| self.candidate_specificity_rank(def) == best_rank)
+            .filter(|def| {
+                self.candidate_specificity_rank(def) == best_rank
+                    && self.candidate_type_distance(args, def) == best_distance
+            })
             .cloned()
             .collect();
         if tied.len() > 1
@@ -201,6 +228,102 @@ impl Interpreter {
             named_count,
             trait_count,
         )
+    }
+
+    /// Compute the total type hierarchy distance between a candidate's type
+    /// constraints and the actual argument types.  Lower means more specific.
+    /// Each parameter contributes the number of MRO levels between the
+    /// constraint and the actual type; unconstrained parameters contribute a
+    /// large constant so that constrained candidates are always preferred.
+    fn candidate_type_distance(&self, args: &[Value], def: &FunctionDef) -> usize {
+        let mut total = 0usize;
+        let params: Vec<&ParamDef> = Self::dispatch_visible_params(def).collect();
+        for (i, pd) in params.iter().enumerate() {
+            if let Some(constraint) = &pd.type_constraint {
+                let base = Self::constraint_base_name(constraint);
+                if i < args.len() {
+                    total += self.type_hierarchy_distance(base, &args[i]);
+                }
+            } else {
+                total += 1000;
+            }
+        }
+        total
+    }
+
+    /// Return how many MRO levels separate `constraint` from the actual type
+    /// of `value`.  0 means exact match; larger means less specific.
+    fn type_hierarchy_distance(&self, constraint: &str, value: &Value) -> usize {
+        let value_type = super::value_type_name(value);
+        // Strip :D/:U smiley
+        let base = if constraint.ends_with(":D") || constraint.ends_with(":U") {
+            &constraint[..constraint.len() - 2]
+        } else {
+            constraint
+        };
+        if base == value_type {
+            return 0;
+        }
+        // For instances, use the class MRO
+        if let Value::Instance { class_name, .. } = value {
+            let cn = class_name.resolve();
+            if base == cn.as_str() {
+                return 0;
+            }
+            // Use a non-mutable copy of the MRO (classes field lookup)
+            if let Some(class_def) = self.classes.get(cn.as_str()) {
+                for (i, ancestor) in class_def.mro.iter().enumerate() {
+                    if ancestor == base {
+                        return i;
+                    }
+                }
+            }
+            // Check composed roles
+            if let Some(roles) = self.class_composed_roles.get(cn.as_str())
+                && roles.iter().any(|r| r == base)
+            {
+                return 1;
+            }
+        }
+        // Built-in type hierarchy (approximation of Raku MRO depths)
+        // Bool -> Int -> Cool -> Any -> Mu
+        // but also Bool -> Int -> Numeric/Real -> ...
+        let builtin_mro: &[&str] = match value_type {
+            "Bool" => &["Bool", "Int", "Numeric", "Real", "Cool", "Any", "Mu"],
+            "Int" => &["Int", "Numeric", "Real", "Cool", "Any", "Mu"],
+            "Num" => &["Num", "Numeric", "Real", "Cool", "Any", "Mu"],
+            "Rat" | "FatRat" => &["Rat", "Numeric", "Real", "Cool", "Any", "Mu"],
+            "Complex" => &["Complex", "Numeric", "Cool", "Any", "Mu"],
+            "Str" => &["Str", "Stringy", "Cool", "Any", "Mu"],
+            "Array" => &["Array", "List", "Positional", "Cool", "Any", "Mu"],
+            "List" => &["List", "Positional", "Cool", "Any", "Mu"],
+            "Hash" => &["Hash", "Map", "Associative", "Cool", "Any", "Mu"],
+            "Pair" => &["Pair", "Associative", "Cool", "Any", "Mu"],
+            "Range" => &["Range", "Positional", "Cool", "Any", "Mu"],
+            "Set" => &["Set", "Setty", "QuantHash", "Associative", "Any", "Mu"],
+            "Bag" => &["Bag", "Baggy", "QuantHash", "Associative", "Any", "Mu"],
+            "Mix" => &[
+                "Mix",
+                "Mixy",
+                "Baggy",
+                "QuantHash",
+                "Associative",
+                "Any",
+                "Mu",
+            ],
+            "Sub" => &["Sub", "Routine", "Block", "Code", "Callable", "Any", "Mu"],
+            "Seq" => &["Seq", "Positional", "Cool", "Any", "Mu"],
+            "Regex" => &["Regex", "Method", "Routine", "Block", "Code", "Any", "Mu"],
+            "Junction" => &["Junction", "Mu"],
+            _ => &[],
+        };
+        for (i, &ancestor) in builtin_mro.iter().enumerate() {
+            if ancestor == base {
+                return i;
+            }
+        }
+        // Not found in hierarchy; return a large distance
+        500
     }
 
     fn sort_candidates_by_specificity(&self, candidates: &mut [(String, FunctionDef)]) {

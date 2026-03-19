@@ -3155,6 +3155,9 @@ impl Interpreter {
             if pd.sigilless {
                 continue; // Sigilless params are raw aliases, always writable
             }
+            if pd.name.starts_with('!') || pd.name.starts_with('.') {
+                continue; // Attribute-binding params ($!attr, $.attr) are always writable
+            }
             let has_mutable_trait = pd
                 .traits
                 .iter()
@@ -3230,17 +3233,39 @@ impl Interpreter {
             }
             return Err(coerce_impossible_error(target, &value));
         }
-        if self.classes.contains_key(base_target)
-            && let Ok(coerced) = self.call_method_with_values(
+        if self.classes.contains_key(base_target) {
+            // Wrap Pair values in a Scalar container so they are passed as
+            // positional arguments to COERCE/new rather than being flattened
+            // into named arguments by the method dispatch logic.
+            let coerce_arg = match &value {
+                Value::Pair(..) | Value::ValuePair(..) => Value::Scalar(Box::new(value.clone())),
+                _ => value.clone(),
+            };
+            // Try COERCE method first
+            if let Ok(coerced) = self.call_method_with_values(
                 Value::Package(Symbol::intern(base_target)),
                 "COERCE",
-                vec![value.clone()],
-            )
-        {
-            if self.type_matches_value(base_target, &coerced) {
+                vec![coerce_arg.clone()],
+            ) {
+                if self.type_matches_value(base_target, &coerced) {
+                    return Ok(coerced);
+                }
+                return Err(coerce_impossible_error(target, &value));
+            }
+            // Fallback: try calling `new` on the target class with the value,
+            // but only if there's an explicit `new` variant that accepts a
+            // positional parameter matching the value type.  The default
+            // constructor (named-only params) must NOT be used for coercion.
+            if self.class_has_new_accepting_positional(base_target, &value)
+                && let Ok(coerced) = self.call_method_with_values(
+                    Value::Package(Symbol::intern(base_target)),
+                    "new",
+                    vec![coerce_arg],
+                )
+                && self.type_matches_value(base_target, &coerced)
+            {
                 return Ok(coerced);
             }
-            return Err(coerce_impossible_error(target, &value));
         }
         Err(coerce_impossible_error(target, &value))
     }

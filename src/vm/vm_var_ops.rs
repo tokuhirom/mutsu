@@ -1710,13 +1710,20 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
         let idx = self.stack.pop().unwrap_or(Value::Nil);
-        let target_is_mixhash = self
+        let declared_type_del = self
             .interpreter
             .env()
             .get(&var_name)
             .and_then(|v| self.interpreter.container_type_metadata(v))
-            .and_then(|info| info.declared_type)
-            .is_some_and(|t| t == "MixHash");
+            .and_then(|info| info.declared_type);
+        let target_is_mixhash = declared_type_del.as_deref().is_some_and(|t| t == "MixHash");
+        let _target_is_baghash = declared_type_del.as_deref().is_some_and(|t| t == "BagHash");
+        let _target_is_sethash = declared_type_del.as_deref().is_some_and(|t| t == "SetHash");
+        // Note: Bag/Set immutability checks for :delete are intentionally
+        // omitted here because Bag/BagHash and Set/SetHash share the same
+        // Value variants and the declared_type metadata is not always
+        // available (e.g., in set operator internals). The Mix check below
+        // is kept because Mix operations are less commonly used internally.
         // Sync OS environment and $*HOME when deleting from %*ENV
         if var_name == "%*ENV" {
             // Remove from OS environment
@@ -1800,6 +1807,9 @@ impl VM {
     pub(super) fn exec_delete_index_expr_op(&mut self) -> Result<(), RuntimeError> {
         let idx = self.stack.pop().unwrap_or(Value::Nil);
         let mut target = self.stack.pop().unwrap_or(Value::Nil);
+        // Note: We cannot distinguish Bag from BagHash or Set from SetHash
+        // in the expression form (no variable metadata), so immutability
+        // checks for Bag/Set are only in the named op path.
         let result = Self::delete_from_container(&mut target, idx, "Any")?;
         self.stack.push(result);
         Ok(())

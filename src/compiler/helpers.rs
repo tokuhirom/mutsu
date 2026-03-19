@@ -1502,6 +1502,7 @@ impl Compiler {
         let param_local = param
             .as_ref()
             .and_then(|p| self.local_map.get(p.as_str()).copied());
+        let source_var_names = Self::for_iterable_var_names(iterable);
         let loop_idx = self.code.emit(OpCode::ForLoop {
             param_idx,
             param_local,
@@ -1515,6 +1516,7 @@ impl Compiler {
             do_writeback: has_rw,
             rw_param_names: Vec::new(),
             kv_mode: false,
+            source_var_names,
         });
         self.compile_collected_loop_body(&loop_body);
         self.code.patch_loop_end(loop_idx);

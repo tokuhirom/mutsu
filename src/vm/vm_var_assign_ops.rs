@@ -602,13 +602,21 @@ impl VM {
         return_new: bool,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
-        let target_is_mixhash = self
+        let declared_type_incdec = self
             .interpreter
             .env()
             .get(&name)
             .and_then(|v| self.interpreter.container_type_metadata(v))
-            .and_then(|info| info.declared_type)
+            .and_then(|info| info.declared_type);
+        let target_is_mixhash = declared_type_incdec
+            .as_deref()
             .is_some_and(|t| t == "MixHash");
+        let _target_is_baghash = declared_type_incdec
+            .as_deref()
+            .is_some_and(|t| t == "BagHash");
+        let _target_is_sethash = declared_type_incdec
+            .as_deref()
+            .is_some_and(|t| t == "SetHash");
         let idx_val = self.stack.pop().unwrap_or(Value::Nil);
         let key = idx_val.to_string_value();
         let mut container = self.get_env_with_main_alias(&name);
@@ -681,13 +689,15 @@ impl VM {
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
-        let target_is_mixhash = self
+        let declared_type = self
             .interpreter
             .env()
             .get(&var_name)
             .and_then(|v| self.interpreter.container_type_metadata(v))
-            .and_then(|info| info.declared_type)
-            .is_some_and(|t| t == "MixHash");
+            .and_then(|info| info.declared_type);
+        let target_is_mixhash = declared_type.as_deref().is_some_and(|t| t == "MixHash");
+        let _target_is_baghash = declared_type.as_deref().is_some_and(|t| t == "BagHash");
+        let _target_is_sethash = declared_type.as_deref().is_some_and(|t| t == "SetHash");
         let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
         let has_declared_shape = self.interpreter.env().contains_key(&declared_shape_key);
         let idx = self.stack.pop().unwrap_or(Value::Nil);
