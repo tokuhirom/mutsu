@@ -496,6 +496,19 @@ impl Compiler {
                 else_branch,
                 binding_var,
             } => {
+                // Check for heredoc scope violations in then/else branches
+                if let Some(err) = self.check_heredoc_scope_errors(then_branch) {
+                    let idx = self.code.add_constant(err);
+                    self.code.emit(OpCode::LoadConst(idx));
+                    self.code.emit(OpCode::Die);
+                    return;
+                }
+                if let Some(err) = self.check_heredoc_scope_errors(else_branch) {
+                    let idx = self.code.add_constant(err);
+                    self.code.emit(OpCode::LoadConst(idx));
+                    self.code.emit(OpCode::Die);
+                    return;
+                }
                 if let Some(var_name) = binding_var {
                     // Desugar: if EXPR -> $var { BODY } else { ELSE }
                     // into: { my $var = EXPR; if $var { BODY } else { ELSE } }
