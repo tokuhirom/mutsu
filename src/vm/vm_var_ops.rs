@@ -1059,6 +1059,37 @@ impl VM {
                 let v = self.resolve_hash_entry(&items, &key.to_string());
                 if matches!(v, Value::Nil) { default } else { v }
             }
+            // WhateverCode index on Hash: %h[*-1] → resolve with hash .elems as length
+            (Value::Hash(ref items), Value::Sub(ref data)) => {
+                let len = items.len() as i64;
+                let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
+                let mut sub_env = data.env.clone();
+                sub_env.insert(param.to_string(), Value::Int(len));
+                let saved_env = std::mem::take(self.interpreter.env_mut());
+                *self.interpreter.env_mut() = sub_env;
+                let idx = self
+                    .interpreter
+                    .eval_block_value(&data.body)
+                    .unwrap_or(Value::Nil);
+                *self.interpreter.env_mut() = saved_env;
+                let i = match &idx {
+                    Value::Int(i) => Some(*i),
+                    Value::Num(n) => Some(*n as i64),
+                    _ => None,
+                };
+                match i {
+                    Some(i) if i < 0 => Self::make_out_of_range_failure(i),
+                    Some(i) => {
+                        // Convert hash to list of pairs and index positionally
+                        let pairs: Vec<Value> = items
+                            .iter()
+                            .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                            .collect();
+                        pairs.get(i as usize).cloned().unwrap_or(Value::Nil)
+                    }
+                    _ => Value::Nil,
+                }
+            }
             (Value::Hash(items), key) => {
                 let default = self.typed_container_default(&Value::Hash(items.clone()));
                 let v = self.resolve_hash_entry(&items, &key.to_string_value());
