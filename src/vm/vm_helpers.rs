@@ -649,6 +649,9 @@ impl VM {
                 | "Attribute"
                 | "Cursor"
                 | "X"
+                | "utf16"
+                | "utf32"
+                | "Macro"
         ) || {
             // Handle parameterized types like Buf[uint8], Array[Int], etc.
             if let Some(open) = name.find('[')

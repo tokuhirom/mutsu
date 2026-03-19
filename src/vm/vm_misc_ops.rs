@@ -78,6 +78,13 @@ fn is_core_raku_type(name: &str) -> bool {
             | "Buf"
             | "Blob"
             | "utf8"
+            | "utf16"
+            | "utf32"
+            | "QuantHash"
+            | "Submethod"
+            | "Macro"
+            | "Order"
+            | "Proxy"
     ) || crate::runtime::native_types::is_native_int_type(name)
         || is_parameterized_core_type(name)
 }
