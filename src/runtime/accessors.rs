@@ -727,7 +727,8 @@ impl Interpreter {
         let mut to_compile = Vec::new();
         for (method_name, overloads) in methods.iter() {
             for (idx, def) in overloads.iter().enumerate() {
-                if def.compiled_code.is_none() && !def.body.is_empty() {
+                if def.compiled_code.is_none() && !crate::ast::body_is_semantically_empty(&def.body)
+                {
                     let mut compiler = crate::compiler::Compiler::new();
                     let cc = compiler.compile_routine_closure_body(
                         &def.params,

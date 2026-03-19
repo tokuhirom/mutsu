@@ -46,11 +46,10 @@ fn predicate_requires_defined(predicate: &Expr) -> bool {
                 && matches!(target.as_ref(), Expr::Var(v) if v == "_")
         }
         Expr::AnonSub { body, .. } => {
-            body.len() == 1
-                && matches!(
-                    &body[0],
-                    Stmt::Expr(expr) if predicate_requires_defined(expr)
-                )
+            matches!(
+                crate::ast::semantic_body_single_stmt(body),
+                Some(Stmt::Expr(expr)) if predicate_requires_defined(expr)
+            )
         }
         _ => false,
     }

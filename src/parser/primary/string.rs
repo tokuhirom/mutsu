@@ -1706,6 +1706,7 @@ pub(super) fn try_interpolate_var<'a>(
                     && leftover.trim().is_empty()
                     && !stmts.is_empty()
                 {
+                    let stmts: Vec<_> = crate::ast::semantic_body_stmts(&stmts).cloned().collect();
                     // When there's a single statement, use DoStmt so that
                     // For/If/etc. get expression-level compilation that
                     // collects results (e.g. list comprehensions).

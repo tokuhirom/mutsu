@@ -301,9 +301,11 @@ impl Interpreter {
         };
 
         // Detect stub body: `class Foo { ... }` — body is a stub operator call
-        let is_stub_body = body.len() == 1
-            && matches!(&body[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
-                if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn");
+        let is_stub_body = matches!(
+            crate::ast::semantic_body_single_stmt(body),
+            Some(Stmt::Expr(Expr::Call { name: fn_name, .. }))
+                if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn"
+        );
 
         // Validate that all parent classes exist
         // Allow inheriting from built-in types that may not be in the classes HashMap

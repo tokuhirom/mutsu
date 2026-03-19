@@ -133,8 +133,7 @@ impl Compiler {
                         }
                     }
                     self.code.patch_block_enter_end(idx);
-                    let body_stmts: Vec<&Stmt> = stmts
-                        .iter()
+                    let body_stmts: Vec<&Stmt> = crate::ast::semantic_body_stmts(stmts)
                         .filter(|s| {
                             !matches!(
                                 s,
@@ -588,7 +587,9 @@ impl Compiler {
             } => {
                 let (pre_stmts, mut loop_body, post_stmts) =
                     self.expand_loop_phasers(body, label.as_deref());
-                let restore_topic = param.is_none() && params.is_empty() && body.len() == 1;
+                let restore_topic = param.is_none()
+                    && params.is_empty()
+                    && crate::ast::semantic_body_single_stmt(body).is_some();
                 for s in &pre_stmts {
                     self.compile_stmt(s);
                 }
@@ -1086,10 +1087,12 @@ impl Compiler {
             } => {
                 let qualified_name = self.qualify_package_name(&name.resolve());
                 // Detect stub body: `module Foo { ... }` — body is a stub operator
-                let is_stub_body = body.len() == 1
-                    && matches!(&body[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
+                let is_stub_body = matches!(
+                    crate::ast::semantic_body_single_stmt(body),
+                    Some(Stmt::Expr(Expr::Call { name: fn_name, .. }))
                         if fn_name.resolve() == "__mutsu_stub_die"
-                            || fn_name.resolve() == "__mutsu_stub_warn");
+                            || fn_name.resolve() == "__mutsu_stub_warn"
+                );
                 if *is_unit {
                     // unit module/package — set package for the rest of the scope
                     self.current_package = qualified_name.clone();
@@ -1498,11 +1501,12 @@ impl Compiler {
                 body,
             } = s
             {
+                let body: Vec<&Stmt> = crate::ast::semantic_body_stmts(body).collect();
                 // Compile the PRE body as a block expression that produces a value
                 for (i, inner) in body.iter().enumerate() {
                     if i == body.len() - 1 {
                         // Last statement: compile as expression to leave value on stack
-                        match inner {
+                        match *inner {
                             Stmt::Expr(expr) => compiler.compile_expr(expr),
                             _ => {
                                 compiler.compile_stmt(inner);
@@ -1527,9 +1531,10 @@ impl Compiler {
                 body,
             } = s
             {
+                let body: Vec<&Stmt> = crate::ast::semantic_body_stmts(body).collect();
                 for (i, inner) in body.iter().enumerate() {
                     if i == body.len() - 1 {
-                        match inner {
+                        match *inner {
                             Stmt::Expr(expr) => compiler.compile_expr(expr),
                             _ => {
                                 compiler.compile_stmt(inner);

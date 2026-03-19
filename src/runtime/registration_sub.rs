@@ -189,7 +189,8 @@ impl Interpreter {
                 && existing.name == new_def.name
                 && existing.params == new_def.params
                 && format!("{:?}", existing.param_defs) == format!("{:?}", new_def.param_defs)
-                && format!("{:?}", existing.body) == format!("{:?}", new_def.body);
+                && crate::ast::semantic_body_debug(&existing.body)
+                    == crate::ast::semantic_body_debug(&new_def.body);
             if same {
                 let callable_key =
                     format!("__mutsu_callable_id::{}::{}", self.current_package, name);
@@ -203,7 +204,7 @@ impl Interpreter {
                 && existing.name == new_def.name
                 && existing.params == new_def.params
                 && format!("{:?}", existing.param_defs) == format!("{:?}", new_def.param_defs);
-            if body.is_empty() && same_signature {
+            if crate::ast::body_is_semantically_empty(body) && same_signature {
                 let callable_key =
                     format!("__mutsu_callable_id::{}::{}", self.current_package, name);
                 self.env.insert(
@@ -542,7 +543,8 @@ impl Interpreter {
                 && existing.name == def.name
                 && existing.params == def.params
                 && format!("{:?}", existing.param_defs) == format!("{:?}", def.param_defs)
-                && format!("{:?}", existing.body) == format!("{:?}", def.body);
+                && crate::ast::semantic_body_debug(&existing.body)
+                    == crate::ast::semantic_body_debug(&def.body);
             if same {
                 return Ok(());
             }
@@ -550,7 +552,7 @@ impl Interpreter {
                 && existing.name == def.name
                 && existing.params == def.params
                 && format!("{:?}", existing.param_defs) == format!("{:?}", def.param_defs);
-            if body.is_empty() && same_signature {
+            if crate::ast::body_is_semantically_empty(body) && same_signature {
                 return Ok(());
             }
         }

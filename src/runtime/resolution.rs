@@ -21,12 +21,11 @@ impl Interpreter {
     const LAZY_GATHER_TAKE_LIMIT_SIGNAL: &str = "__mutsu_lazy_gather_take_limit_reached__";
 
     fn is_stub_method_body(body: &[Stmt]) -> bool {
-        body.len() == 1
-            && matches!(
-                &body[0],
-                Stmt::Expr(Expr::Call { name, .. })
-                    if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
-            )
+        matches!(
+            crate::ast::semantic_body_single_stmt(body),
+            Some(Stmt::Expr(Expr::Call { name, .. }))
+                if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
+        )
     }
 
     pub(super) fn resolve_function(&self, name: &str) -> Option<FunctionDef> {
@@ -1005,7 +1004,7 @@ impl Interpreter {
     }
 
     pub(crate) fn eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
-        if body.is_empty() {
+        if crate::ast::body_is_semantically_empty(body) {
             return Ok(Value::Nil);
         }
         let let_mark = self.let_saves_len();

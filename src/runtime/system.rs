@@ -56,9 +56,11 @@ impl Interpreter {
                 Stmt::ClassDecl { name, body, .. } => (name.resolve(), body),
                 _ => continue,
             };
-            let is_stub = body.len() == 1
-                && matches!(&body[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
-                    if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn");
+            let is_stub = matches!(
+                crate::ast::semantic_body_single_stmt(body),
+                Some(Stmt::Expr(Expr::Call { name: fn_name, .. }))
+                    if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn"
+            );
             match seen_classes.get(&name) {
                 None => {
                     seen_classes.insert(name.to_string(), is_stub);
@@ -84,7 +86,8 @@ impl Interpreter {
     }
 
     fn eval_result_is_unresolved_bareword(&self, stmts: &[Stmt], result: &Value) -> bool {
-        let [Stmt::Expr(Expr::BareWord(name))] = stmts else {
+        let Some(Stmt::Expr(Expr::BareWord(name))) = crate::ast::semantic_body_single_stmt(stmts)
+        else {
             return false;
         };
         matches!(result, Value::Str(s) if s.as_str() == name)

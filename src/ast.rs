@@ -65,6 +65,28 @@ pub(crate) fn function_body_fingerprint(
     hasher.finish()
 }
 
+pub(crate) fn semantic_body_stmts(body: &[Stmt]) -> impl Iterator<Item = &Stmt> {
+    body.iter().filter(|stmt| !matches!(stmt, Stmt::SetLine(_)))
+}
+
+pub(crate) fn body_is_semantically_empty(body: &[Stmt]) -> bool {
+    semantic_body_stmts(body).next().is_none()
+}
+
+pub(crate) fn semantic_body_single_stmt(body: &[Stmt]) -> Option<&Stmt> {
+    let mut stmts = semantic_body_stmts(body);
+    let stmt = stmts.next()?;
+    if stmts.next().is_none() {
+        Some(stmt)
+    } else {
+        None
+    }
+}
+
+pub(crate) fn semantic_body_debug(body: &[Stmt]) -> String {
+    format!("{:?}", semantic_body_stmts(body).collect::<Vec<_>>())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum PhaserKind {
     Begin,

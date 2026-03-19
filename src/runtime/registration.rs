@@ -61,12 +61,11 @@ impl Interpreter {
     }
 
     pub(super) fn is_stub_routine_body(body: &[Stmt]) -> bool {
-        body.len() == 1
-            && matches!(
-                &body[0],
-                Stmt::Expr(Expr::Call { name, .. })
-                    if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
-            )
+        matches!(
+            crate::ast::semantic_body_single_stmt(body),
+            Some(Stmt::Expr(Expr::Call { name, .. }))
+                if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
+        )
     }
 
     fn is_stub_method_def(def: &MethodDef) -> bool {
