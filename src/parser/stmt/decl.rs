@@ -61,10 +61,7 @@ fn typed_default_expr(type_name: &str) -> Expr {
     } else if base == "num" || base == "num32" || base == "num64" {
         Expr::Literal(Value::Num(0.0))
     } else {
-        // For typed declarations (e.g. `my Num $x`), the default is the type object
-        // itself, not Nil. This ensures that ++/-- and other operations preserve
-        // the type identity (e.g. ++Num gives 1e0, not 1).
-        Expr::Literal(Value::Package(Symbol::intern(base)))
+        Expr::Literal(Value::Nil)
     }
 }
 
