@@ -1,6 +1,6 @@
 use Test;
 
-plan 12;
+plan 14;
 
 # push on hash element
 {
@@ -23,7 +23,7 @@ plan 12;
 {
     my %h;
     %h<key> = [1,2,3];
-    %h<key>.pop;
+    is %h<key>.pop, 3, 'pop on hash element returns removed value';
     is +%h<key>, 2, 'pop on hash element decreases count';
 }
 
@@ -50,7 +50,7 @@ plan 12;
 {
     my %h;
     %h<key> = [1,2,3];
-    %h<key>.shift;
+    is %h<key>.shift, 1, 'shift on hash element returns removed value';
     is +%h<key>, 2, 'shift on hash element decreases count';
     is %h<key>[0], 2, 'shift on hash element removes from front';
 }
