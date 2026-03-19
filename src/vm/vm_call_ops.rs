@@ -2227,9 +2227,10 @@ impl VM {
         if captured_env.is_some() {
             for (slot, name) in captured_bindings.iter() {
                 if (name.starts_with('@') || name.starts_with('%'))
-                    && let Some(val) = self.interpreter.get_shared_var(name)
+                    && self.interpreter.get_shared_var(name).is_some()
                 {
-                    self.locals[*slot] = val;
+                    // Leave shared collections unmaterialized in locals.
+                    // GetLocal will read the shared value on demand.
                     continue;
                 }
                 if let Some(outer_slot) = outer_local_slots.get(name.as_str())
@@ -2257,6 +2258,12 @@ impl VM {
         // Sync locals back to env
         if let Some(captured) = captured_env {
             for (slot, name) in writeback_bindings.iter() {
+                if matches!(
+                    self.interpreter.get_shared_var(name),
+                    Some(Value::Array(..) | Value::Hash(..))
+                ) {
+                    continue;
+                }
                 if let Some(outer_slot) = outer_local_slots.get(name.as_str())
                     && let Some(target) = saved_locals.get_mut(*outer_slot)
                 {
