@@ -776,6 +776,7 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         && !rest.starts_with('[')
         && !rest.starts_with('{')
         && !rest.starts_with('<')
+        && !rest.starts_with('\u{00AB}')
     {
         return Err(PError::expected("colonpair name"));
     }
@@ -900,6 +901,30 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 ));
             }
         }
+    }
+    // :name«words» (French-quote colonpair, equivalent to :name(«words»))
+    if rest.starts_with('\u{00AB}') {
+        let (r, val_expr) = super::container::french_quote_list(rest)?;
+        return Ok((
+            r,
+            Expr::Binary {
+                left: Box::new(Expr::Literal(Value::str(name.to_string()))),
+                op: crate::token_kind::TokenKind::FatArrow,
+                right: Box::new(val_expr),
+            },
+        ));
+    }
+    // :name<<words>> (double-angle colonpair, equivalent to :name(<<words>>))
+    if rest.starts_with("<<") {
+        let (r, val_expr) = super::container::double_angle_list(rest)?;
+        return Ok((
+            r,
+            Expr::Binary {
+                left: Box::new(Expr::Literal(Value::str(name.to_string()))),
+                op: crate::token_kind::TokenKind::FatArrow,
+                right: Box::new(val_expr),
+            },
+        ));
     }
     // :name (boolean true)
     Ok((
@@ -1820,6 +1845,18 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
             .map(|w| Expr::Literal(Value::str(w.to_string())))
             .collect();
         return Ok((r, (name, Some(Expr::ArrayLiteral(items)))));
+    }
+
+    // :name«words» (French-quote form)
+    if r.starts_with('\u{00AB}') {
+        let (r, val_expr) = super::container::french_quote_list(r)?;
+        return Ok((r, (name, Some(val_expr))));
+    }
+
+    // :name<<words>> (double-angle form)
+    if r.starts_with("<<") {
+        let (r, val_expr) = super::container::double_angle_list(r)?;
+        return Ok((r, (name, Some(val_expr))));
     }
 
     // :name (boolean true)

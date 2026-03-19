@@ -349,17 +349,52 @@ pub(super) fn class_literal(input: &str) -> PResult<'_, Expr> {
         return Ok((r, Expr::IndirectTypeLookup(Box::new(inner))));
     }
     let (rest, name) = super::super::stmt::ident_pub(rest)?;
-    // Handle qualified names: ::Foo::Bar
+    // Handle qualified names: ::Foo::Bar, with optional dynamic segments ::($expr)
     let mut full_name = name;
     let mut r = rest;
+    let mut dynamic_expr: Option<Expr> = None;
     while r.starts_with("::") {
         let r2 = &r[2..];
-        if let Ok((r2, part)) = super::super::stmt::ident_pub(r2) {
-            full_name = format!("{}::{}", full_name, part);
+        if let Some(after_paren) = r2.strip_prefix('(') {
+            // Dynamic segment: ::($expr)
+            let (r3, _) = ws(after_paren)?;
+            let (r3, seg_expr) = expression(r3)?;
+            let (r3, _) = ws(r3)?;
+            let (r3, _) = parse_char(r3, ')')?;
+            let base = if let Some(prev) = dynamic_expr.take() {
+                Expr::Binary {
+                    left: Box::new(prev),
+                    op: crate::token_kind::TokenKind::Tilde,
+                    right: Box::new(Expr::Literal(Value::str("::".to_string()))),
+                }
+            } else {
+                Expr::Literal(Value::str(format!("{}::", full_name)))
+            };
+            dynamic_expr = Some(Expr::Binary {
+                left: Box::new(base),
+                op: crate::token_kind::TokenKind::Tilde,
+                right: Box::new(seg_expr),
+            });
+            r = r3;
+        } else if let Ok((r2, part)) = super::super::stmt::ident_pub(r2) {
+            if let Some(ref mut dyn_expr) = dynamic_expr {
+                // Append static segment to the dynamic expression
+                let old = std::mem::replace(dyn_expr, Expr::Literal(Value::Nil));
+                *dyn_expr = Expr::Binary {
+                    left: Box::new(old),
+                    op: crate::token_kind::TokenKind::Tilde,
+                    right: Box::new(Expr::Literal(Value::str(format!("::{}", part)))),
+                };
+            } else {
+                full_name = format!("{}::{}", full_name, part);
+            }
             r = r2;
         } else {
             break;
         }
+    }
+    if let Some(dyn_expr) = dynamic_expr {
+        return Ok((r, Expr::IndirectTypeLookup(Box::new(dyn_expr))));
     }
     // Type smileys: ::Foo:U, ::Foo:D, ::Foo:_
     if (r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_"))

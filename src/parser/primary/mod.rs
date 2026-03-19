@@ -2,7 +2,7 @@ mod container;
 mod ident;
 pub(in crate::parser) mod misc;
 mod number;
-mod quote_adverbs;
+pub(in crate::parser) mod quote_adverbs;
 pub(crate) mod regex;
 pub(in crate::parser) mod string;
 pub(crate) mod var;

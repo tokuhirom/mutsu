@@ -89,6 +89,11 @@ pub(crate) enum Expr {
     HyperWhatever,
     BareWord(String),
     StringInterpolation(Vec<Expr>),
+    /// Deferred heredoc interpolation: stores raw content to be interpolated
+    /// at compile time in the scope where the AST node appears, not where
+    /// the qq:to declaration was parsed. This is needed because Raku resolves
+    /// heredoc body variables in the scope of the terminator, not the declaration.
+    HeredocInterpolation(String),
     Var(String),
     CaptureVar(String),
     ArrayVar(String),
@@ -307,6 +312,17 @@ pub(crate) enum Expr {
     SymbolicDeref {
         sigil: String,
         expr: Box<Expr>,
+    },
+    /// Symbolic variable dereference assignment: $::("name") = value
+    SymbolicDerefAssign {
+        sigil: String,
+        expr: Box<Expr>,
+        value: Box<Expr>,
+    },
+    /// Indirect type lookup assignment: ::('$name') = value
+    IndirectTypeLookupAssign {
+        expr: Box<Expr>,
+        value: Box<Expr>,
     },
     PseudoStash(String),
     /// Hash hyperslice: %hash{**}:adverb
@@ -957,6 +973,14 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
         Expr::CodeVar(_) => {}
         Expr::IndirectCodeLookup { package, .. } => collect_ph_expr(package, out),
         Expr::SymbolicDeref { expr, .. } => collect_ph_expr(expr, out),
+        Expr::SymbolicDerefAssign { expr, value, .. } => {
+            collect_ph_expr(expr, out);
+            collect_ph_expr(value, out);
+        }
+        Expr::IndirectTypeLookupAssign { expr, value } => {
+            collect_ph_expr(expr, out);
+            collect_ph_expr(value, out);
+        }
         Expr::Reduction { expr, .. } | Expr::Eager(expr) => collect_ph_expr(expr, out),
         Expr::HyperOp { left, right, .. }
         | Expr::HyperFuncOp { left, right, .. }

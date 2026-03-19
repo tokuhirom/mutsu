@@ -45,6 +45,7 @@ roast/S02-literals/char-by-name.t
 roast/S02-literals/fmt-interpolation.t
 roast/S02-literals/format.t
 roast/S02-literals/hash-interpolation.t
+roast/S02-literals/heredocs.t
 roast/S02-literals/hex_chars.t
 roast/S02-literals/listquote-whitespace.t
 roast/S02-literals/listquote.t
@@ -88,6 +89,7 @@ roast/S02-one-pass-parsing/misc.t
 roast/S02-packages/package-lookup.t
 roast/S02-types/anon_block.t
 roast/S02-types/array_extending.t
+roast/S02-types/array_ref.t
 roast/S02-types/bag-iterator.t
 roast/S02-types/bool.t
 roast/S02-types/built-in.t
@@ -124,6 +126,7 @@ roast/S03-metaops/eager-hyper.t
 roast/S03-metaops/misc.t
 roast/S03-metaops/not.t
 roast/S03-metaops/reverse.t
+roast/S03-operators/adverbial-modifiers.t
 roast/S03-operators/also.t
 roast/S03-operators/andthen.t
 roast/S03-operators/arith.t

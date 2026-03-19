@@ -7,7 +7,7 @@ use super::string::{finalize_interpolation, process_escape_sequence, try_interpo
 
 /// Flags representing which interpolation modes are active in a Q/q quoting form.
 #[derive(Clone, Default)]
-pub(super) struct QuoteFlags {
+pub(in crate::parser) struct QuoteFlags {
     pub backslash: bool,  // :b — full escape sequences (\n, \t, etc.)
     pub scalar: bool,     // :s — interpolate $variables
     pub array: bool,      // :a — interpolate @variables[]
@@ -248,7 +248,7 @@ pub(super) fn parse_fused_adverbs_small_q<'a>(input: &'a str, flags: &mut QuoteF
 
 /// Process quoted content according to the given flags.
 /// This is the unified content processing function for all Q/q forms.
-pub(super) fn process_content_with_flags(content: &str, flags: &QuoteFlags) -> Expr {
+pub(in crate::parser) fn process_content_with_flags(content: &str, flags: &QuoteFlags) -> Expr {
     // Raw Q mode — no processing at all
     if flags.is_raw() {
         return Expr::Literal(Value::str(content.to_string()));

@@ -834,8 +834,9 @@ impl VM {
                 self.exec_approx_eq_op()?;
                 *ip += 1;
             }
-            OpCode::ContainerEq => {
-                self.exec_container_eq_op();
+            OpCode::ContainerEq(flags) => {
+                let flags = *flags;
+                self.exec_container_eq_op(flags);
                 *ip += 1;
             }
 
@@ -1959,6 +1960,14 @@ impl VM {
             }
             OpCode::SymbolicDeref(sigil_idx) => {
                 self.exec_symbolic_deref_op(code, *sigil_idx);
+                *ip += 1;
+            }
+            OpCode::SymbolicDerefStore(sigil_idx) => {
+                self.exec_symbolic_deref_store_op(code, *sigil_idx);
+                *ip += 1;
+            }
+            OpCode::IndirectTypeLookupStore => {
+                self.exec_indirect_type_lookup_store_op(code);
                 *ip += 1;
             }
             OpCode::StateVarInit(slot, key_idx) => {

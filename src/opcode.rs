@@ -59,7 +59,14 @@ pub(crate) enum OpCode {
     NumGt,
     NumGe,
     ApproxEq,
-    ContainerEq,
+    /// Container identity (`=:=`).
+    /// The `u8` flags encode containerisation of operands:
+    /// bit 0 = left operand is containerised,
+    /// bit 1 = right operand is containerised.
+    /// When an operand is containerised (came from a variable / index),
+    /// non-reference values on the stack can never be the same container,
+    /// so the operator returns False for non-Arc value types.
+    ContainerEq(u8),
 
     // -- String comparison --
     StrEq,
@@ -699,6 +706,13 @@ pub(crate) enum OpCode {
     /// Symbolic variable dereference: pop name string from stack, look up variable by sigil+name.
     /// The u32 indexes the constant pool for the sigil string ("$", "@", or "%").
     SymbolicDeref(u32),
+
+    /// Symbolic variable dereference store: pop value and name from stack, store value into variable.
+    /// The u32 indexes the constant pool for the sigil string ("$", "@", or "%").
+    SymbolicDerefStore(u32),
+
+    /// Indirect type lookup store: pop value and name from stack, store value into variable by name.
+    IndirectTypeLookupStore,
 
     /// Save current variable value for `let`/`temp` scope management.
     /// Pops the array index (if index_mode is true) from the stack.
