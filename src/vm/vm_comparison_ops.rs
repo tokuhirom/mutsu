@@ -203,11 +203,56 @@ impl VM {
         Ok(())
     }
 
-    pub(super) fn exec_container_eq_op(&mut self) {
+    /// Container identity (`=:=`).
+    ///
+    /// `flags` encodes whether operands are provably fresh containers:
+    ///   bit 0 = left operand is a fresh container (e.g. array index),
+    ///   bit 1 = right operand is a fresh container.
+    ///
+    /// When at least one operand is a fresh container and both values
+    /// are non-reference types (no `Arc` identity), the two stack
+    /// values can never be the same container, so we return `False`.
+    /// Reference types (Array, Hash, Sub, Instance, …) have `Arc`
+    /// pointer identity which `values_identical` already checks.
+    pub(super) fn exec_container_eq_op(&mut self, flags: u8) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack
-            .push(Value::Bool(crate::runtime::values_identical(&left, &right)));
+        let any_fresh = flags != 0;
+        let result = if any_fresh && Self::is_value_non_reference(&left, &right) {
+            // A fresh container (e.g. from `[$x][0]`) holding a non-reference
+            // value can never be the same container as any other expression.
+            false
+        } else {
+            crate::runtime::values_identical(&left, &right)
+        };
+        self.stack.push(Value::Bool(result));
+    }
+
+    /// Returns `true` when **both** values are simple, non-reference
+    /// types where stack copies can never carry container identity
+    /// (Int, Str, Bool, Nil, Package/type-object, Rat, …).
+    fn is_value_non_reference(left: &Value, right: &Value) -> bool {
+        fn is_non_ref(v: &Value) -> bool {
+            matches!(
+                v,
+                Value::Int(_)
+                    | Value::BigInt(_)
+                    | Value::Num(_)
+                    | Value::Str(_)
+                    | Value::Bool(_)
+                    | Value::Nil
+                    | Value::Package(_)
+                    | Value::Rat(..)
+                    | Value::FatRat(..)
+                    | Value::BigRat(..)
+                    | Value::Complex(..)
+                    | Value::Whatever
+                    | Value::HyperWhatever
+                    | Value::Enum { .. }
+                    | Value::Version { .. }
+            )
+        }
+        is_non_ref(left) && is_non_ref(right)
     }
 
     pub(super) fn exec_str_eq_op(&mut self) -> Result<(), RuntimeError> {
