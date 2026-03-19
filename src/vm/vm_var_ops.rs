@@ -1570,9 +1570,6 @@ impl VM {
                     positional.get(i as usize).cloned().unwrap_or(Value::Nil)
                 }
             }
-            // Associative indexing on type objects returns Nil
-            // (e.g. Any<b> returns (Any), not a parameterized type)
-            (Value::Package(_), Value::Str(_)) | (Value::Package(_), Value::Nil) => Value::Nil,
             // Role parameterization: e.g. R1[C1] → ParametricRole
             (Value::Package(name), idx) if self.interpreter.is_role(&name.resolve()) => {
                 let type_args = match idx {
@@ -1584,6 +1581,9 @@ impl VM {
                     type_args,
                 }
             }
+            // Associative indexing on non-role type objects returns Nil
+            // (e.g. Any<b> returns (Any), not a parameterized type)
+            (Value::Package(_), Value::Str(_)) | (Value::Package(_), Value::Nil) => Value::Nil,
             // Type parameterization: e.g. Array[Int] or Hash[Int,Str]
             (Value::Package(name), idx) => {
                 let type_args = match idx {
