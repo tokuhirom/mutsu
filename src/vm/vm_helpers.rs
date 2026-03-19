@@ -1746,7 +1746,16 @@ impl VM {
             .apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
         let rw_sources: std::collections::HashSet<String> = rw_bindings
             .iter()
-            .map(|(_, source)| source.clone())
+            .flat_map(|(_, source)| {
+                let mut names = vec![source.clone()];
+                // For indexed rw bindings ("%h\0a\0b"), also add the base variable name
+                if let Some(base) = source.split('\0').next()
+                    && base != source
+                {
+                    names.push(base.to_string());
+                }
+                names
+            })
             .collect();
         let local_names: std::collections::HashSet<&String> = cf.code.locals.iter().collect();
         for (k, v) in self.interpreter.env().iter() {
@@ -2041,7 +2050,15 @@ impl VM {
             .apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
         let rw_sources: std::collections::HashSet<String> = rw_bindings
             .iter()
-            .map(|(_, source)| source.clone())
+            .flat_map(|(_, source)| {
+                let mut names = vec![source.clone()];
+                if let Some(base) = source.split('\0').next()
+                    && base != source
+                {
+                    names.push(base.to_string());
+                }
+                names
+            })
             .collect();
         let captured_names: std::collections::HashSet<&str> =
             data.env.keys().map(|s| s.as_str()).collect();

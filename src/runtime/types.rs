@@ -713,7 +713,85 @@ impl Interpreter {
     ) {
         for (param_name, source_name) in rw_bindings {
             if let Some(updated) = self.env.get(param_name).cloned() {
-                target_env.insert(source_name.clone(), updated);
+                if source_name.contains('\0') {
+                    // Hash/array element path: "varname\0key1\0key2..."
+                    Self::apply_rw_binding_indexed(target_env, source_name, updated);
+                } else {
+                    target_env.insert(source_name.clone(), updated);
+                }
+            }
+        }
+    }
+
+    /// Write back an `is rw` parameter value to a hash/array element path.
+    /// The source_name is encoded as "varname\0key1\0key2..." where \0 separates levels.
+    fn apply_rw_binding_indexed(target_env: &mut crate::env::Env, source_name: &str, value: Value) {
+        // Don't autovivify when writing back undefined values
+        if matches!(value, Value::Nil)
+            || matches!(&value, Value::Package(n) if n.resolve() == "Any")
+        {
+            return;
+        }
+
+        let parts: Vec<&str> = source_name.split('\0').collect();
+        if parts.len() < 2 {
+            return;
+        }
+        let var_name = parts[0];
+        let keys = &parts[1..];
+
+        // Get or create the container
+        if !target_env.contains_key(var_name) {
+            target_env.insert(
+                var_name.to_string(),
+                Value::hash(std::collections::HashMap::new()),
+            );
+        }
+
+        let container = match target_env.get_mut(var_name) {
+            Some(c) => c,
+            None => return,
+        };
+
+        // Navigate to the nested location and set the value
+        Self::set_nested_hash_value(container, keys, value);
+    }
+
+    /// Set a value at a nested hash path, autovivifying intermediate hashes.
+    fn set_nested_hash_value(container: &mut Value, keys: &[&str], value: Value) {
+        if keys.is_empty() {
+            return;
+        }
+        if keys.len() == 1 {
+            // Final key: set the value
+            match container {
+                Value::Hash(hash) => {
+                    let h = std::sync::Arc::make_mut(hash);
+                    h.insert(keys[0].to_string(), value);
+                }
+                _ => {
+                    let mut h = std::collections::HashMap::new();
+                    h.insert(keys[0].to_string(), value);
+                    *container = Value::hash(h);
+                }
+            }
+        } else {
+            // Intermediate key: navigate/autovivify
+            match container {
+                Value::Hash(hash) => {
+                    let h = std::sync::Arc::make_mut(hash);
+                    let entry = h
+                        .entry(keys[0].to_string())
+                        .or_insert_with(|| Value::hash(std::collections::HashMap::new()));
+                    Self::set_nested_hash_value(entry, &keys[1..], value);
+                }
+                _ => {
+                    let mut inner = Value::hash(std::collections::HashMap::new());
+                    Self::set_nested_hash_value(&mut inner, &keys[1..], value);
+                    let mut h = std::collections::HashMap::new();
+                    h.insert(keys[0].to_string(), inner);
+                    *container = Value::hash(h);
+                }
             }
         }
     }

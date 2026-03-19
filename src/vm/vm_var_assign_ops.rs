@@ -1018,17 +1018,33 @@ impl VM {
                             }
                         }
                         _ => {
-                            let mut hash = std::collections::HashMap::new();
-                            hash.insert(key.clone(), val.clone());
-                            *container = Value::hash(hash);
+                            // Autovivify: Array for integer index, Hash for string index
+                            if let Some(i) = Self::index_to_usize(&idx) {
+                                let mut arr = vec![Value::Package(Symbol::intern("Any")); i + 1];
+                                arr[i] = val.clone();
+                                *container = Value::array(arr);
+                            } else {
+                                let mut hash = std::collections::HashMap::new();
+                                hash.insert(key.clone(), val.clone());
+                                *container = Value::hash(hash);
+                            }
                         }
                     }
                 } else {
-                    let mut hash = std::collections::HashMap::new();
-                    hash.insert(key.clone(), val.clone());
-                    self.interpreter
-                        .env_mut()
-                        .insert(var_name.clone(), Value::hash(hash));
+                    // Autovivify: Array for integer index, Hash for string index
+                    if let Some(i) = Self::index_to_usize(&idx) {
+                        let mut arr = vec![Value::Package(Symbol::intern("Any")); i + 1];
+                        arr[i] = val.clone();
+                        self.interpreter
+                            .env_mut()
+                            .insert(var_name.clone(), Value::array(arr));
+                    } else {
+                        let mut hash = std::collections::HashMap::new();
+                        hash.insert(key.clone(), val.clone());
+                        self.interpreter
+                            .env_mut()
+                            .insert(var_name.clone(), Value::hash(hash));
+                    }
                 }
                 if let Some((source_name, source_value)) = pending_source_update {
                     self.interpreter.env_mut().insert(source_name, source_value);

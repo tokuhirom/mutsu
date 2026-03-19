@@ -133,6 +133,12 @@ impl Compiler {
             Expr::HashVar(name) => Some(format!("%{}", name)),
             Expr::CodeVar(name) => Some(format!("&{}", name)),
             Expr::BareWord(name) => Some(name.to_string()),
+            // Hash/array element access: encode as "%h\0key1\0key2" for rw write-back
+            Expr::Index { target, index, .. } => {
+                let base = Self::positional_arg_source_name(target)?;
+                let key = Self::index_key_literal(index)?;
+                Some(format!("{}\0{}", base, key))
+            }
             // For FatArrow (named args like `:into(%h)`), encode "key=varname"
             // so the VM can write back to the variable after a builtin call.
             Expr::Binary {
@@ -152,6 +158,15 @@ impl Compiler {
                     None
                 }
             }
+            _ => None,
+        }
+    }
+
+    /// Extract a literal key from an index expression (for hash element rw tracking).
+    fn index_key_literal(expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::Literal(Value::Str(s)) => Some((**s).clone()),
+            Expr::Literal(Value::Int(i)) => Some(i.to_string()),
             _ => None,
         }
     }
