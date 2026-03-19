@@ -1680,12 +1680,21 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     };
 
     let (rest, var) = var_name(input)?;
-    let name = format!("{}{}", prefix, var);
+    // For & sigil with ! twigil (private callable attribute like &!x),
+    // the attribute is stored as "!x" in the env, not "&!x".
+    let name = if sigil == b'&' && var.starts_with('!') {
+        var.clone()
+    } else {
+        format!("{}{}", prefix, var)
+    };
     let (rest, _) = ws(rest)?;
     let var_expr = if sigil == b'@' {
         Expr::ArrayVar(var.clone())
     } else if sigil == b'%' {
         Expr::HashVar(var.clone())
+    } else if sigil == b'&' && var.starts_with('!') {
+        // Private callable attribute: use the attribute name without & prefix
+        Expr::Var(var.clone())
     } else {
         Expr::Var(name.clone())
     };

@@ -2422,10 +2422,10 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     };
 
     let sigil = rest.as_bytes().first().copied().unwrap_or(0);
-    let (rest, _) = if sigil == b'$' || sigil == b'@' || sigil == b'%' {
+    let (rest, _) = if sigil == b'$' || sigil == b'@' || sigil == b'%' || sigil == b'&' {
         (&rest[1..], ())
     } else {
-        return Err(PError::expected("sigil ($, @, %)"));
+        return Err(PError::expected("sigil ($, @, %, &)"));
     };
 
     // Check for public accessor marker '.'

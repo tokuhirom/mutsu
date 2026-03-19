@@ -826,6 +826,13 @@ impl Interpreter {
             }
             return val.clone();
         }
+        // For private callable attributes (e.g. &!x), also check the bare
+        // attribute name without the & prefix.
+        if bare_name.starts_with('!')
+            && let Some(val) = self.env.get(bare_name)
+        {
+            return val.clone();
+        }
         // Look up as a function reference (including multi subs)
         let def = self.resolve_function(lookup_name);
         let is_multi = if def.is_none() {
