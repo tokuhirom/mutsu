@@ -1079,6 +1079,17 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                 return Err(PError::expected("assignment expression"));
             }
         }
+        Expr::BareWord(ref name) if name == "self" => Expr::DoBlock {
+            body: vec![
+                Stmt::Expr(lhs),
+                Stmt::Expr(rhs),
+                Stmt::Expr(Expr::Call {
+                    name: Symbol::intern("__mutsu_assignment_ro"),
+                    args: Vec::new(),
+                }),
+            ],
+            label: None,
+        },
         Expr::BareWord(name) => Expr::AssignExpr {
             name,
             expr: Box::new(rhs),
@@ -1658,6 +1669,21 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                     let stmt = Stmt::Expr(Expr::Call {
                         name: Symbol::intern("__mutsu_atomic_store_var"),
                         args: vec![Expr::Literal(Value::str(bare_name)), expr],
+                    });
+                    return parse_statement_modifier(rest, stmt);
+                }
+                if bare_name == "self" {
+                    // `self` is read-only in Raku; assignment should throw X::Assignment::RO
+                    let stmt = Stmt::Expr(Expr::DoBlock {
+                        body: vec![
+                            Stmt::Expr(Expr::BareWord("self".to_string())),
+                            Stmt::Expr(expr),
+                            Stmt::Expr(Expr::Call {
+                                name: Symbol::intern("__mutsu_assignment_ro"),
+                                args: Vec::new(),
+                            }),
+                        ],
+                        label: None,
                     });
                     return parse_statement_modifier(rest, stmt);
                 }
