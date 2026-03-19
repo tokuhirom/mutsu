@@ -264,6 +264,44 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
         (input, "")
     };
     let (rest, name) = parse_qualified_ident_with_hyphens(rest)?;
+    // Check for indirect package interpolation: $Package::($expr)::suffix
+    if let Some(after_paren_open) = rest.strip_prefix("::(") {
+        let (after_expr, indirect_expr) = expression(after_paren_open)?;
+        let (after_expr, _) = ws(after_expr)?;
+        let (mut r, _) = parse_char(after_expr, ')')?;
+        // Build combined expression: "Package::" ~ $expr ~ "::suffix" ...
+        let prefix_lit = Expr::Literal(Value::str(format!("{}::", name)));
+        let mut combined = concat_exprs(prefix_lit, indirect_expr);
+        // Continue parsing additional ::ident and ::($expr) segments
+        loop {
+            if let Some(after_sep) = r.strip_prefix("::(") {
+                let sep_lit = Expr::Literal(Value::str("::".to_string()));
+                combined = concat_exprs(combined, sep_lit);
+                let (after_expr, seg_expr) = expression(after_sep)?;
+                let (after_expr, _) = ws(after_expr)?;
+                let (r2, _) = parse_char(after_expr, ')')?;
+                combined = concat_exprs(combined, seg_expr);
+                r = r2;
+            } else if let Some(after_sep) = r.strip_prefix("::") {
+                if let Ok((r2, ident)) = parse_ident_with_hyphens(after_sep) {
+                    let sep_ident = format!("::{}", ident);
+                    combined = concat_exprs(combined, Expr::Literal(Value::str(sep_ident)));
+                    r = r2;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        return Ok((
+            r,
+            Expr::SymbolicDeref {
+                sigil: "$".to_string(),
+                expr: Box::new(combined),
+            },
+        ));
+    }
     let (rest, name) = parse_var_name_adverb_suffixes(rest, name);
     let full_name = if twigil.is_empty() {
         name
@@ -346,10 +384,14 @@ fn parse_qualified_ident_with_hyphens<'a>(input: &'a str) -> PResult<'a, String>
     let (mut rest, first) = parse_ident_with_hyphens(input)?;
     let mut full = first.to_string();
     while let Some(after) = rest.strip_prefix("::") {
-        let (r2, part) = parse_ident_with_hyphens(after)?;
-        full.push_str("::");
-        full.push_str(part);
-        rest = r2;
+        if let Ok((r2, part)) = parse_ident_with_hyphens(after) {
+            full.push_str("::");
+            full.push_str(part);
+            rest = r2;
+        } else {
+            // Not an identifier after :: (could be indirect interpolation like ::($expr))
+            break;
+        }
     }
     Ok((rest, normalize_raku_identifier(&full)))
 }
