@@ -605,11 +605,15 @@ pub(crate) fn gist_value(value: &Value) -> String {
                 crate::value::ArrayKind::ItemList => format!("$({})", inner),
             }
         }
-        Value::Hash(items) => items
-            .iter()
-            .map(|(k, v)| format!("{}\t{}", k, gist_value(v)))
-            .collect::<Vec<_>>()
-            .join("\n"),
+        Value::Hash(items) => {
+            let mut sorted_keys: Vec<&String> = items.keys().collect();
+            sorted_keys.sort();
+            let parts: Vec<String> = sorted_keys
+                .iter()
+                .map(|k| format!("{} => {}", k, gist_value(&items[*k])))
+                .collect();
+            format!("{{{}}}", parts.join(", "))
+        }
         Value::Pair(k, v) => format!("{} => {}", k, gist_value(v)),
         Value::ValuePair(k, v) => format!("{} => {}", gist_value(k), gist_value(v)),
         Value::Seq(items) | Value::Slip(items) => {
