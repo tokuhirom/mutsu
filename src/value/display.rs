@@ -412,35 +412,40 @@ impl Value {
             Value::Set(s) => {
                 let mut keys: Vec<&String> = s.iter().collect();
                 keys.sort();
-                format!(
-                    "set({})",
-                    keys.iter()
-                        .map(|k| k.as_str())
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                )
+                keys.iter()
+                    .map(|k| k.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ")
             }
             Value::Bag(b) => {
                 let mut keys: Vec<(&String, &i64)> = b.iter().collect();
                 keys.sort_by_key(|(k, _)| (*k).clone());
-                format!(
-                    "bag({})",
-                    keys.iter()
-                        .map(|(k, v)| format!("{}({})", k, v))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
+                keys.iter()
+                    .map(|(k, v)| {
+                        if **v == 1 {
+                            (*k).clone()
+                        } else {
+                            format!("{}({})", k, v)
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ")
             }
             Value::Mix(m) => {
                 let mut keys: Vec<(&String, &f64)> = m.iter().collect();
                 keys.sort_by_key(|(k, _)| (*k).clone());
-                format!(
-                    "mix({})",
-                    keys.iter()
-                        .map(|(k, v)| format!("{}({})", k, v))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
+                keys.iter()
+                    .map(|(k, v)| {
+                        if (**v - 1.0).abs() < f64::EPSILON {
+                            (*k).clone()
+                        } else if v.fract() == 0.0 {
+                            format!("{}({})", k, **v as i64)
+                        } else {
+                            format!("{}({})", k, v)
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ")
             }
             Value::Pair(k, v) => format!("{}\t{}", k, v.to_string_value()),
             Value::ValuePair(k, v) => {

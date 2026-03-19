@@ -289,6 +289,90 @@ impl Interpreter {
         };
         Ok(match target {
             Value::Array(items, ..) => to_pairs(&items),
+            Value::Bag(ref bag) => {
+                if bag.is_empty() {
+                    Value::Seq(Arc::new(Vec::new()))
+                } else {
+                    let mut best_count: Option<i64> = None;
+                    let mut out: Vec<Value> = Vec::new();
+                    for (key, count) in bag.iter() {
+                        let ord = if let Some(current) = best_count {
+                            count.cmp(&current)
+                        } else {
+                            std::cmp::Ordering::Equal
+                        };
+                        let replace = best_count.is_none()
+                            || (want_max && ord == std::cmp::Ordering::Greater)
+                            || (!want_max && ord == std::cmp::Ordering::Less);
+                        if replace {
+                            best_count = Some(*count);
+                            out.clear();
+                            out.push(Value::Pair(key.clone(), Box::new(Value::Int(*count))));
+                        } else if ord == std::cmp::Ordering::Equal {
+                            out.push(Value::Pair(key.clone(), Box::new(Value::Int(*count))));
+                        }
+                    }
+                    Value::Seq(Arc::new(out))
+                }
+            }
+            Value::Mix(ref mix) => {
+                if mix.is_empty() {
+                    Value::Seq(Arc::new(Vec::new()))
+                } else {
+                    let mut best_weight: Option<f64> = None;
+                    let mut out: Vec<Value> = Vec::new();
+                    for (key, weight) in mix.iter() {
+                        let ord = if let Some(current) = best_weight {
+                            weight
+                                .partial_cmp(&current)
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                        } else {
+                            std::cmp::Ordering::Equal
+                        };
+                        let replace = best_weight.is_none()
+                            || (want_max && ord == std::cmp::Ordering::Greater)
+                            || (!want_max && ord == std::cmp::Ordering::Less);
+                        if replace {
+                            best_weight = Some(*weight);
+                            out.clear();
+                            out.push(Value::Pair(key.clone(), Box::new(Value::Num(*weight))));
+                        } else if ord == std::cmp::Ordering::Equal {
+                            out.push(Value::Pair(key.clone(), Box::new(Value::Num(*weight))));
+                        }
+                    }
+                    Value::Seq(Arc::new(out))
+                }
+            }
+            Value::Hash(ref hash) => {
+                if hash.is_empty() {
+                    Value::Seq(Arc::new(Vec::new()))
+                } else {
+                    // For Hash, compare values
+                    let mut best: Option<&Value> = None;
+                    let mut out: Vec<Value> = Vec::new();
+                    for (key, value) in hash.iter() {
+                        let ord = if let Some(current) = best {
+                            match (value, current) {
+                                (Value::Int(a), Value::Int(b)) => a.cmp(b),
+                                _ => value.to_string_value().cmp(&current.to_string_value()),
+                            }
+                        } else {
+                            std::cmp::Ordering::Equal
+                        };
+                        let replace = best.is_none()
+                            || (want_max && ord == std::cmp::Ordering::Greater)
+                            || (!want_max && ord == std::cmp::Ordering::Less);
+                        if replace {
+                            best = Some(value);
+                            out.clear();
+                            out.push(Value::Pair(key.clone(), Box::new(value.clone())));
+                        } else if ord == std::cmp::Ordering::Equal {
+                            out.push(Value::Pair(key.clone(), Box::new(value.clone())));
+                        }
+                    }
+                    Value::Seq(Arc::new(out))
+                }
+            }
             other => Value::Seq(Arc::new(vec![Value::ValuePair(
                 Box::new(Value::Int(0)),
                 Box::new(other),

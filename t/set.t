@@ -44,7 +44,7 @@ is @p.elems, 3, ".pairs has 3 elements";
 is $s.WHAT, "(Set)", ".WHAT returns (Set)";
 
 # .gist
-ok $s.gist.contains("set"), ".gist contains 'set'";
+ok $s.gist.contains("Set"), ".gist contains 'Set'";
 
 # .Bool / truthiness
 ok ?$s, "non-empty set is truthy";

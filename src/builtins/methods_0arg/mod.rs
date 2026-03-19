@@ -80,6 +80,35 @@ fn sample_weighted_mix_key(items: &HashMap<String, f64>) -> Option<Value> {
         .find_map(|(key, weight)| (*weight > 0.0).then(|| Value::str(key.clone())))
 }
 
+fn sample_weighted_bag_key(items: &HashMap<String, i64>) -> Option<Value> {
+    let mut total: i128 = 0;
+    for count in items.values() {
+        if *count > 0 {
+            total += *count as i128;
+        }
+    }
+    if total <= 0 {
+        return None;
+    }
+    let needle_f = builtin_rand() * total as f64;
+    let mut needle = needle_f as i128;
+    if needle >= total {
+        needle = total - 1;
+    }
+    for (key, count) in items {
+        if *count <= 0 {
+            continue;
+        }
+        if needle < *count as i128 {
+            return Some(Value::str(key.clone()));
+        }
+        needle -= *count as i128;
+    }
+    items
+        .iter()
+        .find_map(|(key, count)| (*count > 0).then(|| Value::str(key.clone())))
+}
+
 /// Normalize Unicode Nd (decimal digit) characters to their ASCII equivalents.
 /// Returns `None` if any non-sign, non-digit character is found.
 fn normalize_unicode_digits(s: &str) -> Option<String> {
@@ -2990,6 +3019,102 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     format_temporal_num(val.to_f64())
                 ))))
             }
+            Value::Bag(b) => {
+                let mut keys: Vec<(&String, &i64)> = b.iter().collect();
+                keys.sort_by_key(|(k, _)| (*k).clone());
+                let inner = keys
+                    .iter()
+                    .map(|(k, v)| {
+                        if **v == 1 {
+                            (*k).clone()
+                        } else {
+                            format!("{}({})", k, v)
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if method == "raku" || method == "perl" {
+                    let pairs = keys
+                        .iter()
+                        .map(|(k, v)| {
+                            format!(
+                                "\"{}\"=>{}",
+                                k.replace('\\', "\\\\").replace('"', "\\\""),
+                                v
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    Some(Ok(Value::str(format!("({}).Bag", pairs))))
+                } else {
+                    // gist: Bag(key(count) ...)
+                    Some(Ok(Value::str(format!("Bag({})", inner))))
+                }
+            }
+            Value::Set(s) => {
+                let mut keys: Vec<&String> = s.iter().collect();
+                keys.sort();
+                if method == "raku" || method == "perl" {
+                    let pairs = keys
+                        .iter()
+                        .map(|k| {
+                            format!(
+                                "\"{}\"=>Bool::True",
+                                k.replace('\\', "\\\\").replace('"', "\\\"")
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    Some(Ok(Value::str(format!("({}).Set", pairs))))
+                } else {
+                    // gist: Set(a b c)
+                    let inner = keys
+                        .iter()
+                        .map(|k| k.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    Some(Ok(Value::str(format!("Set({})", inner))))
+                }
+            }
+            Value::Mix(m) => {
+                let mut keys: Vec<(&String, &f64)> = m.iter().collect();
+                keys.sort_by_key(|(k, _)| (*k).clone());
+                if method == "raku" || method == "perl" {
+                    let pairs = keys
+                        .iter()
+                        .map(|(k, v)| {
+                            let v_str = if v.fract() == 0.0 {
+                                format!("{}", **v as i64)
+                            } else {
+                                format!("{}", v)
+                            };
+                            format!(
+                                "\"{}\"=>{}",
+                                k.replace('\\', "\\\\").replace('"', "\\\""),
+                                v_str
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    Some(Ok(Value::str(format!("({}).Mix", pairs))))
+                } else {
+                    // gist: Mix(key(weight) ...)
+                    let inner = keys
+                        .iter()
+                        .map(|(k, v)| {
+                            if (**v - 1.0).abs() < f64::EPSILON {
+                                (*k).clone()
+                            } else if v.fract() == 0.0 {
+                                format!("{}({})", k, **v as i64)
+                            } else {
+                                format!("{}({})", k, v)
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    Some(Ok(Value::str(format!("Mix({})", inner))))
+                }
+            }
             Value::Package(_) | Value::Instance { .. } | Value::Enum { .. } => None,
             Value::Version {
                 parts, plus, minus, ..
@@ -3226,6 +3351,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Mix(_) => Some(Err(RuntimeError::new(
                 "Cannot call .pick on a Mix (immutable)",
             ))),
+            Value::Bag(items) => Some(Ok(sample_weighted_bag_key(items).unwrap_or(Value::Nil))),
             Value::Hash(items) => {
                 if items.is_empty() {
                     Some(Ok(Value::Nil))
@@ -3257,6 +3383,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             if let Value::Mix(items) = target {
                 return Some(Ok(sample_weighted_mix_key(items).unwrap_or(Value::Nil)));
             }
+            if let Value::Bag(items) = target {
+                return Some(Ok(sample_weighted_bag_key(items).unwrap_or(Value::Nil)));
+            }
             let items = runtime::value_to_list(target);
             if items.is_empty() {
                 Some(Ok(Value::Nil))
@@ -3268,6 +3397,54 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Some(Ok(items[idx].clone()))
             }
         }
+        "pickpairs" => match target {
+            Value::Bag(items) => {
+                if items.is_empty() {
+                    Some(Ok(Value::Nil))
+                } else {
+                    let mut idx =
+                        (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
+                    if idx >= items.len() {
+                        idx = items.len() - 1;
+                    }
+                    let (key, count) = items.iter().nth(idx).expect("index in range");
+                    Some(Ok(Value::Pair(key.clone(), Box::new(Value::Int(*count)))))
+                }
+            }
+            Value::Set(items) => {
+                if items.is_empty() {
+                    Some(Ok(Value::Nil))
+                } else {
+                    let mut idx =
+                        (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
+                    if idx >= items.len() {
+                        idx = items.len() - 1;
+                    }
+                    let key = items.iter().nth(idx).expect("index in range");
+                    Some(Ok(Value::Pair(key.clone(), Box::new(Value::Bool(true)))))
+                }
+            }
+            Value::Mix(items) => {
+                if items.is_empty() {
+                    Some(Ok(Value::Nil))
+                } else {
+                    let mut idx =
+                        (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
+                    if idx >= items.len() {
+                        idx = items.len() - 1;
+                    }
+                    let (key, weight) = items.iter().nth(idx).expect("index in range");
+                    Some(Ok(Value::Pair(key.clone(), Box::new(Value::Num(*weight)))))
+                }
+            }
+            _ => None,
+        },
+        "grab" | "grabpairs" => match target {
+            Value::Bag(_) => Some(Err(RuntimeError::immutable("Bag", method))),
+            Value::Set(_) => Some(Err(RuntimeError::immutable("Set", method))),
+            Value::Mix(_) => Some(Err(RuntimeError::immutable("Mix", method))),
+            _ => None,
+        },
         "first" => match target {
             Value::Array(items, ..) => Some(Ok(items.first().cloned().unwrap_or(Value::Nil))),
             _ => None,
@@ -3348,6 +3525,85 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Hash(_) | Value::Array(..) => None,
             Value::Package(name) if name.resolve() == "Hash" || name.resolve() == "Array" => {
                 Some(Ok(Value::Package(Symbol::intern("Mu"))))
+            }
+            Value::Package(name) | Value::CustomType { name, .. } => {
+                let n = name.resolve();
+                if matches!(n.as_ref(), "Bag" | "BagHash")
+                    || n.starts_with("Bag[")
+                    || n.starts_with("BagHash[")
+                {
+                    Some(Ok(Value::Package(Symbol::intern("UInt"))))
+                } else if matches!(n.as_ref(), "Set" | "SetHash")
+                    || n.starts_with("Set[")
+                    || n.starts_with("SetHash[")
+                {
+                    Some(Ok(Value::Package(Symbol::intern("Bool"))))
+                } else if matches!(n.as_ref(), "Mix" | "MixHash")
+                    || n.starts_with("Mix[")
+                    || n.starts_with("MixHash[")
+                {
+                    Some(Ok(Value::Package(Symbol::intern("Real"))))
+                } else {
+                    None
+                }
+            }
+            Value::Bag(_) => Some(Ok(Value::Package(Symbol::intern("UInt")))),
+            Value::Set(_) => Some(Ok(Value::Package(Symbol::intern("Bool")))),
+            Value::Mix(_) => Some(Ok(Value::Package(Symbol::intern("Real")))),
+            _ => None,
+        },
+        "keyof" => match target {
+            Value::Bag(_) | Value::Set(_) | Value::Mix(_) => {
+                // Unparameterized Bag/Set/Mix: keyof returns Mu
+                Some(Ok(Value::Package(Symbol::intern("Mu"))))
+            }
+            Value::Hash(_) => Some(Ok(Value::Package(Symbol::intern("Str")))),
+            Value::Package(name) | Value::CustomType { name, .. } => {
+                let n = name.resolve();
+                if let Some(bracket_pos) = n.find('[') {
+                    // Parameterized type (e.g., Bag[Str]) — return the param type
+                    let base = &n[..bracket_pos];
+                    if matches!(
+                        base,
+                        "Bag" | "Set" | "Mix" | "BagHash" | "SetHash" | "MixHash" | "Hash"
+                    ) {
+                        let param = n[bracket_pos + 1..].trim_end_matches(']');
+                        Some(Ok(Value::Package(Symbol::intern(param))))
+                    } else {
+                        None
+                    }
+                } else if matches!(
+                    n.as_ref(),
+                    "Bag" | "Set" | "Mix" | "BagHash" | "SetHash" | "MixHash"
+                ) {
+                    Some(Ok(Value::Package(Symbol::intern("Mu"))))
+                } else if n == "Hash" {
+                    Some(Ok(Value::Package(Symbol::intern("Str"))))
+                } else {
+                    None
+                }
+            }
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } => {
+                // Check for parameterized type (e.g., Bag[Str])
+                if let Some(constraint) = attributes.get("__keyof_constraint") {
+                    return Some(Ok(constraint.clone()));
+                }
+                let cn = class_name.resolve();
+                if cn == "Bag"
+                    || cn == "Set"
+                    || cn == "Mix"
+                    || cn == "BagHash"
+                    || cn == "SetHash"
+                    || cn == "MixHash"
+                {
+                    Some(Ok(Value::Package(Symbol::intern("Mu"))))
+                } else {
+                    None
+                }
             }
             _ => None,
         },
