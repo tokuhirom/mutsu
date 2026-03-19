@@ -547,9 +547,13 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if input.starts_with("rand")
         && !input[4..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
     {
-        // rand() and rand(N) are Perl 5 syntax — throw X::Obsolete
         let after_rand = &input[4..];
         let after_ws = after_rand.trim_start();
+        // Reject if followed by `=>` (pair key context — auto-quote as bareword)
+        if after_ws.starts_with("=>") && !after_ws.starts_with("==>") {
+            return Err(PError::expected("not a pair key"));
+        }
+        // rand() and rand(N) are Perl 5 syntax — throw X::Obsolete
         if after_ws.starts_with('(') {
             return Err(PError::fatal(
                 "X::Obsolete: Unsupported use of rand().  In Raku please use: rand.".to_string(),
@@ -567,6 +571,11 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if input.starts_with("now")
         && !input[3..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
     {
+        // Reject if followed by `=>` (pair key context — auto-quote as bareword)
+        let after_now = input[3..].trim_start();
+        if after_now.starts_with("=>") && !after_now.starts_with("==>") {
+            return Err(PError::expected("not a pair key"));
+        }
         return Ok((
             &input[3..],
             Expr::Call {
@@ -579,6 +588,11 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if input.starts_with("time")
         && !input[4..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
     {
+        // Reject if followed by `=>` (pair key context — auto-quote as bareword)
+        let after_time = input[4..].trim_start();
+        if after_time.starts_with("=>") && !after_time.starts_with("==>") {
+            return Err(PError::expected("not a pair key"));
+        }
         return Ok((
             &input[4..],
             Expr::Call {
@@ -1205,6 +1219,14 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
 pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     let (rest, name) = super::super::stmt::parse_raku_ident(input)?;
     let name = normalize_raku_identifier(name);
+
+    // If followed by `=>`, treat any keyword as a bareword (pair key auto-quoting)
+    {
+        let trimmed = rest.trim_start();
+        if trimmed.starts_with("=>") && !trimmed.starts_with("==>") {
+            return Ok((rest, Expr::BareWord(name)));
+        }
+    }
 
     // Handle special expression keywords before qualified name resolution
     match name.as_str() {
