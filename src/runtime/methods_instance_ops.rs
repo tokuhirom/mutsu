@@ -1362,10 +1362,23 @@ impl Interpreter {
                     return self.proxy_subclass_array_mutate(&attrs_ref, &attr_name, method, &args);
                 }
 
-                Err(RuntimeError::new(format!(
-                    "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
-                    method
-                )))
+                let type_name = crate::runtime::utils::value_type_name(&target);
+                let msg = format!(
+                    "X::Method::NotFound: No such method '{}' for invocant of type '{}'",
+                    method, type_name
+                );
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("method".to_string(), Value::str(method.to_string()));
+                attrs.insert("typename".to_string(), Value::str(type_name.to_string()));
+                attrs.insert("private".to_string(), Value::Bool(false));
+                attrs.insert("message".to_string(), Value::str(msg.clone()));
+                let ex = Value::make_instance(
+                    crate::symbol::Symbol::intern("X::Method::NotFound"),
+                    attrs,
+                );
+                let mut err = RuntimeError::new(&msg);
+                err.exception = Some(Box::new(ex));
+                Err(err)
             }
         }
     }
