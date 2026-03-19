@@ -402,6 +402,7 @@ impl VM {
         arity: u32,
         modifier_idx: Option<u32>,
         quoted: bool,
+        writeback: bool,
     ) -> Result<(), RuntimeError> {
         self.ensure_env_synced(code);
         let method_raw = Self::const_str(code, name_idx).to_string();
@@ -734,9 +735,10 @@ impl VM {
                 // Fast path for shift/pop on array values in the non-mutating
                 // (CallMethod) path. Returns the removed element without modifying
                 // any variable. This handles cases like [1,2,3].shift where there
-                // is no variable to mutate. The CallMethodMut path handles variable
-                // targets separately.
+                // is no variable to mutate. Skipped when writeback is true (e.g.
+                // %h<key>.shift) so array_mutate_copy returns the modified array.
                 let call_result = if matches!(method.as_str(), "shift" | "pop")
+                    && !writeback
                     && args.is_empty()
                     && matches!(&target, Value::Array(_, kind) if kind.is_real_array())
                 {

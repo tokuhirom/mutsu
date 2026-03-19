@@ -240,6 +240,11 @@ pub(crate) enum OpCode {
         /// When true, the method name was quoted (e.g. `."DEFINITE"()`),
         /// bypassing pseudo-method macros.
         quoted: bool,
+        /// When true, the result will be used for writeback to an indexed
+        /// container (e.g. `%h<key>.push(4)`). Suppresses the shift/pop
+        /// element-return fast path so `array_mutate_copy` returns the
+        /// modified array for writeback instead.
+        writeback: bool,
     },
     /// Method call with writeback: target is a variable that may be mutated.
     CallMethodMut {

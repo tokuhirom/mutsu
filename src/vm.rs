@@ -1368,8 +1368,16 @@ impl VM {
                 arity,
                 modifier_idx,
                 quoted,
+                writeback,
             } => {
-                self.exec_call_method_op(code, *name_idx, *arity, *modifier_idx, *quoted)?;
+                self.exec_call_method_op(
+                    code,
+                    *name_idx,
+                    *arity,
+                    *modifier_idx,
+                    *quoted,
+                    *writeback,
+                )?;
                 *ip += 1;
             }
             OpCode::CallMethodDynamic { arity } => {

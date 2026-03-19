@@ -1206,6 +1206,7 @@ impl Compiler {
                             arity,
                             modifier_idx,
                             quoted: *quoted,
+                            writeback: true,
                         });
                         // 4. Emit writeback: write the modified value back to the
                         //    container at the same index.
@@ -1285,6 +1286,7 @@ impl Compiler {
                     arity,
                     modifier_idx,
                     quoted: *quoted,
+                    writeback: false,
                 });
             }
             // Dynamic method call: target."$name"(args)
@@ -2324,6 +2326,7 @@ impl Compiler {
                         arity: 0,
                         modifier_idx: None,
                         quoted: false,
+                        writeback: false,
                     });
                     return;
                 }
@@ -2339,6 +2342,7 @@ impl Compiler {
                         arity: 0,
                         modifier_idx: None,
                         quoted: false,
+                        writeback: false,
                     });
                     return;
                 }
