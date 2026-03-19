@@ -90,6 +90,48 @@ fn scalar_binding_rhs_is_readonly(expr: &Expr) -> bool {
     matches!(expr, Expr::Literal(_))
 }
 
+/// After parsing a scalar `my` declaration RHS, consume any trailing
+/// comma-separated expressions as sink expressions.
+/// e.g. `my $b = expr, other_expr, ...;` → returns vec![other_expr, ...]
+fn consume_trailing_comma_sink_exprs(input: &str) -> PResult<'_, Vec<Expr>> {
+    let mut rest = input;
+    let mut sink_exprs = Vec::new();
+    loop {
+        let (r, _) = ws(rest)?;
+        if !r.starts_with(',') || r.starts_with(",,") {
+            return Ok((rest, sink_exprs));
+        }
+        let r = &r[1..];
+        let (r, _) = ws(r)?;
+        // Trailing comma before statement terminator
+        if r.starts_with(';') || r.is_empty() || r.starts_with('}') {
+            return Ok((r, sink_exprs));
+        }
+        match expression(r) {
+            Ok((r, expr)) => {
+                sink_exprs.push(expr);
+                rest = r;
+            }
+            Err(_) => {
+                return Ok((rest, sink_exprs));
+            }
+        }
+    }
+}
+
+/// Wrap a statement with trailing sink expressions into a SyntheticBlock.
+/// Each sink expression is evaluated (for side effects) but discarded.
+fn wrap_with_sink_exprs(stmt: Stmt, sink_exprs: Vec<Expr>) -> Stmt {
+    if sink_exprs.is_empty() {
+        return stmt;
+    }
+    let mut stmts = vec![stmt];
+    for expr in sink_exprs {
+        stmts.push(Stmt::Expr(expr));
+    }
+    Stmt::SyntheticBlock(stmts)
+}
+
 fn is_decl_trailing_or_chain_op(op: &TokenKind) -> bool {
     matches!(op, TokenKind::OrWord | TokenKind::OrElse)
 }
@@ -1524,10 +1566,16 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         }
         // Scalar declarations stop at comma (my $x = 1, 2 → $x gets 1).
         // Array/hash declarations consume the full comma list (my @a = 1, 2 → @a gets [1, 2]).
-        let (rest, expr) = if is_array || is_hash {
-            parse_assign_expr_or_comma(rest)?
+        let (rest, expr, trailing_sink_exprs) = if is_array || is_hash {
+            let (r, e) = parse_assign_expr_or_comma(rest)?;
+            (r, e, Vec::new())
         } else {
-            expression(rest)?
+            let (r, e) = expression(rest)?;
+            // After parsing the scalar RHS, consume any trailing comma-separated
+            // expressions as sink expressions (evaluated but not assigned).
+            // e.g. `my $b = expr, other_expr;` → $b gets expr, other_expr is sunk.
+            let (r, sink) = consume_trailing_comma_sink_exprs(r)?;
+            (r, e, sink)
         };
         // For shaped array declarations with assignment (e.g. my @b[3] = <a b c>),
         // create a shaped array and populate it with the assigned data.
@@ -1549,6 +1597,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             where_constraint: where_constraint.clone(),
         };
         if let Some(stmt) = rewrite_decl_assignment_or_chain(expr.clone(), base_stmt) {
+            let stmt = wrap_with_sink_exprs(stmt, trailing_sink_exprs.clone());
             if apply_modifier {
                 return parse_statement_modifier(rest, stmt);
             }
@@ -1566,6 +1615,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             custom_traits: custom_traits.clone(),
             where_constraint: where_constraint.clone(),
         };
+        let stmt = wrap_with_sink_exprs(stmt, trailing_sink_exprs);
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
         }
