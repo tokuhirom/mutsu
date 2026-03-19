@@ -241,6 +241,8 @@ fn var_name(input: &str) -> PResult<'_, String> {
             Ok((r, "__ANON_ARRAY__".to_string()))
         } else if input.starts_with('%') && twigil.is_empty() {
             Ok((r, "__ANON_HASH__".to_string()))
+        } else if input.starts_with('&') && twigil.is_empty() {
+            Ok((r, "__ANON_CODE__".to_string()))
         } else {
             Err(PError::expected("variable name"))
         }
