@@ -3,6 +3,17 @@ use crate::symbol::Symbol;
 use std::sync::Arc;
 
 impl VM {
+    fn can_drop_shared_collection_target(target_name: &str, method: &str) -> bool {
+        match target_name.chars().next() {
+            Some('@') => matches!(
+                method,
+                "push" | "append" | "pop" | "shift" | "unshift" | "prepend" | "splice"
+            ),
+            Some('%') => matches!(method, "delete"),
+            _ => false,
+        }
+    }
+
     fn append_slip_item(args: &mut Vec<Value>, item: &Value) {
         match item {
             Value::Capture { positional, named } => {
@@ -1209,7 +1220,7 @@ impl VM {
         for arg in raw_args {
             Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
         }
-        let target = self.stack.pop().ok_or_else(|| {
+        let mut target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethodMut target".to_string())
         })?;
         // Junction auto-threading: thread method calls over junction values
@@ -1367,6 +1378,14 @@ impl VM {
                     | "clear"
             )
         {
+            skip_native = true;
+        }
+        if Self::can_drop_shared_collection_target(&target_name, &method)
+            && self.interpreter.has_shared_var(&target_name)
+        {
+            // Shared collection mutators operate by variable name; dropping the
+            // transient stack copy avoids per-call array/hash copy-on-write.
+            target = Value::Nil;
             skip_native = true;
         }
         if skip_native {
@@ -2263,7 +2282,7 @@ impl VM {
         if captured_env.is_some() {
             for (slot, name) in captured_bindings.iter() {
                 if (name.starts_with('@') || name.starts_with('%'))
-                    && self.interpreter.get_shared_var(name).is_some()
+                    && self.interpreter.has_shared_var(name)
                 {
                     // Leave shared collections unmaterialized in locals.
                     // GetLocal will read the shared value on demand.

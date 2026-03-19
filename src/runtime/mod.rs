@@ -3667,6 +3667,11 @@ impl Interpreter {
         sv.get(key).cloned()
     }
 
+    pub(crate) fn has_shared_var(&self, key: &str) -> bool {
+        let sv = self.shared_vars.read().unwrap();
+        sv.contains_key(key)
+    }
+
     /// Write a shared variable. Updates both the local env and shared_vars.
     pub(crate) fn set_shared_var(&mut self, key: &str, value: Value) {
         // Ensure @-variables always store Array(true) (real Arrays)
