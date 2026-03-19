@@ -301,6 +301,17 @@ fn shaped_array_new_with_data_expr(dims: Vec<Expr>, data: Expr) -> Expr {
 fn register_term_symbol_from_decl_name(name: &str) {
     if let Some(callable_name) = name.strip_prefix('&') {
         super::simple::register_user_callable_term_symbol(callable_name);
+        // Also register operator categories (infix, prefix, postfix, circumfix,
+        // postcircumfix) as user subs so the parser recognizes them as operators.
+        // This handles `constant &infix:<op> = ...` style declarations.
+        if callable_name.starts_with("infix:")
+            || callable_name.starts_with("prefix:")
+            || callable_name.starts_with("postfix:")
+            || callable_name.starts_with("circumfix:")
+            || callable_name.starts_with("postcircumfix:")
+        {
+            super::simple::register_user_sub(callable_name);
+        }
     } else {
         // Don't register keywords as term symbols — they must be handled
         // by the keyword-specific paths in identifier_or_call, not as
@@ -1052,9 +1063,19 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         if let Stmt::VarDecl {
             type_constraint: ref mut tc,
             is_our: ref mut our_flag,
+            ref mut expr,
             ..
         } = stmt
         {
+            // For `.= new` style declarations, the default receiver is Mu.
+            // Replace it with the actual type constraint so `my Foo constant x .= new`
+            // compiles to `Foo.new(...)` instead of `Mu.new(...)`.
+            if let Some(ref type_name) = type_constraint
+                && let Expr::MethodCall { target, .. } = expr
+                && matches!(target.as_ref(), Expr::BareWord(w) if w == "Mu")
+            {
+                **target = Expr::BareWord(type_name.clone());
+            }
             *tc = type_constraint;
             // `my <Type> constant` → lexically scoped; `our <Type> constant` → package scoped
             *our_flag = is_our;
