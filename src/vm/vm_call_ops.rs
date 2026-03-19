@@ -2270,13 +2270,6 @@ impl VM {
         // Save/swap stack and locals for the block
         let mut saved_locals = std::mem::take(&mut self.locals);
         let saved_stack = std::mem::take(&mut self.stack);
-        let outer_local_slots: std::collections::HashMap<&str, usize> = outer_code
-            .locals
-            .iter()
-            .enumerate()
-            .map(|(idx, name)| (name.as_str(), idx))
-            .collect();
-
         // Initialize locals for the block
         self.locals = vec![Value::Nil; block_cc.locals.len()];
         if captured_env.is_some() {
@@ -2288,8 +2281,8 @@ impl VM {
                     // GetLocal will read the shared value on demand.
                     continue;
                 }
-                if let Some(outer_slot) = outer_local_slots.get(name.as_str())
-                    && let Some(val) = saved_locals.get(*outer_slot)
+                if let Some(outer_slot) = outer_code.locals.iter().rposition(|local| local == name)
+                    && let Some(val) = saved_locals.get(outer_slot)
                 {
                     self.locals[*slot] = val.clone();
                     continue;
@@ -2319,8 +2312,8 @@ impl VM {
                 ) {
                     continue;
                 }
-                if let Some(outer_slot) = outer_local_slots.get(name.as_str())
-                    && let Some(target) = saved_locals.get_mut(*outer_slot)
+                if let Some(outer_slot) = outer_code.locals.iter().rposition(|local| local == name)
+                    && let Some(target) = saved_locals.get_mut(outer_slot)
                 {
                     *target = self.locals[*slot].clone();
                 }
