@@ -1,6 +1,6 @@
 use Test;
 
-plan 10;
+plan 11;
 
 # Promise.in - creates a promise kept after N seconds
 {
@@ -18,6 +18,19 @@ plan 10;
     is $p.status, 'Planned', 'Promise.at starts as Planned';
     await $p;
     is $p.status, 'Kept', 'Promise.at is Kept after waiting';
+}
+
+{
+    my @order;
+    await Promise.anyof(
+        start { sleep 0.1; @order.push(3) },
+        Promise.in(0.02).then({ @order.push(1) }),
+    );
+    sleep 0.03;
+    @order.push(2);
+    sleep 0.08;
+    is @order.join(','), '1,2,3',
+        'Promise callbacks preserve shared array push ordering';
 }
 
 # Supply.interval - emits incrementing integers at regular intervals

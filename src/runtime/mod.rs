@@ -3603,6 +3603,26 @@ impl Interpreter {
             // shared pushes in-place instead of degenerating into O(n²) COW.
             self.env.remove(key);
             let mut sv = self.shared_vars.write().unwrap();
+            if let Some(shared_value) = sv.remove(key) {
+                if let Value::Array(mut arc_items, kind) = shared_value {
+                    let items = Arc::make_mut(&mut arc_items);
+                    items.extend(values.clone());
+                    let normalized_kind = if kind == ArrayKind::List {
+                        ArrayKind::Array
+                    } else {
+                        kind
+                    };
+                    let result = Value::Array(Arc::clone(&arc_items), normalized_kind);
+                    sv.insert(key.to_string(), Value::Array(arc_items, normalized_kind));
+                    if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                        dirty.insert(key.to_string());
+                    }
+                    drop(sv);
+                    self.env.insert(key.to_string(), result.clone());
+                    return result;
+                }
+                sv.insert(key.to_string(), shared_value);
+            }
             if let Some(Value::Array(arc_items, kind)) = sv.get_mut(key) {
                 let items = Arc::make_mut(arc_items);
                 items.extend(values);
@@ -3610,11 +3630,11 @@ impl Interpreter {
                     *kind = ArrayKind::Array;
                 }
                 let result = Value::Array(Arc::clone(arc_items), *kind);
-                drop(sv);
-                self.env.insert(key.to_string(), result.clone());
                 if let Ok(mut dirty) = self.shared_vars_dirty.write() {
                     dirty.insert(key.to_string());
                 }
+                drop(sv);
+                self.env.insert(key.to_string(), result.clone());
                 return result;
             }
         }
