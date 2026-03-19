@@ -2923,6 +2923,10 @@ impl Interpreter {
         self.halted
     }
 
+    pub(crate) fn is_thread_clone(&self) -> bool {
+        self.is_thread_clone
+    }
+
     pub(crate) fn write_warn_to_stderr(&mut self, message: &str) {
         let msg = format!("{}\n", message);
         if self.is_thread_clone
