@@ -1646,6 +1646,7 @@ impl VM {
                 do_writeback,
                 rw_param_names,
                 kv_mode,
+                source_var_names,
             } => {
                 let spec = vm_control_ops::ForLoopSpec {
                     param_idx: *param_idx,
@@ -1660,6 +1661,7 @@ impl VM {
                     do_writeback: *do_writeback,
                     rw_param_names: rw_param_names.clone(),
                     kv_mode: *kv_mode,
+                    source_var_names: source_var_names.clone(),
                 };
                 self.exec_for_loop_op(code, &spec, ip, compiled_fns)?;
             }
