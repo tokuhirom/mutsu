@@ -1890,30 +1890,49 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     if let Some((op, len)) = parse_comparison_op(r) {
         let r = &r[len..];
         let (r, _) = ws(r)?;
-        let (r, mut right) = if matches!(op, ComparisonOp::SmartMatch | ComparisonOp::SmartNotMatch)
-        {
-            if let Ok((rest, expr)) = crate::parser::primary::regex::regex_lit(r) {
-                if regex_rhs_needs_more_parsing(rest) {
-                    if mode == ExprMode::Full {
-                        junctive_expr_mode(r, mode).map_err(|err| {
-                            // Preserve fatal errors with structured exceptions (e.g., X::Obsolete)
-                            if err.is_fatal() && err.exception.is_some() {
-                                return err;
-                            }
-                            PError {
-                                messages: merge_expected_messages(
-                                    "expected expression after comparison operator",
-                                    &err.messages,
-                                ),
-                                remaining_len: err.remaining_len.or(Some(r.len())),
-                                exception: None,
-                            }
-                        })?
+        let rhs_input = r;
+        let (mut r, mut right) =
+            if matches!(op, ComparisonOp::SmartMatch | ComparisonOp::SmartNotMatch) {
+                if let Ok((rest, expr)) = crate::parser::primary::regex::regex_lit(r) {
+                    if regex_rhs_needs_more_parsing(rest) {
+                        if mode == ExprMode::Full {
+                            junctive_expr_mode(r, mode).map_err(|err| {
+                                // Preserve fatal errors with structured exceptions (e.g., X::Obsolete)
+                                if err.is_fatal() && err.exception.is_some() {
+                                    return err;
+                                }
+                                PError {
+                                    messages: merge_expected_messages(
+                                        "expected expression after comparison operator",
+                                        &err.messages,
+                                    ),
+                                    remaining_len: err.remaining_len.or(Some(r.len())),
+                                    exception: None,
+                                }
+                            })?
+                        } else {
+                            junctive_expr_mode(r, mode)?
+                        }
                     } else {
-                        junctive_expr_mode(r, mode)?
+                        (rest, expr)
                     }
+                } else if mode == ExprMode::Full {
+                    junctive_expr_mode(r, mode).map_err(|err| {
+                        // Preserve fatal errors with structured exceptions (e.g., X::Obsolete)
+                        if err.is_fatal() && err.exception.is_some() {
+                            return err;
+                        }
+                        PError {
+                            messages: merge_expected_messages(
+                                "expected expression after comparison operator",
+                                &err.messages,
+                            ),
+                            remaining_len: err.remaining_len.or(Some(r.len())),
+                            exception: None,
+                        }
+                    })?
                 } else {
-                    (rest, expr)
+                    junctive_expr_mode(r, mode)?
                 }
             } else if mode == ExprMode::Full {
                 junctive_expr_mode(r, mode).map_err(|err| {
@@ -1932,25 +1951,28 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 })?
             } else {
                 junctive_expr_mode(r, mode)?
+            };
+        if matches!(op, ComparisonOp::SmartMatch | ComparisonOp::SmartNotMatch) {
+            let (r_ws, _) = ws(r)?;
+            if r_ws.starts_with("=>") && !r_ws.starts_with("==>") {
+                let after_arrow = &r_ws[2..];
+                let (after_arrow, _) = ws(after_arrow)?;
+                let (after_arrow, value) = super::parse_fat_arrow_value(after_arrow)?;
+                let consumed = &rhs_input[..rhs_input.len() - r.len()];
+                let left = match right {
+                    Expr::BareWord(ref name) if !consumed.trim_start().starts_with('(') => {
+                        Expr::Literal(Value::str(name.clone()))
+                    }
+                    _ => right,
+                };
+                right = Expr::Binary {
+                    left: Box::new(left),
+                    op: TokenKind::FatArrow,
+                    right: Box::new(value),
+                };
+                r = after_arrow;
             }
-        } else if mode == ExprMode::Full {
-            junctive_expr_mode(r, mode).map_err(|err| {
-                // Preserve fatal errors with structured exceptions (e.g., X::Obsolete)
-                if err.is_fatal() && err.exception.is_some() {
-                    return err;
-                }
-                PError {
-                    messages: merge_expected_messages(
-                        "expected expression after comparison operator",
-                        &err.messages,
-                    ),
-                    remaining_len: err.remaining_len.or(Some(r.len())),
-                    exception: None,
-                }
-            })?
-        } else {
-            junctive_expr_mode(r, mode)?
-        };
+        }
         if matches!(op, ComparisonOp::SmartMatch | ComparisonOp::SmartNotMatch) {
             right = wrap_smartmatch_rhs(right);
             // Wrap LHS WhateverCode subexpressions (e.g. `*.abs ~~ Code`).

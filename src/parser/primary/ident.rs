@@ -1068,6 +1068,32 @@ fn parse_listop_arg(input: &str) -> PResult<'_, Expr> {
     // e.g. `squish 1..Inf` should parse as `squish(1..Inf)`.
     let (rest, left) = super::super::expr::term_expr(input)?;
     let (r, _) = ws(rest)?;
+    if r.starts_with("=>") && !r.starts_with("==>") {
+        let r2 = &r[2..];
+        let (r2, _) = ws(r2)?;
+        let (r2, value) = super::super::expr::parse_fat_arrow_value(r2)?;
+        let consumed = &input[..input.len() - rest.len()];
+        let is_bareword = matches!(&left, Expr::BareWord(_));
+        let left = match left {
+            Expr::BareWord(ref name) if !consumed.trim_start().starts_with('(') => {
+                Expr::Literal(Value::str(name.clone()))
+            }
+            _ => left,
+        };
+        let pair = Expr::Binary {
+            left: Box::new(left),
+            op: crate::token_kind::TokenKind::FatArrow,
+            right: Box::new(value),
+        };
+        return Ok((
+            r2,
+            if is_bareword {
+                pair
+            } else {
+                Expr::PositionalPair(Box::new(pair))
+            },
+        ));
+    }
 
     if let Some(rhs) = r.strip_prefix("^..^") {
         let (r2, right) = super::super::expr::term_expr(rhs)?;
