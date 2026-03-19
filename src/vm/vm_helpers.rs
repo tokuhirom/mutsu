@@ -4,7 +4,7 @@ use crate::symbol::Symbol;
 const ATTR_ALIAS_META_PREFIX: &str = "__mutsu_attr_alias::";
 
 impl VM {
-    fn thread_right_first(
+    pub(super) fn thread_right_first(
         left: &crate::value::JunctionKind,
         right: &crate::value::JunctionKind,
     ) -> bool {

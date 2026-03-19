@@ -339,6 +339,98 @@ impl VM {
     pub(super) fn exec_concat_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // Junction auto-threading for ~ operator.
+        // Raku's infix:<~> has explicit Junction candidates that handle
+        // Junction~Junction specially:
+        // - Same-kind junctions: flatten into a single junction with cross-product
+        // - Different kinds: left junction is threaded first (outer) unless
+        //   left is any/one and right is all/none, in which case right goes outer
+        //   with left kind used for inner grouping.
+        if let (
+            Value::Junction {
+                kind: lk,
+                values: lv,
+            },
+            Value::Junction {
+                kind: rk,
+                values: rv,
+            },
+        ) = (&left, &right)
+        {
+            let lk = lk.clone();
+            let rk = rk.clone();
+            let lv = lv.clone();
+            let rv = rv.clone();
+            if lk == rk {
+                // Same kind: flatten into one junction with cross-product
+                let mut results = Vec::new();
+                for l in lv.iter() {
+                    for r in rv.iter() {
+                        self.stack.push(l.clone());
+                        self.stack.push(r.clone());
+                        self.exec_concat_op();
+                        results.push(self.stack.pop().unwrap());
+                    }
+                }
+                self.stack.push(Value::junction(lk, results));
+            } else if Self::thread_right_first(&lk, &rk) {
+                // Left is any/one and right is all/none: right kind outer,
+                // left kind for inner grouping. Group by left values.
+                let mut outer = Vec::new();
+                for l in lv.iter() {
+                    let mut inner = Vec::new();
+                    for r in rv.iter() {
+                        self.stack.push(l.clone());
+                        self.stack.push(r.clone());
+                        self.exec_concat_op();
+                        inner.push(self.stack.pop().unwrap());
+                    }
+                    outer.push(Value::junction(lk.clone(), inner));
+                }
+                self.stack.push(Value::junction(rk, outer));
+            } else {
+                // Left goes outer, right kind for inner grouping.
+                let mut outer = Vec::new();
+                for l in lv.iter() {
+                    let mut inner = Vec::new();
+                    for r in rv.iter() {
+                        self.stack.push(l.clone());
+                        self.stack.push(r.clone());
+                        self.exec_concat_op();
+                        inner.push(self.stack.pop().unwrap());
+                    }
+                    outer.push(Value::junction(rk.clone(), inner));
+                }
+                self.stack.push(Value::junction(lk, outer));
+            }
+            return;
+        }
+        if let Value::Junction { kind, values } = &left {
+            let k = kind.clone();
+            let vals = values.clone();
+            let mut results = Vec::new();
+            for v in vals.iter() {
+                self.stack.push(v.clone());
+                self.stack.push(right.clone());
+                self.exec_concat_op();
+                results.push(self.stack.pop().unwrap());
+            }
+            self.stack.push(Value::junction(k, results));
+            return;
+        }
+        if let Value::Junction { kind, values } = &right {
+            let k = kind.clone();
+            let vals = values.clone();
+            let mut results = Vec::new();
+            for v in vals.iter() {
+                self.stack.push(left.clone());
+                self.stack.push(v.clone());
+                self.exec_concat_op();
+                results.push(self.stack.pop().unwrap());
+            }
+            self.stack.push(Value::junction(k, results));
+            return;
+        }
         // Buf ~ Buf → Buf (byte concatenation, preserving LHS type)
         if Self::is_buf_value(&left) && Self::is_buf_value(&right) {
             let result_class = if let Value::Instance { class_name, .. } = &left {
