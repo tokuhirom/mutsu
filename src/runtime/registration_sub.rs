@@ -81,6 +81,7 @@ impl Interpreter {
         is_test_assertion: bool,
         supersede: bool,
         custom_traits: &[String],
+        deprecated: &Option<Option<String>>,
     ) -> Result<(), RuntimeError> {
         let is_method_value_decl = custom_traits.iter().any(|t| t == "__mutsu_method_decl");
         let allow_redeclare = supersede || is_method_value_decl;
@@ -158,6 +159,7 @@ impl Interpreter {
             is_method: false,
             empty_sig,
             return_type: return_type.cloned(),
+            deprecated: deprecated.clone(),
         };
         let single_key = format!("{}::{}", self.current_package, name);
         let multi_prefix = format!("{}::{}/", self.current_package, name);
@@ -351,6 +353,15 @@ impl Interpreter {
                 }
             }
         }
+        // Register deprecation info if present
+        if let Some(dep_msg) = deprecated {
+            let kind = if is_method_value_decl {
+                "Method"
+            } else {
+                "Sub"
+            };
+            self.register_deprecation(kind, name, &self.current_package.clone(), dep_msg.clone());
+        }
         Ok(())
     }
 
@@ -374,6 +385,7 @@ impl Interpreter {
             is_method: false,
             empty_sig: false,
             return_type: None,
+            deprecated: None,
         };
         self.insert_token_def(name, def, multi);
     }
@@ -414,6 +426,7 @@ impl Interpreter {
                 is_method: false,
                 empty_sig: false,
                 return_type: None,
+                deprecated: None,
             },
         );
         Ok(())
@@ -508,6 +521,7 @@ impl Interpreter {
             is_method: false,
             empty_sig,
             return_type: return_type.cloned(),
+            deprecated: None,
         };
         let single_key = format!("GLOBAL::{}", name);
         let single_key_sym = Symbol::intern(&single_key);
@@ -653,6 +667,7 @@ impl Interpreter {
                 is_method: false,
                 empty_sig: false,
                 return_type: None,
+                deprecated: None,
             },
         );
         Ok(())

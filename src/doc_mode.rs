@@ -245,6 +245,11 @@ fn render_begin_pod_blocks(source: &str) -> String {
 #[allow(clippy::result_large_err)]
 fn run_doc_init_blocks(source: &str) -> Result<(String, i64, bool), RuntimeError> {
     let (stmts, _) = parse_dispatch::parse_source(source)?;
+    // Filter out SetLine markers for DOC INIT block scanning
+    let stmts: Vec<_> = stmts
+        .into_iter()
+        .filter(|s| !matches!(s, Stmt::SetLine(_)))
+        .collect();
     let mut interpreter = Interpreter::new();
     let mut i = 0usize;
     while i + 1 < stmts.len() {

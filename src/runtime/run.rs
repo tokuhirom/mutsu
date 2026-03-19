@@ -143,6 +143,7 @@ impl Interpreter {
                     *is_test_assertion,
                     *supersede,
                     &[],
+                    &None,
                 )?;
                 if *is_export {
                     self.register_sub_decl_as_global(

@@ -85,6 +85,9 @@ impl Compiler {
 
     pub(super) fn compile_stmt(&mut self, stmt: &Stmt) {
         match stmt {
+            Stmt::SetLine(line) => {
+                self.code.emit(OpCode::SetSourceLine(*line as u32));
+            }
             Stmt::Expr(expr) => {
                 self.compile_condition_expr(expr);
                 self.code.emit(OpCode::SinkPop);
@@ -1241,6 +1244,7 @@ impl Compiler {
                     is_test_assertion: false,
                     supersede: false,
                     custom_traits: vec!["__mutsu_method_decl".to_string()],
+                    deprecated: None,
                 };
                 let idx = self.code.add_stmt(lowered);
                 self.code.emit(OpCode::RegisterSub(idx));

@@ -35,6 +35,7 @@ impl VM {
             saved_stack_depth: self.stack.len(),
             saved_env_dirty: self.env_dirty,
             saved_locals_dirty: self.locals_dirty,
+            saved_source_line: self.current_source_line,
         };
         self.env_dirty = false;
         self.locals_dirty = false;
@@ -53,6 +54,7 @@ impl VM {
             .restore_readonly_vars(std::mem::take(&mut frame.saved_readonly));
         self.env_dirty = frame.saved_env_dirty;
         self.locals_dirty = frame.saved_locals_dirty;
+        self.current_source_line = frame.saved_source_line;
         frame
     }
 
@@ -1301,6 +1303,17 @@ impl VM {
         method_sym: crate::symbol::Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        // Deprecation.report — built-in class method
+        if method_sym.resolve() == "report" {
+            let is_deprecation = match target {
+                Value::Package(pkg_name) => pkg_name.resolve() == "Deprecation",
+                Value::Str(s) => s.as_str() == "Deprecation",
+                _ => false,
+            };
+            if is_deprecation {
+                return Some(Ok(self.interpreter.deprecation_report()));
+            }
+        }
         fn collection_contains_instance(value: &Value) -> bool {
             match value {
                 Value::Instance { .. } => true,

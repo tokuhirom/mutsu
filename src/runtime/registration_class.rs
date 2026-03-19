@@ -873,6 +873,7 @@ impl Interpreter {
                     is_alias,
                     is_our,
                     is_my,
+                    deprecated,
                 } => {
                     let attr_name_str = attr_name.resolve();
 
@@ -916,6 +917,10 @@ impl Interpreter {
                     ));
                     if *is_alias {
                         class_def.alias_attributes.insert(attr_name_str.clone());
+                    }
+                    // Register deprecation for public attribute accessors
+                    if *is_public && let Some(dep_msg) = deprecated {
+                        self.register_deprecation("Method", &attr_name_str, name, dep_msg.clone());
                     }
                     if let Some(tc) = type_constraint {
                         class_def
@@ -970,6 +975,7 @@ impl Interpreter {
                     is_our,
                     is_my,
                     return_type,
+                    deprecated: method_deprecated,
                 } => {
                     self.validate_private_access_in_stmts(name, method_body)?;
                     let resolved_method_name = if let Some(expr) = name_expr {
@@ -1088,9 +1094,19 @@ impl Interpreter {
                             is_method: true,
                             empty_sig: false,
                             return_type: None,
+                            deprecated: None,
                         };
                         self.functions
                             .insert(Symbol::intern(&qualified_name), func_def);
+                    }
+                    // Register deprecation for methods
+                    if let Some(dep_msg) = method_deprecated {
+                        self.register_deprecation(
+                            "Method",
+                            &resolved_method_name,
+                            name,
+                            dep_msg.clone(),
+                        );
                     }
                 }
                 Stmt::DoesDecl { name: role_name } => {
@@ -1388,6 +1404,7 @@ impl Interpreter {
                     is_alias,
                     is_our: _,
                     is_my: _,
+                    deprecated: _has_deprecated,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     if let Some(class_def) = self.classes.get_mut(name) {
@@ -1504,6 +1521,7 @@ impl Interpreter {
                     is_alias: _,
                     is_our: _,
                     is_my: _,
+                    deprecated: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     // Check if this attribute already exists from a composed role
@@ -1705,6 +1723,7 @@ impl Interpreter {
                     is_our: _,
                     is_my,
                     return_type,
+                    deprecated: _,
                 } => {
                     if *multi
                         && (param_defs.iter().any(|pd| {

@@ -48,6 +48,9 @@ pub(crate) struct FunctionDef {
     pub(crate) empty_sig: bool,
     /// Return type annotation (e.g., "Str", "Str(Numeric:D)", "Foo:D()")
     pub(crate) return_type: Option<String>,
+    /// `is DEPRECATED` trait: None = not deprecated, Some(None) = deprecated with default message,
+    /// Some(Some(msg)) = deprecated with custom message
+    pub(crate) deprecated: Option<Option<String>>,
 }
 
 pub(crate) fn function_body_fingerprint(
@@ -436,6 +439,9 @@ pub(crate) enum Stmt {
         supersede: bool,
         /// Custom `is` traits (non-builtin trait names like `me'd`)
         custom_traits: Vec<String>,
+        /// `is DEPRECATED` trait: None = not deprecated, Some(None) = deprecated with default message,
+        /// Some(Some(msg)) = deprecated with custom message
+        deprecated: Option<Option<String>>,
     },
     TokenDecl {
         name: Symbol,
@@ -483,6 +489,8 @@ pub(crate) enum Stmt {
         name: Symbol,
         args: Vec<CallArg>,
     },
+    /// Source line marker for deprecation and error tracking.
+    SetLine(i64),
     Use {
         module: String,
         arg: Option<Expr>,
@@ -602,6 +610,8 @@ pub(crate) enum Stmt {
         is_our: bool,
         /// `my $.x` — lexically-scoped class attribute (shared across instances)
         is_my: bool,
+        /// `is DEPRECATED` trait for the auto-generated accessor
+        deprecated: Option<Option<String>>,
     },
     MethodDecl {
         name: Symbol,
@@ -615,6 +625,8 @@ pub(crate) enum Stmt {
         is_our: bool,
         is_my: bool,
         return_type: Option<String>,
+        /// `is DEPRECATED` trait
+        deprecated: Option<Option<String>>,
     },
     RoleDecl {
         name: Symbol,

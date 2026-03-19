@@ -1400,6 +1400,7 @@ fn method_decl_body_with_my(
             is_our,
             is_my,
             return_type,
+            deprecated: traits.deprecated,
         },
     ))
 }
