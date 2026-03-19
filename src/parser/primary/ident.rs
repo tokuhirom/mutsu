@@ -348,6 +348,48 @@ pub(super) fn class_literal(input: &str) -> PResult<'_, Expr> {
         let (r, _) = parse_char(r, ')')?;
         return Ok((r, Expr::IndirectTypeLookup(Box::new(inner))));
     }
+    // Handle ::{expr} — pseudo-stash lookup with curly braces on current scope
+    if let Some(after_brace) = rest.strip_prefix('{') {
+        let (r, _) = ws(after_brace)?;
+        let (r, key_expr) = expression(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, '}')?;
+        return Ok((
+            r,
+            Expr::Index {
+                target: Box::new(Expr::PseudoStash("MY::".to_string())),
+                index: Box::new(key_expr),
+            },
+        ));
+    }
+    // Handle ::<$sym> — pseudo-stash lookup with angle brackets on current scope
+    if let Some(after_bracket) = rest.strip_prefix('<')
+        && let Some(end) = after_bracket.find('>')
+    {
+        let symbol = &after_bracket[..end];
+        let after_close = &after_bracket[end + 1..];
+        return Ok((
+            after_close,
+            Expr::Index {
+                target: Box::new(Expr::PseudoStash("MY::".to_string())),
+                index: Box::new(Expr::Literal(Value::str(symbol.to_string()))),
+            },
+        ));
+    }
+    // Bare :: (current scope PseudoStash) — when followed by `.`, `,`, `;`, `)`, ws, etc.
+    if rest.is_empty()
+        || rest.starts_with('.')
+        || rest.starts_with(',')
+        || rest.starts_with(';')
+        || rest.starts_with(')')
+        || rest.starts_with('}')
+        || rest.starts_with(' ')
+        || rest.starts_with('\n')
+        || rest.starts_with('\r')
+        || rest.starts_with('\t')
+    {
+        return Ok((rest, Expr::PseudoStash("MY::".to_string())));
+    }
     let (rest, name) = super::super::stmt::ident_pub(rest)?;
     // Handle qualified names: ::Foo::Bar, with optional dynamic segments ::($expr)
     let mut full_name = name;

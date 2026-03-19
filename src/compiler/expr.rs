@@ -86,6 +86,18 @@ impl Compiler {
                 self.compile_match_regex(v);
             }
             Expr::Var(name) => {
+                // $.bar — public attribute accessor, equivalent to self.bar()
+                if let Some(method_name) = name.strip_prefix('.') {
+                    let self_name = "self".to_string();
+                    self.compile_expr(&Expr::MethodCall {
+                        target: Box::new(Expr::BareWord(self_name)),
+                        name: Symbol::intern(method_name),
+                        args: Vec::new(),
+                        modifier: None,
+                        quoted: false,
+                    });
+                    return;
+                }
                 // $CALLER:: / $CALLER::CALLER:: variable access
                 if let Some((bare_name, depth)) = Self::parse_caller_prefix(name) {
                     let name_idx = self.code.add_constant(Value::str(bare_name));

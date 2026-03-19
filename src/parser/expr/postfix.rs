@@ -430,14 +430,14 @@ fn parse_bracket_indices_inner(input: &str) -> PResult<'_, ParsedBracketIndex> {
 }
 
 /// Result of parsing a quoted method name.
-enum QuotedMethodName {
+pub(crate) enum QuotedMethodName {
     /// Static method name (single-quoted or double-quoted without interpolation)
     Static(String),
     /// Dynamic method name (double-quoted with interpolation)
     Dynamic(Expr),
 }
 
-fn parse_quoted_method_name(input: &str) -> Option<(&str, QuotedMethodName)> {
+pub(crate) fn parse_quoted_method_name(input: &str) -> Option<(&str, QuotedMethodName)> {
     if input.starts_with('\'') {
         // Single-quoted: no interpolation
         let start = 1;
@@ -1052,9 +1052,87 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         if rest.starts_with('.') && !rest.starts_with("..") {
             expr = auto_invoke_bareword_method_target(expr);
             let r = &rest[1..];
-            // `.=` is handled by statement-level assignment parsing, not postfix
-            // method-call parsing. Stop postfix parsing and let the caller consume it.
-            if r.starts_with('=') {
+            // `.=` mutating method call.  When the target is a simple variable
+            // (`$x`, `@a`, `%h`) the statement-level parser can turn `$x.=m` into
+            // `$x = $x.m`.  Break out of postfix parsing so the statement parser
+            // handles it.  For all other targets (parenthesised exprs, method-call
+            // chains, etc.) we parse `.=method(args)` here and produce the method
+            // call expression inline so that it works inside argument lists.
+            if let Some(r_after_eq) = r.strip_prefix('=') {
+                let handled_by_stmt_parser = matches!(
+                    &expr,
+                    Expr::Var(_)
+                        | Expr::ArrayVar(_)
+                        | Expr::HashVar(_)
+                        | Expr::Index { .. }
+                        | Expr::MultiDimIndex { .. }
+                        | Expr::BareWord(_)
+                );
+                if handled_by_stmt_parser {
+                    break;
+                }
+                // Non-variable target: parse .=method inline as a method call
+                let r = r_after_eq;
+                let (r, _) = ws(r)?;
+                // Try quoted method name
+                if let Some((r2, qname)) = parse_quoted_method_name(r) {
+                    if !r2.starts_with('(') {
+                        return Err(PError::expected_at(
+                            "parenthesized arguments after quoted method name with '.='",
+                            r2,
+                        ));
+                    }
+                    let (r2, _) = parse_char(r2, '(')?;
+                    let (r2, _) = ws(r2)?;
+                    let (r2, args) = parse_call_arg_list(r2)?;
+                    let (r2, _) = ws(r2)?;
+                    let (r2, _) = parse_char(r2, ')')?;
+                    match qname {
+                        QuotedMethodName::Static(name) => {
+                            expr = Expr::MethodCall {
+                                target: Box::new(expr),
+                                name: Symbol::intern(&name),
+                                args,
+                                modifier: None,
+                                quoted: true,
+                            };
+                        }
+                        QuotedMethodName::Dynamic(name_expr) => {
+                            expr = Expr::DynamicMethodCall {
+                                target: Box::new(expr),
+                                name_expr: Box::new(name_expr),
+                                args,
+                            };
+                        }
+                    }
+                    rest = r2;
+                    continue;
+                }
+                // Regular identifier method name
+                if let Ok((r2, method_name)) =
+                    take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
+                {
+                    let (r2, args) = if r2.starts_with('(') {
+                        let (r3, _) = parse_char(r2, '(')?;
+                        let (r3, _) = ws(r3)?;
+                        let (r3, args) = parse_call_arg_list(r3)?;
+                        let (r3, _) = ws(r3)?;
+                        let (r3, _) = parse_char(r3, ')')?;
+                        (r3, args)
+                    } else {
+                        (r2, Vec::new())
+                    };
+                    expr = Expr::MethodCall {
+                        target: Box::new(expr),
+                        name: Symbol::intern(method_name),
+                        args,
+                        modifier: None,
+                        quoted: false,
+                    };
+                    rest = r2;
+                    continue;
+                }
+                // Can't parse method name; break and let statement parser handle
                 break;
             }
             // Allow `.>>...` / `.»...` chains by deferring to the dedicated hyper

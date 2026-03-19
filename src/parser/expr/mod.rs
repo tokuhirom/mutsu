@@ -1,5 +1,5 @@
 mod operators;
-mod postfix;
+pub(crate) mod postfix;
 mod precedence;
 mod precedence_meta_ops;
 
