@@ -578,7 +578,7 @@ fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Option<Expr> {
             }
             None
         }
-        Expr::Index { target, index } => {
+        Expr::Index { target, index, .. } => {
             let (base_target, base_index, mode) = subscript_parts(target.as_ref())?;
             if mode != "kv" && mode != "not-kv" {
                 return None;
@@ -627,7 +627,7 @@ fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Expr> {
             name: format!("%{}", name),
             expr: Box::new(rhs),
         }),
-        Expr::Index { target, index } => Some(Expr::IndexAssign {
+        Expr::Index { target, index, .. } => Some(Expr::IndexAssign {
             target,
             index,
             value: Box::new(rhs),
@@ -648,6 +648,7 @@ where
     let lhs_expr = Expr::Index {
         target: Box::new(target.clone()),
         index: Box::new(tmp_idx_expr.clone()),
+        is_associative: false,
     };
     let assigned_value = build_assigned_value(lhs_expr);
     Expr::DoBlock {
@@ -705,7 +706,7 @@ pub(crate) fn build_compound_assign_expr(
             name: format!("%{}", name),
             expr: Box::new(compound_assigned_value_expr(Expr::HashVar(name), op, rhs)),
         },
-        Expr::Index { target, index } => {
+        Expr::Index { target, index, .. } => {
             return Ok(compound_index_assign_expr(*target, *index, |lhs_expr| {
                 compound_assigned_value_expr(lhs_expr, op, rhs)
             }));
@@ -803,7 +804,7 @@ fn build_custom_compound_assign_expr(
                 modifier: None,
             }),
         },
-        Expr::Index { target, index } => {
+        Expr::Index { target, index, .. } => {
             return Ok(compound_index_assign_expr(*target, *index, |lhs_expr| {
                 Expr::InfixFunc {
                     name: op_name,
@@ -846,10 +847,11 @@ fn build_meta_assign_expr(lhs: Expr, meta: String, op: String, rhs: Expr) -> Res
                 right: Box::new(rhs),
             }),
         },
-        Expr::Index { target, index } => {
+        Expr::Index { target, index, .. } => {
             let lhs_expr = Expr::Index {
                 target: target.clone(),
                 index: index.clone(),
+                is_associative: false,
             };
             Expr::IndexAssign {
                 target,
@@ -948,7 +950,7 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                 name: format!("%{}", name),
                 expr: Box::new(rhs),
             },
-            Expr::Index { target, index } => Expr::IndexAssign {
+            Expr::Index { target, index, .. } => Expr::IndexAssign {
                 target,
                 index,
                 value: Box::new(rhs),
@@ -1021,7 +1023,7 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
             name: format!("%{}", name),
             expr: Box::new(rhs),
         },
-        Expr::Index { target, index } => Expr::IndexAssign {
+        Expr::Index { target, index, .. } => Expr::IndexAssign {
             target,
             index,
             value: Box::new(rhs),

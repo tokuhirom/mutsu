@@ -800,7 +800,7 @@ impl VM {
         Ok(())
     }
 
-    pub(super) fn exec_index_op(&mut self) -> Result<(), RuntimeError> {
+    pub(super) fn exec_index_op(&mut self, is_associative: bool) -> Result<(), RuntimeError> {
         let index = self.stack.pop().unwrap();
         let mut target = self.stack.pop().unwrap();
         if let Value::Junction { kind, values } = &target {
@@ -808,7 +808,7 @@ impl VM {
             for value in values.iter() {
                 self.stack.push(value.clone());
                 self.stack.push(index.clone());
-                self.exec_index_op()?;
+                self.exec_index_op(is_associative)?;
                 results.push(self.stack.pop().unwrap_or(Value::Nil));
             }
             self.stack.push(Value::junction(kind.clone(), results));
@@ -819,7 +819,7 @@ impl VM {
             for value in values.iter() {
                 self.stack.push(target.clone());
                 self.stack.push(value.clone());
-                self.exec_index_op()?;
+                self.exec_index_op(is_associative)?;
                 results.push(self.stack.pop().unwrap_or(Value::Nil));
             }
             self.stack.push(Value::junction(kind.clone(), results));
@@ -863,6 +863,12 @@ impl VM {
         } else {
             index
         };
+        // Associative indexing on Array types is not supported in Raku.
+        if is_associative && matches!(&target, Value::Array(..)) {
+            return Err(RuntimeError::new(
+                "Type Array does not support associative indexing.",
+            ));
+        }
         let result = match (target, index) {
             (Value::Array(items, is_arr), Value::Int(i)) => {
                 if i < 0 {
@@ -1090,7 +1096,7 @@ impl VM {
                 let v = self.resolve_hash_entry(&items, &key);
                 if matches!(v, Value::Nil) { default } else { v }
             }
-            (Value::Hash(items), Value::Int(key)) => {
+            (Value::Hash(items), Value::Int(key)) if is_associative => {
                 let default = self.typed_container_default(&Value::Hash(items.clone()));
                 let v = self.resolve_hash_entry(&items, &key.to_string());
                 if matches!(v, Value::Nil) { default } else { v }
@@ -1124,6 +1130,35 @@ impl VM {
                         pairs.get(i as usize).cloned().unwrap_or(Value::Nil)
                     }
                     _ => Value::Nil,
+                }
+            }
+            (Value::Hash(items), Value::Int(key)) => {
+                // Positional indexing on Hash: [0] returns the hash itself
+                // (Hash is treated as a single-element list), [n>0] is out of range.
+                let hash = Value::Hash(items);
+                if key == 0 {
+                    hash
+                } else if key < 0 {
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("what".to_string(), Value::str_from("Index"));
+                    attrs.insert("got".to_string(), Value::Int(key));
+                    attrs.insert("range".to_string(), Value::str_from("0..^1"));
+                    attrs.insert(
+                        "message".to_string(),
+                        Value::str(format!(
+                            "Index out of range. Is: {}, should be in 0..^1",
+                            key
+                        )),
+                    );
+                    let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
+                    let mut failure_attrs = std::collections::HashMap::new();
+                    failure_attrs.insert("exception".to_string(), ex);
+                    Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+                } else {
+                    return Err(RuntimeError::new(format!(
+                        "Index out of range. Is: {}, should be in 0..^1",
+                        key
+                    )));
                 }
             }
             (Value::Hash(items), key) => {

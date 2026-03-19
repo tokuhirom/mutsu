@@ -319,7 +319,8 @@ pub(crate) enum OpCode {
     MakeLambda(u32, Option<u32>),
     MakeBlockClosure(u32, Option<u32>),
     // -- Indexing --
-    Index,
+    /// Positional (`false`) or associative (`true`) index access.
+    Index(bool),
     DeleteIndexNamed(u32),
     DeleteIndexExpr,
     /// Multi-dimensional indexing: @a[$x;$y;$z]

@@ -1487,6 +1487,7 @@ pub(super) fn try_interpolate_var<'a>(
                 Expr::Index {
                     target: Box::new(target),
                     index: Box::new(index),
+                    is_associative: true,
                 },
                 &after_dlt[end + 2..],
             );
@@ -1501,6 +1502,7 @@ pub(super) fn try_interpolate_var<'a>(
                 Expr::Index {
                     target: Box::new(target),
                     index: Box::new(index),
+                    is_associative: true,
                 },
                 &after_guillemet[end + '\u{00BB}'.len_utf8()..],
             );
@@ -1525,6 +1527,7 @@ pub(super) fn try_interpolate_var<'a>(
                 Expr::Index {
                     target: Box::new(target),
                     index: Box::new(index),
+                    is_associative: true,
                 },
                 &after_lt[end + 1..],
             );
@@ -1549,6 +1552,7 @@ pub(super) fn try_interpolate_var<'a>(
                 Expr::Index {
                     target: Box::new(target),
                     index: Box::new(index),
+                    is_associative: false,
                 },
                 &after_bracket[end + 1..],
             );
@@ -1578,6 +1582,7 @@ pub(super) fn try_interpolate_var<'a>(
                         Expr::Index {
                             target: Box::new(target),
                             index: Box::new(expr),
+                            is_associative: true,
                         },
                         &after_brace[end + 1..],
                     );
@@ -1614,6 +1619,7 @@ pub(super) fn try_interpolate_var<'a>(
             let expr = Expr::Index {
                 target: Box::new(var_expr),
                 index: Box::new(index),
+                is_associative: true,
             };
             let var_rest = &after_lt[end + 1..];
             let (expr, var_rest) = try_parse_interp_method_call(var_rest, expr);
@@ -1635,6 +1641,7 @@ pub(super) fn try_interpolate_var<'a>(
             let expr = Expr::Index {
                 target: Box::new(Expr::Var("/".to_string())),
                 index: Box::new(Expr::Literal(Value::Int(index_val))),
+                is_associative: false,
             };
             let (expr, var_rest) = try_parse_interp_method_call(&var_rest[end..], expr);
             parts.push(expr);

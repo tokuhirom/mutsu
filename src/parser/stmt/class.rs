@@ -115,7 +115,7 @@ fn expr_uses_attr_twigil(expr: &Expr) -> bool {
                 || expr_uses_attr_twigil(then_expr)
                 || expr_uses_attr_twigil(else_expr)
         }
-        Expr::Index { target, index } => {
+        Expr::Index { target, index, .. } => {
             expr_uses_attr_twigil(target) || expr_uses_attr_twigil(index)
         }
         Expr::IndexAssign {

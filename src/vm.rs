@@ -1443,8 +1443,8 @@ impl VM {
             }
 
             // -- Indexing --
-            OpCode::Index => {
-                self.exec_index_op()?;
+            OpCode::Index(is_associative) => {
+                self.exec_index_op(*is_associative)?;
                 *ip += 1;
             }
             OpCode::DeleteIndexNamed(name_idx) => {

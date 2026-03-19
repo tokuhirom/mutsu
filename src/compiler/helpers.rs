@@ -390,7 +390,7 @@ impl Compiler {
             | Expr::HyperMethodCallDynamic { target, args, .. } => {
                 Self::expr_has_placeholder(target) || args.iter().any(Self::expr_has_placeholder)
             }
-            Expr::Index { target, index } | Expr::IndexAssign { target, index, .. } => {
+            Expr::Index { target, index, .. } | Expr::IndexAssign { target, index, .. } => {
                 Self::expr_has_placeholder(target) || Self::expr_has_placeholder(index)
             }
             Expr::CallOn { target, args } => {
@@ -2145,6 +2145,7 @@ impl Compiler {
         if let Expr::Index {
             target: inner_target,
             index: inner_index,
+            ..
         } = target
             && let Some(name) = Self::index_assign_target_name(inner_target)
         {

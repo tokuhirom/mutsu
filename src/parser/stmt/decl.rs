@@ -2215,6 +2215,7 @@ pub(super) fn parse_destructuring_decl(
                     expr: Expr::Index {
                         target: Box::new(Expr::HashVar(hash_bare.clone())),
                         index: Box::new(Expr::Literal(Value::str(bare_name.to_string()))),
+                        is_associative: false,
                     },
                     type_constraint: type_constraint.clone(),
                     is_state,
@@ -2268,11 +2269,13 @@ pub(super) fn parse_destructuring_decl(
                         op: TokenKind::DotDot,
                         right: Box::new(Expr::Whatever),
                     }),
+                    is_associative: false,
                 }
             } else {
                 Expr::Index {
                     target: Box::new(Expr::ArrayVar(array_bare.clone())),
                     index: Box::new(Expr::Literal(Value::Int(i as i64))),
+                    is_associative: false,
                 }
             };
             // Use per-variable type constraint if present, else fall back to
