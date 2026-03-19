@@ -366,14 +366,33 @@ impl Interpreter {
                     args.to_vec(),
                 );
             }
-            // If the role has COERCE, pun it to a class and dispatch coercion
-            if self.role_has_method(name, "COERCE") && args.len() == 1 {
+            // If the role has COERCE or new, pun it to a class and dispatch coercion
+            if (self.role_has_method(name, "COERCE") || self.role_has_method(name, "new"))
+                && args.len() == 1
+            {
                 self.ensure_role_punned_to_class(name);
-                return self.call_method_with_values(
-                    Value::Package(Symbol::intern(name)),
-                    "COERCE",
-                    args.to_vec(),
-                );
+                // Try COERCE first, then fall back to new
+                if self.role_has_method(name, "COERCE") {
+                    let coerce_result = self.call_method_with_values(
+                        Value::Package(Symbol::intern(name)),
+                        "COERCE",
+                        args.to_vec(),
+                    );
+                    if coerce_result.is_ok() {
+                        return coerce_result;
+                    }
+                }
+                // Fall back to new
+                if self.role_has_method(name, "new") {
+                    let new_result = self.call_method_with_values(
+                        Value::Package(Symbol::intern(name)),
+                        "new",
+                        args.to_vec(),
+                    );
+                    if new_result.is_ok() {
+                        return new_result;
+                    }
+                }
             }
             return Ok(Value::Pair(
                 name.to_string(),
