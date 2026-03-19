@@ -780,6 +780,8 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
     {
         return Err(PError::expected("colonpair name"));
     }
+    // Consume unspace between colonpair name and value: :foo\ ("bar")
+    let rest = super::super::helpers::consume_unspace(rest);
     if let Some(after_paren) = rest.strip_prefix('(') {
         let (r, _) = ws(after_paren)?;
         // Handle empty parens: :name() → name => ()

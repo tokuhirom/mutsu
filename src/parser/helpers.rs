@@ -352,6 +352,7 @@ fn matching_bracket(c: char) -> Option<char> {
         '\u{2985}' => Some('\u{2986}'), // ⦅ ⦆
         '\u{2993}' => Some('\u{2994}'), // ⦓ ⦔
         '\u{2995}' => Some('\u{2996}'), // ⦕ ⦖
+        '\u{301D}' => Some('\u{301E}'), // 〝 〞
         _ => None,
     }
 }
@@ -450,24 +451,173 @@ pub(super) fn ws1(input: &str) -> PResult<'_, ()> {
     Ok((rest, ()))
 }
 
-/// Consume unspace: backslash followed by whitespace collapses to nothing.
+/// Consume unspace: backslash followed by optional whitespace/comments collapses to nothing.
+///
+/// This handles:
+///   - `\ ` — standard unspace with whitespace
+///   - `\.` — degenerate unspace (no whitespace, directly followed by operator)
+///   - `\#\`(comment)` — unspace with embedded bracketed comment
+///   - `\ # end-of-line comment\n` — unspace with line comment
+///
 /// Returns the remaining input after any unspace, or the original input if no unspace.
 pub(super) fn consume_unspace(input: &str) -> &str {
-    if let Some(after_bs) = input.strip_prefix('\\')
-        && let Some(c) = after_bs.chars().next()
-        && c.is_whitespace()
+    let Some(after_bs) = input.strip_prefix('\\') else {
+        return input;
+    };
+
+    // Check what follows the backslash
+    let Some(c) = after_bs.chars().next() else {
+        return input;
+    };
+
+    // Degenerate unspace: backslash directly before a postfix operator
+    // (no whitespace at all)
+    if c == '.' || c == '(' || c == '[' || c == '{' || c == '<' || c == ',' || c == ':' || c == '>'
     {
-        let mut scan = &after_bs[c.len_utf8()..];
-        while let Some(c2) = scan.chars().next() {
-            if c2.is_whitespace() {
-                scan = &scan[c2.len_utf8()..];
+        return after_bs;
+    }
+    // Handle `\++` and `\--` degenerate unspace
+    if (c == '+' && after_bs.starts_with("++")) || (c == '-' && after_bs.starts_with("--")) {
+        return after_bs;
+    }
+
+    // Embedded comment after backslash: `\#`(...)`
+    if c == '#' {
+        // Check for `\#`(...)` — embedded bracketed comment
+        if let Some(after_comment) = skip_embedded_comment(after_bs) {
+            return consume_unspace_content(after_comment);
+        }
+        // `\#` alone without a bracket is NOT unspace
+        return input;
+    }
+
+    // Standard unspace: backslash + whitespace
+    if c.is_whitespace() {
+        return consume_unspace_content(after_bs);
+    }
+
+    input
+}
+
+/// Consume whitespace and embedded comments inside an unspace context.
+/// Called after the initial `\` has been consumed.
+fn consume_unspace_content(input: &str) -> &str {
+    let mut scan = input;
+    loop {
+        // Skip whitespace
+        while let Some(c) = scan.chars().next() {
+            if c.is_whitespace() {
+                scan = &scan[c.len_utf8()..];
             } else {
                 break;
             }
         }
-        return scan;
+        // Check for embedded comment `#`(...)`
+        if (scan.starts_with("#`")
+            || scan.starts_with("#\u{300C}")
+            || scan.starts_with("#\u{300E}"))
+            && let Some(after_comment) = skip_embedded_comment(scan)
+        {
+            scan = after_comment;
+            continue;
+        }
+        // End-of-line comment: `# comment\n`
+        if scan.starts_with('#') {
+            if let Some(newline_pos) = scan.find('\n') {
+                scan = &scan[newline_pos + 1..];
+                continue;
+            }
+            // Comment extends to end of input
+            break;
+        }
+        // Check for pod comment (=begin/=end, =for, =comment) at start of line
+        if (scan.starts_with("=begin ") || scan.starts_with("=begin\t"))
+            && let Some(after_pod) = skip_pod_begin_end(scan)
+        {
+            scan = after_pod;
+            continue;
+        }
+        if (scan.starts_with("=for ") || scan.starts_with("=for\t"))
+            && let Some(after_pod) = skip_pod_for(scan)
+        {
+            scan = after_pod;
+            continue;
+        }
+        if (scan.starts_with("=comment ") || scan.starts_with("=comment\t"))
+            && let Some(after_pod) = skip_pod_comment(scan)
+        {
+            scan = after_pod;
+            continue;
+        }
+        // Check for recursive unspace: `\ \` (unspace inside unspace)
+        if scan.starts_with('\\') {
+            let inner = consume_unspace(scan);
+            if !std::ptr::eq(inner, scan) {
+                scan = inner;
+                continue;
+            }
+        }
+        break;
     }
-    input
+    scan
+}
+
+/// Skip a pod `=begin TYPE ... =end TYPE` block.
+/// Returns the remaining input after the `=end TYPE\n`, or None.
+fn skip_pod_begin_end(input: &str) -> Option<&str> {
+    // Parse `=begin <type>`
+    let rest = input.strip_prefix("=begin")?;
+    let rest = rest.strip_prefix(|c: char| c == ' ' || c == '\t')?;
+    // Get the type name
+    let type_end = rest.find(['\n', '\r']).unwrap_or(rest.len());
+    let type_name = rest[..type_end].trim();
+    let end_marker = format!("=end {type_name}");
+    // Find `=end <type>` at start of a line
+    if let Some(pos) = rest.find(&end_marker) {
+        let after_end = &rest[pos + end_marker.len()..];
+        // Skip to end of line
+        if let Some(nl) = after_end.find('\n') {
+            return Some(&after_end[nl + 1..]);
+        }
+        return Some(after_end);
+    }
+    None
+}
+
+/// Skip a pod `=for TYPE ...` block (terminated by blank line).
+/// Returns the remaining input after the blank line.
+fn skip_pod_for(input: &str) -> Option<&str> {
+    let rest = input.strip_prefix("=for")?;
+    let rest = rest.strip_prefix(|c: char| c == ' ' || c == '\t')?;
+    // Skip until blank line (two consecutive newlines)
+    let mut scan = rest;
+    loop {
+        if let Some(pos) = scan.find('\n') {
+            let after_nl = &scan[pos + 1..];
+            // Check if next line is blank
+            if let Some(rest) = after_nl.strip_prefix('\n') {
+                return Some(rest);
+            }
+            if let Some(rest) = after_nl.strip_prefix("\r\n") {
+                return Some(rest);
+            }
+            scan = after_nl;
+        } else {
+            return Some("");
+        }
+    }
+}
+
+/// Skip a pod `=comment ...` (single line pod comment, terminated by newline).
+/// Returns the remaining input after the newline.
+fn skip_pod_comment(input: &str) -> Option<&str> {
+    let rest = input.strip_prefix("=comment")?;
+    let rest = rest.strip_prefix(|c: char| c == ' ' || c == '\t')?;
+    if let Some(pos) = rest.find('\n') {
+        Some(&rest[pos + 1..])
+    } else {
+        Some("")
+    }
 }
 
 /// Returns true for non-breaking space characters that should not split words in `<...>`.
