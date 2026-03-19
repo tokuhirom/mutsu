@@ -430,8 +430,35 @@ impl VM {
 
     pub(super) fn normalize_incdec_source(value: Value) -> Value {
         match value {
-            Value::Nil | Value::Package(_) => Value::Int(0),
+            Value::Nil => Value::Int(0),
+            Value::Package(name) => match name.resolve().as_str() {
+                "Num" | "num" => Value::Num(0.0),
+                "Rat" => crate::value::make_rat(0, 1),
+                "Complex" => Value::Complex(0.0, 0.0),
+                _ => Value::Int(0),
+            },
             other => other,
+        }
+    }
+
+    /// Like normalize_incdec_source, but also checks the variable's type
+    /// constraint when the value is Nil. This ensures that e.g. `my Num $v; ++$v`
+    /// starts from Num(0.0) rather than Int(0).
+    pub(super) fn normalize_incdec_source_with_type(&self, var_name: &str, value: Value) -> Value {
+        match &value {
+            Value::Nil => {
+                if let Some(tc) = self.interpreter.var_type_constraint(var_name) {
+                    match tc.as_str() {
+                        "Num" | "num" => Value::Num(0.0),
+                        "Rat" => crate::value::make_rat(0, 1),
+                        "Complex" => Value::Complex(0.0, 0.0),
+                        _ => Value::Int(0),
+                    }
+                } else {
+                    Value::Int(0)
+                }
+            }
+            _ => Self::normalize_incdec_source(value),
         }
     }
 

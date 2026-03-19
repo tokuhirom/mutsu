@@ -14,7 +14,18 @@ use super::container::paren_expr;
 use super::current_line_number;
 use super::misc::parse_block_body;
 
+use crate::token_kind::TokenKind;
+
 static ANON_STATE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Build a string concatenation expression: left ~ right
+fn concat_exprs(left: Expr, right: Expr) -> Expr {
+    Expr::Binary {
+        left: Box::new(left),
+        op: TokenKind::Tilde,
+        right: Box::new(right),
+    }
+}
 
 /// Parse a variable name from raw string (used in interpolation).
 pub(super) fn parse_var_name_from_str(input: &str) -> (&str, String) {
@@ -153,16 +164,41 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
         let full_name = format!("={}", name);
         return Ok((rest, Expr::Var(full_name)));
     }
-    // Symbolic variable dereference: $::("name")
+    // Symbolic variable dereference: $::("name"), $::("pkg")::name::($dyn)
     if let Some(after_colons) = input.strip_prefix("::(") {
-        let (after_expr, expr) = expression(after_colons)?;
+        let (after_expr, first_expr) = expression(after_colons)?;
         let (after_expr, _) = ws(after_expr)?;
-        let (rest, _) = parse_char(after_expr, ')')?;
+        let (mut rest, _) = parse_char(after_expr, ')')?;
+        let mut combined = first_expr;
+        // Continue parsing ::ident and ::($expr) segments
+        loop {
+            if let Some(after_sep) = rest.strip_prefix("::(") {
+                // Dynamic segment: ::($expr)
+                let sep_lit = Expr::Literal(Value::str("::".to_string()));
+                combined = concat_exprs(combined, sep_lit);
+                let (after_expr, seg_expr) = expression(after_sep)?;
+                let (after_expr, _) = ws(after_expr)?;
+                let (r, _) = parse_char(after_expr, ')')?;
+                combined = concat_exprs(combined, seg_expr);
+                rest = r;
+            } else if let Some(after_sep) = rest.strip_prefix("::") {
+                // Static segment: ::ident
+                if let Ok((r, ident)) = parse_ident_with_hyphens(after_sep) {
+                    let sep_ident = format!("::{}", ident);
+                    combined = concat_exprs(combined, Expr::Literal(Value::str(sep_ident)));
+                    rest = r;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
         return Ok((
             rest,
             Expr::SymbolicDeref {
                 sigil: "$".to_string(),
-                expr: Box::new(expr),
+                expr: Box::new(combined),
             },
         ));
     }

@@ -149,7 +149,13 @@ impl Interpreter {
 
     fn normalize_incdec_source_for_mut(value: Value) -> Value {
         match value {
-            Value::Nil | Value::Package(_) => Value::Int(0),
+            Value::Nil => Value::Int(0),
+            Value::Package(name) => match name.resolve().as_str() {
+                "Num" | "num" => Value::Num(0.0),
+                "Rat" => crate::value::make_rat(0, 1),
+                "Complex" => Value::Complex(0.0, 0.0),
+                _ => Value::Int(0),
+            },
             other => other,
         }
     }

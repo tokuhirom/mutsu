@@ -1179,10 +1179,24 @@ impl Interpreter {
         if let Some(code_name) = name.strip_prefix('&') {
             return self.resolve_code_var(code_name);
         }
+        // Scalars are stored without the `$` sigil in the env; strip it for lookup.
+        if let Some(bare) = name.strip_prefix('$')
+            && let Some(value) = self.env.get(bare)
+            && !matches!(value, Value::Nil)
+        {
+            return value.clone();
+        }
         if let Some(value) = self.env.get(name)
             && !matches!(value, Value::Nil)
         {
             return value.clone();
+        }
+        // Look up well-known numerical constants
+        match name {
+            "e" | "\u{1D452}" => return Value::Num(std::f64::consts::E),
+            "pi" => return Value::Num(std::f64::consts::PI),
+            "tau" | "\u{03C4}" => return Value::Num(std::f64::consts::TAU),
+            _ => {}
         }
         if !self.method_class_stack.is_empty() && self.loaded_modules.contains(name) {
             return Value::Package(Symbol::intern(name));

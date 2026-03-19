@@ -2505,6 +2505,17 @@ impl Compiler {
                 let sigil_idx = self.code.add_constant(Value::str(sigil.clone()));
                 self.code.emit(OpCode::SymbolicDeref(sigil_idx));
             }
+            Expr::SymbolicDerefAssign { sigil, expr, value } => {
+                self.compile_expr(value);
+                self.compile_expr(expr);
+                let sigil_idx = self.code.add_constant(Value::str(sigil.clone()));
+                self.code.emit(OpCode::SymbolicDerefStore(sigil_idx));
+            }
+            Expr::IndirectTypeLookupAssign { expr, value } => {
+                self.compile_expr(value);
+                self.compile_expr(expr);
+                self.code.emit(OpCode::IndirectTypeLookupStore);
+            }
             Expr::ControlFlow { kind, label } => match kind {
                 crate::ast::ControlFlowKind::Last => {
                     self.code.emit(OpCode::Last(label.clone()));
