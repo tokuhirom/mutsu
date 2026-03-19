@@ -747,7 +747,6 @@ pub(super) fn sub_decl_body(
                     is_test_assertion: traits.is_test_assertion,
                     supersede,
                     custom_traits: traits.custom_traits.clone(),
-                    deprecated: traits.deprecated.clone(),
                 },
             ));
         }
@@ -788,7 +787,6 @@ pub(super) fn sub_decl_body(
                 is_test_assertion: traits.is_test_assertion,
                 supersede,
                 custom_traits: traits.custom_traits.clone(),
-                deprecated: traits.deprecated.clone(),
             },
         ));
     }
@@ -829,54 +827,27 @@ pub(super) fn sub_decl_body(
     };
     // Merge return type: `-->` from inside params has priority, then `returns`/`of` traits
     let merged_return_type = return_type.or(traits.return_type);
-    let sub_decl = Stmt::SubDecl {
-        name: Symbol::intern(&name),
-        name_expr,
-        params,
-        param_defs,
-        return_type: merged_return_type,
-        associativity: traits.associativity,
-        signature_alternates,
-        body,
-        multi,
-        is_rw: traits.is_rw,
-        is_raw: traits.is_raw,
-        is_export: traits.is_export,
-        export_tags: traits.export_tags,
-        is_test_assertion: traits.is_test_assertion,
-        supersede,
-        custom_traits: traits.custom_traits,
-        deprecated: traits.deprecated,
-    };
-    // Check for immediate invocation: sub foo(...) { ... }( args )
-    let (rest_ws, _) = ws(rest)?;
-    if rest_ws.starts_with('(') {
-        let (r, _) = parse_char(rest_ws, '(')?;
-        let (r, _) = ws(r)?;
-        if r.starts_with(')') {
-            let (r, _) = parse_char(r, ')')?;
-            let call_expr = Expr::Call {
-                name: Symbol::intern(&name),
-                args: Vec::new(),
-            };
-            return Ok((
-                r,
-                Stmt::SyntheticBlock(vec![sub_decl, Stmt::Expr(call_expr)]),
-            ));
-        }
-        let (r, args) = super::simple::parse_expr_list(r)?;
-        let (r, _) = ws(r)?;
-        let (r, _) = parse_char(r, ')')?;
-        let call_expr = Expr::Call {
+    Ok((
+        rest,
+        Stmt::SubDecl {
             name: Symbol::intern(&name),
-            args,
-        };
-        return Ok((
-            r,
-            Stmt::SyntheticBlock(vec![sub_decl, Stmt::Expr(call_expr)]),
-        ));
-    }
-    Ok((rest, sub_decl))
+            name_expr,
+            params,
+            param_defs,
+            return_type: merged_return_type,
+            associativity: traits.associativity,
+            signature_alternates,
+            body,
+            multi,
+            is_rw: traits.is_rw,
+            is_raw: traits.is_raw,
+            is_export: traits.is_export,
+            export_tags: traits.export_tags,
+            is_test_assertion: traits.is_test_assertion,
+            supersede,
+            custom_traits: traits.custom_traits,
+        },
+    ))
 }
 
 fn consume_raw_sub_body(input: &str) -> PResult<'_, Vec<Stmt>> {
@@ -954,9 +925,6 @@ pub(crate) struct SubTraits {
     /// trait_name is one of "tighter", "looser", "equiv".
     /// reference_operator is the operator symbol or full name (e.g. "*", "+", "infix:<+>", "prefix:<foo>").
     pub precedence_trait: Option<(String, String)>,
-    /// `is DEPRECATED` trait: None = not deprecated, Some(None) = deprecated with default message,
-    /// Some(Some(msg)) = deprecated with custom message
-    pub deprecated: Option<Option<String>>,
 }
 
 /// Parse sub/method traits like `is test-assertion`, `is export`, `returns Str`, `of Num`, etc.
@@ -972,7 +940,6 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
     let mut custom_traits: Vec<String> = Vec::new();
     let mut seen_traits: Vec<String> = Vec::new();
     let mut precedence_trait: Option<(String, String)> = None;
-    let mut deprecated: Option<Option<String>> = None;
     loop {
         let (r, _) = ws(input)?;
         if r.starts_with('{') || r.is_empty() {
@@ -988,7 +955,6 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                     associativity,
                     custom_traits: custom_traits.clone(),
                     precedence_trait: precedence_trait.clone(),
-                    deprecated: deprecated.clone(),
                 },
             ));
         }
@@ -1027,9 +993,6 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 is_raw = true;
             } else if trait_name == "looser" || trait_name == "tighter" || trait_name == "equiv" {
                 associativity = Some(trait_name.to_string());
-            } else if trait_name == "DEPRECATED" {
-                // Will extract the optional message from parenthesized args below
-                deprecated = Some(None);
             } else if trait_name != "assoc"
                 && trait_name != "equiv"
                 && trait_name != "tighter"
@@ -1057,25 +1020,13 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
             if r.starts_with('(') {
                 let before_parens = r;
                 r = skip_balanced_parens(r);
-                let paren_content = &before_parens[1..before_parens.len() - r.len() - 1];
                 if (trait_name == "tighter" || trait_name == "looser" || trait_name == "equiv")
                     && precedence_trait.is_none()
                 {
+                    // Extract the reference operator from parenthesized form
+                    let paren_content = &before_parens[1..before_parens.len() - r.len() - 1];
                     let ref_op = paren_content.trim().to_string();
                     precedence_trait = Some((trait_name.to_string(), ref_op));
-                }
-                if trait_name == "DEPRECATED" {
-                    // Extract the deprecation message from parenthesized form
-                    let msg = paren_content.trim();
-                    // Strip surrounding quotes if present
-                    let msg = if (msg.starts_with('"') && msg.ends_with('"'))
-                        || (msg.starts_with('\'') && msg.ends_with('\''))
-                    {
-                        msg[1..msg.len() - 1].to_string()
-                    } else {
-                        msg.to_string()
-                    };
-                    deprecated = Some(Some(msg));
                 }
             }
             input = r;
@@ -1117,7 +1068,6 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 associativity,
                 custom_traits: custom_traits.clone(),
                 precedence_trait: precedence_trait.clone(),
-                deprecated: deprecated.clone(),
             },
         ));
     }

@@ -1,4 +1,4 @@
-pub(crate) mod expr;
+mod expr;
 mod helpers;
 mod memo;
 mod parse_result;
@@ -149,7 +149,6 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
     stmt::reset_user_subs();
     crate::trace::trace_log!("parse", "parser start memo={}", memo_enabled);
     primary::set_original_source(input);
-    stmt::enable_setline_emission();
     // Split off =finish content before parsing
     let (source, finish_content) = if let Some(idx) = input.find("\n=finish") {
         let content = &input[idx + "\n=finish".len()..];
@@ -246,7 +245,6 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
         );
     }
 
-    stmt::disable_setline_emission();
     result
 }
 
@@ -323,18 +321,6 @@ mod tests {
     use crate::ast::{Expr, Stmt};
     use crate::value::RuntimeErrorCode;
 
-    /// Parse program and filter out SetLine markers for test assertions.
-    fn parse_program_filtered(
-        input: &str,
-    ) -> Result<(Vec<Stmt>, Option<String>), crate::value::RuntimeError> {
-        let (stmts, finish) = parse_program(input)?;
-        let stmts = stmts
-            .into_iter()
-            .filter(|s| !matches!(s, Stmt::SetLine(_)))
-            .collect();
-        Ok((stmts, finish))
-    }
-
     #[test]
     fn parse_program_reports_line_and_column_for_unparsed_input() {
         let err = parse_program("}").unwrap_err();
@@ -375,7 +361,7 @@ mod tests {
     #[test]
     fn parse_program_accepts_corner_bracket_string_in_listop_call() {
         let src = "sub f($a, $b, $c) { }\nf ｢say 42｣, {:out(\"ok\")}, 'msg';";
-        let (stmts, _) = parse_program_filtered(src).unwrap();
+        let (stmts, _) = parse_program(src).unwrap();
         assert_eq!(stmts.len(), 2);
         match &stmts[1] {
             Stmt::Expr(Expr::Call { name, args }) => {
@@ -396,14 +382,14 @@ mod tests {
     #[test]
     fn parse_program_accepts_french_quote_word_list() {
         let src = "my @target = $*DISTRO.is-win ?? «/c \"\"» !! '/dev/null';";
-        let (stmts, _) = parse_program_filtered(src).unwrap();
+        let (stmts, _) = parse_program(src).unwrap();
         assert_eq!(stmts.len(), 1);
     }
 
     #[test]
     fn parse_program_accepts_double_angle_quote_word_list_with_quoted_word() {
         let src = "my @str = <<do gjump sover \"\\r\\nth\" elaz yfo x>>;";
-        let (stmts, _) = parse_program_filtered(src).unwrap();
+        let (stmts, _) = parse_program(src).unwrap();
         assert_eq!(stmts.len(), 1);
         let Stmt::VarDecl { expr, .. } = &stmts[0] else {
             panic!("expected VarDecl")
@@ -424,7 +410,7 @@ mod tests {
     fn parse_program_accepts_french_quote_word_list_with_interpolation() {
         let src =
             r#"subtest 'x' => { with Proc::Async.new: «"$*EXECUTABLE" -e "print 'ok'"» { } };"#;
-        let (stmts, _) = parse_program_filtered(src).unwrap();
+        let (stmts, _) = parse_program(src).unwrap();
         assert_eq!(stmts.len(), 1);
     }
 
@@ -441,7 +427,7 @@ with Proc::Async.new: :out, ($*EXECUTABLE, '-e'), 'say "pass"' {
     .stdout.tap: { }
 }
 "#;
-        let (stmts, _) = parse_program_filtered(src).unwrap();
+        let (stmts, _) = parse_program(src).unwrap();
         assert_eq!(stmts.len(), 2);
     }
 
@@ -453,14 +439,14 @@ with Proc::Async.new: :out, ($*EXECUTABLE, '-e'), 'say "pass"' {
 	ok("ab/cd" ~~ m/ab ‚/‘ c d/, "low-curly single quote");
 	ok("ab/cd" ~~ m/ab ｢/｣ c d/, "corner quote");
 	"#;
-        let (stmts, _) = parse_program_filtered(src).unwrap();
+        let (stmts, _) = parse_program(src).unwrap();
         assert_eq!(stmts.len(), 4);
     }
 
     #[test]
     fn parse_program_accepts_unicode_and_ascii_minus_angle_complex_in_is_deeply() {
         let src = "use Test;\nis-deeply −<42+2i>, -<42+2i>, 'prefix, Complex';";
-        let (stmts, _) = parse_program_filtered(src).unwrap();
+        let (stmts, _) = parse_program(src).unwrap();
         assert_eq!(stmts.len(), 2);
     }
 

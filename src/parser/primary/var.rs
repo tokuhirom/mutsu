@@ -264,44 +264,6 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
         (input, "")
     };
     let (rest, name) = parse_qualified_ident_with_hyphens(rest)?;
-    // Check for indirect package interpolation: $Package::($expr)::suffix
-    if let Some(after_paren_open) = rest.strip_prefix("::(") {
-        let (after_expr, indirect_expr) = expression(after_paren_open)?;
-        let (after_expr, _) = ws(after_expr)?;
-        let (mut r, _) = parse_char(after_expr, ')')?;
-        // Build combined expression: "Package::" ~ $expr ~ "::suffix" ...
-        let prefix_lit = Expr::Literal(Value::str(format!("{}::", name)));
-        let mut combined = concat_exprs(prefix_lit, indirect_expr);
-        // Continue parsing additional ::ident and ::($expr) segments
-        loop {
-            if let Some(after_sep) = r.strip_prefix("::(") {
-                let sep_lit = Expr::Literal(Value::str("::".to_string()));
-                combined = concat_exprs(combined, sep_lit);
-                let (after_expr, seg_expr) = expression(after_sep)?;
-                let (after_expr, _) = ws(after_expr)?;
-                let (r2, _) = parse_char(after_expr, ')')?;
-                combined = concat_exprs(combined, seg_expr);
-                r = r2;
-            } else if let Some(after_sep) = r.strip_prefix("::") {
-                if let Ok((r2, ident)) = parse_ident_with_hyphens(after_sep) {
-                    let sep_ident = format!("::{}", ident);
-                    combined = concat_exprs(combined, Expr::Literal(Value::str(sep_ident)));
-                    r = r2;
-                } else {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-        return Ok((
-            r,
-            Expr::SymbolicDeref {
-                sigil: "$".to_string(),
-                expr: Box::new(combined),
-            },
-        ));
-    }
     let (rest, name) = parse_var_name_adverb_suffixes(rest, name);
     let full_name = if twigil.is_empty() {
         name
@@ -384,14 +346,10 @@ fn parse_qualified_ident_with_hyphens<'a>(input: &'a str) -> PResult<'a, String>
     let (mut rest, first) = parse_ident_with_hyphens(input)?;
     let mut full = first.to_string();
     while let Some(after) = rest.strip_prefix("::") {
-        if let Ok((r2, part)) = parse_ident_with_hyphens(after) {
-            full.push_str("::");
-            full.push_str(part);
-            rest = r2;
-        } else {
-            // Not an identifier after :: (could be indirect interpolation like ::($expr))
-            break;
-        }
+        let (r2, part) = parse_ident_with_hyphens(after)?;
+        full.push_str("::");
+        full.push_str(part);
+        rest = r2;
     }
     Ok((rest, normalize_raku_identifier(&full)))
 }
@@ -590,25 +548,6 @@ pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
     {
         return Ok((r2, Expr::ArrayVar(name)));
     }
-    // Detect Perl 5 deref syntax: @{$var}, @{@var}, @{%var}
-    if twigil.is_empty()
-        && rest.starts_with('{')
-        && (rest[1..].trim_start().starts_with('$')
-            || rest[1..].trim_start().starts_with('@')
-            || rest[1..].trim_start().starts_with('%'))
-    {
-        let after_brace = &rest[1..];
-        if let Some(close_pos) = after_brace.find('}') {
-            let inner = after_brace[..close_pos].trim();
-            if inner.starts_with('$') || inner.starts_with('@') || inner.starts_with('%') {
-                return Err(PError::fatal(format!(
-                    "X::Obsolete: Unsupported use of @{{{inner}}}. \
-                     In Raku please use: @({inner}) for hard ref or \
-                     @::({inner}) for symbolic ref."
-                )));
-            }
-        }
-    }
     // Bare @ (anonymous array variable)
     let next_is_ident =
         !rest.is_empty() && rest.chars().next().is_some_and(is_raku_identifier_start);
@@ -667,19 +606,6 @@ pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
         && let Ok((r2, Expr::Var(name))) = scalar_var(rest)
     {
         return Ok((r2, Expr::HashVar(name)));
-    }
-    // %{expr} — hash contextualizer: coerce block/expr result to Hash
-    // In Raku, bare %{...} constructs a hash from the block result.
-    if twigil.is_empty() && rest.starts_with('{') {
-        let (rest, inner) = super::misc::block_or_hash_expr(rest)?;
-        // Wrap in hash() call to coerce at runtime
-        return Ok((
-            rest,
-            Expr::Call {
-                name: Symbol::intern("hash"),
-                args: vec![inner],
-            },
-        ));
     }
     // Bare % (anonymous hash variable)
     let next_is_ident =

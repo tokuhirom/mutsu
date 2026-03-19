@@ -301,11 +301,9 @@ impl Interpreter {
         };
 
         // Detect stub body: `class Foo { ... }` — body is a stub operator call
-        let is_stub_body = matches!(
-            crate::ast::semantic_body_single_stmt(body),
-            Some(Stmt::Expr(Expr::Call { name: fn_name, .. }))
-                if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn"
-        );
+        let is_stub_body = body.len() == 1
+            && matches!(&body[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
+                if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn");
 
         // Validate that all parent classes exist
         // Allow inheriting from built-in types that may not be in the classes HashMap
@@ -369,7 +367,6 @@ impl Interpreter {
             "Grammar",
             "Proxy",
             "Stash",
-            "Parameter",
         ];
         for parent in parents {
             // Strip type arguments for validation (e.g., "R[Str:D(Numeric)]" -> "R")
@@ -398,23 +395,10 @@ impl Interpreter {
                         parent
                     )));
                 }
-                {
-                    let msg = format!(
-                        "X::Inheritance::UnknownParent: class '{}' specifies unknown parent class '{}'",
-                        name, parent
-                    );
-                    let mut attrs = HashMap::new();
-                    attrs.insert("child".to_string(), Value::str(name.to_string()));
-                    attrs.insert("parent".to_string(), Value::str(parent.to_string()));
-                    attrs.insert("message".to_string(), Value::str(msg.clone()));
-                    let ex = Value::make_instance(
-                        crate::symbol::Symbol::intern("X::Inheritance::UnknownParent"),
-                        attrs,
-                    );
-                    let mut err = RuntimeError::new(msg);
-                    err.exception = Some(Box::new(ex));
-                    return Err(err);
-                }
+                return Err(RuntimeError::new(format!(
+                    "X::Inheritance::UnknownParent: class '{}' specifies unknown parent class '{}'",
+                    name, parent
+                )));
             }
             // Check if parent is a stub (not yet composed)
             if self.class_stubs.contains(resolved_parent) {
@@ -889,7 +873,6 @@ impl Interpreter {
                     is_alias,
                     is_our,
                     is_my,
-                    deprecated,
                 } => {
                     let attr_name_str = attr_name.resolve();
 
@@ -933,10 +916,6 @@ impl Interpreter {
                     ));
                     if *is_alias {
                         class_def.alias_attributes.insert(attr_name_str.clone());
-                    }
-                    // Register deprecation for public attribute accessors
-                    if *is_public && let Some(dep_msg) = deprecated {
-                        self.register_deprecation("Method", &attr_name_str, name, dep_msg.clone());
                     }
                     if let Some(tc) = type_constraint {
                         class_def
@@ -991,7 +970,6 @@ impl Interpreter {
                     is_our,
                     is_my,
                     return_type,
-                    deprecated: method_deprecated,
                 } => {
                     self.validate_private_access_in_stmts(name, method_body)?;
                     let resolved_method_name = if let Some(expr) = name_expr {
@@ -1110,19 +1088,9 @@ impl Interpreter {
                             is_method: true,
                             empty_sig: false,
                             return_type: None,
-                            deprecated: None,
                         };
                         self.functions
                             .insert(Symbol::intern(&qualified_name), func_def);
-                    }
-                    // Register deprecation for methods
-                    if let Some(dep_msg) = method_deprecated {
-                        self.register_deprecation(
-                            "Method",
-                            &resolved_method_name,
-                            name,
-                            dep_msg.clone(),
-                        );
                     }
                 }
                 Stmt::DoesDecl { name: role_name } => {
@@ -1420,7 +1388,6 @@ impl Interpreter {
                     is_alias,
                     is_our: _,
                     is_my: _,
-                    deprecated: _has_deprecated,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     if let Some(class_def) = self.classes.get_mut(name) {
@@ -1537,7 +1504,6 @@ impl Interpreter {
                     is_alias: _,
                     is_our: _,
                     is_my: _,
-                    deprecated: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     // Check if this attribute already exists from a composed role
@@ -1739,7 +1705,6 @@ impl Interpreter {
                     is_our: _,
                     is_my,
                     return_type,
-                    deprecated: _,
                 } => {
                     if *multi
                         && (param_defs.iter().any(|pd| {

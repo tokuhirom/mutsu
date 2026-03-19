@@ -220,7 +220,6 @@ impl VM {
             is_test_assertion,
             supersede,
             custom_traits,
-            deprecated,
         } = stmt
         {
             let resolved_name = if let Some(expr) = name_expr {
@@ -243,7 +242,6 @@ impl VM {
                 *is_test_assertion,
                 *supersede,
                 custom_traits,
-                deprecated,
             )?;
             if *is_export && !self.interpreter.suppress_exports {
                 self.interpreter.register_exported_sub(
@@ -266,7 +264,6 @@ impl VM {
                     *is_test_assertion,
                     *supersede,
                     custom_traits,
-                    deprecated,
                 )?;
             }
             Ok(())

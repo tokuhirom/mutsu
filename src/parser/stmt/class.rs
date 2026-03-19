@@ -115,7 +115,7 @@ fn expr_uses_attr_twigil(expr: &Expr) -> bool {
                 || expr_uses_attr_twigil(then_expr)
                 || expr_uses_attr_twigil(else_expr)
         }
-        Expr::Index { target, index, .. } => {
+        Expr::Index { target, index } => {
             expr_uses_attr_twigil(target) || expr_uses_attr_twigil(index)
         }
         Expr::IndexAssign {
@@ -632,35 +632,9 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
                 let (r2, _) = ws(r2)?;
                 r = r2;
                 continue;
-            } else if parent == "DEPRECATED" {
-                // Skip parenthesized arg if present
-                let r2 = skip_balanced_parens(r2);
-                let (r2, _) = ws(r2)?;
-                r = r2;
-                continue;
             } else if parent.starts_with(|c: char| c.is_ascii_uppercase())
                 || parent.starts_with("::")
             {
-                let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
-                parents.push(format!("{}{}", parent, bracket_suffix));
-                r = r2;
-                let (r2, _) = ws(r)?;
-                r = r2;
-                continue;
-            } else if !matches!(
-                parent.as_str(),
-                "rw" | "hidden"
-                    | "repr"
-                    | "copy"
-                    | "raw"
-                    | "required"
-                    | "default"
-                    | "built"
-                    | "export"
-                    | "DEPRECATED"
-            ) {
-                // Unknown lowercase name after `is` — treat as parent class
-                // so validation can produce X::Inheritance::UnknownParent.
                 let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
                 parents.push(format!("{}{}", parent, bracket_suffix));
                 r = r2;
@@ -744,13 +718,8 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
     };
     let mut stmts = Vec::new();
     for (trait_name, trait_value) in traits {
-        if trait_name == "ver" || trait_name == "auth" || trait_name == "api" {
+        if trait_name == "ver" || trait_name == "auth" {
             stmts.push(meta_setter_stmt(&name, &trait_name, trait_value));
-        } else {
-            return Err(PError::fatal(format!(
-                "X::Syntax::Type::Adverb: Cannot use adverb ':{}' on a class declaration",
-                trait_name
-            )));
         }
     }
     if stmts.is_empty() {

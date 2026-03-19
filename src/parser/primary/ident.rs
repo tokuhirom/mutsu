@@ -348,50 +348,6 @@ pub(super) fn class_literal(input: &str) -> PResult<'_, Expr> {
         let (r, _) = parse_char(r, ')')?;
         return Ok((r, Expr::IndirectTypeLookup(Box::new(inner))));
     }
-    // Handle ::{expr} — pseudo-stash lookup with curly braces on current scope
-    if let Some(after_brace) = rest.strip_prefix('{') {
-        let (r, _) = ws(after_brace)?;
-        let (r, key_expr) = expression(r)?;
-        let (r, _) = ws(r)?;
-        let (r, _) = parse_char(r, '}')?;
-        return Ok((
-            r,
-            Expr::Index {
-                target: Box::new(Expr::PseudoStash("MY::".to_string())),
-                index: Box::new(key_expr),
-                is_associative: true,
-            },
-        ));
-    }
-    // Handle ::<$sym> — pseudo-stash lookup with angle brackets on current scope
-    if let Some(after_bracket) = rest.strip_prefix('<')
-        && let Some(end) = after_bracket.find('>')
-    {
-        let symbol = &after_bracket[..end];
-        let after_close = &after_bracket[end + 1..];
-        return Ok((
-            after_close,
-            Expr::Index {
-                target: Box::new(Expr::PseudoStash("MY::".to_string())),
-                index: Box::new(Expr::Literal(Value::str(symbol.to_string()))),
-                is_associative: true,
-            },
-        ));
-    }
-    // Bare :: (current scope PseudoStash) — when followed by `.`, `,`, `;`, `)`, ws, etc.
-    if rest.is_empty()
-        || rest.starts_with('.')
-        || rest.starts_with(',')
-        || rest.starts_with(';')
-        || rest.starts_with(')')
-        || rest.starts_with('}')
-        || rest.starts_with(' ')
-        || rest.starts_with('\n')
-        || rest.starts_with('\r')
-        || rest.starts_with('\t')
-    {
-        return Ok((rest, Expr::PseudoStash("MY::".to_string())));
-    }
     let (rest, name) = super::super::stmt::ident_pub(rest)?;
     // Handle qualified names: ::Foo::Bar, with optional dynamic segments ::($expr)
     let mut full_name = name;
@@ -549,13 +505,9 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if input.starts_with("rand")
         && !input[4..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
     {
+        // rand() and rand(N) are Perl 5 syntax — throw X::Obsolete
         let after_rand = &input[4..];
         let after_ws = after_rand.trim_start();
-        // Reject if followed by `=>` (pair key context — auto-quote as bareword)
-        if after_ws.starts_with("=>") && !after_ws.starts_with("==>") {
-            return Err(PError::expected("not a pair key"));
-        }
-        // rand() and rand(N) are Perl 5 syntax — throw X::Obsolete
         if after_ws.starts_with('(') {
             return Err(PError::fatal(
                 "X::Obsolete: Unsupported use of rand().  In Raku please use: rand.".to_string(),
@@ -573,11 +525,6 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if input.starts_with("now")
         && !input[3..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
     {
-        // Reject if followed by `=>` (pair key context — auto-quote as bareword)
-        let after_now = input[3..].trim_start();
-        if after_now.starts_with("=>") && !after_now.starts_with("==>") {
-            return Err(PError::expected("not a pair key"));
-        }
         return Ok((
             &input[3..],
             Expr::Call {
@@ -590,11 +537,6 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if input.starts_with("time")
         && !input[4..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
     {
-        // Reject if followed by `=>` (pair key context — auto-quote as bareword)
-        let after_time = input[4..].trim_start();
-        if after_time.starts_with("=>") && !after_time.starts_with("==>") {
-            return Err(PError::expected("not a pair key"));
-        }
         return Ok((
             &input[4..],
             Expr::Call {
@@ -795,7 +737,6 @@ pub(super) fn is_listop(name: &str) -> bool {
             | "end"
             | "uniprop"
             | "uniname"
-            | "undefine"
     ) || is_expr_listop(name)
 }
 
@@ -1224,13 +1165,6 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     let name = normalize_raku_identifier(name);
 
     // Handle special expression keywords before qualified name resolution
-    // Many keyword branches below need a `=>` lookahead to treat the keyword as a
-    // bareword when used as a pair key (e.g. `my => 1`, `sub => 1`).
-    let followed_by_fat_arrow = {
-        let trimmed = rest.trim_start();
-        trimmed.starts_with("=>") && !trimmed.starts_with("==>")
-    };
-
     match name.as_str() {
         "infix" | "prefix" | "postfix" | "circumfix" | "postcircumfix" => {
             // infix:<OP>(args) — operator reference
@@ -1388,14 +1322,12 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
         }
         "my" | "our" | "state" => {
-            if !followed_by_fat_arrow {
-                // my/our/state declaration in expression context
-                // e.g., (my $x = 5) or (state $x = 3)
-                match super::super::stmt::my_decl_expr_pub(input) {
-                    Ok((r, stmt)) => return Ok((r, Expr::DoStmt(Box::new(stmt)))),
-                    Err(err) if err.is_fatal() => return Err(err),
-                    Err(_) => {}
-                }
+            // my/our/state declaration in expression context
+            // e.g., (my $x = 5) or (state $x = 3)
+            match super::super::stmt::my_decl_expr_pub(input) {
+                Ok((r, stmt)) => return Ok((r, Expr::DoStmt(Box::new(stmt)))),
+                Err(err) if err.is_fatal() => return Err(err),
+                Err(_) => {}
             }
         }
         "constant" => {
@@ -1459,7 +1391,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 }
             }
         }
-        "sub" if !followed_by_fat_arrow => {
+        "sub" => {
             let (r, _) = ws(rest)?;
             if r.starts_with('{') {
                 let (r, body) = parse_block_body(r)?;
@@ -1734,7 +1666,6 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     Expr::Index {
                         target: Box::new(Expr::PseudoStash(stash_name)),
                         index: Box::new(key_expr),
-                        is_associative: true,
                     },
                 ));
             }
@@ -1750,7 +1681,6 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         Expr::Index {
                             target: Box::new(Expr::PseudoStash(stash_name)),
                             index: Box::new(Expr::Literal(Value::str(symbol.to_string()))),
-                            is_associative: true,
                         },
                     ));
                 }

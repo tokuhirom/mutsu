@@ -627,7 +627,6 @@ fn process_q_escapes(content: &str, delim: char) -> String {
 }
 
 fn parse_to_heredoc(input: &str, interpolate: bool) -> PResult<'_, Expr> {
-    let heredoc_decl_line = super::current_line_number(input);
     let (r, delimiter) = parse_to_heredoc_delimiter(input)?;
     // In Raku, heredoc content starts on the NEXT line.
     // The rest of the current line (after q:to/DELIM/) continues as normal code.
@@ -683,8 +682,6 @@ fn parse_to_heredoc(input: &str, interpolate: bool) -> PResult<'_, Expr> {
         let after_terminator = after_terminator
             .strip_prefix('\n')
             .unwrap_or(after_terminator);
-        // Count lines in content for $?LINE offset tracking
-        let content_lines = content.matches('\n').count() as i64;
         // qq:to interpolates like double-quoted strings.
         // Use HeredocInterpolation to defer variable resolution to compile time,
         // so variables are resolved in the scope where the terminator appears
@@ -706,27 +703,6 @@ fn parse_to_heredoc(input: &str, interpolate: bool) -> PResult<'_, Expr> {
         // We cannot return a disjoint slice pair, so concatenate.
         let combined = format!("{}\n{}", rest_of_line, after_terminator);
         let leaked: &'static str = Box::leak(combined.into_boxed_str());
-        // Register the leaked string for $?LINE tracking.
-        // The first part of the leaked string is rest_of_line (on the declaration line).
-        // After the artificial \n, we're at the line after the terminator.
-        // base_line for the leaked string: the declaration line.
-        // But the \n in the combined string jumps past all heredoc body lines + terminator.
-        // So we register with a custom line mapping:
-        // - offset 0..rest_of_line.len() → heredoc_decl_line
-        // - offset after \n → heredoc_decl_line + content_lines + 1 (body) + 1 (terminator)
-        // Since current_line_number counts \n in the leaked string prefix,
-        // we set base_line such that base_line + 0 = heredoc_decl_line (first part),
-        // and base_line + 1 = heredoc_decl_line + content_lines + 2 (after \n).
-        // This is tricky because the single \n in the leaked string must jump multiple lines.
-        // Solution: set base_line = heredoc_decl_line for the start,
-        // and adjust by registering a second entry for after the \n.
-        // Simpler: just register the after-terminator part separately.
-        let after_newline_offset = rest_of_line.len() + 1; // +1 for \n
-        let after_terminator_line = heredoc_decl_line + content_lines + 2; // +1 for body newline, +1 for terminator
-        let after_part = &leaked[after_newline_offset..];
-        super::register_heredoc_line_offset(after_part, after_terminator_line);
-        // Also register the full leaked string for the rest_of_line part
-        super::register_heredoc_line_offset(leaked, heredoc_decl_line);
         return Ok((leaked, expr));
     }
     Err(PError::expected("heredoc terminator"))
@@ -911,7 +887,6 @@ fn parse_to_heredoc_with_flags<'a>(
 ) -> PResult<'a, Expr> {
     use super::quote_adverbs::process_content_with_flags;
 
-    let heredoc_decl_line = super::current_line_number(input);
     let (r, delimiter) = parse_to_heredoc_delimiter(input)?;
     let (rest_of_line, heredoc_start) = if let Some(nl) = r.find('\n') {
         (&r[..nl], &r[nl + 1..])
@@ -961,8 +936,6 @@ fn parse_to_heredoc_with_flags<'a>(
         let after_terminator = after_terminator
             .strip_prefix('\n')
             .unwrap_or(after_terminator);
-        // Count lines consumed by heredoc body for $?LINE tracking (must be before content is moved)
-        let content_lines_wf = content.matches('\n').count() as i64;
 
         // Process content based on flags
         let expr = if interpolate {
@@ -1004,12 +977,6 @@ fn parse_to_heredoc_with_flags<'a>(
         }
         let combined = format!("{}\n{}", rest_of_line, after_terminator);
         let leaked: &'static str = Box::leak(combined.into_boxed_str());
-        // Register leaked string for $?LINE tracking
-        let after_newline_offset = rest_of_line.len() + 1;
-        let after_terminator_line = heredoc_decl_line + content_lines_wf + 2;
-        let after_part = &leaked[after_newline_offset..];
-        super::register_heredoc_line_offset(after_part, after_terminator_line);
-        super::register_heredoc_line_offset(leaked, heredoc_decl_line);
         return Ok((leaked, expr));
     }
     Err(PError::expected("heredoc terminator"))
@@ -1520,7 +1487,6 @@ pub(super) fn try_interpolate_var<'a>(
                 Expr::Index {
                     target: Box::new(target),
                     index: Box::new(index),
-                    is_associative: true,
                 },
                 &after_dlt[end + 2..],
             );
@@ -1535,7 +1501,6 @@ pub(super) fn try_interpolate_var<'a>(
                 Expr::Index {
                     target: Box::new(target),
                     index: Box::new(index),
-                    is_associative: true,
                 },
                 &after_guillemet[end + '\u{00BB}'.len_utf8()..],
             );
@@ -1560,7 +1525,6 @@ pub(super) fn try_interpolate_var<'a>(
                 Expr::Index {
                     target: Box::new(target),
                     index: Box::new(index),
-                    is_associative: true,
                 },
                 &after_lt[end + 1..],
             );
@@ -1585,7 +1549,6 @@ pub(super) fn try_interpolate_var<'a>(
                 Expr::Index {
                     target: Box::new(target),
                     index: Box::new(index),
-                    is_associative: false,
                 },
                 &after_bracket[end + 1..],
             );
@@ -1615,7 +1578,6 @@ pub(super) fn try_interpolate_var<'a>(
                         Expr::Index {
                             target: Box::new(target),
                             index: Box::new(expr),
-                            is_associative: true,
                         },
                         &after_brace[end + 1..],
                     );
@@ -1627,27 +1589,6 @@ pub(super) fn try_interpolate_var<'a>(
 
     if rest.starts_with('$') && rest.len() > 1 {
         let next = rest.as_bytes()[1] as char;
-        // Detect Perl 5 deref syntax: "${$var}" or "${@var}"
-        if next == '{' {
-            let after_brace = &rest[2..];
-            if let Some(close_pos) = after_brace.find('}') {
-                let inner = after_brace[..close_pos].trim();
-                if inner.starts_with('$') || inner.starts_with('@') || inner.starts_with('%') {
-                    if !current.is_empty() {
-                        parts.push(Expr::Literal(Value::str(std::mem::take(current))));
-                    }
-                    parts.push(Expr::Call {
-                        name: crate::symbol::Symbol::intern("die"),
-                        args: vec![Expr::Literal(Value::str(format!(
-                            "X::Obsolete: Unsupported use of ${{{inner}}}. \
-                             In Raku please use: $({inner}) for hard ref or \
-                             $::({inner}) for symbolic ref."
-                        )))],
-                    });
-                    return Some(&after_brace[close_pos + 1..]);
-                }
-            }
-        }
         // Special variable $/ (match variable)
         if next == '/' {
             if !current.is_empty() {
@@ -1673,7 +1614,6 @@ pub(super) fn try_interpolate_var<'a>(
             let expr = Expr::Index {
                 target: Box::new(var_expr),
                 index: Box::new(index),
-                is_associative: true,
             };
             let var_rest = &after_lt[end + 1..];
             let (expr, var_rest) = try_parse_interp_method_call(var_rest, expr);
@@ -1695,7 +1635,6 @@ pub(super) fn try_interpolate_var<'a>(
             let expr = Expr::Index {
                 target: Box::new(Expr::Var("/".to_string())),
                 index: Box::new(Expr::Literal(Value::Int(index_val))),
-                is_associative: false,
             };
             let (expr, var_rest) = try_parse_interp_method_call(&var_rest[end..], expr);
             parts.push(expr);
@@ -1727,7 +1666,6 @@ pub(super) fn try_interpolate_var<'a>(
                     && leftover.trim().is_empty()
                     && !stmts.is_empty()
                 {
-                    let stmts: Vec<_> = crate::ast::semantic_body_stmts(&stmts).cloned().collect();
                     // When there's a single statement, use DoStmt so that
                     // For/If/etc. get expression-level compilation that
                     // collects results (e.g. list comprehensions).
@@ -1796,27 +1734,6 @@ pub(super) fn try_interpolate_var<'a>(
     }
     if rest.starts_with('@') && rest.len() > 1 {
         let next = rest.as_bytes()[1] as char;
-        // Detect Perl 5 deref syntax: "@{$var}" or "@{@var}"
-        if next == '{' {
-            let after_brace = &rest[2..];
-            if let Some(close_pos) = after_brace.find('}') {
-                let inner = after_brace[..close_pos].trim();
-                if inner.starts_with('$') || inner.starts_with('@') || inner.starts_with('%') {
-                    if !current.is_empty() {
-                        parts.push(Expr::Literal(Value::str(std::mem::take(current))));
-                    }
-                    parts.push(Expr::Call {
-                        name: crate::symbol::Symbol::intern("die"),
-                        args: vec![Expr::Literal(Value::str(format!(
-                            "X::Obsolete: Unsupported use of @{{{inner}}}. \
-                             In Raku please use: @({inner}) for hard ref or \
-                             @::({inner}) for symbolic ref."
-                        )))],
-                    });
-                    return Some(&after_brace[close_pos + 1..]);
-                }
-            }
-        }
         if next.is_alphabetic() || next == '_' {
             let var_rest = &rest[1..];
             let end = var_rest

@@ -230,7 +230,7 @@ fn subscript_adverb_expr(expr: Expr, adverb: &'static str) -> Expr {
             args,
         };
     }
-    let Expr::Index { target, index, .. } = expr else {
+    let Expr::Index { target, index } = expr else {
         return expr;
     };
     let var_name = match target.as_ref() {
@@ -350,40 +350,6 @@ fn append_call_arg(expr: &mut Expr, arg: Expr) -> bool {
     }
 }
 
-/// Check if an expression is a negative literal integer (e.g., `-1`).
-/// Raku forbids bare negative integer subscripts like `@a[-1]` — use `*-1` instead.
-fn is_negative_int_literal(expr: &Expr) -> Option<i64> {
-    if let Expr::Unary {
-        op: TokenKind::Minus,
-        expr: inner,
-    } = expr
-        && let Expr::Literal(Value::Int(n)) = inner.as_ref()
-    {
-        return Some(-n);
-    }
-    None
-}
-
-/// Check if an expression contains a negative literal subscript that should be rejected.
-/// Returns the negative value if found.
-fn check_negative_subscript(expr: &Expr) -> Option<i64> {
-    // Direct negative literal: @a[-1]
-    if let Some(n) = is_negative_int_literal(expr) {
-        return Some(n);
-    }
-    // Range ending with negative literal: @a[0..-1]
-    if let Expr::Binary {
-        op: TokenKind::DotDot | TokenKind::DotDotCaret,
-        right,
-        ..
-    } = expr
-        && let Some(n) = is_negative_int_literal(right)
-    {
-        return Some(n);
-    }
-    None
-}
-
 /// Result of parsing bracket indices — either a single-dimension index or
 /// a multi-dimensional (semicolon-separated) index.
 enum ParsedBracketIndex {
@@ -464,14 +430,14 @@ fn parse_bracket_indices_inner(input: &str) -> PResult<'_, ParsedBracketIndex> {
 }
 
 /// Result of parsing a quoted method name.
-pub(crate) enum QuotedMethodName {
+enum QuotedMethodName {
     /// Static method name (single-quoted or double-quoted without interpolation)
     Static(String),
     /// Dynamic method name (double-quoted with interpolation)
     Dynamic(Expr),
 }
 
-pub(crate) fn parse_quoted_method_name(input: &str) -> Option<(&str, QuotedMethodName)> {
+fn parse_quoted_method_name(input: &str) -> Option<(&str, QuotedMethodName)> {
     if input.starts_with('\'') {
         // Single-quoted: no interpolation
         let start = 1;
@@ -1086,87 +1052,9 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         if rest.starts_with('.') && !rest.starts_with("..") {
             expr = auto_invoke_bareword_method_target(expr);
             let r = &rest[1..];
-            // `.=` mutating method call.  When the target is a simple variable
-            // (`$x`, `@a`, `%h`) the statement-level parser can turn `$x.=m` into
-            // `$x = $x.m`.  Break out of postfix parsing so the statement parser
-            // handles it.  For all other targets (parenthesised exprs, method-call
-            // chains, etc.) we parse `.=method(args)` here and produce the method
-            // call expression inline so that it works inside argument lists.
-            if let Some(r_after_eq) = r.strip_prefix('=') {
-                let handled_by_stmt_parser = matches!(
-                    &expr,
-                    Expr::Var(_)
-                        | Expr::ArrayVar(_)
-                        | Expr::HashVar(_)
-                        | Expr::Index { .. }
-                        | Expr::MultiDimIndex { .. }
-                        | Expr::BareWord(_)
-                );
-                if handled_by_stmt_parser {
-                    break;
-                }
-                // Non-variable target: parse .=method inline as a method call
-                let r = r_after_eq;
-                let (r, _) = ws(r)?;
-                // Try quoted method name
-                if let Some((r2, qname)) = parse_quoted_method_name(r) {
-                    if !r2.starts_with('(') {
-                        return Err(PError::expected_at(
-                            "parenthesized arguments after quoted method name with '.='",
-                            r2,
-                        ));
-                    }
-                    let (r2, _) = parse_char(r2, '(')?;
-                    let (r2, _) = ws(r2)?;
-                    let (r2, args) = parse_call_arg_list(r2)?;
-                    let (r2, _) = ws(r2)?;
-                    let (r2, _) = parse_char(r2, ')')?;
-                    match qname {
-                        QuotedMethodName::Static(name) => {
-                            expr = Expr::MethodCall {
-                                target: Box::new(expr),
-                                name: Symbol::intern(&name),
-                                args,
-                                modifier: None,
-                                quoted: true,
-                            };
-                        }
-                        QuotedMethodName::Dynamic(name_expr) => {
-                            expr = Expr::DynamicMethodCall {
-                                target: Box::new(expr),
-                                name_expr: Box::new(name_expr),
-                                args,
-                            };
-                        }
-                    }
-                    rest = r2;
-                    continue;
-                }
-                // Regular identifier method name
-                if let Ok((r2, method_name)) =
-                    take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
-                {
-                    let (r2, args) = if r2.starts_with('(') {
-                        let (r3, _) = parse_char(r2, '(')?;
-                        let (r3, _) = ws(r3)?;
-                        let (r3, args) = parse_call_arg_list(r3)?;
-                        let (r3, _) = ws(r3)?;
-                        let (r3, _) = parse_char(r3, ')')?;
-                        (r3, args)
-                    } else {
-                        (r2, Vec::new())
-                    };
-                    expr = Expr::MethodCall {
-                        target: Box::new(expr),
-                        name: Symbol::intern(method_name),
-                        args,
-                        modifier: None,
-                        quoted: false,
-                    };
-                    rest = r2;
-                    continue;
-                }
-                // Can't parse method name; break and let statement parser handle
+            // `.=` is handled by statement-level assignment parsing, not postfix
+            // method-call parsing. Stop postfix parsing and let the caller consume it.
+            if r.starts_with('=') {
                 break;
             }
             // Allow `.>>...` / `.»...` chains by deferring to the dedicated hyper
@@ -1184,7 +1072,6 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 expr = Expr::Index {
                     target: Box::new(expr),
                     index: Box::new(index),
-                    is_associative: false,
                 };
                 rest = r;
                 continue;
@@ -1198,7 +1085,6 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 expr = Expr::Index {
                     target: Box::new(expr),
                     index: Box::new(index),
-                    is_associative: true,
                 };
                 rest = r;
                 continue;
@@ -1231,7 +1117,6 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         expr = Expr::Index {
                             target: Box::new(expr),
                             index: Box::new(index_expr),
-                            is_associative: true,
                         };
                         rest = r2;
                         continue;
@@ -1743,7 +1628,6 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             expr = Expr::Index {
                 target: Box::new(who),
                 index: Box::new(key_expr),
-                is_associative: true,
             };
             rest = r;
             continue;
@@ -1818,23 +1702,11 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             let (r, parsed) = parse_bracket_indices_inner(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ']')?;
-            // Reject negative literal subscripts: @a[-1], @a[0..-1], etc.
-            // Raku requires *-1 instead.
-            if let ParsedBracketIndex::Single(ref index) = parsed
-                && let Some(n) = check_negative_subscript(index)
-            {
-                return Err(PError::fatal(format!(
-                    "X::Obsolete: Unsupported use of a negative {} subscript to index from the end. \
-                     In Raku please use: a function such as *{}.",
-                    n, n
-                )));
-            }
             match parsed {
                 ParsedBracketIndex::Single(index) => {
                     expr = Expr::Index {
                         target: Box::new(expr),
                         index: Box::new(index),
-                        is_associative: false,
                     };
                 }
                 ParsedBracketIndex::MultiDim(dimensions) => {
@@ -1894,7 +1766,6 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 Expr::Index {
                     target: Box::new(expr),
                     index: Box::new(index_expr),
-                    is_associative: true,
                 }
             };
             if is_zen_angle && r.starts_with(":v") && !is_ident_char(r.as_bytes().get(2).copied()) {
@@ -2023,7 +1894,6 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         }
 
         // Hash indexing with braces: %hash{"key"}, %hash{$var}, @a[0]{"key"}, etc.
-        // Also handle postcircumfix on literals/expressions: 5{"c"} should throw at runtime.
         if rest.starts_with('{')
             && matches!(
                 &expr,
@@ -2032,9 +1902,6 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     | Expr::Index { .. }
                     | Expr::MethodCall { .. }
                     | Expr::Call { .. }
-                    | Expr::Literal(_)
-                    | Expr::ArrayLiteral(_)
-                    | Expr::Hash(_)
             )
         {
             let r = &rest[1..];
@@ -2052,7 +1919,6 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     expr = Expr::Index {
                         target: Box::new(expr),
                         index: Box::new(Expr::Whatever),
-                        is_associative: true,
                     };
                     rest = r;
                     continue;
@@ -2073,7 +1939,6 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             let indexed = Expr::Index {
                 target: Box::new(expr.clone()),
                 index: Box::new(index.clone()),
-                is_associative: true,
             };
             if let Some((r_after, exists_expr)) = try_parse_exists_adverb(r_adv, indexed) {
                 expr = exists_expr;
@@ -2085,7 +1950,6 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 let indexed_expr = Expr::Index {
                     target: Box::new(expr.clone()),
                     index: Box::new(index.clone()),
-                    is_associative: true,
                 };
                 if let Some((r_after, mut exists_expr)) =
                     try_parse_exists_adverb(r_after_delete, indexed_expr.clone())
@@ -2131,7 +1995,6 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             expr = Expr::Index {
                 target: Box::new(expr),
                 index: Box::new(index),
-                is_associative: true,
             };
             rest = r;
             continue;

@@ -61,11 +61,12 @@ impl Interpreter {
     }
 
     pub(super) fn is_stub_routine_body(body: &[Stmt]) -> bool {
-        matches!(
-            crate::ast::semantic_body_single_stmt(body),
-            Some(Stmt::Expr(Expr::Call { name, .. }))
-                if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
-        )
+        body.len() == 1
+            && matches!(
+                &body[0],
+                Stmt::Expr(Expr::Call { name, .. })
+                    if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
+            )
     }
 
     fn is_stub_method_def(def: &MethodDef) -> bool {
@@ -417,7 +418,7 @@ impl Interpreter {
                 self.validate_private_access_in_expr(caller_class, then_expr)?;
                 self.validate_private_access_in_expr(caller_class, else_expr)?;
             }
-            Expr::Index { target, index, .. } => {
+            Expr::Index { target, index } => {
                 self.validate_private_access_in_expr(caller_class, target)?;
                 self.validate_private_access_in_expr(caller_class, index)?;
             }
@@ -614,7 +615,7 @@ impl Interpreter {
                 self.check_private_calls_exist_expr(class_name, class_def, then_expr)?;
                 self.check_private_calls_exist_expr(class_name, class_def, else_expr)?;
             }
-            Expr::Index { target, index, .. } => {
+            Expr::Index { target, index } => {
                 self.check_private_calls_exist_expr(class_name, class_def, target)?;
                 self.check_private_calls_exist_expr(class_name, class_def, index)?;
             }

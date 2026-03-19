@@ -21,11 +21,12 @@ impl Interpreter {
     const LAZY_GATHER_TAKE_LIMIT_SIGNAL: &str = "__mutsu_lazy_gather_take_limit_reached__";
 
     fn is_stub_method_body(body: &[Stmt]) -> bool {
-        matches!(
-            crate::ast::semantic_body_single_stmt(body),
-            Some(Stmt::Expr(Expr::Call { name, .. }))
-                if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
-        )
+        body.len() == 1
+            && matches!(
+                &body[0],
+                Stmt::Expr(Expr::Call { name, .. })
+                    if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
+            )
     }
 
     pub(super) fn resolve_function(&self, name: &str) -> Option<FunctionDef> {
@@ -105,14 +106,6 @@ impl Interpreter {
             }
         }
         result
-    }
-
-    /// Check if a class inherits from Array (i.e., "Array" is in its MRO).
-    pub(crate) fn class_inherits_array(&self, class_name: &str) -> bool {
-        if class_name == "Array" {
-            return false; // Array itself doesn't "inherit from" Array in this sense
-        }
-        self.mro_readonly(class_name).iter().any(|p| p == "Array")
     }
 
     pub(crate) fn resolve_token_defs(&self, name: &str) -> Option<Vec<FunctionDef>> {
@@ -1135,7 +1128,7 @@ impl Interpreter {
     }
 
     pub(crate) fn eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
-        if crate::ast::body_is_semantically_empty(body) {
+        if body.is_empty() {
             return Ok(Value::Nil);
         }
         let let_mark = self.let_saves_len();
@@ -1235,15 +1228,9 @@ impl Interpreter {
     /// caller.
     pub(crate) fn call_protect_block(&mut self, code: &Value) -> Result<Value, RuntimeError> {
         if let Value::Sub(data) = code {
-            let (
-                compiled,
-                compiled_fns,
-                _captured_bindings,
-                _writeback_bindings,
-                _captured_names,
-                sync_names,
-            ) = self.get_or_compile_protect_block_with_slots(data);
-            self.sync_shared_vars_for_names(sync_names.iter().map(|name| name.as_str()));
+            let (compiled, compiled_fns, _captured_bindings, _writeback_bindings, captured_names) =
+                self.get_or_compile_protect_block_with_slots(data);
+            self.sync_shared_vars_for_names(captured_names.iter().map(|name| name.as_str()));
             self.run_compiled_block(&compiled, compiled_fns.as_ref())
         } else {
             self.call_sub_value(code.clone(), Vec::new(), true)
@@ -1258,7 +1245,6 @@ impl Interpreter {
         ProtectBlockCompiledFns,
         ProtectBlockCapturedBindings,
         ProtectBlockWritebackBindings,
-        ProtectBlockCapturedNames,
         ProtectBlockCapturedNames,
     ) {
         let entry = self.protect_block_cache.entry(data.id).or_insert_with(|| {
@@ -1305,13 +1291,6 @@ impl Interpreter {
                 .iter()
                 .map(|(_, name)| name.clone())
                 .collect();
-            let mut sync_names: Vec<String> = captured_bindings
-                .iter()
-                .filter_map(|(_, name)| match data.env.get(name) {
-                    Some(crate::value::Value::Array(..) | crate::value::Value::Hash(..)) => None,
-                    _ => Some(name.clone()),
-                })
-                .collect();
             for op in &compiled.ops {
                 let name_idx = match op {
                     crate::opcode::OpCode::GetGlobal(idx)
@@ -1330,17 +1309,6 @@ impl Interpreter {
                 if data.env.contains_key(name.as_str()) && !captured_names.contains(name) {
                     captured_names.push(name.to_string());
                 }
-                if !data.env.contains_key(name.as_str())
-                    || matches!(
-                        data.env.get(name.as_str()),
-                        Some(crate::value::Value::Array(..) | crate::value::Value::Hash(..))
-                    )
-                {
-                    continue;
-                }
-                if !sync_names.contains(name) {
-                    sync_names.push(name.to_string());
-                }
             }
             (
                 compiled,
@@ -1348,7 +1316,6 @@ impl Interpreter {
                 std::sync::Arc::new(captured_bindings),
                 std::sync::Arc::new(writeback_bindings),
                 std::sync::Arc::new(captured_names),
-                std::sync::Arc::new(sync_names),
             )
         });
         (
@@ -1357,7 +1324,6 @@ impl Interpreter {
             entry.2.clone(),
             entry.3.clone(),
             entry.4.clone(),
-            entry.5.clone(),
         )
     }
 

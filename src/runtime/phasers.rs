@@ -285,7 +285,7 @@ fn lift_phasers_from_expr(expr: &mut Expr, check: &mut Vec<Stmt>, init: &mut Vec
                 lift_phasers_from_expr(a, check, init);
             }
         }
-        Expr::Index { target, index, .. } => {
+        Expr::Index { target, index } => {
             lift_phasers_from_expr(target, check, init);
             lift_phasers_from_expr(index, check, init);
         }

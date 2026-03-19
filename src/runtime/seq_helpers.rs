@@ -1188,8 +1188,8 @@ impl Interpreter {
         let defs = self.resolve_token_defs(name)?;
         let def = defs.first()?;
         // Look for a body consisting of a single Expr(Literal(Regex(pat)))
-        if let Some(Stmt::Expr(Expr::Literal(Value::Regex(pat)))) =
-            crate::ast::semantic_body_single_stmt(&def.body)
+        if def.body.len() == 1
+            && let Stmt::Expr(Expr::Literal(Value::Regex(pat))) = &def.body[0]
         {
             return Some(pat.to_string());
         }

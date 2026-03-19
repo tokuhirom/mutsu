@@ -285,8 +285,8 @@ impl Interpreter {
             let code = args[1].clone();
             if let Value::Sub(sub) = &code
                 && sub.params.len() == 1
-                && let Some(Stmt::Expr(Expr::Binary { left, op, right })) =
-                    crate::ast::semantic_body_single_stmt(&sub.body)
+                && sub.body.len() == 1
+                && let Stmt::Expr(Expr::Binary { left, op, right }) = &sub.body[0]
                 && *op == TokenKind::Plus
             {
                 let param = &sub.params[0];

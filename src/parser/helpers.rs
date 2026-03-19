@@ -420,7 +420,7 @@ pub(super) fn normalize_raku_identifier(name: &str) -> String {
 /// Skip balanced parentheses starting from an opening `(`.
 /// Returns the remaining input after the closing `)`, or the original input if it
 /// doesn't start with `(`.
-pub(crate) fn skip_balanced_parens(input: &str) -> &str {
+pub(super) fn skip_balanced_parens(input: &str) -> &str {
     if let Some(inner) = input.strip_prefix('(') {
         let mut depth = 1u32;
         let mut rr = inner;

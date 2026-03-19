@@ -48,9 +48,6 @@ pub(crate) struct FunctionDef {
     pub(crate) empty_sig: bool,
     /// Return type annotation (e.g., "Str", "Str(Numeric:D)", "Foo:D()")
     pub(crate) return_type: Option<String>,
-    /// `is DEPRECATED` trait: None = not deprecated, Some(None) = deprecated with default message,
-    /// Some(Some(msg)) = deprecated with custom message
-    pub(crate) deprecated: Option<Option<String>>,
 }
 
 pub(crate) fn function_body_fingerprint(
@@ -63,28 +60,6 @@ pub(crate) fn function_body_fingerprint(
     format!("{:?}", param_defs).hash(&mut hasher);
     format!("{:?}", body).hash(&mut hasher);
     hasher.finish()
-}
-
-pub(crate) fn semantic_body_stmts(body: &[Stmt]) -> impl Iterator<Item = &Stmt> {
-    body.iter().filter(|stmt| !matches!(stmt, Stmt::SetLine(_)))
-}
-
-pub(crate) fn body_is_semantically_empty(body: &[Stmt]) -> bool {
-    semantic_body_stmts(body).next().is_none()
-}
-
-pub(crate) fn semantic_body_single_stmt(body: &[Stmt]) -> Option<&Stmt> {
-    let mut stmts = semantic_body_stmts(body);
-    let stmt = stmts.next()?;
-    if stmts.next().is_none() {
-        Some(stmt)
-    } else {
-        None
-    }
-}
-
-pub(crate) fn semantic_body_debug(body: &[Stmt]) -> String {
-    format!("{:?}", semantic_body_stmts(body).collect::<Vec<_>>())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -237,9 +212,6 @@ pub(crate) enum Expr {
     Index {
         target: Box<Expr>,
         index: Box<Expr>,
-        /// Whether this is associative indexing (`{}` or `<>`) vs positional (`[]`).
-        /// Defaults to `false` (positional).
-        is_associative: bool,
     },
     /// Multi-dimensional indexing with semicolons: @a[$x;$y;$z]
     MultiDimIndex {
@@ -461,9 +433,6 @@ pub(crate) enum Stmt {
         supersede: bool,
         /// Custom `is` traits (non-builtin trait names like `me'd`)
         custom_traits: Vec<String>,
-        /// `is DEPRECATED` trait: None = not deprecated, Some(None) = deprecated with default message,
-        /// Some(Some(msg)) = deprecated with custom message
-        deprecated: Option<Option<String>>,
     },
     TokenDecl {
         name: Symbol,
@@ -511,8 +480,6 @@ pub(crate) enum Stmt {
         name: Symbol,
         args: Vec<CallArg>,
     },
-    /// Source line marker for deprecation and error tracking.
-    SetLine(i64),
     Use {
         module: String,
         arg: Option<Expr>,
@@ -632,8 +599,6 @@ pub(crate) enum Stmt {
         is_our: bool,
         /// `my $.x` — lexically-scoped class attribute (shared across instances)
         is_my: bool,
-        /// `is DEPRECATED` trait for the auto-generated accessor
-        deprecated: Option<Option<String>>,
     },
     MethodDecl {
         name: Symbol,
@@ -647,8 +612,6 @@ pub(crate) enum Stmt {
         is_our: bool,
         is_my: bool,
         return_type: Option<String>,
-        /// `is DEPRECATED` trait
-        deprecated: Option<Option<String>>,
     },
     RoleDecl {
         name: Symbol,
@@ -941,7 +904,7 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
                 collect_ph_expr(a, out);
             }
         }
-        Expr::Index { target, index, .. } => {
+        Expr::Index { target, index } => {
             collect_ph_expr(target, out);
             collect_ph_expr(index, out);
         }

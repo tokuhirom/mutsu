@@ -57,9 +57,6 @@ pub(crate) enum CompoundAssignOp {
     IntDiv,
     Lcm,
     Gcd,
-    JunctionAny,
-    JunctionAll,
-    JunctionOne,
 }
 
 impl CompoundAssignOp {
@@ -92,9 +89,6 @@ impl CompoundAssignOp {
             CompoundAssignOp::IntDiv => "div=",
             CompoundAssignOp::Lcm => "lcm=",
             CompoundAssignOp::Gcd => "gcd=",
-            CompoundAssignOp::JunctionAny => "|=",
-            CompoundAssignOp::JunctionAll => "&=",
-            CompoundAssignOp::JunctionOne => "^=",
         }
     }
 
@@ -128,9 +122,6 @@ impl CompoundAssignOp {
             "div" => Some(CompoundAssignOp::IntDiv),
             "lcm" => Some(CompoundAssignOp::Lcm),
             "gcd" => Some(CompoundAssignOp::Gcd),
-            "|" => Some(CompoundAssignOp::JunctionAny),
-            "&" => Some(CompoundAssignOp::JunctionAll),
-            "^" => Some(CompoundAssignOp::JunctionOne),
             _ => None,
         }
     }
@@ -164,9 +155,6 @@ impl CompoundAssignOp {
             CompoundAssignOp::IntDiv => TokenKind::Ident("div".to_string()),
             CompoundAssignOp::Lcm => TokenKind::Ident("lcm".to_string()),
             CompoundAssignOp::Gcd => TokenKind::Ident("gcd".to_string()),
-            CompoundAssignOp::JunctionAny => TokenKind::Pipe,
-            CompoundAssignOp::JunctionAll => TokenKind::Ampersand,
-            CompoundAssignOp::JunctionOne => TokenKind::Caret,
         }
     }
 }
@@ -287,9 +275,6 @@ pub(super) const COMPOUND_ASSIGN_OPS: &[CompoundAssignOp] = &[
     CompoundAssignOp::IntDiv,        // div=
     CompoundAssignOp::Lcm,           // lcm=
     CompoundAssignOp::Gcd,           // gcd=
-    CompoundAssignOp::JunctionAny,   // |=
-    CompoundAssignOp::JunctionAll,   // &=
-    CompoundAssignOp::JunctionOne,   // ^=
 ];
 
 pub(crate) fn compound_assign_op_from_name(op: &str) -> Option<CompoundAssignOp> {
@@ -593,7 +578,7 @@ fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Option<Expr> {
             }
             None
         }
-        Expr::Index { target, index, .. } => {
+        Expr::Index { target, index } => {
             let (base_target, base_index, mode) = subscript_parts(target.as_ref())?;
             if mode != "kv" && mode != "not-kv" {
                 return None;
@@ -642,7 +627,7 @@ fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Expr> {
             name: format!("%{}", name),
             expr: Box::new(rhs),
         }),
-        Expr::Index { target, index, .. } => Some(Expr::IndexAssign {
+        Expr::Index { target, index } => Some(Expr::IndexAssign {
             target,
             index,
             value: Box::new(rhs),
@@ -663,7 +648,6 @@ where
     let lhs_expr = Expr::Index {
         target: Box::new(target.clone()),
         index: Box::new(tmp_idx_expr.clone()),
-        is_associative: false,
     };
     let assigned_value = build_assigned_value(lhs_expr);
     Expr::DoBlock {
@@ -721,7 +705,7 @@ pub(crate) fn build_compound_assign_expr(
             name: format!("%{}", name),
             expr: Box::new(compound_assigned_value_expr(Expr::HashVar(name), op, rhs)),
         },
-        Expr::Index { target, index, .. } => {
+        Expr::Index { target, index } => {
             return Ok(compound_index_assign_expr(*target, *index, |lhs_expr| {
                 compound_assigned_value_expr(lhs_expr, op, rhs)
             }));
@@ -819,7 +803,7 @@ fn build_custom_compound_assign_expr(
                 modifier: None,
             }),
         },
-        Expr::Index { target, index, .. } => {
+        Expr::Index { target, index } => {
             return Ok(compound_index_assign_expr(*target, *index, |lhs_expr| {
                 Expr::InfixFunc {
                     name: op_name,
@@ -862,11 +846,10 @@ fn build_meta_assign_expr(lhs: Expr, meta: String, op: String, rhs: Expr) -> Res
                 right: Box::new(rhs),
             }),
         },
-        Expr::Index { target, index, .. } => {
+        Expr::Index { target, index } => {
             let lhs_expr = Expr::Index {
                 target: target.clone(),
                 index: index.clone(),
-                is_associative: false,
             };
             Expr::IndexAssign {
                 target,
@@ -965,7 +948,7 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                 name: format!("%{}", name),
                 expr: Box::new(rhs),
             },
-            Expr::Index { target, index, .. } => Expr::IndexAssign {
+            Expr::Index { target, index } => Expr::IndexAssign {
                 target,
                 index,
                 value: Box::new(rhs),
@@ -1038,7 +1021,7 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
             name: format!("%{}", name),
             expr: Box::new(rhs),
         },
-        Expr::Index { target, index, .. } => Expr::IndexAssign {
+        Expr::Index { target, index } => Expr::IndexAssign {
             target,
             index,
             value: Box::new(rhs),
@@ -1094,17 +1077,6 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                 return Err(PError::expected("assignment expression"));
             }
         }
-        Expr::BareWord(ref name) if name == "self" => Expr::DoBlock {
-            body: vec![
-                Stmt::Expr(lhs),
-                Stmt::Expr(rhs),
-                Stmt::Expr(Expr::Call {
-                    name: Symbol::intern("__mutsu_assignment_ro"),
-                    args: Vec::new(),
-                }),
-            ],
-            label: None,
-        },
         Expr::BareWord(name) => Expr::AssignExpr {
             name,
             expr: Box::new(rhs),
@@ -1248,54 +1220,8 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         _ => "",
     };
     // .= mutating method call: $var .= method(args) => $var = $var.method(args)
-    // Also supports quoted method names: $var.="method"(args) / $var.="$name"(args)
     if let Some(stripped) = r2.strip_prefix(".=") {
         let (r, _) = ws(stripped)?;
-        // Try quoted method name first
-        let name = format!("{}{}", prefix, var);
-        let method_target = match sigil {
-            b'@' => Expr::ArrayVar(var.to_string()),
-            b'%' => Expr::HashVar(var.to_string()),
-            _ => Expr::Var(var.to_string()),
-        };
-        if let Some((r_after_quote, qname)) =
-            crate::parser::expr::postfix::parse_quoted_method_name(r)
-        {
-            if !r_after_quote.starts_with('(') {
-                return Err(PError::expected_at(
-                    "parenthesized arguments after quoted method name with '.='",
-                    r_after_quote,
-                ));
-            }
-            let (r2, _) = parse_char(r_after_quote, '(')?;
-            let (r2, _) = ws(r2)?;
-            let (r2, args) = parse_call_arg_list(r2)?;
-            let (r2, _) = ws(r2)?;
-            let (rest, _) = parse_char(r2, ')')?;
-            let rhs = match qname {
-                crate::parser::expr::postfix::QuotedMethodName::Static(mname) => Expr::MethodCall {
-                    target: Box::new(method_target),
-                    name: Symbol::intern(&mname),
-                    args,
-                    modifier: None,
-                    quoted: true,
-                },
-                crate::parser::expr::postfix::QuotedMethodName::Dynamic(name_expr) => {
-                    Expr::DynamicMethodCall {
-                        target: Box::new(method_target),
-                        name_expr: Box::new(name_expr),
-                        args,
-                    }
-                }
-            };
-            return Ok((
-                rest,
-                Expr::AssignExpr {
-                    name,
-                    expr: Box::new(rhs),
-                },
-            ));
-        }
         // Parse method name
         let (r, method_name) =
             take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
@@ -1361,6 +1287,12 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             (r_inner, args)
         } else {
             (r, vec![])
+        };
+        let name = format!("{}{}", prefix, var);
+        let method_target = match sigil {
+            b'@' => Expr::ArrayVar(var.to_string()),
+            b'%' => Expr::HashVar(var.to_string()),
+            _ => Expr::Var(var.to_string()),
         };
         return Ok((
             rest,
@@ -1687,21 +1619,6 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                     });
                     return parse_statement_modifier(rest, stmt);
                 }
-                if bare_name == "self" {
-                    // `self` is read-only in Raku; assignment should throw X::Assignment::RO
-                    let stmt = Stmt::Expr(Expr::DoBlock {
-                        body: vec![
-                            Stmt::Expr(Expr::BareWord("self".to_string())),
-                            Stmt::Expr(expr),
-                            Stmt::Expr(Expr::Call {
-                                name: Symbol::intern("__mutsu_assignment_ro"),
-                                args: Vec::new(),
-                            }),
-                        ],
-                        label: None,
-                    });
-                    return parse_statement_modifier(rest, stmt);
-                }
                 let stmt = Stmt::Assign {
                     name: bare_name,
                     expr,
@@ -1721,21 +1638,12 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     };
 
     let (rest, var) = var_name(input)?;
-    // For & sigil with ! twigil (private callable attribute like &!x),
-    // the attribute is stored as "!x" in the env, not "&!x".
-    let name = if sigil == b'&' && var.starts_with('!') {
-        var.clone()
-    } else {
-        format!("{}{}", prefix, var)
-    };
+    let name = format!("{}{}", prefix, var);
     let (rest, _) = ws(rest)?;
     let var_expr = if sigil == b'@' {
         Expr::ArrayVar(var.clone())
     } else if sigil == b'%' {
         Expr::HashVar(var.clone())
-    } else if sigil == b'&' && var.starts_with('!') {
-        // Private callable attribute: use the attribute name without & prefix
-        Expr::Var(var.clone())
     } else {
         Expr::Var(name.clone())
     };
@@ -1895,54 +1803,8 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     }
 
     // Mutating method call: $x.=method or $x .= method(args)
-    // Also supports quoted method names: $x.="method"(args) / $x.="$name"(args)
     if let Some(stripped) = rest.strip_prefix(".=") {
         let (stripped, _) = ws(stripped)?;
-        let var_expr = if sigil == b'@' {
-            Expr::ArrayVar(var.clone())
-        } else if sigil == b'%' {
-            Expr::HashVar(var.clone())
-        } else {
-            Expr::Var(var.clone())
-        };
-        // Try quoted method name first
-        if let Some((r_after_quote, qname)) =
-            crate::parser::expr::postfix::parse_quoted_method_name(stripped)
-        {
-            if !r_after_quote.starts_with('(') {
-                return Err(PError::expected_at(
-                    "parenthesized arguments after quoted method name with '.='",
-                    r_after_quote,
-                ));
-            }
-            let (r2, _) = parse_char(r_after_quote, '(')?;
-            let (r2, _) = ws(r2)?;
-            let (r2, args) = parse_call_arg_list(r2)?;
-            let (r2, _) = ws(r2)?;
-            let (r2, _) = parse_char(r2, ')')?;
-            let rhs = match qname {
-                crate::parser::expr::postfix::QuotedMethodName::Static(mname) => Expr::MethodCall {
-                    target: Box::new(var_expr),
-                    name: Symbol::intern(&mname),
-                    args,
-                    modifier: None,
-                    quoted: true,
-                },
-                crate::parser::expr::postfix::QuotedMethodName::Dynamic(name_expr) => {
-                    Expr::DynamicMethodCall {
-                        target: Box::new(var_expr),
-                        name_expr: Box::new(name_expr),
-                        args,
-                    }
-                }
-            };
-            let stmt = Stmt::Assign {
-                name,
-                expr: rhs,
-                op: AssignOp::Assign,
-            };
-            return parse_statement_modifier(r2, stmt);
-        }
         let (r, method_name) = take_while1(stripped, |c: char| {
             c.is_alphanumeric() || c == '_' || c == '-'
         })
@@ -1998,6 +1860,13 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             (r_inner, args)
         } else {
             (r, Vec::new())
+        };
+        let var_expr = if sigil == b'@' {
+            Expr::ArrayVar(var.clone())
+        } else if sigil == b'%' {
+            Expr::HashVar(var.clone())
+        } else {
+            Expr::Var(var.clone())
         };
         let expr = Expr::MethodCall {
             target: Box::new(var_expr),

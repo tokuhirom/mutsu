@@ -2,6 +2,11 @@ use Test;
 
 plan 2;
 
+class A {
+    has %!attrs;
+    method postcircumfix:<{ }>($key) { %!attrs{$key} }
+}
+
 eval-lives-ok q[
 class A {
     has %!attrs;

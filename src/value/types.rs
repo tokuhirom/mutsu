@@ -198,10 +198,6 @@ impl Value {
                     .iter()
                     .all(|(k, v)| b_mix.get(k).is_some_and(|bv| v.eqv(bv)))
             }
-            // Scalar wrapping: unwrap and compare inner value
-            (Value::Scalar(a), Value::Scalar(b)) => a.eqv(b),
-            (Value::Scalar(a), other) => a.eqv(other),
-            (other, Value::Scalar(b)) => other.eqv(b),
             // Cross-type comparisons always return false for eqv
             _ => false,
         }

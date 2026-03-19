@@ -767,7 +767,7 @@ impl Interpreter {
             if let Some(Value::Sub(data)) = generator.as_ref() {
                 if !self
                     .sequence_has_registered_routine(&data.package.resolve(), &data.name.resolve())
-                    && !crate::ast::body_is_semantically_empty(&data.body)
+                    && !data.body.is_empty()
                 {
                     let needs_full_binding = data.param_defs.iter().any(|pd| {
                         pd.type_constraint.is_some()

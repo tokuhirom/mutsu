@@ -3,17 +3,6 @@ use crate::symbol::Symbol;
 use std::sync::Arc;
 
 impl VM {
-    fn can_drop_shared_collection_target(target_name: &str, method: &str) -> bool {
-        match target_name.chars().next() {
-            Some('@') => matches!(
-                method,
-                "push" | "append" | "pop" | "shift" | "unshift" | "prepend" | "splice"
-            ),
-            Some('%') => matches!(method, "delete"),
-            _ => false,
-        }
-    }
-
     fn append_slip_item(args: &mut Vec<Value>, item: &Value) {
         match item {
             Value::Capture { positional, named } => {
@@ -286,11 +275,6 @@ impl VM {
             self.auto_fetch_proxy_args(args)?
         };
         self.interpreter.set_pending_callsite_line(callsite_line);
-        // Check deprecation for function calls
-        if self.current_source_line > 0 {
-            self.interpreter
-                .check_function_deprecation(&name, self.current_source_line);
-        }
         // Check if there's a CALL-ME override from trait_mod mixin
         let call_me_override = self
             .interpreter
@@ -438,70 +422,30 @@ impl VM {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethod target".to_string())
         })?;
-        // Check deprecation for method calls.
-        if self.current_source_line > 0 {
-            let class_name = match &target {
-                Value::Instance { class_name, .. } => Some(class_name.resolve()),
-                Value::Package(name) => Some(name.resolve()),
-                _ => None,
-            };
-            if let Some(cn) = class_name {
-                self.interpreter
-                    .check_method_deprecation(&cn, &method, self.current_source_line);
-            }
-        }
-        // Deprecation.report is a built-in class method.
-        if method == "report" {
-            let is_deprecation = match &target {
-                Value::Package(pkg_name) => pkg_name.resolve() == "Deprecation",
-                Value::Str(s) => s.as_str() == "Deprecation",
-                _ => false,
-            };
-            if is_deprecation {
-                let report = self.interpreter.deprecation_report();
-                self.stack.push(report);
-                self.env_dirty = true;
-                return Ok(());
-            }
-        }
-        // Junction auto-threading: thread method calls over junction values.
-        // Skip methods that should NOT auto-thread: .gist, .raku/.perl return a
-        // single string representation of the junction. .WHAT, .^name, .THREAD
-        // operate on the junction itself. .Bool, .so, .defined collapse the junction.
+        // Junction auto-threading: thread method calls over junction values
         if let Value::Junction { kind, values } = &target
             && !matches!(
                 method.as_str(),
-                "Bool" | "so" | "WHAT" | "^name" | "gist" | "defined" | "THREAD" | "raku" | "perl"
+                "Bool"
+                    | "so"
+                    | "WHAT"
+                    | "^name"
+                    | "gist"
+                    | "Str"
+                    | "defined"
+                    | "THREAD"
+                    | "raku"
+                    | "perl"
             )
         {
             let kind = kind.clone();
-            let is_array_vivify = matches!(
-                method.as_str(),
-                "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
-            );
             let mut results = Vec::new();
             for v in values.iter() {
-                // Auto-vivify Any/Mu type objects to empty Array for mutating methods
-                let v_vivified = if is_array_vivify {
-                    if let Value::Package(name) = v {
-                        let tn = name.resolve();
-                        if tn == "Any" || tn == "Mu" {
-                            Value::real_array(vec![])
-                        } else {
-                            v.clone()
-                        }
-                    } else {
-                        v.clone()
-                    }
-                } else {
-                    v.clone()
-                };
-                let r = if let Some(nr) =
-                    self.try_native_method(&v_vivified, Symbol::intern(&method), &args)
+                let r = if let Some(nr) = self.try_native_method(v, Symbol::intern(&method), &args)
                 {
                     nr?
                 } else {
-                    self.try_compiled_method_or_interpret(v_vivified, &method, args.clone())?
+                    self.try_compiled_method_or_interpret(v.clone(), &method, args.clone())?
                 };
                 results.push(r);
             }
@@ -704,22 +648,6 @@ impl VM {
             self.env_dirty = true;
             return Ok(());
         }
-        // Auto-vivification for non-variable targets (e.g. %h{0}.push: 42):
-        // when push/pop/etc is called on Any/Mu type object, vivify to empty Array.
-        let target = if let Value::Package(name) = &target {
-            let type_name = name.resolve();
-            if matches!(
-                method.as_str(),
-                "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
-            ) && (type_name == "Any" || type_name == "Mu")
-            {
-                Value::real_array(vec![])
-            } else {
-                target
-            }
-        } else {
-            target
-        };
         // Unhandled Failure explosion: calling a non-Failure method on an unhandled
         // Failure should throw the stored exception (Raku behavior).
         if let Value::Instance {
@@ -1281,28 +1209,23 @@ impl VM {
         for arg in raw_args {
             Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
         }
-        let mut target = self.stack.pop().ok_or_else(|| {
+        let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethodMut target".to_string())
         })?;
-        // Deprecation.report — built-in class method
-        if method == "report" {
-            let is_deprecation = match &target {
-                Value::Package(pkg_name) => pkg_name.resolve() == "Deprecation",
-                Value::Str(s) => s.as_str() == "Deprecation",
-                _ => false,
-            };
-            if is_deprecation {
-                let report = self.interpreter.deprecation_report();
-                self.stack.push(report);
-                self.env_dirty = true;
-                return Ok(());
-            }
-        }
         // Junction auto-threading: thread method calls over junction values
         if let Value::Junction { kind, values } = &target
             && !matches!(
                 method.as_str(),
-                "Bool" | "so" | "WHAT" | "^name" | "gist" | "defined" | "THREAD" | "raku" | "perl"
+                "Bool"
+                    | "so"
+                    | "WHAT"
+                    | "^name"
+                    | "gist"
+                    | "Str"
+                    | "defined"
+                    | "THREAD"
+                    | "raku"
+                    | "perl"
             )
         {
             let kind = kind.clone();
@@ -1446,69 +1369,9 @@ impl VM {
         {
             skip_native = true;
         }
-        if Self::can_drop_shared_collection_target(&target_name, &method)
-            && self.interpreter.has_shared_var(&target_name)
-        {
-            // Shared collection mutators operate by variable name; dropping the
-            // transient stack copy avoids per-call array/hash copy-on-write.
-            target = Value::Nil;
-            skip_native = true;
-        }
         if skip_native {
             self.interpreter.skip_pseudo_method_native = Some(method.clone());
         }
-        // Auto-vivification: when a mutating method is called on a type object
-        // (Package("Array"), Package("Hash"), Package("Any"), Package("Mu"))
-        // or on Nil, vivify to an empty instance and store it back in the variable.
-        let target = if let Value::Package(name) = &target {
-            let type_name = name.resolve();
-            let is_array_mutating = matches!(
-                method.as_str(),
-                "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
-            );
-            let is_mutating = is_array_mutating
-                || matches!(
-                    method.as_str(),
-                    "STORE" | "ASSIGN-POS" | "ASSIGN-KEY" | "BIND-POS" | "BIND-KEY"
-                );
-            if is_mutating && (type_name == "Array" || type_name == "Hash") {
-                let vivified = if type_name == "Array" {
-                    Value::real_array(vec![])
-                } else {
-                    Value::hash(std::collections::HashMap::new())
-                };
-                self.interpreter
-                    .env_insert(target_name.clone(), vivified.clone());
-                self.env_dirty = true;
-                vivified
-            } else if is_array_mutating && (type_name == "Any" || type_name == "Mu") {
-                // In Raku, calling push/pop/etc on Any or Mu auto-vivifies to Array
-                let vivified = Value::real_array(vec![]);
-                self.interpreter
-                    .env_insert(target_name.clone(), vivified.clone());
-                self.env_dirty = true;
-                vivified
-            } else {
-                target
-            }
-        } else if matches!(&target, Value::Nil) {
-            let is_array_mutating = matches!(
-                method.as_str(),
-                "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
-            );
-            if is_array_mutating {
-                // In Raku, calling push/pop/etc on Nil auto-vivifies to Array
-                let vivified = Value::real_array(vec![]);
-                self.interpreter
-                    .env_insert(target_name.clone(), vivified.clone());
-                self.env_dirty = true;
-                vivified
-            } else {
-                target
-            }
-        } else {
-            target
-        };
         // For .* and .+ modifiers, skip the single-dispatch call and go
         // directly to the all-methods-in-MRO path to avoid double execution.
         match modifier.as_deref() {
@@ -2327,13 +2190,13 @@ impl VM {
                         block_fns,
                         captured_bindings,
                         writeback_bindings,
-                        _captured_names,
-                        sync_names,
+                        captured_names,
                     ) = self
                         .interpreter
                         .get_or_compile_protect_block_with_slots(data);
-                    self.interpreter
-                        .sync_shared_vars_for_names(sync_names.iter().map(|name| name.as_str()));
+                    self.interpreter.sync_shared_vars_for_names(
+                        captured_names.iter().map(|name| name.as_str()),
+                    );
                     (
                         block_cc,
                         block_fns,
@@ -2352,19 +2215,26 @@ impl VM {
         // Save/swap stack and locals for the block
         let mut saved_locals = std::mem::take(&mut self.locals);
         let saved_stack = std::mem::take(&mut self.stack);
+        let outer_local_slots: std::collections::HashMap<&str, usize> = outer_code
+            .locals
+            .iter()
+            .enumerate()
+            .map(|(idx, name)| (name.as_str(), idx))
+            .collect();
+
         // Initialize locals for the block
         self.locals = vec![Value::Nil; block_cc.locals.len()];
         if captured_env.is_some() {
             for (slot, name) in captured_bindings.iter() {
                 if (name.starts_with('@') || name.starts_with('%'))
-                    && self.interpreter.has_shared_var(name)
+                    && self.interpreter.get_shared_var(name).is_some()
                 {
                     // Leave shared collections unmaterialized in locals.
                     // GetLocal will read the shared value on demand.
                     continue;
                 }
-                if let Some(outer_slot) = outer_code.locals.iter().rposition(|local| local == name)
-                    && let Some(val) = saved_locals.get(outer_slot)
+                if let Some(outer_slot) = outer_local_slots.get(name.as_str())
+                    && let Some(val) = saved_locals.get(*outer_slot)
                 {
                     self.locals[*slot] = val.clone();
                     continue;
@@ -2394,8 +2264,8 @@ impl VM {
                 ) {
                     continue;
                 }
-                if let Some(outer_slot) = outer_code.locals.iter().rposition(|local| local == name)
-                    && let Some(target) = saved_locals.get_mut(outer_slot)
+                if let Some(outer_slot) = outer_local_slots.get(name.as_str())
+                    && let Some(target) = saved_locals.get_mut(*outer_slot)
                 {
                     *target = self.locals[*slot].clone();
                 }

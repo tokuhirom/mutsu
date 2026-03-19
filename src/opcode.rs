@@ -319,8 +319,7 @@ pub(crate) enum OpCode {
     MakeLambda(u32, Option<u32>),
     MakeBlockClosure(u32, Option<u32>),
     // -- Indexing --
-    /// Positional (`false`) or associative (`true`) index access.
-    Index(bool),
+    Index,
     DeleteIndexNamed(u32),
     DeleteIndexExpr,
     /// Multi-dimensional indexing: @a[$x;$y;$z]
@@ -604,10 +603,6 @@ pub(crate) enum OpCode {
     // -- Error handling --
     Die,
     Fail,
-
-    // -- Source line tracking --
-    /// Set the current source line for deprecation and error reporting.
-    SetSourceLine(u32),
 
     // -- Functions --
     Return,

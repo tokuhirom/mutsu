@@ -148,7 +148,6 @@ impl Interpreter {
                 | "eval-lives-ok"
                 | "eval-dies-ok"
                 | "throws-like"
-                | "throws-like-any"
                 | "fails-like"
                 | "is_run"
                 | "run"
@@ -211,7 +210,6 @@ impl Interpreter {
             "eval-lives-ok" => self.test_fn_eval_lives_ok(args).map(Some),
             "eval-dies-ok" => self.test_fn_eval_dies_ok(args).map(Some),
             "throws-like" => self.test_fn_throws_like(args).map(Some),
-            "throws-like-any" => self.test_fn_throws_like_any(args).map(Some),
             "fails-like" => self.test_fn_fails_like(args).map(Some),
             "is_run" => self.test_fn_is_run(args).map(Some),
             "run" | "Test::Util::run" => self.test_fn_run(args).map(Some),
@@ -1320,126 +1318,6 @@ impl Interpreter {
         let all_ok = type_ok && result.is_err();
         let label = if desc.is_empty() {
             format!("did we throws-like {}?", expected_normalized)
-        } else {
-            desc.clone()
-        };
-        self.finish_subtest(
-            ctx,
-            &label,
-            if all_ok {
-                Ok(())
-            } else {
-                Err(RuntimeError::new(""))
-            },
-        )?;
-        Ok(Value::Bool(type_ok))
-    }
-
-    /// throws-like-any: like throws-like but accepts an array of exception types
-    /// and passes if the exception matches ANY of them.
-    fn test_fn_throws_like_any(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let code_val =
-            Self::positional_value_required(args, 0, "throws-like-any expects code")?.clone();
-        let types_val =
-            Self::positional_value_required(args, 1, "throws-like-any expects type array")?.clone();
-        let desc = Self::positional_string(args, 2);
-
-        // Extract the list of type names from the array argument
-        let type_names: Vec<String> = match &types_val {
-            Value::Array(items, ..) => items.iter().map(|v| v.to_string_value()).collect(),
-            _ => vec![types_val.to_string_value()],
-        };
-
-        // Normalize type names: strip parentheses like "(Exception)" -> "Exception"
-        let type_names_normalized: Vec<String> = type_names
-            .iter()
-            .map(|s| {
-                s.strip_prefix('(')
-                    .and_then(|s2| s2.strip_suffix(')'))
-                    .unwrap_or(s)
-                    .to_string()
-            })
-            .collect();
-
-        // Execute the code
-        let result = match &code_val {
-            Value::Sub(data) => self.eval_block_value(&data.body),
-            Value::Str(code) => {
-                let mut nested = Interpreter::new();
-                nested.strict_mode = self.strict_mode;
-                nested.run(code).map(|_| Value::Nil)
-            }
-            other => Self::sink_failure_to_error(other.clone()),
-        };
-        let result = match result {
-            Ok(val) => Self::sink_failure_to_error(val),
-            err => err,
-        };
-
-        // Check if the exception type matches any of the expected types
-        let (type_ok, _exception_val) = match &result {
-            Ok(_) => (false, None),
-            Err(err) => {
-                let ex_class = err.exception.as_ref().and_then(|ex| {
-                    if let Value::Instance { class_name, .. } = ex.as_ref() {
-                        Some(class_name.resolve())
-                    } else {
-                        None
-                    }
-                });
-                let matched = type_names_normalized.iter().any(|expected| {
-                    if expected.is_empty() || expected == "Exception" {
-                        true
-                    } else if let Some(cls) = &ex_class {
-                        cls == expected
-                            || cls.starts_with(&format!("{}::", expected))
-                            || self
-                                .classes
-                                .get(cls)
-                                .is_some_and(|def| def.mro.iter().any(|parent| parent == expected))
-                            || (cls == "X::AdHoc" && err.message.contains(expected))
-                    } else {
-                        err.message.contains(expected)
-                    }
-                });
-                (matched, err.exception.as_ref().map(|e| e.as_ref().clone()))
-            }
-        };
-
-        let type_display = type_names_normalized.join(", ");
-
-        // Collect named attribute matchers
-        let named_matchers: Vec<(String, Value)> = args
-            .iter()
-            .skip(2)
-            .filter_map(|arg| {
-                if let Value::Pair(key, val) = arg {
-                    Some((key.clone(), *val.clone()))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        let ctx = self.begin_subtest();
-        let total = 2 + named_matchers.len();
-        let state = self.test_state.get_or_insert_with(TestState::new);
-        state.planned = Some(total);
-        self.emit_output(&format!("1..{}\n", total));
-        self.test_ok(result.is_err(), "code dies", false)?;
-        self.test_ok(
-            type_ok,
-            &format!("right exception type ({})", type_display),
-            false,
-        )?;
-        if !type_ok && result.is_ok() {
-            for _ in &named_matchers {
-                self.test_ok(false, "Code did not die, can not check exception", true)?;
-            }
-        }
-        let all_ok = type_ok && result.is_err();
-        let label = if desc.is_empty() {
-            format!("did we throws-like-any {}?", type_display)
         } else {
             desc.clone()
         };

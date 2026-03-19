@@ -1420,21 +1420,11 @@ impl Interpreter {
                     return Ok(Value::make_instance(Symbol::intern("Match"), attrs));
                 }
                 // Types that cannot be instantiated with .new
-                "HyperWhatever" | "Whatever" | "Instant" => {
-                    let mut err = RuntimeError::new(format!(
+                "HyperWhatever" | "Whatever" => {
+                    return Err(RuntimeError::new(format!(
                         "X::Cannot::New: Cannot create new object of type {}",
                         class_name
-                    ));
-                    let mut ex_attrs = std::collections::HashMap::new();
-                    ex_attrs.insert(
-                        "typename".to_string(),
-                        Value::str_from(&class_name.resolve()),
-                    );
-                    err.exception = Some(Box::new(Value::make_instance(
-                        Symbol::intern("X::Cannot::New"),
-                        ex_attrs,
                     )));
-                    return Err(err);
                 }
                 "Junction" => {
                     // Junction.new(values, :type<kind>)

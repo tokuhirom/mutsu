@@ -25,20 +25,6 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
         // Empty parens = empty list
         return Ok((input, Expr::ArrayLiteral(Vec::new())));
     }
-    // (@) — anonymous array variable: return an empty mutable Array
-    if let Some(after_at) = input.strip_prefix('@') {
-        let after_at = after_at.trim_start();
-        if let Ok((rest, _)) = parse_char(after_at, ')') {
-            return Ok((rest, Expr::BracketArray(Vec::new(), false)));
-        }
-    }
-    // (%) — anonymous hash variable: return an empty mutable Hash
-    if let Some(after_pct) = input.strip_prefix('%') {
-        let after_pct = after_pct.trim_start();
-        if let Ok((rest, _)) = parse_char(after_pct, ')') {
-            return Ok((rest, Expr::Hash(Vec::new())));
-        }
-    }
     // Try class declaration in parens: (class A { })
     if (input.starts_with("class ") || input.starts_with("class\t") || input.starts_with("class\n"))
         && let Ok((r, class_stmt)) = super::super::stmt::class::class_decl(input)
@@ -602,31 +588,6 @@ pub(super) fn itemized_paren_expr(input: &str) -> PResult<'_, Expr> {
     ))
 }
 
-/// Parse list contextualizer: `@(...)`.
-///
-/// In Raku, `@(expr)` forces list context on the expression — equivalent to
-/// calling `.list` on the inner expression. We lower this to `(expr).list`.
-pub(super) fn list_paren_expr(input: &str) -> PResult<'_, Expr> {
-    let Some(rest) = input.strip_prefix('@') else {
-        return Err(PError::expected("list contextualizer"));
-    };
-    if !rest.starts_with('(') {
-        return Err(PError::expected("list contextualizer"));
-    }
-    let (rest, inner) = paren_expr(rest)?;
-    // Lower @(expr) to expr.list — forces list context
-    Ok((
-        rest,
-        Expr::MethodCall {
-            target: Box::new(inner),
-            name: Symbol::intern("list"),
-            args: vec![],
-            modifier: None,
-            quoted: false,
-        },
-    ))
-}
-
 /// Parse itemized brace expression: `${ }`.
 ///
 /// In Raku, `${ a => 1, b => 2 }` creates an itemized hash — it wraps the
@@ -637,29 +598,6 @@ pub(super) fn itemized_brace_expr(input: &str) -> PResult<'_, Expr> {
     };
     if !rest.starts_with('{') {
         return Err(PError::expected("itemized brace expression"));
-    }
-    // Detect Perl 5 deref syntax: ${$var}, ${@var}, ${%var}
-    // These are obsolete in Raku and should produce an error.
-    if let Some(after_brace) = rest.strip_prefix('{') {
-        let trimmed = after_brace.trim_start();
-        if (trimmed.starts_with('$') || trimmed.starts_with('@') || trimmed.starts_with('%'))
-            && !trimmed.starts_with("$(")
-            && !trimmed.starts_with("@(")
-            && !trimmed.starts_with("%(")
-        {
-            // Try to find closing brace to detect ${$var} pattern
-            if let Some(close_pos) = after_brace.find('}') {
-                let inner = after_brace[..close_pos].trim();
-                if inner.starts_with('$') || inner.starts_with('@') || inner.starts_with('%') {
-                    let sigil = &input[..1]; // '$'
-                    return Err(PError::fatal(format!(
-                        "X::Obsolete: Unsupported use of {sigil}{{{inner}}}. \
-                         In Raku please use: {sigil}({inner}) for hard ref or \
-                         {sigil}::({inner}) for symbolic ref."
-                    )));
-                }
-            }
-        }
     }
     let (rest, inner) = super::misc::block_or_hash_expr(rest)?;
     // When the inner expression is a Hash literal, ${ } creates an itemized hash
@@ -882,27 +820,40 @@ fn merge_sequence_seeds(items: Vec<Expr>) -> Vec<Expr> {
 }
 
 /// Parse a hash constructor literal: %(key => value, :name, ...)
-/// Also handles positional args: %('a', 1, 'b', 2) => hash('a', 1, 'b', 2)
 pub(super) fn percent_hash_literal(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '%')?;
     let (input, _) = parse_char(input, '(')?;
     let (mut rest, _) = ws(input)?;
+    let mut pairs = Vec::new();
 
     if let Ok((rest_after, _)) = parse_char(rest, ')') {
-        return Ok((rest_after, Expr::Hash(vec![])));
+        return Ok((rest_after, Expr::Hash(pairs)));
     }
 
-    // Collect all expressions first, then decide if they are all pairs or positional
-    let mut exprs = Vec::new();
     loop {
         let (r, item) = expression(rest)?;
-        exprs.push(item);
+        let (key, value) = match item {
+            Expr::Binary {
+                left,
+                op: crate::token_kind::TokenKind::FatArrow,
+                right,
+            } => {
+                let key = match *left {
+                    Expr::Literal(Value::Str(s)) => s.to_string(),
+                    Expr::Literal(Value::Int(i)) => i.to_string(),
+                    _ => return Err(PError::expected("hash pair key")),
+                };
+                (key, Some(*right))
+            }
+            _ => return Err(PError::expected("hash pair")),
+        };
+        pairs.push((key, value));
+
         let (r, _) = ws(r)?;
         if let Ok((r, _)) = parse_char(r, ',') {
             let (r, _) = ws(r)?;
             if let Ok((r_after, _)) = parse_char(r, ')') {
-                rest = r_after;
-                break;
+                return Ok((r_after, Expr::Hash(pairs)));
             }
             rest = r;
             continue;
@@ -910,66 +861,12 @@ pub(super) fn percent_hash_literal(input: &str) -> PResult<'_, Expr> {
         // Newline-separated colonpairs without commas: treat as separate
         // statements (like Raku), keeping only the last entry.
         if r.starts_with(':') {
-            exprs.clear();
+            pairs.clear();
             rest = r;
             continue;
         }
         let (r, _) = parse_char(r, ')')?;
-        rest = r;
-        break;
-    }
-
-    // Check if all expressions are fat-arrow pairs
-    let all_pairs = exprs.iter().all(|e| {
-        matches!(
-            e,
-            Expr::Binary {
-                op: crate::token_kind::TokenKind::FatArrow,
-                ..
-            }
-        )
-    });
-
-    if all_pairs {
-        // Convert to Hash literal
-        let mut pairs = Vec::new();
-        for item in exprs {
-            if let Expr::Binary {
-                left,
-                op: crate::token_kind::TokenKind::FatArrow,
-                right,
-            } = item
-            {
-                let key = match *left {
-                    Expr::Literal(Value::Str(s)) => s.to_string(),
-                    Expr::Literal(Value::Int(i)) => i.to_string(),
-                    _ => return Err(PError::expected("hash pair key")),
-                };
-                pairs.push((key, Some(*right)));
-            }
-        }
-        Ok((rest, Expr::Hash(pairs)))
-    } else if exprs.len() == 1 {
-        // Single non-pair expression: lower to expr.hash (hash contextualizer)
-        Ok((
-            rest,
-            Expr::MethodCall {
-                target: Box::new(exprs.into_iter().next().unwrap()),
-                name: Symbol::intern("Hash"),
-                args: vec![],
-                modifier: None,
-                quoted: false,
-            },
-        ))
-    } else {
-        // Multiple positional args: lower to hash(...) call
-        Ok((
-            rest,
-            Expr::Call {
-                name: Symbol::intern("hash"),
-                args: exprs,
-            },
-        ))
+        return Ok((r, Expr::Hash(pairs)));
     }
 }
 

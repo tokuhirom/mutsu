@@ -46,10 +46,11 @@ fn predicate_requires_defined(predicate: &Expr) -> bool {
                 && matches!(target.as_ref(), Expr::Var(v) if v == "_")
         }
         Expr::AnonSub { body, .. } => {
-            matches!(
-                crate::ast::semantic_body_single_stmt(body),
-                Some(Stmt::Expr(expr)) if predicate_requires_defined(expr)
-            )
+            body.len() == 1
+                && matches!(
+                    &body[0],
+                    Stmt::Expr(expr) if predicate_requires_defined(expr)
+                )
         }
         _ => false,
     }
@@ -1160,15 +1161,7 @@ impl Interpreter {
         if constraint == "Numeric"
             && matches!(
                 value_type,
-                "Int"
-                    | "Num"
-                    | "Rat"
-                    | "FatRat"
-                    | "Complex"
-                    | "Bool"
-                    | "UInt"
-                    | "Duration"
-                    | "Instant"
+                "Int" | "Num" | "Rat" | "FatRat" | "Complex" | "Bool" | "UInt"
             )
         {
             return true;
@@ -1176,7 +1169,7 @@ impl Interpreter {
         if constraint == "Real"
             && matches!(
                 value_type,
-                "Int" | "Num" | "Rat" | "FatRat" | "Bool" | "UInt" | "Duration" | "Instant"
+                "Int" | "Num" | "Rat" | "FatRat" | "Bool" | "UInt"
             )
         {
             return true;

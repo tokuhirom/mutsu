@@ -838,29 +838,7 @@ impl VM {
                 // Check if the target is an array variable — use numeric index assignment
                 let key = idx.to_string_value();
                 let array_elem_constraint = self.interpreter.var_type_constraint(&var_name);
-                // Skip element type check for scalar ($) variables with container-type
-                // constraints (Hash, Array). E.g. `my Hash $h; $h<key> = 1` should
-                // not check that `1` is a Hash — the constraint applies to the whole
-                // container, not individual elements.
-                let is_scalar_container_constraint = !var_name.starts_with('@')
-                    && !var_name.starts_with('%')
-                    && array_elem_constraint.as_deref().is_some_and(|c| {
-                        matches!(
-                            c,
-                            "Hash"
-                                | "Array"
-                                | "List"
-                                | "Seq"
-                                | "Bag"
-                                | "Set"
-                                | "Mix"
-                                | "BagHash"
-                                | "SetHash"
-                                | "MixHash"
-                        )
-                    });
                 if let Some(constraint) = array_elem_constraint
-                    && !is_scalar_container_constraint
                     && !matches!(val, Value::Nil)
                     && !self.interpreter.type_matches_value(&constraint, &val)
                 {
@@ -878,17 +856,6 @@ impl VM {
                 let mut range_initialized_marks: Vec<String> = Vec::new();
                 let mut pending_source_update: Option<(String, Value)> = None;
                 let mut pending_varref_update: Option<(String, Option<usize>, Value)> = None;
-                // Auto-vivify Package type objects to empty containers for subscript assignment
-                if let Some(container) = self.interpreter.env_mut().get_mut(&var_name)
-                    && let Value::Package(pkg_name) = container
-                {
-                    let type_name = pkg_name.resolve().to_string();
-                    if type_name == "Hash" {
-                        *container = Value::hash(std::collections::HashMap::new());
-                    } else if type_name == "Array" {
-                        *container = Value::real_array(vec![]);
-                    }
-                }
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
                     match *container {
                         Value::Hash(ref mut hash) => {
@@ -980,7 +947,7 @@ impl VM {
                                     }
                                 }
                             } else {
-                                return Err(Self::make_out_of_range_error(&idx));
+                                return Err(RuntimeError::new("Index out of bounds"));
                             }
                             self.mark_initialized_index(&var_name, encoded_idx.clone());
                             if bind_mode {
@@ -1269,11 +1236,6 @@ impl VM {
                 return Ok(());
             }
             if let Some(constraint) = self.interpreter.var_type_constraint_fast(&name).cloned() {
-                // Nil's type object IS Nil — return Value::Nil, not Package("Nil")
-                if constraint == "Nil" {
-                    self.stack.push(Value::Nil);
-                    return Ok(());
-                }
                 let nominal = self
                     .interpreter
                     .nominal_type_object_name_for_constraint(&constraint);
@@ -1322,20 +1284,6 @@ impl VM {
                     return Err(RuntimeError::new(
                         runtime::utils::type_check_assignment_error(name, &constraint, &val),
                     ));
-                }
-                // Native int range validation: BigInt values must fit in the native range
-                let base_constraint = crate::runtime::types::strip_type_smiley(&constraint).0;
-                if !matches!(val, Value::Nil)
-                    && crate::runtime::native_types::is_native_int_type(base_constraint)
-                    && let Value::BigInt(ref n) = val
-                {
-                    let bits = n.bits();
-                    if !crate::runtime::native_types::is_in_native_range(base_constraint, n) {
-                        return Err(RuntimeError::new(format!(
-                            "Cannot unbox {} bit wide bigint into native integer",
-                            bits
-                        )));
-                    }
                 }
                 let val = if !matches!(val, Value::Nil) {
                     self.interpreter
@@ -1435,20 +1383,6 @@ impl VM {
                 return Err(RuntimeError::new(
                     runtime::utils::type_check_assignment_error(name, &constraint, &val),
                 ));
-            }
-            // Native int range validation: BigInt values must fit in the native range
-            let base_constraint = crate::runtime::types::strip_type_smiley(&constraint).0;
-            if !matches!(val, Value::Nil)
-                && crate::runtime::native_types::is_native_int_type(base_constraint)
-                && let Value::BigInt(ref n) = val
-            {
-                let bits = n.bits();
-                if !crate::runtime::native_types::is_in_native_range(base_constraint, n) {
-                    return Err(RuntimeError::new(format!(
-                        "Cannot unbox {} bit wide bigint into native integer",
-                        bits
-                    )));
-                }
             }
             if !matches!(val, Value::Nil) {
                 val = self

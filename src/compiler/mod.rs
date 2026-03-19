@@ -272,7 +272,6 @@ impl Compiler {
                         Expr::Index {
                             target: Box::new(Expr::Var(target_name.clone())),
                             index: Box::new(Expr::Literal(Value::Int(positional_index as i64))),
-                            is_associative: false,
                         },
                     ));
                     positional_index += 1;
@@ -285,7 +284,6 @@ impl Compiler {
                 Expr::Index {
                     target: Box::new(Expr::Var("_".to_string())),
                     index: Box::new(Expr::Literal(Value::Int(i as i64))),
-                    is_associative: false,
                 },
             ));
         }

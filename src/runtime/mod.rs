@@ -39,10 +39,6 @@ fn flatten_append_args(args: Vec<Value>) -> Vec<Value> {
     if args.len() == 1 {
         match &args[0] {
             Value::Array(vals, kind) if !kind.is_itemized() => vals.to_vec(),
-            Value::Hash(map) => map
-                .iter()
-                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
-                .collect(),
             _ => args,
         }
     } else {
@@ -94,7 +90,6 @@ type ProtectBlockCacheEntry = (
     Arc<HashMap<String, CompiledFunction>>,
     Arc<Vec<(usize, String)>>,
     Arc<Vec<(usize, String)>>,
-    Arc<Vec<String>>,
     Arc<Vec<String>>,
 );
 type ProtectBlockCache = HashMap<u64, ProtectBlockCacheEntry>;
@@ -685,28 +680,6 @@ pub struct Interpreter {
     shared_thread_stderr: Option<Arc<Mutex<String>>>,
     /// True when this interpreter is a thread clone (should use shared output).
     is_thread_clone: bool,
-    /// Deprecation tracker: maps a deprecation key (e.g. "Sub name (from GLOBAL)")
-    /// to (message, Vec<(file, line)>) recording each call site.
-    deprecation_tracker: HashMap<String, DeprecationRecord>,
-    /// Maps function qualified name (e.g. "GLOBAL::a") to deprecation tracker key.
-    deprecated_functions: HashMap<String, String>,
-    /// Maps (class_name, method_name) to deprecation tracker key.
-    deprecated_methods: HashMap<(String, String), String>,
-}
-
-/// Record of deprecation usage for a single deprecated callable.
-#[derive(Debug, Clone)]
-pub(crate) struct DeprecationRecord {
-    /// "Sub" or "Method"
-    pub(crate) kind: String,
-    /// The callable name (e.g. "a", "foo")
-    pub(crate) name: String,
-    /// The package/class that defined it
-    pub(crate) package: String,
-    /// The deprecation message (None = use default "something else")
-    pub(crate) message: Option<String>,
-    /// Call sites: (file, line)
-    pub(crate) call_sites: Vec<(String, i64)>,
 }
 
 /// Metadata stored per custom type created by Metamodel::Primitives.
@@ -1985,7 +1958,6 @@ impl Interpreter {
         register_x("X::Syntax::Variable::ConflictingTypes", "X::Syntax");
         register_x("X::Syntax::Number::LiteralType", "X::Syntax");
         register_x("X::Syntax::Regex::Adverb", "X::Syntax");
-        register_x("X::Syntax::Type::Adverb", "X::Syntax");
         register_x("X::Backslash::UnrecognizedSequence", "X::Backslash");
         register_x("X::Syntax::Regex::SolitaryQuantifier", "X::Syntax");
         register_x("X::Syntax::Regex::NullRegex", "X::Syntax");
@@ -2024,7 +1996,6 @@ impl Interpreter {
 
         // X::Cannot::Lazy
         register_x("X::Cannot::Lazy", "Exception");
-        register_x("X::Cannot::New", "Exception");
         register_x("X::Cannot::Capture", "Exception");
 
         // X::Match::Bool
@@ -2289,9 +2260,6 @@ impl Interpreter {
             shared_thread_output: None,
             shared_thread_stderr: None,
             is_thread_clone: false,
-            deprecation_tracker: HashMap::new(),
-            deprecated_functions: HashMap::new(),
-            deprecated_methods: HashMap::new(),
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
@@ -2494,136 +2462,6 @@ impl Interpreter {
     pub fn add_lib_path(&mut self, path: String) {
         if !path.is_empty() {
             self.lib_paths.push(path);
-        }
-    }
-
-    /// Register a deprecation for a callable (sub or method).
-    pub(crate) fn register_deprecation(
-        &mut self,
-        kind: &str,
-        name: &str,
-        package: &str,
-        message: Option<String>,
-    ) {
-        let key = format!("{} {} (from {})", kind, name, package);
-        self.deprecation_tracker
-            .entry(key.clone())
-            .or_insert_with(|| DeprecationRecord {
-                kind: kind.to_string(),
-                name: name.to_string(),
-                package: package.to_string(),
-                message,
-                call_sites: Vec::new(),
-            });
-        if kind == "Sub" {
-            let fq = format!("{}::{}", package, name);
-            self.deprecated_functions.insert(fq, key);
-        } else if kind == "Method" {
-            self.deprecated_methods
-                .insert((package.to_string(), name.to_string()), key);
-        }
-    }
-
-    /// Record a call to a deprecated callable by tracker key.
-    pub(crate) fn record_deprecation_call_by_key(&mut self, key: &str, file: &str, line: i64) {
-        if let Some(record) = self.deprecation_tracker.get_mut(key) {
-            record.call_sites.push((file.to_string(), line));
-        }
-    }
-
-    /// Check if a function call is deprecated and record the call site.
-    pub(crate) fn check_function_deprecation(&mut self, name: &str, line: i64) {
-        let pkg = self.current_package.clone();
-        let fq = format!("{}::{}", pkg, name);
-        let key = self.deprecated_functions.get(&fq).cloned();
-        if key.is_none() {
-            // Try GLOBAL
-            let fq_global = format!("GLOBAL::{}", name);
-            if let Some(k) = self.deprecated_functions.get(&fq_global).cloned() {
-                let file = self
-                    .program_path
-                    .clone()
-                    .unwrap_or_else(|| "-e".to_string());
-                self.record_deprecation_call_by_key(&k, &file, line);
-            }
-            return;
-        }
-        if let Some(k) = key {
-            let file = self
-                .program_path
-                .clone()
-                .unwrap_or_else(|| "-e".to_string());
-            self.record_deprecation_call_by_key(&k, &file, line);
-        }
-    }
-
-    /// Check if a method call is deprecated and record the call site.
-    pub(crate) fn check_method_deprecation(
-        &mut self,
-        class_name: &str,
-        method_name: &str,
-        line: i64,
-    ) {
-        let lookup_key = (class_name.to_string(), method_name.to_string());
-        if let Some(k) = self.deprecated_methods.get(&lookup_key).cloned() {
-            let file = self
-                .program_path
-                .clone()
-                .unwrap_or_else(|| "-e".to_string());
-            self.record_deprecation_call_by_key(&k, &file, line);
-        }
-    }
-
-    /// Generate and consume the deprecation report.
-    pub(crate) fn deprecation_report(&mut self) -> Value {
-        if self.deprecation_tracker.is_empty() {
-            return Value::Nil;
-        }
-        // Find entries with call_sites
-        let mut reports: Vec<String> = Vec::new();
-        let mut consumed_keys: Vec<String> = Vec::new();
-        for (key, record) in &self.deprecation_tracker {
-            if record.call_sites.is_empty() {
-                continue;
-            }
-            consumed_keys.push(key.clone());
-            let count = record.call_sites.len();
-            let replacement = match &record.message {
-                Some(msg) => msg.clone(),
-                None => "something else".to_string(),
-            };
-            // Build location string
-            let locations = if count == 1 {
-                let (file, line) = &record.call_sites[0];
-                format!("  {}, line {}", file, line)
-            } else {
-                // Group consecutive lines
-                let lines: Vec<i64> = record.call_sites.iter().map(|(_, l)| *l).collect();
-                let file = &record.call_sites[0].0;
-                let line_strs: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
-                format!("  {}, lines {}", file, line_strs.join(","))
-            };
-            let report = format!(
-                "Saw 1 occurrence of deprecated code.\n\
-                 ================================================================================\n\
-                 {} {} (from {}) seen at:\n\
-                 {}\n\
-                 Please use {} instead.\n\
-                 --------------------------------------------------------------------------------",
-                record.kind, record.name, record.package, locations, replacement
-            );
-            reports.push(report);
-        }
-        // Clear consumed entries
-        for key in consumed_keys {
-            if let Some(record) = self.deprecation_tracker.get_mut(&key) {
-                record.call_sites.clear();
-            }
-        }
-        if reports.is_empty() {
-            Value::Nil
-        } else {
-            Value::str(reports.join("\n"))
         }
     }
 
@@ -3083,6 +2921,10 @@ impl Interpreter {
 
     pub(crate) fn is_halted(&self) -> bool {
         self.halted
+    }
+
+    pub(crate) fn is_thread_clone(&self) -> bool {
+        self.is_thread_clone
     }
 
     pub(crate) fn write_warn_to_stderr(&mut self, message: &str) {
@@ -3744,9 +3586,6 @@ impl Interpreter {
                 Some(Arc::clone(buf))
             },
             is_thread_clone: true,
-            deprecation_tracker: self.deprecation_tracker.clone(),
-            deprecated_functions: self.deprecated_functions.clone(),
-            deprecated_methods: self.deprecated_methods.clone(),
         };
         cloned.init_io_environment();
         cloned
@@ -3829,11 +3668,6 @@ impl Interpreter {
     pub(crate) fn get_shared_var(&self, key: &str) -> Option<Value> {
         let sv = self.shared_vars.read().unwrap();
         sv.get(key).cloned()
-    }
-
-    pub(crate) fn has_shared_var(&self, key: &str) -> bool {
-        let sv = self.shared_vars.read().unwrap();
-        sv.contains_key(key)
     }
 
     /// Write a shared variable. Updates both the local env and shared_vars.
@@ -4264,7 +4098,7 @@ mod tests {
         });
 
         let mut interp = Interpreter::new();
-        let (_, _, captured_bindings, _, captured_names, sync_names) =
+        let (_, _, captured_bindings, _, captured_names) =
             interp.get_or_compile_protect_block_with_slots(&block);
 
         assert_eq!(
@@ -4278,10 +4112,6 @@ mod tests {
                 "@noise".to_string(),
                 "$target".to_string(),
             ]
-        );
-        assert_eq!(
-            sync_names.as_ref(),
-            &vec!["used".to_string(), "$target".to_string()]
         );
     }
 }

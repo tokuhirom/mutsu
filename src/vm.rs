@@ -37,7 +37,6 @@ pub(super) struct VmCallFrame {
     pub saved_readonly: HashSet<String>,
     pub saved_env_dirty: bool,
     pub saved_locals_dirty: bool,
-    pub saved_source_line: i64,
 }
 
 pub(crate) struct VM {
@@ -68,8 +67,6 @@ pub(crate) struct VM {
     resume_ip: Option<usize>,
     /// When true, the next SetLocal is a `:=` bind (preserves container type for `@` vars).
     bind_context: bool,
-    /// Current source line number (set by SetSourceLine opcode, used for deprecation tracking).
-    current_source_line: i64,
 }
 
 impl VM {
@@ -175,7 +172,6 @@ impl VM {
             locals_dirty: false,
             resume_ip: None,
             bind_context: false,
-            current_source_line: 0,
         }
     }
 
@@ -484,19 +480,6 @@ impl VM {
                         Value::Nil
                     }
                 });
-                // Private attribute access ($!attr) outside of a class/method
-                // context: throw X::Syntax::NoSelf if the variable is not found.
-                if matches!(val, Value::Nil)
-                    && name.starts_with('!')
-                    && name.len() > 1
-                    && name != "!"
-                    && self.get_env_with_main_alias("self").is_none()
-                {
-                    return Err(RuntimeError::new(format!(
-                        "X::Syntax::NoSelf: Variable ${} used where no 'self' is available",
-                        name
-                    )));
-                }
                 // When the value is Nil and the variable has a type constraint,
                 // return the type object (consistent with GetLocal behavior).
                 let val = if matches!(val, Value::Nil) {
@@ -529,18 +512,7 @@ impl VM {
                             .and_then(|bare| self.interpreter.env().get(bare).cloned())
                     })
                     .unwrap_or(Value::Nil);
-                // Coerce Hash to list of Pairs when accessed via @ sigil
-                let coerced = match &val {
-                    Value::Hash(map) => {
-                        let pairs: Vec<Value> = map
-                            .iter()
-                            .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
-                            .collect();
-                        Value::Array(std::sync::Arc::new(pairs), crate::value::ArrayKind::List)
-                    }
-                    _ => val,
-                };
-                self.stack.push(coerced);
+                self.stack.push(val);
                 *ip += 1;
             }
             OpCode::GetHashVar(name_idx) => {
@@ -553,17 +525,7 @@ impl VM {
                             .and_then(|bare| self.interpreter.env().get(bare).cloned())
                     })
                     .unwrap_or(Value::Nil);
-                // Coerce Array/List to Hash when accessed via % sigil
-                let coerced = match &val {
-                    Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
-                        match crate::runtime::utils::build_hash_from_items(items.to_vec()) {
-                            Ok(h) => h,
-                            Err(_) => val,
-                        }
-                    }
-                    _ => val,
-                };
-                self.stack.push(coerced);
+                self.stack.push(val);
                 *ip += 1;
             }
             OpCode::GetBareWord(name_idx) => {
@@ -731,21 +693,18 @@ impl VM {
                 self.interpreter
                     .set_var_type_constraint(&name, Some(constraint.clone()));
                 // For scalar variables, if the current value is Nil, set it to the type object.
-                // Exception: Nil type constraint should keep Value::Nil (Nil's type object IS Nil).
                 if !name.starts_with('@') && !name.starts_with('%') {
-                    if constraint != "Nil" {
-                        let is_nil =
-                            matches!(self.interpreter.env().get(&name), Some(Value::Nil) | None);
-                        if is_nil {
-                            let type_obj = Value::Package(Symbol::intern(
-                                &self
-                                    .interpreter
-                                    .var_type_constraint(&name)
-                                    .unwrap_or(constraint.clone()),
-                            ));
-                            self.set_env_with_main_alias(&name, type_obj.clone());
-                            self.update_local_if_exists(code, &name, &type_obj);
-                        }
+                    let is_nil =
+                        matches!(self.interpreter.env().get(&name), Some(Value::Nil) | None);
+                    if is_nil {
+                        let type_obj = Value::Package(Symbol::intern(
+                            &self
+                                .interpreter
+                                .var_type_constraint(&name)
+                                .unwrap_or(constraint.clone()),
+                        ));
+                        self.set_env_with_main_alias(&name, type_obj.clone());
+                        self.update_local_if_exists(code, &name, &type_obj);
                     }
                 } else if let Some(value) = self.get_env_with_main_alias(&name) {
                     let info = crate::runtime::ContainerTypeInfo {
@@ -1470,8 +1429,8 @@ impl VM {
             }
 
             // -- Indexing --
-            OpCode::Index(is_associative) => {
-                self.exec_index_op(*is_associative)?;
+            OpCode::Index => {
+                self.exec_index_op()?;
                 *ip += 1;
             }
             OpCode::DeleteIndexNamed(name_idx) => {
@@ -1721,10 +1680,6 @@ impl VM {
             }
 
             // -- Error handling --
-            OpCode::SetSourceLine(line) => {
-                self.current_source_line = *line as i64;
-                *ip += 1;
-            }
             OpCode::Die => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
                 // Store the resume point (instruction after Die) for .resume support

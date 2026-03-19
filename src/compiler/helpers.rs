@@ -390,7 +390,7 @@ impl Compiler {
             | Expr::HyperMethodCallDynamic { target, args, .. } => {
                 Self::expr_has_placeholder(target) || args.iter().any(Self::expr_has_placeholder)
             }
-            Expr::Index { target, index, .. } | Expr::IndexAssign { target, index, .. } => {
+            Expr::Index { target, index } | Expr::IndexAssign { target, index, .. } => {
                 Self::expr_has_placeholder(target) || Self::expr_has_placeholder(index)
             }
             Expr::CallOn { target, args } => {
@@ -943,24 +943,22 @@ impl Compiler {
 
     fn compile_stmts_value(&mut self, stmts: &[Stmt]) {
         let saved = self.push_dynamic_scope_lexical();
-        let filtered: Vec<Stmt> = crate::ast::semantic_body_stmts(stmts).cloned().collect();
-        if filtered.is_empty() {
+        if stmts.is_empty() {
             self.emit_nil_value();
             self.pop_dynamic_scope_lexical(saved);
             return;
         }
-        let stmts: Vec<&Stmt> = filtered.iter().collect();
         // If the block contains CATCH/CONTROL, wrap in implicit try so
         // exceptions are handled (any Raku block can act as a try block).
-        if Self::has_catch_or_control(&filtered) {
-            self.compile_try(&filtered, &None);
+        if Self::has_catch_or_control(stmts) {
+            self.compile_try(stmts, &None);
             self.pop_dynamic_scope_lexical(saved);
             return;
         }
         for (i, stmt) in stmts.iter().enumerate() {
             let is_last = i == stmts.len() - 1;
             if is_last {
-                match *stmt {
+                match stmt {
                     Stmt::Expr(expr) => self.compile_expr(expr),
                     Stmt::If {
                         cond,
@@ -1332,7 +1330,8 @@ impl Compiler {
             }
             self.code.patch_block_enter_end(idx);
             // Body (filter out phasers)
-            let body_stmts: Vec<&Stmt> = crate::ast::semantic_body_stmts(body)
+            let body_stmts: Vec<&Stmt> = body
+                .iter()
                 .filter(|s| {
                     !matches!(
                         s,
@@ -2148,7 +2147,6 @@ impl Compiler {
         if let Expr::Index {
             target: inner_target,
             index: inner_index,
-            ..
         } = target
             && let Some(name) = Self::index_assign_target_name(inner_target)
         {
@@ -2176,19 +2174,17 @@ impl Compiler {
     /// Compile a block inline (for blocks without placeholders).
     pub(super) fn compile_block_inline(&mut self, stmts: &[Stmt]) {
         let saved = self.push_dynamic_scope_lexical();
-        let stmts: Vec<&Stmt> = crate::ast::semantic_body_stmts(stmts).collect();
         if stmts.is_empty() {
             self.code.emit(OpCode::LoadNil);
             self.pop_dynamic_scope_lexical(saved);
             return;
         }
         // Hoist sub declarations
-        let filtered: Vec<Stmt> = stmts.iter().map(|stmt| (*stmt).clone()).collect();
-        self.hoist_sub_decls(&filtered);
+        self.hoist_sub_decls(stmts);
         for (i, stmt) in stmts.iter().enumerate() {
             let is_last = i == stmts.len() - 1;
             if is_last {
-                match *stmt {
+                match stmt {
                     // MarkSigillessReadonly at block-final position: compile
                     // the mark statement, then load the variable's value so
                     // `my \x = 42` used in expression context returns 42.

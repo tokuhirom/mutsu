@@ -252,11 +252,11 @@ pub(super) fn decimal(input: &str) -> PResult<'_, Expr> {
             ));
         }
         let denom = 10i64.pow(frac_digits);
-        let int_val: Option<i64> = int_clean.parse().ok();
-        let frac_val: Option<i64> = frac_clean.parse().ok();
+        let int_val: i64 = int_clean.parse().unwrap_or(0);
+        let frac_val: i64 = frac_clean.parse().unwrap_or(0);
         let numer = int_val
-            .zip(frac_val)
-            .and_then(|(iv, fv)| iv.checked_mul(denom).and_then(|v| v.checked_add(fv)));
+            .checked_mul(denom)
+            .and_then(|v| v.checked_add(frac_val));
         match numer {
             Some(numer) => Ok((rest, Expr::Literal(crate::value::make_rat(numer, denom)))),
             None => {

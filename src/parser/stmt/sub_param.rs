@@ -257,7 +257,7 @@ fn expr_contains_whatever(expr: &Expr) -> bool {
         Expr::CallOn { target, args } => {
             expr_contains_whatever(target) || args.iter().any(expr_contains_whatever)
         }
-        Expr::Index { target, index, .. } => {
+        Expr::Index { target, index } => {
             expr_contains_whatever(target) || expr_contains_whatever(index)
         }
         Expr::MultiDimIndex { target, dimensions } => {
@@ -1400,7 +1400,6 @@ fn method_decl_body_with_my(
             is_our,
             is_my,
             return_type,
-            deprecated: traits.deprecated,
         },
     ))
 }

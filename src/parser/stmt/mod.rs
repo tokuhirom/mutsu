@@ -33,22 +33,6 @@ use sub::{
 thread_local! {
     static STMT_MEMO_TLS: RefCell<HashMap<(usize, usize), MemoEntry<Stmt>>> = RefCell::new(HashMap::new());
     static STMT_MEMO_STATS_TLS: RefCell<MemoStats> = RefCell::new(MemoStats::default());
-    /// When true, SetLine markers are emitted into statement lists.
-    static EMIT_SETLINE: RefCell<bool> = const { RefCell::new(false) };
-}
-
-/// Enable SetLine emission during parsing. Called by parse_program.
-pub(crate) fn enable_setline_emission() {
-    EMIT_SETLINE.with(|f| *f.borrow_mut() = true);
-}
-
-/// Disable SetLine emission. Called after parsing completes.
-pub(crate) fn disable_setline_emission() {
-    EMIT_SETLINE.with(|f| *f.borrow_mut() = false);
-}
-
-fn should_emit_setline() -> bool {
-    EMIT_SETLINE.with(|f| *f.borrow())
 }
 
 static STMT_MEMO: ParseMemo<Stmt> = ParseMemo::new(&STMT_MEMO_TLS, &STMT_MEMO_STATS_TLS);
@@ -532,11 +516,6 @@ fn stmt_list_with_mode(input: &str, allow_mainline_capture: bool) -> PResult<'_,
                 Some(r.len()),
             ));
         }
-        let stmt_start_line = if should_emit_setline() {
-            Some(crate::parser::primary::current_line_number(r))
-        } else {
-            None
-        };
         match statement(r) {
             Ok((r, stmt)) => {
                 if matches!(
@@ -544,9 +523,6 @@ fn stmt_list_with_mode(input: &str, allow_mainline_capture: bool) -> PResult<'_,
                     Stmt::Package { .. } | Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. }
                 ) {
                     saw_compunit_declarator = true;
-                }
-                if let Some(line) = stmt_start_line {
-                    stmts.push(Stmt::SetLine(line));
                 }
                 stmts.push(stmt);
                 rest = r;
@@ -1158,15 +1134,7 @@ mod tests {
         let (rest, stmts) = program(".=fmt('%03b');").unwrap();
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
-        // .=method on topic produces an assignment to $_
-        assert!(matches!(
-            &stmts[0],
-            Stmt::Assign {
-                name,
-                expr: Expr::MethodCall { .. },
-                ..
-            } if name == "_"
-        ));
+        assert!(matches!(&stmts[0], Stmt::Expr(Expr::MethodCall { .. })));
     }
 
     #[test]
@@ -1174,8 +1142,10 @@ mod tests {
         let (rest, stmts) = program("(class { method foo() { self } }.new).=foo;").unwrap();
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
-        // (expr).=method is parsed inline as a method call expression
-        assert!(matches!(&stmts[0], Stmt::Expr(Expr::MethodCall { .. })));
+        assert!(matches!(
+            &stmts[0],
+            Stmt::Expr(Expr::Call { name, .. }) if name == "sink"
+        ));
     }
 
     #[test]

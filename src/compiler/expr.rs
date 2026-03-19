@@ -37,7 +37,7 @@ impl Compiler {
             Expr::ArrayVar(name) => Some(format!("@{}", name)),
             Expr::HashVar(name) => Some(format!("%{}", name)),
             Expr::CodeVar(name) => Some(format!("&{}", name)),
-            Expr::Index { target, index, .. }
+            Expr::Index { target, index }
                 if matches!(target.as_ref(), Expr::PseudoStash(_))
                     && matches!(index.as_ref(), Expr::Literal(Value::Str(_))) =>
             {
@@ -86,18 +86,6 @@ impl Compiler {
                 self.compile_match_regex(v);
             }
             Expr::Var(name) => {
-                // $.bar — public attribute accessor, equivalent to self.bar()
-                if let Some(method_name) = name.strip_prefix('.') {
-                    let self_name = "self".to_string();
-                    self.compile_expr(&Expr::MethodCall {
-                        target: Box::new(Expr::BareWord(self_name)),
-                        name: Symbol::intern(method_name),
-                        args: Vec::new(),
-                        modifier: None,
-                        quoted: false,
-                    });
-                    return;
-                }
                 // $CALLER:: / $CALLER::CALLER:: variable access
                 if let Some((bare_name, depth)) = Self::parse_caller_prefix(name) {
                     let name_idx = self.code.add_constant(Value::str(bare_name));
@@ -219,7 +207,7 @@ impl Compiler {
                         self.code.emit(OpCode::Pop);
                         let name_idx = self.code.add_constant(Value::str(var_name));
                         self.code.emit(OpCode::PreIncrement(name_idx));
-                    } else if let Expr::Index { target, index, .. } = expr.as_ref() {
+                    } else if let Expr::Index { target, index } = expr.as_ref() {
                         if let Some(name) = Self::postfix_index_name(target) {
                             self.compile_expr(index);
                             let name_idx = self.code.add_constant(Value::str(name));
@@ -250,7 +238,7 @@ impl Compiler {
                         self.code.emit(OpCode::Pop);
                         let name_idx = self.code.add_constant(Value::str(var_name));
                         self.code.emit(OpCode::PreDecrement(name_idx));
-                    } else if let Expr::Index { target, index, .. } = expr.as_ref() {
+                    } else if let Expr::Index { target, index } = expr.as_ref() {
                         if let Some(name) = Self::postfix_index_name(target) {
                             self.compile_expr(index);
                             let name_idx = self.code.add_constant(Value::str(name));
@@ -762,32 +750,6 @@ impl Compiler {
                     });
                     return;
                 }
-                // Rewrite __mutsu_assign_named_sub_lvalue("undefine", [$var], value)
-                // → $var = Nil; $var = value (undefine is rw)
-                if name == "__mutsu_assign_named_sub_lvalue"
-                    && args.len() == 3
-                    && matches!(&args[0], Expr::Literal(Value::Str(s)) if **s == *"undefine")
-                    && let Expr::ArrayLiteral(call_args) = &args[1]
-                    && call_args.len() == 1
-                    && let Some(var_name) = match &call_args[0] {
-                        Expr::Var(n) => Some(n.clone()),
-                        Expr::ArrayVar(n) => Some(format!("@{}", n)),
-                        Expr::HashVar(n) => Some(format!("%{}", n)),
-                        Expr::CodeVar(n) => Some(format!("&{}", n)),
-                        _ => None,
-                    }
-                {
-                    // First undefine: $var = Nil
-                    self.code.emit(OpCode::LoadNil);
-                    let name_idx = self.code.add_constant(Value::str(var_name.clone()));
-                    self.code.emit(OpCode::AssignExpr(name_idx));
-                    self.code.emit(OpCode::Pop);
-                    // Then assign the value: $var = value
-                    self.compile_expr(&args[2]);
-                    let name_idx2 = self.code.add_constant(Value::str(var_name));
-                    self.code.emit(OpCode::AssignExpr(name_idx2));
-                    return;
-                }
                 // Rewrite undefine($var) → $var = Nil (assign Nil to the variable)
                 if name == "undefine" && args.len() == 1 {
                     let var_name = match &args[0] {
@@ -802,25 +764,8 @@ impl Compiler {
                         self.code.emit(OpCode::LoadNil);
                         let name_idx = self.code.add_constant(Value::str(vname));
                         self.code.emit(OpCode::AssignExpr(name_idx));
-                    } else if let Expr::Index { target, index, .. } = &args[0] {
-                        // undefine %hash<key> or undefine @arr[idx]
-                        // Compile as IndexAssign with Nil value
-                        let assign_expr = Expr::IndexAssign {
-                            target: target.clone(),
-                            index: index.clone(),
-                            value: Box::new(Expr::Literal(Value::Nil)),
-                        };
-                        self.compile_expr(&assign_expr);
                     } else {
-                        // For other expressions (e.g. function calls), just call
-                        // undefine as a regular function
-                        self.compile_expr(&args[0]);
-                        let call_name_idx = self.code.add_constant(Value::str(name.resolve()));
-                        self.code.emit(OpCode::CallFunc {
-                            name_idx: call_name_idx,
-                            arity: 1,
-                            arg_sources_idx: None,
-                        });
+                        self.code.emit(OpCode::LoadNil);
                     }
                 }
                 // Rewrite shift(@arr)/pop(@arr) → @arr.shift()/@arr.pop() for mutability
@@ -911,7 +856,7 @@ impl Compiler {
                             expr: args[2].clone(),
                             op: AssignOp::Assign,
                         }),
-                        Expr::Index { target, index, .. } => Some(Stmt::Expr(Expr::IndexAssign {
+                        Expr::Index { target, index } => Some(Stmt::Expr(Expr::IndexAssign {
                             target: target.clone(),
                             index: index.clone(),
                             value: Box::new(args[2].clone()),
@@ -1102,7 +1047,6 @@ impl Compiler {
                 if let Expr::Index {
                     target: index_target,
                     index,
-                    ..
                 } = target.as_ref()
                     && let Some(source_name) = Self::index_assign_target_name(index_target)
                 {
@@ -1183,7 +1127,6 @@ impl Compiler {
                 if let Expr::Index {
                     target: idx_target,
                     index: idx_key,
-                    ..
                 } = target.as_ref()
                 {
                     let var_name = Self::postfix_index_name(idx_target).unwrap_or_default();
@@ -1230,7 +1173,6 @@ impl Compiler {
                     && let Expr::Index {
                         target: delete_target,
                         index: delete_index,
-                        ..
                     } = target.as_ref()
                 {
                     if let Some(var_name) = Self::postfix_index_name(delete_target) {
@@ -1357,11 +1299,7 @@ impl Compiler {
                 });
             }
             // Indexing
-            Expr::Index {
-                target,
-                index,
-                is_associative,
-            } => {
+            Expr::Index { target, index } => {
                 // Special case: %*ENV<key> compiles to GetEnvIndex
                 if let Expr::HashVar(name) = target.as_ref() {
                     if name == "*ENV" {
@@ -1372,24 +1310,24 @@ impl Compiler {
                             // Dynamic key - compile as runtime hash + index
                             self.compile_expr(target);
                             self.compile_expr(index);
-                            self.code.emit(OpCode::Index(*is_associative));
+                            self.code.emit(OpCode::Index);
                         }
                     } else {
                         self.compile_expr(target);
                         self.compile_expr(index);
-                        self.code.emit(OpCode::Index(*is_associative));
+                        self.code.emit(OpCode::Index);
                     }
                 } else {
                     self.compile_expr(target);
                     self.compile_expr(index);
-                    self.code.emit(OpCode::Index(*is_associative));
+                    self.code.emit(OpCode::Index);
                 }
             }
             // Multi-dimensional indexing: @a[$x;$y;$z]
             Expr::MultiDimIndex { target, dimensions } => {
                 self.compile_expr(target);
                 self.compile_expr(&Expr::ArrayLiteral(dimensions.clone()));
-                self.code.emit(OpCode::Index(false));
+                self.code.emit(OpCode::Index);
             }
             // Hash hyperslice: %hash{**}:adverb
             Expr::HyperSlice { target, adverb } => {
@@ -1445,7 +1383,7 @@ impl Compiler {
                     self.code.emit(OpCode::Pop);
                     let name_idx = self.code.add_constant(Value::str(var_name));
                     self.code.emit(OpCode::PostIncrement(name_idx));
-                } else if let Expr::Index { target, index, .. } = expr.as_ref() {
+                } else if let Expr::Index { target, index } = expr.as_ref() {
                     if let Some(name) = Self::postfix_index_name(target) {
                         self.compile_expr(index);
                         let name_idx = self.code.add_constant(Value::str(name));
@@ -1521,7 +1459,7 @@ impl Compiler {
                     self.code.emit(OpCode::Pop);
                     let name_idx = self.code.add_constant(Value::str(var_name));
                     self.code.emit(OpCode::PostDecrement(name_idx));
-                } else if let Expr::Index { target, index, .. } = expr.as_ref() {
+                } else if let Expr::Index { target, index } = expr.as_ref() {
                     if let Some(name) = Self::postfix_index_name(target) {
                         self.compile_expr(index);
                         let name_idx = self.code.add_constant(Value::str(name));
@@ -1740,9 +1678,7 @@ impl Compiler {
                     Expr::ZenSlice(inner) => {
                         self.compile_expr(inner);
                     }
-                    Expr::Index {
-                        target: t, index, ..
-                    } => {
+                    Expr::Index { target: t, index } => {
                         self.compile_expr(t);
                         self.compile_expr(index);
                     }
@@ -1759,7 +1695,6 @@ impl Compiler {
                     && let Expr::Index {
                         target: delete_target,
                         index: delete_index,
-                        ..
                     } = target.as_ref()
                 {
                     if let Some(var_name) = Self::postfix_index_name(delete_target) {
@@ -2391,7 +2326,6 @@ impl Compiler {
                         is_test_assertion: false,
                         supersede: false,
                         custom_traits: Vec::new(),
-                        deprecated: None,
                     });
                     self.code.emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx)));
                 } else {
@@ -2445,7 +2379,6 @@ impl Compiler {
                     is_test_assertion: false,
                     supersede: false,
                     custom_traits: Vec::new(),
-                    deprecated: None,
                 });
                 self.code.emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx)));
             }
@@ -2474,7 +2407,6 @@ impl Compiler {
                     is_test_assertion: false,
                     supersede: false,
                     custom_traits: Vec::new(),
-                    deprecated: None,
                 });
                 self.code.emit(OpCode::MakeLambda(idx, Some(cc_idx)));
             }

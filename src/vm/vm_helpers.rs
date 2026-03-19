@@ -4,7 +4,7 @@ use crate::symbol::Symbol;
 const ATTR_ALIAS_META_PREFIX: &str = "__mutsu_attr_alias::";
 
 impl VM {
-    pub(super) fn thread_right_first(
+    fn thread_right_first(
         left: &crate::value::JunctionKind,
         right: &crate::value::JunctionKind,
     ) -> bool {
@@ -35,7 +35,6 @@ impl VM {
             saved_stack_depth: self.stack.len(),
             saved_env_dirty: self.env_dirty,
             saved_locals_dirty: self.locals_dirty,
-            saved_source_line: self.current_source_line,
         };
         self.env_dirty = false;
         self.locals_dirty = false;
@@ -54,7 +53,6 @@ impl VM {
             .restore_readonly_vars(std::mem::take(&mut frame.saved_readonly));
         self.env_dirty = frame.saved_env_dirty;
         self.locals_dirty = frame.saved_locals_dirty;
-        self.current_source_line = frame.saved_source_line;
         frame
     }
 
@@ -101,9 +99,18 @@ impl VM {
     }
 
     pub(super) fn get_env_with_main_alias(&self, name: &str) -> Option<Value> {
-        // Check local env first so that function parameters and lexical
-        // variables take precedence over shared_vars.  Without this,
-        // recursive `start` blocks read stale parameter values from
+        // Thread-clone @/% lookups must prefer the shared copy. Child thread
+        // env snapshots can lag behind sibling mutations even when Lock::Async
+        // serializes the writes through shared_vars.
+        if self.interpreter.is_thread_clone()
+            && (name.starts_with('@') || name.starts_with('%'))
+            && let Some(v) = self.interpreter.get_shared_var(name)
+        {
+            return Some(v);
+        }
+        // Otherwise check local env first so that function parameters and
+        // lexical variables take precedence over shared_vars. Without this,
+        // recursive `start` blocks can read stale parameter values from
         // shared_vars instead of the locally-bound ones.
         if let Some(val) = self.interpreter.env().get(name) {
             return Some(val.clone());
@@ -651,9 +658,6 @@ impl VM {
                 | "Attribute"
                 | "Cursor"
                 | "X"
-                | "utf16"
-                | "utf32"
-                | "Macro"
         ) || {
             // Handle parameterized types like Buf[uint8], Array[Int], etc.
             if let Some(open) = name.find('[')
@@ -1014,14 +1018,6 @@ impl VM {
                     .cloned()
                     .unwrap_or(Value::Nil))
             } else {
-                // Clear capture variables ($0, $1, ...) and $/ on failed match
-                self.interpreter
-                    .env_mut()
-                    .insert("/".to_string(), Value::Nil);
-                for i in 0..10 {
-                    self.interpreter.env_mut().remove(&i.to_string());
-                }
-                self.env_dirty = true;
                 Ok(Value::Nil)
             }
         } else {
@@ -1303,17 +1299,6 @@ impl VM {
         method_sym: crate::symbol::Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        // Deprecation.report — built-in class method
-        if method_sym.resolve() == "report" {
-            let is_deprecation = match target {
-                Value::Package(pkg_name) => pkg_name.resolve() == "Deprecation",
-                Value::Str(s) => s.as_str() == "Deprecation",
-                _ => false,
-            };
-            if is_deprecation {
-                return Some(Ok(self.interpreter.deprecation_report()));
-            }
-        }
         fn collection_contains_instance(value: &Value) -> bool {
             match value {
                 Value::Instance { .. } => true,
@@ -1373,15 +1358,6 @@ impl VM {
                     .interpreter
                     .is_native_method(&class_name.resolve(), &method_name));
         // Proxy containers must auto-FETCH before dispatching methods (except meta-methods)
-        let bypass_array_subclass = matches!(target, Value::Instance { class_name, .. }
-            if self.interpreter.class_inherits_array(&class_name.resolve())
-                && !self.interpreter.has_user_method(&class_name.resolve(), &method_name)
-                && !matches!(method_name.as_ref(),
-                    "WHAT" | "HOW" | "WHO" | "WHY" | "WHICH" | "WHERE" | "DEFINITE"
-                    | "VAR" | "REPR" | "new" | "bless" | "clone" | "isa" | "does" | "can"
-                    | "^name" | "^mro" | "^parents" | "^methods" | "^roles" | "^attributes"
-                    | "defined" | "Bool" | "so" | "not" | "gist" | "Str" | "raku" | "perl"
-                    | "ACCEPTS" | "Numeric" | "Int" | "sink" | "self" | "item"));
         let bypass_proxy = matches!(target, Value::Proxy { .. })
             && !matches!(
                 method_sym.resolve().as_ref(),
@@ -1395,7 +1371,6 @@ impl VM {
             || bypass_tail_fastpath
             || bypass_numeric_bridge_instance_fastpath
             || bypass_runtime_native_instance_fastpath
-            || bypass_array_subclass
             || bypass_proxy
         {
             return None;

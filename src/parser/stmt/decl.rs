@@ -18,69 +18,6 @@ fn parse_colon_method_arg(input: &str) -> PResult<'_, Expr> {
 
 use crate::ast::{AssignOp, Expr, Stmt};
 use crate::symbol::Symbol;
-
-/// Parse a method name and optional arguments after `.=` in a declaration.
-/// Returns (remaining, method_name, args).
-/// `type_constraint` is used for typed sigilless vars (calls method on the type).
-fn parse_dot_assign_method<'a>(
-    input: &'a str,
-    _type_constraint: Option<&Expr>,
-) -> PResult<'a, (String, Vec<Expr>)> {
-    let (r, method_name) =
-        take_while1(input, |c: char| c.is_alphanumeric() || c == '_' || c == '-').map_err(
-            |err| PError {
-                messages: merge_expected_messages("expected method name after '.='", &err.messages),
-                remaining_len: err.remaining_len.or(Some(input.len())),
-                exception: None,
-            },
-        )?;
-    let method_name = method_name.to_string();
-    let (r, _) = ws(r)?;
-    // Parse optional args: parens or colon-form
-    let (r, args) = if r.starts_with('(') {
-        let (r, _) = parse_char(r, '(')?;
-        let (r, _) = ws(r)?;
-        let (r, args) = crate::parser::primary::parse_call_arg_list(r)?;
-        let (r, _) = ws(r)?;
-        let (r, _) = parse_char(r, ')')?;
-        (r, args)
-    } else if r.starts_with(':') && !r.starts_with("::") {
-        // Colon-arg syntax: .=method: arg, arg2 or .=new :key<value>
-        let r = &r[1..];
-        let (r, _) = ws(r)?;
-        let (r, first_arg) = parse_colon_method_arg(r)?;
-        let mut args = vec![first_arg];
-        let mut r_inner = r;
-        loop {
-            let (r2, _) = ws(r_inner)?;
-            // Adjacent colonpairs without comma
-            if r2.starts_with(':')
-                && !r2.starts_with("::")
-                && let Ok((r3, arg)) = crate::parser::primary::misc::colonpair_expr(r2)
-            {
-                args.push(arg);
-                r_inner = r3;
-                continue;
-            }
-            if !r2.starts_with(',') {
-                break;
-            }
-            let r2 = &r2[1..];
-            let (r2, _) = ws(r2)?;
-            if r2.starts_with(';') || r2.starts_with('}') || r2.is_empty() {
-                r_inner = r2;
-                break;
-            }
-            let (r2, next) = parse_colon_method_arg(r2)?;
-            args.push(next);
-            r_inner = r2;
-        }
-        (r_inner, args)
-    } else {
-        (r, Vec::new())
-    };
-    Ok((r, (method_name, args)))
-}
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
@@ -151,48 +88,6 @@ fn default_decl_expr(
 
 fn scalar_binding_rhs_is_readonly(expr: &Expr) -> bool {
     matches!(expr, Expr::Literal(_))
-}
-
-/// After parsing a scalar `my` declaration RHS, consume any trailing
-/// comma-separated expressions as sink expressions.
-/// e.g. `my $b = expr, other_expr, ...;` → returns vec![other_expr, ...]
-fn consume_trailing_comma_sink_exprs(input: &str) -> PResult<'_, Vec<Expr>> {
-    let mut rest = input;
-    let mut sink_exprs = Vec::new();
-    loop {
-        let (r, _) = ws(rest)?;
-        if !r.starts_with(',') || r.starts_with(",,") {
-            return Ok((rest, sink_exprs));
-        }
-        let r = &r[1..];
-        let (r, _) = ws(r)?;
-        // Trailing comma before statement terminator
-        if r.starts_with(';') || r.is_empty() || r.starts_with('}') {
-            return Ok((r, sink_exprs));
-        }
-        match expression(r) {
-            Ok((r, expr)) => {
-                sink_exprs.push(expr);
-                rest = r;
-            }
-            Err(_) => {
-                return Ok((rest, sink_exprs));
-            }
-        }
-    }
-}
-
-/// Wrap a statement with trailing sink expressions into a SyntheticBlock.
-/// Each sink expression is evaluated (for side effects) but discarded.
-fn wrap_with_sink_exprs(stmt: Stmt, sink_exprs: Vec<Expr>) -> Stmt {
-    if sink_exprs.is_empty() {
-        return stmt;
-    }
-    let mut stmts = vec![stmt];
-    for expr in sink_exprs {
-        stmts.push(Stmt::Expr(expr));
-    }
-    Stmt::SyntheticBlock(stmts)
 }
 
 fn is_decl_trailing_or_chain_op(op: &TokenKind) -> bool {
@@ -1037,39 +932,6 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             }
             return Ok((r, stmt));
         }
-        // .= mutating method call on sigilless declaration:
-        // my \foo .= new  =>  my \foo = Mu.new (default type Mu)
-        // my \foo .= new: arg  =>  my \foo = Mu.new(arg)
-        if let Some(stripped) = r.strip_prefix(".=") {
-            let (stripped, _) = ws(stripped)?;
-            let (r_after, (method_name, method_args)) = parse_dot_assign_method(stripped, None)?;
-            // Default type for sigilless vars is Mu
-            let type_expr = Expr::BareWord("Mu".to_string());
-            let expr = Expr::MethodCall {
-                target: Box::new(type_expr),
-                name: Symbol::intern(&method_name),
-                args: method_args,
-                modifier: None,
-                quoted: false,
-            };
-            let decl = Stmt::VarDecl {
-                name: name.clone(),
-                expr,
-                type_constraint: None,
-                is_state,
-                is_our,
-                is_dynamic: false,
-                is_export: false,
-                export_tags: Vec::new(),
-                custom_traits: Vec::new(),
-                where_constraint: None,
-            };
-            let stmt = Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigillessReadonly(name)]);
-            if apply_modifier {
-                return parse_statement_modifier(r_after, stmt);
-            }
-            return Ok((r_after, stmt));
-        }
         if r.starts_with('=') && !r.starts_with("==") && !r.starts_with("=>") {
             let r = &r[1..];
             let (r, _) = ws(r)?;
@@ -1228,41 +1090,6 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             }
             return Ok((r, stmt));
         }
-        // .= mutating method call on typed sigilless declaration:
-        // my Int \foo5 .= new  =>  my \foo5 = Int.new()
-        if let Some(stripped) = r.strip_prefix(".=") {
-            let (stripped, _) = ws(stripped)?;
-            let (r_after, (method_name, method_args)) = parse_dot_assign_method(stripped, None)?;
-            // Use the type constraint as the target for the method call
-            let type_expr = type_constraint
-                .as_deref()
-                .map(|tc| Expr::BareWord(tc.to_string()))
-                .unwrap_or_else(|| Expr::BareWord("Mu".to_string()));
-            let expr = Expr::MethodCall {
-                target: Box::new(type_expr),
-                name: Symbol::intern(&method_name),
-                args: method_args,
-                modifier: None,
-                quoted: false,
-            };
-            let stmt = Stmt::VarDecl {
-                name: name.clone(),
-                expr,
-                type_constraint,
-                is_state,
-                is_our,
-                is_dynamic: false,
-                is_export: false,
-                export_tags: Vec::new(),
-                custom_traits: Vec::new(),
-                where_constraint: None,
-            };
-            let stmt = Stmt::SyntheticBlock(vec![stmt, Stmt::MarkSigillessReadonly(name)]);
-            if apply_modifier {
-                return parse_statement_modifier(r_after, stmt);
-            }
-            return Ok((r_after, stmt));
-        }
         if r.starts_with('=') && !r.starts_with("==") && !r.starts_with("=>") {
             let r = &r[1..];
             let (r, _) = ws(r)?;
@@ -1356,7 +1183,6 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_alias: false,
             is_our,
             is_my: !is_our && !is_state,
-            deprecated: None,
         };
         if apply_modifier {
             return parse_statement_modifier(after_name, stmt);
@@ -1698,16 +1524,10 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         }
         // Scalar declarations stop at comma (my $x = 1, 2 → $x gets 1).
         // Array/hash declarations consume the full comma list (my @a = 1, 2 → @a gets [1, 2]).
-        let (rest, expr, trailing_sink_exprs) = if is_array || is_hash {
-            let (r, e) = parse_assign_expr_or_comma(rest)?;
-            (r, e, Vec::new())
+        let (rest, expr) = if is_array || is_hash {
+            parse_assign_expr_or_comma(rest)?
         } else {
-            let (r, e) = expression(rest)?;
-            // After parsing the scalar RHS, consume any trailing comma-separated
-            // expressions as sink expressions (evaluated but not assigned).
-            // e.g. `my $b = expr, other_expr;` → $b gets expr, other_expr is sunk.
-            let (r, sink) = consume_trailing_comma_sink_exprs(r)?;
-            (r, e, sink)
+            expression(rest)?
         };
         // For shaped array declarations with assignment (e.g. my @b[3] = <a b c>),
         // create a shaped array and populate it with the assigned data.
@@ -1729,7 +1549,6 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             where_constraint: where_constraint.clone(),
         };
         if let Some(stmt) = rewrite_decl_assignment_or_chain(expr.clone(), base_stmt) {
-            let stmt = wrap_with_sink_exprs(stmt, trailing_sink_exprs.clone());
             if apply_modifier {
                 return parse_statement_modifier(rest, stmt);
             }
@@ -1747,7 +1566,6 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             custom_traits: custom_traits.clone(),
             where_constraint: where_constraint.clone(),
         };
-        let stmt = wrap_with_sink_exprs(stmt, trailing_sink_exprs);
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
         }
@@ -2216,7 +2034,6 @@ pub(super) fn parse_destructuring_decl(
                     expr: Expr::Index {
                         target: Box::new(Expr::HashVar(hash_bare.clone())),
                         index: Box::new(Expr::Literal(Value::str(bare_name.to_string()))),
-                        is_associative: false,
                     },
                     type_constraint: type_constraint.clone(),
                     is_state,
@@ -2270,13 +2087,11 @@ pub(super) fn parse_destructuring_decl(
                         op: TokenKind::DotDot,
                         right: Box::new(Expr::Whatever),
                     }),
-                    is_associative: false,
                 }
             } else {
                 Expr::Index {
                     target: Box::new(Expr::ArrayVar(array_bare.clone())),
                     index: Box::new(Expr::Literal(Value::Int(i as i64))),
-                    is_associative: false,
                 }
             };
             // Use per-variable type constraint if present, else fall back to
@@ -2376,7 +2191,6 @@ fn has_decl_list(input: &str) -> PResult<'_, Stmt> {
             is_alias,
             is_our: false,
             is_my: false,
-            deprecated: None,
         });
         let (r, _) = ws(rest)?;
         rest = r;
@@ -2424,10 +2238,10 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     };
 
     let sigil = rest.as_bytes().first().copied().unwrap_or(0);
-    let (rest, _) = if sigil == b'$' || sigil == b'@' || sigil == b'%' || sigil == b'&' {
+    let (rest, _) = if sigil == b'$' || sigil == b'@' || sigil == b'%' {
         (&rest[1..], ())
     } else {
-        return Err(PError::expected("sigil ($, @, %, &)"));
+        return Err(PError::expected("sigil ($, @, %)"));
     };
 
     // Check for public accessor marker '.'
@@ -2459,7 +2273,6 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let mut is_readonly = false;
     let mut is_required: Option<Option<String>> = None;
     let mut is_default_trait: Option<Expr> = None;
-    let mut deprecated: Option<Option<String>> = None;
     while let Some(r) = keyword("is", rest) {
         let (r, _) = ws1(r)?;
         let (r, trait_name) = ident(r)?;
@@ -2522,52 +2335,6 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                 }
             }
             is_required = Some(None);
-        } else if trait_name == "DEPRECATED" {
-            // Check for optional message: `is DEPRECATED("message")`
-            let (r_ws, _) = ws(r)?;
-            if let Some(inner) = r_ws.strip_prefix('(') {
-                let (inner, _) = ws(inner)?;
-                if let Some(double_quoted) = inner.strip_prefix('"') {
-                    let end = double_quoted.find('"').ok_or_else(|| {
-                        PError::expected("closing quote in is DEPRECATED message")
-                    })?;
-                    let msg = double_quoted[..end].to_string();
-                    let after = &double_quoted[end + 1..];
-                    let (after, _) = ws(after)?;
-                    let after = after
-                        .strip_prefix(')')
-                        .ok_or_else(|| PError::expected("closing paren in is DEPRECATED"))?;
-                    deprecated = Some(Some(msg));
-                    rest = after;
-                    let (r2, _) = ws(rest)?;
-                    rest = r2;
-                    continue;
-                } else if let Some(single_quoted) = inner.strip_prefix('\'') {
-                    let end = single_quoted.find('\'').ok_or_else(|| {
-                        PError::expected("closing quote in is DEPRECATED message")
-                    })?;
-                    let msg = single_quoted[..end].to_string();
-                    let after = &single_quoted[end + 1..];
-                    let (after, _) = ws(after)?;
-                    let after = after
-                        .strip_prefix(')')
-                        .ok_or_else(|| PError::expected("closing paren in is DEPRECATED"))?;
-                    deprecated = Some(Some(msg));
-                    rest = after;
-                    let (r2, _) = ws(rest)?;
-                    rest = r2;
-                    continue;
-                } else {
-                    // Non-string arg — skip balanced parens
-                    let r_after = crate::parser::helpers::skip_balanced_parens(r_ws);
-                    deprecated = Some(None);
-                    rest = r_after;
-                    let (r2, _) = ws(rest)?;
-                    rest = r2;
-                    continue;
-                }
-            }
-            deprecated = Some(None);
         }
         let (r, _) = ws(r)?;
         rest = r;
@@ -2768,7 +2535,6 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             is_alias,
             is_our: false,
             is_my: false,
-            deprecated,
         },
     ))
 }
@@ -3112,40 +2878,6 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
             }
         }
         rest = r3;
-    }
-    // .= mutating method call on constant declaration:
-    // my constant foo .= new  =>  constant foo = Mu.new()
-    // my Int constant foo .= new: 42  =>  constant foo = Int.new(42)
-    // Note: type_constraint is patched in by the caller for typed constants.
-    if let Some(stripped) = rest.strip_prefix(".=") {
-        let (stripped, _) = ws(stripped)?;
-        let (r_after, (method_name, method_args)) = parse_dot_assign_method(stripped, None)?;
-        // Default type for constants is Mu (type constraint is patched in by caller)
-        let type_expr = Expr::BareWord("Mu".to_string());
-        let expr = Expr::MethodCall {
-            target: Box::new(type_expr),
-            name: Symbol::intern(&method_name),
-            args: method_args,
-            modifier: None,
-            quoted: false,
-        };
-        let (r_after, _) = ws(r_after)?;
-        let (r_after, _) = opt_char(r_after, ';');
-        return Ok((
-            r_after,
-            Stmt::VarDecl {
-                name,
-                expr,
-                type_constraint: None,
-                is_state: false,
-                is_our: true,
-                is_dynamic: false,
-                is_export,
-                export_tags: export_tags.clone(),
-                custom_traits: Vec::new(),
-                where_constraint: None,
-            },
-        ));
     }
     if rest.starts_with('=') || rest.starts_with("::=") || rest.starts_with(":=") {
         let rest = if let Some(stripped) = rest.strip_prefix("::=") {

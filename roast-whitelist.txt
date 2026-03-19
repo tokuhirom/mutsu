@@ -93,14 +93,11 @@ roast/S02-types/array_ref.t
 roast/S02-types/bag-iterator.t
 roast/S02-types/bool.t
 roast/S02-types/built-in.t
-roast/S02-types/catch_type_cast_mismatch.t
 roast/S02-types/compact.t
-roast/S02-types/declare.t
 roast/S02-types/fatrat.t
 roast/S02-types/hash_ref.t
 roast/S02-types/hyperwhatever.t
 roast/S02-types/infinity.t
-roast/S02-types/instants-and-durations.t
 roast/S02-types/int-uint.t
 roast/S02-types/lazy-lists.t
 roast/S02-types/mu.t
@@ -140,11 +137,9 @@ roast/S03-operators/bit.t
 roast/S03-operators/boolean-bitwise.t
 roast/S03-operators/brainos.t
 roast/S03-operators/chained-declarators.t
-roast/S03-operators/cmp.t
 roast/S03-operators/comparison-simple.t
 roast/S03-operators/comparison.t
 roast/S03-operators/composition.t
-roast/S03-operators/context.t
 roast/S03-operators/custom.t
 roast/S03-operators/div.t
 roast/S03-operators/equality.t
@@ -401,7 +396,6 @@ roast/S12-class/augment-supersede.t
 roast/S12-class/declaration-order.t
 roast/S12-class/extending-arrays.t
 roast/S12-class/inheritance-class-methods.t
-roast/S12-class/inheritance.t
 roast/S12-class/interface-consistency.t
 roast/S12-class/lexical.t
 roast/S12-class/literal.t

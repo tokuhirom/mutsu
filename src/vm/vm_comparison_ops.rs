@@ -1,5 +1,4 @@
 use super::*;
-use num_traits::Zero;
 
 /// Extract (real, imaginary) parts from a value, treating non-Complex as having im=0.
 fn complex_parts(v: &Value) -> (f64, f64) {
@@ -22,32 +21,8 @@ fn is_rationalish(v: &Value) -> bool {
 }
 
 /// Check if a value is NaN (for numeric comparison semantics).
-/// Includes Num::NaN and Rat/FatRat with denominator 0 and numerator 0.
 fn is_nan_value(v: &Value) -> bool {
-    match v {
-        Value::Num(n) if n.is_nan() => true,
-        Value::Rat(0, 0) | Value::FatRat(0, 0) => true,
-        Value::BigRat(n, d) if n.is_zero() && d.is_zero() => true,
-        _ => false,
-    }
-}
-
-/// Check if a value is positive infinity (Num::INFINITY or Rat/FatRat with numerator > 0 and denominator 0).
-fn is_pos_inf_value(v: &Value) -> bool {
-    match v {
-        Value::Num(n) if *n == f64::INFINITY => true,
-        Value::Rat(n, 0) | Value::FatRat(n, 0) if *n > 0 => true,
-        _ => false,
-    }
-}
-
-/// Check if a value is negative infinity.
-fn is_neg_inf_value(v: &Value) -> bool {
-    match v {
-        Value::Num(n) if *n == f64::NEG_INFINITY => true,
-        Value::Rat(n, 0) | Value::FatRat(n, 0) if *n < 0 => true,
-        _ => false,
-    }
+    matches!(v, Value::Num(n) if n.is_nan())
 }
 
 impl VM {
@@ -598,204 +573,22 @@ impl VM {
     pub(super) fn exec_cmp_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        // Apply Bridge coercion for custom Real types before comparison
+        if Self::is_buf_value(&left) && Self::is_buf_value(&right) {
+            let ord = Self::buf_cmp_bytes(&left, &right);
+            self.stack.push(runtime::make_order(ord));
+            return;
+        }
+        // NaN in cmp context: compare as string "NaN"
+        if is_nan_value(&left) || is_nan_value(&right) {
+            let ord = left.to_string_value().cmp(&right.to_string_value());
+            self.stack.push(runtime::make_order(ord));
+            return;
+        }
         let (left, right) = self
             .coerce_numeric_bridge_pair(left.clone(), right.clone())
             .unwrap_or((left, right));
-        let ord = Self::cmp_values(&left, &right);
+        let ord = Self::spaceship_ordering(&left, &right);
         self.stack.push(runtime::make_order(ord));
-    }
-
-    /// Generic `cmp` comparison that handles all Raku types.
-    fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
-        // Buf cmp Buf: byte comparison
-        if Self::is_buf_value(left) && Self::is_buf_value(right) {
-            return Self::buf_cmp_bytes(left, right);
-        }
-        // NaN in cmp context: compare as string "NaN"
-        // Rat(0,0) and FatRat(0,0) are NaN
-        if is_nan_value(left) || is_nan_value(right) {
-            let ls = if is_nan_value(left) {
-                "NaN".to_string()
-            } else {
-                left.to_string_value()
-            };
-            let rs = if is_nan_value(right) {
-                "NaN".to_string()
-            } else {
-                right.to_string_value()
-            };
-            return ls.cmp(&rs);
-        }
-        // Inf/-Inf in cmp context: Inf is greater than everything except Inf,
-        // -Inf is less than everything except -Inf
-        if is_pos_inf_value(left) {
-            return if is_pos_inf_value(right) {
-                std::cmp::Ordering::Equal
-            } else {
-                std::cmp::Ordering::Greater
-            };
-        }
-        if is_pos_inf_value(right) {
-            return std::cmp::Ordering::Less;
-        }
-        if is_neg_inf_value(left) {
-            return if is_neg_inf_value(right) {
-                std::cmp::Ordering::Equal
-            } else {
-                std::cmp::Ordering::Less
-            };
-        }
-        if is_neg_inf_value(right) {
-            return std::cmp::Ordering::Greater;
-        }
-        // Range cmp Range: structural comparison (before list expansion)
-        if Self::range_components(left).is_some()
-            && Self::range_components(right).is_some()
-            && let Some(ord) = Self::try_cmp_ranges(left, right)
-        {
-            return ord;
-        }
-        // Array/List cmp: element-wise comparison
-        // Ranges are expanded to lists when compared against a list
-        if Self::is_list_value(left) || Self::is_list_value(right) {
-            let litems = Self::cmp_as_list(left).unwrap_or_else(|| vec![left.clone()]);
-            let ritems = Self::cmp_as_list(right).unwrap_or_else(|| vec![right.clone()]);
-            return Self::cmp_lists(&litems, &ritems);
-        }
-        // Real cmp Range or Range cmp Real: structural comparison
-        if let Some(ord) = Self::try_cmp_ranges(left, right) {
-            return ord;
-        }
-        // Pair cmp Pair
-        if let (Value::Pair(lk, lv), Value::Pair(rk, rv)) = (left, right) {
-            let key_ord = lk.cmp(rk);
-            if key_ord != std::cmp::Ordering::Equal {
-                return key_ord;
-            }
-            return Self::cmp_values(lv, rv);
-        }
-        // Default: try numeric comparison then string comparison
-        Self::spaceship_ordering(left, right)
-    }
-
-    /// Check if a value is a list type (Array, Seq, Slip).
-    fn is_list_value(v: &Value) -> bool {
-        matches!(v, Value::Array(..) | Value::Seq(..) | Value::Slip(..))
-    }
-
-    /// Extract list items for cmp comparison.
-    /// Returns None for non-list values. Ranges are expanded to lists.
-    fn cmp_as_list(v: &Value) -> Option<Vec<Value>> {
-        match v {
-            Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => {
-                Some(items.as_ref().clone())
-            }
-            Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. } => Some(crate::runtime::utils::value_to_list(v)),
-            _ => None,
-        }
-    }
-
-    /// Element-wise list comparison for cmp.
-    fn cmp_lists(left: &[Value], right: &[Value]) -> std::cmp::Ordering {
-        for (l, r) in left.iter().zip(right.iter()) {
-            let ord = Self::cmp_values(l, r);
-            if ord != std::cmp::Ordering::Equal {
-                return ord;
-            }
-        }
-        left.len().cmp(&right.len())
-    }
-
-    /// Extract range components (start, excl_start, end, excl_end) for cmp.
-    fn range_components(v: &Value) -> Option<(Value, bool, Value, bool)> {
-        match v {
-            Value::Range(a, b) => Some((Value::Int(*a), false, Value::Int(*b), false)),
-            Value::RangeExcl(a, b) => Some((Value::Int(*a), false, Value::Int(*b), true)),
-            Value::RangeExclStart(a, b) => Some((Value::Int(*a), true, Value::Int(*b), false)),
-            Value::RangeExclBoth(a, b) => Some((Value::Int(*a), true, Value::Int(*b), true)),
-            Value::GenericRange {
-                start,
-                end,
-                excl_start,
-                excl_end,
-            } => Some((
-                start.as_ref().clone(),
-                *excl_start,
-                end.as_ref().clone(),
-                *excl_end,
-            )),
-            _ => None,
-        }
-    }
-
-    /// Try Range cmp Range, Real cmp Range, or Range cmp Real.
-    /// Returns None if neither side is a range.
-    fn try_cmp_ranges(left: &Value, right: &Value) -> Option<std::cmp::Ordering> {
-        let lrange = Self::range_components(left);
-        let rrange = Self::range_components(right);
-        match (lrange, rrange) {
-            (Some((ls, les, le, lee)), Some((rs, res, re, ree))) => {
-                // Range cmp Range: compare min, then excl_min, then max, then excl_max
-                let start_ord = Self::cmp_values(&ls, &rs);
-                if start_ord != std::cmp::Ordering::Equal {
-                    return Some(start_ord);
-                }
-                // For excludes-min: false < true (included endpoint = earlier start)
-                let excl_start_ord = les.cmp(&res);
-                if excl_start_ord != std::cmp::Ordering::Equal {
-                    return Some(excl_start_ord);
-                }
-                let end_ord = Self::cmp_values(&le, &re);
-                if end_ord != std::cmp::Ordering::Equal {
-                    return Some(end_ord);
-                }
-                // For excludes-max: excluded (true) means earlier end, so reverse order
-                // (5..10) excl_end=false > (5..^10) excl_end=true
-                Some(ree.cmp(&lee))
-            }
-            (None, Some((rs, res, re, ree))) => {
-                // Real cmp Range: treat Real as point range (x..x)
-                let start_ord = Self::cmp_values(left, &rs);
-                if start_ord != std::cmp::Ordering::Equal {
-                    return Some(start_ord);
-                }
-                let excl_start_ord = false.cmp(&res);
-                if excl_start_ord != std::cmp::Ordering::Equal {
-                    return Some(excl_start_ord);
-                }
-                let end_ord = Self::cmp_values(left, &re);
-                if end_ord != std::cmp::Ordering::Equal {
-                    return Some(end_ord);
-                }
-                // Real as point range has excl_end=true (it's like x..^(x+1) but a single point)
-                // Actually: a point range (x..x) is inclusive on both ends, excl_end=false
-                // But Raku's `5 cmp (5..10)` → Less, meaning after matching start=5, excl_start=false,
-                // the end 5 < 10 → Less. So excl_end comparison shouldn't normally be reached.
-                Some(ree.cmp(&false))
-            }
-            (Some((ls, les, le, lee)), None) => {
-                // Range cmp Real: treat Real as point range (x..x)
-                let start_ord = Self::cmp_values(&ls, right);
-                if start_ord != std::cmp::Ordering::Equal {
-                    return Some(start_ord);
-                }
-                let excl_start_ord = les.cmp(&false);
-                if excl_start_ord != std::cmp::Ordering::Equal {
-                    return Some(excl_start_ord);
-                }
-                let end_ord = Self::cmp_values(&le, right);
-                if end_ord != std::cmp::Ordering::Equal {
-                    return Some(end_ord);
-                }
-                Some(false.cmp(&lee))
-            }
-            (None, None) => None,
-        }
     }
 
     pub(super) fn exec_leg_op(&mut self) {

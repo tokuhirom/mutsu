@@ -493,19 +493,9 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
             other => {
                 let Some(value) = iter.next() else {
                     let message = format!(
-                        "Odd number of elements found where hash initializer expected:\n\
-                         Found {total_items} (implicit) elements:\nLast element seen: {last_item}"
+                        "Odd number of elements found where hash initializer expected: found {total_items} element(s); last element seen: {last_item}"
                     );
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(message.clone()));
-                    let ex = Value::make_instance(
-                        crate::symbol::Symbol::intern("X::Hash::Store::OddNumber"),
-                        attrs,
-                    );
-                    return Err(RuntimeError {
-                        exception: Some(Box::new(ex)),
-                        ..RuntimeError::new(message)
-                    });
+                    return Err(RuntimeError::new(message));
                 };
                 map.insert(other.to_string_value(), value);
             }
@@ -564,13 +554,6 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
         Value::GenericRange { .. } => Value::real_array(value_to_list(&value)),
         Value::Slip(items) | Value::Seq(items) => Value::Array(items, ArrayKind::Array),
         Value::LazyList(_) => value,
-        Value::Hash(map) => {
-            let pairs: Vec<Value> = map
-                .iter()
-                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
-                .collect();
-            Value::real_array(pairs)
-        }
         other => Value::real_array(vec![other]),
     }
 }

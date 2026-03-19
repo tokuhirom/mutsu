@@ -212,17 +212,6 @@ impl Interpreter {
         if let Value::Scalar(inner) = target {
             return self.call_method_with_values(*inner, method, args);
         }
-        // Deprecation.report: return the deprecation report and clear tracked call sites
-        if method == "report" {
-            let is_deprecation = match &target {
-                Value::Package(pkg_name) => pkg_name.resolve() == "Deprecation",
-                Value::Str(s) => s.as_str() == "Deprecation",
-                _ => false,
-            };
-            if is_deprecation {
-                return Ok(self.deprecation_report());
-            }
-        }
         // Unhandled Failure explosion: calling a non-Failure method on an unhandled
         // Failure should throw the stored exception (Raku behavior).
         if let Value::Instance {
@@ -343,68 +332,6 @@ impl Interpreter {
             )
         {
             return self.dispatch_instance_and_fallback(target, method, args);
-        }
-        // Delegation for classes inheriting from Array:
-        // If the method is not user-defined, delegate to the internal array storage.
-        // Exclude meta-methods (WHAT, HOW, etc.), introspection (isa, does, ^name),
-        // and constructor methods (new, bless, clone) which must operate on the Instance itself.
-        if let Value::Instance {
-            class_name,
-            attributes,
-            ..
-        } = &target
-        {
-            let cn = class_name.resolve();
-            if self.class_inherits_array(&cn)
-                && !self.has_user_method(&cn, method)
-                && !matches!(
-                    method,
-                    "WHAT"
-                        | "HOW"
-                        | "WHO"
-                        | "WHY"
-                        | "WHICH"
-                        | "WHERE"
-                        | "DEFINITE"
-                        | "VAR"
-                        | "REPR"
-                        | "new"
-                        | "bless"
-                        | "clone"
-                        | "isa"
-                        | "does"
-                        | "can"
-                        | "^name"
-                        | "^mro"
-                        | "^parents"
-                        | "^methods"
-                        | "^roles"
-                        | "^attributes"
-                        | "defined"
-                        | "Bool"
-                        | "so"
-                        | "not"
-                        | "gist"
-                        | "Str"
-                        | "raku"
-                        | "perl"
-                        | "ACCEPTS"
-                        | "Numeric"
-                        | "Int"
-                        | "sink"
-                        | "self"
-                        | "item"
-                )
-            {
-                let storage_key = "__mutsu_array_storage";
-                let items: Vec<Value> = match attributes.get(storage_key) {
-                    Some(Value::Array(values, ..)) => values.to_vec(),
-                    _ => Vec::new(),
-                };
-                let array_val = Value::real_array(items);
-                let result = self.call_method_with_values(array_val, method, args);
-                return result;
-            }
         }
         if let Value::Instance {
             class_name,
@@ -1731,7 +1658,6 @@ impl Interpreter {
                     | "compose"
                     | "archetypes"
                     | "name"
-                    | "shortname"
                     | "ver"
                     | "auth"
                     | "mro"
