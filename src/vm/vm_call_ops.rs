@@ -1723,6 +1723,18 @@ impl VM {
                 results.push(val);
                 continue;
             }
+            // Special case: user-defined postfix:<...> operators applied via hyper (»op / >>op).
+            // These are function calls, not method calls.
+            // Exclude built-in postfix operators (++, --) which are handled by method dispatch.
+            if method.starts_with("postfix:<")
+                && !matches!(method.as_str(), "postfix:<++>" | "postfix:<-->")
+            {
+                let mut call_args = vec![item.clone()];
+                call_args.extend(args.clone());
+                let val = self.interpreter.call_function(&method, call_args)?;
+                results.push(val);
+                continue;
+            }
             let mut skip_native = method == "VAR"
                 || (quoted
                     && matches!(
