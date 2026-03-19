@@ -752,11 +752,23 @@ impl Interpreter {
         let expected = Self::positional_value_required(args, 1, "is-approx expects expected")?;
 
         // Detect three-arg form: is-approx(got, expected, numeric-tolerance, desc?)
-        // If the third positional arg is numeric, treat it as abs-tol.
+        // If the third positional arg is a native numeric type (not a Str),
+        // treat it as abs-tol.
         let third_pos = Self::positional_value(args, 2);
-        let (positional_abs_tol, desc) = if let Some(v) = third_pos.and_then(super::to_float_value)
-        {
-            (Some(v), Self::positional_string(args, 3))
+        let third_is_numeric = third_pos.as_ref().is_some_and(|v| {
+            matches!(
+                v,
+                Value::Int(_)
+                    | Value::Num(_)
+                    | Value::Rat(_, _)
+                    | Value::FatRat(_, _)
+                    | Value::BigRat(_, _)
+                    | Value::BigInt(_)
+            )
+        });
+        let (positional_abs_tol, desc) = if third_is_numeric {
+            let v = super::to_float_value(third_pos.as_ref().unwrap());
+            (v, Self::positional_string(args, 3))
         } else {
             (None, Self::positional_string(args, 2))
         };

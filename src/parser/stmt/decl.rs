@@ -1522,7 +1522,13 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 }
             }
         }
-        let (rest, expr) = parse_assign_expr_or_comma(rest)?;
+        // Scalar declarations stop at comma (my $x = 1, 2 → $x gets 1).
+        // Array/hash declarations consume the full comma list (my @a = 1, 2 → @a gets [1, 2]).
+        let (rest, expr) = if is_array || is_hash {
+            parse_assign_expr_or_comma(rest)?
+        } else {
+            expression(rest)?
+        };
         // For shaped array declarations with assignment (e.g. my @b[3] = <a b c>),
         // create a shaped array and populate it with the assigned data.
         let expr = if let Some(dims) = shape_dims {

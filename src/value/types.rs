@@ -57,11 +57,29 @@ impl Value {
             (Value::Seq(a), Value::Seq(b)) => {
                 a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.eqv(y))
             }
-            // Num: use bit-exact comparison to distinguish signed zeros
-            (Value::Num(a), Value::Num(b)) => a.to_bits() == b.to_bits(),
-            // Complex: use bit-exact comparison for both components
+            // Num: use bit-exact comparison to distinguish signed zeros,
+            // but treat all NaN bit patterns as identical (Raku considers all NaN equal).
+            (Value::Num(a), Value::Num(b)) => {
+                if a.is_nan() && b.is_nan() {
+                    true
+                } else {
+                    a.to_bits() == b.to_bits()
+                }
+            }
+            // Complex: use bit-exact comparison for both components,
+            // treating all NaN bit patterns as identical.
             (Value::Complex(ar, ai), Value::Complex(br, bi)) => {
-                ar.to_bits() == br.to_bits() && ai.to_bits() == bi.to_bits()
+                let re_eq = if ar.is_nan() && br.is_nan() {
+                    true
+                } else {
+                    ar.to_bits() == br.to_bits()
+                };
+                let im_eq = if ai.is_nan() && bi.is_nan() {
+                    true
+                } else {
+                    ai.to_bits() == bi.to_bits()
+                };
+                re_eq && im_eq
             }
             // Same-type scalar comparisons delegate to PartialEq
             // BigInt: both sides BigInt — use PartialEq

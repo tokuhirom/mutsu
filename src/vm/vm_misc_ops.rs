@@ -542,6 +542,7 @@ impl VM {
                 && trimmed.parse::<i64>().is_err()
                 && trimmed.parse::<f64>().is_err()
                 && crate::runtime::utils::parse_prefixed_generic_radix_literal(trimmed).is_none()
+                && crate::runtime::utils::parse_0_prefixed_radix_literal(trimmed).is_none()
             {
                 let mut ex_attrs = std::collections::HashMap::new();
                 ex_attrs.insert(
@@ -638,7 +639,7 @@ impl VM {
             .get_env_with_main_alias(name)
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
-        let val = Self::normalize_incdec_source(val);
+        let val = self.normalize_incdec_source_with_type(name, val);
         let new_val = Self::increment_value(&val);
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
@@ -652,7 +653,7 @@ impl VM {
             .get_env_with_main_alias(name)
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
-        let val = Self::normalize_incdec_source(val);
+        let val = self.normalize_incdec_source_with_type(name, val);
         let new_val = Self::decrement_value(&val);
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
