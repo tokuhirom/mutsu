@@ -148,7 +148,7 @@ impl Interpreter {
                 .collect();
             ranked.sort_by(|a, b| {
                 // Higher rank first, then lower distance
-                b.1 .0.cmp(&a.1 .0).then(a.1 .1.cmp(&b.1 .1))
+                b.1.0.cmp(&a.1.0).then(a.1.1.cmp(&b.1.1))
             });
             let sorted_matches: Vec<FunctionDef> =
                 ranked.iter().map(|(i, _)| matches[*i].clone()).collect();
