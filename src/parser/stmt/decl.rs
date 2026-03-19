@@ -2668,9 +2668,12 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         }
     } else if let Some(tc) = &type_constraint
         && is_required.is_none()
+        && sigil == b'$'
     {
-        // Typed attribute with no explicit default → use type object as default
+        // Typed scalar attribute with no explicit default → use type object as default
         // But not when `is required` — the attribute must be explicitly provided
+        // For @ and % sigils, the type constraint is an element type, not the
+        // container type, so we don't set a default (empty container is used).
         (rest, Some(Expr::BareWord(tc.clone())))
     } else if let Some(default_expr) = is_default_trait {
         // `is default(expr)` was used — apply it as the default value
