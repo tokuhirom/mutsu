@@ -1197,9 +1197,22 @@ impl VM {
             self.stack.push(fetched);
             return Ok(());
         }
+        // Shared @/% variables may be mutated by sibling threads while this VM
+        // still holds an old local snapshot. Prefer the shared copy so reads
+        // observe the latest value without forcing array COW on every push.
+        if (name.starts_with('@') || name.starts_with('%'))
+            && let Some(shared_val) = self.interpreter.get_shared_var(&name)
+        {
+            self.stack.push(shared_val);
+            return Ok(());
+        }
         let val = self.locals[idx].clone();
         // Fast path: non-Nil values are always valid — skip env lookup
         if matches!(val, Value::Nil) {
+            if let Some(shared_val) = self.interpreter.get_shared_var(&name) {
+                self.stack.push(shared_val);
+                return Ok(());
+            }
             let is_internal = name.starts_with("__");
             let is_special = matches!(name.as_str(), "_" | "/" | "!" | "¢");
             if !is_internal && !is_special && !self.interpreter.env().contains_key(&name) {
