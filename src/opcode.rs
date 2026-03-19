@@ -700,6 +700,13 @@ pub(crate) enum OpCode {
     /// The u32 indexes the constant pool for the sigil string ("$", "@", or "%").
     SymbolicDeref(u32),
 
+    /// Symbolic variable dereference store: pop value and name from stack, store value into variable.
+    /// The u32 indexes the constant pool for the sigil string ("$", "@", or "%").
+    SymbolicDerefStore(u32),
+
+    /// Indirect type lookup store: pop value and name from stack, store value into variable by name.
+    IndirectTypeLookupStore,
+
     /// Save current variable value for `let`/`temp` scope management.
     /// Pops the array index (if index_mode is true) from the stack.
     /// `is_temp`: true for `temp` (always restore), false for `let` (restore on failure only).

@@ -428,6 +428,15 @@ fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             name: Symbol::intern("__mutsu_assign_callable_lvalue"),
             args: vec![*target, Expr::ArrayLiteral(args), value],
         },
+        Expr::SymbolicDeref { sigil, expr } => Expr::SymbolicDerefAssign {
+            sigil,
+            expr,
+            value: Box::new(value),
+        },
+        Expr::IndirectTypeLookup(inner) => Expr::IndirectTypeLookupAssign {
+            expr: inner,
+            value: Box::new(value),
+        },
         Expr::DoStmt(stmt) => {
             if let Stmt::VarDecl {
                 name,

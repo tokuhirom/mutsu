@@ -715,6 +715,15 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 expr,
                 op: AssignOp::Assign,
             },
+            Expr::SymbolicDeref { sigil, expr: inner } => Stmt::Expr(Expr::SymbolicDerefAssign {
+                sigil,
+                expr: inner,
+                value: Box::new(expr),
+            }),
+            Expr::IndirectTypeLookup(inner) => Stmt::Expr(Expr::IndirectTypeLookupAssign {
+                expr: inner,
+                value: Box::new(expr),
+            }),
             target => {
                 if let Some(stmt) = single_target_list_lvalue_stmt(target.clone(), expr.clone()) {
                     stmt
@@ -796,6 +805,15 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             Expr::Literal(_) | Expr::BareWord(_) => {
                 Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)])
             }
+            Expr::SymbolicDeref { sigil, expr: inner } => Stmt::Expr(Expr::SymbolicDerefAssign {
+                sigil,
+                expr: inner,
+                value: Box::new(rhs),
+            }),
+            Expr::IndirectTypeLookup(inner) => Stmt::Expr(Expr::IndirectTypeLookupAssign {
+                expr: inner,
+                value: Box::new(rhs),
+            }),
             target => {
                 if let Some(stmt) = single_target_list_lvalue_stmt(target.clone(), rhs.clone()) {
                     stmt

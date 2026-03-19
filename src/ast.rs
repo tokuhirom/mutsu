@@ -308,6 +308,17 @@ pub(crate) enum Expr {
         sigil: String,
         expr: Box<Expr>,
     },
+    /// Symbolic variable dereference assignment: $::("name") = value
+    SymbolicDerefAssign {
+        sigil: String,
+        expr: Box<Expr>,
+        value: Box<Expr>,
+    },
+    /// Indirect type lookup assignment: ::('$name') = value
+    IndirectTypeLookupAssign {
+        expr: Box<Expr>,
+        value: Box<Expr>,
+    },
     PseudoStash(String),
     /// Hash hyperslice: %hash{**}:adverb
     HyperSlice {
@@ -957,6 +968,14 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
         Expr::CodeVar(_) => {}
         Expr::IndirectCodeLookup { package, .. } => collect_ph_expr(package, out),
         Expr::SymbolicDeref { expr, .. } => collect_ph_expr(expr, out),
+        Expr::SymbolicDerefAssign { expr, value, .. } => {
+            collect_ph_expr(expr, out);
+            collect_ph_expr(value, out);
+        }
+        Expr::IndirectTypeLookupAssign { expr, value } => {
+            collect_ph_expr(expr, out);
+            collect_ph_expr(value, out);
+        }
         Expr::Reduction { expr, .. } | Expr::Eager(expr) => collect_ph_expr(expr, out),
         Expr::HyperOp { left, right, .. }
         | Expr::HyperFuncOp { left, right, .. }
