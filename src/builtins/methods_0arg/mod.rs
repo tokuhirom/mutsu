@@ -1508,6 +1508,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     Some(Ok(Value::Array(Arc::new(items.to_vec()), *kind)))
                 }
                 Value::Hash(map) => Some(Ok(Value::Hash(Arc::new((**map).clone())))),
+                Value::Sub(data) => {
+                    // Clone the sub with a new id so state variables are independent
+                    let mut new_data = (**data).clone();
+                    new_data.id = crate::value::next_instance_id();
+                    Some(Ok(Value::Sub(Arc::new(new_data))))
+                }
                 _ => None, // fall through to slow path for instances etc.
             }
         }
