@@ -512,7 +512,18 @@ impl VM {
                             .and_then(|bare| self.interpreter.env().get(bare).cloned())
                     })
                     .unwrap_or(Value::Nil);
-                self.stack.push(val);
+                // Coerce Hash to list of Pairs when accessed via @ sigil
+                let coerced = match &val {
+                    Value::Hash(map) => {
+                        let pairs: Vec<Value> = map
+                            .iter()
+                            .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                            .collect();
+                        Value::Array(std::sync::Arc::new(pairs), crate::value::ArrayKind::List)
+                    }
+                    _ => val,
+                };
+                self.stack.push(coerced);
                 *ip += 1;
             }
             OpCode::GetHashVar(name_idx) => {
