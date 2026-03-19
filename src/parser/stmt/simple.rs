@@ -469,18 +469,6 @@ pub(in crate::parser) fn is_user_declared_sub(name: &str) -> bool {
     })
 }
 
-/// Check if a name was declared as a user term symbol (sigilless variable, constant, etc.)
-/// in any enclosing scope.
-pub(in crate::parser) fn is_user_declared_term_symbol(name: &str) -> bool {
-    SCOPES.with(|s| {
-        let scopes = s.borrow();
-        scopes
-            .iter()
-            .rev()
-            .any(|scope| scope.term_symbols.contains_key(name))
-    })
-}
-
 /// Register a user-declared type name (class, role, grammar, enum).
 pub(in crate::parser) fn register_user_type(name: &str) {
     SCOPES.with(|s| {
@@ -1612,7 +1600,7 @@ pub(super) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
 /// via `register_module_exports()` when `use Test` / `use Test::Util` is parsed.
 pub(super) const KNOWN_CALLS: &[&str] = &[
     "dd", "exit", "proceed", "succeed", "done", "push", "pop", "shift", "unshift", "append",
-    "prepend", "elems", "chars", "defined", "undefine", "warn", "leave", "EVAL", "EVALFILE",
+    "prepend", "elems", "chars", "defined", "warn", "leave", "EVAL", "EVALFILE",
 ];
 
 /// Check if a name is a known statement-level function call.

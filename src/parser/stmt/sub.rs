@@ -827,53 +827,27 @@ pub(super) fn sub_decl_body(
     };
     // Merge return type: `-->` from inside params has priority, then `returns`/`of` traits
     let merged_return_type = return_type.or(traits.return_type);
-    let sub_decl = Stmt::SubDecl {
-        name: Symbol::intern(&name),
-        name_expr,
-        params,
-        param_defs,
-        return_type: merged_return_type,
-        associativity: traits.associativity,
-        signature_alternates,
-        body,
-        multi,
-        is_rw: traits.is_rw,
-        is_raw: traits.is_raw,
-        is_export: traits.is_export,
-        export_tags: traits.export_tags,
-        is_test_assertion: traits.is_test_assertion,
-        supersede,
-        custom_traits: traits.custom_traits,
-    };
-    // Check for immediate invocation: sub foo(...) { ... }( args )
-    let (rest_ws, _) = ws(rest)?;
-    if rest_ws.starts_with('(') {
-        let (r, _) = parse_char(rest_ws, '(')?;
-        let (r, _) = ws(r)?;
-        if r.starts_with(')') {
-            let (r, _) = parse_char(r, ')')?;
-            let call_expr = Expr::Call {
-                name: Symbol::intern(&name),
-                args: Vec::new(),
-            };
-            return Ok((
-                r,
-                Stmt::SyntheticBlock(vec![sub_decl, Stmt::Expr(call_expr)]),
-            ));
-        }
-        let (r, args) = super::simple::parse_expr_list(r)?;
-        let (r, _) = ws(r)?;
-        let (r, _) = parse_char(r, ')')?;
-        let call_expr = Expr::Call {
+    Ok((
+        rest,
+        Stmt::SubDecl {
             name: Symbol::intern(&name),
-            args,
-        };
-        return Ok((
-            r,
-            Stmt::SyntheticBlock(vec![sub_decl, Stmt::Expr(call_expr)]),
-        ));
-    }
-    Ok((rest, sub_decl))
+            name_expr,
+            params,
+            param_defs,
+            return_type: merged_return_type,
+            associativity: traits.associativity,
+            signature_alternates,
+            body,
+            multi,
+            is_rw: traits.is_rw,
+            is_raw: traits.is_raw,
+            is_export: traits.is_export,
+            export_tags: traits.export_tags,
+            is_test_assertion: traits.is_test_assertion,
+            supersede,
+            custom_traits: traits.custom_traits,
+        },
+    ))
 }
 
 fn consume_raw_sub_body(input: &str) -> PResult<'_, Vec<Stmt>> {

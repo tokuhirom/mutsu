@@ -129,6 +129,35 @@ fn sample_weighted_mix_key(items: &HashMap<String, f64>) -> Option<Value> {
         .find_map(|(key, weight)| (*weight > 0.0).then(|| Value::str(key.clone())))
 }
 
+fn sample_weighted_bag_key(items: &HashMap<String, i64>) -> Option<Value> {
+    let mut total: i128 = 0;
+    for count in items.values() {
+        if *count > 0 {
+            total += *count as i128;
+        }
+    }
+    if total <= 0 {
+        return None;
+    }
+    let needle_f = crate::builtins::rng::builtin_rand() * total as f64;
+    let mut needle = needle_f as i128;
+    if needle >= total {
+        needle = total - 1;
+    }
+    for (key, count) in items {
+        if *count <= 0 {
+            continue;
+        }
+        if needle < *count as i128 {
+            return Some(Value::str(key.clone()));
+        }
+        needle -= *count as i128;
+    }
+    items
+        .iter()
+        .find_map(|(key, count)| (*count > 0).then(|| Value::str(key.clone())))
+}
+
 fn int_to_superscript(n: i64) -> String {
     const SUPER_DIGITS: [char; 10] = [
         '\u{2070}', '\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}', '\u{2076}',
@@ -747,6 +776,31 @@ pub(crate) fn native_method_1arg(
                     .collect::<Vec<_>>()
                     .join("\n");
                 Some(Ok(Value::str(rendered)))
+            } else if let Value::Bag(items) = target {
+                let rendered = items
+                    .iter()
+                    .map(|(k, v)| {
+                        runtime::format_sprintf_args(&fmt, &[Value::str(k.clone()), Value::Int(*v)])
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                Some(Ok(Value::str(rendered)))
+            } else if let Value::Set(items) = target {
+                let rendered = items
+                    .iter()
+                    .map(|k| runtime::format_sprintf_args(&fmt, &[Value::str(k.clone())]))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                Some(Ok(Value::str(rendered)))
+            } else if let Value::Mix(items) = target {
+                let rendered = items
+                    .iter()
+                    .map(|(k, v)| {
+                        runtime::format_sprintf_args(&fmt, &[Value::str(k.clone()), Value::Num(*v)])
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                Some(Ok(Value::str(rendered)))
             } else if let Some((k, v)) = pair_key_value(target) {
                 // Pair.fmt(format): format key and value
                 let rendered = runtime::format_sprintf_args(&fmt, &[k, v]);
@@ -996,6 +1050,56 @@ pub(crate) fn native_method_1arg(
                     "Cannot call .pick on a Mix (immutable)",
                 )));
             }
+            // For Bag, use weighted picking without expanding to a flat list
+            if let Value::Bag(bag) = target {
+                let total_items: i128 = bag.values().map(|c| *c as i128).sum();
+                let count: i128 = match arg {
+                    Value::Whatever => total_items,
+                    Value::Num(f) if f.is_infinite() && f.is_sign_positive() => total_items,
+                    Value::Int(n) => (*n).max(0) as i128,
+                    Value::Num(f) => (*f as i64).max(0) as i128,
+                    Value::Rat(n, d) if *d != 0 => (*n / *d).max(0) as i128,
+                    _ => 0i128,
+                };
+                if count == 0 || bag.is_empty() {
+                    return Some(Ok(Value::array(Vec::new())));
+                }
+                // Build a mutable copy of counts for without-replacement picking
+                let mut counts: Vec<(String, i128)> = bag
+                    .iter()
+                    .filter(|(_, c)| **c > 0)
+                    .map(|(k, c)| (k.clone(), *c as i128))
+                    .collect();
+                let mut total: i128 = counts.iter().map(|(_, c)| *c).sum();
+                let pick_count = (count as usize).min(total as usize);
+                let mut result = Vec::with_capacity(pick_count);
+                for _ in 0..pick_count {
+                    if total <= 0 {
+                        break;
+                    }
+                    let needle_f = crate::builtins::rng::builtin_rand() * total as f64;
+                    let mut needle = needle_f as i128;
+                    if needle >= total {
+                        needle = total - 1;
+                    }
+                    let mut picked_idx = counts.len() - 1;
+                    let mut cum: i128 = 0;
+                    for (i, (_, c)) in counts.iter().enumerate() {
+                        cum += *c;
+                        if needle < cum {
+                            picked_idx = i;
+                            break;
+                        }
+                    }
+                    result.push(Value::str(counts[picked_idx].0.clone()));
+                    counts[picked_idx].1 -= 1;
+                    total -= 1;
+                    if counts[picked_idx].1 == 0 {
+                        counts.swap_remove(picked_idx);
+                    }
+                }
+                return Some(Ok(Value::array(result)));
+            }
             let mut items = runtime::value_to_list(target);
             Some(Ok(match arg {
                 Value::Whatever => {
@@ -1017,6 +1121,38 @@ pub(crate) fn native_method_1arg(
                         items.swap(i, j);
                     }
                     Value::array(items)
+                }
+                Value::Num(f) => {
+                    // .pick(<num>) — truncate to int
+                    let count = (*f as i64).max(0) as usize;
+                    if count == 0 || items.is_empty() {
+                        Value::array(Vec::new())
+                    } else {
+                        let mut result = Vec::with_capacity(count.min(items.len()));
+                        for _ in 0..count.min(items.len()) {
+                            let idx = (crate::builtins::rng::builtin_rand() * items.len() as f64)
+                                as usize
+                                % items.len();
+                            result.push(items.swap_remove(idx));
+                        }
+                        Value::array(result)
+                    }
+                }
+                Value::Rat(n, d) if *d != 0 => {
+                    // .pick(<rat>) — truncate to int
+                    let count = (*n / *d).max(0) as usize;
+                    if count == 0 || items.is_empty() {
+                        Value::array(Vec::new())
+                    } else {
+                        let mut result = Vec::with_capacity(count.min(items.len()));
+                        for _ in 0..count.min(items.len()) {
+                            let idx = (crate::builtins::rng::builtin_rand() * items.len() as f64)
+                                as usize
+                                % items.len();
+                            result.push(items.swap_remove(idx));
+                        }
+                        Value::array(result)
+                    }
                 }
                 Value::Int(n) => {
                     let count = (*n).max(0) as usize;
@@ -1051,6 +1187,42 @@ pub(crate) fn native_method_1arg(
                 _ => return None,
             }))
         }
+        "pickpairs" => {
+            if let Value::Bag(bag) = target {
+                let count = match arg {
+                    Value::Whatever => bag.len(),
+                    Value::Int(n) => (*n).max(0) as usize,
+                    Value::Num(f) if f.is_infinite() && f.is_sign_positive() => bag.len(),
+                    Value::Num(f) => (*f as i64).max(0) as usize,
+                    Value::Rat(n, d) if *d != 0 => (*n / *d).max(0) as usize,
+                    _ => return None,
+                };
+                if count == 0 || bag.is_empty() {
+                    return Some(Ok(Value::array(Vec::new())));
+                }
+                let mut pairs: Vec<(String, i64)> =
+                    bag.iter().map(|(k, v)| (k.clone(), *v)).collect();
+                let pick_count = count.min(pairs.len());
+                let mut result = Vec::with_capacity(pick_count);
+                for _ in 0..pick_count {
+                    if pairs.is_empty() {
+                        break;
+                    }
+                    let idx = (crate::builtins::rng::builtin_rand() * pairs.len() as f64) as usize
+                        % pairs.len();
+                    let (key, count) = pairs.swap_remove(idx);
+                    result.push(Value::Pair(key, Box::new(Value::Int(count))));
+                }
+                return Some(Ok(Value::array(result)));
+            }
+            None
+        }
+        "grab" | "grabpairs" => match target {
+            Value::Bag(_) => Some(Err(RuntimeError::immutable("Bag", method))),
+            Value::Set(_) => Some(Err(RuntimeError::immutable("Set", method))),
+            Value::Mix(_) => Some(Err(RuntimeError::immutable("Mix", method))),
+            _ => None,
+        },
         "roll" => {
             if matches!(target, Value::Package(_)) {
                 return None;
@@ -1086,6 +1258,31 @@ pub(crate) fn native_method_1arg(
                 let mut result = Vec::with_capacity(count);
                 for _ in 0..count {
                     if let Some(v) = sample_weighted_mix_key(items) {
+                        result.push(v);
+                    }
+                }
+                return Some(Ok(Value::array(result)));
+            }
+            if let Value::Bag(items) = target {
+                if count.is_none() {
+                    let generated = 131_072usize;
+                    let mut out = Vec::with_capacity(generated);
+                    for _ in 0..generated {
+                        if let Some(v) = sample_weighted_bag_key(items) {
+                            out.push(v);
+                        }
+                    }
+                    return Some(Ok(Value::LazyList(Arc::new(
+                        crate::value::LazyList::new_cached(out),
+                    ))));
+                }
+                let count = count.unwrap_or(0);
+                if count == 0 {
+                    return Some(Ok(Value::array(Vec::new())));
+                }
+                let mut result = Vec::with_capacity(count);
+                for _ in 0..count {
+                    if let Some(v) = sample_weighted_bag_key(items) {
                         result.push(v);
                     }
                 }
@@ -1680,6 +1877,37 @@ pub(crate) fn native_method_2arg(
                         runtime::format_sprintf_args(
                             &fmt_str,
                             &[Value::str(k.to_string()), v.clone()],
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(&sep);
+                Some(Ok(Value::str(rendered)))
+            } else if let Value::Bag(items) = target {
+                let rendered = items
+                    .iter()
+                    .map(|(k, v)| {
+                        runtime::format_sprintf_args(
+                            &fmt_str,
+                            &[Value::str(k.clone()), Value::Int(*v)],
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(&sep);
+                Some(Ok(Value::str(rendered)))
+            } else if let Value::Set(items) = target {
+                let rendered = items
+                    .iter()
+                    .map(|k| runtime::format_sprintf_args(&fmt_str, &[Value::str(k.clone())]))
+                    .collect::<Vec<_>>()
+                    .join(&sep);
+                Some(Ok(Value::str(rendered)))
+            } else if let Value::Mix(items) = target {
+                let rendered = items
+                    .iter()
+                    .map(|(k, v)| {
+                        runtime::format_sprintf_args(
+                            &fmt_str,
+                            &[Value::str(k.clone()), Value::Num(*v)],
                         )
                     })
                     .collect::<Vec<_>>()

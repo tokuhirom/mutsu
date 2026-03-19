@@ -232,6 +232,42 @@ impl Interpreter {
         false
     }
 
+    /// Check whether the class (or its MRO ancestors) has a `new` method
+    /// variant with a non-named positional parameter whose type matches the
+    /// given value.  This is used by the coercion fallback: only try `new`
+    /// when there is an explicit `new(TargetType:U: ValueType $x)` multi.
+    pub(super) fn class_has_new_accepting_positional(
+        &mut self,
+        class_name: &str,
+        value: &Value,
+    ) -> bool {
+        let mro = self.class_mro(class_name);
+        for cn in &mro {
+            let methods = match self.classes.get(cn.as_str()) {
+                Some(cd) => cd.methods.get("new").cloned(),
+                None => None,
+            };
+            if let Some(overloads) = methods {
+                for method in &overloads {
+                    // Look for a positional (non-named, non-invocant) param
+                    // that type-matches the value.
+                    let has_matching_positional = method.param_defs.iter().any(|pd| {
+                        !pd.named
+                            && !pd.is_invocant
+                            && pd
+                                .type_constraint
+                                .as_deref()
+                                .is_some_and(|tc| self.type_matches_value(tc, value))
+                    });
+                    if has_matching_positional {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     pub(crate) fn is_native_method(&mut self, class_name: &str, method_name: &str) -> bool {
         // IO::Handle has native methods handled by native_io_handle
         if class_name == "IO::Handle"

@@ -477,30 +477,7 @@ impl Interpreter {
             "__mutsu_words_atom" => self.builtin_words_atom(&args),
             "__mutsu_qw_result" => Ok(args.first().cloned().unwrap_or(Value::Nil)),
             "__mutsu_unknown_backslash_escape" => self.builtin_unknown_backslash_escape(&args),
-            "undefine" => {
-                // When called as a function (not compiled as variable assignment),
-                // the argument is a non-container value. Trying to undefine an
-                // immutable value should throw an error.
-                if let Some(arg) = args.first() {
-                    match arg {
-                        Value::Bool(_)
-                        | Value::Int(_)
-                        | Value::Num(_)
-                        | Value::Str(_)
-                        | Value::Rat(_, _)
-                        | Value::Complex(_, _) => {
-                            let type_name = crate::runtime::utils::value_type_name(arg);
-                            return Err(RuntimeError::new(format!(
-                                "Cannot modify an immutable {} ({})",
-                                type_name,
-                                arg.to_string_value()
-                            )));
-                        }
-                        _ => {}
-                    }
-                }
-                Ok(Value::Nil)
-            }
+            "undefine" => Ok(Value::Nil),
             "local" => Ok(Value::Nil),
             "VAR" => Ok(args.first().cloned().unwrap_or(Value::Nil)),
             "WHAT" => {
@@ -2449,32 +2426,6 @@ impl Interpreter {
                 method_args,
                 value,
             );
-        }
-
-        // undefine($var) = value: first undefine $var, then assign value
-        if name == "undefine" && call_args.len() == 1 {
-            if let Value::Str(var_name) = &call_args[0] {
-                // Direct variable reference — undefine then assign
-                self.env.insert(var_name.to_string(), value.clone());
-                return Ok(value);
-            }
-            // Find which variable holds this value and assign to it
-            let target_var = {
-                let mut found = None;
-                for (k, v) in self.env.iter() {
-                    if crate::runtime::values_identical(v, &call_args[0]) && !k.starts_with("__") {
-                        found = Some(k.clone());
-                        break;
-                    }
-                }
-                found
-            };
-            if let Some(var_name) = target_var {
-                self.env.insert(var_name, value.clone());
-                return Ok(value);
-            }
-            // No container found — just assign Nil then return value
-            return Ok(value);
         }
 
         if let Some(def) = self.resolve_function_with_alias(name, &call_args) {

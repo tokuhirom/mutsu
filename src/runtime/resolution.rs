@@ -213,33 +213,151 @@ impl Interpreter {
         arg_values: &[Value],
     ) -> Option<(String, MethodDef)> {
         let mro = self.class_mro(class_name);
-        for cn in mro {
+        // Collect all matching multi candidates across the MRO, then pick the
+        // most specific one by type hierarchy distance.
+        let mut all_matches: Vec<(String, MethodDef)> = Vec::new();
+        // Track whether a non-multi submethod was found on an ancestor
+        // (submethods block MRO search for their class but not for
+        // descendants).
+        let mut submethod_blocks = false;
+        for cn in &mro {
             if let Some(overloads) = self
                 .classes
-                .get(&cn)
+                .get(cn.as_str())
                 .and_then(|c| c.methods.get(method_name))
                 .cloned()
             {
                 let any_multi = overloads.iter().any(|d| d.is_multi);
+                // Check if all overloads are submethods on an ancestor class
+                let all_submethods = overloads.iter().all(|d| d.is_my);
+                let is_ancestor = cn != class_name;
                 for def in overloads {
                     if def.is_private {
                         continue;
                     }
+                    // Submethods are NOT inherited: skip if defined on an
+                    // ancestor class rather than the receiver's own class.
+                    if def.is_my && is_ancestor {
+                        continue;
+                    }
                     if self.method_args_match(arg_values, &def.param_defs) {
-                        return Some((cn.clone(), def));
+                        if !any_multi {
+                            // Non-multi: return the first match immediately
+                            return Some((cn.clone(), def));
+                        }
+                        all_matches.push((cn.clone(), def));
                     }
                 }
+                // A non-multi submethod on an ancestor blocks the MRO search
+                // (the method name exists but no candidate matched and
+                // submethods are not inherited).
+                if !any_multi && is_ancestor && all_submethods {
+                    submethod_blocks = true;
+                    continue;
+                }
                 // Method name is present on this class, but no candidate matched.
-                // For multi methods, continue searching parent classes since
-                // all candidates across the MRO participate in dispatch.
                 // For non-multi methods, stop here — a subclass override
                 // hides the parent's version.
-                if !any_multi {
+                if !any_multi && all_matches.is_empty() {
                     return None;
                 }
             }
         }
-        None
+        if all_matches.len() <= 1 {
+            return all_matches.into_iter().next();
+        }
+        // Pick the candidate with the smallest type hierarchy distance
+        let mut best_idx = 0;
+        let mut best_dist = self.method_candidate_type_distance(arg_values, &all_matches[0].1);
+        for (i, (_, def)) in all_matches.iter().enumerate().skip(1) {
+            let dist = self.method_candidate_type_distance(arg_values, def);
+            if dist < best_dist {
+                best_dist = dist;
+                best_idx = i;
+            }
+        }
+        let _ = submethod_blocks; // used for control flow above
+        Some(all_matches.remove(best_idx))
+    }
+
+    /// Compute the type distance of a method's param constraints from the
+    /// actual arguments.  Lower distance = more specific match.
+    fn method_candidate_type_distance(&self, args: &[Value], def: &MethodDef) -> usize {
+        let mut total = 0usize;
+        let mut arg_idx = 0;
+        for pd in &def.param_defs {
+            if pd.is_invocant || pd.named {
+                continue;
+            }
+            if let Some(tc) = &pd.type_constraint {
+                let base = Self::constraint_base_for_distance(tc);
+                if arg_idx < args.len() {
+                    total += Self::builtin_type_distance(base, &args[arg_idx]);
+                }
+            } else {
+                total += 1000;
+            }
+            arg_idx += 1;
+        }
+        total
+    }
+
+    fn constraint_base_for_distance(constraint: &str) -> &str {
+        let s = if constraint.ends_with(":D") || constraint.ends_with(":U") {
+            &constraint[..constraint.len() - 2]
+        } else {
+            constraint
+        };
+        s.split('(').next().unwrap_or(s)
+    }
+
+    /// Compute the type hierarchy distance between a constraint and a value.
+    /// 0 = exact match, larger = less specific.
+    fn builtin_type_distance(constraint: &str, value: &Value) -> usize {
+        let value_type = super::value_type_name(value);
+        if constraint == value_type {
+            return 0;
+        }
+        if let Value::Instance { class_name, .. } = value
+            && constraint == class_name.resolve().as_str()
+        {
+            return 0;
+        }
+        let builtin_mro: &[&str] = match value_type {
+            "Bool" => &["Bool", "Int", "Numeric", "Real", "Cool", "Any", "Mu"],
+            "Int" => &["Int", "Numeric", "Real", "Cool", "Any", "Mu"],
+            "Num" => &["Num", "Numeric", "Real", "Cool", "Any", "Mu"],
+            "Rat" | "FatRat" => &["Rat", "Numeric", "Real", "Cool", "Any", "Mu"],
+            "Complex" => &["Complex", "Numeric", "Cool", "Any", "Mu"],
+            "Str" => &["Str", "Stringy", "Cool", "Any", "Mu"],
+            "Array" => &["Array", "List", "Positional", "Cool", "Any", "Mu"],
+            "List" => &["List", "Positional", "Cool", "Any", "Mu"],
+            "Hash" => &["Hash", "Map", "Associative", "Cool", "Any", "Mu"],
+            "Pair" => &["Pair", "Associative", "Cool", "Any", "Mu"],
+            "Range" => &["Range", "Positional", "Cool", "Any", "Mu"],
+            "Set" => &["Set", "Setty", "QuantHash", "Associative", "Any", "Mu"],
+            "Bag" => &["Bag", "Baggy", "QuantHash", "Associative", "Any", "Mu"],
+            "Mix" => &[
+                "Mix",
+                "Mixy",
+                "Baggy",
+                "QuantHash",
+                "Associative",
+                "Any",
+                "Mu",
+            ],
+            "Sub" => &["Sub", "Routine", "Block", "Code", "Callable", "Any", "Mu"],
+            "Seq" => &["Seq", "Positional", "Cool", "Any", "Mu"],
+            "Regex" => &["Regex", "Method", "Routine", "Block", "Code", "Any", "Mu"],
+            "Junction" => &["Junction", "Mu"],
+            _ => &[],
+        };
+        for (i, &ancestor) in builtin_mro.iter().enumerate() {
+            if ancestor == constraint {
+                return i;
+            }
+        }
+        500
     }
 
     pub(crate) fn resolve_all_methods_with_owner(
@@ -250,15 +368,20 @@ impl Interpreter {
     ) -> Vec<(String, MethodDef)> {
         let mro = self.class_mro(class_name);
         let mut matches = Vec::new();
-        for cn in mro {
+        for cn in &mro {
             if let Some(overloads) = self
                 .classes
-                .get(&cn)
+                .get(cn.as_str())
                 .and_then(|c| c.methods.get(method_name))
                 .cloned()
             {
+                let is_ancestor = cn != class_name;
                 for def in overloads {
                     if def.is_private {
+                        continue;
+                    }
+                    // Submethods are NOT inherited
+                    if def.is_my && is_ancestor {
                         continue;
                     }
                     if self.method_args_match(arg_values, &def.param_defs) {
@@ -1105,15 +1228,9 @@ impl Interpreter {
     /// caller.
     pub(crate) fn call_protect_block(&mut self, code: &Value) -> Result<Value, RuntimeError> {
         if let Value::Sub(data) = code {
-            let (
-                compiled,
-                compiled_fns,
-                _captured_bindings,
-                _writeback_bindings,
-                _captured_names,
-                sync_names,
-            ) = self.get_or_compile_protect_block_with_slots(data);
-            self.sync_shared_vars_for_names(sync_names.iter().map(|name| name.as_str()));
+            let (compiled, compiled_fns, _captured_bindings, _writeback_bindings, captured_names) =
+                self.get_or_compile_protect_block_with_slots(data);
+            self.sync_shared_vars_for_names(captured_names.iter().map(|name| name.as_str()));
             self.run_compiled_block(&compiled, compiled_fns.as_ref())
         } else {
             self.call_sub_value(code.clone(), Vec::new(), true)
@@ -1128,7 +1245,6 @@ impl Interpreter {
         ProtectBlockCompiledFns,
         ProtectBlockCapturedBindings,
         ProtectBlockWritebackBindings,
-        ProtectBlockCapturedNames,
         ProtectBlockCapturedNames,
     ) {
         let entry = self.protect_block_cache.entry(data.id).or_insert_with(|| {
@@ -1175,13 +1291,6 @@ impl Interpreter {
                 .iter()
                 .map(|(_, name)| name.clone())
                 .collect();
-            let mut sync_names: Vec<String> = captured_bindings
-                .iter()
-                .filter_map(|(_, name)| match data.env.get(name) {
-                    Some(crate::value::Value::Array(..) | crate::value::Value::Hash(..)) => None,
-                    _ => Some(name.clone()),
-                })
-                .collect();
             for op in &compiled.ops {
                 let name_idx = match op {
                     crate::opcode::OpCode::GetGlobal(idx)
@@ -1200,17 +1309,6 @@ impl Interpreter {
                 if data.env.contains_key(name.as_str()) && !captured_names.contains(name) {
                     captured_names.push(name.to_string());
                 }
-                if !data.env.contains_key(name.as_str())
-                    || matches!(
-                        data.env.get(name.as_str()),
-                        Some(crate::value::Value::Array(..) | crate::value::Value::Hash(..))
-                    )
-                {
-                    continue;
-                }
-                if !sync_names.contains(name) {
-                    sync_names.push(name.to_string());
-                }
             }
             (
                 compiled,
@@ -1218,7 +1316,6 @@ impl Interpreter {
                 std::sync::Arc::new(captured_bindings),
                 std::sync::Arc::new(writeback_bindings),
                 std::sync::Arc::new(captured_names),
-                std::sync::Arc::new(sync_names),
             )
         });
         (
@@ -1227,7 +1324,6 @@ impl Interpreter {
             entry.2.clone(),
             entry.3.clone(),
             entry.4.clone(),
-            entry.5.clone(),
         )
     }
 

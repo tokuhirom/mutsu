@@ -561,17 +561,39 @@ fn parse_hyper_func_op(input: &str) -> Option<(String, bool, bool, usize)> {
         return None;
     };
 
-    // Check for [&func] pattern
+    // Check for [&func] pattern (e.g. [&infix:<+>])
     if !after_left.starts_with("[&") {
         return None;
     }
     let bracket_content = &after_left[2..]; // skip "[&"
     let end = bracket_content.find(']')?;
     let name = &bracket_content[..end];
+    // Allow alphanumeric, hyphens, underscores, and operator-style names like infix:<+>
     if name.is_empty()
-        || !name
-            .chars()
-            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        || !name.chars().all(|c| {
+            c.is_alphanumeric()
+                || matches!(
+                    c,
+                    '-' | '_'
+                        | ':'
+                        | '<'
+                        | '>'
+                        | '+'
+                        | '*'
+                        | '/'
+                        | '~'
+                        | '%'
+                        | '!'
+                        | '?'
+                        | '|'
+                        | '^'
+                        | '='
+                        | '.'
+                        | '&'
+                        | ','
+                        | '\\'
+                )
+        })
     {
         return None;
     }

@@ -103,6 +103,7 @@ impl Interpreter {
                 | "roles"
                 | "concretization"
                 | "curried_role"
+                | "pun"
         ) {
             return Some(Value::str(method_name.to_string()));
         }
@@ -151,43 +152,6 @@ impl Interpreter {
                 }
                 other => value_type_name(other).to_string(),
             })),
-            "shortname" if !args.is_empty() => {
-                let full_name = match &args[0] {
-                    Value::Package(name) => name.resolve(),
-                    Value::Instance { class_name, .. } => class_name.resolve(),
-                    Value::ParametricRole {
-                        base_name,
-                        type_args,
-                    } => {
-                        let args_str = type_args
-                            .iter()
-                            .map(|v| match v {
-                                Value::Package(n) => n.resolve(),
-                                other => other.to_string_value(),
-                            })
-                            .collect::<Vec<_>>()
-                            .join(",");
-                        format!("{}[{}]", base_name, args_str)
-                    }
-                    other => value_type_name(other).to_string(),
-                };
-                // Strip package prefix: Foo::Bar[Int] → Bar[Int]
-                // Find the last :: that's outside of brackets
-                let short = if let Some(bracket_pos) = full_name.find('[') {
-                    let prefix = &full_name[..bracket_pos];
-                    let suffix = &full_name[bracket_pos..];
-                    if let Some(last_sep) = prefix.rfind("::") {
-                        format!("{}{}", &prefix[last_sep + 2..], suffix)
-                    } else {
-                        full_name.clone()
-                    }
-                } else if let Some(last_sep) = full_name.rfind("::") {
-                    full_name[last_sep + 2..].to_string()
-                } else {
-                    full_name
-                };
-                Ok(Value::str(short))
-            }
             "ver" if args.len() == 1 => {
                 let invocant_name = match &args[0] {
                     Value::Package(name) => *name,
@@ -544,6 +508,15 @@ impl Interpreter {
                 Ok(Value::array(values))
             }
             "parents" if !args.is_empty() => self.dispatch_classhow_parents(&args),
+            "pun" if !args.is_empty() => {
+                let role_name = match &args[0] {
+                    Value::Package(name) => name.resolve(),
+                    Value::Instance { class_name, .. } => class_name.resolve(),
+                    other => other.to_string_value(),
+                };
+                self.ensure_role_punned_to_class(&role_name);
+                Ok(Value::Package(Symbol::intern(&role_name)))
+            }
             "roles" if !args.is_empty() => self.dispatch_classhow_roles(&args),
             "candidates" if !args.is_empty() => {
                 let base_name = match &args[0] {

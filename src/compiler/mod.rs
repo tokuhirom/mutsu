@@ -272,7 +272,6 @@ impl Compiler {
                         Expr::Index {
                             target: Box::new(Expr::Var(target_name.clone())),
                             index: Box::new(Expr::Literal(Value::Int(positional_index as i64))),
-                            is_associative: false,
                         },
                     ));
                     positional_index += 1;
@@ -285,7 +284,6 @@ impl Compiler {
                 Expr::Index {
                     target: Box::new(Expr::Var("_".to_string())),
                     index: Box::new(Expr::Literal(Value::Int(i as i64))),
-                    is_associative: false,
                 },
             ));
         }
@@ -311,6 +309,24 @@ impl Compiler {
             }
             _ => None,
         }
+    }
+
+    /// Extract per-element variable names when the iterable is a list of
+    /// scalar variables (e.g. `($a, $b, $c)`). Returns an empty vec otherwise.
+    fn for_iterable_var_names(iterable: &Expr) -> Vec<String> {
+        if let Expr::ArrayLiteral(items) = iterable {
+            let names: Vec<String> = items
+                .iter()
+                .filter_map(|item| match item {
+                    Expr::Var(name) => Some(name.clone()),
+                    _ => None,
+                })
+                .collect();
+            if names.len() == items.len() {
+                return names;
+            }
+        }
+        Vec::new()
     }
 
     /// Detect if the iterable is a `.kv` method call (key-value pairs).

@@ -512,18 +512,7 @@ impl VM {
                             .and_then(|bare| self.interpreter.env().get(bare).cloned())
                     })
                     .unwrap_or(Value::Nil);
-                // Coerce Hash to list of Pairs when accessed via @ sigil
-                let coerced = match &val {
-                    Value::Hash(map) => {
-                        let pairs: Vec<Value> = map
-                            .iter()
-                            .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
-                            .collect();
-                        Value::Array(std::sync::Arc::new(pairs), crate::value::ArrayKind::List)
-                    }
-                    _ => val,
-                };
-                self.stack.push(coerced);
+                self.stack.push(val);
                 *ip += 1;
             }
             OpCode::GetHashVar(name_idx) => {
@@ -704,21 +693,18 @@ impl VM {
                 self.interpreter
                     .set_var_type_constraint(&name, Some(constraint.clone()));
                 // For scalar variables, if the current value is Nil, set it to the type object.
-                // Exception: Nil type constraint should keep Value::Nil (Nil's type object IS Nil).
                 if !name.starts_with('@') && !name.starts_with('%') {
-                    if constraint != "Nil" {
-                        let is_nil =
-                            matches!(self.interpreter.env().get(&name), Some(Value::Nil) | None);
-                        if is_nil {
-                            let type_obj = Value::Package(Symbol::intern(
-                                &self
-                                    .interpreter
-                                    .var_type_constraint(&name)
-                                    .unwrap_or(constraint.clone()),
-                            ));
-                            self.set_env_with_main_alias(&name, type_obj.clone());
-                            self.update_local_if_exists(code, &name, &type_obj);
-                        }
+                    let is_nil =
+                        matches!(self.interpreter.env().get(&name), Some(Value::Nil) | None);
+                    if is_nil {
+                        let type_obj = Value::Package(Symbol::intern(
+                            &self
+                                .interpreter
+                                .var_type_constraint(&name)
+                                .unwrap_or(constraint.clone()),
+                        ));
+                        self.set_env_with_main_alias(&name, type_obj.clone());
+                        self.update_local_if_exists(code, &name, &type_obj);
                     }
                 } else if let Some(value) = self.get_env_with_main_alias(&name) {
                     let info = crate::runtime::ContainerTypeInfo {
@@ -1443,8 +1429,8 @@ impl VM {
             }
 
             // -- Indexing --
-            OpCode::Index(is_associative) => {
-                self.exec_index_op(*is_associative)?;
+            OpCode::Index => {
+                self.exec_index_op()?;
                 *ip += 1;
             }
             OpCode::DeleteIndexNamed(name_idx) => {
@@ -1619,6 +1605,7 @@ impl VM {
                 do_writeback,
                 rw_param_names,
                 kv_mode,
+                source_var_names,
             } => {
                 let spec = vm_control_ops::ForLoopSpec {
                     param_idx: *param_idx,
@@ -1633,6 +1620,7 @@ impl VM {
                     do_writeback: *do_writeback,
                     rw_param_names: rw_param_names.clone(),
                     kv_mode: *kv_mode,
+                    source_var_names: source_var_names.clone(),
                 };
                 self.exec_for_loop_op(code, &spec, ip, compiled_fns)?;
             }

@@ -99,9 +99,18 @@ impl VM {
     }
 
     pub(super) fn get_env_with_main_alias(&self, name: &str) -> Option<Value> {
-        // Check local env first so that function parameters and lexical
-        // variables take precedence over shared_vars.  Without this,
-        // recursive `start` blocks read stale parameter values from
+        // Thread-clone @/% lookups must prefer the shared copy. Child thread
+        // env snapshots can lag behind sibling mutations even when Lock::Async
+        // serializes the writes through shared_vars.
+        if self.interpreter.is_thread_clone()
+            && (name.starts_with('@') || name.starts_with('%'))
+            && let Some(v) = self.interpreter.get_shared_var(name)
+        {
+            return Some(v);
+        }
+        // Otherwise check local env first so that function parameters and
+        // lexical variables take precedence over shared_vars. Without this,
+        // recursive `start` blocks can read stale parameter values from
         // shared_vars instead of the locally-bound ones.
         if let Some(val) = self.interpreter.env().get(name) {
             return Some(val.clone());
@@ -649,9 +658,6 @@ impl VM {
                 | "Attribute"
                 | "Cursor"
                 | "X"
-                | "utf16"
-                | "utf32"
-                | "Macro"
         ) || {
             // Handle parameterized types like Buf[uint8], Array[Int], etc.
             if let Some(open) = name.find('[')
@@ -1012,14 +1018,6 @@ impl VM {
                     .cloned()
                     .unwrap_or(Value::Nil))
             } else {
-                // Clear capture variables ($0, $1, ...) and $/ on failed match
-                self.interpreter
-                    .env_mut()
-                    .insert("/".to_string(), Value::Nil);
-                for i in 0..10 {
-                    self.interpreter.env_mut().remove(&i.to_string());
-                }
-                self.env_dirty = true;
                 Ok(Value::Nil)
             }
         } else {

@@ -3,17 +3,6 @@ use crate::symbol::Symbol;
 use std::sync::Arc;
 
 impl VM {
-    fn can_drop_shared_collection_target(target_name: &str, method: &str) -> bool {
-        match target_name.chars().next() {
-            Some('@') => matches!(
-                method,
-                "push" | "append" | "pop" | "shift" | "unshift" | "prepend" | "splice"
-            ),
-            Some('%') => matches!(method, "delete"),
-            _ => false,
-        }
-    }
-
     fn append_slip_item(args: &mut Vec<Value>, item: &Value) {
         match item {
             Value::Capture { positional, named } => {
@@ -731,8 +720,8 @@ impl VM {
                         }
                         "defined" | "Bool" | "so" | "not" | "gist" | "Str" | "raku" | "perl"
                         | "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "VAR" | "DEFINITE"
-                        | "isa" | "does" | "can" | "^name" | "^mro" | "new" | "bless" | "clone"
-                        | "item" | "self" | "sink" => {
+                        | "isa" | "does" | "can" | "^name" | "^mro" | "^pun" | "new" | "bless"
+                        | "clone" | "item" | "self" | "sink" => {
                             // Fall through to normal dispatch
                         }
                         _ => {
@@ -1220,7 +1209,7 @@ impl VM {
         for arg in raw_args {
             Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
         }
-        let mut target = self.stack.pop().ok_or_else(|| {
+        let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethodMut target".to_string())
         })?;
         // Junction auto-threading: thread method calls over junction values
@@ -1380,53 +1369,9 @@ impl VM {
         {
             skip_native = true;
         }
-        if Self::can_drop_shared_collection_target(&target_name, &method)
-            && self.interpreter.has_shared_var(&target_name)
-        {
-            // Shared collection mutators operate by variable name; dropping the
-            // transient stack copy avoids per-call array/hash copy-on-write.
-            target = Value::Nil;
-            skip_native = true;
-        }
         if skip_native {
             self.interpreter.skip_pseudo_method_native = Some(method.clone());
         }
-        // Auto-vivification: when a mutating method is called on a type object
-        // (Package("Array") or Package("Hash")), vivify to an empty instance and
-        // store it back in the variable.
-        let target = if let Value::Package(name) = &target {
-            let type_name = name.resolve();
-            let is_mutating = matches!(
-                method.as_str(),
-                "push"
-                    | "pop"
-                    | "shift"
-                    | "unshift"
-                    | "append"
-                    | "prepend"
-                    | "splice"
-                    | "STORE"
-                    | "ASSIGN-POS"
-                    | "ASSIGN-KEY"
-                    | "BIND-POS"
-                    | "BIND-KEY"
-            );
-            if is_mutating && (type_name == "Array" || type_name == "Hash") {
-                let vivified = if type_name == "Array" {
-                    Value::real_array(vec![])
-                } else {
-                    Value::hash(std::collections::HashMap::new())
-                };
-                self.interpreter
-                    .env_insert(target_name.clone(), vivified.clone());
-                self.env_dirty = true;
-                vivified
-            } else {
-                target
-            }
-        } else {
-            target
-        };
         // For .* and .+ modifiers, skip the single-dispatch call and go
         // directly to the all-methods-in-MRO path to avoid double execution.
         match modifier.as_deref() {
@@ -1638,6 +1583,18 @@ impl VM {
                 )
             {
                 let val = self.vm_call_on_value(item.clone(), args.clone(), None)?;
+                results.push(val);
+                continue;
+            }
+            // Special case: user-defined postfix:<...> operators applied via hyper (»op / >>op).
+            // These are function calls, not method calls.
+            // Exclude built-in postfix operators (++, --) which are handled by method dispatch.
+            if method.starts_with("postfix:<")
+                && !matches!(method.as_str(), "postfix:<++>" | "postfix:<-->")
+            {
+                let mut call_args = vec![item.clone()];
+                call_args.extend(args.clone());
+                let val = self.interpreter.call_function(&method, call_args)?;
                 results.push(val);
                 continue;
             }
@@ -2245,13 +2202,13 @@ impl VM {
                         block_fns,
                         captured_bindings,
                         writeback_bindings,
-                        _captured_names,
-                        sync_names,
+                        captured_names,
                     ) = self
                         .interpreter
                         .get_or_compile_protect_block_with_slots(data);
-                    self.interpreter
-                        .sync_shared_vars_for_names(sync_names.iter().map(|name| name.as_str()));
+                    self.interpreter.sync_shared_vars_for_names(
+                        captured_names.iter().map(|name| name.as_str()),
+                    );
                     (
                         block_cc,
                         block_fns,
@@ -2270,19 +2227,26 @@ impl VM {
         // Save/swap stack and locals for the block
         let mut saved_locals = std::mem::take(&mut self.locals);
         let saved_stack = std::mem::take(&mut self.stack);
+        let outer_local_slots: std::collections::HashMap<&str, usize> = outer_code
+            .locals
+            .iter()
+            .enumerate()
+            .map(|(idx, name)| (name.as_str(), idx))
+            .collect();
+
         // Initialize locals for the block
         self.locals = vec![Value::Nil; block_cc.locals.len()];
         if captured_env.is_some() {
             for (slot, name) in captured_bindings.iter() {
                 if (name.starts_with('@') || name.starts_with('%'))
-                    && self.interpreter.has_shared_var(name)
+                    && self.interpreter.get_shared_var(name).is_some()
                 {
                     // Leave shared collections unmaterialized in locals.
                     // GetLocal will read the shared value on demand.
                     continue;
                 }
-                if let Some(outer_slot) = outer_code.locals.iter().rposition(|local| local == name)
-                    && let Some(val) = saved_locals.get(outer_slot)
+                if let Some(outer_slot) = outer_local_slots.get(name.as_str())
+                    && let Some(val) = saved_locals.get(*outer_slot)
                 {
                     self.locals[*slot] = val.clone();
                     continue;
@@ -2312,8 +2276,8 @@ impl VM {
                 ) {
                     continue;
                 }
-                if let Some(outer_slot) = outer_code.locals.iter().rposition(|local| local == name)
-                    && let Some(target) = saved_locals.get_mut(outer_slot)
+                if let Some(outer_slot) = outer_local_slots.get(name.as_str())
+                    && let Some(target) = saved_locals.get_mut(*outer_slot)
                 {
                     *target = self.locals[*slot].clone();
                 }

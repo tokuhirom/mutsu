@@ -576,6 +576,47 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Some(Ok(Value::array(positional_antipairs(&values))))
             }
         },
+        "kxxv" => match target {
+            Value::Bag(items) => {
+                let mut result = Vec::new();
+                for (k, count) in items.iter() {
+                    for _ in 0..*count {
+                        result.push(Value::str(k.clone()));
+                    }
+                }
+                Some(Ok(Value::array(result)))
+            }
+            Value::Mix(items) => {
+                let mut result = Vec::new();
+                for (k, weight) in items.iter() {
+                    let count = weight.floor() as i64;
+                    for _ in 0..count.max(0) {
+                        result.push(Value::str(k.clone()));
+                    }
+                }
+                Some(Ok(Value::array(result)))
+            }
+            Value::Set(items) => {
+                // Set is like Bag with all counts = 1
+                Some(Ok(Value::array(
+                    items.iter().map(|k| Value::str(k.clone())).collect(),
+                )))
+            }
+            Value::Hash(items) => {
+                let mut result = Vec::new();
+                for (k, v) in items.iter() {
+                    let count = match v {
+                        Value::Int(i) => *i,
+                        _ => v.to_f64() as i64,
+                    };
+                    for _ in 0..count.max(0) {
+                        result.push(Value::str(k.clone()));
+                    }
+                }
+                Some(Ok(Value::array(result)))
+            }
+            _ => None,
+        },
         "invert" => invert_value(target).map(Ok),
         "total" => match target {
             Value::Set(s) => Some(Ok(Value::Int(s.len() as i64))),

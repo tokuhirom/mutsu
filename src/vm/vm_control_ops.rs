@@ -14,6 +14,7 @@ pub(super) struct ForLoopSpec {
     pub(super) do_writeback: bool,
     pub(super) rw_param_names: Vec<String>,
     pub(super) kv_mode: bool,
+    pub(super) source_var_names: Vec<String>,
 }
 
 pub(super) struct WhileLoopSpec {
@@ -342,6 +343,12 @@ impl VM {
                                 &hash_keys_for_writeback,
                             );
                         }
+                        self.write_back_to_source_var(
+                            code,
+                            &spec.source_var_names,
+                            &param_name,
+                            idx,
+                        );
                         if let Some(ref mut coll) = collected {
                             let base = stack_base.unwrap();
                             if self.stack.len() > base {
@@ -376,6 +383,12 @@ impl VM {
                                 &hash_keys_for_writeback,
                             );
                         }
+                        self.write_back_to_source_var(
+                            code,
+                            &spec.source_var_names,
+                            &param_name,
+                            idx,
+                        );
                         break 'body_redo;
                     }
                     Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
@@ -415,6 +428,12 @@ impl VM {
                                 &hash_keys_for_writeback,
                             );
                         }
+                        self.write_back_to_source_var(
+                            code,
+                            &spec.source_var_names,
+                            &param_name,
+                            idx,
+                        );
                         if let Some(v) = e.return_value {
                             if let Some(ref mut coll) = collected {
                                 Self::collect_loop_value(coll, v.clone());
@@ -445,6 +464,12 @@ impl VM {
                                 &hash_keys_for_writeback,
                             );
                         }
+                        self.write_back_to_source_var(
+                            code,
+                            &spec.source_var_names,
+                            &param_name,
+                            idx,
+                        );
                         break 'for_loop;
                     }
                     Err(e) if e.is_next && Self::label_matches(&e.label, &spec.label) => {
@@ -463,6 +488,12 @@ impl VM {
                                 &hash_keys_for_writeback,
                             );
                         }
+                        self.write_back_to_source_var(
+                            code,
+                            &spec.source_var_names,
+                            &param_name,
+                            idx,
+                        );
                         break 'body_redo;
                     }
                     Err(e) => {
@@ -547,6 +578,29 @@ impl VM {
         let updated_value = Value::Array(std::sync::Arc::new(updated), kind);
         self.set_env_with_main_alias(source, updated_value.clone());
         self.update_local_if_exists(code, source, &updated_value);
+    }
+
+    /// Write back modified loop variable to the original scalar variable.
+    /// Used when iterating over a list of scalar variables like `for ($a, $b, $c)`.
+    fn write_back_to_source_var(
+        &mut self,
+        code: &CompiledCode,
+        source_var_names: &[String],
+        param_name: &Option<String>,
+        idx: usize,
+    ) {
+        if source_var_names.is_empty() || idx >= source_var_names.len() {
+            return;
+        }
+        let var_name = param_name.as_deref().unwrap_or("_");
+        let Some(current_val) = self.interpreter.env().get(var_name).cloned() else {
+            return;
+        };
+        let target = &source_var_names[idx];
+        self.interpreter
+            .env_mut()
+            .insert(target.clone(), current_val.clone());
+        self.update_local_if_exists(code, target, &current_val);
     }
 
     /// Write back the named rw param to the source container at the given index.

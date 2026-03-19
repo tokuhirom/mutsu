@@ -39,10 +39,6 @@ fn flatten_append_args(args: Vec<Value>) -> Vec<Value> {
     if args.len() == 1 {
         match &args[0] {
             Value::Array(vals, kind) if !kind.is_itemized() => vals.to_vec(),
-            Value::Hash(map) => map
-                .iter()
-                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
-                .collect(),
             _ => args,
         }
     } else {
@@ -94,7 +90,6 @@ type ProtectBlockCacheEntry = (
     Arc<HashMap<String, CompiledFunction>>,
     Arc<Vec<(usize, String)>>,
     Arc<Vec<(usize, String)>>,
-    Arc<Vec<String>>,
     Arc<Vec<String>>,
 );
 type ProtectBlockCache = HashMap<u64, ProtectBlockCacheEntry>;
@@ -2001,7 +1996,6 @@ impl Interpreter {
 
         // X::Cannot::Lazy
         register_x("X::Cannot::Lazy", "Exception");
-        register_x("X::Cannot::New", "Exception");
         register_x("X::Cannot::Capture", "Exception");
 
         // X::Match::Bool
@@ -2929,6 +2923,10 @@ impl Interpreter {
         self.halted
     }
 
+    pub(crate) fn is_thread_clone(&self) -> bool {
+        self.is_thread_clone
+    }
+
     pub(crate) fn write_warn_to_stderr(&mut self, message: &str) {
         let msg = format!("{}\n", message);
         if self.is_thread_clone
@@ -3672,11 +3670,6 @@ impl Interpreter {
         sv.get(key).cloned()
     }
 
-    pub(crate) fn has_shared_var(&self, key: &str) -> bool {
-        let sv = self.shared_vars.read().unwrap();
-        sv.contains_key(key)
-    }
-
     /// Write a shared variable. Updates both the local env and shared_vars.
     pub(crate) fn set_shared_var(&mut self, key: &str, value: Value) {
         // Ensure @-variables always store Array(true) (real Arrays)
@@ -4105,7 +4098,7 @@ mod tests {
         });
 
         let mut interp = Interpreter::new();
-        let (_, _, captured_bindings, _, captured_names, sync_names) =
+        let (_, _, captured_bindings, _, captured_names) =
             interp.get_or_compile_protect_block_with_slots(&block);
 
         assert_eq!(
@@ -4119,10 +4112,6 @@ mod tests {
                 "@noise".to_string(),
                 "$target".to_string(),
             ]
-        );
-        assert_eq!(
-            sync_names.as_ref(),
-            &vec!["used".to_string(), "$target".to_string()]
         );
     }
 }

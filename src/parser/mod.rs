@@ -1,4 +1,4 @@
-pub(crate) mod expr;
+mod expr;
 mod helpers;
 mod memo;
 mod parse_result;

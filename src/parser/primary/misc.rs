@@ -1083,7 +1083,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
         let (r, return_type) = skip_pointy_return_type(r)?;
-        let (r, body) = parse_block_body_with_params(r, &sub_params)?;
+        let (r, body) = parse_block_body(r)?;
         if is_rw_block {
             inject_rw_trait(&mut sub_params);
         }
@@ -1119,7 +1119,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
             r = r2;
         }
         let (r, return_type) = skip_pointy_return_type(r)?;
-        let (r, body) = parse_block_body_with_params(r, &param_defs)?;
+        let (r, body) = parse_block_body(r)?;
         if is_rw_block {
             inject_rw_trait(&mut param_defs);
         }
@@ -1141,7 +1141,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
             inject_rw_trait(std::slice::from_mut(&mut first));
         }
         let (r, return_type) = skip_pointy_return_type(r)?;
-        let (r, body) = parse_block_body_with_params(r, std::slice::from_ref(&first))?;
+        let (r, body) = parse_block_body(r)?;
         let simple_single = first.traits.is_empty()
             && first.shape_constraints.is_none()
             && !first.named
@@ -1239,24 +1239,8 @@ pub(super) fn ws_inner(input: &str) -> (&str, ()) {
 
 /// Parse a block body: { stmts }
 pub(in crate::parser) fn parse_block_body(input: &str) -> PResult<'_, Vec<crate::ast::Stmt>> {
-    parse_block_body_with_params(input, &[])
-}
-
-/// Parse a block body `{ ... }`, registering sigilless parameters as term symbols
-/// in the block scope so they shadow keywords (e.g. `\s` shadows the `s` substitution
-/// operator).
-pub(in crate::parser) fn parse_block_body_with_params<'a>(
-    input: &'a str,
-    param_defs: &[crate::ast::ParamDef],
-) -> PResult<'a, Vec<crate::ast::Stmt>> {
     let (r, _) = parse_char(input, '{')?;
     crate::parser::stmt::simple::push_scope();
-    // Register sigilless params as term symbols so they shadow keywords like `s` (substitution).
-    for pd in param_defs {
-        if pd.sigilless {
-            crate::parser::stmt::simple::register_user_term_symbol(&pd.name);
-        }
-    }
     let result = (|| -> PResult<'_, Vec<crate::ast::Stmt>> {
         let (r, stmts) = super::super::stmt::stmt_list_pub(r)?;
         let (r, _) = ws_inner(r);

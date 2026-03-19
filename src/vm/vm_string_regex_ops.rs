@@ -488,7 +488,14 @@ impl VM {
         let result = if both_scalar && results.len() == 1 {
             results.into_iter().next().unwrap()
         } else {
-            Value::real_array(results)
+            // Preserve List kind when inputs are Lists (not Arrays)
+            let left_is_array = matches!(&left, Value::Array(_, crate::value::ArrayKind::Array));
+            let right_is_array = matches!(&right, Value::Array(_, crate::value::ArrayKind::Array));
+            if !left_is_array && !right_is_array {
+                Value::Array(std::sync::Arc::new(results), crate::value::ArrayKind::List)
+            } else {
+                Value::real_array(results)
+            }
         };
         self.stack.push(result);
         Ok(())
@@ -550,7 +557,14 @@ impl VM {
         let result = if both_scalar && results.len() == 1 {
             results.into_iter().next().unwrap()
         } else {
-            Value::real_array(results)
+            // Preserve List kind when inputs are Lists (not Arrays)
+            let left_is_array = matches!(&left, Value::Array(_, crate::value::ArrayKind::Array));
+            let right_is_array = matches!(&right, Value::Array(_, crate::value::ArrayKind::Array));
+            if !left_is_array && !right_is_array {
+                Value::Array(std::sync::Arc::new(results), crate::value::ArrayKind::List)
+            } else {
+                Value::real_array(results)
+            }
         };
         self.stack.push(result);
         Ok(())
