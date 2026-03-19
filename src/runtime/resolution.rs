@@ -1164,7 +1164,29 @@ impl Interpreter {
                 .filter(|(slot, _)| assigned_slots.contains(slot))
                 .cloned()
                 .collect();
-            let captured_names = data.env.keys().cloned().collect();
+            let mut captured_names: Vec<String> = captured_bindings
+                .iter()
+                .map(|(_, name)| name.clone())
+                .collect();
+            for op in &compiled.ops {
+                let name_idx = match op {
+                    crate::opcode::OpCode::GetGlobal(idx)
+                    | crate::opcode::OpCode::SetGlobal(idx)
+                    | crate::opcode::OpCode::GetArrayVar(idx)
+                    | crate::opcode::OpCode::GetHashVar(idx)
+                    | crate::opcode::OpCode::CheckReadOnly(idx) => Some(*idx as usize),
+                    _ => None,
+                };
+                let Some(idx) = name_idx else {
+                    continue;
+                };
+                let Some(crate::value::Value::Str(name)) = compiled.constants.get(idx) else {
+                    continue;
+                };
+                if data.env.contains_key(name.as_str()) && !captured_names.contains(name) {
+                    captured_names.push(name.to_string());
+                }
+            }
             (
                 compiled,
                 compiled_fns,

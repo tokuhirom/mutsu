@@ -941,7 +941,7 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
         if let Some((modifier, name, len)) = parse_infix_func_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right_exprs) = if modifier.as_deref() == Some("X") {
+            let (r, mut right_exprs) = if modifier.as_deref() == Some("X") {
                 parse_comma_list_of_range(r)?
             } else {
                 let (r, expr) = range_expr(r).map_err(|err| {
@@ -953,6 +953,20 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
                 })?;
                 (r, vec![expr])
             };
+            // Collect trailing colonpair adverbs (e.g., `3 zin 4 :x(5)`)
+            let mut r = r;
+            loop {
+                let (r2, _) = ws(r)?;
+                if r2.starts_with(':')
+                    && !r2.starts_with("::")
+                    && let Ok((r3, adverb)) = super::super::primary::colonpair_expr(r2)
+                {
+                    right_exprs.push(adverb);
+                    r = r3;
+                } else {
+                    break;
+                }
+            }
             *left = Expr::InfixFunc {
                 name,
                 left: Box::new(left.clone()),
@@ -1319,6 +1333,19 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
                     })?;
                     args.push(arg);
                     r = r_after_arg;
+                }
+            }
+            // Collect trailing colonpair adverbs (e.g., `3 zin 4 :x(5)`)
+            loop {
+                let (r_ws, _) = ws(r)?;
+                if r_ws.starts_with(':')
+                    && !r_ws.starts_with("::")
+                    && let Ok((r3, adverb)) = super::super::primary::colonpair_expr(r_ws)
+                {
+                    args.push(adverb);
+                    r = r3;
+                } else {
+                    break;
                 }
             }
             *left = match assoc.as_str() {
