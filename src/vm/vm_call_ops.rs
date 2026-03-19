@@ -433,30 +433,44 @@ impl VM {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethod target".to_string())
         })?;
-        // Junction auto-threading: thread method calls over junction values
+        // Junction auto-threading: thread method calls over junction values.
+        // Skip methods that should NOT auto-thread: .gist, .raku/.perl return a
+        // single string representation of the junction. .WHAT, .^name, .THREAD
+        // operate on the junction itself. .Bool, .so, .defined collapse the junction.
         if let Value::Junction { kind, values } = &target
             && !matches!(
                 method.as_str(),
-                "Bool"
-                    | "so"
-                    | "WHAT"
-                    | "^name"
-                    | "gist"
-                    | "Str"
-                    | "defined"
-                    | "THREAD"
-                    | "raku"
-                    | "perl"
+                "Bool" | "so" | "WHAT" | "^name" | "gist" | "defined" | "THREAD" | "raku" | "perl"
             )
         {
             let kind = kind.clone();
+            let is_array_vivify = matches!(
+                method.as_str(),
+                "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
+            );
             let mut results = Vec::new();
             for v in values.iter() {
-                let r = if let Some(nr) = self.try_native_method(v, Symbol::intern(&method), &args)
+                // Auto-vivify Any/Mu type objects to empty Array for mutating methods
+                let v_vivified = if is_array_vivify {
+                    if let Value::Package(name) = v {
+                        let tn = name.resolve();
+                        if tn == "Any" || tn == "Mu" {
+                            Value::real_array(vec![])
+                        } else {
+                            v.clone()
+                        }
+                    } else {
+                        v.clone()
+                    }
+                } else {
+                    v.clone()
+                };
+                let r = if let Some(nr) =
+                    self.try_native_method(&v_vivified, Symbol::intern(&method), &args)
                 {
                     nr?
                 } else {
-                    self.try_compiled_method_or_interpret(v.clone(), &method, args.clone())?
+                    self.try_compiled_method_or_interpret(v_vivified, &method, args.clone())?
                 };
                 results.push(r);
             }
@@ -659,6 +673,22 @@ impl VM {
             self.env_dirty = true;
             return Ok(());
         }
+        // Auto-vivification for non-variable targets (e.g. %h{0}.push: 42):
+        // when push/pop/etc is called on Any/Mu type object, vivify to empty Array.
+        let target = if let Value::Package(name) = &target {
+            let type_name = name.resolve();
+            if matches!(
+                method.as_str(),
+                "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
+            ) && (type_name == "Any" || type_name == "Mu")
+            {
+                Value::real_array(vec![])
+            } else {
+                target
+            }
+        } else {
+            target
+        };
         // Unhandled Failure explosion: calling a non-Failure method on an unhandled
         // Failure should throw the stored exception (Raku behavior).
         if let Value::Instance {
@@ -1227,16 +1257,7 @@ impl VM {
         if let Value::Junction { kind, values } = &target
             && !matches!(
                 method.as_str(),
-                "Bool"
-                    | "so"
-                    | "WHAT"
-                    | "^name"
-                    | "gist"
-                    | "Str"
-                    | "defined"
-                    | "THREAD"
-                    | "raku"
-                    | "perl"
+                "Bool" | "so" | "WHAT" | "^name" | "gist" | "defined" | "THREAD" | "raku" | "perl"
             )
         {
             let kind = kind.clone();
@@ -1392,31 +1413,47 @@ impl VM {
             self.interpreter.skip_pseudo_method_native = Some(method.clone());
         }
         // Auto-vivification: when a mutating method is called on a type object
-        // (Package("Array") or Package("Hash")), vivify to an empty instance and
-        // store it back in the variable.
+        // (Package("Array"), Package("Hash"), Package("Any"), Package("Mu"))
+        // or on Nil, vivify to an empty instance and store it back in the variable.
         let target = if let Value::Package(name) = &target {
             let type_name = name.resolve();
-            let is_mutating = matches!(
+            let is_array_mutating = matches!(
                 method.as_str(),
-                "push"
-                    | "pop"
-                    | "shift"
-                    | "unshift"
-                    | "append"
-                    | "prepend"
-                    | "splice"
-                    | "STORE"
-                    | "ASSIGN-POS"
-                    | "ASSIGN-KEY"
-                    | "BIND-POS"
-                    | "BIND-KEY"
+                "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
             );
+            let is_mutating = is_array_mutating
+                || matches!(
+                    method.as_str(),
+                    "STORE" | "ASSIGN-POS" | "ASSIGN-KEY" | "BIND-POS" | "BIND-KEY"
+                );
             if is_mutating && (type_name == "Array" || type_name == "Hash") {
                 let vivified = if type_name == "Array" {
                     Value::real_array(vec![])
                 } else {
                     Value::hash(std::collections::HashMap::new())
                 };
+                self.interpreter
+                    .env_insert(target_name.clone(), vivified.clone());
+                self.env_dirty = true;
+                vivified
+            } else if is_array_mutating && (type_name == "Any" || type_name == "Mu") {
+                // In Raku, calling push/pop/etc on Any or Mu auto-vivifies to Array
+                let vivified = Value::real_array(vec![]);
+                self.interpreter
+                    .env_insert(target_name.clone(), vivified.clone());
+                self.env_dirty = true;
+                vivified
+            } else {
+                target
+            }
+        } else if matches!(&target, Value::Nil) {
+            let is_array_mutating = matches!(
+                method.as_str(),
+                "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
+            );
+            if is_array_mutating {
+                // In Raku, calling push/pop/etc on Nil auto-vivifies to Array
+                let vivified = Value::real_array(vec![]);
                 self.interpreter
                     .env_insert(target_name.clone(), vivified.clone());
                 self.env_dirty = true;

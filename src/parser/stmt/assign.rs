@@ -57,6 +57,9 @@ pub(crate) enum CompoundAssignOp {
     IntDiv,
     Lcm,
     Gcd,
+    JunctionAny,
+    JunctionAll,
+    JunctionOne,
 }
 
 impl CompoundAssignOp {
@@ -89,6 +92,9 @@ impl CompoundAssignOp {
             CompoundAssignOp::IntDiv => "div=",
             CompoundAssignOp::Lcm => "lcm=",
             CompoundAssignOp::Gcd => "gcd=",
+            CompoundAssignOp::JunctionAny => "|=",
+            CompoundAssignOp::JunctionAll => "&=",
+            CompoundAssignOp::JunctionOne => "^=",
         }
     }
 
@@ -122,6 +128,9 @@ impl CompoundAssignOp {
             "div" => Some(CompoundAssignOp::IntDiv),
             "lcm" => Some(CompoundAssignOp::Lcm),
             "gcd" => Some(CompoundAssignOp::Gcd),
+            "|" => Some(CompoundAssignOp::JunctionAny),
+            "&" => Some(CompoundAssignOp::JunctionAll),
+            "^" => Some(CompoundAssignOp::JunctionOne),
             _ => None,
         }
     }
@@ -155,6 +164,9 @@ impl CompoundAssignOp {
             CompoundAssignOp::IntDiv => TokenKind::Ident("div".to_string()),
             CompoundAssignOp::Lcm => TokenKind::Ident("lcm".to_string()),
             CompoundAssignOp::Gcd => TokenKind::Ident("gcd".to_string()),
+            CompoundAssignOp::JunctionAny => TokenKind::Pipe,
+            CompoundAssignOp::JunctionAll => TokenKind::Ampersand,
+            CompoundAssignOp::JunctionOne => TokenKind::Caret,
         }
     }
 }
@@ -275,6 +287,9 @@ pub(super) const COMPOUND_ASSIGN_OPS: &[CompoundAssignOp] = &[
     CompoundAssignOp::IntDiv,        // div=
     CompoundAssignOp::Lcm,           // lcm=
     CompoundAssignOp::Gcd,           // gcd=
+    CompoundAssignOp::JunctionAny,   // |=
+    CompoundAssignOp::JunctionAll,   // &=
+    CompoundAssignOp::JunctionOne,   // ^=
 ];
 
 pub(crate) fn compound_assign_op_from_name(op: &str) -> Option<CompoundAssignOp> {
