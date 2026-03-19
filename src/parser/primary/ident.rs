@@ -1220,15 +1220,14 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     let (rest, name) = super::super::stmt::parse_raku_ident(input)?;
     let name = normalize_raku_identifier(name);
 
-    // If followed by `=>`, treat any keyword as a bareword (pair key auto-quoting)
-    {
-        let trimmed = rest.trim_start();
-        if trimmed.starts_with("=>") && !trimmed.starts_with("==>") {
-            return Ok((rest, Expr::BareWord(name)));
-        }
-    }
-
     // Handle special expression keywords before qualified name resolution
+    // Many keyword branches below need a `=>` lookahead to treat the keyword as a
+    // bareword when used as a pair key (e.g. `my => 1`, `sub => 1`).
+    let followed_by_fat_arrow = {
+        let trimmed = rest.trim_start();
+        trimmed.starts_with("=>") && !trimmed.starts_with("==>")
+    };
+
     match name.as_str() {
         "infix" | "prefix" | "postfix" | "circumfix" | "postcircumfix" => {
             // infix:<OP>(args) — operator reference
@@ -1386,12 +1385,14 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
         }
         "my" | "our" | "state" => {
-            // my/our/state declaration in expression context
-            // e.g., (my $x = 5) or (state $x = 3)
-            match super::super::stmt::my_decl_expr_pub(input) {
-                Ok((r, stmt)) => return Ok((r, Expr::DoStmt(Box::new(stmt)))),
-                Err(err) if err.is_fatal() => return Err(err),
-                Err(_) => {}
+            if !followed_by_fat_arrow {
+                // my/our/state declaration in expression context
+                // e.g., (my $x = 5) or (state $x = 3)
+                match super::super::stmt::my_decl_expr_pub(input) {
+                    Ok((r, stmt)) => return Ok((r, Expr::DoStmt(Box::new(stmt)))),
+                    Err(err) if err.is_fatal() => return Err(err),
+                    Err(_) => {}
+                }
             }
         }
         "constant" => {
@@ -1455,7 +1456,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 }
             }
         }
-        "sub" => {
+        "sub" if !followed_by_fat_arrow => {
             let (r, _) = ws(rest)?;
             if r.starts_with('{') {
                 let (r, body) = parse_block_body(r)?;
