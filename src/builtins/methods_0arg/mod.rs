@@ -1037,6 +1037,29 @@ fn raku_value(v: &Value) -> String {
             };
             format!("{} => {}", key_repr, raku_value(value))
         }
+        Value::Hash(map) => {
+            let mut sorted_keys: Vec<&String> = map.keys().collect();
+            sorted_keys.sort();
+            let parts: Vec<String> = sorted_keys
+                .iter()
+                .map(|k| {
+                    let v = &map[*k];
+                    if let Value::Bool(true) = v {
+                        format!(":{}", k)
+                    } else if let Value::Bool(false) = v {
+                        format!(":!{}", k)
+                    } else {
+                        let repr = if matches!(v, Value::Nil) {
+                            "Any".to_string()
+                        } else {
+                            raku_value(v)
+                        };
+                        format!(":{}({})", k, repr)
+                    }
+                })
+                .collect();
+            format!("{{{}}}", parts.join(", "))
+        }
         Value::Nil => "Nil".to_string(),
         Value::Package(name) => name.resolve().to_string(),
         Value::Range(a, b) => format!("{}..{}", a, b),
@@ -3294,7 +3317,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     sorted_keys.sort();
                     let parts: Vec<String> = sorted_keys
                         .iter()
-                        .map(|k| format!("{} => {}", k, map[*k].to_string_value()))
+                        .map(|k| format!("{} => {}", k, runtime::gist_value(&map[*k])))
                         .collect();
                     Some(Ok(Value::str(format!("{{{}}}", parts.join(", ")))))
                 }
