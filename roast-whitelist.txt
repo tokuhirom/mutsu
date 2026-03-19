@@ -140,6 +140,7 @@ roast/S03-operators/bit.t
 roast/S03-operators/boolean-bitwise.t
 roast/S03-operators/brainos.t
 roast/S03-operators/chained-declarators.t
+roast/S03-operators/cmp.t
 roast/S03-operators/comparison-simple.t
 roast/S03-operators/comparison.t
 roast/S03-operators/composition.t
