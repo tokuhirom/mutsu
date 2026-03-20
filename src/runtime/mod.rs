@@ -241,6 +241,10 @@ pub(crate) struct MethodDef {
     pub(crate) original_role: Option<String>,
     pub(crate) return_type: Option<String>,
     pub(crate) compiled_code: Option<std::sync::Arc<crate::opcode::CompiledCode>>,
+    /// Delegation info: (attribute_var_name, target_method_name).
+    /// When set, the method forwards the call (with all args) to the named method
+    /// on the object stored in the given attribute.
+    pub(crate) delegation: Option<(String, String)>,
 }
 
 #[derive(Debug, Clone)]
@@ -2166,6 +2170,7 @@ impl Interpreter {
                         original_role: None,
                         return_type: None,
                         compiled_code: None,
+                        delegation: None,
                     };
                     let mut methods = HashMap::new();
                     for name in ["id", "need", "load", "loaded"] {

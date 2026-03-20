@@ -1044,6 +1044,28 @@ impl Interpreter {
                 let wildcard_attrs = self.collect_wildcard_handles(&class_name.resolve());
                 if let Value::Instance { attributes, .. } = &target {
                     for attr_var in &wildcard_attrs {
+                        // Check for regex delegation pattern: "attr_var:regex:pattern"
+                        if let Some(regex_idx) = attr_var.find(":regex:") {
+                            let real_attr = &attr_var[..regex_idx];
+                            let pattern = &attr_var[regex_idx + ":regex:".len()..];
+                            let attr_key =
+                                real_attr.trim_start_matches('!').trim_start_matches('.');
+                            // Check if method name matches the regex pattern
+                            if let Ok(re) = fancy_regex::Regex::new(pattern)
+                                && re.is_match(method).unwrap_or(false)
+                                && let Some(delegate) = attributes.get(attr_key)
+                            {
+                                match self.call_method_with_values(
+                                    delegate.clone(),
+                                    method,
+                                    args.clone(),
+                                ) {
+                                    Ok(val) => return Ok(val),
+                                    Err(_) => continue,
+                                }
+                            }
+                            continue;
+                        }
                         let attr_key = attr_var.trim_start_matches('!').trim_start_matches('.');
                         if let Some(delegate) = attributes.get(attr_key) {
                             // Try calling the method on the delegate; if it succeeds, return

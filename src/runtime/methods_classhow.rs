@@ -431,6 +431,7 @@ impl Interpreter {
                     original_role: None,
                     return_type: None,
                     compiled_code: None,
+                    delegation: None,
                 };
                 if let Some(class_def) = self.classes.get_mut(&class_name) {
                     class_def.methods.insert(method_name, vec![def]);
@@ -469,6 +470,7 @@ impl Interpreter {
                     original_role: None,
                     return_type: None,
                     compiled_code: None,
+                    delegation: None,
                 };
                 if let Some(class_def) = self.classes.get_mut(&class_name) {
                     class_def.methods.entry(method_name).or_default().push(def);

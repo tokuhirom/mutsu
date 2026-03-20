@@ -522,6 +522,49 @@ impl Interpreter {
         args: Vec<Value>,
         invocant: Option<Value>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+        // Fast path: delegation methods forward the call to the delegate object
+        if let Some((ref attr_var_name, ref target_method)) = method_def.delegation {
+            let attr_key = attr_var_name
+                .trim_start_matches('.')
+                .trim_start_matches('!');
+            let delegate = attributes.get(attr_key).cloned().unwrap_or(Value::Nil);
+            if delegate == Value::Nil {
+                return Err(RuntimeError::new(format!(
+                    "No such method '{}' for invocant of type '{}'",
+                    target_method, receiver_class_name
+                )));
+            }
+            let delegate_id = match &delegate {
+                Value::Instance { id, .. } => Some(*id),
+                _ => None,
+            };
+            let delegate_class = match &delegate {
+                Value::Instance { class_name, .. } => Some(*class_name),
+                _ => None,
+            };
+            let result = self.call_method_with_values(delegate, target_method, args)?;
+            // For Instance delegates, check if the delegate was mutated and update
+            // the frontend's attribute with the updated delegate.
+            if let (Some(did), Some(dcn)) = (delegate_id, delegate_class) {
+                // Look for the updated delegate in env bindings
+                let mut updated_delegate = None;
+                for val in self.env.values() {
+                    if let Value::Instance { class_name, id, .. } = val
+                        && *class_name == dcn
+                        && *id == did
+                    {
+                        updated_delegate = Some(val.clone());
+                        break;
+                    }
+                }
+                if let Some(updated) = updated_delegate {
+                    let mut attrs = attributes;
+                    attrs.insert(attr_key.to_string(), updated);
+                    return Ok((result, attrs));
+                }
+            }
+            return Ok((result, attributes));
+        }
         // For type-object calls (no attributes), use Package so self.new works
         let mut base = if let Some(invocant) = invocant {
             invocant

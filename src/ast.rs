@@ -4,6 +4,21 @@ use crate::value::Value;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
+/// Specifies how delegation (`handles`) should forward methods.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) enum HandleSpec {
+    /// Forward a method by name (same name on both sides).
+    Name(String),
+    /// Rename: expose `exposed` on the class, forwarding to `target` on the delegate.
+    Rename { exposed: String, target: String },
+    /// Forward all methods defined in the given type (class or role name).
+    Type(String),
+    /// Forward all methods whose name matches the regex pattern.
+    Regex(String),
+    /// Wildcard: forward all unknown methods.
+    Wildcard,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ParamDef {
     pub(crate) name: String,
@@ -581,7 +596,7 @@ pub(crate) enum Stmt {
         name: Symbol,
         is_public: bool,
         default: Option<Expr>,
-        handles: Vec<String>,
+        handles: Vec<HandleSpec>,
         #[allow(dead_code)]
         is_rw: bool,
         is_readonly: bool,
