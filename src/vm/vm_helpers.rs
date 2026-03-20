@@ -1627,6 +1627,13 @@ impl VM {
         self.interpreter
             .prepare_definite_return_slot(return_spec.as_deref());
 
+        // Raku: $! is scoped per routine — fresh Nil on entry
+        if !fn_name.is_empty() {
+            self.interpreter
+                .env_mut()
+                .insert("!".to_string(), Value::Nil);
+        }
+
         self.locals = vec![Value::Nil; cf.code.locals.len()];
         for (i, local_name) in cf.code.locals.iter().enumerate() {
             if let Some(val) = self.interpreter.env().get(local_name) {
@@ -1916,6 +1923,13 @@ impl VM {
             }
         }
 
+        // Raku: $! is scoped per routine — fresh Nil on entry
+        if !data.name.resolve().is_empty() {
+            self.interpreter
+                .env_mut()
+                .insert("!".to_string(), Value::Nil);
+        }
+
         self.locals = vec![Value::Nil; cc.locals.len()];
         for (i, local_name) in cc.locals.iter().enumerate() {
             if let Some(val) = self.interpreter.env().get(local_name) {
@@ -2162,6 +2176,11 @@ impl VM {
             "_".to_string(),
             Value::Package(crate::symbol::Symbol::intern("Any")),
         );
+
+        // Raku: $! is scoped per routine — fresh Nil on entry
+        self.interpreter
+            .env_mut()
+            .insert("!".to_string(), Value::Nil);
 
         // Role param bindings
         if let Some(role_bindings) = self

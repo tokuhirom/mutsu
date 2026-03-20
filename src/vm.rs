@@ -100,14 +100,25 @@ impl VM {
     }
 
     fn runtime_error_from_exception_value(
-        &self,
+        &mut self,
         value: Value,
         default_message: &str,
         is_fail: bool,
     ) -> RuntimeError {
         if matches!(value, Value::Nil) {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert(
+                "payload".to_string(),
+                Value::str(default_message.to_string()),
+            );
+            attrs.insert(
+                "message".to_string(),
+                Value::str(default_message.to_string()),
+            );
+            let exception = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
             let mut err = RuntimeError::new(default_message);
             err.is_fail = is_fail;
+            err.exception = Some(Box::new(exception));
             return err;
         }
 
@@ -115,7 +126,25 @@ impl VM {
             attributes
                 .get("message")
                 .map(|v| v.to_string_value())
-                .unwrap_or_else(|| value.to_string_value())
+                .unwrap_or_else(|| {
+                    // Try calling the user-defined .Str method
+                    self.interpreter
+                        .call_method_with_values(value.clone(), "Str", vec![])
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|_| value.to_string_value())
+                })
+        } else if let Value::Array(items, _) = &value {
+            // Multi-arg die: concatenate .Str of each element
+            let mut parts = Vec::new();
+            for item in items.iter() {
+                let s = self
+                    .interpreter
+                    .call_method_with_values(item.clone(), "Str", vec![])
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_else(|_| item.to_string_value());
+                parts.push(s);
+            }
+            parts.join("")
         } else {
             value.to_string_value()
         };
@@ -1704,6 +1733,20 @@ impl VM {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
                 // Store the resume point (instruction after Die) for .resume support
                 self.resume_ip = Some(*ip + 1);
+                // die() with empty array (from parsing die() with parens) should
+                // check $! first, falling back to "Died" default
+                let val = if matches!(&val, Value::Array(items, _) if items.is_empty()) {
+                    let current = self.interpreter.env().get("!").cloned();
+                    if let Some(ref c) = current
+                        && !matches!(c, Value::Nil)
+                    {
+                        current.unwrap()
+                    } else {
+                        Value::Nil
+                    }
+                } else {
+                    val
+                };
                 return Err(self.runtime_error_from_exception_value(val, "Died", false));
             }
             OpCode::Fail => {

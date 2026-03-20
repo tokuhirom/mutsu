@@ -988,7 +988,7 @@ impl Interpreter {
     }
 
     fn runtime_error_from_die_value(
-        &self,
+        &mut self,
         value: &Value,
         default_message: &str,
         is_fail: bool,
@@ -1003,7 +1003,23 @@ impl Interpreter {
             attributes
                 .get("message")
                 .map(|v| v.to_string_value())
-                .unwrap_or_else(|| value.to_string_value())
+                .unwrap_or_else(|| {
+                    // Try calling the user-defined .Str method
+                    self.call_method_with_values(value.clone(), "Str", vec![])
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|_| value.to_string_value())
+                })
+        } else if let Value::Array(items, _) = value {
+            // Multi-arg die: concatenate .Str of each element
+            let mut parts = Vec::new();
+            for item in items.iter() {
+                let s = self
+                    .call_method_with_values(item.clone(), "Str", vec![])
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_else(|_| item.to_string_value());
+                parts.push(s);
+            }
+            parts.join("")
         } else {
             value.to_string_value()
         };
@@ -1044,43 +1060,51 @@ impl Interpreter {
         err
     }
 
-    fn builtin_die(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        if let Some(v) = args.first() {
-            return Err(self.runtime_error_from_die_value(v, "Died", false));
+    fn builtin_die(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // Check if we have actual arguments (not just an empty array from die())
+        let has_real_args = match args.first() {
+            Some(Value::Array(items, _)) if items.is_empty() => false,
+            Some(_) => true,
+            None => false,
+        };
+        if has_real_args {
+            return Err(self.runtime_error_from_die_value(args.first().unwrap(), "Died", false));
         }
-        if let Some(current) = self.env.get("!")
+        if let Some(current) = self.env.get("!").cloned()
             && !matches!(current, Value::Nil)
         {
-            return Err(self.runtime_error_from_die_value(current, "Died", false));
+            return Err(self.runtime_error_from_die_value(&current, "Died", false));
         }
-        Err(RuntimeError::new("Died"))
+        // die() with no args and $! not set: create X::AdHoc with "Died" message
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("payload".to_string(), Value::str("Died".to_string()));
+        attrs.insert("message".to_string(), Value::str("Died".to_string()));
+        let exception = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
+        let mut err = RuntimeError::new("Died");
+        err.exception = Some(Box::new(exception));
+        Err(err)
     }
 
-    fn builtin_fail(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        if let Some(v) = args.first() {
+    fn builtin_fail(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if let Some(v) = args.first().cloned() {
             // When fail() receives a Failure:D, extract the inner exception
             // and re-arm it (Raku behavior: fail(Failure:D) re-arms)
-            let v = if let Value::Instance {
+            if let Value::Instance {
                 class_name,
                 attributes,
                 ..
-            } = v
+            } = &v
+                && class_name.resolve() == "Failure"
+                && let Some(exc) = attributes.get("exception").cloned()
             {
-                if class_name.resolve() == "Failure"
-                    && let Some(exc) = attributes.get("exception")
-                {
-                    return Err(self.runtime_error_from_die_value(exc, "Failed", true));
-                }
-                v
-            } else {
-                v
-            };
-            return Err(self.runtime_error_from_die_value(v, "Failed", true));
+                return Err(self.runtime_error_from_die_value(&exc, "Failed", true));
+            }
+            return Err(self.runtime_error_from_die_value(&v, "Failed", true));
         }
-        if let Some(current) = self.env.get("!")
+        if let Some(current) = self.env.get("!").cloned()
             && !matches!(current, Value::Nil)
         {
-            return Err(self.runtime_error_from_die_value(current, "Failed", true));
+            return Err(self.runtime_error_from_die_value(&current, "Failed", true));
         }
         let mut err = RuntimeError::new("Failed");
         err.is_fail = true;
@@ -2790,7 +2814,7 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("X::StubCode"), attrs)
     }
 
-    fn builtin_stub_die(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    fn builtin_stub_die(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let mut message = String::new();
         for arg in args {
             message.push_str(&arg.to_string_value());
