@@ -792,20 +792,36 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 .map(|r2| ws(r2).map(|(r3, _)| r3).unwrap_or(r2))
                 .unwrap_or(r);
             let (r, mut stmt) = sub_decl_body(r, true, false, false)?;
-            if let Stmt::SubDecl { return_type, .. } = &mut stmt
-                && return_type.is_none()
+            if let Stmt::SubDecl {
+                return_type,
+                custom_traits,
+                ..
+            } = &mut stmt
             {
-                *return_type = Some(routine_type.clone());
+                if return_type.is_none() {
+                    *return_type = Some(routine_type.clone());
+                }
+                if is_our {
+                    custom_traits.push("__our_scoped".to_string());
+                }
             }
             return Ok((r, stmt));
         }
         if let Some(r) = keyword("sub", after_type) {
             let (r, _) = ws1(r)?;
             let (r, mut stmt) = sub_decl_body(r, false, false, false)?;
-            if let Stmt::SubDecl { return_type, .. } = &mut stmt
-                && return_type.is_none()
+            if let Stmt::SubDecl {
+                return_type,
+                custom_traits,
+                ..
+            } = &mut stmt
             {
-                *return_type = Some(routine_type.clone());
+                if return_type.is_none() {
+                    *return_type = Some(routine_type.clone());
+                }
+                if is_our {
+                    custom_traits.push("__our_scoped".to_string());
+                }
             }
             return Ok((r, stmt));
         }
@@ -868,13 +884,21 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         let r = keyword("sub", r)
             .map(|r2| ws(r2).map(|(r3, _)| r3).unwrap_or(r2))
             .unwrap_or(r);
-        return sub_decl_body(r, true, false, false);
+        let (r, mut stmt) = sub_decl_body(r, true, false, false)?;
+        if is_our && let Stmt::SubDecl { custom_traits, .. } = &mut stmt {
+            custom_traits.push("__our_scoped".to_string());
+        }
+        return Ok((r, stmt));
     }
 
     // my sub name(...) { ... }
     if let Some(r) = keyword("sub", rest) {
         let (r, _) = ws1(r)?;
-        return sub_decl_body(r, false, false, false);
+        let (r, mut stmt) = sub_decl_body(r, false, false, false)?;
+        if is_our && let Stmt::SubDecl { custom_traits, .. } = &mut stmt {
+            custom_traits.push("__our_scoped".to_string());
+        }
+        return Ok((r, stmt));
     }
 
     // my/our method name(...) { ... }
