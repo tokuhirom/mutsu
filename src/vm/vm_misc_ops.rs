@@ -940,6 +940,14 @@ impl VM {
         }
         self.update_local_if_exists(code, &name, &val);
         self.set_env_with_main_alias(&name, val.clone());
+        // Track topic mutations for map rw writeback: when `$_` (= "_") is
+        // explicitly assigned, record the value so `eval_map_over_items_rw` can
+        // read it back even after the block return value overwrites `_`.
+        if name == "_" {
+            self.interpreter
+                .env_mut()
+                .insert("__mutsu_rw_map_topic__".to_string(), val.clone());
+        }
         let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
             if let Value::Str(name) = v {
                 Some(name.to_string())

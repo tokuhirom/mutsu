@@ -1297,6 +1297,17 @@ impl Interpreter {
 
     pub(super) fn builtin_map(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let func = args.first().cloned();
+        let arg_sources = self.pending_call_arg_sources.clone().unwrap_or_default();
+        // Check if the source is a single named array variable for rw writeback
+        let source_var = if args.len() == 2 {
+            arg_sources
+                .get(1)
+                .and_then(|entry| entry.as_ref())
+                .filter(|name| name.starts_with('@'))
+                .cloned()
+        } else {
+            None
+        };
         let mut list_items = Vec::new();
         for arg in args.iter().skip(1) {
             if crate::runtime::utils::is_shaped_array(arg) {
@@ -1321,7 +1332,13 @@ impl Interpreter {
                 }
             }
         }
-        self.eval_map_over_items(func, list_items)
+        if let Some(var_name) = source_var {
+            let result = self.eval_map_over_items_rw(func, &mut list_items)?;
+            self.env.insert(var_name, Value::real_array(list_items));
+            Ok(result)
+        } else {
+            self.eval_map_over_items(func, list_items)
+        }
     }
 
     pub(super) fn builtin_grep(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

@@ -997,6 +997,8 @@ impl Interpreter {
                 self.closure_env_overrides
                     .insert(data.id, persisted_closure_env);
             }
+            // Preserve map rw topic writeback across env restoration
+            let rw_map_topic = self.env.get("__mutsu_rw_map_topic__").cloned();
             let mut merged = saved_env;
             self.pop_caller_env_with_writeback(&mut merged);
             if merge_all {
@@ -1018,6 +1020,10 @@ impl Interpreter {
             self.merge_sigilless_alias_writes(&mut merged, &self.env);
             // Apply rw bindings after merge so they take precedence
             self.apply_rw_bindings_to_env(&rw_bindings, &mut merged);
+            // Restore map rw topic tracker if it was set during block execution
+            if let Some(topic_val) = rw_map_topic {
+                merged.insert("__mutsu_rw_map_topic__".to_string(), topic_val);
+            }
             self.env = merged;
             self.restore_readonly_vars(saved_readonly);
             if let Err(e) = &result
@@ -1389,6 +1395,29 @@ impl Interpreter {
             } else {
                 1
             };
+            // Routine wrapper from .assuming() on a builtin — delegate to call_sub_value
+            // which knows how to resolve __mutsu_routine_name.
+            if data.env.contains_key("__mutsu_routine_name") {
+                let mut result = Vec::new();
+                let mut i = 0usize;
+                while i < list_items.len() {
+                    if arity > 1 && i + arity > list_items.len() {
+                        return Err(RuntimeError::new("Not enough elements for map block arity"));
+                    }
+                    let chunk: Vec<Value> = if arity == 1 {
+                        vec![list_items[i].clone()]
+                    } else {
+                        list_items[i..i + arity].to_vec()
+                    };
+                    let value = self.call_sub_value(Value::Sub(data.clone()), chunk, false)?;
+                    match value {
+                        Value::Slip(elems) => result.extend(elems.iter().cloned()),
+                        v => result.push(v),
+                    }
+                    i += arity;
+                }
+                return Ok(Value::array(result));
+            }
             if data.env.contains_key("__mutsu_compose_left")
                 && data.env.contains_key("__mutsu_compose_right")
             {
@@ -1558,6 +1587,222 @@ impl Interpreter {
             return Ok(Value::array(result));
         }
         Ok(Value::array(list_items))
+    }
+
+    /// Like `eval_map_over_items` but writes back `$_` mutations to the source
+    /// list elements, implementing Raku's rw binding semantics for map.
+    /// Uses the same VM fast path as `eval_map_over_items` but checks for
+    /// `__mutsu_rw_map_topic__` after each iteration to capture mutations.
+    pub(super) fn eval_map_over_items_rw(
+        &mut self,
+        func: Option<Value>,
+        list_items: &mut [Value],
+    ) -> Result<Value, RuntimeError> {
+        let topic_key = "__mutsu_rw_map_topic__";
+        if let Some(Value::Sub(data)) = func {
+            let requires_full_binding = data.param_defs.iter().any(|pd| {
+                pd.named
+                    || pd.slurpy
+                    || pd.sigilless
+                    || pd.optional_marker
+                    || pd.default.is_some()
+                    || pd.type_constraint.is_some()
+                    || pd.where_constraint.is_some()
+                    || pd.sub_signature.is_some()
+                    || pd.outer_sub_signature.is_some()
+                    || pd.code_signature.is_some()
+                    || pd.shape_constraints.is_some()
+            });
+            if requires_full_binding
+                || data.env.contains_key("__mutsu_routine_name")
+                || data.env.contains_key("__mutsu_compose_left")
+            {
+                // Fall through to call_sub_value path for complex cases
+                let mut result = Vec::new();
+                let arity = if !data.params.is_empty() {
+                    let effective = data
+                        .params
+                        .len()
+                        .saturating_sub(data.assumed_positional.len());
+                    if effective == 0 { 1 } else { effective }
+                } else {
+                    1
+                };
+                let mut i = 0usize;
+                while i < list_items.len() {
+                    if arity > 1 && i + arity > list_items.len() {
+                        return Err(RuntimeError::new("Not enough elements for map block arity"));
+                    }
+                    let chunk: Vec<Value> = if arity == 1 {
+                        vec![list_items[i].clone()]
+                    } else {
+                        list_items[i..i + arity].to_vec()
+                    };
+                    self.env.remove(topic_key);
+                    let value = self.call_sub_value(Value::Sub(data.clone()), chunk, false)?;
+                    if arity == 1
+                        && let Some(mutated) = self.env.get(topic_key).cloned()
+                    {
+                        list_items[i] = mutated;
+                    }
+                    match value {
+                        Value::Slip(elems) => result.extend(elems.iter().cloned()),
+                        v => result.push(v),
+                    }
+                    i += arity;
+                }
+                self.env.remove(topic_key);
+                return Ok(Value::array(result));
+            }
+
+            let arity = if !data.params.is_empty() {
+                let effective = data
+                    .params
+                    .len()
+                    .saturating_sub(data.assumed_positional.len());
+                if effective == 0 { 1 } else { effective }
+            } else {
+                1
+            };
+            let mut result = Vec::new();
+
+            // Compile once, reuse VM for every iteration (same as eval_map_over_items)
+            let compiler = crate::compiler::Compiler::new();
+            let (code, compiled_fns) = compiler.compile(&data.body);
+
+            let underscore = "_".to_string();
+            let dollar_topic = "$_".to_string();
+
+            let mut touched_keys: Vec<String> = Vec::with_capacity(data.params.len() + 1);
+            for k in data.env.keys() {
+                if !self.env.contains_key(k) {
+                    touched_keys.push(k.clone());
+                }
+            }
+            for p in &data.params {
+                if !touched_keys.contains(p) {
+                    touched_keys.push(p.clone());
+                }
+            }
+            if !touched_keys.iter().any(|k| k == "_") {
+                touched_keys.push(underscore.clone());
+            }
+            if !touched_keys.iter().any(|k| k == "$_") {
+                touched_keys.push(dollar_topic.clone());
+            }
+            let saved: Vec<(String, Option<Value>)> = touched_keys
+                .iter()
+                .map(|k| (k.clone(), self.env.get(k).cloned()))
+                .collect();
+
+            for (k, v) in &data.env {
+                if !self.env.contains_key(k) {
+                    self.env.insert(k.clone(), v.clone());
+                }
+            }
+
+            let interp = std::mem::take(self);
+            let mut vm = crate::vm::VM::new(interp);
+
+            let mut i = 0usize;
+            while i < list_items.len() {
+                if arity > 1 && i + arity > list_items.len() {
+                    *self = vm.into_interpreter();
+                    for (k, orig) in &saved {
+                        match orig {
+                            Some(v) => self.env.insert(k.clone(), v.clone()),
+                            None => self.env.remove(k),
+                        };
+                    }
+                    return Err(RuntimeError::new("Not enough elements for map block arity"));
+                }
+                {
+                    let interp = vm.interpreter_mut();
+                    let assumed_count = data.assumed_positional.len();
+                    for (idx, val) in data.assumed_positional.iter().enumerate() {
+                        if let Some(p) = data.params.get(idx) {
+                            interp.env_insert(p.clone(), val.clone());
+                        }
+                    }
+                    // Clear the topic tracker before each iteration
+                    interp.env_mut().remove(topic_key);
+                    if arity == 1 {
+                        let item = list_items[i].clone();
+                        if let Some(p) = data.params.get(assumed_count) {
+                            interp.env_insert(p.clone(), item.clone());
+                        }
+                        interp.env_insert(underscore.clone(), item.clone());
+                        interp.env_insert(dollar_topic.clone(), item);
+                    } else {
+                        for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
+                            if i + idx < list_items.len() {
+                                interp.env_insert(p.clone(), list_items[i + idx].clone());
+                            }
+                        }
+                        interp.env_insert(underscore.clone(), list_items[i].clone());
+                        interp.env_insert(dollar_topic.clone(), list_items[i].clone());
+                    }
+                }
+                match vm.run_reuse(&code, &compiled_fns) {
+                    Ok(()) => {
+                        let val = vm
+                            .interpreter()
+                            .env()
+                            .get("_")
+                            .cloned()
+                            .unwrap_or(Value::Nil);
+                        // Write back topic mutation if it happened
+                        if arity == 1
+                            && let Some(mutated) = vm.interpreter().env().get(topic_key).cloned()
+                        {
+                            list_items[i] = mutated;
+                        }
+                        match val {
+                            Value::Slip(elems) => result.extend(elems.iter().cloned()),
+                            v => result.push(v),
+                        }
+                    }
+                    Err(e) if e.is_next => {
+                        if arity == 1
+                            && let Some(mutated) = vm.interpreter().env().get(topic_key).cloned()
+                        {
+                            list_items[i] = mutated;
+                        }
+                    }
+                    Err(e) if e.is_last => {
+                        if arity == 1
+                            && let Some(mutated) = vm.interpreter().env().get(topic_key).cloned()
+                        {
+                            list_items[i] = mutated;
+                        }
+                        break;
+                    }
+                    Err(e) => {
+                        *self = vm.into_interpreter();
+                        for (k, orig) in &saved {
+                            match orig {
+                                Some(v) => self.env.insert(k.clone(), v.clone()),
+                                None => self.env.remove(k),
+                            };
+                        }
+                        return Err(e);
+                    }
+                }
+                i += arity;
+            }
+
+            *self = vm.into_interpreter();
+            for (k, orig) in saved {
+                match orig {
+                    Some(v) => self.env.insert(k, v),
+                    None => self.env.remove(&k),
+                };
+            }
+            self.env.remove(topic_key);
+            return Ok(Value::array(result));
+        }
+        // Non-Sub func: delegate to regular map
+        self.eval_map_over_items(func, list_items.to_vec())
     }
 
     pub(super) fn eval_grep_over_items_with_mutated(
