@@ -1,7 +1,118 @@
 use super::*;
+use crate::ast::{HandleSpec, ParamDef};
 use crate::symbol::Symbol;
 
 type ResolvedRoleCandidate = (RoleDef, Vec<String>, Vec<Value>);
+
+/// Intermediate representation for resolved handle specs.
+enum ResolvedHandle {
+    /// Forward `exposed` method to `target` method on the object in `attr_var`.
+    Method {
+        exposed: String,
+        target: String,
+        attr_var: String,
+    },
+    /// Regex-based delegation: forward methods matching `pattern`.
+    Regex { attr_var: String, pattern: String },
+    /// Wildcard delegation: forward all unknown methods.
+    WildcardHandle(String),
+}
+
+/// Apply resolved handles to methods map and wildcard handles.
+fn apply_resolved_handles(
+    handles: &[ResolvedHandle],
+    methods: &mut HashMap<String, Vec<MethodDef>>,
+    wildcard_handles: &mut Vec<String>,
+) {
+    for handle in handles {
+        match handle {
+            ResolvedHandle::Method {
+                exposed,
+                target,
+                attr_var,
+            } => {
+                methods
+                    .entry(exposed.clone())
+                    .or_default()
+                    .push(make_delegation_method(attr_var, target));
+            }
+            ResolvedHandle::Regex { attr_var, pattern } => {
+                wildcard_handles.push(format!("{}:regex:{}", attr_var, pattern));
+            }
+            ResolvedHandle::WildcardHandle(attr_var) => {
+                wildcard_handles.push(attr_var.clone());
+            }
+        }
+    }
+}
+
+/// Create the slurpy `*@_` parameter used by delegation forwarding methods.
+/// This ensures the method matches any number of positional/named arguments.
+fn delegation_slurpy_param() -> ParamDef {
+    ParamDef {
+        name: "@_".to_string(),
+        default: None,
+        multi_invocant: false,
+        required: false,
+        named: false,
+        slurpy: true,
+        double_slurpy: false,
+        sigilless: false,
+        type_constraint: None,
+        literal_value: None,
+        sub_signature: None,
+        where_constraint: None,
+        traits: Vec::new(),
+        optional_marker: false,
+        outer_sub_signature: None,
+        code_signature: None,
+        is_invocant: false,
+        shape_constraints: None,
+    }
+}
+
+/// Create a delegation MethodDef that forwards method calls to `target_method`
+/// on the object in `attr_var_name`.
+fn make_delegation_method(attr_var_name: &str, target_method: &str) -> MethodDef {
+    MethodDef {
+        params: vec!["@_".to_string(), "%_".to_string()],
+        param_defs: vec![delegation_slurpy_param(), delegation_double_slurpy_param()],
+        body: std::sync::Arc::new(Vec::new()),
+        is_rw: false,
+        is_private: false,
+        is_multi: false,
+        is_my: false,
+        role_origin: None,
+        original_role: None,
+        return_type: None,
+        compiled_code: None,
+        delegation: Some((attr_var_name.to_string(), target_method.to_string())),
+    }
+}
+
+/// Create the double-slurpy `**@_` parameter for named arg forwarding.
+fn delegation_double_slurpy_param() -> ParamDef {
+    ParamDef {
+        name: "%_".to_string(),
+        default: None,
+        multi_invocant: false,
+        required: false,
+        named: false,
+        slurpy: true,
+        double_slurpy: true,
+        sigilless: false,
+        type_constraint: None,
+        literal_value: None,
+        sub_signature: None,
+        where_constraint: None,
+        traits: Vec::new(),
+        optional_marker: false,
+        outer_sub_signature: None,
+        code_signature: None,
+        is_invocant: false,
+        shape_constraints: None,
+    }
+}
 
 pub(crate) struct ClassDeclModifiers<'a> {
     pub(crate) class_is_rw: bool,
@@ -98,10 +209,125 @@ fn substitute_type_params_in_method(
         original_role: method.original_role.clone(),
         return_type: method.return_type.clone(),
         compiled_code: method.compiled_code.clone(),
+        delegation: method.delegation.clone(),
     }
 }
 
 impl Interpreter {
+    /// Apply `handles` specifications to a class definition.
+    /// For type-based handles, collects method names from the referenced type
+    /// first, then applies them without holding borrows on self.
+    fn apply_handle_specs(
+        &self,
+        specs: &[HandleSpec],
+        attr_var_name: &str,
+        class_def: &mut ClassDef,
+    ) {
+        let resolved = self.resolve_handle_specs_to_names(specs, attr_var_name);
+        apply_resolved_handles(
+            &resolved,
+            &mut class_def.methods,
+            &mut class_def.wildcard_handles,
+        );
+    }
+
+    /// Apply `handles` specifications to a role definition.
+    fn apply_handle_specs_to_role(
+        &self,
+        specs: &[HandleSpec],
+        attr_var_name: &str,
+        role_def: &mut RoleDef,
+    ) {
+        let resolved = self.resolve_handle_specs_to_names(specs, attr_var_name);
+        apply_resolved_handles(
+            &resolved,
+            &mut role_def.methods,
+            &mut role_def.wildcard_handles,
+        );
+    }
+
+    /// Resolve handle specs to concrete (exposed_name, target_method, attr_var_name) tuples
+    /// or wildcard/regex entries. This step only reads from self (immutable borrow).
+    fn resolve_handle_specs_to_names(
+        &self,
+        specs: &[HandleSpec],
+        attr_var_name: &str,
+    ) -> Vec<ResolvedHandle> {
+        let mut result = Vec::new();
+        for spec in specs {
+            match spec {
+                HandleSpec::Name(name) => {
+                    // Check if the name refers to a known class or role (type delegation)
+                    let type_methods = self.collect_type_method_names(name);
+                    if !type_methods.is_empty() {
+                        for method_name in type_methods {
+                            result.push(ResolvedHandle::Method {
+                                exposed: method_name.clone(),
+                                target: method_name,
+                                attr_var: attr_var_name.to_string(),
+                            });
+                        }
+                    } else {
+                        result.push(ResolvedHandle::Method {
+                            exposed: name.clone(),
+                            target: name.clone(),
+                            attr_var: attr_var_name.to_string(),
+                        });
+                    }
+                }
+                HandleSpec::Rename { exposed, target } => {
+                    result.push(ResolvedHandle::Method {
+                        exposed: exposed.clone(),
+                        target: target.clone(),
+                        attr_var: attr_var_name.to_string(),
+                    });
+                }
+                HandleSpec::Type(type_name) => {
+                    for method_name in self.collect_type_method_names(type_name) {
+                        result.push(ResolvedHandle::Method {
+                            exposed: method_name.clone(),
+                            target: method_name,
+                            attr_var: attr_var_name.to_string(),
+                        });
+                    }
+                }
+                HandleSpec::Regex(pattern) => {
+                    result.push(ResolvedHandle::Regex {
+                        attr_var: attr_var_name.to_string(),
+                        pattern: pattern.clone(),
+                    });
+                }
+                HandleSpec::Wildcard => {
+                    result.push(ResolvedHandle::WildcardHandle(attr_var_name.to_string()));
+                }
+            }
+        }
+        result
+    }
+
+    /// Collect method names from a class or role by name.
+    fn collect_type_method_names(&self, type_name: &str) -> Vec<String> {
+        let mut names = Vec::new();
+        if let Some(class_def) = self.classes.get(type_name) {
+            names.extend(class_def.methods.keys().cloned());
+        } else if let Some(role_def) = self.roles.get(type_name) {
+            names.extend(role_def.methods.keys().cloned());
+            // Also include methods from composed roles
+            if let Some(composed) = self.class_composed_roles.get(type_name) {
+                for role_name in composed {
+                    if let Some(rd) = self.roles.get(role_name) {
+                        for key in rd.methods.keys() {
+                            if !names.contains(key) {
+                                names.push(key.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        names
+    }
+
     fn eval_role_arg_values(&mut self, arg_exprs: &[String]) -> Result<Vec<Value>, RuntimeError> {
         let mut values = Vec::with_capacity(arg_exprs.len());
         for expr in arg_exprs {
@@ -927,36 +1153,7 @@ impl Interpreter {
                     } else {
                         format!("!{}", attr_name_str)
                     };
-                    for handle_name in handles {
-                        if handle_name == "*" {
-                            // Wildcard delegation: forward unknown methods to this attribute
-                            class_def.wildcard_handles.push(attr_var_name.clone());
-                        } else {
-                            class_def
-                                .methods
-                                .entry(handle_name.clone())
-                                .or_default()
-                                .push(MethodDef {
-                                    params: Vec::new(),
-                                    param_defs: Vec::new(),
-                                    body: std::sync::Arc::new(vec![Stmt::Expr(Expr::MethodCall {
-                                        target: Box::new(Expr::Var(attr_var_name.clone())),
-                                        name: Symbol::intern(handle_name),
-                                        args: Vec::new(),
-                                        modifier: None,
-                                        quoted: false,
-                                    })]),
-                                    is_rw: false,
-                                    is_private: false,
-                                    is_multi: false,
-                                    is_my: false,
-                                    role_origin: None,
-                                    original_role: None,
-                                    return_type: None,
-                                    compiled_code: None,
-                                });
-                        }
-                    }
+                    self.apply_handle_specs(handles, &attr_var_name, &mut class_def);
                 }
                 Stmt::MethodDecl {
                     name: method_name,
@@ -996,6 +1193,7 @@ impl Interpreter {
                         original_role: None,
                         return_type: return_type.clone(),
                         compiled_code: None,
+                        delegation: None,
                     };
                     if *multi {
                         class_def
@@ -1348,6 +1546,7 @@ impl Interpreter {
                         original_role: None,
                         return_type: return_type.clone(),
                         compiled_code: None,
+                        delegation: None,
                     };
                     if let Some(class_def) = self.classes.get_mut(name) {
                         if *multi {
@@ -1390,6 +1589,13 @@ impl Interpreter {
                     is_my: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
+                    let attr_var_name = if *is_public {
+                        format!(".{}", attr_name_str)
+                    } else {
+                        format!("!{}", attr_name_str)
+                    };
+                    // Resolve handles before taking mutable borrow on class_def
+                    let resolved = self.resolve_handle_specs_to_names(handles, &attr_var_name);
                     if let Some(class_def) = self.classes.get_mut(name) {
                         class_def.attributes.push((
                             attr_name_str.clone(),
@@ -1408,42 +1614,11 @@ impl Interpreter {
                                 .attribute_types
                                 .insert(attr_name_str.clone(), tc.clone());
                         }
-                        let attr_var_name = if *is_public {
-                            format!(".{}", attr_name_str)
-                        } else {
-                            format!("!{}", attr_name_str)
-                        };
-                        for handle_name in handles {
-                            if handle_name == "*" {
-                                class_def.wildcard_handles.push(attr_var_name.clone());
-                            } else {
-                                class_def
-                                    .methods
-                                    .entry(handle_name.clone())
-                                    .or_default()
-                                    .push(MethodDef {
-                                        params: Vec::new(),
-                                        param_defs: Vec::new(),
-                                        body: std::sync::Arc::new(vec![Stmt::Expr(
-                                            Expr::MethodCall {
-                                                target: Box::new(Expr::Var(attr_var_name.clone())),
-                                                name: Symbol::intern(handle_name),
-                                                args: Vec::new(),
-                                                modifier: None,
-                                                quoted: false,
-                                            },
-                                        )]),
-                                        is_rw: false,
-                                        is_private: false,
-                                        is_multi: false,
-                                        is_my: false,
-                                        role_origin: None,
-                                        original_role: None,
-                                        return_type: None,
-                                        compiled_code: None,
-                                    });
-                            }
-                        }
+                        apply_resolved_handles(
+                            &resolved,
+                            &mut class_def.methods,
+                            &mut class_def.wildcard_handles,
+                        );
                     }
                 }
                 // Execute other statements in the class body (e.g., sub declarations)
@@ -1550,35 +1725,7 @@ impl Interpreter {
                     } else {
                         format!("!{}", attr_name_str)
                     };
-                    for handle_name in handles {
-                        if handle_name == "*" {
-                            role_def.wildcard_handles.push(attr_var_name.clone());
-                        } else {
-                            role_def
-                                .methods
-                                .entry(handle_name.clone())
-                                .or_default()
-                                .push(MethodDef {
-                                    params: Vec::new(),
-                                    param_defs: Vec::new(),
-                                    body: std::sync::Arc::new(vec![Stmt::Expr(Expr::MethodCall {
-                                        target: Box::new(Expr::Var(attr_var_name.clone())),
-                                        name: Symbol::intern(handle_name),
-                                        args: Vec::new(),
-                                        modifier: None,
-                                        quoted: false,
-                                    })]),
-                                    is_rw: false,
-                                    is_private: false,
-                                    is_multi: false,
-                                    is_my: false,
-                                    role_origin: None,
-                                    original_role: None,
-                                    return_type: None,
-                                    compiled_code: None,
-                                });
-                        }
-                    }
+                    self.apply_handle_specs_to_role(handles, &attr_var_name, &mut role_def);
                 }
                 Stmt::DoesDecl { name: role_name } => {
                     if *role_name == "__mutsu_role_hidden__" {
@@ -1738,6 +1885,7 @@ impl Interpreter {
                         original_role: None,
                         return_type: return_type.clone(),
                         compiled_code: None,
+                        delegation: None,
                     };
                     if *multi {
                         role_def

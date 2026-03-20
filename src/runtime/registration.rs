@@ -88,6 +88,11 @@ impl Interpreter {
     }
 
     pub(super) fn method_signatures_match(required: &MethodDef, candidate: &MethodDef) -> bool {
+        // Delegation methods can satisfy any stub requirement since they
+        // transparently forward all arguments to the delegate.
+        if candidate.delegation.is_some() {
+            return required.is_private == candidate.is_private;
+        }
         Self::method_positional_signature(required) == Self::method_positional_signature(candidate)
             && required.is_private == candidate.is_private
     }

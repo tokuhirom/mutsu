@@ -926,6 +926,45 @@ impl Interpreter {
         } else {
             return Err(super::methods_signature::make_multi_no_match_error(method));
         };
+        // Delegation methods: forward assignment to the delegate
+        if let Some((attr_var_name, target_method)) = &method_def.delegation {
+            let attr_key = attr_var_name
+                .trim_start_matches('.')
+                .trim_start_matches('!');
+            let delegate = attributes.get(attr_key).cloned().unwrap_or(Value::Nil);
+            if delegate != Value::Nil {
+                let sigil = match &delegate {
+                    Value::Array(..) => "@",
+                    Value::Hash(_) => "%",
+                    _ => "$",
+                };
+                let temp_var = format!("{}__mutsu_delegation_tmp__", sigil);
+                self.env.insert(temp_var.clone(), delegate.clone());
+                let result = self.assign_method_lvalue_with_values(
+                    Some(&temp_var),
+                    delegate,
+                    target_method,
+                    method_args,
+                    value,
+                )?;
+                let updated_delegate = self.env.get(&temp_var).cloned().unwrap_or(Value::Nil);
+                self.env.remove(&temp_var);
+                let mut updated = (*attributes).clone();
+                updated.insert(attr_key.to_string(), updated_delegate);
+                if let Some(var_name) = target_var {
+                    self.overwrite_instance_bindings_by_identity(
+                        &class_name.resolve(),
+                        target_id,
+                        updated.clone(),
+                    );
+                    self.env.insert(
+                        var_name.to_string(),
+                        Value::make_instance_with_id(class_name, updated, target_id),
+                    );
+                }
+                return Ok(result);
+            }
+        }
         if !method_def.is_rw {
             return Err(RuntimeError::new(format!(
                 "X::Assignment::RO: method '{}' is not rw",
@@ -966,6 +1005,45 @@ impl Interpreter {
                 );
             }
             return Ok(assigned_value);
+        }
+
+        // Check if this is a delegation method — forward assignment to delegate
+        if let Some((ref attr_var_name, ref target_method)) = method_def.delegation {
+            let attr_key = attr_var_name
+                .trim_start_matches('.')
+                .trim_start_matches('!');
+            let delegate = attributes.get(attr_key).cloned().unwrap_or(Value::Nil);
+            if delegate != Value::Nil {
+                // Temporarily bind the delegate to an env variable for update tracking
+                let temp_var = "__mutsu_delegation_tmp__".to_string();
+                self.env.insert(temp_var.clone(), delegate.clone());
+                // Forward the assignment to the delegate
+                let result = self.assign_method_lvalue_with_values(
+                    Some(&temp_var),
+                    delegate,
+                    target_method,
+                    method_args,
+                    value,
+                )?;
+                // Read back the potentially-updated delegate
+                let updated_delegate = self.env.get(&temp_var).cloned().unwrap_or(Value::Nil);
+                self.env.remove(&temp_var);
+                // Write the updated delegate back into the frontend's attributes
+                let mut updated = (*attributes).clone();
+                updated.insert(attr_key.to_string(), updated_delegate);
+                if let Some(var_name) = target_var {
+                    self.overwrite_instance_bindings_by_identity(
+                        &class_name.resolve(),
+                        target_id,
+                        updated.clone(),
+                    );
+                    self.env.insert(
+                        var_name.to_string(),
+                        Value::make_instance_with_id(class_name, updated, target_id),
+                    );
+                }
+                return Ok(result);
+            }
         }
 
         // The method body doesn't directly expose an attribute — run it and check for Proxy
@@ -1990,6 +2068,50 @@ impl Interpreter {
                     Value::make_instance_with_id(class_name, updated, target_id),
                 );
                 return Ok(ret);
+            }
+
+            // Handle delegation methods: forward the call to the delegate
+            if let Some(method_def) = self.resolve_method(&class_name.resolve(), method, &args)
+                && method_def.delegation.is_some()
+            {
+                let (attr_var_name, target_method) = method_def.delegation.as_ref().unwrap();
+                let attr_key = attr_var_name
+                    .trim_start_matches('.')
+                    .trim_start_matches('!');
+                let delegate = attributes.get(attr_key).cloned().unwrap_or(Value::Nil);
+                if delegate == Value::Nil {
+                    return Err(RuntimeError::new(format!(
+                        "No such method '{}' for invocant of type '{}'",
+                        target_method,
+                        class_name.resolve()
+                    )));
+                }
+                // Determine sigil for temp var based on delegate type
+                let sigil = match &delegate {
+                    Value::Array(..) => "@",
+                    Value::Hash(_) => "%",
+                    _ => "$",
+                };
+                let temp_var = format!("{}__mutsu_delegation_tmp__", sigil);
+                self.env.insert(temp_var.clone(), delegate.clone());
+                let result =
+                    self.call_method_mut_with_values(&temp_var, delegate, target_method, args)?;
+                // Read back the potentially-updated delegate
+                let updated_delegate = self.env.get(&temp_var).cloned().unwrap_or(Value::Nil);
+                self.env.remove(&temp_var);
+                // Write the updated delegate back into the frontend's attributes
+                let mut updated = (*attributes).clone();
+                updated.insert(attr_key.to_string(), updated_delegate);
+                self.overwrite_instance_bindings_by_identity(
+                    &class_name.resolve(),
+                    target_id,
+                    updated.clone(),
+                );
+                self.env.insert(
+                    target_var.to_string(),
+                    Value::make_instance_with_id(class_name, updated, target_id),
+                );
+                return Ok(result);
             }
 
             if args.len() == 1 && !self.is_native_method(&class_name.resolve(), method) {
