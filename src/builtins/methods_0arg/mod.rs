@@ -2838,6 +2838,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 return None; // fall through to runtime to force
             }
             if let Some(items) = target.as_list_items() {
+                // If any item is an Instance, fall through to runtime
+                // so user-defined Str() methods can be called.
+                if items.iter().any(|v| matches!(v, Value::Instance { .. })) {
+                    return None;
+                }
                 let joined = items
                     .iter()
                     .map(|v| v.to_str_context())

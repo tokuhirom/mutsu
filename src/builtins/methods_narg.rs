@@ -559,6 +559,11 @@ pub(crate) fn native_method_1arg(
         }
         "join" => {
             if let Some(items) = target.as_list_items() {
+                // If any item is an Instance, fall through to runtime
+                // so user-defined Str() methods can be called.
+                if items.iter().any(|v| matches!(v, Value::Instance { .. })) {
+                    return None;
+                }
                 let sep = arg.to_string_value();
                 let joined = items
                     .iter()

@@ -2781,11 +2781,18 @@ impl Interpreter {
                         .first()
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
-                    let joined = Self::value_to_list(&target)
-                        .iter()
-                        .map(|v| v.to_string_value())
-                        .collect::<Vec<_>>()
-                        .join(&sep);
+                    let items = Self::value_to_list(&target);
+                    let mut parts = Vec::with_capacity(items.len());
+                    for v in &items {
+                        if matches!(v, Value::Instance { .. }) {
+                            // Call user-defined Str() method on instances
+                            let s = self.call_method_with_values(v.clone(), "Str", vec![])?;
+                            parts.push(s.to_string_value());
+                        } else {
+                            parts.push(v.to_string_value());
+                        }
+                    }
+                    let joined = parts.join(&sep);
                     return Ok(Value::str(joined));
                 }
             }
