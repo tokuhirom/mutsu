@@ -2585,8 +2585,7 @@ impl Interpreter {
                     return self.eval_snip(matcher, items);
                 }
             }
-            "head" | "flat" | "batch" | "comb" | "words" | "wait" | "zip"
-            | "zip-latest" => {
+            "head" | "flat" | "batch" | "comb" | "words" | "wait" | "zip" | "zip-latest" => {
                 if let Value::Instance { class_name, .. } = &target
                     && class_name == "Supply"
                 {
