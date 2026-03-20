@@ -205,6 +205,11 @@ impl Interpreter {
                     },
                 );
             }
+            // IO::Spec::* types: create an IO::Spec instance with the spec name
+            if cn_resolved.starts_with("IO::Spec::") {
+                let attrs = HashMap::new();
+                return Ok(Value::make_instance(Symbol::intern(&cn_resolved), attrs));
+            }
             let class_key = if self.classes.contains_key(&cn_resolved) {
                 cn_resolved.as_str()
             } else {
@@ -327,6 +332,19 @@ impl Interpreter {
                         _ => {}
                     }
                 }
+                // Determine dir separator from SPEC (Win32 uses '\', others use '/')
+                let is_win32_spec = spec_attr
+                    .as_ref()
+                    .map(|s| {
+                        let name = match s {
+                            Value::Package(n) => n.resolve().to_string(),
+                            Value::Instance { class_name, .. } => class_name.resolve().to_string(),
+                            _ => String::new(),
+                        };
+                        name == "IO::Spec::Win32" || name.ends_with("Win32")
+                    })
+                    .unwrap_or(false);
+                let dir_sep = if is_win32_spec { '\\' } else { '/' };
                 let path = if let Some(positional) = positional_path {
                     positional
                 } else if let Some(basename) = basename_part {
@@ -335,7 +353,7 @@ impl Interpreter {
                             if dirname.ends_with('/') || dirname.ends_with('\\') {
                                 format!("{dirname}{basename}")
                             } else {
-                                format!("{dirname}/{basename}")
+                                format!("{dirname}{dir_sep}{basename}")
                             }
                         }
                         _ => basename,
@@ -343,7 +361,11 @@ impl Interpreter {
                     if let Some(volume) = volume_part
                         && !volume.is_empty()
                     {
-                        built = format!("{volume}:{built}");
+                        if volume.ends_with('/') || volume.ends_with('\\') {
+                            built = format!("{volume}{built}");
+                        } else {
+                            built = format!("{volume}{dir_sep}{built}");
+                        }
                     }
                     built
                 } else {

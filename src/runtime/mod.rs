@@ -1249,6 +1249,7 @@ impl Interpreter {
                     "mode",
                     "s",
                     "z",
+                    "created",
                     "modified",
                     "accessed",
                     "changed",

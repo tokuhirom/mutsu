@@ -102,7 +102,12 @@ impl Interpreter {
         let cwd_path = self.get_cwd_path();
         let original = Path::new(&p);
         match method {
-            "Str" | "gist" => Ok(Value::str(p.clone())),
+            "Str" => Ok(Value::str(p.clone())),
+            "gist" => {
+                // IO::Path.gist returns "path".IO with the path quoted
+                // Only escape double quotes, not backslashes
+                Ok(Value::str(format!("\"{}\".IO", p.replace('"', "\\\""))))
+            }
             "raku" | "perl" => {
                 let escape = |s: &str| {
                     s.replace('\\', "\\\\")
@@ -160,7 +165,18 @@ impl Interpreter {
             "parent" => {
                 let mut levels = 1i64;
                 if let Some(Value::Int(i)) = args.first() {
-                    levels = (*i).max(1);
+                    if *i < 0 {
+                        return Err(RuntimeError::new(
+                            "X::IO::ParentOutOfRange: Cannot go to a negative parent",
+                        ));
+                    }
+                    levels = *i;
+                }
+                if levels == 0 {
+                    return Ok(Value::make_instance(
+                        Symbol::intern("IO::Path"),
+                        attributes.clone(),
+                    ));
                 }
                 let mut path = p.clone();
                 for _ in 0..levels {
@@ -192,9 +208,19 @@ impl Interpreter {
                     .first()
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
-                let parent = original.parent().unwrap_or_else(|| Path::new("."));
-                let sibling_path = Self::stringify_path(&parent.join(&sibling_name));
-                Ok(self.make_io_path_instance(&sibling_path))
+                // For sibling, get the dirname and join with the new name
+                let (volume, dirname, _) = Self::io_path_parts(&p);
+                let dir_with_volume = format!("{}{}", volume, dirname);
+                let sibling_path = if dir_with_volume == "/" || dir_with_volume == "\\" {
+                    format!("{}{}", dir_with_volume, sibling_name)
+                } else if dir_with_volume == "." {
+                    sibling_name
+                } else if dir_with_volume.ends_with('/') || dir_with_volume.ends_with('\\') {
+                    format!("{}{}", dir_with_volume, sibling_name)
+                } else {
+                    format!("{}/{}", dir_with_volume, sibling_name)
+                };
+                Ok(Self::clone_io_path_with_path(attributes, sibling_path))
             }
             "child" | "add" => {
                 let child_name = args
@@ -341,6 +367,15 @@ impl Interpreter {
             "z" => {
                 let zero = io_path_metadata(&path_buf, &p, method)?.len() == 0;
                 Ok(Value::Bool(zero))
+            }
+            "created" => {
+                let ts = fs::metadata(&path_buf)
+                    .and_then(|meta| meta.created())
+                    .map(Self::system_time_to_int)
+                    .map_err(|err| {
+                        RuntimeError::new(format!("Failed to get created time '{}': {}", p, err))
+                    })?;
+                Ok(Value::Int(ts))
             }
             "modified" => {
                 let ts = fs::metadata(&path_buf)
@@ -752,7 +787,7 @@ impl Interpreter {
         basename.chars().filter(|&c| c == '.').count() as i64
     }
 
-    fn cleanup_io_path_lexical(path: &str) -> String {
+    pub fn cleanup_io_path_lexical(path: &str) -> String {
         if path.is_empty() {
             return ".".to_string();
         }

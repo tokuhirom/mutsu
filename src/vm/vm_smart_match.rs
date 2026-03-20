@@ -1,6 +1,37 @@
+use std::path::PathBuf;
+
 use crate::runtime::Interpreter;
 use crate::value::Value;
 use crate::vm::VM;
+
+/// Normalize an IO::Path for ACCEPTS comparison: cleanup + absolute.
+/// Returns the cleaned-up absolute path string.
+fn io_path_cleanup_absolute(path: &str, cwd: &str) -> String {
+    let cleaned = crate::runtime::Interpreter::cleanup_io_path_lexical(path);
+    if std::path::Path::new(&cleaned).is_absolute() {
+        cleaned
+    } else {
+        let abs = PathBuf::from(cwd).join(&cleaned);
+        crate::runtime::Interpreter::cleanup_io_path_lexical(abs.to_string_lossy().as_ref())
+    }
+}
+
+/// Extract path and CWD from IO::Path attributes.
+fn io_path_attrs(attrs: &std::sync::Arc<crate::value::InstanceAttrs>) -> (String, String) {
+    let path = attrs
+        .get("path")
+        .map(|v: &Value| v.to_string_value())
+        .unwrap_or_default();
+    let cwd = attrs
+        .get("cwd")
+        .map(|v: &Value| v.to_string_value())
+        .unwrap_or_else(|| {
+            std::env::current_dir()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| ".".to_string())
+        });
+    (path, cwd)
+}
 
 /// Check if a value requires interpreter-based smart matching when used as LHS.
 /// These types have their own dispatch (junction threading, callable invocation,
@@ -141,7 +172,7 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         (Value::Int(a), Value::Str(b)) => Some(b.trim().parse::<f64>() == Ok(*a as f64)),
         (Value::Nil, Value::Str(s)) => Some(s.is_empty()),
 
-        // IO::Path ~~ IO::Path: compare by path string
+        // IO::Path ~~ IO::Path: compare by cleanup.absolute
         (
             Value::Instance {
                 class_name: cn_a,
@@ -154,9 +185,12 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
                 ..
             },
         ) if cn_a == "IO::Path" && cn_b == "IO::Path" => {
-            let path_a = attrs_a.get("path").map(|v| v.to_string_value());
-            let path_b = attrs_b.get("path").map(|v| v.to_string_value());
-            Some(path_a == path_b)
+            let (path_a, cwd_a) = io_path_attrs(attrs_a);
+            let (path_b, cwd_b) = io_path_attrs(attrs_b);
+            Some(
+                io_path_cleanup_absolute(&path_a, &cwd_a)
+                    == io_path_cleanup_absolute(&path_b, &cwd_b),
+            )
         }
 
         // Buf/Blob ~~ Buf/Blob: compare byte contents
@@ -419,6 +453,26 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
             } else {
                 Some(false)
             }
+        }
+
+        // Str/Int/Cool ~~ IO::Path: convert LHS to IO::Path and compare cleanup.absolute
+        (
+            _,
+            Value::Instance {
+                class_name: cn_b,
+                attributes: attrs_b,
+                ..
+            },
+        ) if cn_b == "IO::Path" && !needs_interpreter_lhs(left) => {
+            let lhs_str = left.to_string_value();
+            let (path_b, cwd_b) = io_path_attrs(attrs_b);
+            let cwd = std::env::current_dir()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| ".".to_string());
+            Some(
+                io_path_cleanup_absolute(&lhs_str, &cwd)
+                    == io_path_cleanup_absolute(&path_b, &cwd_b),
+            )
         }
 
         // Instance ~~ Instance identity check (generic, after all specific instance checks).
