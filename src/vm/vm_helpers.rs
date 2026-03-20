@@ -1357,6 +1357,16 @@ impl VM {
                 if self
                     .interpreter
                     .is_native_method(&class_name.resolve(), &method_name));
+        // Constrained Hash: bypass builtins for .raku/.perl/.keyof so runtime handles them
+        let bypass_constrained_hash = matches!(target, Value::Hash(_))
+            && args.is_empty()
+            && matches!(method_sym.resolve().as_ref(), "raku" | "perl" | "keyof")
+            && self.interpreter.container_type_metadata(target).is_some();
+        // Unconstrained Hash .keyof must also bypass builtins (returns Str(Any))
+        let bypass_hash_keyof = matches!(target, Value::Hash(_))
+            && args.is_empty()
+            && method_sym == "keyof"
+            && !bypass_constrained_hash;
         // Proxy containers must auto-FETCH before dispatching methods (except meta-methods)
         let bypass_proxy = matches!(target, Value::Proxy { .. })
             && !matches!(
@@ -1372,6 +1382,8 @@ impl VM {
             || bypass_numeric_bridge_instance_fastpath
             || bypass_runtime_native_instance_fastpath
             || bypass_proxy
+            || bypass_constrained_hash
+            || bypass_hash_keyof
         {
             return None;
         }

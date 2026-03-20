@@ -1455,6 +1455,49 @@ impl Interpreter {
         {
             return self.dispatch_tail(target, &args);
         }
+        // .raku/.perl on constrained Hash: produce (my Int % = ...) format
+        if matches!(method, "raku" | "perl")
+            && args.is_empty()
+            && matches!(&target, Value::Hash(_))
+            && let Some(info) = self.container_type_metadata(&target)
+            && let Value::Hash(map) = &target
+        {
+            let mut sorted_keys: Vec<&String> = map.keys().collect();
+            sorted_keys.sort();
+            let parts: Vec<String> = sorted_keys
+                .iter()
+                .map(|k| {
+                    let v = &map[*k];
+                    if let Value::Bool(true) = v {
+                        format!(":{}", k)
+                    } else if let Value::Bool(false) = v {
+                        format!(":!{}", k)
+                    } else {
+                        let repr = if matches!(v, Value::Nil) {
+                            "Any".to_string()
+                        } else {
+                            self.call_method_with_values(v.clone(), "raku", vec![])
+                                .map(|r| r.to_string_value())
+                                .unwrap_or_else(|_| format!("{:?}", v))
+                        };
+                        format!(":{}({})", k, repr)
+                    }
+                })
+                .collect();
+            let key_suffix = if let Some(ref kt) = info.key_type {
+                format!("{{{}}}", kt)
+            } else {
+                String::new()
+            };
+            let inner = parts.join(", ");
+            let result = if inner.is_empty() {
+                format!("(my {} %{})", info.value_type, key_suffix)
+            } else {
+                format!("(my {} %{} = {})", info.value_type, key_suffix, inner)
+            };
+            return Ok(Value::str(result));
+        }
+
         if let Some(result) = native_result {
             if method == "decode" {
                 return result.map(|value| match value {
@@ -1479,6 +1522,17 @@ impl Interpreter {
                 return Ok(Value::Package(Symbol::intern(&info.value_type)));
             }
             return Ok(Value::Package(Symbol::intern("Mu")));
+        }
+
+        // .keyof on Hash: check container_type_metadata for key type constraint
+        if method == "keyof" && args.is_empty() && matches!(&target, Value::Hash(_)) {
+            if let Some(info) = self.container_type_metadata(&target)
+                && let Some(ref key_type) = info.key_type
+            {
+                return Ok(Value::Package(Symbol::intern(key_type)));
+            }
+            // Default key type for Hash is Str(Any) (coercion type)
+            return Ok(Value::Package(Symbol::intern("Str(Any)")));
         }
 
         // Complex→Num conversion needs $*TOLERANCE from dynamic scope

@@ -3586,7 +3586,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 // Unparameterized Bag/Set/Mix: keyof returns Mu
                 Some(Ok(Value::Package(Symbol::intern("Mu"))))
             }
-            Value::Hash(_) => Some(Ok(Value::Package(Symbol::intern("Str")))),
+            // Fall through to runtime handler which checks container_type_metadata
+            // for explicit key constraints. Default is Str(Any).
+            Value::Hash(_) => None,
             Value::Package(name) | Value::CustomType { name, .. } => {
                 let n = name.resolve();
                 if let Some(bracket_pos) = n.find('[') {
@@ -3607,7 +3609,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 ) {
                     Some(Ok(Value::Package(Symbol::intern("Mu"))))
                 } else if n == "Hash" {
-                    Some(Ok(Value::Package(Symbol::intern("Str"))))
+                    Some(Ok(Value::Package(Symbol::intern("Str(Any)"))))
                 } else {
                     None
                 }
