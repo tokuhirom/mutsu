@@ -1472,8 +1472,16 @@ pub(super) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
     parse_statement_modifier(rest, stmt)
 }
 
-/// Parse `take` statement.
+/// Parse `take` or `take-rw` statement.
 pub(super) fn take_stmt(input: &str) -> PResult<'_, Stmt> {
+    // Try `take-rw` first (longer match wins)
+    if let Some(rest) = keyword("take-rw", input)
+        && let Ok((rest, _)) = ws1(rest)
+    {
+        let (rest, expr) = parse_comma_or_expr(rest)?;
+        // TODO: implement true rw semantics (container references)
+        return parse_statement_modifier(rest, Stmt::Take(expr));
+    }
     let rest = keyword("take", input).ok_or_else(|| PError::expected("take statement"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, expr) = parse_comma_or_expr(rest)?;

@@ -828,10 +828,32 @@ impl VM {
             self.interpreter.pop_gather_take_limit();
         }
 
-        // Merge env changes back (like the interpreter version does)
-        let mut merged_env = saved_env;
-        for (k, v) in self.interpreter.env().iter() {
-            merged_env.insert(k.clone(), v.clone());
+        // Restore the outer environment, selectively merging changes from
+        // the gather body. Only propagate variables that:
+        // 1. Existed in the outer scope, AND
+        // 2. Were actually modified during gather body execution
+        //    (i.e., their value changed from the gather body's initial env).
+        // This prevents nested gather closures from corrupting each other's
+        // captured variables (e.g., `$n` in nested grep-div calls), while
+        // still propagating genuine side effects (e.g., `$x += 1`).
+        let gather_result_env = self.interpreter.env().clone();
+        let mut merged_env = saved_env.clone();
+        for (k, v) in gather_result_env.iter() {
+            if !saved_env.contains_key(k) {
+                continue;
+            }
+            if let Some(initial) = list.env.get(k) {
+                // Variable existed in both outer and gather env.
+                // Only propagate if the value actually changed during execution.
+                // Compare string representations as a proxy for value equality.
+                if v.to_string_value() != initial.to_string_value() {
+                    merged_env.insert(k.clone(), v.clone());
+                }
+            } else {
+                // Variable existed in outer scope but not in gather's initial env;
+                // always propagate changes.
+                merged_env.insert(k.clone(), v.clone());
+            }
         }
         *self.interpreter.env_mut() = merged_env;
 
