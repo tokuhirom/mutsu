@@ -101,7 +101,21 @@ fn parse_required_suffix(input: &str) -> (&str, bool, bool) {
 }
 
 pub(super) fn parse_type_constraint_expr(input: &str) -> Option<(&str, String)> {
-    let (mut rest, mut type_name) = qualified_ident(input).ok()?;
+    // Handle type capture variables like `::a` (e.g., `my ::a $a`)
+    let (mut rest, mut type_name) = if input.starts_with("::")
+        && input[2..]
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_alphabetic() || c == '_')
+    {
+        let r = &input[2..];
+        let end = r
+            .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+            .unwrap_or(r.len());
+        (&r[end..], format!("::{}", &r[..end]))
+    } else {
+        qualified_ident(input).ok()?
+    };
     while rest.starts_with('[') {
         let (r2, suffix) = parse_generic_suffix(rest).ok()?;
         type_name.push_str(&suffix);
