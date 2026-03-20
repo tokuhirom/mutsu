@@ -526,6 +526,11 @@ impl Interpreter {
             }
         };
 
+        // TODO: Detect X::Redeclaration when a class redefines a role in the same scope.
+        // Currently disabled because the role registry is global (not lexically scoped),
+        // so `my role B { ... }` in one block leaks and causes false positives when
+        // `class B` is defined in a different scope (e.g., EVAL).
+
         // Detect stub body: `class Foo { ... }` — body is a stub operator call
         let is_stub_body = body.len() == 1
             && matches!(&body[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
@@ -624,6 +629,17 @@ impl Interpreter {
                 return Err(RuntimeError::new(format!(
                     "X::Inheritance::UnknownParent: class '{}' specifies unknown parent class '{}'",
                     name, parent
+                )));
+            }
+            // Check that `does` targets are actually roles, not classes
+            if does_parents.contains(parent)
+                && self.classes.contains_key(resolved_parent)
+                && !self.roles.contains_key(resolved_parent)
+                && !BUILTIN_TYPES.contains(&resolved_parent)
+            {
+                return Err(RuntimeError::new(format!(
+                    "'{}' cannot compose '{}' because it is not a role",
+                    name, resolved_parent
                 )));
             }
             // Check if parent is a stub (not yet composed)
@@ -2066,7 +2082,11 @@ impl Interpreter {
     }
 
     /// Get the type constraint for a class attribute, searching MRO.
-    fn get_attr_type_constraint(&self, class_name: &str, attr_name: &str) -> Option<String> {
+    pub(super) fn get_attr_type_constraint(
+        &self,
+        class_name: &str,
+        attr_name: &str,
+    ) -> Option<String> {
         if let Some(class_def) = self.classes.get(class_name) {
             for (name, _is_public, _default, _is_rw, _, _, _) in &class_def.attributes {
                 if name == attr_name {
