@@ -1405,6 +1405,39 @@ impl VM {
         if skip_native {
             self.interpreter.skip_pseudo_method_native = Some(method.clone());
         }
+        // Handle Match.make — must mutate the Match instance's `ast` attribute
+        // and write the modified Match back to the variable.
+        if method == "make"
+            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Match")
+        {
+            let value = args.into_iter().next().unwrap_or(Value::Nil);
+            if let Value::Instance {
+                class_name,
+                attributes,
+                id,
+            } = target
+            {
+                let mut attrs = crate::value::InstanceAttrs::clone(&attributes);
+                attrs.insert("ast".to_string(), value.clone());
+                let updated = Value::Instance {
+                    class_name,
+                    attributes: Arc::new(crate::value::InstanceAttrs::new(
+                        class_name, attrs, id, false,
+                    )),
+                    id,
+                };
+                self.interpreter
+                    .env_mut()
+                    .insert(target_name.to_string(), updated);
+                self.interpreter
+                    .env_mut()
+                    .insert("made".to_string(), value.clone());
+                self.interpreter.action_made = Some(value.clone());
+            }
+            self.stack.push(value);
+            self.env_dirty = true;
+            return Ok(());
+        }
         // For .* and .+ modifiers, skip the single-dispatch call and go
         // directly to the all-methods-in-MRO path to avoid double execution.
         match modifier.as_deref() {

@@ -273,6 +273,7 @@ roast/S05-mass/properties-script.t
 roast/S05-match/arrayhash.t
 roast/S05-match/basics.t
 roast/S05-match/blocks.t
+roast/S05-match/make.t
 roast/S05-match/non-capturing.t
 roast/S05-match/raku.t
 roast/S05-metachars/closure.t

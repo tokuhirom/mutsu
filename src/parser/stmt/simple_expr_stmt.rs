@@ -1227,6 +1227,38 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
         return Err(PError::expected("variable after temp"));
     }
     let after_sigil = &rest[1..];
+    // Handle special variables: $/, $!
+    if sigil == '$' && (after_sigil.starts_with('/') || after_sigil.starts_with('!')) {
+        let special_char = &after_sigil[..1];
+        let rest_after = &after_sigil[1..];
+        let full_name = special_char.to_string();
+        let (rest_after, _) = ws(rest_after)?;
+        // Check for assignment: temp $/ = expr
+        if rest_after.starts_with('=') && !rest_after.starts_with("==") {
+            let val_rest = &rest_after[1..];
+            let (val_rest, _) = ws(val_rest)?;
+            let (val_rest, val_expr) = expression(val_rest)?;
+            return parse_statement_modifier(
+                val_rest,
+                Stmt::Let {
+                    name: full_name,
+                    index: None,
+                    value: Some(Box::new(val_expr)),
+                    is_temp: true,
+                },
+            );
+        }
+        // Bare temp: temp $/
+        return parse_statement_modifier(
+            rest_after,
+            Stmt::Let {
+                name: full_name,
+                index: None,
+                value: None,
+                is_temp: true,
+            },
+        );
+    }
     // Handle twigils: $*CWD, $?FILE, etc.
     let (after_twigil, twigil) = if after_sigil.starts_with('*')
         || after_sigil.starts_with('?')
