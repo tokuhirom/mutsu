@@ -739,6 +739,7 @@ roast/S32-list/map_function_return_values.t
 roast/S32-list/produce.t
 roast/S32-list/roll.t
 roast/S32-list/rotor.t
+roast/S32-list/snip.t
 roast/S32-list/sort.t
 roast/S32-list/squish.t
 roast/S32-list/tail.t

@@ -1378,6 +1378,78 @@ impl Interpreter {
         self.eval_grep_over_items(func, list_items)
     }
 
+    /// `snip(matcher, +values)` — split a list at positions where the matcher stops matching.
+    pub(super) fn builtin_snip(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.is_empty() {
+            return Err(RuntimeError::new("Too few positionals passed to 'snip'"));
+        }
+        let matcher = args[0].clone();
+        let mut list_items = Vec::new();
+        for arg in args.iter().skip(1) {
+            match arg {
+                Value::Array(items, ..) => list_items.extend(items.iter().cloned()),
+                other => list_items.push(other.clone()),
+            }
+        }
+        self.eval_snip(matcher, list_items)
+    }
+
+    /// Core snip implementation shared by both sub and method forms.
+    pub(super) fn eval_snip(
+        &mut self,
+        matcher: Value,
+        items: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        // Extract the list of matchers: if matcher is a list/array of callables/types,
+        // use them in sequence; otherwise treat as a single matcher.
+        let matchers: Vec<Value> = match &matcher {
+            Value::Array(elems, ..) | Value::Seq(elems) | Value::Slip(elems) => {
+                elems.iter().cloned().collect()
+            }
+            other => vec![other.clone()],
+        };
+
+        let mut result_groups: Vec<Value> = Vec::new();
+        let mut current_group: Vec<Value> = Vec::new();
+        let mut matcher_idx: usize = 0;
+
+        for item in items {
+            let current_matcher = matchers.get(matcher_idx);
+            let matched = if let Some(m) = current_matcher {
+                self.snip_matches(&item, m)?
+            } else {
+                // No more matchers — everything goes into the last group
+                true
+            };
+
+            if matched {
+                current_group.push(item);
+            } else {
+                // Snip here: save current group and start a new one
+                result_groups.push(Value::array(current_group));
+                current_group = vec![item];
+                matcher_idx += 1;
+            }
+        }
+        // Push the final group
+        if !current_group.is_empty() {
+            result_groups.push(Value::array(current_group));
+        }
+
+        Ok(Value::array(result_groups))
+    }
+
+    /// Check if a value matches a snip matcher (Callable or type object).
+    fn snip_matches(&mut self, item: &Value, matcher: &Value) -> Result<bool, RuntimeError> {
+        if matches!(matcher, Value::Sub(_)) {
+            Ok(self
+                .call_sub_value(matcher.clone(), vec![item.clone()], true)?
+                .truthy())
+        } else {
+            Ok(self.smart_match(item, matcher))
+        }
+    }
+
     pub(super) fn builtin_first(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // Separate named args (Pairs) from positional args
         let mut positional = Vec::new();
