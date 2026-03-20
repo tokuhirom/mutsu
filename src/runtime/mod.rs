@@ -541,6 +541,7 @@ pub struct Interpreter {
     hidden_defer_parents: HashMap<String, HashSet<String>>,
     class_trusts: HashMap<String, HashSet<String>>,
     class_composed_roles: HashMap<String, Vec<String>>, // class -> roles composed via `does`
+    class_enum_roles: HashMap<String, Vec<String>>,     // class -> enums composed via `does`
     roles: HashMap<String, RoleDef>,
     role_candidates: HashMap<String, Vec<RoleCandidateDef>>,
     role_parents: HashMap<String, Vec<String>>,
@@ -2102,6 +2103,7 @@ impl Interpreter {
                 );
                 ccr
             },
+            class_enum_roles: HashMap::new(),
             roles: {
                 let mut roles = HashMap::new();
                 roles.insert(
@@ -3512,6 +3514,7 @@ impl Interpreter {
             hidden_defer_parents: self.hidden_defer_parents.clone(),
             class_trusts: self.class_trusts.clone(),
             class_composed_roles: self.class_composed_roles.clone(),
+            class_enum_roles: self.class_enum_roles.clone(),
             roles: self.roles.clone(),
             role_candidates: self.role_candidates.clone(),
             role_parents: self.role_parents.clone(),

@@ -715,6 +715,14 @@ impl VM {
             self.stack.push(composed?);
             return Ok(());
         }
+        let result = Self::apply_but_mixin(left, right);
+        self.stack.push(result);
+        Ok(())
+    }
+
+    /// Apply a `but`-style mixin: wrap the left value with the right value
+    /// keyed by its type name.
+    fn apply_but_mixin(left: Value, right: Value) -> Value {
         // Determine the mixin type from the right-hand value
         let mixin_type = match &right {
             Value::Bool(_) => "Bool".to_string(),
@@ -726,10 +734,10 @@ impl VM {
             _ => "Any".to_string(),
         };
         // If left is already a Mixin, add to existing mixins
-        let result = match left {
+        match left {
             Value::Mixin(inner, existing_mixins) => {
                 let mut mixins = (*existing_mixins).clone();
-                mixins.insert(mixin_type.clone(), right);
+                mixins.insert(mixin_type, right);
                 Value::mixin((*inner).clone(), mixins)
             }
             other => {
@@ -737,9 +745,7 @@ impl VM {
                 mixins.insert(mixin_type, right);
                 Value::mixin(other, mixins)
             }
-        };
-        self.stack.push(result);
-        Ok(())
+        }
     }
 
     pub(super) fn exec_isa_op(&mut self) {
@@ -757,6 +763,10 @@ impl VM {
         // If so, delegate to the interpreter which manages role state.
         if self.interpreter.is_role_application(&right) {
             return self.interpreter.eval_does_values(left, right);
+        }
+        // When the RHS is an enum value, `does` acts as a mixin (like `but`).
+        if matches!(&right, Value::Enum { .. }) {
+            return Ok(Self::apply_but_mixin(left, right));
         }
         // Pure check: does the value conform to the named role/type?
         let role_name = right.to_string_value();
