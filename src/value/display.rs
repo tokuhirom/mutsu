@@ -202,6 +202,53 @@ fn format_ratio_bigint_decimal(
     format!("{}{}.{}", if sign { "-" } else { "" }, int_part, frac)
 }
 
+/// Compute the number of decimal digits for non-terminating Rat Str/gist.
+/// Raku uses max(6, ceil(log10(abs(denom)))) and then strips trailing zeros.
+fn rat_nonterminating_digits(denom: i64) -> usize {
+    let d = (denom as i128).abs();
+    if d <= 1 {
+        return 6;
+    }
+    let log10 = (d as f64).log10().ceil() as usize;
+    log10.max(6)
+}
+
+/// Compute digits for BigInt denominator
+fn rat_nonterminating_digits_bigint(denom: &NumBigInt) -> usize {
+    if denom.is_zero() {
+        return 6;
+    }
+    let digits = denom.abs().to_string().len();
+    digits.max(6)
+}
+
+/// Format a non-terminating rational as decimal with proper digit count and trailing zero stripping.
+fn format_nonterminating_ratio(numer: i64, denom: i64) -> String {
+    let digits = rat_nonterminating_digits(denom);
+    let s = format!("{:.*}", digits, numer as f64 / denom as f64);
+    strip_trailing_zeros(&s)
+}
+
+/// Format a non-terminating BigRat as decimal with proper digit count and trailing zero stripping.
+fn format_nonterminating_ratio_bigint(numer: &NumBigInt, denom: &NumBigInt) -> String {
+    let digits = rat_nonterminating_digits_bigint(denom);
+    format_ratio_bigint_decimal(numer, denom, false, Some(digits))
+}
+
+/// Strip trailing zeros from a decimal string (but keep at least one digit after the decimal point).
+fn strip_trailing_zeros(s: &str) -> String {
+    if s.contains('.') {
+        let trimmed = s.trim_end_matches('0');
+        if let Some(stripped) = trimmed.strip_suffix('.') {
+            stripped.to_string()
+        } else {
+            trimmed.to_string()
+        }
+    } else {
+        s.to_string()
+    }
+}
+
 fn has_terminating_decimal(denom: i64) -> bool {
     if denom == 0 {
         return false;
@@ -369,8 +416,7 @@ impl Value {
                     // Exact decimal representation without f64 rounding.
                     format_terminating_ratio_exact(*n, *d, false)
                 } else {
-                    let whole = *n as f64 / *d as f64;
-                    format!("{:.6}", whole)
+                    format_nonterminating_ratio(*n, *d)
                 }
             }
             Value::FatRat(a, b) => {
@@ -387,8 +433,7 @@ impl Value {
                 } else if has_terminating_decimal(*b) {
                     format_terminating_ratio_exact(*a, *b, false)
                 } else {
-                    let whole = *a as f64 / *b as f64;
-                    format!("{:.6}", whole)
+                    format_nonterminating_ratio(*a, *b)
                 }
             }
             Value::BigRat(n, d) => {
@@ -402,10 +447,26 @@ impl Value {
                     }
                 } else if (n % d).is_zero() {
                     format!("{}", n / d)
+                } else if d.abs().to_string().len() > 20 {
+                    // For BigRats with very large denominators (beyond uint64 range),
+                    // fall back to Num-based formatting like Raku does for standard Rats.
+                    // Use scaled integer division to get a float value even when both
+                    // n and d are too large for f64 individually.
+                    let sign = n.is_negative() ^ d.is_negative();
+                    let na = n.abs();
+                    let da = d.abs();
+                    // Scale numerator up to get enough precision for f64
+                    let scaled = &na * NumBigInt::from(10u64).pow(20);
+                    let div = &scaled / &da;
+                    let val = div.to_f64().unwrap_or(0.0) / 1e20;
+                    let val = if sign { -val } else { val };
+                    // Use the Num Str formatting
+                    Value::Num(val).to_string_value()
                 } else if has_terminating_decimal_bigint(d) {
                     format_ratio_bigint_decimal(n, d, false, None)
                 } else {
-                    format_ratio_bigint_decimal(n, d, false, Some(6))
+                    let s = format_nonterminating_ratio_bigint(n, d);
+                    strip_trailing_zeros(&s)
                 }
             }
             Value::Complex(r, i) => format_complex(*r, *i),

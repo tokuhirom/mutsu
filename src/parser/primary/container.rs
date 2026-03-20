@@ -1234,8 +1234,7 @@ fn angle_word_value_impl(word: &str, fraction_allomorphic: bool) -> Value {
     } else {
         word
     };
-    if let Some((n, d)) = parse_angle_rat_word(parse_word) {
-        let rat = crate::value::make_rat(n, d);
+    if let Some(rat) = parse_angle_rat_word(parse_word) {
         if fraction_allomorphic {
             return make_allomorphic_value(rat, word);
         }
@@ -1274,7 +1273,7 @@ fn make_allomorphic_value(val: Value, word: &str) -> Value {
     Value::mixin(val, mixins)
 }
 
-fn parse_angle_rat_word(word: &str) -> Option<(i64, i64)> {
+fn parse_angle_rat_word(word: &str) -> Option<Value> {
     let (lhs, rhs) = word.split_once('/')?;
     if lhs.is_empty() || rhs.is_empty() {
         return None;
@@ -1283,9 +1282,51 @@ fn parse_angle_rat_word(word: &str) -> Option<(i64, i64)> {
     if rhs.starts_with('-') {
         return None;
     }
-    let numer = parse_angle_int(lhs)?;
-    let denom = parse_angle_int(rhs)?;
-    Some((numer, denom))
+    // Try i64 first, fall back to BigInt for large numbers
+    if let (Some(n), Some(d)) = (parse_angle_int(lhs), parse_angle_int(rhs)) {
+        return Some(crate::value::make_rat(n, d));
+    }
+    // BigInt fallback
+    let numer = parse_angle_bigint(lhs)?;
+    let denom = parse_angle_bigint(rhs)?;
+    Some(crate::value::make_big_rat(numer, denom))
+}
+
+fn parse_angle_bigint(s: &str) -> Option<num_bigint::BigInt> {
+    let (sign_neg, rest) = if let Some(rest) = s.strip_prefix('+') {
+        (false, rest)
+    } else if let Some(rest) = s.strip_prefix('-') {
+        (true, rest)
+    } else {
+        (false, s)
+    };
+    if rest.is_empty() {
+        return None;
+    }
+    let clean: String = rest.chars().filter(|c| *c != '_').collect();
+    if clean.is_empty() {
+        return None;
+    }
+    // Support 0x, 0b, 0o prefixes
+    let val = if let Some(hex) = clean
+        .strip_prefix("0x")
+        .or_else(|| clean.strip_prefix("0X"))
+    {
+        num_bigint::BigInt::parse_bytes(hex.as_bytes(), 16)?
+    } else if let Some(bin) = clean
+        .strip_prefix("0b")
+        .or_else(|| clean.strip_prefix("0B"))
+    {
+        num_bigint::BigInt::parse_bytes(bin.as_bytes(), 2)?
+    } else if let Some(oct) = clean
+        .strip_prefix("0o")
+        .or_else(|| clean.strip_prefix("0O"))
+    {
+        num_bigint::BigInt::parse_bytes(oct.as_bytes(), 8)?
+    } else {
+        clean.parse::<num_bigint::BigInt>().ok()?
+    };
+    if sign_neg { Some(-val) } else { Some(val) }
 }
 
 /// Parse an integer that may have a 0x/0b/0o prefix, sign, or underscores.
