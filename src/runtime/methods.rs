@@ -753,12 +753,30 @@ impl Interpreter {
                 _ => {}
             }
         }
-        // Handle Match.make method — stores value via make() mechanism
-        if let Value::Instance { class_name, .. } = &target
+        // Handle Match.make method — stores value in Match instance's `ast` attribute
+        // and updates `$/` in the environment.
+        if let Value::Instance {
+            class_name,
+            attributes,
+            id,
+        } = &target
             && class_name == "Match"
             && method == "make"
         {
             let value = args.first().cloned().unwrap_or(Value::Nil);
+            let mut attrs = crate::value::InstanceAttrs::clone(attributes);
+            attrs.insert("ast".to_string(), value.clone());
+            let updated = Value::Instance {
+                class_name: *class_name,
+                attributes: std::sync::Arc::new(crate::value::InstanceAttrs::new(
+                    *class_name,
+                    attrs,
+                    *id,
+                    false,
+                )),
+                id: *id,
+            };
+            self.env.insert("/".to_string(), updated);
             self.env.insert("made".to_string(), value.clone());
             self.action_made = Some(value.clone());
             return Ok(value);
