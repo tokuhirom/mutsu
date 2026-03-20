@@ -87,6 +87,9 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
                         args,
                     }
                 }
+                ref e if try_wrap_whatevercode_call_chain(e).is_some() => {
+                    try_wrap_whatevercode_call_chain(&expr).unwrap()
+                }
                 other => wrap_whatevercode(&other),
             };
         }
@@ -359,6 +362,59 @@ fn make_wc_param(name: String) -> crate::ast::ParamDef {
 
 pub(super) fn or_expr_pub(input: &str) -> PResult<'_, Expr> {
     or_expr(input)
+}
+
+/// Try to detect and fix a chain of MethodCalls leading to a CallOn whose target
+/// contains Whatever. If found, wrap only the CallOn target as WhateverCode,
+/// leaving the outer method calls outside the lambda.
+///
+/// Handles patterns like: *.foo().(args).bar().baz()
+/// where only *.foo() should be wrapped as WhateverCode.
+fn try_wrap_whatevercode_call_chain(expr: &Expr) -> Option<Expr> {
+    // Check if this is a MethodCall chain ending at a CallOn with Whatever target
+    match expr {
+        Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier,
+            quoted,
+        } if !args.iter().any(contains_whatever) => {
+            match target.as_ref() {
+                // Direct: MethodCall -> CallOn -> Whatever-containing target
+                Expr::CallOn {
+                    target: inner_target,
+                    args: call_args,
+                } if should_wrap_whatevercode(inner_target)
+                    && !call_args.iter().any(contains_whatever) =>
+                {
+                    Some(Expr::MethodCall {
+                        target: Box::new(Expr::CallOn {
+                            target: Box::new(wrap_whatevercode(inner_target)),
+                            args: call_args.clone(),
+                        }),
+                        name: *name,
+                        args: args.clone(),
+                        modifier: *modifier,
+                        quoted: *quoted,
+                    })
+                }
+                // Recursive: MethodCall -> MethodCall -> ... -> CallOn
+                inner @ Expr::MethodCall { .. } => {
+                    let wrapped_inner = try_wrap_whatevercode_call_chain(inner)?;
+                    Some(Expr::MethodCall {
+                        target: Box::new(wrapped_inner),
+                        name: *name,
+                        args: args.clone(),
+                        modifier: *modifier,
+                        quoted: *quoted,
+                    })
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 fn is_whatever(expr: &Expr) -> bool {
