@@ -795,6 +795,24 @@ impl Interpreter {
                     }
                 }
             }
+            // Enum-as-role dispatch: if the class `does` an enum, check variant methods
+            if args.is_empty()
+                && let Some(enum_names) = self.class_enum_roles.get(&class_name.resolve()).cloned()
+            {
+                for enum_name in &enum_names {
+                    if let Some(variants) = self.enum_types.get(enum_name).cloned()
+                        && variants.iter().any(|(vname, _)| vname == method)
+                    {
+                        // Get the stored enum value from the instance attribute
+                        let stored = attributes.get(enum_name);
+                        if let Some(Value::Enum { key, .. }) = stored {
+                            return Ok(Value::Bool(key.resolve() == method));
+                        }
+                        // No enum value set
+                        return Ok(Value::Bool(false));
+                    }
+                }
+            }
         }
 
         // For user-defined numeric/real-like objects, delegate unknown methods through
