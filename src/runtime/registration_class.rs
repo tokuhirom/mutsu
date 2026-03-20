@@ -2098,11 +2098,45 @@ impl Interpreter {
             Some(r) => r.clone(),
             None => return,
         };
+        // Collect attributes and methods from the role itself and all composed parent roles
+        let mut all_attributes = role_def.attributes.clone();
+        let mut all_methods: HashMap<String, Vec<MethodDef>> = role_def.methods.clone();
+        let mut composed_roles_list = vec![role_name.to_string()];
+        if let Some(parent_names) = self.role_parents.get(role_name).cloned() {
+            let mut role_stack: Vec<String> = parent_names;
+            while let Some(parent_role_name) = role_stack.pop() {
+                if !composed_roles_list.contains(&parent_role_name) {
+                    composed_roles_list.push(parent_role_name.clone());
+                    if let Some(parent_role) = self.roles.get(&parent_role_name).cloned() {
+                        for attr in &parent_role.attributes {
+                            // ClassAttributeDef is a tuple; field 0 is the attribute name
+                            if !all_attributes.iter().any(|a| a.0 == attr.0) {
+                                all_attributes.push(attr.clone());
+                            }
+                        }
+                        for (method_name, method_defs) in &parent_role.methods {
+                            all_methods
+                                .entry(method_name.clone())
+                                .or_default()
+                                .extend(method_defs.clone());
+                        }
+                    }
+                    // Also recurse into grandparent roles
+                    if let Some(grandparents) = self.role_parents.get(&parent_role_name).cloned() {
+                        for gp_name in &grandparents {
+                            if !composed_roles_list.contains(gp_name) {
+                                role_stack.push(gp_name.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
         let punned_class = ClassDef {
             parents: Vec::new(),
-            attributes: role_def.attributes.clone(),
+            attributes: all_attributes,
             attribute_types: HashMap::new(),
-            methods: HashMap::new(),
+            methods: all_methods,
             native_methods: HashSet::new(),
             mro: vec![role_name.to_string(), "Any".to_string(), "Mu".to_string()],
             wildcard_handles: Vec::new(),
@@ -2110,8 +2144,8 @@ impl Interpreter {
             class_level_attrs: HashMap::new(),
         };
         self.classes.insert(role_name.to_string(), punned_class);
-        // Register the role as a composed role of the punned class
+        // Register the role and its composed roles
         self.class_composed_roles
-            .insert(role_name.to_string(), vec![role_name.to_string()]);
+            .insert(role_name.to_string(), composed_roles_list);
     }
 }

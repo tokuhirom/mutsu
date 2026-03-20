@@ -1644,10 +1644,38 @@ impl Interpreter {
                     }
                 }
 
+                // Collect attributes from this role and all composed parent roles
+                let mut all_attributes = role.attributes.clone();
+                if let Some(parent_names) = self.role_parents.get(&class_name.resolve()).cloned() {
+                    let mut role_stack: Vec<String> = parent_names;
+                    let mut visited = vec![class_name.resolve()];
+                    while let Some(parent_role_name) = role_stack.pop() {
+                        if !visited.contains(&parent_role_name) {
+                            visited.push(parent_role_name.clone());
+                            if let Some(parent_role) = self.roles.get(&parent_role_name).cloned() {
+                                for attr in &parent_role.attributes {
+                                    if !all_attributes.iter().any(|a| a.0 == attr.0) {
+                                        all_attributes.push(attr.clone());
+                                    }
+                                }
+                            }
+                            if let Some(grandparents) =
+                                self.role_parents.get(&parent_role_name).cloned()
+                            {
+                                for gp_name in &grandparents {
+                                    if !visited.contains(gp_name) {
+                                        role_stack.push(gp_name.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 let mut mixins = HashMap::new();
                 mixins.insert(format!("__mutsu_role__{}", class_name), Value::Bool(true));
                 for (idx, (attr_name, _is_public, default_expr, _, _, _, _)) in
-                    role.attributes.iter().enumerate()
+                    all_attributes.iter().enumerate()
                 {
                     let value = if let Some(v) = named_args.get(attr_name) {
                         v.clone()

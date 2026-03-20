@@ -852,6 +852,47 @@ impl Interpreter {
             }
         }
 
+        // Handle Mixin-wrapped instances (e.g. from role punning) by updating
+        // the mixin attribute entry directly.
+        if let Value::Mixin(ref inner, ref mixins) = target
+            && let Value::Instance { class_name, .. } = inner.as_ref()
+        {
+            let mixin_attr_key = format!("__mutsu_attr__{}", method);
+            if mixins.contains_key(&mixin_attr_key) {
+                let mut updated_mixins = (**mixins).clone();
+                updated_mixins.insert(mixin_attr_key, value.clone());
+                if let Some(var_name) = target_var {
+                    self.env.insert(
+                        var_name.to_string(),
+                        Value::Mixin(inner.clone(), std::sync::Arc::new(updated_mixins)),
+                    );
+                }
+                return Ok(value);
+            }
+            // Check if the role attribute is public and rw
+            let cn = class_name.resolve();
+            let role_attrs = self.collect_role_attributes_for_class(&cn);
+            for (attr_name, is_public, _default, is_rw, _, sigil, _) in &role_attrs {
+                if attr_name == method && *is_public {
+                    if !is_rw && *sigil != '@' && *sigil != '%' {
+                        return Err(RuntimeError::new(format!(
+                            "X::Assignment::RO: method '{}' is not rw",
+                            method
+                        )));
+                    }
+                    let mut updated_mixins = (**mixins).clone();
+                    updated_mixins.insert(format!("__mutsu_attr__{}", method), value.clone());
+                    if let Some(var_name) = target_var {
+                        self.env.insert(
+                            var_name.to_string(),
+                            Value::Mixin(inner.clone(), std::sync::Arc::new(updated_mixins)),
+                        );
+                    }
+                    return Ok(value);
+                }
+            }
+        }
+
         let Value::Instance {
             class_name,
             attributes,

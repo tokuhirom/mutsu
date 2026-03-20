@@ -456,6 +456,43 @@ impl Interpreter {
         attrs
     }
 
+    /// Collect attributes from a role and all its composed parent roles.
+    /// Used when the role has been punned (instantiated via mixin) and we need
+    /// to check attribute metadata (e.g. `is rw`).
+    pub(super) fn collect_role_attributes_for_class(
+        &self,
+        role_name: &str,
+    ) -> Vec<ClassAttributeDef> {
+        let mut attrs: Vec<ClassAttributeDef> = Vec::new();
+        if let Some(role) = self.roles.get(role_name) {
+            attrs.extend(role.attributes.clone());
+        }
+        if let Some(parent_names) = self.role_parents.get(role_name) {
+            let mut role_stack: Vec<String> = parent_names.clone();
+            let mut visited = vec![role_name.to_string()];
+            while let Some(parent_role_name) = role_stack.pop() {
+                if !visited.contains(&parent_role_name) {
+                    visited.push(parent_role_name.clone());
+                    if let Some(parent_role) = self.roles.get(&parent_role_name) {
+                        for attr in &parent_role.attributes {
+                            if !attrs.iter().any(|a| a.0 == attr.0) {
+                                attrs.push(attr.clone());
+                            }
+                        }
+                    }
+                    if let Some(grandparents) = self.role_parents.get(&parent_role_name) {
+                        for gp in grandparents {
+                            if !visited.contains(gp) {
+                                role_stack.push(gp.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        attrs
+    }
+
     pub(crate) fn run_instance_method(
         &mut self,
         receiver_class_name: &str,
