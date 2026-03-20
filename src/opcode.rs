@@ -492,6 +492,8 @@ pub(crate) enum OpCode {
     Subst {
         pattern_idx: u32,
         replacement_idx: u32,
+        samecase: bool,
+        sigspace: bool,
         samemark: bool,
         samespace: bool,
         global: bool,
@@ -504,6 +506,8 @@ pub(crate) enum OpCode {
     NonDestructiveSubst {
         pattern_idx: u32,
         replacement_idx: u32,
+        samecase: bool,
+        sigspace: bool,
         samemark: bool,
         samespace: bool,
         global: bool,

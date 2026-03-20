@@ -1109,6 +1109,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                             Expr::Subst {
                                 pattern,
                                 replacement: replacement.to_string(),
+                                samecase: adverbs.samecase,
+                                sigspace: adverbs.sigspace,
                                 samemark: adverbs.samemark,
                                 samespace: adverbs.samespace,
                                 global: adverbs.global,
@@ -1194,6 +1196,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                             Expr::Subst {
                                 pattern,
                                 replacement: replacement.to_string(),
+                                samecase: adverbs.samecase,
+                                sigspace: adverbs.sigspace,
                                 samemark: adverbs.samemark,
                                 samespace: adverbs.samespace,
                                 global: adverbs.global,
@@ -1250,6 +1254,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 Expr::Subst {
                                     pattern,
                                     replacement,
+                                    samecase: adverbs.samecase,
+                                    sigspace: adverbs.sigspace,
                                     samemark: adverbs.samemark,
                                     samespace: adverbs.samespace,
                                     global: adverbs.global,
@@ -1329,6 +1335,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                             Expr::NonDestructiveSubst {
                                 pattern,
                                 replacement: replacement.to_string(),
+                                samecase: adverbs.samecase,
+                                sigspace: adverbs.sigspace,
                                 samemark: adverbs.samemark,
                                 samespace: adverbs.samespace,
                                 global: adverbs.global,
@@ -1358,6 +1366,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                             Expr::NonDestructiveSubst {
                                 pattern,
                                 replacement,
+                                samecase: adverbs.samecase,
+                                sigspace: adverbs.sigspace,
                                 samemark: adverbs.samemark,
                                 samespace: adverbs.samespace,
                                 global: adverbs.global,
@@ -1411,6 +1421,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                 Expr::NonDestructiveSubst {
                     pattern: pattern.to_string(),
                     replacement: replacement.to_string(),
+                    samecase: false,
+                    sigspace: false,
                     samemark: false,
                     samespace: false,
                     global: false,

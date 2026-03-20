@@ -1818,6 +1818,8 @@ impl Compiler {
             Expr::Subst {
                 pattern,
                 replacement,
+                samecase,
+                sigspace,
                 samemark,
                 samespace,
                 global,
@@ -1833,6 +1835,8 @@ impl Compiler {
                 self.code.emit(OpCode::Subst {
                     pattern_idx,
                     replacement_idx,
+                    samecase: *samecase,
+                    sigspace: *sigspace,
                     samemark: *samemark,
                     samespace: *samespace,
                     global: *global,
@@ -1845,6 +1849,8 @@ impl Compiler {
             Expr::NonDestructiveSubst {
                 pattern,
                 replacement,
+                samecase,
+                sigspace,
                 samemark,
                 samespace,
                 global,
@@ -1860,6 +1866,8 @@ impl Compiler {
                 self.code.emit(OpCode::NonDestructiveSubst {
                     pattern_idx,
                     replacement_idx,
+                    samecase: *samecase,
+                    sigspace: *sigspace,
                     samemark: *samemark,
                     samespace: *samespace,
                     global: *global,

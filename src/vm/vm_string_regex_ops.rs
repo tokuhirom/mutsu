@@ -1,6 +1,126 @@
 use super::*;
 use crate::symbol::Symbol;
 
+/// Detect the case pattern of a word.
+/// Returns one of: "uc" (all upper), "lc" (all lower), "ucfirst" (first upper, rest lower),
+/// "lcfirst" (first lower, rest upper).
+fn detect_word_case(word: &str) -> &'static str {
+    let chars: Vec<char> = word.chars().filter(|c| c.is_alphabetic()).collect();
+    if chars.is_empty() {
+        return "lc";
+    }
+    let all_upper = chars.iter().all(|c| c.is_uppercase());
+    let all_lower = chars.iter().all(|c| c.is_lowercase());
+    if all_upper {
+        return "uc";
+    }
+    if all_lower {
+        return "lc";
+    }
+    if chars[0].is_uppercase() && chars[1..].iter().all(|c| c.is_lowercase()) {
+        return "ucfirst";
+    }
+    if chars[0].is_lowercase() && chars[1..].iter().all(|c| c.is_uppercase()) {
+        return "lcfirst";
+    }
+    // Mixed case - fall back to char-by-char
+    "mixed"
+}
+
+/// Apply a case function to a word.
+fn apply_case_function(word: &str, case_fn: &str) -> String {
+    match case_fn {
+        "uc" => word.to_uppercase(),
+        "lc" => word.to_lowercase(),
+        "ucfirst" => {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => {
+                    let mut s = first.to_uppercase().to_string();
+                    for ch in chars {
+                        for c in ch.to_lowercase() {
+                            s.push(c);
+                        }
+                    }
+                    s
+                }
+            }
+        }
+        "lcfirst" => {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => {
+                    let mut s = first.to_lowercase().to_string();
+                    for ch in chars {
+                        for c in ch.to_uppercase() {
+                            s.push(c);
+                        }
+                    }
+                    s
+                }
+            }
+        }
+        _ => word.to_string(),
+    }
+}
+
+/// Apply samecase on a per-word basis: detect the case pattern of each word in the
+/// matched text, then apply that pattern to each corresponding word in the replacement.
+fn samecase_per_word(replacement: &str, matched: &str) -> String {
+    let matched_words: Vec<&str> = matched.split_whitespace().collect();
+    if matched_words.is_empty() {
+        return replacement.to_string();
+    }
+
+    // Detect case function for each matched word
+    let case_fns: Vec<&str> = matched_words.iter().map(|w| detect_word_case(w)).collect();
+
+    // Check if all words have the same case function (non-wordcase mode)
+    // Only use the "entire string" shortcut for uc/lc where it makes sense.
+    // For ucfirst/lcfirst, we still need per-word application.
+    let all_same = case_fns.windows(2).all(|w| w[0] == w[1]);
+    if all_same && (case_fns[0] == "uc" || case_fns[0] == "lc") {
+        return apply_case_function(replacement, case_fns[0]);
+    }
+
+    // Word-case mode: apply per-word case functions
+    let mut result = String::new();
+    let mut word_idx = 0;
+    let mut chars = replacement.chars().peekable();
+    while chars.peek().is_some() {
+        // Collect leading whitespace
+        while let Some(&ch) = chars.peek() {
+            if ch.is_whitespace() {
+                result.push(ch);
+                chars.next();
+            } else {
+                break;
+            }
+        }
+        // Collect word
+        let mut word = String::new();
+        while let Some(&ch) = chars.peek() {
+            if ch.is_whitespace() {
+                break;
+            }
+            word.push(ch);
+            chars.next();
+        }
+        if !word.is_empty() {
+            let case_fn = if word_idx < case_fns.len() {
+                case_fns[word_idx]
+            } else {
+                case_fns.last().unwrap()
+            };
+            result.push_str(&apply_case_function(&word, case_fn));
+            word_idx += 1;
+        }
+    }
+    result
+}
+
 /// Apply samemark on a per-word basis: split both source and target by whitespace,
 /// apply samemark to each word pair, then reassemble with the replacement's whitespace.
 fn samemark_per_word(target: &str, source: &str) -> String {
@@ -97,6 +217,145 @@ fn samespace_replace(replacement: &str, matched: &str) -> String {
     result
 }
 
+/// Interpolate variables in s/// replacement strings (like a double-quoted string).
+/// Handles: $var, $var[idx], @var, ${...}
+fn interpolate_subst_replacement(
+    template: &str,
+    interpreter: &crate::runtime::Interpreter,
+) -> String {
+    let mut out = String::new();
+    let mut i = 0usize;
+    let bytes = template.as_bytes();
+    while i < bytes.len() {
+        // Handle escape sequences
+        if bytes[i] == b'\\' && i + 1 < bytes.len() {
+            let next = bytes[i + 1];
+            match next {
+                b'n' => {
+                    out.push('\n');
+                    i += 2;
+                }
+                b't' => {
+                    out.push('\t');
+                    i += 2;
+                }
+                b'\\' => {
+                    out.push('\\');
+                    i += 2;
+                }
+                b'$' => {
+                    out.push('$');
+                    i += 2;
+                }
+                b'@' => {
+                    out.push('@');
+                    i += 2;
+                }
+                _ => {
+                    out.push('\\');
+                    i += 1;
+                }
+            }
+            continue;
+        }
+        // Handle ${...}
+        if i + 1 < bytes.len()
+            && bytes[i] == b'$'
+            && bytes[i + 1] == b'{'
+            && let Some(close) = template[i + 2..].find('}')
+        {
+            let name = &template[i + 2..i + 2 + close];
+            let value = interpreter.env().get(name).cloned().unwrap_or(Value::Nil);
+            out.push_str(&value.to_string_value());
+            i += 2 + close + 1;
+            continue;
+        }
+        // Handle $var and $var[idx]
+        if bytes[i] == b'$' && i + 1 < bytes.len() {
+            let after = &template[i + 1..];
+            if let Some(name_len) = take_var_name(after) {
+                let name = &after[..name_len];
+                let after_name = &after[name_len..];
+                // Check for postcircumfix [idx]
+                if after_name.starts_with('[')
+                    && let Some(close) = after_name.find(']')
+                {
+                    let idx_str = &after_name[1..close];
+                    let value = interpreter.env().get(name).cloned().unwrap_or(Value::Nil);
+                    if let Ok(idx) = idx_str.parse::<i64>() {
+                        match &value {
+                            Value::Array(arr, _) => {
+                                let idx = if idx < 0 {
+                                    (arr.len() as i64 + idx) as usize
+                                } else {
+                                    idx as usize
+                                };
+                                let elem = arr.get(idx).cloned().unwrap_or(Value::Nil);
+                                out.push_str(&elem.to_string_value());
+                            }
+                            _ => {
+                                out.push_str(&value.to_string_value());
+                            }
+                        }
+                    } else {
+                        out.push_str(&value.to_string_value());
+                    }
+                    i += 1 + name_len + close + 1;
+                    continue;
+                }
+                let value = interpreter.env().get(name).cloned().unwrap_or(Value::Nil);
+                out.push_str(&value.to_string_value());
+                i += 1 + name_len;
+                continue;
+            }
+        }
+        // Handle @var
+        if bytes[i] == b'@' && i + 1 < bytes.len() {
+            let after = &template[i + 1..];
+            if let Some(name_len) = take_var_name(after) {
+                let name = &after[..name_len];
+                let value = interpreter
+                    .env()
+                    .get(&format!("@{name}"))
+                    .or_else(|| interpreter.env().get(name))
+                    .cloned()
+                    .unwrap_or(Value::Nil);
+                out.push_str(&value.to_string_value());
+                i += 1 + name_len;
+                continue;
+            }
+        }
+        let ch = template[i..].chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
+}
+
+/// Extract a variable name (identifier chars: alpha, digit, _, -, ::)
+fn take_var_name(input: &str) -> Option<usize> {
+    let mut chars = input.char_indices();
+    let (_, first) = chars.next()?;
+    if !first.is_ascii_alphabetic()
+        && first != '_'
+        && first != '*'
+        && first != '?'
+        && first != '!'
+        && first != '^'
+    {
+        return None;
+    }
+    let mut end = first.len_utf8();
+    for (idx, ch) in chars {
+        if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' || ch == ':' {
+            end = idx + ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+    Some(end)
+}
+
 fn normalize_subst_replacement(template: &str) -> String {
     let mut out = String::new();
     let mut chars = template.chars().peekable();
@@ -146,6 +405,8 @@ impl VM {
         code: &CompiledCode,
         pattern_idx: u32,
         replacement_idx: u32,
+        samecase: bool,
+        sigspace: bool,
         samemark: bool,
         samespace: bool,
         global: bool,
@@ -154,7 +415,8 @@ impl VM {
         perl5: bool,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
-        let replacement = normalize_subst_replacement(Self::const_str(code, replacement_idx));
+        let raw_replacement = normalize_subst_replacement(Self::const_str(code, replacement_idx));
+        let replacement = interpolate_subst_replacement(&raw_replacement, &self.interpreter);
         let nth_spec = nth_idx.map(|idx| Self::const_str(code, idx).to_string());
         let x_count = x_count.map(|n| n as usize);
         let target = self
@@ -176,6 +438,8 @@ impl VM {
                     &text,
                     &[(start, end)],
                     &replacement,
+                    samecase,
+                    sigspace,
                     samemark,
                     samespace,
                 );
@@ -206,7 +470,15 @@ impl VM {
             return Ok(());
         }
 
-        let out = Self::apply_substitutions(&text, &ranges, &replacement, samemark, samespace);
+        let out = Self::apply_substitutions(
+            &text,
+            &ranges,
+            &replacement,
+            samecase,
+            sigspace,
+            samemark,
+            samespace,
+        );
         let result = Value::str(out);
         self.interpreter
             .env_mut()
@@ -223,6 +495,8 @@ impl VM {
         code: &CompiledCode,
         pattern_idx: u32,
         replacement_idx: u32,
+        samecase: bool,
+        sigspace: bool,
         samemark: bool,
         samespace: bool,
         global: bool,
@@ -231,7 +505,8 @@ impl VM {
         perl5: bool,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
-        let replacement = normalize_subst_replacement(Self::const_str(code, replacement_idx));
+        let raw_replacement = normalize_subst_replacement(Self::const_str(code, replacement_idx));
+        let replacement = interpolate_subst_replacement(&raw_replacement, &self.interpreter);
         let nth_spec = nth_idx.map(|idx| Self::const_str(code, idx).to_string());
         let x_count = x_count.map(|n| n as usize);
         let target = self
@@ -253,6 +528,8 @@ impl VM {
                     &text,
                     &[(start, end)],
                     &replacement,
+                    samecase,
+                    sigspace,
                     samemark,
                     samespace,
                 );
@@ -277,7 +554,15 @@ impl VM {
             self.stack.push(Value::str(text));
             return Ok(());
         }
-        let out = Self::apply_substitutions(&text, &ranges, &replacement, samemark, samespace);
+        let out = Self::apply_substitutions(
+            &text,
+            &ranges,
+            &replacement,
+            samecase,
+            sigspace,
+            samemark,
+            samespace,
+        );
         self.stack.push(Value::str(out));
         Ok(())
     }
@@ -327,6 +612,8 @@ impl VM {
         text: &str,
         ranges: &[(usize, usize)],
         replacement: &str,
+        samecase: bool,
+        sigspace: bool,
         samemark: bool,
         samespace: bool,
     ) -> String {
@@ -337,7 +624,13 @@ impl VM {
             let end_b = runtime::char_idx_to_byte(text, *end);
             out.push_str(&text[prev_end_b..start_b]);
             let matched_text = &text[start_b..end_b];
-            let mut repl = if samemark {
+            let mut repl = if samecase {
+                if sigspace {
+                    samecase_per_word(replacement, matched_text)
+                } else {
+                    crate::builtins::samecase_string(replacement, matched_text)
+                }
+            } else if samemark {
                 if matched_text.contains(char::is_whitespace)
                     && replacement.contains(char::is_whitespace)
                 {
