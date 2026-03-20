@@ -422,6 +422,13 @@ impl VM {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethod target".to_string())
         })?;
+        // .return method: triggers a return from the enclosing sub with the invocant
+        // as the return value. Does NOT auto-thread over junctions.
+        if method == "return" && args.is_empty() {
+            let mut err = RuntimeError::new("return");
+            err.return_value = Some(target);
+            return Err(err);
+        }
         // Junction auto-threading: thread method calls over junction values
         if let Value::Junction { kind, values } = &target
             && !matches!(
@@ -1144,6 +1151,12 @@ impl VM {
             self.vm_call_on_value(name_val, call_args, None)
         } else {
             let method = name_val.to_string_value();
+            // .return method: triggers a return from the enclosing sub
+            if method == "return" && args.is_empty() {
+                let mut err = RuntimeError::new("return");
+                err.return_value = Some(target);
+                return Err(err);
+            }
             if let Some(native_result) =
                 self.try_native_method(&target, Symbol::intern(&method), &args)
             {

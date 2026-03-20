@@ -1781,6 +1781,20 @@ impl VM {
             }
             OpCode::Return => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
+                // Check if &return has been lexically rebound; if so, call
+                // the rebound function instead of performing a built-in return.
+                self.ensure_env_synced(code);
+                if let Some(rebound) = self.interpreter.env().get("&return").cloned()
+                    && matches!(
+                        &rebound,
+                        Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                    )
+                {
+                    let result = self.vm_call_on_value(rebound, vec![val], None)?;
+                    self.stack.push(result);
+                    *ip += 1;
+                    return Ok(());
+                }
                 return Err(RuntimeError::return_signal(val));
             }
             OpCode::ReturnFromNonRoutine => {

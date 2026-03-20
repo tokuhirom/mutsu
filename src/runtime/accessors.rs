@@ -827,6 +827,15 @@ impl Interpreter {
             }
             return val.clone();
         }
+        // `return` is a control-flow keyword that also resolves as &return
+        // so that it can be rebound (proxied return pattern).
+        if bare_name == "return" {
+            return Value::Routine {
+                package: Symbol::intern("GLOBAL"),
+                name: Symbol::intern("return"),
+                is_regex: false,
+            };
+        }
         // Look up as a function reference (including multi subs)
         let def = self.resolve_function(lookup_name);
         let is_multi = if def.is_none() {

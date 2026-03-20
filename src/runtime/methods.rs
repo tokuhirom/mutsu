@@ -212,6 +212,12 @@ impl Interpreter {
         if let Value::Scalar(inner) = target {
             return self.call_method_with_values(*inner, method, args);
         }
+        // .return method: triggers a return from the enclosing sub with the invocant
+        if method == "return" && args.is_empty() {
+            let mut err = RuntimeError::new("return");
+            err.return_value = Some(target);
+            return Err(err);
+        }
         // Unhandled Failure explosion: calling a non-Failure method on an unhandled
         // Failure should throw the stored exception (Raku behavior).
         if let Value::Instance {
