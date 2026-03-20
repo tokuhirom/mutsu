@@ -927,6 +927,19 @@ impl Interpreter {
                 }
             }
             if found_public_rw {
+                // Check type constraint on the attribute before assignment
+                if let Some(type_constraint) =
+                    self.get_attr_type_constraint(&class_name.resolve(), method)
+                    && !self.type_matches_value(&type_constraint, &value)
+                {
+                    return Err(RuntimeError::new(format!(
+                        "Type check failed in assignment to $!{}; expected {}, got {} ({})",
+                        method,
+                        type_constraint,
+                        super::utils::value_type_name(&value),
+                        value.to_string_value()
+                    )));
+                }
                 let attr_key = if attributes.contains_key(method) {
                     method.to_string()
                 } else if attributes.contains_key(&format!("@{}", method)) {
