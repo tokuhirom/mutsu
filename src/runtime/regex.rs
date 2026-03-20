@@ -6,6 +6,44 @@ thread_local! {
     static PENDING_REGEX_GOAL_FAILURE: RefCell<Option<(String, usize)>> = const { RefCell::new(None) };
 }
 
+/// Iterator that yields all case variants of a character (lowercase + uppercase + titlecase).
+/// Deduplicates so each distinct char is yielded at most once.
+struct CaseFoldIter {
+    chars: Vec<char>,
+    idx: usize,
+}
+
+impl CaseFoldIter {
+    fn new(c: char) -> Self {
+        let mut chars = Vec::with_capacity(4);
+        chars.push(c);
+        for lc in c.to_lowercase() {
+            if !chars.contains(&lc) {
+                chars.push(lc);
+            }
+        }
+        for uc in c.to_uppercase() {
+            if !chars.contains(&uc) {
+                chars.push(uc);
+            }
+        }
+        CaseFoldIter { chars, idx: 0 }
+    }
+}
+
+impl Iterator for CaseFoldIter {
+    type Item = char;
+    fn next(&mut self) -> Option<char> {
+        if self.idx < self.chars.len() {
+            let c = self.chars[self.idx];
+            self.idx += 1;
+            Some(c)
+        } else {
+            None
+        }
+    }
+}
+
 struct NamedRegexLookupSpec {
     silent: bool,
     token_lookup: bool,
@@ -2489,7 +2527,7 @@ impl Interpreter {
                 }
             }
             RegexAtom::Any => true,
-            RegexAtom::CharClass(class) => self.regex_match_class(class, c),
+            RegexAtom::CharClass(class) => self.regex_match_class_ignorecase(class, c, ignore_case),
             RegexAtom::UnicodeProp {
                 name,
                 negated,
@@ -2503,34 +2541,57 @@ impl Interpreter {
                 if *negated { !prop_match } else { prop_match }
             }
             RegexAtom::CompositeClass { positive, negative } => {
+                let check_char = if ignore_case {
+                    c.to_lowercase().next().unwrap_or(c)
+                } else {
+                    c
+                };
+                let chars_to_check: Vec<char> = if ignore_case {
+                    CaseFoldIter::new(c).collect()
+                } else {
+                    vec![c]
+                };
                 let pos_match = positive.iter().any(|item| match item {
-                    ClassItem::NamedBuiltin(n) => matches_named_builtin(n, c),
+                    ClassItem::NamedBuiltin(n) => chars_to_check
+                        .iter()
+                        .any(|ch| matches_named_builtin(n, *ch)),
                     ClassItem::UnicodePropItem { name, negated } => {
-                        let m = check_unicode_property(name, c);
+                        let m = chars_to_check
+                            .iter()
+                            .any(|ch| check_unicode_property(name, *ch));
                         if *negated { !m } else { m }
                     }
-                    _ => self.regex_match_class(
-                        &CharClass {
+                    _ => {
+                        let class = CharClass {
                             items: vec![item.clone()],
                             negated: false,
-                        },
-                        c,
-                    ),
+                        };
+                        chars_to_check
+                            .iter()
+                            .any(|ch| self.regex_match_class(&class, *ch))
+                    }
                 });
                 let neg_match = negative.iter().any(|item| match item {
-                    ClassItem::NamedBuiltin(n) => matches_named_builtin(n, c),
+                    ClassItem::NamedBuiltin(n) => chars_to_check
+                        .iter()
+                        .any(|ch| matches_named_builtin(n, *ch)),
                     ClassItem::UnicodePropItem { name, negated } => {
-                        let m = check_unicode_property(name, c);
+                        let m = chars_to_check
+                            .iter()
+                            .any(|ch| check_unicode_property(name, *ch));
                         if *negated { !m } else { m }
                     }
-                    _ => self.regex_match_class(
-                        &CharClass {
+                    _ => {
+                        let class = CharClass {
                             items: vec![item.clone()],
                             negated: false,
-                        },
-                        c,
-                    ),
+                        };
+                        chars_to_check
+                            .iter()
+                            .any(|ch| self.regex_match_class(&class, *ch))
+                    }
                 });
+                let _ = check_char;
                 pos_match && !neg_match
             }
             RegexAtom::Group(_)
@@ -3210,6 +3271,24 @@ impl Interpreter {
                 }
             }
         }
+    }
+
+    pub(super) fn regex_match_class_ignorecase(
+        &self,
+        class: &CharClass,
+        c: char,
+        ignore_case: bool,
+    ) -> bool {
+        if ignore_case {
+            // When ignore_case is set, check if any case variant of c matches the class
+            for variant in CaseFoldIter::new(c) {
+                if self.regex_match_class(class, variant) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        self.regex_match_class(class, c)
     }
 
     pub(super) fn regex_match_class(&self, class: &CharClass, c: char) -> bool {
