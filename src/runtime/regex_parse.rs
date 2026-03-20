@@ -1990,6 +1990,7 @@ impl Interpreter {
                 continue;
             }
             if ch == '$' {
+                let inside_sq = is_inside_single_quoted_regex_literal(&chars, i);
                 let mut j = i + 1;
                 if j < chars.len() && chars[j] == '{' {
                     j += 1;
@@ -1998,6 +1999,12 @@ impl Interpreter {
                         j += 1;
                     }
                     if j < chars.len() && j > name_start {
+                        // Inside single-quoted regex literals, $ is not interpolated
+                        if inside_sq {
+                            out.push('$');
+                            i += 1;
+                            continue;
+                        }
                         let name: String = chars[name_start..j].iter().collect();
                         let value = self
                             .env
@@ -2005,12 +2012,8 @@ impl Interpreter {
                             .cloned()
                             .or_else(|| self.env.get(&format!("${name}")).cloned())
                             .unwrap_or(Value::Nil);
-                        if !(matches!(value, Value::Nil)
-                            && is_inside_single_quoted_regex_literal(&chars, i))
-                        {
-                            Self::check_hash_in_regex(&value)?;
-                            Self::push_value_as_regex_pattern(&value, &mut out);
-                        }
+                        Self::check_hash_in_regex(&value)?;
+                        Self::push_value_as_regex_pattern(&value, &mut out);
                         i = j + 1;
                         continue;
                     }
@@ -2021,6 +2024,12 @@ impl Interpreter {
                     {
                         j += 1;
                     }
+                    // Inside single-quoted regex literals, $ is not interpolated
+                    if inside_sq {
+                        out.push('$');
+                        i += 1;
+                        continue;
+                    }
                     let name: String = chars[name_start..j].iter().collect();
                     let value = self
                         .env
@@ -2028,17 +2037,19 @@ impl Interpreter {
                         .cloned()
                         .or_else(|| self.env.get(&format!("${name}")).cloned())
                         .unwrap_or(Value::Nil);
-                    if !(matches!(value, Value::Nil)
-                        && is_inside_single_quoted_regex_literal(&chars, i))
-                    {
-                        Self::check_hash_in_regex(&value)?;
-                        Self::push_value_as_regex_pattern(&value, &mut out);
-                    }
+                    Self::check_hash_in_regex(&value)?;
+                    Self::push_value_as_regex_pattern(&value, &mut out);
                     i = j;
                     continue;
                 }
             }
             if ch == '@' {
+                // Inside single-quoted regex literals, @ is not interpolated
+                if is_inside_single_quoted_regex_literal(&chars, i) {
+                    out.push('@');
+                    i += 1;
+                    continue;
+                }
                 let mut j = i + 1;
                 if j < chars.len() && (chars[j].is_alphabetic() || chars[j] == '_') {
                     let name_start = j;
@@ -2537,9 +2548,11 @@ mod tests {
     }
 
     #[test]
-    fn undefined_scalar_inside_single_quoted_regex_atom_interpolates_to_empty() {
+    fn scalar_inside_single_quoted_regex_atom_is_literal() {
         let interp = Interpreter::default();
         let interpolated = interp.interpolate_regex_scalars("'$param'").unwrap();
-        assert_eq!(interpolated, "''");
+        // $ inside single-quoted regex atoms should not be interpolated —
+        // the $ is kept literal per Raku spec.
+        assert_eq!(interpolated, "'$param'");
     }
 }

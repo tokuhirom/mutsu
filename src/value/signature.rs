@@ -393,6 +393,7 @@ fn extract_twigil(name: &str) -> &str {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn make_params_value_from_param_defs(params: &[ParamDef]) -> Value {
     let sig_params: Vec<SigParam> = params.iter().map(param_def_to_sig_param).collect();
     make_params_value_from_sig_params(&sig_params)

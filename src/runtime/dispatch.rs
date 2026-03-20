@@ -877,18 +877,40 @@ impl Interpreter {
             if let Some(err) = self.take_pending_dispatch_error() {
                 return Err(err);
             }
+            // Build call profile: name(Type1, Type2, ...)
+            let arg_types: Vec<String> = args
+                .iter()
+                .filter(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
+                .map(|a| {
+                    let tn = super::value_type_name(a);
+                    if !matches!(a, Value::Nil) {
+                        format!("{}:D", tn)
+                    } else {
+                        tn.to_string()
+                    }
+                })
+                .collect();
+            let call_profile = format!("{}({})", proto_name, arg_types.join(", "));
+
+            // Collect candidate signatures from all multi candidates
+            let sig_lines = self.collect_multi_candidate_signatures(&proto_name, args.len());
+
+            let sig_list = if sig_lines.is_empty() {
+                String::new()
+            } else {
+                format!(":\n{}", sig_lines.join("\n"))
+            };
+
+            let message = format!(
+                "Cannot resolve caller {}; none of these signatures matches{}",
+                call_profile, sig_list
+            );
             let mut err = RuntimeError::new(format!(
                 "No matching candidates for proto sub: {}",
                 proto_name
             ));
             let mut attrs = std::collections::HashMap::new();
-            attrs.insert(
-                "message".to_string(),
-                Value::str(format!(
-                    "Cannot resolve caller {}; none of these signatures matches",
-                    proto_name
-                )),
-            );
+            attrs.insert("message".to_string(), Value::str(message));
             err.exception = Some(Box::new(Value::make_instance(
                 Symbol::intern("X::Multi::NoMatch"),
                 attrs,
@@ -962,6 +984,65 @@ impl Interpreter {
             return None;
         }
         self.resolve_function_with_types(name, arg_values)
+    }
+
+    /// Collect formatted signature lines from multi dispatch candidates.
+    pub(super) fn collect_multi_candidate_signatures(
+        &self,
+        name: &str,
+        _arity: usize,
+    ) -> Vec<String> {
+        let mut sig_lines = Vec::new();
+        // Multi candidates are stored with keys like:
+        //   GLOBAL::name/arity:Type
+        //   Package::name/arity:Type
+        //   GLOBAL::name/arity__mN
+        // We need to match all of them.
+        let local_prefix = format!("{}::{}/", self.current_package, name);
+        let global_prefix = format!("GLOBAL::{}/", name);
+        let bare_prefix = format!("{}/", name);
+        let mut seen_sigs = std::collections::HashSet::new();
+        for (key, def) in &self.functions {
+            let ks = key.resolve();
+            if !ks.starts_with(&local_prefix)
+                && !ks.starts_with(&global_prefix)
+                && !ks.starts_with(&bare_prefix)
+            {
+                continue;
+            }
+            let sig_parts: Vec<String> = def
+                .param_defs
+                .iter()
+                .filter(|pd| !pd.traits.iter().any(|t| t == "invocant"))
+                .map(|pd| {
+                    if pd.name == "__type_only__" {
+                        pd.type_constraint.as_deref().unwrap_or("Any").to_string()
+                    } else {
+                        let sigil = if pd.name.starts_with('@')
+                            || pd.name.starts_with('%')
+                            || pd.name.starts_with('&')
+                        {
+                            ""
+                        } else if pd.sigilless {
+                            "\\"
+                        } else {
+                            "$"
+                        };
+                        let name_part = format!("{}{}", sigil, pd.name);
+                        if let Some(tc) = &pd.type_constraint {
+                            format!("{} {}", tc, name_part)
+                        } else {
+                            name_part
+                        }
+                    }
+                })
+                .collect();
+            let sig_str = format!("    ({})", sig_parts.join(", "));
+            if seen_sigs.insert(sig_str.clone()) {
+                sig_lines.push(sig_str);
+            }
+        }
+        sig_lines
     }
 
     fn rewrite_proto_dispatch_stmt(stmt: &Stmt) -> Stmt {

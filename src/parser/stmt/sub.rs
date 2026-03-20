@@ -147,6 +147,21 @@ fn default_type_matches_constraint(
 pub(super) fn validate_signature_params(params: &[ParamDef]) -> Result<(), PError> {
     let mut saw_optional_positional = false;
     for pd in params {
+        // Reject $? twigil parameters (compile-time variables like $?VERSION, $?FILE)
+        // but allow $! (error variable / attribute twigil) since $! is a valid param name
+        if pd.name.starts_with('?') {
+            let msg = format!(
+                "X::Parameter::Twigil: In signature parameter $?{}, it is illegal to use the '?' twigil",
+                pd.name.strip_prefix('?').unwrap_or(&pd.name)
+            );
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
+            let ex = crate::value::Value::make_instance(
+                crate::symbol::Symbol::intern("X::Parameter::Twigil"),
+                attrs,
+            );
+            return Err(PError::fatal_with_exception(msg, Box::new(ex)));
+        }
         if pd.traits.iter().any(|t| t == "rw") && (pd.optional_marker || pd.default.is_some()) {
             return Err(PError::fatal(
                 "X::Trait::Invalid: Cannot make an 'is rw' parameter optional".to_string(),

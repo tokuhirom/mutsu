@@ -340,16 +340,34 @@ impl Interpreter {
             return self.eval_call_on_value(callable, args.to_vec());
         }
         if self.has_proto(name) {
+            // Build call profile: name(Type1:D, Type2:D, ...)
+            let arg_types: Vec<String> = args
+                .iter()
+                .filter(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
+                .map(|a| {
+                    let tn = super::value_type_name(a);
+                    if !matches!(a, Value::Nil) {
+                        format!("{}:D", tn)
+                    } else {
+                        tn.to_string()
+                    }
+                })
+                .collect();
+            let call_profile = format!("{}({})", name, arg_types.join(", "));
+            let sig_lines = self.collect_multi_candidate_signatures(name, args.len());
+            let sig_list = if sig_lines.is_empty() {
+                String::new()
+            } else {
+                format!(":\n{}", sig_lines.join("\n"))
+            };
+            let message = format!(
+                "Cannot resolve caller {}; none of these signatures matches{}",
+                call_profile, sig_list
+            );
             let mut err =
                 RuntimeError::new(format!("No matching candidates for proto sub: {}", name));
             let mut attrs = std::collections::HashMap::new();
-            attrs.insert(
-                "message".to_string(),
-                Value::str(format!(
-                    "Cannot resolve caller {}; none of these signatures matches",
-                    name
-                )),
-            );
+            attrs.insert("message".to_string(), Value::str(message));
             err.exception = Some(Box::new(Value::make_instance(
                 Symbol::intern("X::Multi::NoMatch"),
                 attrs,
@@ -405,16 +423,34 @@ impl Interpreter {
 
         // Check if multi candidates exist for this name (no matching arity/types)
         if self.has_multi_candidates(name) {
+            // Build call profile: name(Type1:D, Type2:D, ...)
+            let arg_types: Vec<String> = args
+                .iter()
+                .filter(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
+                .map(|a| {
+                    let tn = super::value_type_name(a);
+                    if !matches!(a, Value::Nil) {
+                        format!("{}:D", tn)
+                    } else {
+                        tn.to_string()
+                    }
+                })
+                .collect();
+            let call_profile = format!("{}({})", name, arg_types.join(", "));
+            let sig_lines = self.collect_multi_candidate_signatures(name, args.len());
+            let sig_list = if sig_lines.is_empty() {
+                String::new()
+            } else {
+                format!(":\n{}", sig_lines.join("\n"))
+            };
+            let message = format!(
+                "Cannot resolve caller {}; none of these signatures matches{}",
+                call_profile, sig_list
+            );
             let mut err =
                 RuntimeError::new(format!("No matching candidates for proto sub: {}", name));
             let mut attrs = std::collections::HashMap::new();
-            attrs.insert(
-                "message".to_string(),
-                Value::str(format!(
-                    "Cannot resolve caller {}; none of these signatures matches",
-                    name
-                )),
-            );
+            attrs.insert("message".to_string(), Value::str(message));
             err.exception = Some(Box::new(Value::make_instance(
                 Symbol::intern("X::Multi::NoMatch"),
                 attrs,
