@@ -391,6 +391,15 @@ impl VM {
                     ip = target_ip;
                     continue;
                 }
+                // Handle warn signals inline — print to stderr and continue,
+                // just like the top-level run() method does.
+                if e.is_warn {
+                    if !self.interpreter.warning_suppressed() {
+                        self.interpreter.write_warn_to_stderr(&e.message);
+                    }
+                    ip += 1;
+                    continue;
+                }
                 return Err(e);
             }
             if self.interpreter.is_halted() {
