@@ -1262,6 +1262,14 @@ impl VM {
         if code.simple_locals[idx] && bind_source.is_none() && !is_bind {
             let mut val = raw_popped;
             let name = &code.locals[idx];
+            // If the current value is a Proxy, invoke STORE instead of overwriting
+            if let Value::Proxy { storer, .. } = &self.locals[idx]
+                && !matches!(storer.as_ref(), Value::Nil)
+            {
+                let proxy_val = self.locals[idx].clone();
+                self.interpreter.assign_proxy_lvalue(proxy_val, val)?;
+                return Ok(());
+            }
             if !name.starts_with('@') && !name.starts_with('%') {
                 val = Self::normalize_scalar_assignment_value(val);
             }

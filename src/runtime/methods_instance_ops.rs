@@ -1371,7 +1371,7 @@ impl Interpreter {
     }
 
     /// Mutate an array attribute in a Proxy subclass's shared storage.
-    fn proxy_subclass_array_mutate(
+    pub(crate) fn proxy_subclass_array_mutate(
         &mut self,
         attrs_ref: &Arc<std::sync::Mutex<HashMap<String, Value>>>,
         attr_name: &str,

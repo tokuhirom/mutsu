@@ -738,6 +738,23 @@ impl VM {
                         }
                     }
                 }
+                // If we have a pending Proxy subclass attribute reference and this
+                // is a mutating array method, delegate to the shared storage mutator
+                // so the mutation is visible through the Proxy subclass.
+                if matches!(
+                    method.as_str(),
+                    "push" | "pop" | "shift" | "unshift" | "append" | "prepend"
+                ) && matches!(&target, Value::Array(..))
+                    && let Some((attrs_ref, attr_name)) =
+                        self.interpreter.pending_proxy_subclass_attr.take()
+                {
+                    let result = self
+                        .interpreter
+                        .proxy_subclass_array_mutate(&attrs_ref, &attr_name, &method, &args)?;
+                    self.stack.push(result);
+                    self.env_dirty = true;
+                    return Ok(());
+                }
                 // Fast path for shift/pop on array values in the non-mutating
                 // (CallMethod) path. Returns the removed element without modifying
                 // any variable. This handles cases like [1,2,3].shift where there
