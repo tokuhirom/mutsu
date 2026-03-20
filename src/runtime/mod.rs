@@ -3618,9 +3618,7 @@ impl Interpreter {
                     };
                     let result = Value::Array(Arc::clone(&arc_items), normalized_kind);
                     sv.insert(key.to_string(), Value::Array(arc_items, normalized_kind));
-                    if let Ok(mut dirty) = self.shared_vars_dirty.write() {
-                        dirty.insert(key.to_string());
-                    }
+                    self.mark_shared_var_dirty(key);
                     drop(sv);
                     self.env.insert(key.to_string(), result.clone());
                     return result;
@@ -3634,9 +3632,7 @@ impl Interpreter {
                     *kind = ArrayKind::Array;
                 }
                 let result = Value::Array(Arc::clone(arc_items), *kind);
-                if let Ok(mut dirty) = self.shared_vars_dirty.write() {
-                    dirty.insert(key.to_string());
-                }
+                self.mark_shared_var_dirty(key);
                 drop(sv);
                 self.env.insert(key.to_string(), result.clone());
                 return result;
@@ -3670,6 +3666,20 @@ impl Interpreter {
         sv.get(key).cloned()
     }
 
+    fn mark_shared_var_dirty(&self, key: &str) {
+        if self
+            .shared_vars_dirty
+            .read()
+            .ok()
+            .is_some_and(|dirty| dirty.contains(key))
+        {
+            return;
+        }
+        if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+            dirty.insert(key.to_string());
+        }
+    }
+
     /// Write a shared variable. Updates both the local env and shared_vars.
     pub(crate) fn set_shared_var(&mut self, key: &str, value: Value) {
         // Ensure @-variables always store Array(true) (real Arrays)
@@ -3689,9 +3699,7 @@ impl Interpreter {
                 sv.insert(key.to_string(), value);
                 // Mark this key as explicitly updated so sync_shared_vars_to_env
                 // knows to propagate it (vs keys only initialized by clone_for_thread).
-                if let Ok(mut dirty) = self.shared_vars_dirty.write() {
-                    dirty.insert(key.to_string());
-                }
+                self.mark_shared_var_dirty(key);
             }
         }
     }
