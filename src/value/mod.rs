@@ -374,6 +374,7 @@ pub enum Value {
         nth: Option<Arc<String>>,
         perl5: bool,
         pos: bool,
+        continue_: bool,
         ignore_case: bool,
         sigspace: bool,
         samecase: bool,
@@ -906,6 +907,7 @@ impl PartialEq for Value {
                     nth: anth,
                     perl5: ap5,
                     pos: apos,
+                    continue_: ac,
                     ignore_case: aic,
                     sigspace: ass,
                     samecase: asc,
@@ -920,6 +922,7 @@ impl PartialEq for Value {
                     nth: bnth,
                     perl5: bp5,
                     pos: bpos,
+                    continue_: bc,
                     ignore_case: bic,
                     sigspace: bss,
                     samecase: bsc,
@@ -934,6 +937,7 @@ impl PartialEq for Value {
                     && anth == bnth
                     && ap5 == bp5
                     && apos == bpos
+                    && ac == bc
                     && aic == bic
                     && ass == bss
                     && asc == bsc

@@ -1386,6 +1386,40 @@ impl Interpreter {
             })
     }
 
+    /// Match regex searching from a specific character position (non-anchored).
+    /// Unlike `regex_match_with_captures_at` which only matches starting exactly
+    /// at `pos`, this tries each position from `from_pos` onwards until a match
+    /// is found (like `:c(N)` / `:continue(N)` in Raku).
+    pub(crate) fn regex_match_with_captures_from(
+        &mut self,
+        pattern: &str,
+        text: &str,
+        from_pos: usize,
+    ) -> Option<RegexCaptures> {
+        let parsed = self.parse_regex(pattern)?;
+        let pkg = self.current_package.clone();
+        let chars: Vec<char> = text.chars().collect();
+        if from_pos > chars.len() {
+            return None;
+        }
+        // If pattern has ^ anchor, it can only match at position 0
+        if parsed.anchor_start && from_pos != 0 {
+            return None;
+        }
+        let start_pos = if parsed.anchor_start { 0 } else { from_pos };
+        for start in start_pos..=chars.len() {
+            if let Some((end, mut caps)) =
+                self.regex_match_end_from_caps_in_pkg(&parsed, &chars, start, &pkg)
+            {
+                caps.from = caps.capture_start.unwrap_or(start);
+                caps.to = caps.capture_end.unwrap_or(end);
+                caps.matched = chars[caps.from..caps.to].iter().collect();
+                return Some(caps);
+            }
+        }
+        None
+    }
+
     pub(super) fn regex_match_all_with_captures(
         &self,
         pattern: &str,

@@ -584,6 +584,7 @@ fn build_regex_with_adverbs(pattern: String, adverbs: &MatchAdverbs) -> Value {
         nth: adverbs.nth.as_ref().map(|s| Arc::new(s.clone())),
         perl5: adverbs.perl5,
         pos: adverbs.pos,
+        continue_: adverbs.continue_,
         ignore_case: adverbs.ignore_case,
         sigspace: adverbs.sigspace,
         samecase: adverbs.samecase,

@@ -14,6 +14,7 @@ impl Interpreter {
         let mut overlap = false;
         let mut global = false;
         let mut anchored_pos: Option<usize> = None;
+        let mut continue_pos: Option<usize> = None;
         let mut repeat_bounds: Option<(usize, Option<usize>)> = None;
         let mut pattern_arg: Option<&Value> = None;
         for arg in args {
@@ -22,6 +23,8 @@ impl Interpreter {
                     overlap = true;
                 } else if key == "p" || key == "pos" {
                     anchored_pos = Some(value.to_f64() as usize);
+                } else if key == "c" || key == "continue" {
+                    continue_pos = Some(value.to_f64() as usize);
                 } else if (key == "g" || key == "global") && value.truthy() {
                     global = true;
                 } else if key == "x" {
@@ -99,9 +102,12 @@ impl Interpreter {
             self.env.insert("/".to_string(), result.clone());
             return Ok(result);
         }
-        // Use anchored match if :p(N) or :pos(N) is specified
+        // Use anchored match if :p(N) or :pos(N) is specified,
+        // or search-from if :c(N) or :continue(N) is specified
         let captures = if let Some(pos) = anchored_pos {
             self.regex_match_with_captures_at(&pat, &text, pos)
+        } else if let Some(pos) = continue_pos {
+            self.regex_match_with_captures_from(&pat, &text, pos)
         } else {
             self.regex_match_with_captures(&pat, &text)
         };
