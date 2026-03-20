@@ -564,35 +564,9 @@ pub(crate) fn coerce_to_str(value: &Value) -> String {
 
 pub(crate) fn gist_value(value: &Value) -> String {
     match value {
-        Value::Rat(n, d) => {
-            if *d == 0 {
-                if *n == 0 {
-                    "NaN".to_string()
-                } else if *n > 0 {
-                    "Inf".to_string()
-                } else {
-                    "-Inf".to_string()
-                }
-            } else if *n % *d == 0 {
-                // Exact integer: Rat(10, 2) => "5"
-                format!("{}", *n / *d)
-            } else {
-                let mut dd = *d;
-                while dd % 2 == 0 {
-                    dd /= 2;
-                }
-                while dd % 5 == 0 {
-                    dd /= 5;
-                }
-                if dd == 1 {
-                    let val = *n as f64 / *d as f64;
-                    format!("{}", val)
-                } else {
-                    // Non-terminating decimals: display as decimal with 6 places
-                    let val = *n as f64 / *d as f64;
-                    format!("{:.6}", val)
-                }
-            }
+        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _) => {
+            // Rat.gist is identical to Rat.Str in Raku
+            value.to_string_value()
         }
         Value::Array(items, kind) => {
             let inner = items.iter().map(gist_value).collect::<Vec<_>>().join(" ");

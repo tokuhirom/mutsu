@@ -1250,6 +1250,22 @@ impl Interpreter {
                     return Ok(Value::make_instance(*class_name, attrs));
                 }
                 "Rat" => {
+                    use num_bigint::BigInt;
+                    // Handle BigInt args to avoid truncation
+                    let has_big = args.iter().take(2).any(|v| matches!(v, Value::BigInt(_)));
+                    if has_big {
+                        let a = match args.first() {
+                            Some(Value::BigInt(bi)) => (**bi).clone(),
+                            Some(v) => BigInt::from(to_int(v)),
+                            None => BigInt::from(0),
+                        };
+                        let b = match args.get(1) {
+                            Some(Value::BigInt(bi)) => (**bi).clone(),
+                            Some(v) => BigInt::from(to_int(v)),
+                            None => BigInt::from(1),
+                        };
+                        return Ok(crate::value::make_big_rat(a, b));
+                    }
                     let a = match args.first() {
                         Some(v) => to_int(v),
                         None => 0,

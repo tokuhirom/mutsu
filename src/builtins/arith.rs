@@ -6,7 +6,124 @@ use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, make_big_rat, make_rat};
 use num_bigint::{BigInt as NumBigInt, Sign};
-use num_traits::{ToPrimitive, Zero};
+use num_traits::{Signed, ToPrimitive, Zero};
+
+/// Perform Rat addition with overflow detection.
+/// Returns Num if the result's denominator would exceed i64 range.
+fn rat_add_checked(an: i64, ad: i64, bn: i64, bd: i64) -> Value {
+    // Use i128 to detect overflow
+    let n = an as i128 * bd as i128 + bn as i128 * ad as i128;
+    let d = ad as i128 * bd as i128;
+    rat_from_i128_or_num(n, d)
+}
+
+/// Perform Rat subtraction with overflow detection.
+fn rat_sub_checked(an: i64, ad: i64, bn: i64, bd: i64) -> Value {
+    let n = an as i128 * bd as i128 - bn as i128 * ad as i128;
+    let d = ad as i128 * bd as i128;
+    rat_from_i128_or_num(n, d)
+}
+
+/// Perform Rat multiplication with overflow detection.
+fn rat_mul_checked(an: i64, ad: i64, bn: i64, bd: i64) -> Value {
+    let n = an as i128 * bn as i128;
+    let d = ad as i128 * bd as i128;
+    rat_from_i128_or_num(n, d)
+}
+
+/// Perform Rat division with overflow detection.
+fn rat_div_checked(an: i64, ad: i64, bn: i64, bd: i64) -> Value {
+    let n = an as i128 * bd as i128;
+    let d = ad as i128 * bn as i128;
+    rat_from_i128_or_num(n, d)
+}
+
+/// Convert i128 numerator/denominator to Rat, or Num on overflow.
+/// Raku spec: Rat denominators are limited to uint64 range.
+/// When the denominator exceeds this after GCD reduction, degrade to Num.
+fn rat_from_i128_or_num(n: i128, d: i128) -> Value {
+    if d == 0 {
+        return if n == 0 {
+            Value::Rat(0, 0)
+        } else if n > 0 {
+            Value::Rat(1, 0)
+        } else {
+            Value::Rat(-1, 0)
+        };
+    }
+    // Normalize sign
+    let (mut n, mut d) = if d < 0 { (-n, -d) } else { (n, d) };
+    // GCD
+    fn gcd128(mut a: i128, mut b: i128) -> i128 {
+        a = a.abs();
+        b = b.abs();
+        while b != 0 {
+            let t = b;
+            b = a % b;
+            a = t;
+        }
+        a
+    }
+    let g = gcd128(n, d);
+    if g != 0 {
+        n /= g;
+        d /= g;
+    }
+    // Check if result fits in i64 (denominator must also fit in uint64 per Raku spec)
+    if let (Ok(n64), Ok(d64)) = (i64::try_from(n), i64::try_from(d)) {
+        return Value::Rat(n64, d64);
+    }
+    // Overflow: degrade to Num
+    Value::Num(n as f64 / d as f64)
+}
+
+/// Check if BigRat arithmetic is needed: at least one operand requires BigInt precision
+/// (BigRat or BigInt) AND at least one operand is rational (Rat/FatRat/BigRat).
+/// Plain Rat-vs-Rat operations use the i128-based overflow-to-Num path instead.
+fn needs_bigrat_path(l: &Value, r: &Value) -> bool {
+    let has_big = matches!(l, Value::BigRat(_, _) | Value::BigInt(_))
+        || matches!(r, Value::BigRat(_, _) | Value::BigInt(_));
+    let has_rat = matches!(
+        l,
+        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+    ) || matches!(
+        r,
+        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
+    );
+    has_big && has_rat
+}
+
+/// Safely convert a BigInt ratio to f64, handling cases where both
+/// numerator and denominator are too large for f64 individually.
+fn bigint_ratio_to_f64(n: &NumBigInt, d: &NumBigInt) -> f64 {
+    if d.is_zero() {
+        if n.is_zero() {
+            return f64::NAN;
+        }
+        return if n.is_negative() {
+            f64::NEG_INFINITY
+        } else {
+            f64::INFINITY
+        };
+    }
+    // Try direct conversion first
+    if let (Some(nf), Some(df)) = (n.to_f64(), d.to_f64())
+        && nf.is_finite()
+        && df.is_finite()
+        && df != 0.0
+    {
+        return nf / df;
+    }
+    // For very large numbers, use scaled division
+    let sign = n.is_negative() ^ d.is_negative();
+    let na = n.abs();
+    let da = d.abs();
+    // Scale to get enough precision
+    let scaled = &na * NumBigInt::from(10u64).pow(20);
+    let div = &scaled / &da;
+    let val = div.to_f64().unwrap_or(0.0) / 1e20;
+    if sign { -val } else { val }
+}
 
 /// Floored modulo for f64: result has the same sign as the divisor.
 fn float_mod_floor(a: f64, b: f64) -> f64 {
@@ -212,13 +329,7 @@ fn arith_add_coerced(l: Value, r: Value) -> Value {
     {
         Value::from_bigint(a + b)
     } else if let (Some((an, ad)), Some((bn, bd))) = (to_big_rat_parts(&l), to_big_rat_parts(&r))
-        && (matches!(
-            l,
-            Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
-        ) || matches!(
-            r,
-            Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
-        ))
+        && needs_bigrat_path(&l, &r)
     {
         let has_fat_rat = matches!(l, Value::FatRat(_, _)) || matches!(r, Value::FatRat(_, _));
         match make_big_rat(an * bd.clone() + bn * ad.clone(), ad * bd) {
@@ -232,12 +343,12 @@ fn arith_add_coerced(l: Value, r: Value) -> Value {
             || matches!(r, Value::Rat(_, _) | Value::FatRat(_, _));
         let has_fat_rat = matches!(l, Value::FatRat(_, _)) || matches!(r, Value::FatRat(_, _));
         if has_rat {
-            let n = an * bd + bn * ad;
-            let d = ad * bd;
             if has_fat_rat {
+                let n = an * bd + bn * ad;
+                let d = ad * bd;
                 make_fat_rat(n, d)
             } else {
-                make_rat(n, d)
+                rat_add_checked(an, ad, bn, bd)
             }
         } else {
             match (l, r) {
@@ -369,13 +480,7 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
     {
         Value::from_bigint(a - b)
     } else if let (Some((an, ad)), Some((bn, bd))) = (to_big_rat_parts(&l), to_big_rat_parts(&r))
-        && (matches!(
-            l,
-            Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
-        ) || matches!(
-            r,
-            Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
-        ))
+        && needs_bigrat_path(&l, &r)
     {
         let has_fat_rat = matches!(l, Value::FatRat(_, _)) || matches!(r, Value::FatRat(_, _));
         match make_big_rat(an * bd.clone() - bn * ad.clone(), ad * bd) {
@@ -389,12 +494,12 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
             || matches!(r, Value::Rat(_, _) | Value::FatRat(_, _));
         let has_fat_rat = matches!(l, Value::FatRat(_, _)) || matches!(r, Value::FatRat(_, _));
         if has_rat {
-            let n = an * bd - bn * ad;
-            let d = ad * bd;
             if has_fat_rat {
+                let n = an * bd - bn * ad;
+                let d = ad * bd;
                 make_fat_rat(n, d)
             } else {
-                make_rat(n, d)
+                rat_sub_checked(an, ad, bn, bd)
             }
         } else {
             match (l, r) {
@@ -447,13 +552,7 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
     {
         Value::from_bigint(a * b)
     } else if let (Some((an, ad)), Some((bn, bd))) = (to_big_rat_parts(&l), to_big_rat_parts(&r))
-        && (matches!(
-            l,
-            Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
-        ) || matches!(
-            r,
-            Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _)
-        ))
+        && needs_bigrat_path(&l, &r)
     {
         let has_fat_rat = matches!(l, Value::FatRat(_, _)) || matches!(r, Value::FatRat(_, _));
         match make_big_rat(an * bn, ad * bd) {
@@ -467,12 +566,12 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
             || matches!(r, Value::Rat(_, _) | Value::FatRat(_, _));
         let has_fat_rat = matches!(l, Value::FatRat(_, _)) || matches!(r, Value::FatRat(_, _));
         if has_rat {
-            let n = an * bn;
-            let d = ad * bd;
             if has_fat_rat {
+                let n = an * bn;
+                let d = ad * bd;
                 make_fat_rat(n, d)
             } else {
-                make_rat(n, d)
+                rat_mul_checked(an, ad, bn, bd)
             }
         } else {
             match (l, r) {
@@ -568,26 +667,21 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
                 || matches!(r, Value::Rat(_, _) | Value::FatRat(_, _));
             let has_fat_rat = matches!(l, Value::FatRat(_, _)) || matches!(r, Value::FatRat(_, _));
             if has_rat || matches!((&l, &r), (Value::Int(_), Value::Int(_))) {
-                if let (Some(n), Some(d)) = (an.checked_mul(bd), ad.checked_mul(bn)) {
-                    return Ok(if has_fat_rat {
+                return Ok(if has_fat_rat {
+                    if let (Some(n), Some(d)) = (an.checked_mul(bd), ad.checked_mul(bn)) {
                         make_fat_rat(n, d)
                     } else {
-                        make_rat(n, d)
-                    });
-                } else {
-                    // Overflow: promote to BigRat
-                    let n = NumBigInt::from(an) * NumBigInt::from(bd);
-                    let d = NumBigInt::from(ad) * NumBigInt::from(bn);
-                    let result = make_big_rat(n, d);
-                    return Ok(if has_fat_rat {
+                        let n = NumBigInt::from(an) * NumBigInt::from(bd);
+                        let d = NumBigInt::from(ad) * NumBigInt::from(bn);
+                        let result = make_big_rat(n, d);
                         match result {
                             Value::Rat(n, d) => Value::FatRat(n, d),
                             other => other,
                         }
-                    } else {
-                        result
-                    });
-                }
+                    }
+                } else {
+                    rat_div_checked(an, ad, bn, bd)
+                });
             }
         }
         Ok(match (&l, &r) {
@@ -795,9 +889,23 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                 if let (Some(np), Some(dp)) = (n.checked_pow(p), d.checked_pow(p)) {
                     make_rat(np, dp)
                 } else {
+                    // Overflow in i64: use BigInt, then check if denom fits
                     let nn = NumBigInt::from(n).pow(p);
                     let dd = NumBigInt::from(d).pow(p);
-                    make_big_rat(nn, dd)
+                    match make_big_rat(nn, dd) {
+                        // If make_big_rat reduced it to fit in i64, keep as Rat
+                        Value::Rat(rn, rd) => Value::Rat(rn, rd),
+                        // BigRat means denom exceeds i64: degrade to Num
+                        Value::BigRat(bn, bd) => {
+                            // Check if denom fits in i64 (numerator can be big)
+                            if let Some(d64) = bd.to_i64() {
+                                Value::BigRat(bn, NumBigInt::from(d64))
+                            } else {
+                                Value::Num(bigint_ratio_to_f64(&bn, &bd))
+                            }
+                        }
+                        other => other,
+                    }
                 }
             }
             (Value::Rat(n, d), Value::Int(b)) => {
@@ -807,7 +915,17 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                 } else {
                     let nn = NumBigInt::from(d).pow(p);
                     let dd = NumBigInt::from(n).pow(p);
-                    make_big_rat(nn, dd)
+                    match make_big_rat(nn, dd) {
+                        Value::Rat(rn, rd) => Value::Rat(rn, rd),
+                        Value::BigRat(bn, bd) => {
+                            if let Some(d64) = bd.to_i64() {
+                                Value::BigRat(bn, NumBigInt::from(d64))
+                            } else {
+                                Value::Num(bigint_ratio_to_f64(&bn, &bd))
+                            }
+                        }
+                        other => other,
+                    }
                 }
             }
             (Value::FatRat(n, d), Value::Int(b)) if b >= 0 => {
