@@ -105,6 +105,8 @@ pub(crate) enum Expr {
     Subst {
         pattern: String,
         replacement: String,
+        samecase: bool,
+        sigspace: bool,
         samemark: bool,
         samespace: bool,
         global: bool,
@@ -115,6 +117,8 @@ pub(crate) enum Expr {
     NonDestructiveSubst {
         pattern: String,
         replacement: String,
+        samecase: bool,
+        sigspace: bool,
         samemark: bool,
         samespace: bool,
         global: bool,
