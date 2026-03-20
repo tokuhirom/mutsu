@@ -343,6 +343,14 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                         // Skip optional argument in parens: :name(...)
                         chars.next();
                         skip_balanced(&mut chars, '(', ')');
+                    } else if !name.is_empty()
+                        && !is_known_regex_adverb(&name)
+                        && chars.peek().is_none_or(|ch| {
+                            ch.is_whitespace() || ch.is_alphanumeric() || *ch == '_'
+                        })
+                    {
+                        // Unknown adverb like :iabc — need whitespace after modifier
+                        return Err(make_unrecognized_modifier_error(&name));
                     }
                 }
             }
@@ -372,6 +380,29 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
 }
 
 /// Skip known inline adverbs at the start of a regex pattern.
+/// Check if a name is a known regex inline adverb.
+fn is_known_regex_adverb(name: &str) -> bool {
+    matches!(
+        name,
+        "i" | "ignorecase"
+            | "m"
+            | "ignoremark"
+            | "s"
+            | "sigspace"
+            | "r"
+            | "ratchet"
+            | "g"
+            | "global"
+            | "ii"
+            | "samecase"
+            | "ss"
+            | "samespace"
+            | "mm"
+            | "samemark"
+            | "dba"
+    )
+}
+
 fn skip_inline_adverbs(mut source: &str) -> &str {
     loop {
         let trimmed = source.trim_start();
@@ -389,7 +420,10 @@ fn skip_inline_adverbs(mut source: &str) -> &str {
             .or_else(|| trimmed.strip_prefix(":s"))
             .or_else(|| trimmed.strip_prefix(":m"))
             .filter(|r| {
-                r.is_empty() || r.starts_with(' ') || r.starts_with(':') || r.starts_with('/')
+                r.is_empty()
+                    || r.starts_with(|c: char| c.is_whitespace())
+                    || r.starts_with(':')
+                    || r.starts_with('/')
             })
         {
             source = rest;

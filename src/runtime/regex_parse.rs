@@ -642,7 +642,12 @@ impl Interpreter {
                 source = rest.trim_start();
                 continue;
             }
-            if let Some(rest) = source.strip_prefix(":i") {
+            if let Some(rest) = source.strip_prefix(":i")
+                && (rest.is_empty()
+                    || rest.starts_with(|c: char| c.is_whitespace())
+                    || rest.starts_with(':')
+                    || rest.starts_with('/'))
+            {
                 ignore_case = true;
                 source = rest.trim_start();
                 continue;
@@ -1299,8 +1304,8 @@ impl Interpreter {
                                                 tokens: toks,
                                                 anchor_start: false,
                                                 anchor_end: false,
-                                                ignore_case: false,
-                                                ignore_mark: false,
+                                                ignore_case,
+                                                ignore_mark,
                                             }
                                         })
                                         .collect();
