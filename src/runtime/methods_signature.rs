@@ -96,6 +96,12 @@ impl Interpreter {
             },
             '%' => match &val {
                 Value::Hash(_) => val,
+                Value::Pair(k, v) => {
+                    // A single Pair coerces to a one-element hash
+                    let mut map = HashMap::new();
+                    map.insert(k.clone(), *v.clone());
+                    Value::Hash(std::sync::Arc::new(map))
+                }
                 Value::Array(arr, _) => {
                     // Convert array of pairs to hash
                     let mut map = HashMap::new();

@@ -1860,7 +1860,9 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     if r.starts_with("=>") && !r.starts_with("==>") {
         let r2 = &r[2..];
         let (r2, _) = ws(r2)?;
-        let (r2, value) = or_expr_pub(r2)?;
+        // Use parse_fat_arrow_value for right-associative chaining:
+        // a => b => c parses as a => (b => c)
+        let (r2, value) = crate::parser::expr::parse_fat_arrow_value(r2)?;
         return Ok((
             r2,
             Expr::Binary {

@@ -144,7 +144,7 @@ pub(super) fn expression_no_sequence(input: &str) -> PResult<'_, Expr> {
     Ok((rest, expr))
 }
 
-fn parse_fat_arrow_value(input: &str) -> PResult<'_, Expr> {
+pub(in crate::parser) fn parse_fat_arrow_value(input: &str) -> PResult<'_, Expr> {
     // Fat arrow (=>) has lower precedence than ternary (??!!),
     // so the RHS should be parsed at ternary level.
     let (rest, value) = ternary(input)?;
