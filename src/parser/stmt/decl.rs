@@ -90,6 +90,36 @@ fn scalar_binding_rhs_is_readonly(expr: &Expr) -> bool {
     matches!(expr, Expr::Literal(_))
 }
 
+/// Handle comma-separated `my` declarations: `my $x = 1, my $y = 2`
+/// If the remaining input starts with `, my/our/state`, parse the subsequent
+/// declarations and combine them into a SyntheticBlock.
+fn parse_comma_chained_decls<'a>(input: &'a str, first: Stmt) -> PResult<'a, Stmt> {
+    let (r, _) = ws(input)?;
+    if !r.starts_with(',') {
+        return Ok((input, first));
+    }
+    let after_comma = &r[1..];
+    let (after_ws, _) = ws(after_comma)?;
+    // Check if the next token is my/our/state (another declaration)
+    if keyword("my", after_ws).is_none()
+        && keyword("our", after_ws).is_none()
+        && keyword("state", after_ws).is_none()
+    {
+        return Ok((input, first));
+    }
+    // Parse the next declaration
+    let (rest, next) = my_decl_inner(after_ws, false)?;
+    let mut stmts = match first {
+        Stmt::SyntheticBlock(v) => v,
+        other => vec![other],
+    };
+    match next {
+        Stmt::SyntheticBlock(v) => stmts.extend(v),
+        other => stmts.push(other),
+    }
+    Ok((rest, Stmt::SyntheticBlock(stmts)))
+}
+
 fn is_decl_trailing_or_chain_op(op: &TokenKind) -> bool {
     matches!(op, TokenKind::OrWord | TokenKind::OrElse)
 }
@@ -1570,6 +1600,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             where_constraint: where_constraint.clone(),
         };
         if let Some(stmt) = rewrite_decl_assignment_or_chain(expr.clone(), base_stmt) {
+            // Handle comma-separated declarations: my $x = 1, my $y = 2
+            let (rest, stmt) = parse_comma_chained_decls(rest, stmt)?;
             if apply_modifier {
                 return parse_statement_modifier(rest, stmt);
             }
@@ -1587,6 +1619,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             custom_traits: custom_traits.clone(),
             where_constraint: where_constraint.clone(),
         };
+        // Handle comma-separated declarations: my $x = 1, my $y = 2
+        let (rest, stmt) = parse_comma_chained_decls(rest, stmt)?;
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
         }
