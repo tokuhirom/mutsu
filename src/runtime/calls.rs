@@ -359,8 +359,25 @@ impl Interpreter {
             "Calling {} will never work with declared signature {}\n  {}",
             call_profile, signature, err.message
         );
-        let mut enhanced = RuntimeError::new(enhanced_msg);
-        enhanced.exception = err.exception;
+        let mut enhanced = RuntimeError::new(enhanced_msg.clone());
+        // Update the exception object's message attribute so $! shows the enhanced message
+        if let Some(ex) = err.exception {
+            if let Value::Instance {
+                class_name,
+                ref attributes,
+                ..
+            } = *ex
+            {
+                let mut new_attrs: std::collections::HashMap<String, Value> = attributes
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
+                new_attrs.insert("message".to_string(), Value::str(enhanced_msg));
+                enhanced.exception = Some(Box::new(Value::make_instance(class_name, new_attrs)));
+            } else {
+                enhanced.exception = Some(ex);
+            }
+        }
         enhanced.hint = err.hint;
         enhanced
     }

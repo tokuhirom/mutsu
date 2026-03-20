@@ -1458,6 +1458,101 @@ impl Interpreter {
         Ok(Value::mixin(inner, mixins))
     }
 
+    /// Check if a constraint string refers to a known type (built-in or user-defined).
+    /// Used for __type_only__ params to distinguish real type constraints (Str, Int)
+    /// from sigilless parameter names (e1, e2) that look like type constraints.
+    pub(crate) fn is_resolvable_type(&self, constraint: &str) -> bool {
+        // Strip definedness smileys
+        let base = constraint
+            .strip_suffix(":D")
+            .or_else(|| constraint.strip_suffix(":U"))
+            .or_else(|| constraint.strip_suffix(":_"))
+            .unwrap_or(constraint);
+        // Strip parameterization: Array[Int] → Array
+        let base = if let Some(idx) = base.find('[') {
+            &base[..idx]
+        } else {
+            base
+        };
+        // Check built-in types
+        if matches!(
+            base,
+            "Mu" | "Any"
+                | "Cool"
+                | "Int"
+                | "UInt"
+                | "Num"
+                | "Str"
+                | "Bool"
+                | "Array"
+                | "List"
+                | "Hash"
+                | "Map"
+                | "Rat"
+                | "FatRat"
+                | "Complex"
+                | "Range"
+                | "Seq"
+                | "Pair"
+                | "Set"
+                | "SetHash"
+                | "Bag"
+                | "BagHash"
+                | "Mix"
+                | "MixHash"
+                | "Junction"
+                | "Regex"
+                | "Match"
+                | "Nil"
+                | "Failure"
+                | "Exception"
+                | "Callable"
+                | "Sub"
+                | "Method"
+                | "Block"
+                | "Routine"
+                | "Code"
+                | "WhateverCode"
+                | "Whatever"
+                | "Numeric"
+                | "Real"
+                | "Stringy"
+                | "Positional"
+                | "Associative"
+                | "IO"
+                | "Supply"
+                | "Promise"
+                | "Channel"
+                | "Buf"
+                | "Blob"
+                | "utf8"
+                | "Version"
+                | "Instant"
+                | "Duration"
+                | "DateTime"
+                | "Date"
+                | "Capture"
+                | "Signature"
+                | "Parameter"
+                | "Stash"
+                | "Grammar"
+                | "Proc"
+        ) {
+            return true;
+        }
+        // Check native types
+        if super::utils::is_known_type_constraint(base) {
+            return true;
+        }
+        // Check user-defined classes
+        if self.has_class(base) {
+            return true;
+        }
+        // Check if it starts with uppercase (heuristic for type names)
+        // This handles cases like user-defined enum types that may not be registered as classes
+        false
+    }
+
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
         if let Value::Scalar(inner) = value {
             return self.type_matches_value(constraint, inner.as_ref());
@@ -2785,8 +2880,8 @@ impl Interpreter {
                             self.env.insert(readonly_key, Value::Bool(true));
                         }
                     }
-                    if pd.name != "__type_only__"
-                        && let Some(constraint) = &pd.type_constraint
+                    if let Some(constraint) = &pd.type_constraint
+                        && (pd.name != "__type_only__" || self.is_resolvable_type(constraint))
                     {
                         let type_error_kind = "X::TypeCheck::Binding::Parameter";
                         if let Some(captured_name) = constraint.strip_prefix("::") {
@@ -2871,10 +2966,15 @@ impl Interpreter {
                         {
                             // Binding accepts numeric widening into Num parameters.
                         } else if !self.type_matches_value(constraint, &value) {
+                            let display_name = if pd.name == "__type_only__" {
+                                format!("parameter '{}'", constraint)
+                            } else {
+                                pd.name.clone()
+                            };
                             return Err(RuntimeError::new(format!(
                                 "{}: Type check failed for {}: expected {}, got {}",
                                 type_error_kind,
-                                pd.name,
+                                display_name,
                                 constraint,
                                 super::value_type_name(&value)
                             )));

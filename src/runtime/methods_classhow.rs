@@ -1,6 +1,5 @@
 use super::*;
 use crate::symbol::Symbol;
-use crate::value::signature::make_params_value_from_param_defs;
 
 impl Interpreter {
     pub(super) fn classhow_lookup(&self, invocant: &Value, method_name: &str) -> Option<Value> {
@@ -1331,17 +1330,10 @@ impl Interpreter {
 
         // Build a Signature object for this method
         let param_defs = &method_def.param_defs;
-        let sig_attrs = {
-            let mut sa = std::collections::HashMap::new();
-            sa.insert(
-                "params".to_string(),
-                make_params_value_from_param_defs(param_defs),
-            );
-            sa
-        };
+        let sig_info = crate::value::signature::param_defs_to_sig_info(param_defs, None);
         attrs.insert(
             "signature".to_string(),
-            Value::make_instance(Symbol::intern("Signature"), sig_attrs),
+            crate::value::signature::make_signature_value(sig_info),
         );
 
         // Return type
