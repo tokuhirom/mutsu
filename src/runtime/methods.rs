@@ -2573,8 +2573,19 @@ impl Interpreter {
                     return self.builtin_minmax(&call_args);
                 }
             }
-            "head" | "flat" | "batch" | "comb" | "words" | "snip" | "wait" | "zip"
-            | "zip-latest" => {
+            "snip" => {
+                if let Value::Instance { class_name, .. } = &target
+                    && class_name == "Supply"
+                {
+                    return self.dispatch_supply_transform(target, method, &args);
+                }
+                if !args.is_empty() {
+                    let matcher = args[0].clone();
+                    let items = crate::runtime::utils::value_to_list(&target);
+                    return self.eval_snip(matcher, items);
+                }
+            }
+            "head" | "flat" | "batch" | "comb" | "words" | "wait" | "zip" | "zip-latest" => {
                 if let Value::Instance { class_name, .. } = &target
                     && class_name == "Supply"
                 {

@@ -768,6 +768,7 @@ pub(super) fn is_expr_listop(name: &str) -> bool {
             | "make"
             | "take"
             | "take-rw"
+            | "snip"
             | "set"
             | "bag"
             | "mix"

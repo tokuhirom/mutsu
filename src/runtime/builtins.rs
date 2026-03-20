@@ -637,6 +637,7 @@ impl Interpreter {
             // Higher-order functions
             "map" => self.builtin_map(&args),
             "grep" => self.builtin_grep(&args),
+            "snip" => self.builtin_snip(&args),
             "first" => self.builtin_first(&args),
             "tail" => {
                 if args.len() < 2 {
