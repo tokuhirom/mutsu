@@ -2471,29 +2471,29 @@ impl Interpreter {
                 return self.deepmap_iterate(&block, &target);
             }
             "max" | "min" => {
-                if matches!(target, Value::Hash(_)) {
-                    let mut call_args = vec![target.clone()];
-                    if let Some(first) = args.first() {
-                        if matches!(
-                            first,
-                            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
-                        ) {
-                            call_args.push(Value::Pair("by".to_string(), Box::new(first.clone())));
-                        } else {
-                            call_args.extend(args.clone());
-                        }
-                    }
-                    return if method == "max" {
-                        self.builtin_max(&call_args)
-                    } else {
-                        self.builtin_min(&call_args)
-                    };
-                }
                 if let Value::Instance { class_name, .. } = &target
                     && class_name == "Supply"
                 {
                     return self.dispatch_supply_running_extrema(target, method, &args);
                 }
+                // For all types (Hash, Array, Seq, List, scalars, etc.),
+                // convert .min/.max method call args to builtin call args.
+                let mut call_args = vec![target.clone()];
+                if let Some(first) = args.first() {
+                    if matches!(
+                        first,
+                        Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                    ) {
+                        call_args.push(Value::Pair("by".to_string(), Box::new(first.clone())));
+                    } else {
+                        call_args.extend(args.clone());
+                    }
+                }
+                return if method == "max" {
+                    self.builtin_max(&call_args)
+                } else {
+                    self.builtin_min(&call_args)
+                };
             }
             "minpairs" | "maxpairs" if args.is_empty() => {
                 return self.dispatch_minmaxpairs(target, method);
@@ -2549,7 +2549,31 @@ impl Interpreter {
                 }
                 return self.dispatch_squish(target, &args);
             }
-            "head" | "flat" | "batch" | "comb" | "words" | "snip" | "minmax" | "wait" | "zip"
+            "minmax" => {
+                if let Value::Instance { class_name, .. } = &target
+                    && class_name == "Supply"
+                {
+                    if !args.is_empty() {
+                        return self.dispatch_supply_transform(target, method, &args);
+                    }
+                    // Fall through for 0-arg Supply.minmax
+                } else {
+                    // .minmax on lists/arrays/ranges (with or without comparator block)
+                    let mut call_args = vec![target.clone()];
+                    if let Some(first) = args.first() {
+                        if matches!(
+                            first,
+                            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                        ) {
+                            call_args.push(Value::Pair("by".to_string(), Box::new(first.clone())));
+                        } else {
+                            call_args.extend(args.clone());
+                        }
+                    }
+                    return self.builtin_minmax(&call_args);
+                }
+            }
+            "head" | "flat" | "batch" | "comb" | "words" | "snip" | "wait" | "zip"
             | "zip-latest" => {
                 if let Value::Instance { class_name, .. } = &target
                     && class_name == "Supply"

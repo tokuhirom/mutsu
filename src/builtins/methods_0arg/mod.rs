@@ -3510,11 +3510,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 .iter()
                 .filter(|v| crate::runtime::types::value_is_defined(v))
                 .cloned()
-                .min_by(|a, b| match (a, b) {
-                    (Value::Int(x), Value::Int(y)) => x.cmp(y),
-                    _ => a.to_string_value().cmp(&b.to_string_value()),
+                .min_by(|a, b| {
+                    let cmp = crate::runtime::compare_values(a, b);
+                    if cmp < 0 {
+                        std::cmp::Ordering::Less
+                    } else if cmp > 0 {
+                        std::cmp::Ordering::Greater
+                    } else {
+                        std::cmp::Ordering::Equal
+                    }
                 })
-                .unwrap_or(Value::Nil))),
+                .unwrap_or(Value::Num(f64::INFINITY)))),
             Value::Range(a, b) => Some(Ok(if a <= b { Value::Int(*a) } else { Value::Nil })),
             Value::RangeExcl(a, b) => Some(Ok(if a < b { Value::Int(*a) } else { Value::Nil })),
             Value::RangeExclStart(a, b) => Some(Ok(if a < b {
@@ -3544,11 +3550,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 .iter()
                 .filter(|v| crate::runtime::types::value_is_defined(v))
                 .cloned()
-                .max_by(|a, b| match (a, b) {
-                    (Value::Int(x), Value::Int(y)) => x.cmp(y),
-                    _ => a.to_string_value().cmp(&b.to_string_value()),
+                .max_by(|a, b| {
+                    let cmp = crate::runtime::compare_values(a, b);
+                    if cmp < 0 {
+                        std::cmp::Ordering::Less
+                    } else if cmp > 0 {
+                        std::cmp::Ordering::Greater
+                    } else {
+                        std::cmp::Ordering::Equal
+                    }
                 })
-                .unwrap_or(Value::Nil))),
+                .unwrap_or(Value::Num(f64::NEG_INFINITY)))),
             Value::Range(a, b) => Some(Ok(if a <= b { Value::Int(*b) } else { Value::Nil })),
             Value::RangeExcl(a, b) => Some(Ok(if a < b {
                 Value::Int(*b - 1)

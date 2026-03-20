@@ -629,19 +629,45 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         },
         "minmax" => match target {
             Value::Array(items, ..) if !items.is_empty() => {
-                let mut min = &items[0];
-                let mut max = &items[0];
-                for item in &items[1..] {
-                    if runtime::compare_values(item, min) < 0 {
-                        min = item;
-                    }
-                    if runtime::compare_values(item, max) > 0 {
-                        max = item;
-                    }
+                // Collect all candidates, extracting Range endpoints
+                let mut candidates = Vec::new();
+                for item in items.iter() {
+                    crate::runtime::builtins_collection::collect_minmax_candidates_pub(
+                        item,
+                        &mut candidates,
+                    );
                 }
+                if candidates.is_empty() {
+                    Some(Ok(Value::GenericRange {
+                        start: Arc::new(Value::Num(f64::INFINITY)),
+                        end: Arc::new(Value::Num(f64::NEG_INFINITY)),
+                        excl_start: false,
+                        excl_end: false,
+                    }))
+                } else {
+                    let mut min = &candidates[0];
+                    let mut max = &candidates[0];
+                    for item in &candidates[1..] {
+                        if runtime::compare_values(item, min) < 0 {
+                            min = item;
+                        }
+                        if runtime::compare_values(item, max) > 0 {
+                            max = item;
+                        }
+                    }
+                    Some(Ok(
+                        crate::runtime::builtins_collection::make_inclusive_range_pub(
+                            min.clone(),
+                            max.clone(),
+                        ),
+                    ))
+                }
+            }
+            Value::Array(..) => {
+                // Empty array: return Inf..-Inf
                 Some(Ok(Value::GenericRange {
-                    start: Arc::new(min.clone()),
-                    end: Arc::new(max.clone()),
+                    start: Arc::new(Value::Num(f64::INFINITY)),
+                    end: Arc::new(Value::Num(f64::NEG_INFINITY)),
                     excl_start: false,
                     excl_end: false,
                 }))

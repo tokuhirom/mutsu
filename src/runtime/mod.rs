@@ -98,7 +98,7 @@ mod accessors;
 mod builtins;
 mod builtins_atomic;
 mod builtins_coerce;
-mod builtins_collection;
+pub(crate) mod builtins_collection;
 mod builtins_io;
 mod builtins_operators;
 pub(crate) mod builtins_reduce;
