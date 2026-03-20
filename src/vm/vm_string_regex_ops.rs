@@ -183,7 +183,13 @@ impl VM {
                 self.interpreter
                     .env_mut()
                     .insert("_".to_string(), result.clone());
-                self.interpreter.env_mut().insert("$_".to_string(), result);
+                self.interpreter
+                    .env_mut()
+                    .insert("$_".to_string(), result.clone());
+                // Track topic mutation for map rw writeback
+                self.interpreter
+                    .env_mut()
+                    .insert("__mutsu_rw_map_topic__".to_string(), result);
                 self.stack.push(Value::Bool(true));
             } else {
                 self.stack.push(Value::Nil);
@@ -211,7 +217,13 @@ impl VM {
         self.interpreter
             .env_mut()
             .insert("_".to_string(), result.clone());
-        self.interpreter.env_mut().insert("$_".to_string(), result);
+        self.interpreter
+            .env_mut()
+            .insert("$_".to_string(), result.clone());
+        // Track topic mutation for map rw writeback
+        self.interpreter
+            .env_mut()
+            .insert("__mutsu_rw_map_topic__".to_string(), result);
         // Push Bool::True so `$x ~~ s///` returns True on match
         self.stack.push(Value::Bool(true));
         Ok(())

@@ -1316,6 +1316,13 @@ impl VM {
             // from firing).
             self.interpreter
                 .set_shared_var(name, self.locals[idx].clone());
+            // Track topic mutations for map rw writeback
+            if name == "_" {
+                self.interpreter.env_mut().insert(
+                    "__mutsu_rw_map_topic__".to_string(),
+                    self.locals[idx].clone(),
+                );
+            }
             self.locals_dirty = true;
             return Ok(());
         }
@@ -1607,6 +1614,13 @@ impl VM {
             // from firing).
             self.interpreter
                 .set_shared_var(name, self.locals[idx].clone());
+            // Track topic mutations for map rw writeback
+            if name == "_" {
+                self.interpreter.env_mut().insert(
+                    "__mutsu_rw_map_topic__".to_string(),
+                    self.locals[idx].clone(),
+                );
+            }
             self.locals_dirty = true;
             return Ok(());
         }

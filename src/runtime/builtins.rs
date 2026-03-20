@@ -3324,6 +3324,8 @@ impl Interpreter {
                 | "substr"
                 | "words"
                 | "rand"
+                | "sprintf"
+                | "zprintf"
         )
     }
 

@@ -689,6 +689,12 @@ impl VM {
                         .insert(readonly_key.clone(), Value::Bool(false));
                 }
                 self.set_env_with_main_alias(&name, val.clone());
+                // Track topic mutations for map rw writeback
+                if name == "_" {
+                    self.interpreter
+                        .env_mut()
+                        .insert("__mutsu_rw_map_topic__".to_string(), val.clone());
+                }
                 // Sync to shared_vars for cross-thread visibility
                 self.interpreter.set_shared_var(&name, val.clone());
                 let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {

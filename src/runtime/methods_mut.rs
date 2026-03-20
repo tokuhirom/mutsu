@@ -1579,6 +1579,17 @@ impl Interpreter {
             }
         }
 
+        // map with rw binding: mutations to $_ inside map should write back to the
+        // source array elements (Raku semantics: $_ is rw-bound in map).
+        if method == "map" && target_var.starts_with('@') {
+            let mut items = Self::value_to_list(&target);
+            let result = self.eval_map_over_items_rw(args.first().cloned(), &mut items)?;
+            // Write mutated elements back to the source array
+            let key = target_var.to_string();
+            self.env.insert(key, Value::real_array(items));
+            return Ok(result);
+        }
+
         // SharedPromise/SharedChannel are internally mutable — delegate to immutable dispatch
         if matches!(target, Value::Promise(_) | Value::Channel(_)) {
             return self.call_method_with_values(target, method, args);
