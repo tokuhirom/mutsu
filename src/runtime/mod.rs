@@ -379,6 +379,8 @@ struct RegexToken {
     quant: RegexQuant,
     named_capture: Option<String>,
     ratchet: bool,
+    /// Frugal (non-greedy) quantifier modifier: `*?`, `+?`, `??`
+    frugal: bool,
 }
 
 #[derive(Clone)]

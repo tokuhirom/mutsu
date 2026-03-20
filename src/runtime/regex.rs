@@ -1662,6 +1662,18 @@ impl Interpreter {
                             stack.push((idx + 1, pos, caps.clone()));
                             candidates.clear();
                         }
+                    } else if token.frugal {
+                        // Frugal: prefer zero matches — push match first (low priority),
+                        // then zero (high priority, tried first from LIFO stack).
+                        for (next, new_caps) in &candidates {
+                            stack.push((
+                                idx + 1,
+                                *next,
+                                apply_named_capture(token, pos, *next, new_caps.clone()),
+                            ));
+                        }
+                        stack.push((idx + 1, pos, caps.clone()));
+                        candidates.clear();
                     } else {
                         stack.push((idx + 1, pos, caps.clone()));
                     }
@@ -1745,6 +1757,10 @@ impl Interpreter {
                             && let Some(last) = positions.last().cloned()
                         {
                             positions = vec![last];
+                        }
+                        // Frugal: reverse so shortest match is tried first (LIFO)
+                        if token.frugal {
+                            positions.reverse();
                         }
                         if stride > 0 {
                             for (p, c) in positions {
@@ -1854,6 +1870,10 @@ impl Interpreter {
                             && let Some(last) = positions.last().cloned()
                         {
                             positions = vec![last];
+                        }
+                        // Frugal: reverse so shortest match is tried first (LIFO)
+                        if token.frugal {
+                            positions.reverse();
                         }
                         // Fold quantified captures for each position
                         if stride > 0 {
