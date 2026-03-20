@@ -570,9 +570,10 @@ impl Interpreter {
     }
 
     pub(crate) fn current_once_scope(&self) -> Option<u64> {
-        if self.once_scope_stack.len() > 1 {
-            return self.once_scope_stack.last().copied();
-        }
+        // When inside a closure call, __mutsu_callable_id identifies the
+        // specific closure clone.  This must take priority over the
+        // once_scope_stack so that `once` blocks inside closures called from
+        // EVAL (where the stack depth > 1) still get a per-clone scope.
         match self.env.get("__mutsu_callable_id") {
             Some(Value::Int(id)) if *id >= 0 => Some(*id as u64),
             _ => self.once_scope_stack.last().copied(),

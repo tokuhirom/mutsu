@@ -239,6 +239,7 @@ roast/S04-statements/leave.t
 roast/S04-statements/map-and-sort-in-for.t
 roast/S04-statements/next.t
 roast/S04-statements/no-implicit-block.t
+roast/S04-statements/once.t
 roast/S04-statements/quietly.t
 roast/S04-statements/redo.t
 roast/S04-statements/repeat.t
