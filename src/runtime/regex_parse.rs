@@ -67,6 +67,7 @@ fn rewrite_tilde_tokens(
                 quant: RegexQuant::One,
                 named_capture: None,
                 ratchet: false,
+                frugal: false,
             });
             i += 3;
             continue;
@@ -185,6 +186,7 @@ fn regex_single_quote_atom(literal: String, ignore_case: bool) -> RegexAtom {
                 quant: RegexQuant::One,
                 named_capture: None,
                 ratchet: false,
+                frugal: false,
             })
             .collect();
         RegexAtom::Group(RegexPattern {
@@ -719,6 +721,7 @@ impl Interpreter {
                         quant: RegexQuant::One,
                         named_capture: None,
                         ratchet: false,
+                        frugal: false,
                     }],
                     anchor_start: false,
                     anchor_end: false,
@@ -754,6 +757,7 @@ impl Interpreter {
                                 quant: RegexQuant::ZeroOrMore,
                                 named_capture: None,
                                 ratchet,
+                                frugal: false,
                             });
                         }
                     } else {
@@ -778,6 +782,7 @@ impl Interpreter {
                             },
                             named_capture: None,
                             ratchet,
+                            frugal: false,
                         });
                     }
                 }
@@ -801,6 +806,7 @@ impl Interpreter {
                         quant: RegexQuant::One,
                         named_capture: None,
                         ratchet,
+                        frugal: false,
                     });
                     continue;
                 } else if tokens.is_empty() {
@@ -816,6 +822,7 @@ impl Interpreter {
                     quant: RegexQuant::One,
                     named_capture: None,
                     ratchet,
+                    frugal: false,
                 });
                 continue;
             }
@@ -835,6 +842,7 @@ impl Interpreter {
                         quant: RegexQuant::One,
                         named_capture: pending_named_capture.take(),
                         ratchet,
+                        frugal: false,
                     });
                     continue;
                 }
@@ -866,6 +874,7 @@ impl Interpreter {
                     quant: RegexQuant::One,
                     named_capture: None,
                     ratchet: false,
+                    frugal: false,
                 });
                 continue;
             }
@@ -889,6 +898,7 @@ impl Interpreter {
                         quant: RegexQuant::One,
                         named_capture: pending_named_capture.take(),
                         ratchet,
+                        frugal: false,
                     });
                     continue;
                 }
@@ -1029,6 +1039,7 @@ impl Interpreter {
                                         quant: RegexQuant::One,
                                         named_capture: None,
                                         ratchet: false,
+                                        frugal: false,
                                     });
                                 }
                                 RegexAtom::Literal(*resolved.last().unwrap())
@@ -1293,6 +1304,7 @@ impl Interpreter {
                                                     quant: RegexQuant::One,
                                                     named_capture: None,
                                                     ratchet: false,
+                                                    frugal: false,
                                                 })
                                                 .collect();
                                             RegexPattern {
@@ -1469,6 +1481,7 @@ impl Interpreter {
                                                         quant: RegexQuant::One,
                                                         named_capture: None,
                                                         ratchet: false,
+                                                        frugal: false,
                                                     },
                                                     RegexToken {
                                                         atom: RegexAtom::CharClass(CharClass {
@@ -1480,6 +1493,7 @@ impl Interpreter {
                                                         quant: RegexQuant::ZeroOrMore,
                                                         named_capture: None,
                                                         ratchet: false,
+                                                        frugal: false,
                                                     },
                                                 ],
                                                 anchor_start: false,
@@ -1563,6 +1577,7 @@ impl Interpreter {
                                 quant: RegexQuant::One,
                                 named_capture: None,
                                 ratchet: false,
+                                frugal: false,
                             }],
                             anchor_start: false,
                             anchor_end: false,
@@ -1719,6 +1734,13 @@ impl Interpreter {
                     _ => RegexQuant::One,
                 };
             }
+            // Handle frugal (non-greedy) modifier: `*?`, `+?`, `??`
+            let token_frugal = if !matches!(quant, RegexQuant::One) && chars.peek() == Some(&'?') {
+                chars.next();
+                true
+            } else {
+                false
+            };
             // Handle per-token backtracking control.
             // `:` enables ratchet on this token; `:!` disables it.
             let token_ratchet = if chars.peek() == Some(&':') {
@@ -1739,6 +1761,7 @@ impl Interpreter {
                     .take()
                     .or(pending_builtin_named_capture.take()),
                 ratchet: token_ratchet,
+                frugal: token_frugal,
             });
         }
         let tokens = match rewrite_tilde_tokens(tokens, ignore_case, ignore_mark) {
