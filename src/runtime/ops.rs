@@ -1253,12 +1253,16 @@ impl Interpreter {
                     Value::GenericRange { start, end, .. } => ((**start).clone(), (**end).clone()),
                     _ => (right.clone(), right.clone()),
                 };
-                let lo_n = to_num(&left_lo);
-                let ro_n = to_num(&right_lo);
-                let hi_l = to_num(&left_hi);
-                let hi_r = to_num(&right_hi);
-                let lo = if lo_n <= ro_n { left_lo } else { right_lo };
-                let hi = if hi_l >= hi_r { left_hi } else { right_hi };
+                let lo = if crate::runtime::compare_values(&left_lo, &right_lo) <= 0 {
+                    left_lo
+                } else {
+                    right_lo
+                };
+                let hi = if crate::runtime::compare_values(&left_hi, &right_hi) >= 0 {
+                    left_hi
+                } else {
+                    right_hi
+                };
                 Ok(Value::GenericRange {
                     start: std::sync::Arc::new(lo),
                     end: std::sync::Arc::new(hi),
@@ -1267,14 +1271,14 @@ impl Interpreter {
                 })
             }
             "min" => {
-                if to_num(left) <= to_num(right) {
+                if crate::runtime::compare_values(left, right) <= 0 {
                     Ok(left.clone())
                 } else {
                     Ok(right.clone())
                 }
             }
             "max" => {
-                if to_num(left) >= to_num(right) {
+                if crate::runtime::compare_values(left, right) >= 0 {
                     Ok(left.clone())
                 } else {
                     Ok(right.clone())
