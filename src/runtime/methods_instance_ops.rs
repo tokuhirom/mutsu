@@ -347,8 +347,45 @@ impl Interpreter {
             }
 
             // IO::Spec methods
-            if class_name == "IO::Spec" {
+            if class_name == "IO::Spec" || class_name.resolve().starts_with("IO::Spec::") {
+                let is_win32 = class_name == "IO::Spec::Win32";
+                let sep = if is_win32 { "\\" } else { "/" };
+                let sep_char = if is_win32 { '\\' } else { '/' };
                 match method {
+                    "dir-sep" => {
+                        return Ok(Value::str_from(sep));
+                    }
+                    "join" => {
+                        let vol = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let dir = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
+                        let file = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
+                        let mut result = String::new();
+                        if !vol.is_empty() {
+                            result.push_str(&vol);
+                        }
+                        if !dir.is_empty() {
+                            if !result.is_empty()
+                                && !result.ends_with('/')
+                                && !result.ends_with('\\')
+                            {
+                                result.push(sep_char);
+                            }
+                            result.push_str(&dir);
+                        }
+                        if !file.is_empty() {
+                            if !result.is_empty()
+                                && !result.ends_with('/')
+                                && !result.ends_with('\\')
+                            {
+                                result.push(sep_char);
+                            }
+                            result.push_str(&file);
+                        }
+                        return Ok(Value::str(result));
+                    }
                     "catdir" => {
                         let parts: Vec<String> = args
                             .iter()
@@ -358,13 +395,13 @@ impl Interpreter {
                                         .iter()
                                         .map(|v| v.to_string_value())
                                         .collect::<Vec<_>>()
-                                        .join("/")
+                                        .join(sep)
                                 } else {
                                     a.to_string_value()
                                 }
                             })
                             .collect();
-                        let joined = parts.join("/");
+                        let joined = parts.join(sep);
                         return Ok(Value::str(joined));
                     }
                     "catfile" => {
@@ -376,13 +413,13 @@ impl Interpreter {
                                         .iter()
                                         .map(|v| v.to_string_value())
                                         .collect::<Vec<_>>()
-                                        .join("/")
+                                        .join(sep)
                                 } else {
                                     a.to_string_value()
                                 }
                             })
                             .collect();
-                        let joined = parts.join("/");
+                        let joined = parts.join(sep);
                         return Ok(Value::str(joined));
                     }
                     "catpath" => {
@@ -397,14 +434,20 @@ impl Interpreter {
                             result.push_str(&vol);
                         }
                         if !dir.is_empty() {
-                            if !result.is_empty() && !result.ends_with('/') {
-                                result.push('/');
+                            if !result.is_empty()
+                                && !result.ends_with('/')
+                                && !result.ends_with('\\')
+                            {
+                                result.push(sep_char);
                             }
                             result.push_str(&dir);
                         }
                         if !file.is_empty() {
-                            if !result.is_empty() && !result.ends_with('/') {
-                                result.push('/');
+                            if !result.is_empty()
+                                && !result.ends_with('/')
+                                && !result.ends_with('\\')
+                            {
+                                result.push(sep_char);
                             }
                             result.push_str(&file);
                         }

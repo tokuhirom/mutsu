@@ -1258,6 +1258,36 @@ impl Interpreter {
         None
     }
 
+    /// Extract path and CWD from IO::Path attributes for ACCEPTS comparison.
+    fn io_path_attrs_for_accepts(
+        attrs: &std::sync::Arc<crate::value::InstanceAttrs>,
+    ) -> (String, String) {
+        let path = attrs
+            .get("path")
+            .map(|v: &Value| v.to_string_value())
+            .unwrap_or_default();
+        let cwd = attrs
+            .get("cwd")
+            .map(|v: &Value| v.to_string_value())
+            .unwrap_or_else(|| {
+                std::env::current_dir()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|_| ".".to_string())
+            });
+        (path, cwd)
+    }
+
+    /// Normalize an IO path: cleanup + absolute.
+    fn io_path_cleanup_absolute(path: &str, cwd: &str) -> String {
+        let cleaned = Self::cleanup_io_path_lexical(path);
+        if std::path::Path::new(&cleaned).is_absolute() {
+            cleaned
+        } else {
+            let abs = std::path::PathBuf::from(cwd).join(&cleaned);
+            Self::cleanup_io_path_lexical(abs.to_string_lossy().as_ref())
+        }
+    }
+
     pub(super) fn smart_match(&mut self, left: &Value, right: &Value) -> bool {
         match (left, right) {
             // Whatever on RHS always matches (ACCEPTS returns True for any value)
@@ -2218,7 +2248,7 @@ impl Interpreter {
             }
             (Value::Int(a), Value::Str(b)) => b.trim().parse::<f64>() == Ok(*a as f64),
             (Value::Nil, Value::Str(s)) => s.is_empty(),
-            // IO::Path ~~ IO::Path: compare by path string value
+            // IO::Path ~~ IO::Path: compare by cleanup.absolute
             (
                 Value::Instance {
                     class_name: cn_a,
@@ -2231,9 +2261,39 @@ impl Interpreter {
                     ..
                 },
             ) if cn_a == "IO::Path" && cn_b == "IO::Path" => {
-                let path_a = attrs_a.get("path").map(|v| v.to_string_value());
-                let path_b = attrs_b.get("path").map(|v| v.to_string_value());
-                path_a == path_b
+                let (path_a, cwd_a) = Self::io_path_attrs_for_accepts(attrs_a);
+                let (path_b, cwd_b) = Self::io_path_attrs_for_accepts(attrs_b);
+                Self::io_path_cleanup_absolute(&path_a, &cwd_a)
+                    == Self::io_path_cleanup_absolute(&path_b, &cwd_b)
+            }
+            // Cool ~~ IO::Path: convert LHS to string, compare by cleanup.absolute
+            (
+                _,
+                Value::Instance {
+                    class_name: cn_b,
+                    attributes: attrs_b,
+                    ..
+                },
+            ) if cn_b == "IO::Path"
+                && !matches!(
+                    left,
+                    Value::Junction { .. }
+                        | Value::Sub(_)
+                        | Value::Regex(_)
+                        | Value::RegexWithAdverbs { .. }
+                        | Value::Routine { .. }
+                        | Value::Package(_)
+                        | Value::CustomType { .. }
+                        | Value::ParametricRole { .. }
+                ) =>
+            {
+                let lhs_str = left.to_string_value();
+                let (path_b, cwd_b) = Self::io_path_attrs_for_accepts(attrs_b);
+                let cwd = std::env::current_dir()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|_| ".".to_string());
+                Self::io_path_cleanup_absolute(&lhs_str, &cwd)
+                    == Self::io_path_cleanup_absolute(&path_b, &cwd_b)
             }
             // Signature ~~ Signature: s1 ACCEPTS s2
             (
