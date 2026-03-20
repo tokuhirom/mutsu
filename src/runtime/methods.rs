@@ -2346,7 +2346,7 @@ impl Interpreter {
                 }
                 return self.dispatch_to_hash(target);
             }
-            "hash" if args.is_empty() => {
+            "hash" if args.is_empty() && !matches!(&target, Value::Instance { .. }) => {
                 return self.dispatch_to_hash(target);
             }
             "any" | "all" | "one" | "none" if args.is_empty() => {

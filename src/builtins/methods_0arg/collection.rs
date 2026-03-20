@@ -304,6 +304,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 Some(Ok(Value::hash(map)))
             }
+            Value::Instance { .. } => {
+                // Instance types should fall through to accessor dispatch,
+                // not be coerced via .hash builtin
+                None
+            }
             _ => {
                 let items = crate::runtime::utils::value_to_list(target);
                 Some(crate::runtime::utils::build_hash_from_items(items))

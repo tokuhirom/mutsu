@@ -639,9 +639,17 @@ impl Interpreter {
             }
             if method == "clone" {
                 let mut attrs: HashMap<String, Value> = (**attributes).clone();
+                // Build sigil map from class attributes to coerce values properly
+                let class_attrs_info = self.collect_class_attributes(&class_name.resolve());
+                let sigil_map: HashMap<String, char> = class_attrs_info
+                    .iter()
+                    .map(|(name, _, _, _, _, sigil, _)| (name.clone(), *sigil))
+                    .collect();
                 for arg in &args {
                     if let Value::Pair(key, boxed) = arg {
-                        attrs.insert(key.clone(), *boxed.clone());
+                        let sigil = sigil_map.get(key.as_str()).copied().unwrap_or('$');
+                        let coerced = Self::coerce_attr_value_by_sigil(*boxed.clone(), sigil);
+                        attrs.insert(key.clone(), coerced);
                     }
                 }
                 return Ok(Value::make_instance(*class_name, attrs));
