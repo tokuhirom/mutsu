@@ -297,6 +297,14 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     {
         return Err(PError::fatal("Confused. Two terms in a row".to_string()));
     }
+    // Detect "unexpected block in infix position": a completed expression followed
+    // by `{` on the same line without an infix operator is an error in Raku.
+    // e.g., `(1) { $foo = 2 }` — parens do not eat spaces after them.
+    if !separated_by_newline && is_pure_value_expr(&expr) && rest.starts_with('{') {
+        return Err(PError::fatal(
+            "Unexpected block in infix position (missing statement control word before the expression?)".to_string(),
+        ));
+    }
     if let Some(stripped) = rest
         .strip_prefix("\u{00BB}.=")
         .or_else(|| rest.strip_prefix(">>.="))
