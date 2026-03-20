@@ -184,6 +184,22 @@ fn unwrap_varref_value(value: Value) -> Value {
     }
 }
 
+/// Recursively flatten a list of values for `*@` (flattening slurpy) parameter binding.
+/// Non-itemized Array/List elements are flattened recursively; itemized containers
+/// (`$(...)`, `$[...]`) are preserved as single elements.
+fn flatten_into_slurpy(values: &[Value], out: &mut Vec<Value>) {
+    for val in values {
+        match val {
+            Value::Array(arr, kind) if !kind.is_itemized() => {
+                flatten_into_slurpy(arr, out);
+            }
+            other => {
+                out.push(other.clone());
+            }
+        }
+    }
+}
+
 fn make_varref_value(name: String, value: Value, source_index: Option<usize>) -> Value {
     let mut named = std::collections::HashMap::new();
     named.insert("__mutsu_varref_name".to_string(), Value::str(name));
@@ -2514,7 +2530,7 @@ impl Interpreter {
                         } else {
                             format!("@{}", pd.name)
                         };
-                        self.bind_param_value(&key, Value::array(items));
+                        self.bind_param_value(&key, Value::real_array(items));
                         self.set_var_type_constraint(&key, pd.type_constraint.clone());
                     }
                 } else {
@@ -2551,8 +2567,8 @@ impl Interpreter {
                             positional_idx += 1;
                             continue;
                         }
-                        // *@ (flattening slurpy): flatten list args but preserve
-                        // itemized Arrays ($[...] / .item) as single values.
+                        // *@ (flattening slurpy): recursively flatten list args
+                        // but preserve itemized Arrays ($[...] / .item) as single values.
                         // Skip Pair values — they are named args for *%_ or will be rejected
                         match unwrap_varref_value(raw_arg) {
                             Value::Pair(..) => {
@@ -2562,7 +2578,7 @@ impl Interpreter {
                                 if kind.is_itemized() {
                                     items.push(Value::Array(arr.clone(), kind));
                                 } else {
-                                    items.extend(arr.iter().cloned());
+                                    flatten_into_slurpy(&arr, &mut items);
                                 }
                             }
                             other => {
