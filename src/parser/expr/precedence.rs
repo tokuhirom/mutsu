@@ -802,10 +802,10 @@ fn and_and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
 
 /// Boolean bitwise / junction: ?| ?& ?^ | & ^
 fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
-    let next_fn = if mode == ExprMode::Full {
-        sequence_expr
-    } else {
-        list_infix_expr
+    let next_fn: fn(&str) -> PResult<'_, Expr> = match mode {
+        ExprMode::Full => sequence_expr,
+        ExprMode::NoSequence => list_infix_expr,
+        ExprMode::NoSequenceNoFeed => range_expr,
     };
     let (mut rest, mut left) = next_fn(input)?;
     loop {
@@ -2169,7 +2169,7 @@ fn parse_comparison_op(r: &str) -> Option<(ComparisonOp, usize)> {
     }
     if r.starts_with("===") {
         Some((ComparisonOp::StrictEq, 3))
-    } else if r.starts_with("==") && !r.starts_with("===") {
+    } else if r.starts_with("==") && !r.starts_with("===") && !r.starts_with("==>") {
         Some((ComparisonOp::NumEq, 2))
     } else if r.starts_with("!%%") {
         Some((ComparisonOp::NotDivisibleBy, 3))
@@ -2183,7 +2183,7 @@ fn parse_comparison_op(r: &str) -> Option<(ComparisonOp, usize)> {
         Some((ComparisonOp::SmartMatch, 2))
     } else if r.starts_with("<=>") {
         Some((ComparisonOp::Spaceship, 3))
-    } else if r.starts_with("<=") && !r.starts_with("<=>") {
+    } else if r.starts_with("<=") && !r.starts_with("<=>") && !r.starts_with("<==") {
         Some((ComparisonOp::NumLe, 2))
     } else if r.starts_with(">=") {
         Some((ComparisonOp::NumGe, 2))

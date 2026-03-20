@@ -4,6 +4,79 @@ use crate::symbol::Symbol;
 
 use std::sync::Mutex;
 
+/// Compute 0-based indices of filtered items within the original list.
+pub(crate) fn compute_grep_indices(original_items: &[Value], filtered: &Value) -> Vec<usize> {
+    let filtered_items = if let Value::Array(items, ..) = filtered {
+        items.to_vec()
+    } else {
+        return vec![];
+    };
+    let mut indices = Vec::new();
+    let mut scan_from = 0usize;
+    for needle in &filtered_items {
+        if let Some(rel) = original_items[scan_from..]
+            .iter()
+            .position(|candidate| crate::runtime::utils::values_identical(candidate, needle))
+        {
+            let absolute = scan_from + rel;
+            indices.push(absolute);
+            scan_from = absolute.saturating_add(1);
+        }
+    }
+    indices
+}
+
+/// Adverb mode for grep: controls what is returned.
+enum GrepAdverb {
+    /// :v (default) — return matching values
+    V,
+    /// :k — return indices of matching elements
+    K,
+    /// :kv — return alternating index, value pairs
+    Kv,
+    /// :p — return index => value Pairs
+    P,
+}
+
+impl GrepAdverb {
+    /// Transform a grep result (array of matched values) into the adverb-specific form.
+    /// `indices` contains the 0-based positions of matched items in the original list.
+    fn transform_result(&self, filtered: Value, indices: &[usize]) -> Result<Value, RuntimeError> {
+        match self {
+            GrepAdverb::V => Ok(filtered),
+            GrepAdverb::K => {
+                let idx_vals: Vec<Value> = indices.iter().map(|&i| Value::Int(i as i64)).collect();
+                Ok(Value::array(idx_vals))
+            }
+            GrepAdverb::Kv => {
+                let items = if let Value::Array(items, ..) = &filtered {
+                    items.to_vec()
+                } else {
+                    vec![filtered]
+                };
+                let mut result = Vec::new();
+                for (i, item) in indices.iter().zip(items.iter()) {
+                    result.push(Value::Int(*i as i64));
+                    result.push(item.clone());
+                }
+                Ok(Value::array(result))
+            }
+            GrepAdverb::P => {
+                let items = if let Value::Array(items, ..) = &filtered {
+                    items.to_vec()
+                } else {
+                    vec![filtered]
+                };
+                let mut result = Vec::new();
+                for (i, item) in indices.iter().zip(items.iter()) {
+                    result.push(Value::Pair(i.to_string(), Box::new(item.clone())));
+                }
+                Ok(Value::array(result))
+            }
+        }
+    }
+}
+
 static THREAD_HANDLES: std::sync::LazyLock<Mutex<HashMap<u64, std::thread::JoinHandle<()>>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -1328,14 +1401,39 @@ impl Interpreter {
             }
         }
 
-        if let Some(Value::Pair(key, _)) =
-            args.iter().skip(1).find(|v| matches!(v, Value::Pair(_, _)))
-        {
-            return Err(RuntimeError::new(format!(
-                "X::Adverb: Unexpected adverb '{}'",
-                key
-            )));
+        // Parse named adverbs (:k, :v, :kv, :p) from args
+        let mut has_k = false;
+        let mut has_kv = false;
+        let mut has_p = false;
+        let mut positional_args: Vec<Value> = Vec::new();
+        for arg in args {
+            match arg {
+                Value::Pair(key, value) if key == "k" => has_k = value.truthy(),
+                Value::Pair(key, value) if key == "kv" => has_kv = value.truthy(),
+                Value::Pair(key, value) if key == "p" => has_p = value.truthy(),
+                Value::Pair(key, value) if key == "v" => {
+                    // :v is the default behavior, just ignore
+                    let _ = value;
+                }
+                Value::Pair(key, _) => {
+                    return Err(RuntimeError::new(format!(
+                        "X::Adverb: Unexpected adverb '{}'",
+                        key
+                    )));
+                }
+                _ => positional_args.push(arg.clone()),
+            }
         }
+        let grep_adverb = if has_k {
+            GrepAdverb::K
+        } else if has_kv {
+            GrepAdverb::Kv
+        } else if has_p {
+            GrepAdverb::P
+        } else {
+            GrepAdverb::V
+        };
+        let args = &positional_args;
 
         match target {
             Value::Package(class_name) if class_name == "Supply" => Err(RuntimeError::new(
@@ -1391,8 +1489,8 @@ impl Interpreter {
                     &items,
                     Value::Array(updated_source.clone(), arr_kind),
                 );
+                let mut indices = Vec::new();
                 if let Value::Array(filtered_items, ..) = &filtered {
-                    let mut indices = Vec::new();
                     let mut scan_from = 0usize;
                     let source_items = updated_source.as_ref();
                     for needle in filtered_items.iter() {
@@ -1408,28 +1506,28 @@ impl Interpreter {
                         crate::runtime::utils::register_grep_view_binding(
                             filtered_items,
                             &updated_source,
-                            indices,
+                            indices.clone(),
                             arr_kind,
                         );
                     }
                 }
-                Ok(filtered)
+                grep_adverb.transform_result(filtered, &indices)
             }
             Value::Range(a, b) => {
                 let items: Vec<Value> = (a..=b).map(Value::Int).collect();
-                self.eval_grep_over_items(args.first().cloned(), items)
+                self.eval_grep_with_adverb(args.first().cloned(), items, &grep_adverb)
             }
             Value::RangeExcl(a, b) => {
                 let items: Vec<Value> = (a..b).map(Value::Int).collect();
-                self.eval_grep_over_items(args.first().cloned(), items)
+                self.eval_grep_with_adverb(args.first().cloned(), items, &grep_adverb)
             }
             Value::RangeExclStart(a, b) => {
                 let items: Vec<Value> = (a + 1..=b).map(Value::Int).collect();
-                self.eval_grep_over_items(args.first().cloned(), items)
+                self.eval_grep_with_adverb(args.first().cloned(), items, &grep_adverb)
             }
             Value::RangeExclBoth(a, b) => {
                 let items: Vec<Value> = (a + 1..b).map(Value::Int).collect();
-                self.eval_grep_over_items(args.first().cloned(), items)
+                self.eval_grep_with_adverb(args.first().cloned(), items, &grep_adverb)
             }
             Value::GenericRange { .. } => {
                 if let Value::GenericRange {
@@ -1450,7 +1548,9 @@ impl Interpreter {
                             current += 1;
                         }
                         let mut result = Vec::new();
+                        let mut result_indices = Vec::new();
                         let limit = 1_000_000usize;
+                        let mut item_idx = 0usize;
                         while result.len() < limit {
                             let item = match start.as_ref() {
                                 Value::Num(_) => Value::Num(current as f64),
@@ -1466,18 +1566,25 @@ impl Interpreter {
                                     Ok(pred) => {
                                         if pred.truthy() {
                                             result.push(item.clone());
+                                            result_indices.push(item_idx);
                                         }
                                         break 'redo_item;
                                     }
                                     Err(e) if e.is_redo => continue 'redo_item,
                                     Err(e) if e.is_next => break 'redo_item,
-                                    Err(e) if e.is_last => return Ok(Value::array(result)),
+                                    Err(e) if e.is_last => {
+                                        return grep_adverb.transform_result(
+                                            Value::array(result),
+                                            &result_indices,
+                                        );
+                                    }
                                     Err(e) => return Err(e),
                                 }
                             }
                             current += 1;
+                            item_idx += 1;
                         }
-                        return Ok(Value::array(result));
+                        return grep_adverb.transform_result(Value::array(result), &result_indices);
                     }
                     if end_num.is_infinite() && end_num.is_sign_positive() {
                         // Preserve laziness for open-ended ranges in grep.
@@ -1485,7 +1592,7 @@ impl Interpreter {
                     }
                 }
                 let items = crate::runtime::utils::value_to_list(&target);
-                self.eval_grep_over_items(args.first().cloned(), items)
+                self.eval_grep_with_adverb(args.first().cloned(), items, &grep_adverb)
             }
             Value::Str(s) => {
                 if let Some(Value::Sub(data)) = args.first()
@@ -1494,16 +1601,48 @@ impl Interpreter {
                         Some(Stmt::Expr(Expr::Literal(Value::Regex(_))))
                     )
                 {
-                    return self
-                        .eval_grep_over_items(args.first().cloned(), vec![Value::Str(s.clone())]);
+                    return self.eval_grep_with_adverb(
+                        args.first().cloned(),
+                        vec![Value::Str(s.clone())],
+                        &grep_adverb,
+                    );
                 }
-                Ok(Value::Str(s.clone()))
+                match grep_adverb {
+                    GrepAdverb::K => Ok(Value::Int(0)),
+                    GrepAdverb::Kv => Ok(Value::array(vec![Value::Int(0), Value::Str(s.clone())])),
+                    GrepAdverb::P => Ok(Value::Pair(
+                        "0".to_string(),
+                        Box::new(Value::Str(s.clone())),
+                    )),
+                    GrepAdverb::V => Ok(Value::Str(s.clone())),
+                }
             }
             Value::Seq(items) | Value::Slip(items) => {
-                self.eval_grep_over_items(args.first().cloned(), items.to_vec())
+                self.eval_grep_with_adverb(args.first().cloned(), items.to_vec(), &grep_adverb)
             }
-            other => Ok(other),
+            other => match grep_adverb {
+                GrepAdverb::K => Ok(Value::Int(0)),
+                GrepAdverb::Kv => Ok(Value::array(vec![Value::Int(0), other])),
+                GrepAdverb::P => Ok(Value::Pair("0".to_string(), Box::new(other))),
+                GrepAdverb::V => Ok(other),
+            },
         }
+    }
+
+    /// Helper: run grep over items, compute indices, and apply adverb transformation.
+    fn eval_grep_with_adverb(
+        &mut self,
+        func: Option<Value>,
+        items: Vec<Value>,
+        adverb: &GrepAdverb,
+    ) -> Result<Value, RuntimeError> {
+        let original_items = items.clone();
+        let filtered = self.eval_grep_over_items(func, items)?;
+        if matches!(adverb, GrepAdverb::V) {
+            return Ok(filtered);
+        }
+        let indices = compute_grep_indices(&original_items, &filtered);
+        adverb.transform_result(filtered, &indices)
     }
 
     pub(super) fn dispatch_first(
