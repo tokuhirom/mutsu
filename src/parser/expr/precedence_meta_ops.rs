@@ -9,6 +9,29 @@ use super::operators::*;
 use super::postfix::{postfix_expr_continue, prefix_expr};
 use super::precedence::parse_custom_infix_word;
 
+/// Raku's "statement-ending block" rule: a closing brace `}` followed by a
+/// newline terminates the current statement, so an infix operator on the next
+/// line must NOT be consumed as part of the same expression.
+///
+/// `input` is the string that was passed to the current precedence function.
+/// `rest` is the remaining input right after the left-hand expression.
+/// `after_ws` is the remaining input after consuming whitespace from `rest`.
+///
+/// Returns `true` when the infix loop should break.
+pub(super) fn block_newline_terminates(input: &str, rest: &str, after_ws: &str) -> bool {
+    let consumed = input.len() - rest.len();
+    if consumed == 0 {
+        return false;
+    }
+    // Check if the character just before `rest` is `}`
+    if input.as_bytes()[consumed - 1] != b'}' {
+        return false;
+    }
+    // Check if the whitespace gap between rest and after_ws contains a newline
+    let gap = &rest[..rest.len() - after_ws.len()];
+    gap.contains('\n')
+}
+
 pub(super) fn parse_infix_func_op(input: &str) -> Option<(Option<String>, String, usize)> {
     let (modifier, bracket_start) = if input.starts_with("R[&") {
         (Some("R".to_string()), 1)
@@ -422,6 +445,9 @@ pub(super) fn structural_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = concat_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
+        if block_newline_terminates(input, rest, r) {
+            break;
+        }
         if r.starts_with("but") && !is_ident_char(r.as_bytes().get(3).copied()) {
             let r = &r[3..];
             let (r, _) = ws(r)?;
@@ -653,6 +679,9 @@ pub(super) fn concat_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = replication_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
+        if block_newline_terminates(input, rest, r) {
+            break;
+        }
         // Hyper operators with function reference: >>[&func]<<, <<[&func]>>, etc.
         if let Some((func_name, dwim_left, dwim_right, len)) = parse_hyper_func_op(r) {
             let r = &r[len..];
@@ -735,6 +764,9 @@ fn replication_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = additive_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
+        if block_newline_terminates(input, rest, r) {
+            break;
+        }
         if let Some((op, len)) = parse_replication_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
@@ -829,6 +861,9 @@ pub(super) fn additive_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = multiplicative_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
+        if block_newline_terminates(input, rest, r) {
+            break;
+        }
         if let Some((op, len)) = parse_additive_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
@@ -913,6 +948,9 @@ pub(super) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = prefix_expr_with_ws_dot(input)?;
     loop {
         let (r, _) = ws(rest)?;
+        if block_newline_terminates(input, rest, r) {
+            break;
+        }
         if let Some((op, len)) = parse_multiplicative_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
@@ -1034,6 +1072,9 @@ fn power_expr_inner(input: &str, base_parser: fn(&str) -> PResult<'_, Expr>) -> 
     // Check for custom infixes at power level (tighter than multiplicative)
     loop {
         let (r, _) = ws(rest)?;
+        if block_newline_terminates(input, rest, r) {
+            break;
+        }
         // Custom infix ops at power level (between multiplicative and prefix exclusive)
         // (covers is equiv<**>, is tighter<*>, is tighter<**>)
         {

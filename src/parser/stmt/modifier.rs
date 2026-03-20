@@ -7,7 +7,42 @@ use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
+use super::super::helpers::is_raku_identifier_start;
 use super::{keyword, parse_comma_or_expr};
+
+/// After parsing a postfix modifier condition, check if the remaining input
+/// starts on a new line with a bare word that is not a statement modifier.
+/// This detects "two terms in a row across lines" errors like:
+///   42 if 23
+///   is 50; 1
+/// where `is` on the next line is confused with a continuation.
+fn check_two_terms_across_lines(r: &str) -> Result<(), PError> {
+    // Only check if there's content after the condition
+    if r.is_empty() || r.starts_with(';') || r.starts_with('}') {
+        return Ok(());
+    }
+    // Check if whitespace before remaining contains a newline
+    let trimmed = r.trim_start();
+    let gap = &r[..r.len() - trimmed.len()];
+    if !gap.contains('\n') {
+        return Ok(());
+    }
+    // If the next token after the newline is a bare word that's not a
+    // statement modifier keyword, it's "two terms in a row across lines"
+    if trimmed.is_empty() || trimmed.starts_with(';') || trimmed.starts_with('}') {
+        return Ok(());
+    }
+    if is_stmt_modifier_keyword(trimmed) {
+        return Ok(());
+    }
+    let first_ch = trimmed.chars().next().unwrap_or('\0');
+    if is_raku_identifier_start(first_ch) {
+        return Err(PError::fatal(
+            "Confused. Two terms in a row across lines (missing semicolon or comma?)".to_string(),
+        ));
+    }
+    Ok(())
+}
 
 fn rewrite_placeholder_block_modifier_stmt(stmt: Stmt, cond: &Expr) -> Stmt {
     if let Stmt::Block(body) = &stmt
@@ -100,6 +135,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
+        check_two_terms_across_lines(r)?;
         let then_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &cond);
         return Ok(Some((
             r,
@@ -121,6 +157,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
+        check_two_terms_across_lines(r)?;
         let then_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &cond);
         return Ok(Some((
             r,

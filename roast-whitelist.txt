@@ -246,6 +246,7 @@ roast/S04-statements/quietly.t
 roast/S04-statements/redo.t
 roast/S04-statements/repeat.t
 roast/S04-statements/sink.t
+roast/S04-statements/terminator.t
 roast/S04-statements/try.t
 roast/S04-statements/unless.t
 roast/S04-statements/until.t
