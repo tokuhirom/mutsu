@@ -1029,8 +1029,8 @@ fn parse_listop_arg(input: &str) -> PResult<'_, Expr> {
     }
 
     // Parse a single term with prefix/postfix operators, but no infix operators.
-    // This keeps listop precedence behavior (e.g. `shift @a + 1` parses as
-    // `(shift @a) + 1`) while still allowing argument postfix chains like
+    // This keeps named-unary precedence behavior (e.g. `uc 'foo' xor 'bar'` parses as
+    // `(uc 'foo') xor 'bar'`) while still allowing argument postfix chains like
     // `chmod $file.IO.mode, $other`.
     //
     // Exception: range operators are part of a single argument in listop calls,
@@ -1948,8 +1948,17 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if is_expr_listop(&name) {
                 return parse_expr_listop_args(r, name);
             }
-            // Try to parse an argument
-            let (r2, arg) = parse_listop_arg(r).map_err(|err| PError {
+            // Try to parse an argument.
+            // List operators (grep, map, sort, etc.) parse full expressions as args
+            // (up to comma/feed precedence), matching Raku's "list prefix" semantics.
+            // e.g. `grep $_ == 1, 1, 2, 3` → `grep(($_ == 1), 1, 2, 3)`.
+            let parse_arg = |input| {
+                if is_stmt_modifier_ahead(input) {
+                    return Err(PError::expected("listop argument"));
+                }
+                super::super::expr::listop_arg_expr(input)
+            };
+            let (r2, arg) = parse_arg(r).map_err(|err| PError {
                 messages: merge_expected_messages(
                     "expected listop argument expression",
                     &err.messages,
@@ -1978,7 +1987,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 {
                     break;
                 }
-                let (r3, rest_arg) = parse_listop_arg(r3)?;
+                let (r3, rest_arg) = parse_arg(r3)?;
                 args.push(rest_arg);
                 rest_after = r3;
             }

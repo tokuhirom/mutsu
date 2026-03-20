@@ -604,9 +604,11 @@ pub(super) fn parse_word_logical_op(input: &str) -> Option<(LogicalOp, usize)> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ExprMode {
+pub(in crate::parser) enum ExprMode {
     Full,
     NoSequence,
+    /// For listop arguments: excludes both sequence (...) and feed (==>) operators.
+    NoSequenceNoFeed,
 }
 
 pub(super) fn enrich_expected_error(

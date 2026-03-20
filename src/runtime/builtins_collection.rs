@@ -1342,13 +1342,31 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_grep(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // Parse named adverbs (:k, :v, :kv, :p) from args
+        let mut has_k = false;
+        let mut has_kv = false;
+        let mut has_p = false;
+        let mut positional_args: Vec<Value> = Vec::new();
+        for arg in args {
+            match arg {
+                Value::Pair(key, value) if key == "k" => has_k = value.truthy(),
+                Value::Pair(key, value) if key == "kv" => has_kv = value.truthy(),
+                Value::Pair(key, value) if key == "p" => has_p = value.truthy(),
+                Value::Pair(key, _) if key == "v" => {} // default
+                _ => positional_args.push(arg.clone()),
+            }
+        }
+        let args = &positional_args;
         let func = args.first().cloned();
-        if args.len() == 1
-            && matches!(
-                args[0],
-                Value::Bool(_) | Value::Int(_) | Value::Num(_) | Value::Str(_)
-            )
-        {
+        // Check if the matcher is a Bool — this is always an error.
+        // `grep $_ == 1, 1,2,3` passes a Bool as the matcher.
+        if let Some(Value::Bool(_)) = func.as_ref() {
+            return Err(RuntimeError::typed_msg(
+                "X::Match::Bool",
+                "Cannot use Bool as Matcher with '.match'. Did you mean to use $_ ~~ ... instead?",
+            ));
+        }
+        if args.len() == 1 && matches!(args[0], Value::Int(_) | Value::Num(_) | Value::Str(_)) {
             return Err(RuntimeError::typed_msg(
                 "X::Match::Bool",
                 "Cannot use Bool as Matcher with '.match'. Did you mean to use $_ ~~ ... instead?",
@@ -1359,14 +1377,30 @@ impl Interpreter {
         {
             let end_f = end.to_f64();
             if end_f.is_infinite() && end_f.is_sign_positive() {
-                let method_args: Vec<Value> = func.into_iter().collect();
+                let mut method_args: Vec<Value> = func.into_iter().collect();
+                if has_k {
+                    method_args.push(Value::Pair("k".to_string(), Box::new(Value::Bool(true))));
+                } else if has_kv {
+                    method_args.push(Value::Pair("kv".to_string(), Box::new(Value::Bool(true))));
+                } else if has_p {
+                    method_args.push(Value::Pair("p".to_string(), Box::new(Value::Bool(true))));
+                }
                 return self.call_method_with_values(args[1].clone(), "grep", method_args);
             }
         }
         let mut list_items = Vec::new();
         for arg in args.iter().skip(1) {
             match arg {
-                Value::Array(items, ..) => list_items.extend(items.iter().cloned()),
+                // Only flatten List-kind arrays (from @-sigiled variables).
+                // Array-kind (from [...] literals) are kept as individual items.
+                Value::Array(items, kind)
+                    if matches!(
+                        kind,
+                        crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList
+                    ) || (matches!(kind, crate::value::ArrayKind::Array) && args.len() == 2) =>
+                {
+                    list_items.extend(items.iter().cloned());
+                }
                 Value::Range(a, b) => list_items.extend((*a..=*b).map(Value::Int)),
                 Value::RangeExcl(a, b) => list_items.extend((*a..*b).map(Value::Int)),
                 v if v.is_range() => {
@@ -1375,7 +1409,44 @@ impl Interpreter {
                 other => list_items.push(other.clone()),
             }
         }
-        self.eval_grep_over_items(func, list_items)
+        if has_k || has_kv || has_p {
+            let original_items = list_items.clone();
+            let filtered = self.eval_grep_over_items(func, list_items)?;
+            let indices = crate::runtime::methods_collection_ops::compute_grep_indices(
+                &original_items,
+                &filtered,
+            );
+            if has_k {
+                let idx_vals: Vec<Value> = indices.iter().map(|&i| Value::Int(i as i64)).collect();
+                Ok(Value::array(idx_vals))
+            } else if has_kv {
+                let items = if let Value::Array(items, ..) = &filtered {
+                    items.to_vec()
+                } else {
+                    vec![filtered]
+                };
+                let mut result = Vec::new();
+                for (i, item) in indices.iter().zip(items.iter()) {
+                    result.push(Value::Int(*i as i64));
+                    result.push(item.clone());
+                }
+                Ok(Value::array(result))
+            } else {
+                // :p
+                let items = if let Value::Array(items, ..) = &filtered {
+                    items.to_vec()
+                } else {
+                    vec![filtered]
+                };
+                let mut result = Vec::new();
+                for (i, item) in indices.iter().zip(items.iter()) {
+                    result.push(Value::Pair(i.to_string(), Box::new(item.clone())));
+                }
+                Ok(Value::array(result))
+            }
+        } else {
+            self.eval_grep_over_items(func, list_items)
+        }
     }
 
     /// `snip(matcher, +values)` — split a list at positions where the matcher stops matching.
