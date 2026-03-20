@@ -236,6 +236,7 @@ roast/S04-statements/goto.t
 roast/S04-statements/label.t
 roast/S04-statements/last.t
 roast/S04-statements/leave.t
+roast/S04-statements/loop.t
 roast/S04-statements/map-and-sort-in-for.t
 roast/S04-statements/next.t
 roast/S04-statements/no-implicit-block.t

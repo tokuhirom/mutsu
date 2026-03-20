@@ -1692,6 +1692,14 @@ pub(super) fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
     // Infinite loop
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
+    // `loop {} while COND` is a syntax error — use `repeat while` instead
+    let (check, _) = ws(rest)?;
+    if keyword("while", check).is_some() || keyword("until", check).is_some() {
+        return Err(PError::fatal(
+            "X::Syntax::Confused: Strange text after block (missing semicolon or comma?)"
+                .to_string(),
+        ));
+    }
     Ok((
         rest,
         Stmt::Loop {

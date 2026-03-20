@@ -1758,14 +1758,18 @@ impl VM {
         } else {
             None
         };
+        // Only catch loop control signals (last/next/redo) when the do block
+        // has an explicit label that matches. Unlabeled do blocks should let
+        // these signals propagate to the enclosing loop construct.
+        let has_label = label.is_some();
         let result = loop {
             match self.run_range(code, body_start, end, compiled_fns) {
                 Ok(()) => break Ok(()),
-                Err(e) if e.is_redo && Self::label_matches(&e.label, &label) => {
+                Err(e) if e.is_redo && has_label && Self::label_matches(&e.label, &label) => {
                     self.stack.truncate(stack_base);
                     continue;
                 }
-                Err(e) if e.is_next && Self::label_matches(&e.label, &label) => {
+                Err(e) if e.is_next && has_label && Self::label_matches(&e.label, &label) => {
                     self.stack.truncate(stack_base);
                     self.stack.push(Value::Slip(std::sync::Arc::new(vec![])));
                     break Ok(());
@@ -1783,7 +1787,7 @@ impl VM {
                     );
                     break Ok(());
                 }
-                Err(e) if e.is_last && Self::label_matches(&e.label, &label) => {
+                Err(e) if e.is_last && has_label && Self::label_matches(&e.label, &label) => {
                     self.stack.truncate(stack_base);
                     self.stack.push(
                         e.return_value
