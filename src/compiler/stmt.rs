@@ -554,6 +554,10 @@ impl Compiler {
                     self.code.emit(OpCode::Die);
                     return;
                 }
+                // Check if the then_branch uses @_ (bare if blocks receive
+                // the condition value as @_ in Raku).
+                let needs_at_underscore =
+                    binding_var.is_none() && Self::body_uses_legacy_args(then_branch);
                 if let Some(var_name) = binding_var {
                     // Desugar: if EXPR -> $var { BODY } else { ELSE }
                     // into: { my $var = EXPR; if $var { BODY } else { ELSE } }
@@ -575,8 +579,18 @@ impl Compiler {
                     self.compile_condition_expr(&desugared_cond);
                 } else {
                     self.compile_condition_expr(cond);
+                    if needs_at_underscore {
+                        // Duplicate condition value: one for JumpIfFalse truthiness
+                        // test, one for setting @_ in the then_branch.
+                        self.code.emit(OpCode::Dup);
+                    }
                 }
                 let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
+                if needs_at_underscore {
+                    // Flatten the duplicated condition into @_ (like *@ slurpy).
+                    self.code.emit(OpCode::FlattenSlurpy);
+                    self.emit_set_named_var("@_");
+                }
                 if Self::body_mutates_topic(then_branch) {
                     self.compile_stmt(&Stmt::Block(then_branch.clone()));
                 } else {
@@ -584,9 +598,17 @@ impl Compiler {
                 }
                 if else_branch.is_empty() {
                     self.code.patch_jump(jump_else);
+                    if needs_at_underscore {
+                        // Pop the leftover duplicated condition value on the
+                        // false branch (JumpIfFalse consumed only one copy).
+                        self.code.emit(OpCode::Pop);
+                    }
                 } else {
                     let jump_end = self.code.emit(OpCode::Jump(0));
                     self.code.patch_jump(jump_else);
+                    if needs_at_underscore {
+                        self.code.emit(OpCode::Pop);
+                    }
                     if else_branch.len() == 1 && matches!(else_branch[0], Stmt::If { .. }) {
                         self.compile_stmt(&else_branch[0]);
                     } else if Self::body_mutates_topic(else_branch) {

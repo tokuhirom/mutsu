@@ -818,6 +818,13 @@ impl VM {
                 self.exec_decont_op();
                 *ip += 1;
             }
+            OpCode::FlattenSlurpy => {
+                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let mut items = Vec::new();
+                Self::flatten_value_for_slurpy(&val, &mut items);
+                self.stack.push(Value::real_array(items));
+                *ip += 1;
+            }
 
             // -- Logic / coercion --
             OpCode::Not => {

@@ -2633,6 +2633,21 @@ impl VM {
     /// Evaluate truthiness of a value, including dispatch to user-defined Bool methods.
     /// For Package (type objects) and Instance values, checks if the class defines
     /// a custom Bool method and calls it. Falls back to Value::truthy() otherwise.
+    /// Recursively flatten a value like a `*@` slurpy would: non-itemized
+    /// Array/List elements are expanded, itemized containers are preserved.
+    pub(super) fn flatten_value_for_slurpy(val: &Value, out: &mut Vec<Value>) {
+        match val {
+            Value::Array(items, kind) if !kind.is_itemized() => {
+                for item in items.iter() {
+                    Self::flatten_value_for_slurpy(item, out);
+                }
+            }
+            other => {
+                out.push(other.clone());
+            }
+        }
+    }
+
     pub(super) fn eval_truthy(&mut self, val: &Value) -> bool {
         match val {
             Value::Package(name) => {

@@ -922,7 +922,7 @@ impl Compiler {
     }
 
     /// Check if the body uses @_ or %_ legacy argument variables.
-    fn body_uses_legacy_args(body: &[Stmt]) -> bool {
+    pub(super) fn body_uses_legacy_args(body: &[Stmt]) -> bool {
         let body_str = format!("{:?}", body);
         body_str.contains("\"@_\"") || body_str.contains("\"%_\"")
     }
@@ -1019,11 +1019,25 @@ impl Compiler {
             self.code.emit(OpCode::Die);
             return;
         }
+        let needs_at_underscore = Self::body_uses_legacy_args(then_branch);
         self.compile_expr(cond);
+        if needs_at_underscore {
+            // Duplicate condition for @_ (bare if blocks receive condition as @_).
+            self.code.emit(OpCode::Dup);
+        }
         let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
+        if needs_at_underscore {
+            // Flatten the duplicated condition into @_.
+            self.code.emit(OpCode::FlattenSlurpy);
+            self.emit_set_named_var("@_");
+        }
         self.compile_stmts_value(then_branch);
         let jump_end = self.code.emit(OpCode::Jump(0));
         self.code.patch_jump(jump_else);
+        if needs_at_underscore {
+            // Pop leftover duplicated condition on the false branch.
+            self.code.emit(OpCode::Pop);
+        }
         if else_branch.is_empty() {
             let empty_idx = self.code.add_constant(Value::slip(vec![]));
             self.code.emit(OpCode::LoadConst(empty_idx));

@@ -40,6 +40,9 @@ pub(crate) enum OpCode {
     StrBitNeg,  // ~^ prefix: string/buffer bitwise negation
     MakeSlip,   // | prefix: convert array/list to Slip for flattening
     Decont,     // decontainerize: Array(_, true) → Array(_, false) for slurpy flattening
+    /// Recursively flatten a list value into a real Array (like *@ slurpy).
+    /// Used to populate @_ in bare if blocks.
+    FlattenSlurpy,
 
     // -- Logic / coercion --
     Not,
