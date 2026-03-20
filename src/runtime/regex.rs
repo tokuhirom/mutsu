@@ -1417,6 +1417,54 @@ impl Interpreter {
         out
     }
 
+    /// Find first regex match in text, starting search from `min_pos` (char index).
+    /// Returns (from, to) as char indices in the full text.
+    /// Unlike `regex_find_first`, this preserves full-text context for zero-width assertions.
+    pub(crate) fn regex_find_first_from(
+        &self,
+        pattern: &str,
+        text: &str,
+        min_pos: usize,
+    ) -> Option<(usize, usize)> {
+        let parsed = self.parse_regex(pattern)?;
+        let pkg = self.current_package.clone();
+        let chars: Vec<char> = text.chars().collect();
+        if parsed.anchor_start && min_pos > 0 {
+            return None;
+        }
+        let search_start = if parsed.anchor_start { 0 } else { min_pos };
+        for start in search_start..=chars.len() {
+            if let Some(end) = self.regex_match_end_from_in_pkg(&parsed, &chars, start, &pkg) {
+                return Some((start, end));
+            }
+        }
+        None
+    }
+
+    /// Like `regex_find_first_from` but also returns positional captures.
+    pub(crate) fn regex_find_first_from_with_captures(
+        &self,
+        pattern: &str,
+        text: &str,
+        min_pos: usize,
+    ) -> Option<(usize, usize, Vec<String>)> {
+        let parsed = self.parse_regex(pattern)?;
+        let pkg = self.current_package.clone();
+        let chars: Vec<char> = text.chars().collect();
+        if parsed.anchor_start && min_pos > 0 {
+            return None;
+        }
+        let search_start = if parsed.anchor_start { 0 } else { min_pos };
+        for start in search_start..=chars.len() {
+            if let Some((end, caps)) =
+                self.regex_match_end_from_caps_in_pkg(&parsed, &chars, start, &pkg)
+            {
+                return Some((start, end, caps.positional));
+            }
+        }
+        None
+    }
+
     pub(crate) fn regex_find_first(&self, pattern: &str, text: &str) -> Option<(usize, usize)> {
         let parsed = self.parse_regex(pattern)?;
         let pkg = self.current_package.clone();
@@ -2460,6 +2508,19 @@ impl Interpreter {
                 }
                 return best_len.map(|len| pos + len);
             }
+            if spec.lookup_name == "wb" && !spec.token_lookup {
+                // <.wb> — zero-width word boundary assertion
+                let before_is_word = pos > 0 && is_word_char(chars[pos - 1]);
+                let after_is_word = pos < chars.len() && is_word_char(chars[pos]);
+                return if before_is_word != after_is_word
+                    || (pos == 0 && after_is_word)
+                    || (pos == chars.len() && before_is_word)
+                {
+                    Some(pos)
+                } else {
+                    None
+                };
+            }
             if spec.lookup_name == "ws" && !spec.token_lookup {
                 let mut next = pos;
                 while next < chars.len() && chars[next].is_whitespace() {
@@ -3021,6 +3082,18 @@ impl Interpreter {
                     return Some((end, new_caps));
                 }
                 return None;
+            }
+            if spec.lookup_name == "wb" && !spec.token_lookup {
+                // <.wb> — zero-width word boundary assertion
+                let before_is_word = pos > 0 && is_word_char(chars[pos - 1]);
+                let after_is_word = pos < chars.len() && is_word_char(chars[pos]);
+                let at_boundary = before_is_word != after_is_word
+                    || (pos == 0 && after_is_word)
+                    || (pos == chars.len() && before_is_word);
+                if !at_boundary {
+                    return None;
+                }
+                return Some((pos, current_caps.clone()));
             }
             if spec.lookup_name == "ws" && !spec.token_lookup {
                 let mut end = pos;

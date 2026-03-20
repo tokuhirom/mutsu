@@ -295,6 +295,8 @@ impl Interpreter {
             return Err(RuntimeError::new("Must specify a pattern for split"));
         }
 
+        opts.check_conflicts("Str")?;
+
         let splitter = positional[0].clone();
         if positional.len() > 1 {
             opts.limit = Some(crate::runtime::to_int(positional[1]).max(0) as usize);
@@ -379,7 +381,8 @@ impl Interpreter {
 
         let max_splits = limit.map(|l| if l > 0 { l - 1 } else { 0 });
         let mut splits_done = 0;
-        let mut pos = 0;
+        let mut pos = 0; // current segment start
+        let mut search_from = 0; // where to start searching for next match
 
         loop {
             if let Some(max) = max_splits
@@ -390,41 +393,38 @@ impl Interpreter {
                 return Ok(result);
             }
 
-            // Try to match regex starting from pos
-            let remaining_text: String = chars[pos..].iter().collect();
-            if let Some((from, to)) = self.regex_find_first(pattern, &remaining_text) {
-                let abs_from = pos + from;
-                let abs_to = pos + to;
+            if search_from > chars.len() {
+                break;
+            }
 
-                // Avoid infinite loop on zero-width match
-                if from == to && abs_from == pos && !result.is_empty() {
-                    if pos < chars.len() {
-                        let ch_str = chars[pos].to_string();
-                        result.push((ch_str, None));
-                        pos += 1;
-                        continue;
-                    } else {
-                        break;
-                    }
-                }
-
-                let segment: String = chars[pos..abs_from].iter().collect();
-                let matched: String = chars[abs_from..abs_to].iter().collect();
+            // Try to match regex starting from search_from, using full text for context
+            if let Some((from, to, pcaps)) =
+                self.regex_find_first_from_with_captures(pattern, text, search_from)
+            {
+                let segment: String = chars[pos..from].iter().collect();
+                let matched: String = chars[from..to].iter().collect();
                 result.push((
                     segment,
                     Some(SplitMatch {
-                        from: abs_from,
-                        to: abs_to,
+                        from,
+                        to,
                         matched,
                         splitter_index: 0,
+                        is_regex: true,
+                        orig: text.to_string(),
+                        positional_captures: pcaps,
                     }),
                 ));
-                pos = abs_to;
-                if pos == abs_from {
-                    // Zero-width match: advance by one to prevent infinite loop
-                    pos += 1;
-                }
                 splits_done += 1;
+                if from == to {
+                    // Zero-width match: next segment starts at from,
+                    // but search for next match from from+1
+                    pos = from;
+                    search_from = from + 1;
+                } else {
+                    pos = to;
+                    search_from = to;
+                }
             } else {
                 let remaining: String = chars[pos..].iter().collect();
                 result.push((remaining, None));
@@ -467,23 +467,22 @@ impl Interpreter {
                 return Ok(result);
             }
 
-            let remaining_text: String = chars[pos..].iter().collect();
-            let mut best: Option<(usize, usize, usize, String)> = None; // (from, to, idx, matched)
+            // (abs_from, abs_to, idx, matched, is_regex) — positions in full text
+            let mut best: Option<(usize, usize, usize, String, bool)> = None;
 
             for (idx, splitter) in splitters.iter().enumerate() {
                 match splitter {
                     Value::Regex(pattern) | Value::RegexWithAdverbs { pattern, .. } => {
-                        if let Some((from, to)) = self.regex_find_first(pattern, &remaining_text) {
-                            let matched: String =
-                                remaining_text.chars().skip(from).take(to - from).collect();
+                        if let Some((from, to)) = self.regex_find_first_from(pattern, text, pos) {
+                            let matched: String = chars[from..to].iter().collect();
                             let is_better = match &best {
                                 None => true,
-                                Some((bf, bt, _, _)) => {
+                                Some((bf, bt, _, _, _)) => {
                                     from < *bf || (from == *bf && (to - from) > (*bt - *bf))
                                 }
                             };
                             if is_better {
-                                best = Some((from, to, idx, matched));
+                                best = Some((from, to, idx, matched, true));
                             }
                         }
                     }
@@ -493,13 +492,12 @@ impl Interpreter {
                             continue;
                         }
                         let sep_chars: Vec<char> = sep.chars().collect();
-                        let rem_chars: Vec<char> = remaining_text.chars().collect();
-                        if sep_chars.len() <= rem_chars.len() {
-                            for start in 0..=(rem_chars.len() - sep_chars.len()) {
-                                if rem_chars[start..start + sep_chars.len()] == sep_chars[..] {
+                        if pos + sep_chars.len() <= chars.len() {
+                            for start in pos..=(chars.len() - sep_chars.len()) {
+                                if chars[start..start + sep_chars.len()] == sep_chars[..] {
                                     let is_better = match &best {
                                         None => true,
-                                        Some((bf, _, _, _)) => start < *bf,
+                                        Some((bf, _, _, _, _)) => start < *bf,
                                     };
                                     if is_better {
                                         best = Some((
@@ -507,6 +505,7 @@ impl Interpreter {
                                             start + sep_chars.len(),
                                             idx,
                                             sep.clone(),
+                                            false,
                                         ));
                                     }
                                     break;
@@ -518,20 +517,25 @@ impl Interpreter {
             }
 
             match best {
-                Some((from, to, idx, matched)) => {
-                    let abs_from = pos + from;
-                    let abs_to = pos + to;
-                    let segment: String = chars[pos..abs_from].iter().collect();
+                Some((from, to, idx, matched, is_regex)) => {
+                    let segment: String = chars[pos..from].iter().collect();
                     result.push((
                         segment,
                         Some(SplitMatch {
-                            from: abs_from,
-                            to: abs_to,
+                            from,
+                            to,
                             matched,
                             splitter_index: idx,
+                            is_regex,
+                            orig: text.to_string(),
+                            positional_captures: Vec::new(),
                         }),
                     ));
-                    pos = abs_to;
+                    pos = to;
+                    if pos == from {
+                        // Zero-width match: advance by one
+                        pos += 1;
+                    }
                     splits_done += 1;
                 }
                 None => {
@@ -584,6 +588,9 @@ fn split_by_string_static(
                     to: match_pos,
                     matched: String::new(),
                     splitter_index: 0,
+                    is_regex: false,
+                    orig: String::new(),
+                    positional_captures: Vec::new(),
                 }),
             ));
             seg_start = match_pos;
@@ -627,6 +634,9 @@ fn split_by_string_static(
                         to: match_pos + sep_len,
                         matched: sep.to_string(),
                         splitter_index: 0,
+                        is_regex: false,
+                        orig: String::new(),
+                        positional_captures: Vec::new(),
                     }),
                 ));
                 pos = match_pos + sep_len;
@@ -705,6 +715,9 @@ fn split_by_strings_static(
                         to: match_pos + match_len,
                         matched,
                         splitter_index: splitter_idx,
+                        is_regex: false,
+                        orig: String::new(),
+                        positional_captures: Vec::new(),
                     }),
                 ));
                 pos = match_pos + match_len;

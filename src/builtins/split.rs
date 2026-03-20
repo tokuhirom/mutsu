@@ -33,6 +33,42 @@ impl SplitOpts {
         }
         (positional, opts)
     }
+
+    /// Check for conflicting adverbs. Returns Err with X::Adverb if conflicts found.
+    pub(crate) fn check_conflicts(&self, source: &str) -> Result<(), RuntimeError> {
+        let mut active = Vec::new();
+        if self.k {
+            active.push("k");
+        }
+        if self.kv {
+            active.push("kv");
+        }
+        if self.p {
+            active.push("p");
+        }
+        if self.v {
+            active.push("v");
+        }
+        if active.len() > 1 {
+            use crate::symbol::Symbol;
+            use std::collections::HashMap;
+            let nogo: Vec<Value> = active.iter().map(|s| Value::str(s.to_string())).collect();
+            let mut attrs = HashMap::new();
+            attrs.insert("what".to_string(), Value::str("split".to_string()));
+            attrs.insert("source".to_string(), Value::str(source.to_string()));
+            attrs.insert("nogo".to_string(), Value::Seq(Arc::new(nogo)));
+            let msg = format!(
+                "Only one of :v, :k, :kv, :p may be specified on {}.split",
+                source
+            );
+            attrs.insert("message".to_string(), Value::str(msg.clone()));
+            let exc = Value::make_instance(Symbol::intern("X::Adverb"), attrs);
+            let mut err = RuntimeError::new(msg);
+            err.exception = Some(Box::new(exc));
+            return Err(err);
+        }
+        Ok(())
+    }
 }
 
 /// A split match: the matched separator text and which splitter index matched.
@@ -42,6 +78,12 @@ pub(crate) struct SplitMatch {
     pub to: usize,
     pub matched: String,
     pub splitter_index: usize,
+    /// Whether this match came from a regex splitter (affects :v/:kv/:p output).
+    pub is_regex: bool,
+    /// The original string being split (needed for Match object construction).
+    pub orig: String,
+    /// Positional captures from regex match (for :v Match objects).
+    pub positional_captures: Vec<String>,
 }
 
 /// Split a string by a string splitter. Returns list of (segment, Option<match>).
@@ -81,6 +123,9 @@ fn split_by_string(
                     to: match_pos,
                     matched: String::new(),
                     splitter_index: 0,
+                    is_regex: false,
+                    orig: String::new(),
+                    positional_captures: Vec::new(),
                 }),
             ));
             seg_start = match_pos;
@@ -124,6 +169,9 @@ fn split_by_string(
                         to: match_pos + sep_len,
                         matched: sep.to_string(),
                         splitter_index: 0,
+                        is_regex: false,
+                        orig: String::new(),
+                        positional_captures: Vec::new(),
                     }),
                 ));
                 pos = match_pos + sep_len;
@@ -199,6 +247,9 @@ fn split_by_strings(
                         to: match_pos + match_len,
                         matched,
                         splitter_index: splitter_idx,
+                        is_regex: false,
+                        orig: String::new(),
+                        positional_captures: Vec::new(),
                     }),
                 ));
                 pos = match_pos + match_len;
@@ -213,22 +264,48 @@ fn split_by_strings(
     }
 }
 
+/// Create a separator value: Match object for regex splits, string for string splits.
+fn separator_value(m: &SplitMatch) -> Value {
+    if m.is_regex {
+        use std::collections::HashMap;
+        let orig = if m.orig.is_empty() {
+            None
+        } else {
+            Some(m.orig.as_str())
+        };
+        Value::make_match_object_full(
+            m.matched.clone(),
+            m.from as i64,
+            m.to as i64,
+            &m.positional_captures,
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+            &[],
+            orig,
+        )
+    } else {
+        Value::str(m.matched.clone())
+    }
+}
+
 /// Insert separator information based on named param options.
 fn push_separator_info(result: &mut Vec<Value>, m: &SplitMatch, opts: &SplitOpts) {
-    if m.from == m.to {
+    // For non-regex zero-width matches (empty string separator), don't insert separator info
+    if m.from == m.to && !m.is_regex {
         return;
     }
     if opts.v {
-        result.push(Value::str(m.matched.clone()));
+        result.push(separator_value(m));
     } else if opts.k {
         result.push(Value::Int(m.splitter_index as i64));
     } else if opts.kv {
         result.push(Value::Int(m.splitter_index as i64));
-        result.push(Value::str(m.matched.clone()));
+        result.push(separator_value(m));
     } else if opts.p {
-        result.push(Value::Pair(
-            m.splitter_index.to_string(),
-            Box::new(Value::str(m.matched.clone())),
+        result.push(Value::ValuePair(
+            Box::new(Value::Int(m.splitter_index as i64)),
+            Box::new(separator_value(m)),
         ));
     }
 }
@@ -287,6 +364,10 @@ pub(crate) fn native_split_method(
     let (positional, mut opts) = SplitOpts::from_args(args);
     if positional.is_empty() {
         return Some(Err(RuntimeError::new("Must specify a pattern for split")));
+    }
+
+    if let Err(e) = opts.check_conflicts("Str") {
+        return Some(Err(e));
     }
 
     let splitter = positional[0];
