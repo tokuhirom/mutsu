@@ -1462,11 +1462,26 @@ impl Interpreter {
 
     pub(crate) fn restore_routine_registry(&mut self, snapshot: RoutineRegistrySnapshot) {
         let (functions, proto_functions, token_defs, proto_subs, proto_tokens) = snapshot;
+        // Collect our-scoped functions that were newly added during this block
+        // (not present in the snapshot) that need to persist after scope restoration.
+        // Only preserve functions whose package matches the current package (i.e., not
+        // functions from loaded modules with different packages).
+        let current_pkg = self.current_package.clone();
+        let mut new_our: Vec<(Symbol, FunctionDef)> = Vec::new();
+        for (key, def) in &self.our_scoped_functions {
+            if !functions.contains_key(key) && def.package.resolve() == current_pkg {
+                new_our.push((*key, def.clone()));
+            }
+        }
         self.functions = functions;
         self.proto_functions = proto_functions;
         self.token_defs = token_defs;
         self.proto_subs = proto_subs;
         self.proto_tokens = proto_tokens;
+        // Re-apply only newly added our-scoped functions so they survive block scope exit
+        for (key, def) in new_our {
+            self.functions.insert(key, def);
+        }
     }
 
     pub(crate) fn push_block_scope_depth(&mut self) {

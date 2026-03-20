@@ -309,6 +309,16 @@ impl Interpreter {
             let fq = format!("{}::{}", self.current_package, name);
             self.functions.insert(Symbol::intern(&fq), def);
         }
+        // If this is an our-scoped sub, also store it in the persistent our_scoped_functions
+        // so it survives block scope restoration.
+        let is_our_scoped = custom_traits.iter().any(|t| t == "__our_scoped");
+        if is_our_scoped {
+            let fq = format!("{}::{}", self.current_package, name);
+            if let Some(f) = self.functions.get(&Symbol::intern(&fq)) {
+                self.our_scoped_functions
+                    .insert(Symbol::intern(&fq), f.clone());
+            }
+        }
         let callable_key = format!("__mutsu_callable_id::{}::{}", self.current_package, name);
         self.env.insert(
             callable_key,
@@ -332,7 +342,7 @@ impl Interpreter {
         if !custom_traits.is_empty()
             && (self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>"))
         {
-            for trait_name in custom_traits {
+            for trait_name in custom_traits.iter().filter(|t| !t.starts_with("__")) {
                 let sub_val = Value::make_sub(
                     Symbol::intern(&self.current_package),
                     Symbol::intern(name),
