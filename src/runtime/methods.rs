@@ -475,6 +475,34 @@ impl Interpreter {
             });
         }
 
+        // .throw on user-defined Exception subclasses (MRO-aware)
+        if method == "throw"
+            && args.is_empty()
+            && let Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } = &target
+        {
+            let cn = class_name.resolve();
+            let is_exception = cn == "Exception"
+                || cn.starts_with("X::")
+                || cn.starts_with("CX::")
+                || self
+                    .class_mro(&cn)
+                    .iter()
+                    .any(|p| p == "Exception" || p.starts_with("X::") || p.starts_with("CX::"));
+            if is_exception {
+                let msg = attributes
+                    .get("message")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_else(|| target.to_string_value());
+                let mut err = RuntimeError::new(&msg);
+                err.exception = Some(Box::new(target.clone()));
+                return Err(err);
+            }
+        }
+
         if method == "Str"
             && args.is_empty()
             && let Value::Instance { class_name, .. } = &target

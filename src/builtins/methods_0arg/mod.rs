@@ -1192,6 +1192,28 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
 
+    // .throw on exception objects — throw the exception
+    // Note: we handle this for all Instance values here; the MRO check for
+    // user-defined Exception subclasses is done in runtime/methods.rs
+    if method == "throw"
+        && let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target
+    {
+        let cn = class_name.resolve();
+        if cn == "Exception" || cn.starts_with("X::") || cn.starts_with("CX::") || cn == "Failure" {
+            let msg = attributes
+                .get("message")
+                .map(|v| v.to_string_value())
+                .unwrap_or_else(|| target.to_string_value());
+            let mut err = RuntimeError::new(&msg);
+            err.exception = Some(Box::new(target.clone()));
+            return Some(Err(err));
+        }
+    }
+
     // Array of Match objects: .to returns last element's .to, .from returns first element's .from
     if let Value::Array(arr, _) = target {
         match method {
