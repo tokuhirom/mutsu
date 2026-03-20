@@ -1493,6 +1493,29 @@ impl Interpreter {
                 }
                 true
             }
+            // :c/:continue — search from $/.to (or 0) onwards (non-anchored)
+            (
+                _,
+                Value::RegexWithAdverbs {
+                    pattern: pat,
+                    continue_: true,
+                    global: false,
+                    exhaustive: false,
+                    overlap: false,
+                    ..
+                },
+            ) => {
+                let text = left.to_string_value();
+                let pat = pat.to_string();
+                let start_pos = self.get_match_to_position();
+                if let Some(captures) = self.regex_match_with_captures_from(&pat, &text, start_pos)
+                {
+                    self.apply_single_regex_captures(&captures);
+                    return true;
+                }
+                self.env.insert("/".to_string(), Value::Nil);
+                false
+            }
             // :pos/:p anchored match (non-exhaustive/non-global) — match at $/.to (or 0)
             (
                 _,
