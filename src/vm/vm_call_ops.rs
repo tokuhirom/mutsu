@@ -2214,6 +2214,12 @@ impl VM {
         outer_code: &CompiledCode,
         code_val: &Value,
     ) -> Result<Value, RuntimeError> {
+        let outer_local_slots: std::collections::HashMap<&str, usize> = outer_code
+            .locals
+            .iter()
+            .enumerate()
+            .map(|(idx, name)| (name.as_str(), idx))
+            .collect();
         let (block_cc, block_fns, captured_env, captured_bindings, writeback_bindings) =
             match code_val {
                 Value::Sub(data) => {
@@ -2263,8 +2269,8 @@ impl VM {
                     // GetLocal will read the shared value on demand.
                     continue;
                 }
-                if let Some(outer_slot) = outer_code.locals.iter().rposition(|local| local == name)
-                    && let Some(val) = saved_locals.get(outer_slot)
+                if let Some(outer_slot) = outer_local_slots.get(name.as_str())
+                    && let Some(val) = saved_locals.get(*outer_slot)
                 {
                     self.locals[*slot] = val.clone();
                     continue;
@@ -2294,8 +2300,8 @@ impl VM {
                 ) {
                     continue;
                 }
-                if let Some(outer_slot) = outer_code.locals.iter().rposition(|local| local == name)
-                    && let Some(target) = saved_locals.get_mut(outer_slot)
+                if let Some(outer_slot) = outer_local_slots.get(name.as_str())
+                    && let Some(target) = saved_locals.get_mut(*outer_slot)
                 {
                     *target = self.locals[*slot].clone();
                 }
