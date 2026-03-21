@@ -409,11 +409,13 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         }
 
         // IO::Path/Str ~~ Pair(:e), :d, :f, :r, :w, :x, :s, :z file tests
+        // Also handles negated forms: :!e, :!d, :!f, :!r, :!w, :!x, :!s, :!z
         (_, Value::Pair(key, val))
-            if matches!(val.as_ref(), Value::Bool(true))
+            if matches!(val.as_ref(), Value::Bool(_))
                 && matches!(key.as_str(), "e" | "d" | "f" | "r" | "w" | "x" | "s" | "z")
                 && !needs_interpreter_lhs(left) =>
         {
+            let negated = matches!(val.as_ref(), Value::Bool(false));
             let path_str = match left {
                 Value::Instance {
                     class_name,
@@ -427,12 +429,36 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
             };
             if let Some(p) = path_str {
                 let path = std::path::Path::new(&p);
-                Some(match key.as_str() {
+                let result = match key.as_str() {
                     "e" => path.exists(),
                     "d" => path.is_dir(),
                     "f" => path.is_file(),
-                    "r" => path.exists(),
-                    "w" => path.exists(),
+                    "r" => {
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            std::fs::metadata(&p)
+                                .map(|m| m.permissions().mode() & 0o444 != 0)
+                                .unwrap_or(false)
+                        }
+                        #[cfg(not(unix))]
+                        {
+                            path.exists()
+                        }
+                    }
+                    "w" => {
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            std::fs::metadata(&p)
+                                .map(|m| m.permissions().mode() & 0o222 != 0)
+                                .unwrap_or(false)
+                        }
+                        #[cfg(not(unix))]
+                        {
+                            path.exists()
+                        }
+                    }
                     "x" => {
                         #[cfg(unix)]
                         {
@@ -449,9 +475,10 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
                     "s" => std::fs::metadata(&p).map(|m| m.len() > 0).unwrap_or(false),
                     "z" => std::fs::metadata(&p).map(|m| m.len() == 0).unwrap_or(false),
                     _ => false,
-                })
+                };
+                Some(if negated { !result } else { result })
             } else {
-                Some(false)
+                Some(negated)
             }
         }
 

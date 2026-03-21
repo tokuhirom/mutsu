@@ -1892,10 +1892,12 @@ impl Interpreter {
                 }
             },
             // IO::Path/Str ~~ Pair(:e), :d, :f, :r, :w, :x file tests
+            // Also handles negated forms: :!e, :!d, :!f, :!r, :!w, :!x, :!s, :!z
             (_, Value::Pair(key, val))
-                if matches!(val.as_ref(), Value::Bool(true))
+                if matches!(val.as_ref(), Value::Bool(_))
                     && matches!(key.as_str(), "e" | "d" | "f" | "r" | "w" | "x" | "s" | "z") =>
             {
+                let negated = matches!(val.as_ref(), Value::Bool(false));
                 let path_str = match left {
                     Value::Instance {
                         class_name,
@@ -1909,12 +1911,36 @@ impl Interpreter {
                 };
                 if let Some(p) = path_str {
                     let path = std::path::Path::new(&p);
-                    match key.as_str() {
+                    let result = match key.as_str() {
                         "e" => path.exists(),
                         "d" => path.is_dir(),
                         "f" => path.is_file(),
-                        "r" => path.exists(), // simplified: exists = readable
-                        "w" => path.exists(), // simplified
+                        "r" => {
+                            #[cfg(unix)]
+                            {
+                                use std::os::unix::fs::PermissionsExt;
+                                std::fs::metadata(&p)
+                                    .map(|m| m.permissions().mode() & 0o444 != 0)
+                                    .unwrap_or(false)
+                            }
+                            #[cfg(not(unix))]
+                            {
+                                path.exists()
+                            }
+                        }
+                        "w" => {
+                            #[cfg(unix)]
+                            {
+                                use std::os::unix::fs::PermissionsExt;
+                                std::fs::metadata(&p)
+                                    .map(|m| m.permissions().mode() & 0o222 != 0)
+                                    .unwrap_or(false)
+                            }
+                            #[cfg(not(unix))]
+                            {
+                                path.exists()
+                            }
+                        }
                         "x" => {
                             #[cfg(unix)]
                             {
@@ -1931,9 +1957,10 @@ impl Interpreter {
                         "s" => std::fs::metadata(&p).map(|m| m.len() > 0).unwrap_or(false),
                         "z" => std::fs::metadata(&p).map(|m| m.len() == 0).unwrap_or(false),
                         _ => false,
-                    }
+                    };
+                    if negated { !result } else { result }
                 } else {
-                    false
+                    negated
                 }
             }
             // Hash ~~ Pair: check that key exists in hash and value smartmatches
