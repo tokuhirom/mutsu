@@ -653,6 +653,22 @@ pub(crate) fn signature_smartmatch(s1: &SigInfo, s2: &SigInfo) -> bool {
         if p1.sigil == '@' && p2.sigil == '$' {
             return false;
         }
+        // Compare literal values: if s1 (RHS/accepting) has a literal,
+        // s2 (LHS/topic) must have the same literal value.
+        if let Some(ref lit1) = p1.literal_value {
+            match &p2.literal_value {
+                Some(lit2) => {
+                    if !lit1.eqv(lit2) {
+                        return false;
+                    }
+                }
+                None => {
+                    // s1 has a literal but s2 doesn't — s2 is more general,
+                    // so s1 does not accept s2
+                    return false;
+                }
+            }
+        }
     }
 
     for i in 0..check_count {
