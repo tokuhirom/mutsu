@@ -203,6 +203,7 @@ impl Interpreter {
                         native_methods: std::collections::HashSet::new(),
                         mro: Vec::new(),
                         attribute_types: HashMap::new(),
+                        attribute_smileys: HashMap::new(),
                         wildcard_handles: Vec::new(),
                         alias_attributes: HashSet::new(),
                         class_level_attrs: HashMap::new(),
@@ -1833,6 +1834,7 @@ impl Interpreter {
                     }
                 }
                 self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
+                self.enforce_attribute_smiley_constraints(class_key, &attrs)?;
                 let int_ctor_val =
                     if matches!(positional_ctor_args.first(), Some(Value::Package(_))) {
                         return Err(RuntimeError::new("Cannot convert type object to Int"));
@@ -1945,6 +1947,7 @@ impl Interpreter {
                 // Add alias metadata for `has $x` (no twigil) attributes
                 self.add_alias_attribute_metadata(class_key, &mut attrs);
                 self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
+                self.enforce_attribute_smiley_constraints(class_key, &attrs)?;
                 // Restore env after default evaluation, but preserve side effects
                 // on variables that already existed in the caller environment.
                 let mut restored_env = saved_default_env.clone();
@@ -2037,6 +2040,7 @@ impl Interpreter {
                         }
                     }
                     self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
+                    self.enforce_attribute_smiley_constraints(class_key, &attrs)?;
                 }
                 // Walk MRO in reverse for TWEAK as well
                 for mro_class in mro.iter().rev() {
@@ -2376,6 +2380,106 @@ impl Interpreter {
                     "Type check failed in assignment to $!{}; where constraint failed",
                     attr_name
                 )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Enforce type smiley constraints (`:U`, `:D`) on attribute values during `.new`.
+    fn enforce_attribute_smiley_constraints(
+        &mut self,
+        class_name: &str,
+        attrs: &HashMap<String, Value>,
+    ) -> Result<(), RuntimeError> {
+        // Collect smileys and required status from this class and all parent classes in the MRO
+        let mut smileys: HashMap<String, String> = HashMap::new();
+        let mut required_attrs: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        let mro = self.class_mro(class_name);
+        for mro_class in &mro {
+            if let Some(class_def) = self.classes.get(mro_class) {
+                for (attr_name, smiley) in &class_def.attribute_smileys {
+                    smileys
+                        .entry(attr_name.clone())
+                        .or_insert_with(|| smiley.clone());
+                }
+                for (attr_name, _, _, _, is_required, _, _) in &class_def.attributes {
+                    if is_required.is_some() {
+                        required_attrs.insert(attr_name.clone());
+                    }
+                }
+            }
+        }
+
+        for (attr_name, smiley) in &smileys {
+            // Skip smiley check for required attributes — the required check
+            // should take priority (it fires separately and produces a better error)
+            if required_attrs.contains(attr_name) {
+                continue;
+            }
+            let Some(value) = attrs.get(attr_name) else {
+                continue;
+            };
+            match smiley.as_str() {
+                "U" => {
+                    // :U means the value must be undefined (type object)
+                    if super::types::value_is_defined(value) {
+                        let mut ex_attrs = HashMap::new();
+                        ex_attrs.insert("name".to_string(), Value::str(format!("$!{}", attr_name)));
+                        ex_attrs.insert(
+                            "message".to_string(),
+                            Value::str(format!(
+                                "Type check failed in default value of attribute $!{}; expected {}, got {}",
+                                attr_name,
+                                self.classes.get(class_name)
+                                    .and_then(|cd| cd.attribute_types.get(attr_name))
+                                    .map(|t| format!("{}:U", t))
+                                    .unwrap_or_else(|| "Any:U".to_string()),
+                                super::value_type_name(value),
+                            )),
+                        );
+                        let ex = Value::make_instance(
+                            Symbol::intern("X::TypeCheck::Attribute::Default"),
+                            ex_attrs,
+                        );
+                        let mut err = RuntimeError::new(format!(
+                            "Type check failed in default value of attribute $!{}",
+                            attr_name
+                        ));
+                        err.exception = Some(Box::new(ex));
+                        return Err(err);
+                    }
+                }
+                "D" => {
+                    // :D means the value must be defined
+                    if !super::types::value_is_defined(value) {
+                        let mut ex_attrs = HashMap::new();
+                        ex_attrs.insert("name".to_string(), Value::str(format!("$!{}", attr_name)));
+                        ex_attrs.insert(
+                            "message".to_string(),
+                            Value::str(format!(
+                                "Type check failed in default value of attribute $!{}; expected {}, got {}",
+                                attr_name,
+                                self.classes.get(class_name)
+                                    .and_then(|cd| cd.attribute_types.get(attr_name))
+                                    .map(|t| format!("{}:D", t))
+                                    .unwrap_or_else(|| "Any:D".to_string()),
+                                super::value_type_name(value),
+                            )),
+                        );
+                        let ex = Value::make_instance(
+                            Symbol::intern("X::TypeCheck::Attribute::Default"),
+                            ex_attrs,
+                        );
+                        let mut err = RuntimeError::new(format!(
+                            "Type check failed in default value of attribute $!{}",
+                            attr_name
+                        ));
+                        err.exception = Some(Box::new(ex));
+                        return Err(err);
+                    }
+                }
+                _ => {} // "_" or anything else: no constraint
             }
         }
         Ok(())

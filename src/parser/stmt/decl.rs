@@ -443,6 +443,11 @@ pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
         return parse_use_variables_pragma(rest);
     }
 
+    // Handle `use attributes :D/:U/:_` pragma
+    if module == "attributes" {
+        return parse_use_attributes_pragma(rest);
+    }
+
     // `use newline :lf|:cr|:crlf` uses a colonpair argument and must be preserved.
     if module == "newline" && rest.starts_with(':') && !rest.starts_with("::") {
         let (rest, arg) = super::super::primary::colonpair_expr(rest)?;
@@ -504,22 +509,26 @@ pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, Stmt::Use { module, arg }))
 }
 
-/// Parse `use variables :D/:U/:_` pragma.
+/// Parse `use <pragma_name> :D/:U/:_` pragma.
 /// Validates the argument and emits the Use statement.
-fn parse_use_variables_pragma(input: &str) -> PResult<'_, Stmt> {
+/// Shared implementation for both `use variables` and `use attributes`.
+fn parse_use_smiley_pragma<'a>(input: &'a str, pragma_name: &'a str) -> PResult<'a, Stmt> {
     let rest = input;
 
     // No argument → X::Pragma::MustOneOf
     if rest.starts_with(';') || rest.is_empty() || rest.starts_with('}') {
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("name".to_string(), Value::str("variables".to_string()));
+        attrs.insert("name".to_string(), Value::str(pragma_name.to_string()));
         attrs.insert(
             "message".to_string(),
-            Value::str("Must use one of :D, :U, :_ with 'variables' pragma".to_string()),
+            Value::str(format!(
+                "Must use one of :D, :U, :_ with '{}' pragma",
+                pragma_name
+            )),
         );
         let ex = Value::make_instance(Symbol::intern("X::Pragma::MustOneOf"), attrs);
         return Err(PError::fatal_with_exception(
-            "Must use one of :D, :U, :_ with 'variables' pragma".to_string(),
+            format!("Must use one of :D, :U, :_ with '{}' pragma", pragma_name),
             Box::new(ex),
         ));
     }
@@ -530,7 +539,7 @@ fn parse_use_variables_pragma(input: &str) -> PResult<'_, Stmt> {
         let (r, arg_expr) = expression(rest)?;
         let arg_str = format!("{:?}", arg_expr);
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("name".to_string(), Value::str("variables".to_string()));
+        attrs.insert("name".to_string(), Value::str(pragma_name.to_string()));
         // Try to extract string value from the expression
         let arg_val = if let Expr::Literal(Value::Str(ref s)) = arg_expr {
             s.to_string()
@@ -541,14 +550,14 @@ fn parse_use_variables_pragma(input: &str) -> PResult<'_, Stmt> {
         attrs.insert(
             "message".to_string(),
             Value::str(format!(
-                "Unknown argument '{}' to 'variables' pragma",
-                arg_val
+                "Unknown argument '{}' to '{}' pragma",
+                arg_val, pragma_name
             )),
         );
         let ex = Value::make_instance(Symbol::intern("X::Pragma::UnknownArg"), attrs);
         let _ = r;
         return Err(PError::fatal_with_exception(
-            format!("Unknown argument '{}' to 'variables' pragma", arg_val),
+            format!("Unknown argument '{}' to '{}' pragma", arg_val, pragma_name),
             Box::new(ex),
         ));
     }
@@ -576,10 +585,10 @@ fn parse_use_variables_pragma(input: &str) -> PResult<'_, Stmt> {
     // Validate smileys
     if smileys.is_empty() {
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("name".to_string(), Value::str("variables".to_string()));
+        attrs.insert("name".to_string(), Value::str(pragma_name.to_string()));
         let ex = Value::make_instance(Symbol::intern("X::Pragma::MustOneOf"), attrs);
         return Err(PError::fatal_with_exception(
-            "Must use one of :D, :U, :_ with 'variables' pragma".to_string(),
+            format!("Must use one of :D, :U, :_ with '{}' pragma", pragma_name),
             Box::new(ex),
         ));
     }
@@ -610,14 +619,20 @@ fn parse_use_variables_pragma(input: &str) -> PResult<'_, Stmt> {
     // Multiple smileys → X::Pragma::OnlyOne
     if smileys.len() > 1 {
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("name".to_string(), Value::str("variables".to_string()));
+        attrs.insert("name".to_string(), Value::str(pragma_name.to_string()));
         attrs.insert(
             "message".to_string(),
-            Value::str("Can only use one of :D, :U, :_ with 'variables' pragma".to_string()),
+            Value::str(format!(
+                "Can only use one of :D, :U, :_ with '{}' pragma",
+                pragma_name
+            )),
         );
         let ex = Value::make_instance(Symbol::intern("X::Pragma::OnlyOne"), attrs);
         return Err(PError::fatal_with_exception(
-            "Can only use one of :D, :U, :_ with 'variables' pragma".to_string(),
+            format!(
+                "Can only use one of :D, :U, :_ with '{}' pragma",
+                pragma_name
+            ),
             Box::new(ex),
         ));
     }
@@ -628,10 +643,29 @@ fn parse_use_variables_pragma(input: &str) -> PResult<'_, Stmt> {
     Ok((
         r,
         Stmt::Use {
-            module: "variables".to_string(),
+            module: pragma_name.to_string(),
             arg: Some(Expr::Literal(Value::str(format!(":{}", smiley)))),
         },
     ))
+}
+
+/// Parse `use variables :D/:U/:_` pragma.
+fn parse_use_variables_pragma(input: &str) -> PResult<'_, Stmt> {
+    parse_use_smiley_pragma(input, "variables")
+}
+
+/// Parse `use attributes :D/:U/:_` pragma.
+fn parse_use_attributes_pragma(input: &str) -> PResult<'_, Stmt> {
+    let result = parse_use_smiley_pragma(input, "attributes")?;
+    // Set the parse-time attributes pragma so has_decl can check it
+    if let Stmt::Use {
+        arg: Some(Expr::Literal(Value::Str(ref s))),
+        ..
+    } = result.1
+    {
+        super::simple::set_attributes_pragma(s);
+    }
+    Ok(result)
 }
 
 /// Parse `import Module [:TAG ...];`
@@ -679,6 +713,22 @@ pub(super) fn no_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, module) = qualified_ident(rest)?;
     let (rest, _) = ws(rest)?;
+
+    // `no attributes` is not allowed — throw X::Pragma::CannotWhat
+    if module == "attributes" {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("what".to_string(), Value::str("no".to_string()));
+        attrs.insert("name".to_string(), Value::str("attributes".to_string()));
+        attrs.insert(
+            "message".to_string(),
+            Value::str("Cannot use 'no' with the 'attributes' pragma".to_string()),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::Pragma::CannotWhat"), attrs);
+        return Err(PError::fatal_with_exception(
+            "Cannot use 'no' with the 'attributes' pragma".to_string(),
+            Box::new(ex),
+        ));
+    }
 
     // `no variables` is not allowed — throw X::Pragma::CannotWhat
     if module == "variables" {
@@ -1277,6 +1327,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_rw: true,
             is_readonly: false,
             type_constraint: type_constraint.clone(),
+            type_smiley: None,
             is_required: None,
             sigil: sigil as char,
             where_constraint: None,
@@ -2289,6 +2340,7 @@ fn has_decl_list(input: &str) -> PResult<'_, Stmt> {
             is_rw: false,
             is_readonly: false,
             type_constraint: None,
+            type_smiley: None,
             is_required: None,
             sigil: sigil as char,
             where_constraint: None,
@@ -2320,24 +2372,27 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     }
 
     // Optional type constraint.
-    let (rest, mut type_constraint) = {
+    let (rest, mut type_constraint, type_smiley) = {
         let saved = rest;
         if let Some((r, tc)) = parse_type_constraint_expr(rest) {
             let (r2, _) = ws(r)?;
             if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
-                // Strip smiley suffix for the type_constraint name used as default
-                let base = tc
-                    .strip_suffix(":D")
-                    .or_else(|| tc.strip_suffix(":U"))
-                    .or_else(|| tc.strip_suffix(":_"))
-                    .unwrap_or(&tc)
-                    .to_string();
-                (r2, Some(base))
+                // Extract smiley suffix and strip it for the type_constraint name
+                let (base, smiley) = if let Some(b) = tc.strip_suffix(":D") {
+                    (b.to_string(), Some("D".to_string()))
+                } else if let Some(b) = tc.strip_suffix(":U") {
+                    (b.to_string(), Some("U".to_string()))
+                } else if let Some(b) = tc.strip_suffix(":_") {
+                    (b.to_string(), Some("_".to_string()))
+                } else {
+                    (tc.to_string(), None)
+                };
+                (r2, Some(base), smiley)
             } else {
-                (saved, None)
+                (saved, None, None)
             }
         } else {
-            (saved, None)
+            (saved, None, None)
         }
     };
 
@@ -2559,28 +2614,86 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         } else {
             (rest, Some(expr))
         }
-    } else if let Some(tc) = &type_constraint
-        && is_required.is_none()
-        && sigil == b'$'
-    {
-        // Typed scalar attribute with no explicit default → use type object as default
-        // But not when `is required` — the attribute must be explicitly provided
-        // For @ and % sigils, the type constraint is an element type, not the
-        // container type, so we don't set a default (empty container is used).
-        // ::?CLASS / ::?ROLE resolve via the compile-time variable, not as a bare word
-        if tc == "::?CLASS" {
-            (rest, Some(Expr::Var("?CLASS".to_string())))
-        } else if tc == "::?ROLE" {
-            (rest, Some(Expr::Var("?ROLE".to_string())))
-        } else {
-            (rest, Some(Expr::BareWord(tc.clone())))
-        }
     } else if let Some(default_expr) = is_default_trait {
         // `is default(expr)` was used — apply it as the default value
         (rest, Some(default_expr))
     } else {
         (rest, None)
     };
+
+    // Track whether user provided an explicit default (before auto-default)
+    let has_explicit_default = default.is_some();
+
+    // Apply `use attributes :D/:U/:_` pragma if no explicit smiley on the type
+    let smiley_from_pragma = type_smiley.is_none() && type_constraint.is_some() && {
+        let pragma = super::simple::current_attributes_pragma();
+        matches!(pragma.as_str(), ":D" | ":U")
+    };
+    let type_smiley = if type_smiley.is_none() && type_constraint.is_some() {
+        let pragma = super::simple::current_attributes_pragma();
+        match pragma.as_str() {
+            ":D" => Some("D".to_string()),
+            ":U" => Some("U".to_string()),
+            _ => type_smiley, // ":_" or empty - no change
+        }
+    } else {
+        type_smiley
+    };
+
+    // Enforce type smiley constraints at parse time
+    let effective_smiley = type_smiley.as_deref().unwrap_or("_");
+    if effective_smiley == "D" && !has_explicit_default && is_required.is_none() {
+        // :D attribute without a default or `is required` → X::Syntax::Variable::MissingInitializer
+        let twigil = if is_public { "." } else { "!" };
+        let tc_display = if let Some(ref tc) = type_constraint {
+            format!("{}:D", tc)
+        } else {
+            "Any:D".to_string()
+        };
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("type".to_string(), Value::str(tc_display));
+        attrs.insert("name".to_string(), Value::str(format!("$!{}", name)));
+        if smiley_from_pragma {
+            attrs.insert(
+                "implicit".to_string(),
+                Value::str(":D by pragma".to_string()),
+            );
+        }
+        let ex = Value::make_instance(
+            Symbol::intern("X::Syntax::Variable::MissingInitializer"),
+            attrs,
+        );
+        return Err(PError::fatal_with_exception(
+            format!(
+                "Variable '{}{}{}' of type '{}:D' must be initialized",
+                sigil as char,
+                twigil,
+                name,
+                type_constraint.as_deref().unwrap_or("Any")
+            ),
+            Box::new(ex),
+        ));
+    }
+
+    // Auto-default: typed scalar attribute with no explicit default → use type object
+    // But not when `is required` — the attribute must be explicitly provided
+    // For @ and % sigils, the type constraint is an element type, not the
+    // container type, so we don't set a default (empty container is used).
+    if !has_explicit_default
+        && is_required.is_none()
+        && sigil == b'$'
+        && let Some(ref tc) = type_constraint
+    {
+        // ::?CLASS / ::?ROLE resolve via the compile-time variable, not as a bare word
+        if tc == "::?CLASS" {
+            default = Some(Expr::Var("?CLASS".to_string()));
+        } else if tc == "::?ROLE" {
+            default = Some(Expr::Var("?ROLE".to_string()));
+        } else {
+            default = Some(Expr::BareWord(tc.clone()));
+        }
+    }
+
     if sigil == b'@' {
         if let Some(dims) = shape_dims {
             // Shaped array attribute: has @.a[3, 3]
@@ -2613,6 +2726,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             is_rw,
             is_readonly,
             type_constraint,
+            type_smiley,
             is_required,
             sigil: sigil as char,
             where_constraint,
