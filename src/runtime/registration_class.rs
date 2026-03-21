@@ -1674,6 +1674,56 @@ impl Interpreter {
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
         self.clear_private_zeroarg_method_cache();
+
+        // Check for our-scoped declarations inside the role body.
+        // In Raku, class/subset/enum/constant/role are implicitly our-scoped,
+        // and explicit `our sub/method/variable` are also forbidden inside roles.
+        let check_body: Vec<&Stmt> = body
+            .iter()
+            .flat_map(|s| match s {
+                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
+                other => vec![other],
+            })
+            .collect();
+        for stmt in &check_body {
+            let declaration = match stmt {
+                Stmt::ClassDecl { .. } => Some("class"),
+                Stmt::SubsetDecl { .. } => Some("subset"),
+                Stmt::EnumDecl { .. } => Some("enum"),
+                Stmt::RoleDecl { .. } => Some("role"),
+                Stmt::VarDecl {
+                    is_our: true,
+                    custom_traits,
+                    ..
+                } => {
+                    if custom_traits.iter().any(|(t, _)| t == "__constant") {
+                        Some("constant")
+                    } else {
+                        Some("variable")
+                    }
+                }
+                Stmt::SubDecl { custom_traits, .. }
+                    if custom_traits.iter().any(|t| t == "__our_scoped") =>
+                {
+                    Some("sub")
+                }
+                Stmt::MethodDecl { is_our: true, .. } => Some("method"),
+                _ => None,
+            };
+            if let Some(decl) = declaration {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("declaration".to_string(), Value::str(decl.to_string()));
+                attrs.insert(
+                    "message".to_string(),
+                    Value::str(format!(
+                        "Cannot declare our-scoped {} inside of a role",
+                        decl
+                    )),
+                );
+                return Err(RuntimeError::typed("X::Declaration::OurScopeInRole", attrs));
+            }
+        }
+
         // Clean up stale punned class entry for this role name.
         self.classes.remove(name);
         self.hidden_classes.remove(name);
