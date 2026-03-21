@@ -343,18 +343,53 @@ impl Interpreter {
         updated: std::collections::HashMap<String, Value>,
     ) {
         for bound in self.env.values_mut() {
-            let should_replace = match bound {
-                Value::Instance {
-                    class_name: existing_class,
-                    id: existing_id,
-                    ..
-                } => existing_class == class_name && *existing_id == id,
-                _ => false,
-            };
-            if should_replace {
-                *bound =
+            Self::overwrite_instance_recursive(bound, class_name, id, &updated);
+        }
+    }
+
+    /// Recursively update all occurrences of an instance (identified by class_name + id)
+    /// in a value tree. This handles instances stored as attributes of other instances.
+    fn overwrite_instance_recursive(
+        value: &mut Value,
+        class_name: &str,
+        id: u64,
+        updated: &std::collections::HashMap<String, Value>,
+    ) {
+        match value {
+            Value::Instance {
+                class_name: existing_class,
+                id: existing_id,
+                ..
+            } if existing_class.resolve() == class_name && *existing_id == id => {
+                *value =
                     Value::make_instance_with_id(Symbol::intern(class_name), updated.clone(), id);
             }
+            Value::Instance {
+                attributes,
+                id: this_id,
+                class_name: this_class,
+                ..
+            } => {
+                // Recurse into this instance's attributes, but only if it's a different
+                // instance (avoid infinite recursion on self-referential structures).
+                let this_id_val = *this_id;
+                if this_id_val != id {
+                    // Check if any attribute contains the target instance
+                    let has_target = attributes.values().any(|v| {
+                        matches!(v, Value::Instance { class_name: cn, id: vid, .. }
+                            if cn.resolve() == class_name && *vid == id)
+                    });
+                    if has_target {
+                        let mut new_attrs: std::collections::HashMap<String, Value> =
+                            (**attributes).clone();
+                        for attr_val in new_attrs.values_mut() {
+                            Self::overwrite_instance_recursive(attr_val, class_name, id, updated);
+                        }
+                        *value = Value::make_instance_with_id(*this_class, new_attrs, this_id_val);
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
@@ -912,6 +947,7 @@ impl Interpreter {
         } else if method_args.is_empty() {
             let class_attrs = self.collect_class_attributes(&class_name.resolve());
             let mut found_public_rw = false;
+            let mut attr_sigil = '$';
             for (attr_name, is_public, _default, is_rw, _is_required, sigil, ..) in &class_attrs {
                 if attr_name == method && *is_public {
                     // @ and % attributes are containers whose elements are always writable
@@ -923,13 +959,17 @@ impl Interpreter {
                         )));
                     }
                     found_public_rw = true;
+                    attr_sigil = *sigil;
                     break;
                 }
             }
             if found_public_rw {
-                // Check type constraint on the attribute before assignment
-                if let Some(type_constraint) =
-                    self.get_attr_type_constraint(&class_name.resolve(), method)
+                // Check type constraint on the attribute before assignment.
+                // For @ and % attributes, the type constraint applies to elements/values,
+                // not to the container itself, so skip the container-level check.
+                if attr_sigil == '$'
+                    && let Some(type_constraint) =
+                        self.get_attr_type_constraint(&class_name.resolve(), method)
                     && !self.type_matches_value(&type_constraint, &value)
                 {
                     return Err(RuntimeError::new(format!(

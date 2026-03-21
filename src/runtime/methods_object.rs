@@ -27,6 +27,10 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // Calling .new() on an instance delegates to the class constructor
+        if let Value::Instance { class_name, .. } = &target {
+            return self.dispatch_new(Value::Package(*class_name), args);
+        }
         if let Value::Str(ref name) = target
             && self.enum_types.contains_key(name.as_str())
         {
@@ -1893,8 +1897,46 @@ impl Interpreter {
                         Self::coerce_attr_value_by_sigil(val, sigil)
                     } else {
                         match sigil {
-                            '@' => Value::real_array(Vec::new()),
-                            '%' => Value::hash(HashMap::new()),
+                            '@' => {
+                                let arr = Value::real_array(Vec::new());
+                                // Register element type constraint for typed array attributes
+                                if let Some(tc) = self
+                                    .classes
+                                    .get(class_key)
+                                    .and_then(|cd| cd.attribute_types.get(&attr_name))
+                                    .cloned()
+                                {
+                                    self.register_container_type_metadata(
+                                        &arr,
+                                        super::ContainerTypeInfo {
+                                            value_type: tc,
+                                            key_type: None,
+                                            declared_type: None,
+                                        },
+                                    );
+                                }
+                                arr
+                            }
+                            '%' => {
+                                let h = Value::hash(HashMap::new());
+                                // Register value type constraint for typed hash attributes
+                                if let Some(tc) = self
+                                    .classes
+                                    .get(class_key)
+                                    .and_then(|cd| cd.attribute_types.get(&attr_name))
+                                    .cloned()
+                                {
+                                    self.register_container_type_metadata(
+                                        &h,
+                                        super::ContainerTypeInfo {
+                                            value_type: tc,
+                                            key_type: None,
+                                            declared_type: None,
+                                        },
+                                    );
+                                }
+                                h
+                            }
                             _ => Value::Nil,
                         }
                     };

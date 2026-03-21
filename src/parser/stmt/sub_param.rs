@@ -101,8 +101,13 @@ fn parse_required_suffix(input: &str) -> (&str, bool, bool) {
 }
 
 pub(super) fn parse_type_constraint_expr(input: &str) -> Option<(&str, String)> {
+    // Handle ::?CLASS and ::?ROLE pseudo-types
+    let (mut rest, mut type_name) = if let Some(r) = input.strip_prefix("::?CLASS") {
+        (r, "::?CLASS".to_string())
+    } else if let Some(r) = input.strip_prefix("::?ROLE") {
+        (r, "::?ROLE".to_string())
     // Handle type capture variables like `::a` (e.g., `my ::a $a`)
-    let (mut rest, mut type_name) = if input.starts_with("::")
+    } else if input.starts_with("::")
         && input[2..]
             .chars()
             .next()

@@ -2523,10 +2523,17 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             (rest, Vec::new())
         };
         let target_name = type_constraint.clone().unwrap_or_else(|| name.clone());
+        let target_expr = if target_name == "::?CLASS" {
+            Expr::Var("?CLASS".to_string())
+        } else if target_name == "::?ROLE" {
+            Expr::Var("?ROLE".to_string())
+        } else {
+            Expr::BareWord(target_name)
+        };
         (
             rest,
             Some(Expr::MethodCall {
-                target: Box::new(Expr::BareWord(target_name)),
+                target: Box::new(target_expr),
                 name: Symbol::intern(&method_name),
                 args,
                 modifier: None,
@@ -2560,7 +2567,14 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         // But not when `is required` — the attribute must be explicitly provided
         // For @ and % sigils, the type constraint is an element type, not the
         // container type, so we don't set a default (empty container is used).
-        (rest, Some(Expr::BareWord(tc.clone())))
+        // ::?CLASS / ::?ROLE resolve via the compile-time variable, not as a bare word
+        if tc == "::?CLASS" {
+            (rest, Some(Expr::Var("?CLASS".to_string())))
+        } else if tc == "::?ROLE" {
+            (rest, Some(Expr::Var("?ROLE".to_string())))
+        } else {
+            (rest, Some(Expr::BareWord(tc.clone())))
+        }
     } else if let Some(default_expr) = is_default_trait {
         // `is default(expr)` was used — apply it as the default value
         (rest, Some(default_expr))
