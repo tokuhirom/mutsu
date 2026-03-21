@@ -580,6 +580,21 @@ impl Compiler {
                 // vs bare values (literals, method returns, type objects) so the VM
                 // can distinguish "same container" from "same value".
                 if matches!(op, TokenKind::Ident(name) if name == "=:=") {
+                    // When both operands are named variables, use the named
+                    // variant so the VM can check the alias table.
+                    if let (Expr::Var(left_name), Expr::Var(right_name)) =
+                        (left.as_ref(), right.as_ref())
+                    {
+                        self.compile_expr(left);
+                        self.compile_expr(right);
+                        let left_idx = self.code.add_constant(Value::str(left_name.clone()));
+                        let right_idx = self.code.add_constant(Value::str(right_name.clone()));
+                        self.code.emit(OpCode::ContainerEqNamed {
+                            left_name_idx: left_idx,
+                            right_name_idx: right_idx,
+                        });
+                        return;
+                    }
                     let left_fresh = Self::expr_is_fresh_container(left);
                     let right_fresh = Self::expr_is_fresh_container(right);
                     let flags = (if left_fresh { 1u8 } else { 0u8 })
@@ -2297,6 +2312,14 @@ impl Compiler {
                     // Sigilless var declarations (VarDecl + MarkSigillessReadonly)
                     // should NOT isolate scope — the variable must be visible in
                     // the enclosing scope.
+                    self.compile_block_inline(inner);
+                }
+                Stmt::SyntheticBlock(inner)
+                    if inner.iter().any(|s| matches!(s, Stmt::MarkBind)) =>
+                {
+                    // `:=` bind declarations (MarkBind + VarDecl) should NOT
+                    // isolate scope — the variable must be visible in the
+                    // enclosing scope (e.g. loop conditions with inline decl).
                     self.compile_block_inline(inner);
                 }
                 Stmt::SyntheticBlock(inner) => {

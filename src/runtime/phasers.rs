@@ -64,7 +64,8 @@ fn flatten_synthetic_blocks(stmts: &mut Vec<Stmt>) {
                     if name.resolve() == "__mutsu_record_bound_array_len"
                 )
             });
-            if has_mark_readonly || has_bound_array {
+            let has_mark_bind = inner.iter().any(|s| matches!(s, Stmt::MarkBind));
+            if has_mark_readonly || has_bound_array || has_mark_bind {
                 stmts.push(stmt);
             } else if let Stmt::SyntheticBlock(inner) = stmt {
                 stmts.extend(inner);

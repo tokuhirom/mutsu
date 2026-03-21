@@ -70,6 +70,14 @@ pub(crate) enum OpCode {
     /// non-reference values on the stack can never be the same container,
     /// so the operator returns False for non-Arc value types.
     ContainerEq(u8),
+    /// Container identity (`=:=`) when both operands are named variables.
+    /// The VM checks the alias table to see if the two variable names
+    /// resolve to the same binding root.  Falls back to `values_identical`
+    /// for reference types (Array, Hash, Sub, Instance, …).
+    ContainerEqNamed {
+        left_name_idx: u32,
+        right_name_idx: u32,
+    },
 
     // -- String comparison --
     StrEq,

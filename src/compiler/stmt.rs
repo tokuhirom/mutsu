@@ -254,6 +254,8 @@ impl Compiler {
                         if name.resolve() == "__mutsu_record_bound_array_len"
                     )
                 });
+                // Detect `:=` bind context for scalar variables via MarkBind.
+                let has_mark_bind = stmts.iter().any(|s| matches!(s, Stmt::MarkBind));
                 // Collect sigilless readonly names so we can clear the flag
                 // before the VarDecl assignment (allows re-declaration in loops).
                 let sigilless_readonly_names: Vec<String> = stmts
@@ -271,6 +273,9 @@ impl Compiler {
                         && let Stmt::VarDecl { name, .. } = s
                         && name.starts_with('@')
                     {
+                        self.bind_vardecl = true;
+                    }
+                    if has_mark_bind && matches!(s, Stmt::VarDecl { .. }) {
                         self.bind_vardecl = true;
                     }
                     // Before compiling a VarDecl that will be followed by
@@ -291,6 +296,9 @@ impl Compiler {
             Stmt::MarkReadonly(name) => {
                 let idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::MarkVarReadonly(idx));
+            }
+            Stmt::MarkBind => {
+                // Handled by SyntheticBlock detection; no-op when compiled standalone.
             }
             Stmt::MarkSigillessReadonly(name) => {
                 // Set __mutsu_sigilless_readonly::NAME = true in env
@@ -382,7 +390,14 @@ impl Compiler {
                 } else {
                     None
                 };
-                self.compile_assignment_rhs_for_target(name, expr);
+                if self.bind_vardecl && !name.starts_with('@') && !name.starts_with('%') {
+                    // `:=` binding for scalar VarDecl: use compile_call_arg
+                    // so WrapVarRef is emitted and the VM can set up aliases.
+                    self.bind_vardecl = false;
+                    self.compile_call_arg(expr);
+                } else {
+                    self.compile_assignment_rhs_for_target(name, expr);
+                }
                 // Skip TypeCheck for hash declarations: the type constraint
                 // applies to element values, not to the collection itself.
                 // TODO: enforce per-element type constraints at assignment time.
@@ -526,9 +541,12 @@ impl Compiler {
                     self.code.emit(OpCode::Die);
                     return;
                 }
-                // Emit readonly check for assignment to potentially readonly params
+                // Emit readonly check for assignment to potentially readonly params.
+                // Skip the check for `:=` (rebinding replaces the container).
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
-                self.code.emit(OpCode::CheckReadOnly(name_idx));
+                if !matches!(op, AssignOp::Bind) {
+                    self.code.emit(OpCode::CheckReadOnly(name_idx));
+                }
                 if matches!(op, AssignOp::Bind) {
                     if name.starts_with('@') {
                         self.code.emit(OpCode::MarkBindContext);
