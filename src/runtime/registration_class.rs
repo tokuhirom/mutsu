@@ -536,6 +536,14 @@ impl Interpreter {
             && matches!(&body[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
                 if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn");
 
+        // If this is a stub registration but the class already exists and is
+        // NOT a stub (i.e., it was already filled in by a hoisted real
+        // declaration), skip the stub registration to avoid overwriting the
+        // real class definition.
+        if is_stub_body && self.classes.contains_key(name) && !self.class_stubs.contains(name) {
+            return Ok(());
+        }
+
         // Validate that all parent classes exist
         // Allow inheriting from built-in types that may not be in the classes HashMap
         const BUILTIN_TYPES: &[&str] = &[
