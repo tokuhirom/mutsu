@@ -769,6 +769,14 @@ impl Compiler {
         // share the same variable name.
         let closure_id = STATE_COUNTER.fetch_add(1, Ordering::Relaxed);
         let closure_package = format!("{}::&<closure>/{}", self.current_package, closure_id);
+        // Preserve the enclosing package for $?PACKAGE resolution.
+        // If the parent already has an enclosing_package, propagate it;
+        // otherwise use the parent's current_package.
+        sub_compiler.enclosing_package = Some(
+            self.enclosing_package
+                .clone()
+                .unwrap_or_else(|| self.current_package.clone()),
+        );
         sub_compiler.set_current_package(closure_package);
         // Pre-allocate locals for parameters
         for param in params {

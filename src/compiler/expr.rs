@@ -117,9 +117,11 @@ impl Compiler {
                 }
                 // Compile-time package/module variables
                 else if name == "?PACKAGE" || name == "?MODULE" {
-                    let idx = self
-                        .code
-                        .add_constant(Value::Package(Symbol::intern(&self.current_package)));
+                    let pkg = self
+                        .enclosing_package
+                        .as_deref()
+                        .unwrap_or(&self.current_package);
+                    let idx = self.code.add_constant(Value::Package(Symbol::intern(pkg)));
                     self.code.emit(OpCode::LoadConst(idx));
                 } else if name == "?CLASS" || name == "?ROLE" {
                     // ::?CLASS / ::?ROLE resolves at runtime from env

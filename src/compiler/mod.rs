@@ -19,6 +19,10 @@ pub(crate) struct Compiler {
     local_types: HashMap<String, String>,
     compiled_functions: HashMap<String, CompiledFunction>,
     current_package: String,
+    /// The enclosing package name before closure mangling. Used for `$?PACKAGE`
+    /// so that methods inside a class report the class name, not the internal
+    /// closure package name.
+    enclosing_package: Option<String>,
     tmp_counter: usize,
     dynamic_scope_all: bool,
     dynamic_scope_names: Option<std::collections::HashSet<String>>,
@@ -39,6 +43,7 @@ impl Compiler {
             local_types: HashMap::new(),
             compiled_functions: HashMap::new(),
             current_package: "GLOBAL".to_string(),
+            enclosing_package: None,
             tmp_counter: 0,
             dynamic_scope_all: false,
             dynamic_scope_names: None,

@@ -703,7 +703,10 @@ impl VM {
                 name.resolve()
             };
             let current_package = self.interpreter.current_package().to_string();
-            let qualified_name = if resolved_name.contains("::")
+            let qualified_name = if let Some(stripped) = resolved_name.strip_prefix("GLOBAL::") {
+                // `class GLOBAL::Foo` declares Foo in the global namespace
+                stripped.to_string()
+            } else if resolved_name.contains("::")
                 || current_package == "GLOBAL"
                 || resolved_name == current_package
             {
