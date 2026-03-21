@@ -2976,7 +2976,7 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export,
                 export_tags: export_tags.clone(),
-                custom_traits: Vec::new(),
+                custom_traits: vec![("__constant".to_string(), None)],
                 where_constraint: None,
             },
         ));
@@ -2993,7 +2993,7 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
             is_dynamic: false,
             is_export,
             export_tags,
-            custom_traits: Vec::new(),
+            custom_traits: vec![("__constant".to_string(), None)],
             where_constraint: None,
         },
     ))

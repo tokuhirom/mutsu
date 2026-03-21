@@ -453,6 +453,10 @@ impl Compiler {
                         .emit(OpCode::RegisterVarExport { name_idx, tags_idx });
                 }
                 for (trait_name, trait_arg) in custom_traits {
+                    // Skip internal markers (not real traits)
+                    if trait_name.starts_with("__") {
+                        continue;
+                    }
                     if let Some(arg) = trait_arg {
                         self.compile_expr(arg);
                     }
