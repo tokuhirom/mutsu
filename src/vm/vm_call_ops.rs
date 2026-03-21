@@ -1265,7 +1265,8 @@ impl VM {
         // Detect calls on undeclared type names: when a BareWord resolved to a Str
         // (because the name wasn't a known type/class), and .new() is called on it,
         // this means the user tried to instantiate a nonexistent class.
-        if let Value::Str(s) = &target
+        if method == "new"
+            && let Value::Str(s) = &target
             && **s == target_name
             && target_name
                 .chars()
