@@ -428,6 +428,8 @@ impl Interpreter {
             "__mutsu_reverse_andthen" => self.builtin_reverse_andthen(&args),
             "__mutsu_andthen_finalize" => self.builtin_andthen_finalize(&args),
             "__mutsu_cross_shortcircuit" => self.builtin_cross_shortcircuit(&args),
+            "__mutsu_zip_shortcircuit" => self.builtin_zip_shortcircuit(&args),
+            "__mutsu_zip_xx" => self.builtin_zip_xx(&args),
             "__mutsu_bind_index_value" => Ok(Value::Pair(
                 "__mutsu_bind_index_value".to_string(),
                 Box::new(Value::Array(
@@ -2374,6 +2376,88 @@ impl Interpreter {
             }
         }
         Ok(Value::array(out))
+    }
+
+    /// Zip with short-circuit semantics for and/&&/or/||/andthen/orelse.
+    /// Args: [op_name, left_list, right_thunk]
+    /// The right thunk is only evaluated per-element when the operator needs it.
+    fn builtin_zip_shortcircuit(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() != 3 {
+            return Err(RuntimeError::new(
+                "__mutsu_zip_shortcircuit expects op, lhs, thunk",
+            ));
+        }
+        let op = args[0].to_string_value();
+        // For zip, treat scalars (including Nil) as single-element lists
+        let left_values = if matches!(args[1], Value::Nil) {
+            vec![Value::Nil]
+        } else {
+            let list = crate::runtime::value_to_list(&args[1]);
+            if list.is_empty() {
+                vec![args[1].clone()]
+            } else {
+                list
+            }
+        };
+        let thunk = args[2].clone();
+        let mut out = Vec::new();
+        for left in left_values {
+            let needs_rhs = match op.as_str() {
+                "and" | "&&" => left.truthy(),
+                "or" | "||" => !left.truthy(),
+                "andthen" => crate::runtime::types::value_is_defined(&left),
+                "orelse" => !crate::runtime::types::value_is_defined(&left),
+                _ => false,
+            };
+            if !needs_rhs {
+                out.push(left);
+                continue;
+            }
+            let rhs_value = if op == "andthen" || op == "orelse" {
+                let saved_topic = self.env.get("_").cloned();
+                self.env.insert("_".to_string(), left.clone());
+                let result = self.eval_call_on_value(thunk.clone(), Vec::new());
+                match saved_topic {
+                    Some(value) => {
+                        self.env.insert("_".to_string(), value);
+                    }
+                    None => {
+                        self.env.remove("_");
+                    }
+                }
+                result?
+            } else {
+                self.eval_call_on_value(thunk.clone(), Vec::new())?
+            };
+            // The thunk returns a list; zip pairs elements 1:1
+            let rhs_items = crate::runtime::value_to_list(&rhs_value);
+            // Take the first element from the thunked result (zip is 1:1)
+            out.push(rhs_items.into_iter().next().unwrap_or(Value::Nil));
+        }
+        Ok(Value::array(out))
+    }
+
+    /// Zip xx with thunked left side: ($thunk,) Zxx (counts,)
+    /// Args: [right_list, left_thunk]
+    /// The left thunk is evaluated per-element, repeated `count` times.
+    fn builtin_zip_xx(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() != 2 {
+            return Err(RuntimeError::new(
+                "__mutsu_zip_xx expects right_list and left_thunk",
+            ));
+        }
+        let right_values = crate::runtime::value_to_list(&args[0]);
+        let thunk = args[1].clone();
+        let mut out = Vec::new();
+        for count_val in right_values {
+            let count = crate::runtime::to_int(&count_val);
+            for _ in 0..count {
+                let val = self.eval_call_on_value(thunk.clone(), Vec::new())?;
+                let items = crate::runtime::value_to_list(&val);
+                out.push(items.into_iter().next().unwrap_or(Value::Nil));
+            }
+        }
+        Ok(Value::Seq(std::sync::Arc::new(out)))
     }
 
     fn sub_call_args_from_value(arg: Option<&Value>) -> Vec<Value> {

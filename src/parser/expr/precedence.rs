@@ -937,6 +937,20 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
                 r,
             ));
         }
+        if r.starts_with("Z.") && !r.starts_with("Z..") {
+            let after = &r[2..];
+            let after_trimmed = after.trim_start();
+            if after_trimmed.starts_with('"') || after_trimmed.starts_with('\'') {
+                return Err(PError::expected_at(
+                    "X::Obsolete: Perl . is dead. Please use ~ to concatenate strings.",
+                    r,
+                ));
+            }
+            return Err(PError::expected_at(
+                "X::Syntax::CannotMeta: Cannot do . because it is too fiddly",
+                r,
+            ));
+        }
         // Infixed function call: [&func], R[&func], X[&func], Z[&func]
         if let Some((modifier, name, len)) = parse_infix_func_op(r) {
             let r = &r[len..];
@@ -1787,6 +1801,21 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     }
     // Detect X. metaop misuse.
     if r.starts_with("X.") && !r.starts_with("X..") {
+        let after = &r[2..];
+        let after_trimmed = after.trim_start();
+        if after_trimmed.starts_with('"') || after_trimmed.starts_with('\'') {
+            return Err(PError::expected_at(
+                "X::Obsolete: Perl . is dead. Please use ~ to concatenate strings.",
+                r,
+            ));
+        }
+        return Err(PError::expected_at(
+            "X::Syntax::CannotMeta: Cannot do . because it is too fiddly",
+            r,
+        ));
+    }
+    // Detect Z. metaop misuse.
+    if r.starts_with("Z.") && !r.starts_with("Z..") {
         let after = &r[2..];
         let after_trimmed = after.trim_start();
         if after_trimmed.starts_with('"') || after_trimmed.starts_with('\'') {

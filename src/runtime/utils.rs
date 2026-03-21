@@ -794,8 +794,10 @@ pub(crate) fn reduction_identity(op: &str) -> Value {
         // Set operators
         "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖" => Value::set(HashSet::new()),
         "(.)" | "⊍" | "(+)" | "⊎" => Value::bag(HashMap::new()),
-        // Comma/zip: empty list
-        "," | "Z" => Value::Array(std::sync::Arc::new(Vec::new()), ArrayKind::List),
+        // Comma: empty list
+        "," => Value::Array(std::sync::Arc::new(Vec::new()), ArrayKind::List),
+        // Zip: empty Seq (Raku returns a Seq for arity-0 Z)
+        "Z" => Value::Seq(std::sync::Arc::new(Vec::new())),
         _ => {
             // Hyper operator forms: >>op<<, >>op>>, <<op<<, <<op>>
             if let Some(inner) = strip_hyper_delimiters_for_identity(op) {

@@ -1224,17 +1224,47 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
         }
         "zip" => {
             // zip([@a], [@b], ...) — interleave elements from each list
-            let lists: Vec<Vec<Value>> = args.iter().map(runtime::value_to_list).collect();
+            // zip takes a single list-of-lists argument; each sub-list is a
+            // "column" and zip transposes them into rows.
+            let is_lazy_input =
+                |v: &Value| -> bool { matches!(v, Value::LazyList(_)) || is_infinite_range(v) };
+            let (raw_inputs, single_arg) = if args.len() == 1 {
+                (runtime::value_to_list(&args[0]), true)
+            } else {
+                (args.to_vec(), false)
+            };
+            let all_lazy = if single_arg {
+                // For single-arg zip, check if all sub-lists are lazy
+                raw_inputs.iter().all(is_lazy_input)
+            } else {
+                args.iter().all(is_lazy_input)
+            };
+            let lists: Vec<Vec<Value>> = raw_inputs
+                .iter()
+                .map(runtime::value_to_list)
+                .collect();
             if lists.is_empty() {
-                return Some(Ok(Value::array(vec![])));
+                return Some(Ok(Value::Seq(std::sync::Arc::new(vec![]))));
             }
-            let min_len = lists.iter().map(|l| l.len()).min().unwrap_or(0);
+            let max_expand: usize = 1_000;
+            let min_len = lists
+                .iter()
+                .map(|l| l.len())
+                .min()
+                .unwrap_or(0)
+                .min(max_expand);
             let mut result = Vec::with_capacity(min_len);
             for i in 0..min_len {
                 let row: Vec<Value> = lists.iter().map(|l| l[i].clone()).collect();
                 result.push(Value::array(row));
             }
-            Some(Ok(Value::array(result)))
+            if all_lazy {
+                Some(Ok(Value::LazyList(std::sync::Arc::new(
+                    crate::value::LazyList::new_cached(result),
+                ))))
+            } else {
+                Some(Ok(Value::array(result)))
+            }
         }
         "flat" => {
             if args.len() == 1 && is_infinite_range(&args[0]) {

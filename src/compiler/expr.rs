@@ -1972,6 +1972,41 @@ impl Compiler {
                     self.compile_expr(&rewritten);
                     return;
                 }
+                // Z with short-circuit operators: thunk the right side
+                if meta == "Z"
+                    && matches!(
+                        op.as_str(),
+                        "and" | "&&" | "or" | "||" | "andthen" | "orelse"
+                    )
+                {
+                    let thunked = Expr::AnonSub {
+                        body: vec![Stmt::Expr(right.as_ref().clone())],
+                        is_rw: false,
+                    };
+                    let rewritten = Expr::Call {
+                        name: Symbol::intern("__mutsu_zip_shortcircuit"),
+                        args: vec![
+                            Expr::Literal(Value::str(op.clone())),
+                            left.as_ref().clone(),
+                            thunked,
+                        ],
+                    };
+                    self.compile_expr(&rewritten);
+                    return;
+                }
+                // Zxx with list left side: thunk the left side
+                if meta == "Z" && op == "xx" && matches!(left.as_ref(), Expr::ArrayLiteral(_)) {
+                    let thunked = Expr::AnonSub {
+                        body: vec![Stmt::Expr(left.as_ref().clone())],
+                        is_rw: false,
+                    };
+                    let rewritten = Expr::Call {
+                        name: Symbol::intern("__mutsu_zip_xx"),
+                        args: vec![right.as_ref().clone(), thunked],
+                    };
+                    self.compile_expr(&rewritten);
+                    return;
+                }
                 if meta == "R" {
                     // R-meta can stack (RRop, RRRop, ...). Normalize to base operator and parity.
                     let mut base = op.as_str();
