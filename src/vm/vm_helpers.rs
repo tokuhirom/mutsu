@@ -1744,6 +1744,65 @@ impl VM {
         }
     }
 
+    /// Find the first positional argument that is a Junction and whose corresponding
+    /// parameter type constraint does not accept Junction (i.e., needs auto-threading).
+    /// Returns the index of that argument, or None if no auto-threading is needed.
+    fn find_junction_autothread_arg(
+        &self,
+        data: &crate::value::SubData,
+        args: &[Value],
+    ) -> Option<usize> {
+        // Collect positional param_defs (skip named)
+        let positional_params: Vec<&crate::ast::ParamDef> = data
+            .param_defs
+            .iter()
+            .filter(|pd| !pd.named && !pd.slurpy && !pd.double_slurpy)
+            .collect();
+
+        // Also filter out named args from the args list to get positional args
+        let mut positional_idx = 0usize;
+        for (i, arg) in args.iter().enumerate() {
+            // Skip named args (pairs where key matches a named param)
+            if let Value::Pair(_, _) = arg {
+                // Check if this is a named argument
+                let is_named = data.param_defs.iter().any(|pd| {
+                    pd.named
+                        && if let Value::Pair(key, _) = arg {
+                            pd.name.trim_start_matches('$').trim_start_matches(':') == key.as_str()
+                        } else {
+                            false
+                        }
+                });
+                if is_named {
+                    continue;
+                }
+            }
+
+            if let Value::Junction { .. } = arg {
+                // Check if the corresponding param accepts Junction
+                if let Some(pd) = positional_params.get(positional_idx) {
+                    let constraint = pd.type_constraint.as_deref().unwrap_or(
+                        if pd.name.starts_with('$') || pd.name.is_empty() {
+                            "Any" // implicit Any for $-sigiled params
+                        } else {
+                            "Mu" // no constraint for other sigils
+                        },
+                    );
+                    // Mu and Junction accept junctions directly
+                    if constraint != "Mu" && constraint != "Junction" {
+                        return Some(i);
+                    }
+                }
+                // If no param_def found (extra args), implicit Any rejects Junction
+                else if positional_idx >= positional_params.len() {
+                    // Slurpy or extra - don't auto-thread
+                }
+            }
+            positional_idx += 1;
+        }
+        None
+    }
+
     /// Call a compiled closure (Value::Sub with compiled_code).
     pub(super) fn call_compiled_closure(
         &mut self,
@@ -1788,6 +1847,29 @@ impl VM {
                 positional.push(Value::Pair(key, Box::new(value)));
             }
             args = positional;
+        }
+
+        // Junction auto-threading: if any positional argument is a Junction and the
+        // corresponding parameter's type constraint does not accept Junction (i.e., is
+        // not Mu or Junction), call the closure once per eigenvalue and collect results
+        // into a new Junction of the same kind.
+        if let Some(junction_idx) = self.find_junction_autothread_arg(data, &args)
+            && let Value::Junction { kind, values } = &args[junction_idx]
+        {
+            let kind = kind.clone();
+            let values = values.clone();
+            let mut results = Vec::with_capacity(values.len());
+            for eigenvalue in values.iter() {
+                let mut threaded_args = args.clone();
+                threaded_args[junction_idx] = eigenvalue.clone();
+                results.push(self.call_compiled_closure(
+                    data,
+                    cc,
+                    threaded_args,
+                    compiled_fns,
+                )?);
+            }
+            return Ok(Value::junction(kind, results));
         }
 
         self.push_call_frame();
