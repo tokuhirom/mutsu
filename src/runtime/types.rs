@@ -1336,6 +1336,11 @@ impl Interpreter {
         self.variables_pragma = smiley.to_string();
     }
 
+    pub(crate) fn set_attributes_pragma(&mut self, smiley: &str) {
+        // smiley is ":D", ":U", ":_", or empty
+        self.attributes_pragma = smiley.to_string();
+    }
+
     /// Apply the `use variables` pragma to a type constraint.
     /// If the constraint has no explicit smiley and the pragma is active,
     /// append the pragma smiley (e.g., `Int` → `Int:D` when `use variables :D`).

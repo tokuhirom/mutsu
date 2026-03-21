@@ -1383,6 +1383,17 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::str("variables".to_string()));
                 self.code.emit(OpCode::SetPragma(name_idx));
             }
+            Stmt::Use { module, arg } if module == "attributes" => {
+                // `use attributes :D/:U/:_` pragma — emit a SetPragma opcode
+                if let Some(arg_expr) = arg {
+                    self.compile_expr(arg_expr);
+                } else {
+                    let nil_idx = self.code.add_constant(Value::Nil);
+                    self.code.emit(OpCode::LoadConst(nil_idx));
+                }
+                let name_idx = self.code.add_constant(Value::str("attributes".to_string()));
+                self.code.emit(OpCode::SetPragma(name_idx));
+            }
             Stmt::Use { module, .. }
                 if module == "v6"
                     || module == "customtrait"

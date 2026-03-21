@@ -678,6 +678,7 @@ impl Interpreter {
             parents: parents.to_vec(),
             attributes: Vec::new(),
             attribute_types: HashMap::new(),
+            attribute_smileys: HashMap::new(),
             methods: HashMap::new(),
             native_methods: HashSet::new(),
             mro: Vec::new(),
@@ -972,6 +973,7 @@ impl Interpreter {
                     parents: punned_class_parents,
                     attributes: Vec::new(),
                     attribute_types: HashMap::new(),
+                    attribute_smileys: HashMap::new(),
                     methods: HashMap::new(),
                     native_methods: HashSet::new(),
                     mro: Vec::new(),
@@ -1125,6 +1127,7 @@ impl Interpreter {
                     is_rw,
                     is_readonly,
                     type_constraint,
+                    type_smiley,
                     is_required,
                     sigil,
                     where_constraint,
@@ -1181,6 +1184,11 @@ impl Interpreter {
                         class_def
                             .attribute_types
                             .insert(attr_name_str.clone(), resolved_tc);
+                    }
+                    if let Some(ts) = type_smiley {
+                        class_def
+                            .attribute_smileys
+                            .insert(attr_name_str.clone(), ts.clone());
                     }
                     let attr_var_name = if *is_public {
                         format!(".{}", attr_name_str)
@@ -1614,6 +1622,7 @@ impl Interpreter {
                     is_rw,
                     is_readonly: _,
                     type_constraint,
+                    type_smiley: _,
                     is_required,
                     sigil,
                     handles,
@@ -1757,6 +1766,7 @@ impl Interpreter {
                     is_rw,
                     is_readonly: _,
                     type_constraint: _,
+                    type_smiley: _,
                     is_required,
                     sigil,
                     where_constraint,
@@ -2224,6 +2234,7 @@ impl Interpreter {
             parents: Vec::new(),
             attributes: all_attributes,
             attribute_types: HashMap::new(),
+            attribute_smileys: HashMap::new(),
             methods: all_methods,
             native_methods: HashSet::new(),
             mro: vec![role_name.to_string(), "Any".to_string(), "Mu".to_string()],

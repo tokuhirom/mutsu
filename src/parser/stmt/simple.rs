@@ -63,6 +63,9 @@ thread_local! {
     /// Imported function names to pre-register after scope reset (for EVAL).
     static EVAL_IMPORTED_FUNCTION_PRESEED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     static CURRENT_LANGUAGE_VERSION: RefCell<String> = RefCell::new("6.e".to_string());
+    /// `use attributes :D/:U/:_` pragma — tracks the smiley to apply to unsmileyed attribute types.
+    /// Empty string means no pragma active.
+    static ATTRIBUTES_PRAGMA: RefCell<String> = const { RefCell::new(String::new()) };
 }
 
 pub(super) static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -437,6 +440,16 @@ pub(in crate::parser) fn set_current_language_version(version: &str) {
 
 pub(crate) fn current_language_version() -> String {
     CURRENT_LANGUAGE_VERSION.with(|v| v.borrow().clone())
+}
+
+pub(in crate::parser) fn set_attributes_pragma(smiley: &str) {
+    ATTRIBUTES_PRAGMA.with(|v| {
+        *v.borrow_mut() = smiley.to_string();
+    });
+}
+
+pub(in crate::parser) fn current_attributes_pragma() -> String {
+    ATTRIBUTES_PRAGMA.with(|v| v.borrow().clone())
 }
 
 /// Set operator sub names to pre-register after scope reset (for EVAL).

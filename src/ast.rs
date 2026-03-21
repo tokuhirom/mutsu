@@ -605,6 +605,8 @@ pub(crate) enum Stmt {
         is_rw: bool,
         is_readonly: bool,
         type_constraint: Option<String>,
+        /// Type smiley: "D", "U", or "_" (from `Int:D`, `Int:U`, `Int:_`)
+        type_smiley: Option<String>,
         /// `is required` trait: None = not required, Some(None) = required,
         /// Some(Some(reason)) = required with reason string
         is_required: Option<Option<String>>,

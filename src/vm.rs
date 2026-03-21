@@ -2052,10 +2052,12 @@ impl VM {
             OpCode::SetPragma(name_idx) => {
                 let value = self.stack.pop().unwrap_or(Value::Nil);
                 let name = Self::const_str(code, *name_idx);
-                if name == "variables"
-                    && let Value::Str(ref s) = value
-                {
-                    self.interpreter.set_variables_pragma(s);
+                if let Value::Str(ref s) = value {
+                    if name == "variables" {
+                        self.interpreter.set_variables_pragma(s);
+                    } else if name == "attributes" {
+                        self.interpreter.set_attributes_pragma(s);
+                    }
                 }
                 *ip += 1;
             }
