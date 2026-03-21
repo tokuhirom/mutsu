@@ -444,9 +444,9 @@ impl VM {
     /// Increment a value, calling .succ() on Instance values with custom methods.
     pub(super) fn increment_value_smart(&mut self, val: &Value) -> Result<Value, RuntimeError> {
         if let Value::Instance { .. } = val
-            && let Ok(result) = self
-                .interpreter
-                .call_method_with_values(val.clone(), "succ", vec![])
+            && let Ok(result) =
+                self.interpreter
+                    .call_method_with_values(val.clone(), "succ", vec![])
         {
             return Ok(result);
         }
@@ -456,9 +456,9 @@ impl VM {
     /// Decrement a value, calling .pred() on Instance values with custom methods.
     pub(super) fn decrement_value_smart(&mut self, val: &Value) -> Result<Value, RuntimeError> {
         if let Value::Instance { .. } = val
-            && let Ok(result) = self
-                .interpreter
-                .call_method_with_values(val.clone(), "pred", vec![])
+            && let Ok(result) =
+                self.interpreter
+                    .call_method_with_values(val.clone(), "pred", vec![])
         {
             return Ok(result);
         }
