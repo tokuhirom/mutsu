@@ -1176,9 +1176,11 @@ impl Interpreter {
                         class_def.alias_attributes.insert(attr_name_str.clone());
                     }
                     if let Some(tc) = type_constraint {
+                        // Resolve ::?CLASS to the current class name
+                        let resolved_tc = tc.replace("::?CLASS", name);
                         class_def
                             .attribute_types
-                            .insert(attr_name_str.clone(), tc.clone());
+                            .insert(attr_name_str.clone(), resolved_tc);
                     }
                     let attr_var_name = if *is_public {
                         format!(".{}", attr_name_str)
