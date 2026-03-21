@@ -958,6 +958,7 @@ impl VM {
                 // materializing huge/infinite lists like 1..*.
                 let left_iter = ZipIter::from_value(&left);
                 let right_iter = ZipIter::from_value(&right);
+                let all_lazy = left_iter.is_lazy() && right_iter.is_lazy();
                 let len = left_iter.len().min(right_iter.len()).min(MAX_ZIP_EXPAND);
                 let mut results = Vec::new();
                 if op.is_empty() || op == "," {
@@ -1003,7 +1004,13 @@ impl VM {
                         }
                     }
                 }
-                Value::array(results)
+                if all_lazy {
+                    Value::LazyList(std::sync::Arc::new(crate::value::LazyList::new_cached(
+                        results,
+                    )))
+                } else {
+                    Value::array(results)
+                }
             }
             "!" => {
                 let inner = self.eval_reduction_operator_values(&op, &left, &right)?;
@@ -1479,6 +1486,8 @@ enum ZipIter {
         /// The last real element (before `*`), used for extension
         fill: Value,
     },
+    /// A lazy list (preserves laziness for is-lazy propagation)
+    Lazy(Vec<Value>),
 }
 
 impl ZipIter {
@@ -1521,6 +1530,11 @@ impl ZipIter {
             // Nil in zip context is a 1-element list (not empty), matching Raku behavior
             // where `Nil Z+ 2` yields `(2)` (Nil coerces to 0).
             Value::Nil => ZipIter::List(vec![Value::Nil]),
+            Value::LazyList(_) => {
+                let list = runtime::value_to_list(val);
+                let len = list.len().min(MAX_ZIP_EXPAND);
+                ZipIter::Lazy(list[..len].to_vec())
+            }
             _ => {
                 let list = runtime::value_to_list(val);
                 // Check for trailing Whatever (*) — extends the list by
@@ -1536,10 +1550,21 @@ impl ZipIter {
         }
     }
 
+    /// Returns true if this side represents an infinite / lazy source.
+    fn is_lazy(&self) -> bool {
+        match self {
+            ZipIter::IntRange { count, .. } | ZipIter::IntRangeExcl { count, .. } => {
+                *count >= MAX_ZIP_EXPAND
+            }
+            ZipIter::ExtendedList { .. } | ZipIter::Lazy(_) => true,
+            ZipIter::List(_) => false,
+        }
+    }
+
     fn len(&self) -> usize {
         match self {
             ZipIter::IntRange { count, .. } | ZipIter::IntRangeExcl { count, .. } => *count,
-            ZipIter::List(v) => v.len(),
+            ZipIter::List(v) | ZipIter::Lazy(v) => v.len(),
             // Extended lists can match any length from the other side
             ZipIter::ExtendedList { .. } => usize::MAX,
         }
@@ -1550,7 +1575,7 @@ impl ZipIter {
             ZipIter::IntRange { start, .. } | ZipIter::IntRangeExcl { start, .. } => {
                 Value::Int(*start + i as i64)
             }
-            ZipIter::List(v) => v[i].clone(),
+            ZipIter::List(v) | ZipIter::Lazy(v) => v[i].clone(),
             ZipIter::ExtendedList { items, fill } => {
                 if i < items.len() {
                     items[i].clone()

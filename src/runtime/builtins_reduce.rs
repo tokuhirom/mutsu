@@ -290,7 +290,7 @@ impl Interpreter {
 
     /// zip:with — zip lists using a custom combining function.
     pub(super) fn builtin_zip_with(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let mut lists: Vec<Vec<Value>> = Vec::new();
+        let mut raw_inputs: Vec<&Value> = Vec::new();
         let mut with_fn: Option<Value> = None;
         for arg in args {
             if let Value::Pair(key, val) = arg
@@ -299,15 +299,38 @@ impl Interpreter {
                 with_fn = Some((**val).clone());
                 continue;
             }
-            lists.push(crate::runtime::value_to_list(arg));
+            raw_inputs.push(arg);
         }
+        let is_lazy_input = |v: &Value| -> bool {
+            matches!(v, Value::LazyList(_))
+                || matches!(v,
+                    Value::Range(_, end)
+                    | Value::RangeExcl(_, end)
+                    | Value::RangeExclStart(_, end)
+                    | Value::RangeExclBoth(_, end) if *end == i64::MAX)
+                || matches!(v, Value::GenericRange { end, .. } if {
+                    let f = end.to_f64();
+                    f.is_infinite() && f.is_sign_positive()
+                })
+        };
+        let all_lazy = raw_inputs.iter().all(|v| is_lazy_input(v));
+        let lists: Vec<Vec<Value>> = raw_inputs
+            .iter()
+            .map(|v| crate::runtime::value_to_list(v))
+            .collect();
         let combiner = with_fn.ok_or_else(|| RuntimeError::new("zip: missing :with argument"))?;
         if lists.is_empty() {
             return Ok(Value::array(vec![]));
         }
         // Determine associativity from the operator name
         let assoc = Self::op_associativity(&combiner);
-        let min_len = lists.iter().map(|l| l.len()).min().unwrap_or(0);
+        let max_expand: usize = 1_000;
+        let min_len = lists
+            .iter()
+            .map(|l| l.len())
+            .min()
+            .unwrap_or(0)
+            .min(max_expand);
         let mut result = Vec::with_capacity(min_len);
         for i in 0..min_len {
             let elements: Vec<Value> = lists.iter().map(|l| l[i].clone()).collect();
@@ -359,7 +382,13 @@ impl Interpreter {
             };
             result.push(combined);
         }
-        Ok(Value::array(result))
+        if all_lazy {
+            Ok(Value::LazyList(std::sync::Arc::new(
+                crate::value::LazyList::new_cached(result),
+            )))
+        } else {
+            Ok(Value::array(result))
+        }
     }
 
     /// Determine the associativity of an operator from its name.
