@@ -2193,6 +2193,91 @@ impl Compiler {
         }
     }
 
+    /// Check if a class body is a stub (contains only `...`, `!!!`, or `???`).
+    pub(super) fn is_stub_class_body(body: &[Stmt]) -> bool {
+        body.len() == 1
+            && matches!(&body[0], Stmt::Expr(Expr::Call { name, .. })
+                if name.resolve() == "__mutsu_stub_die" || name.resolve() == "__mutsu_stub_warn")
+    }
+
+    /// Reorder statements so that when a stub class is followed later by its
+    /// real definition, the real definition is moved right after the stub.
+    /// This emulates Raku's compile-time class registration: by the time
+    /// runtime code executes, stub classes have been filled in.
+    ///
+    /// Only applies to non-lexical ClassDecl statements, and only when there
+    /// are no intervening class/role declarations between the stub and the
+    /// real definition (to preserve inter-class dependency ordering).
+    pub(super) fn reorder_stub_class_decls(stmts: &[Stmt]) -> Option<Vec<Stmt>> {
+        // Collect names of stubbed classes and the index of the real definition.
+        let mut stub_names = std::collections::HashMap::<String, usize>::new();
+        let mut real_defs = std::collections::HashMap::<String, usize>::new();
+        for (i, stmt) in stmts.iter().enumerate() {
+            if let Stmt::ClassDecl {
+                name,
+                is_lexical,
+                body,
+                ..
+            } = stmt
+            {
+                if *is_lexical {
+                    continue;
+                }
+                let n = name.resolve();
+                if Self::is_stub_class_body(body) {
+                    stub_names.entry(n).or_insert(i);
+                } else {
+                    real_defs.insert(n, i);
+                }
+            }
+        }
+        // Find names that have both a stub and a later real definition,
+        // with no intervening class/role declarations between them.
+        let mut needs_move: Vec<(String, usize, usize)> = Vec::new();
+        for (name, stub_idx) in &stub_names {
+            if let Some(&real_idx) = real_defs.get(name) {
+                if real_idx <= *stub_idx + 1 {
+                    continue; // Already adjacent
+                }
+                // Check for intervening class/role declarations that could
+                // have inter-dependencies with the stub class.
+                let has_intervening_decls = stmts[stub_idx + 1..real_idx]
+                    .iter()
+                    .any(|s| matches!(s, Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. }));
+                if !has_intervening_decls {
+                    needs_move.push((name.clone(), *stub_idx, real_idx));
+                }
+            }
+        }
+        if needs_move.is_empty() {
+            return None;
+        }
+        // Build reordered statement list: for each stub, insert the real
+        // definition immediately after it, and skip the real def at its
+        // original position.
+        let moved_indices: std::collections::HashSet<usize> = needs_move
+            .iter()
+            .map(|(_, _, real_idx)| *real_idx)
+            .collect();
+        let stub_to_real: std::collections::HashMap<usize, usize> = needs_move
+            .iter()
+            .map(|(_, stub_idx, real_idx)| (*stub_idx, *real_idx))
+            .collect();
+        let mut result = Vec::with_capacity(stmts.len());
+        for (i, stmt) in stmts.iter().enumerate() {
+            if moved_indices.contains(&i) {
+                // Skip — this real definition was moved after its stub.
+                continue;
+            }
+            result.push(stmt.clone());
+            if let Some(&real_idx) = stub_to_real.get(&i) {
+                // Insert the real definition right after the stub.
+                result.push(stmts[real_idx].clone());
+            }
+        }
+        Some(result)
+    }
+
     /// Compile a block inline (for blocks without placeholders).
     pub(super) fn compile_block_inline(&mut self, stmts: &[Stmt]) {
         let saved = self.push_dynamic_scope_lexical();

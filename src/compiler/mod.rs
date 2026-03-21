@@ -350,6 +350,15 @@ impl Compiler {
         mut self,
         stmts: &[Stmt],
     ) -> (CompiledCode, HashMap<String, CompiledFunction>) {
+        // Reorder stub class declarations so real definitions come right
+        // after stubs (Raku class declarations are compile-time).
+        let reordered;
+        let stmts = if let Some(r) = Self::reorder_stub_class_decls(stmts) {
+            reordered = r;
+            &reordered[..]
+        } else {
+            stmts
+        };
         self.hoist_sub_decls(stmts);
         // If the top-level body contains a CATCH block, wrap in implicit try.
         let has_catch = stmts.iter().any(|s| matches!(s, Stmt::Catch(_)));
