@@ -307,106 +307,11 @@ impl VM {
     }
 
     fn string_succ(s: &str) -> String {
-        if s.is_empty() {
-            return String::new();
-        }
-        let mut chars: Vec<char> = s.chars().collect();
-        let mut carry = true;
-        for ch in chars.iter_mut().rev() {
-            if !carry {
-                break;
-            }
-            if ch.is_ascii_lowercase() {
-                if *ch == 'z' {
-                    *ch = 'a';
-                } else {
-                    *ch = (*ch as u8 + 1) as char;
-                    carry = false;
-                }
-            } else if ch.is_ascii_uppercase() {
-                if *ch == 'Z' {
-                    *ch = 'A';
-                } else {
-                    *ch = (*ch as u8 + 1) as char;
-                    carry = false;
-                }
-            } else if ch.is_ascii_digit() {
-                if *ch == '9' {
-                    *ch = '0';
-                } else {
-                    *ch = (*ch as u8 + 1) as char;
-                    carry = false;
-                }
-            } else {
-                *ch = char::from_u32(*ch as u32 + 1).unwrap_or(*ch);
-                carry = false;
-            }
-        }
-        if carry {
-            let first = chars[0];
-            let prefix = if first.is_ascii_lowercase() {
-                'a'
-            } else if first.is_ascii_uppercase() {
-                'A'
-            } else if first.is_ascii_digit() {
-                '1'
-            } else {
-                first
-            };
-            chars.insert(0, prefix);
-        }
-        chars.into_iter().collect()
+        crate::builtins::str_increment::string_succ(s)
     }
 
-    fn string_pred(s: &str) -> String {
-        if s.is_empty() {
-            return String::new();
-        }
-        let mut chars: Vec<char> = s.chars().collect();
-        if chars.len() == 1 {
-            let ch = chars[0];
-            if let Some(prev) = char::from_u32(ch as u32 - 1) {
-                return prev.to_string();
-            }
-            return s.to_string();
-        }
-        let mut borrow = true;
-        for ch in chars.iter_mut().rev() {
-            if !borrow {
-                break;
-            }
-            if ch.is_ascii_lowercase() {
-                if *ch == 'a' {
-                    *ch = 'z';
-                } else {
-                    *ch = (*ch as u8 - 1) as char;
-                    borrow = false;
-                }
-            } else if ch.is_ascii_uppercase() {
-                if *ch == 'A' {
-                    *ch = 'Z';
-                } else {
-                    *ch = (*ch as u8 - 1) as char;
-                    borrow = false;
-                }
-            } else if ch.is_ascii_digit() {
-                if *ch == '0' {
-                    *ch = '9';
-                } else {
-                    *ch = (*ch as u8 - 1) as char;
-                    borrow = false;
-                }
-            } else {
-                if let Some(prev) = char::from_u32(*ch as u32 - 1) {
-                    *ch = prev;
-                }
-                borrow = false;
-            }
-        }
-        if borrow && chars.len() > 1 {
-            chars.remove(0);
-        }
-        chars.into_iter().collect()
+    fn string_pred_checked(s: &str) -> Option<String> {
+        crate::builtins::str_increment::string_pred_checked(s)
     }
 
     pub(super) fn increment_value(value: &Value) -> Value {
@@ -444,6 +349,7 @@ impl VM {
                 "Num" | "num" => Value::Num(0.0),
                 "Rat" => crate::value::make_rat(0, 1),
                 "Complex" => Value::Complex(0.0, 0.0),
+                "Bool" => Value::Bool(false),
                 _ => Value::Int(0),
             },
             other => other,
@@ -461,6 +367,7 @@ impl VM {
                         "Num" | "num" => Value::Num(0.0),
                         "Rat" => crate::value::make_rat(0, 1),
                         "Complex" => Value::Complex(0.0, 0.0),
+                        "Bool" => Value::Bool(false),
                         _ => Value::Int(0),
                     }
                 } else {
@@ -489,14 +396,31 @@ impl VM {
             Value::Str(s) => {
                 if let Some(prev) = Self::superscript_pred(s) {
                     Value::str(prev)
+                } else if let Some(pred) = Self::string_pred_checked(s) {
+                    Value::str(pred)
                 } else {
-                    Value::str(Self::string_pred(s))
+                    // Decrement underflow: return a Failure value
+                    Self::make_decrement_failure()
                 }
             }
             // Mixin (allomorphic types like IntStr): decrement the inner value
             Value::Mixin(inner, _) => Self::decrement_value(inner),
             _ => Value::Int(-1),
         }
+    }
+
+    /// Create a Failure value for "Decrement out of range".
+    fn make_decrement_failure() -> Value {
+        let mut ex_attrs = std::collections::HashMap::new();
+        ex_attrs.insert(
+            "message".to_string(),
+            Value::str("Decrement out of range".to_string()),
+        );
+        let exception = Value::make_instance(Symbol::intern("X::AdHoc"), ex_attrs);
+        let mut failure_attrs = std::collections::HashMap::new();
+        failure_attrs.insert("exception".to_string(), exception);
+        failure_attrs.insert("handled".to_string(), Value::Bool(false));
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
     pub(super) fn strict_undeclared_error(&self, name: &str) -> RuntimeError {
