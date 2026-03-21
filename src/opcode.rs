@@ -162,6 +162,11 @@ pub(crate) enum OpCode {
     JunctionAny,
     JunctionAll,
     JunctionOne,
+    /// Multi-operand junction: pop `count` values, check for user-defined
+    /// infix:<|>/<&>/<^> override (list-associative), or build junction.
+    JunctionAnyN(u32),
+    JunctionAllN(u32),
+    JunctionOneN(u32),
 
     // -- Sequence --
     Sequence {
