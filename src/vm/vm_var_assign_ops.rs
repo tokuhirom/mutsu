@@ -441,6 +441,30 @@ impl VM {
         Ok(())
     }
 
+    /// Increment a value, calling .succ() on Instance values with custom methods.
+    pub(super) fn increment_value_smart(&mut self, val: &Value) -> Result<Value, RuntimeError> {
+        if let Value::Instance { .. } = val
+            && let Ok(result) =
+                self.interpreter
+                    .call_method_with_values(val.clone(), "succ", vec![])
+        {
+            return Ok(result);
+        }
+        Ok(Self::increment_value(val))
+    }
+
+    /// Decrement a value, calling .pred() on Instance values with custom methods.
+    pub(super) fn decrement_value_smart(&mut self, val: &Value) -> Result<Value, RuntimeError> {
+        if let Value::Instance { .. } = val
+            && let Ok(result) =
+                self.interpreter
+                    .call_method_with_values(val.clone(), "pred", vec![])
+        {
+            return Ok(result);
+        }
+        Ok(Self::decrement_value(val))
+    }
+
     pub(super) fn exec_post_increment_op(
         &mut self,
         code: &CompiledCode,
@@ -451,7 +475,7 @@ impl VM {
         if let Some((bare_name, depth)) = crate::compiler::Compiler::parse_caller_prefix(name) {
             let raw_val = self.interpreter.get_caller_var(&bare_name, depth)?;
             let val = Self::normalize_incdec_source(raw_val);
-            let new_val = Self::increment_value(&val);
+            let new_val = self.increment_value_smart(&val)?;
             self.interpreter
                 .set_caller_var(&bare_name, depth, new_val)?;
             self.stack.push(val);
@@ -468,13 +492,13 @@ impl VM {
         {
             let fetched = self.interpreter.auto_fetch_proxy(&raw_val)?;
             let val = Self::normalize_incdec_source(fetched);
-            let new_val = Self::increment_value(&val);
+            let new_val = self.increment_value_smart(&val)?;
             self.interpreter.assign_proxy_lvalue(raw_val, new_val)?;
             self.stack.push(val);
             return Ok(());
         }
         let val = self.normalize_incdec_source_with_type(name, raw_val);
-        let new_val = Self::increment_value(&val);
+        let new_val = self.increment_value_smart(&val)?;
         let new_val = Self::maybe_wrap_native_int(&self.interpreter, name, new_val);
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
@@ -529,7 +553,7 @@ impl VM {
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::Int(0));
         let val = self.normalize_incdec_source_with_type(name, raw_val);
-        let new_val = Self::decrement_value(&val);
+        let new_val = self.decrement_value_smart(&val)?;
         let new_val = Self::maybe_wrap_native_int(&self.interpreter, name, new_val);
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
@@ -644,9 +668,9 @@ impl VM {
         };
         let effective = Self::normalize_incdec_source(effective);
         let new_val = if increment {
-            Self::increment_value(&effective)
+            self.increment_value_smart(&effective)?
         } else {
-            Self::decrement_value(&effective)
+            self.decrement_value_smart(&effective)?
         };
         if let Some(container_value) = container.as_mut() {
             match container_value {

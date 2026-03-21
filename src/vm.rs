@@ -1614,11 +1614,11 @@ impl VM {
 
             // -- Prefix increment/decrement --
             OpCode::PreIncrement(name_idx) => {
-                self.exec_pre_increment_op(code, *name_idx);
+                self.exec_pre_increment_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::PreDecrement(name_idx) => {
-                self.exec_pre_decrement_op(code, *name_idx);
+                self.exec_pre_decrement_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::PreIncrementIndex(name_idx) => {

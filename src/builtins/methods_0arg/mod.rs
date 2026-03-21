@@ -3692,17 +3692,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::FatRat(n, d) => Some(Ok(Value::FatRat(n + d, *d))),
             Value::BigRat(n, d) => Some(Ok(Value::BigRat(n + d, d.clone()))),
             Value::Bool(_) => Some(Ok(Value::Bool(true))),
-            Value::Str(s) => {
-                if s.is_empty() {
-                    Some(Ok(Value::str(String::new())))
-                } else {
-                    let mut chars: Vec<char> = s.chars().collect();
-                    if let Some(last) = chars.last_mut() {
-                        *last = char::from_u32(*last as u32 + 1).unwrap_or(*last);
-                    }
-                    Some(Ok(Value::str(chars.into_iter().collect())))
-                }
-            }
+            Value::Str(s) => Some(Ok(Value::str(crate::builtins::str_increment::string_succ(
+                s,
+            )))),
             _ => Some(Ok(target.clone())),
         },
         "pred" => match target {
@@ -3714,6 +3706,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::FatRat(n, d) => Some(Ok(Value::FatRat(n - d, *d))),
             Value::BigRat(n, d) => Some(Ok(Value::BigRat(n - d, d.clone()))),
             Value::Bool(_) => Some(Ok(Value::Bool(false))),
+            Value::Str(s) => Some(Ok(Value::str(crate::builtins::str_increment::string_pred(
+                s,
+            )))),
             _ => Some(Ok(target.clone())),
         },
         "log" => match target {

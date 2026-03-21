@@ -2821,57 +2821,7 @@ impl Interpreter {
 
     // Compute the successor of a string (increment the last character, carrying over)
     pub(super) fn string_succ(s: &str) -> String {
-        if s.is_empty() {
-            return String::new();
-        }
-        let mut chars: Vec<char> = s.chars().collect();
-        // Carry-over increment from the last character
-        let mut carry = true;
-        for ch in chars.iter_mut().rev() {
-            if !carry {
-                break;
-            }
-            if ch.is_ascii_lowercase() {
-                if *ch == 'z' {
-                    *ch = 'a';
-                } else {
-                    *ch = (*ch as u8 + 1) as char;
-                    carry = false;
-                }
-            } else if ch.is_ascii_uppercase() {
-                if *ch == 'Z' {
-                    *ch = 'A';
-                } else {
-                    *ch = (*ch as u8 + 1) as char;
-                    carry = false;
-                }
-            } else if ch.is_ascii_digit() {
-                if *ch == '9' {
-                    *ch = '0';
-                } else {
-                    *ch = (*ch as u8 + 1) as char;
-                    carry = false;
-                }
-            } else {
-                *ch = char::from_u32(*ch as u32 + 1).unwrap_or(*ch);
-                carry = false;
-            }
-        }
-        if carry {
-            // All characters carried over, prepend appropriate char
-            let first = chars[0];
-            let prefix = if first.is_ascii_lowercase() {
-                'a'
-            } else if first.is_ascii_uppercase() {
-                'A'
-            } else if first.is_ascii_digit() {
-                '1'
-            } else {
-                first
-            };
-            chars.insert(0, prefix);
-        }
-        chars.into_iter().collect()
+        crate::builtins::str_increment::string_succ(s)
     }
 
     pub(super) fn digit_string_succ_radix(s: &str, radix: u32) -> String {
