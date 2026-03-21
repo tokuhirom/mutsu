@@ -1223,6 +1223,14 @@ impl Interpreter {
         if constraint == "Variable" && matches!(value_type, "Scalar" | "Array" | "Hash" | "Sub") {
             return true;
         }
+        // Exception hierarchy: all X::* types are subtypes of Exception
+        if constraint == "Exception"
+            && (value_type.starts_with("X::")
+                || value_type.starts_with("CX::")
+                || value_type == "Exception")
+        {
+            return true;
+        }
         // Role-like type relationships
         if constraint == "Positional"
             && matches!(

@@ -1262,6 +1262,25 @@ impl VM {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethodMut target".to_string())
         })?;
+        // Detect calls on undeclared type names: when a BareWord resolved to a Str
+        // (because the name wasn't a known type/class), and .new() is called on it,
+        // this means the user tried to instantiate a nonexistent class.
+        if method == "new"
+            && let Value::Str(s) = &target
+            && **s == target_name
+            && target_name
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_uppercase())
+            && !self.interpreter.has_type(&target_name)
+            && !Self::is_builtin_type(&target_name)
+            && !self.interpreter.has_class(&target_name)
+        {
+            return Err(RuntimeError::undeclared_symbols(format!(
+                "Undeclared name:\n    {} used at line 1",
+                target_name,
+            )));
+        }
         // Junction auto-threading: thread method calls over junction values
         if let Value::Junction { kind, values } = &target
             && !matches!(
