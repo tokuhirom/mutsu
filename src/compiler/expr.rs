@@ -315,6 +315,18 @@ impl Compiler {
                             operands.push(inner_right.as_ref());
                             current = inner_left.as_ref();
                         }
+                        // For junction operators (|, &, ^), emit all operands then a
+                        // single multi-operand opcode so user-defined overrides with
+                        // slurpy params get called once (list-associative).
+                        if let Some(multi_op) = Self::junction_multi_opcode(op) {
+                            let count = operands.len() + 1; // +1 for leftmost
+                            self.compile_expr(current);
+                            for operand in operands.into_iter().rev() {
+                                self.compile_expr(operand);
+                            }
+                            self.code.emit(multi_op(count as u32));
+                            return;
+                        }
                         // `current` is the leftmost non-matching operand
                         self.compile_expr(current);
                         // Operands were collected right-to-left, reverse to emit
@@ -2110,6 +2122,48 @@ impl Compiler {
                     self.code.patch_flip_flop_rhs_end(ff_idx);
                     return;
                 }
+                // For junction operators (|, &, ^), flatten chains of same-name
+                // InfixFunc nodes so the user-defined operator is called once
+                // with all operands (list-associative behavior).
+                if modifier.is_none()
+                    && matches!(name.as_str(), "|" | "&" | "^")
+                    && right.len() == 1
+                {
+                    let mut operands = Vec::new();
+                    // Collect rightmost operands from the chain
+                    operands.extend(right.iter());
+                    let mut current = left.as_ref();
+                    while let Expr::InfixFunc {
+                        name: inner_name,
+                        left: inner_left,
+                        right: inner_right,
+                        modifier: inner_mod,
+                    } = current
+                    {
+                        if inner_name != name || inner_mod.is_some() || inner_right.len() != 1 {
+                            break;
+                        }
+                        operands.extend(inner_right.iter());
+                        current = inner_left.as_ref();
+                    }
+                    if operands.len() > 1 {
+                        // We have a flattened chain: compile leftmost, then
+                        // all right operands (reversed since collected right-to-left),
+                        // then a single InfixFunc with the total right arity.
+                        operands.reverse();
+                        self.compile_expr(current);
+                        for op in &operands {
+                            self.compile_expr(op);
+                        }
+                        let name_idx = self.code.add_constant(Value::str(name.clone()));
+                        self.code.emit(OpCode::InfixFunc {
+                            name_idx,
+                            right_arity: operands.len() as u32,
+                            modifier_idx: None,
+                        });
+                        return;
+                    }
+                }
                 self.compile_expr(left);
                 for r in right {
                     self.compile_expr(r);
@@ -2753,6 +2807,19 @@ impl Compiler {
             TokenKind::Caret => Some(OpCode::JunctionOne),
             TokenKind::DotDotDot => Some(OpCode::Sequence { exclude_end: false }),
             TokenKind::DotDotDotCaret => Some(OpCode::Sequence { exclude_end: true }),
+            _ => None,
+        }
+    }
+
+    /// Returns a constructor for multi-operand junction opcodes when the
+    /// token is a junction operator (|, &, ^). Used to emit a single opcode
+    /// for flattened chains so that user-defined overrides are called once
+    /// with all operands (list-associative behavior).
+    fn junction_multi_opcode(op: &TokenKind) -> Option<fn(u32) -> OpCode> {
+        match op {
+            TokenKind::Pipe => Some(OpCode::JunctionAnyN),
+            TokenKind::Ampersand => Some(OpCode::JunctionAllN),
+            TokenKind::Caret => Some(OpCode::JunctionOneN),
             _ => None,
         }
     }

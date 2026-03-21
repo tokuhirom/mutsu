@@ -1110,12 +1110,22 @@ impl VM {
                     )?
                 }
             } else {
-                self.call_infix_fallback(
-                    lookup_name.as_ref(),
-                    Some(&infix_name),
-                    call_args,
-                    compiled_fns,
-                )?
+                // For multi-arg calls (list-associative flattened chains),
+                // try the user-defined function first before falling back
+                // to built-in reduction.
+                if let Some(def) = self
+                    .interpreter
+                    .resolve_function_with_types(&infix_name, &call_args)
+                {
+                    self.interpreter.call_function_def(&def, &call_args)?
+                } else {
+                    self.call_infix_fallback(
+                        lookup_name.as_ref(),
+                        Some(&infix_name),
+                        call_args,
+                        compiled_fns,
+                    )?
+                }
             }
         };
         self.stack.push(result);

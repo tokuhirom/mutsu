@@ -808,4 +808,40 @@ impl VM {
         self.stack
             .push(runtime::merge_junction(JunctionKind::One, left, right));
     }
+
+    /// Execute a multi-operand junction opcode. Pops `count` values from
+    /// the stack. If a user-defined infix operator exists in scope, calls
+    /// it once with all operands (list-associative). Otherwise builds the
+    /// junction from all values.
+    pub(super) fn exec_junction_n_op(
+        &mut self,
+        count: u32,
+        kind: JunctionKind,
+        infix_name: &str,
+    ) -> Result<(), RuntimeError> {
+        let n = count as usize;
+        let mut values: Vec<Value> = Vec::with_capacity(n);
+        for _ in 0..n {
+            values.push(self.stack.pop().unwrap_or(Value::Nil));
+        }
+        values.reverse();
+
+        // Check for user-defined override
+        if let Some(def) = self
+            .interpreter
+            .resolve_function_with_types(infix_name, &values)
+        {
+            let result = self.interpreter.call_function_def(&def, &values)?;
+            self.stack.push(result);
+            return Ok(());
+        }
+
+        // No user override: build junction from all values
+        let result = Value::Junction {
+            kind,
+            values: values.into(),
+        };
+        self.stack.push(result);
+        Ok(())
+    }
 }

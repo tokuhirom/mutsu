@@ -1166,6 +1166,18 @@ impl VM {
                 self.exec_junction_one_op();
                 *ip += 1;
             }
+            OpCode::JunctionAnyN(count) => {
+                self.exec_junction_n_op(*count, JunctionKind::Any, "infix:<|>")?;
+                *ip += 1;
+            }
+            OpCode::JunctionAllN(count) => {
+                self.exec_junction_n_op(*count, JunctionKind::All, "infix:<&>")?;
+                *ip += 1;
+            }
+            OpCode::JunctionOneN(count) => {
+                self.exec_junction_n_op(*count, JunctionKind::One, "infix:<^>")?;
+                *ip += 1;
+            }
 
             // -- Sequence --
             OpCode::Sequence { exclude_end } => {
