@@ -1862,8 +1862,7 @@ impl VM {
             for eigenvalue in values.iter() {
                 let mut threaded_args = args.clone();
                 threaded_args[junction_idx] = eigenvalue.clone();
-                results
-                    .push(self.call_compiled_closure(data, cc, threaded_args, compiled_fns)?);
+                results.push(self.call_compiled_closure(data, cc, threaded_args, compiled_fns)?);
             }
             return Ok(Value::junction(kind, results));
         }
