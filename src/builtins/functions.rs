@@ -1239,10 +1239,7 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
             } else {
                 args.iter().all(is_lazy_input)
             };
-            let lists: Vec<Vec<Value>> = raw_inputs
-                .iter()
-                .map(runtime::value_to_list)
-                .collect();
+            let lists: Vec<Vec<Value>> = raw_inputs.iter().map(runtime::value_to_list).collect();
             if lists.is_empty() {
                 return Some(Ok(Value::Seq(std::sync::Arc::new(vec![]))));
             }
