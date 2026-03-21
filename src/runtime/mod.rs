@@ -2090,6 +2090,9 @@ impl Interpreter {
         // X::Signature::Placeholder
         register_x("X::Signature::Placeholder", "Exception");
 
+        // X::Signature::NameClash
+        register_x("X::Signature::NameClash", "X::Comp");
+
         // X::SecurityPolicy
         register_x("X::SecurityPolicy", "Exception");
 

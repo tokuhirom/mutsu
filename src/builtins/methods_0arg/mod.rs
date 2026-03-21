@@ -696,9 +696,27 @@ fn dispatch_capture(
         "raku" | "perl" => {
             let mut parts = Vec::new();
             for v in positional {
-                parts.push(raku_value(v));
+                // Pairs appearing as positional items in a Capture are rendered
+                // with quoted key syntax ("key" => value) to distinguish them
+                // from named arguments which use colonpair syntax (:key(value)).
+                match v {
+                    Value::Pair(k, val) => {
+                        parts.push(format!(
+                            "{} => {}",
+                            raku_value(&Value::str(k.clone())),
+                            raku_value(val)
+                        ));
+                    }
+                    Value::ValuePair(k, val) => {
+                        parts.push(format!("{} => {}", raku_value(k), raku_value(val)));
+                    }
+                    _ => parts.push(raku_value(v)),
+                }
             }
-            for (k, v) in named {
+            let mut named_keys: Vec<&String> = named.keys().collect();
+            named_keys.sort();
+            for k in named_keys {
+                let v = &named[k];
                 if let Value::Bool(true) = v {
                     parts.push(format!(":{}", k));
                 } else if let Value::Bool(false) = v {
@@ -1077,6 +1095,40 @@ fn raku_value(v: &Value) -> String {
             let start_sep = if *excl_start { "^.." } else { ".." };
             let end_sep = if *excl_end { "^" } else { "" };
             format!("{}{}{}{}", start_repr, start_sep, end_sep, end_repr)
+        }
+        Value::Capture { positional, named } => {
+            let mut parts = Vec::new();
+            for v in positional {
+                // Pairs appearing as positional items in a Capture are rendered
+                // with quoted key syntax ("key" => value) to distinguish them
+                // from named arguments which use colonpair syntax (:key(value)).
+                match v {
+                    Value::Pair(k, val) => {
+                        parts.push(format!(
+                            "{} => {}",
+                            raku_value(&Value::str(k.clone())),
+                            raku_value(val)
+                        ));
+                    }
+                    Value::ValuePair(k, val) => {
+                        parts.push(format!("{} => {}", raku_value(k), raku_value(val)));
+                    }
+                    _ => parts.push(raku_value(v)),
+                }
+            }
+            let mut named_keys: Vec<&String> = named.keys().collect();
+            named_keys.sort();
+            for k in named_keys {
+                let v = &named[k];
+                if let Value::Bool(true) = v {
+                    parts.push(format!(":{}", k));
+                } else if let Value::Bool(false) = v {
+                    parts.push(format!(":!{}", k));
+                } else {
+                    parts.push(format!(":{}({})", k, raku_value(v)));
+                }
+            }
+            format!("\\({})", parts.join(", "))
         }
         other => other.to_string_value(),
     }
