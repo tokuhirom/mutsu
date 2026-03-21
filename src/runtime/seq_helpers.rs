@@ -1326,6 +1326,12 @@ impl Interpreter {
                     Err(_) => false,
                 }
             }
+            // Junction ~~ Junction type: a Junction IS a Junction, don't autothread
+            (Value::Junction { .. }, Value::Package(name))
+                if matches!(name.resolve().as_str(), "Junction" | "Mu") =>
+            {
+                true
+            }
             (Value::Junction { kind, values }, _) => match kind {
                 crate::value::JunctionKind::Any => {
                     values.iter().any(|v| self.smart_match(v, right))
