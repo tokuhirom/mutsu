@@ -1796,16 +1796,33 @@ impl Interpreter {
                 Value::Num(n)
             }
         }
+        fn flatten_to_list(v: &Value) -> Vec<Value> {
+            match v {
+                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                    items.as_ref().clone()
+                }
+                Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
+                _ => vec![v.clone()],
+            }
+        }
         let mut n = val_to_f64(target);
-        // Flatten args into a list of divisors
+        // Flatten args into a list of divisors, tracking if any source is infinite
         let mut divisors = Vec::new();
+        let mut has_infinite = false;
         for arg in args {
             match arg {
-                Value::Array(items, ..) => divisors.extend(items.iter().cloned()),
+                Value::LazyList(_) => {
+                    has_infinite = true;
+                    divisors.extend(flatten_to_list(arg));
+                }
+                Value::Array(..) | Value::Seq(_) | Value::Slip(_) => {
+                    divisors.extend(flatten_to_list(arg));
+                }
                 _ => divisors.push(arg.clone()),
             }
         }
         let mut result = Vec::new();
+        let mut stopped = false;
         for d in &divisors {
             let d_val = val_to_f64(d);
             if d_val == 0.0 {
@@ -1813,16 +1830,26 @@ impl Interpreter {
                 n = f64::INFINITY;
                 continue;
             }
+            // For infinite lists, stop when n reaches 0
+            if has_infinite && n == 0.0 {
+                stopped = true;
+                break;
+            }
+            // Modulo 1 always yields remainder 0 and quotient = n; for infinite lists
+            // this would loop forever, so push n directly and stop
+            if has_infinite && d_val == 1.0 {
+                result.push(f64_to_val(n));
+                stopped = true;
+                break;
+            }
             let rem = n % d_val;
             let quot = ((n - rem) / d_val).trunc();
             result.push(f64_to_val(rem));
             n = quot;
-            // Modulo 1 always yields remainder 0 and quotient = n; stop infinite loops
-            if d_val == 1.0 {
-                break;
-            }
         }
-        result.push(f64_to_val(n));
+        if !stopped {
+            result.push(f64_to_val(n));
+        }
         Ok(Value::array(result))
     }
 
