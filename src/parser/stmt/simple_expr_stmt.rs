@@ -63,6 +63,12 @@ fn starts_with_unambiguous_term(input: &str) -> bool {
 /// Returns true if the expression is a pure value that cannot take arguments
 /// (i.e., a literal or variable, not a function call or bareword that might
 /// be a function name).  Used to detect "two terms in a row" parse errors.
+/// Returns `true` if the expression is a literal value (number, string, etc.)
+/// that cannot appear as the left-hand side of a bind operator (`:=`).
+fn is_literal_expr(expr: &Expr) -> bool {
+    matches!(expr, Expr::Literal(_))
+}
+
 fn is_pure_value_expr(expr: &Expr) -> bool {
     matches!(
         expr,
@@ -836,6 +842,22 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     // Generic bind assignment on non-variable lhs (e.g. `($a, $b) := |(f)`).
     // Keep this as a parse fallback so complex bind lvalues don't fail early.
     if !matches!(expr, Expr::AssignExpr { .. }) && rest.starts_with(":=") {
+        // Reject binding to a literal: `0 := 1` → X::Bind
+        if is_literal_expr(&expr) {
+            let ex = crate::value::Value::make_instance(
+                crate::symbol::Symbol::intern("X::Bind"),
+                std::collections::HashMap::from([(
+                    "message".to_string(),
+                    crate::value::Value::str(
+                        "Cannot use bind operator with this left-hand side".to_string(),
+                    ),
+                )]),
+            );
+            return Err(PError::fatal_with_exception(
+                "Cannot use bind operator with this left-hand side".to_string(),
+                Box::new(ex),
+            ));
+        }
         let r = &rest[2..];
         let (r, _) = ws(r)?;
         let (r, rhs) = super::assign::parse_assign_expr_or_comma(r).map_err(|err| PError {

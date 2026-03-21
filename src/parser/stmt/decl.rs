@@ -1862,6 +1862,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         let bound_name = name.clone();
         let mark_scalar_readonly =
             !is_array && !bound_name.starts_with('%') && scalar_binding_rhs_is_readonly(&expr);
+        let bind_to_var = matches!(expr, Expr::Var(_));
         let stmt = Stmt::VarDecl {
             name,
             expr,
@@ -1893,7 +1894,13 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             Stmt::SyntheticBlock(stmts)
         } else if mark_scalar_readonly {
             Stmt::SyntheticBlock(vec![Stmt::MarkReadonly(bound_name), stmt])
+        } else if bind_to_var {
+            // Non-readonly `:=` bind to a variable (e.g. `my $y := $x`):
+            // wrap in SyntheticBlock with MarkBind so the compiler emits
+            // alias metadata for `=:=` identity checks.
+            Stmt::SyntheticBlock(vec![Stmt::MarkBind, stmt])
         } else {
+            // Non-readonly `:=` bind to an expression (e.g. `my $proxy := Proxy.new(...)`)
             stmt
         };
         if apply_modifier {

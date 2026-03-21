@@ -890,6 +890,13 @@ impl VM {
                 self.exec_container_eq_op(flags);
                 *ip += 1;
             }
+            OpCode::ContainerEqNamed {
+                left_name_idx,
+                right_name_idx,
+            } => {
+                self.exec_container_eq_named_op(code, *left_name_idx, *right_name_idx);
+                *ip += 1;
+            }
 
             // -- String comparison --
             OpCode::StrEq => {

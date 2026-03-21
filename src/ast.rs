@@ -427,6 +427,8 @@ pub(crate) enum Stmt {
     },
     /// Mark a variable as readonly (used for `:=` binding desugaring).
     MarkReadonly(String),
+    /// Flag that the next VarDecl in this SyntheticBlock uses `:=` binding.
+    MarkBind,
     /// Mark a sigilless variable as readonly via `__mutsu_sigilless_readonly::NAME` env key.
     MarkSigillessReadonly(String),
     Assign {

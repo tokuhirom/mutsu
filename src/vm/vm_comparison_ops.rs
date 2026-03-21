@@ -230,7 +230,10 @@ impl VM {
 
     /// Returns `true` when **both** values are simple, non-reference
     /// types where stack copies can never carry container identity
-    /// (Int, Str, Bool, Nil, Package/type-object, Rat, …).
+    /// (Int, Str, Bool, Nil, Rat, …).
+    ///
+    /// Note: `Package` is NOT included because type objects are singletons —
+    /// two variables holding the same Package should be considered `=:=`.
     fn is_value_non_reference(left: &Value, right: &Value) -> bool {
         fn is_non_ref(v: &Value) -> bool {
             matches!(
@@ -241,7 +244,6 @@ impl VM {
                     | Value::Str(_)
                     | Value::Bool(_)
                     | Value::Nil
-                    | Value::Package(_)
                     | Value::Rat(..)
                     | Value::FatRat(..)
                     | Value::BigRat(..)
@@ -253,6 +255,55 @@ impl VM {
             )
         }
         is_non_ref(left) && is_non_ref(right)
+    }
+
+    /// Container identity (`=:=`) when both operands are named variables.
+    /// Resolves alias chains to find the binding root of each name, then:
+    /// - If both roots are the same name, they share a container → True.
+    /// - For reference types (Array, Hash, Sub, Instance), use Arc pointer identity.
+    /// - Otherwise → False (distinct scalar containers).
+    pub(super) fn exec_container_eq_named_op(
+        &mut self,
+        code: &CompiledCode,
+        left_name_idx: u32,
+        right_name_idx: u32,
+    ) {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let left_name = Self::const_str(code, left_name_idx);
+        let right_name = Self::const_str(code, right_name_idx);
+
+        // Resolve alias chains to find the binding root of each variable.
+        let left_root = self.resolve_alias_root(left_name);
+        let right_root = self.resolve_alias_root(right_name);
+
+        let result = if left_root == right_root {
+            // Same binding root → same container.
+            true
+        } else if !Self::is_value_non_reference(&left, &right) {
+            // Reference types: check Arc pointer identity.
+            crate::runtime::values_identical(&left, &right)
+        } else {
+            // Distinct scalar containers → never identical.
+            false
+        };
+        self.stack.push(Value::Bool(result));
+    }
+
+    /// Walk the `__mutsu_sigilless_alias::` chain to find the ultimate
+    /// binding root for a variable name.
+    fn resolve_alias_root(&self, name: &str) -> String {
+        let mut current = name.to_string();
+        let mut seen = std::collections::HashSet::new();
+        while seen.insert(current.clone()) {
+            let key = format!("__mutsu_sigilless_alias::{}", current);
+            if let Some(Value::Str(next)) = self.interpreter.env().get(&key) {
+                current = next.to_string();
+            } else {
+                break;
+            }
+        }
+        current
     }
 
     pub(super) fn exec_str_eq_op(&mut self) -> Result<(), RuntimeError> {
