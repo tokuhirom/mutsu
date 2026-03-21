@@ -947,6 +947,14 @@ impl VM {
             let bool_val = match_result.truthy();
             return Ok(Value::Bool(!bool_val));
         }
+        // When RHS is the Junction type object, don't auto-thread LHS.
+        // $junction ~~ Junction should return True (a Junction isa Junction).
+        // Also applies to Mu (the supertype of Junction).
+        if matches!(&right, Value::Package(name) if matches!(name.resolve().as_str(), "Junction" | "Mu"))
+            && matches!(&left, Value::Junction { .. })
+        {
+            return self.smart_match_op(left, right);
+        }
         if let (
             Value::Junction {
                 kind: left_kind,

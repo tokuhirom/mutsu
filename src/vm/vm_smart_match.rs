@@ -59,6 +59,13 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         // Whatever on RHS always matches
         (_, Value::Whatever) => Some(true),
 
+        // Junction ~~ Junction/Mu type: a Junction IS a Junction, don't autothread
+        (Value::Junction { .. }, Value::Package(name))
+            if matches!(name.resolve().as_str(), "Junction" | "Mu") =>
+        {
+            Some(true)
+        }
+
         // DateTime ~~ Date: compare date parts
         (
             Value::Instance {

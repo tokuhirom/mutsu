@@ -504,6 +504,18 @@ impl VM {
         let val = self.stack.pop().unwrap();
         // Auto-FETCH Proxy containers
         let val = self.interpreter.auto_fetch_proxy(&val)?;
+        // Junction auto-threading for prefix:<+>
+        if let Value::Junction { kind, values } = &val {
+            let kind = kind.clone();
+            let mut results = Vec::new();
+            for v in values.iter() {
+                self.stack.push(v.clone());
+                self.exec_num_coerce_op()?;
+                results.push(self.stack.pop().unwrap_or(Value::Nil));
+            }
+            self.stack.push(Value::junction(kind, results));
+            return Ok(());
+        }
         // Type objects (Mu, Any, etc.) cannot be numerically coerced
         if let Value::Package(name) = &val
             && matches!(name.resolve().as_str(), "Mu" | "Any")
