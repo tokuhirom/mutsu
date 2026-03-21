@@ -4,6 +4,23 @@ use crate::symbol::Symbol;
 impl Interpreter {
     pub(crate) fn run_pending_instance_destroys(&mut self) -> Result<(), RuntimeError> {
         let pending = take_pending_instance_destroys();
+        if pending.is_empty() {
+            return Ok(());
+        }
+        let is_6e = crate::parser::current_language_version().starts_with("6.e");
+        // Set reentrancy guard to prevent infinite DESTROY recursion:
+        // instances created during DESTROY execution should not queue new DESTROYs.
+        crate::value::set_in_destroy_handler(true);
+        let result = self.run_pending_instance_destroys_inner(&pending, is_6e);
+        crate::value::set_in_destroy_handler(false);
+        result
+    }
+
+    fn run_pending_instance_destroys_inner(
+        &mut self,
+        pending: &[crate::value::PendingInstanceDestroy],
+        is_6e: bool,
+    ) -> Result<(), RuntimeError> {
         for item in pending {
             let instance_class = item.class_name.resolve();
             // Collect the MRO so we call DESTROY on each class in order (child → parent).
@@ -12,29 +29,60 @@ impl Interpreter {
                 .get(&instance_class)
                 .map(|cd| cd.mro.clone())
                 .unwrap_or_default();
+            // Track attributes across DESTROY calls so mutations are visible
+            let mut current_attrs = item.attributes.clone();
             // Walk the MRO; submethods are per-class, not inherited.
             for mro_class in &mro {
+                // Skip role entries in MRO
+                if self.roles.contains_key(mro_class) && !self.classes.contains_key(mro_class) {
+                    continue;
+                }
                 let Some(class_def) = self.classes.get(mro_class) else {
                     continue;
                 };
-                let Some(overloads) = class_def.methods.get("DESTROY").cloned() else {
-                    continue;
-                };
-                let Some(method_def) = overloads.into_iter().find(|def| {
-                    def.is_my && !def.is_private && self.method_args_match(&[], &def.param_defs)
-                }) else {
-                    continue;
-                };
-                let invocant =
-                    Value::make_instance_without_destroy(item.class_name, item.attributes.clone());
-                let _ = self.run_instance_method_resolved(
-                    mro_class,
-                    &instance_class,
-                    method_def,
-                    item.attributes.clone(),
-                    Vec::new(),
-                    Some(invocant),
-                )?;
+                // Call class's own DESTROY submethod
+                if let Some(overloads) = class_def.methods.get("DESTROY").cloned()
+                    && let Some(method_def) = overloads.into_iter().find(|def| {
+                        def.is_my && !def.is_private && self.method_args_match(&[], &def.param_defs)
+                    })
+                {
+                    let invocant = Value::make_instance_without_destroy(
+                        item.class_name,
+                        current_attrs.clone(),
+                    );
+                    if let Ok((_v, updated)) = self.run_instance_method_resolved(
+                        &instance_class,
+                        mro_class,
+                        method_def,
+                        current_attrs.clone(),
+                        Vec::new(),
+                        Some(invocant),
+                    ) {
+                        current_attrs = updated;
+                    }
+                }
+                // Under v6.e+, call DESTROY submethods from composed roles
+                // (in reverse order: role submethods after the class's own DESTROY)
+                if is_6e {
+                    let role_order = self.ordered_role_submethods_for_class(mro_class, "DESTROY");
+                    // DESTROY order is reverse of BUILD: role submethods after class
+                    for (role_name, method_def) in role_order.into_iter().rev() {
+                        let invocant = Value::make_instance_without_destroy(
+                            item.class_name,
+                            current_attrs.clone(),
+                        );
+                        if let Ok((_v, updated)) = self.run_instance_method_resolved(
+                            &instance_class,
+                            &role_name,
+                            method_def,
+                            current_attrs.clone(),
+                            Vec::new(),
+                            Some(invocant),
+                        ) {
+                            current_attrs = updated;
+                        }
+                    }
+                }
             }
         }
         Ok(())

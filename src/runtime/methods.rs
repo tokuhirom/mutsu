@@ -2739,9 +2739,29 @@ impl Interpreter {
                 }
                 // Run BUILD/TWEAK submethods in MRO order (base-first)
                 let mro = self.class_mro(&class_name.resolve());
+                let is_6e = crate::parser::current_language_version().starts_with("6.e");
                 for mro_class in mro.iter().rev() {
                     if mro_class == "Any" || mro_class == "Mu" {
                         continue;
+                    }
+                    // Skip role entries in MRO
+                    if self.roles.contains_key(mro_class) && !self.classes.contains_key(mro_class) {
+                        continue;
+                    }
+                    // Under v6.e+, call BUILD submethods from composed roles first
+                    if is_6e {
+                        let role_order = self.ordered_role_submethods_for_class(mro_class, "BUILD");
+                        for (role_name, method_def) in role_order {
+                            let (_v, updated) = self.run_instance_method_resolved(
+                                &class_name.resolve(),
+                                &role_name,
+                                method_def,
+                                attributes.clone(),
+                                Vec::new(),
+                                Some(Value::make_instance(class_name, attributes.clone())),
+                            )?;
+                            attributes = updated;
+                        }
                     }
                     let has_build = self
                         .classes
@@ -2762,6 +2782,25 @@ impl Interpreter {
                 for mro_class in mro.iter().rev() {
                     if mro_class == "Any" || mro_class == "Mu" {
                         continue;
+                    }
+                    // Skip role entries in MRO
+                    if self.roles.contains_key(mro_class) && !self.classes.contains_key(mro_class) {
+                        continue;
+                    }
+                    // Under v6.e+, call TWEAK submethods from composed roles first
+                    if is_6e {
+                        let role_order = self.ordered_role_submethods_for_class(mro_class, "TWEAK");
+                        for (role_name, method_def) in role_order {
+                            let (_v, updated) = self.run_instance_method_resolved(
+                                &class_name.resolve(),
+                                &role_name,
+                                method_def,
+                                attributes.clone(),
+                                Vec::new(),
+                                Some(Value::make_instance(class_name, attributes.clone())),
+                            )?;
+                            attributes = updated;
+                        }
                     }
                     let has_tweak = self
                         .classes

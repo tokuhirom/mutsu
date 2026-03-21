@@ -51,6 +51,17 @@ pub(crate) struct PendingInstanceDestroy {
 
 thread_local! {
     static PENDING_INSTANCE_DESTROYS: RefCell<Vec<PendingInstanceDestroy>> = const { RefCell::new(Vec::new()) };
+    /// When true, suppress queuing new DESTROY items (we are already inside a DESTROY handler).
+    static IN_DESTROY_HANDLER: RefCell<bool> = const { RefCell::new(false) };
+}
+
+/// Set the in-destroy-handler flag to suppress recursive DESTROY queuing.
+pub(crate) fn set_in_destroy_handler(value: bool) {
+    IN_DESTROY_HANDLER.with(|flag| *flag.borrow_mut() = value);
+}
+
+fn is_in_destroy_handler() -> bool {
+    IN_DESTROY_HANDLER.with(|flag| *flag.borrow())
 }
 
 fn live_instance_refcounts() -> &'static Mutex<HashMap<u64, usize>> {
@@ -112,6 +123,10 @@ impl PartialEq for InstanceAttrs {
 impl Drop for InstanceAttrs {
     fn drop(&mut self) {
         if !self.queue_destroy {
+            return;
+        }
+        // Suppress recursive DESTROY queuing when we're already inside a DESTROY handler
+        if is_in_destroy_handler() {
             return;
         }
         let should_queue = if let Ok(mut counts) = live_instance_refcounts().lock() {

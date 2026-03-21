@@ -1916,10 +1916,32 @@ impl Interpreter {
                 // submethods defined directly on each class. Submethods are
                 // NOT inherited, so each class's own BUILD/TWEAK is called
                 // independently with the construction args.
+                // Under v6.e.PREVIEW+, role submethods are also called
+                // (roles' BUILD/TWEAK before the class's own).
                 let mro = self.class_mro(class_key);
+                let is_6e = crate::parser::current_language_version().starts_with("6.e");
                 for mro_class in mro.iter().rev() {
                     if mro_class == "Any" || mro_class == "Mu" {
                         continue;
+                    }
+                    // Skip role entries in MRO — they are handled separately below
+                    if self.roles.contains_key(mro_class) && !self.classes.contains_key(mro_class) {
+                        continue;
+                    }
+                    // Under v6.e+, call BUILD submethods from composed roles first
+                    if is_6e {
+                        let role_order = self.ordered_role_submethods_for_class(mro_class, "BUILD");
+                        for (role_name, method_def) in role_order {
+                            let (_v, updated) = self.run_instance_method_resolved(
+                                &class_name.resolve(),
+                                &role_name,
+                                method_def,
+                                attrs.clone(),
+                                args.clone(),
+                                Some(Value::make_instance(*class_name, attrs.clone())),
+                            )?;
+                            attrs = updated;
+                        }
                     }
                     let has_build = self
                         .classes
@@ -1938,7 +1960,7 @@ impl Interpreter {
                     }
                 }
                 // Check required attributes after all BUILDs have run
-                if mro.iter().any(|cn| {
+                let any_build = mro.iter().any(|cn| {
                     cn != "Any"
                         && cn != "Mu"
                         && self
@@ -1946,7 +1968,17 @@ impl Interpreter {
                             .get(cn)
                             .and_then(|def| def.methods.get("BUILD"))
                             .is_some()
-                }) {
+                });
+                // Also check role BUILD submethods for required attribute enforcement
+                let any_role_build = is_6e
+                    && mro.iter().any(|cn| {
+                        cn != "Any"
+                            && cn != "Mu"
+                            && !self
+                                .ordered_role_submethods_for_class(cn, "BUILD")
+                                .is_empty()
+                    });
+                if any_build || any_role_build {
                     for (attr_name, _is_public, _default, _is_rw, is_required, _sigil, _) in
                         &class_attrs_info
                     {
@@ -1968,6 +2000,30 @@ impl Interpreter {
                 for mro_class in mro.iter().rev() {
                     if mro_class == "Any" || mro_class == "Mu" {
                         continue;
+                    }
+                    // Skip role entries in MRO
+                    if self.roles.contains_key(mro_class) && !self.classes.contains_key(mro_class) {
+                        continue;
+                    }
+                    // Under v6.e+, call TWEAK submethods from composed roles first
+                    if is_6e {
+                        let role_order = self.ordered_role_submethods_for_class(mro_class, "TWEAK");
+                        for (role_name, method_def) in role_order {
+                            let (_v, updated) = self.run_instance_method_resolved(
+                                &class_name.resolve(),
+                                &role_name,
+                                method_def,
+                                attrs.clone(),
+                                args.clone(),
+                                Some(Value::make_instance(*class_name, attrs.clone())),
+                            )?;
+                            attrs = updated;
+                            self.enforce_attribute_where_constraints(
+                                class_key,
+                                &class_attrs_info,
+                                &attrs,
+                            )?;
+                        }
                     }
                     let has_tweak = self
                         .classes
@@ -2141,6 +2197,84 @@ impl Interpreter {
             Ok(result) => result.truthy(),
             Err(_) => false,
         }
+    }
+
+    /// For a given class, return the ordered list of (role_name, MethodDef) pairs
+    /// for role submethods with the given name (e.g. "BUILD", "TWEAK", "DESTROY").
+    /// The order respects role composition: sub-roles come before the role that
+    /// composes them. Only submethods (is_my == true) are included; regular methods
+    /// in roles are skipped.
+    pub(super) fn ordered_role_submethods_for_class(
+        &self,
+        class_name: &str,
+        method_name: &str,
+    ) -> Vec<(String, MethodDef)> {
+        let composed = match self.class_composed_roles.get(class_name) {
+            Some(roles) => roles.clone(),
+            None => return Vec::new(),
+        };
+        // Build the correct order: for each directly composed role (in order),
+        // recursively include parent roles (depth-first) before the role itself.
+        // Deduplicate to avoid calling the same role submethod twice for the same class.
+        let mut ordered = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        // Figure out which roles are "direct" (from `does` declarations) vs transitive.
+        // Direct roles are those not reachable through another direct role's parents.
+        // However, `class_composed_roles` includes both direct and transitive roles in
+        // an unspecified order. We need to reconstruct the proper depth-first order.
+        //
+        // Strategy: for each role in composed list, expand it depth-first (parents first).
+        // The composed list may have the order [R1, R0, R2] where R0 is a parent of R1.
+        // We want [R0, R1, R2]. We achieve this by expanding each role and skipping
+        // already-seen roles.
+        for role in &composed {
+            let role_base = role
+                .split_once('[')
+                .map(|(b, _)| b)
+                .unwrap_or(role.as_str());
+            self.expand_role_depth_first(role_base, &mut ordered, &mut seen);
+        }
+        // Now filter to only roles that have the requested submethod
+        let mut result = Vec::new();
+        for role_name in &ordered {
+            if let Some(role_def) = self.roles.get(role_name)
+                && let Some(overloads) = role_def.methods.get(method_name)
+            {
+                for md in overloads {
+                    if md.is_my {
+                        result.push((role_name.clone(), md.clone()));
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    /// Recursively expand a role and its parent roles in depth-first order
+    /// (parent roles first, then the role itself).
+    fn expand_role_depth_first(
+        &self,
+        role_name: &str,
+        ordered: &mut Vec<String>,
+        seen: &mut std::collections::HashSet<String>,
+    ) {
+        if !seen.insert(role_name.to_string()) {
+            return;
+        }
+        // First, expand parent roles
+        if let Some(parents) = self.role_parents.get(role_name) {
+            for parent in parents {
+                let parent_base = parent
+                    .split_once('[')
+                    .map(|(b, _)| b)
+                    .unwrap_or(parent.as_str());
+                if self.roles.contains_key(parent_base) {
+                    self.expand_role_depth_first(parent_base, ordered, seen);
+                }
+            }
+        }
+        // Then add the role itself
+        ordered.push(role_name.to_string());
     }
 
     fn collect_attribute_type_constraints(&mut self, class_name: &str) -> HashMap<String, String> {
