@@ -69,6 +69,46 @@ fn is_literal_expr(expr: &Expr) -> bool {
     matches!(expr, Expr::Literal(_))
 }
 
+/// Extract variable names from a Signature literal expression for signature binding.
+/// Returns None if the expression is not a Signature literal.
+/// Returns Some(Vec<String>) where each string is either a variable name (e.g., "f")
+/// or empty string for anonymous params.
+fn extract_signature_param_names(expr: &Expr) -> Option<Vec<String>> {
+    let Expr::Literal(Value::Instance {
+        class_name,
+        attributes,
+        ..
+    }) = expr
+    else {
+        return None;
+    };
+    if class_name != "Signature" {
+        return None;
+    }
+    let params = attributes.get("params")?;
+    let Value::Array(param_list, ..) = params else {
+        return None;
+    };
+    let mut names = Vec::new();
+    for param in param_list.iter() {
+        let Value::Instance { attributes, .. } = param else {
+            names.push(String::new());
+            continue;
+        };
+        if let Some(Value::Str(name)) = attributes.get("name") {
+            if name.is_empty() {
+                names.push(String::new());
+            } else {
+                // name has the sigil included, e.g. "$f" -> we need "f" for Stmt::Assign
+                names.push(name.to_string());
+            }
+        } else {
+            names.push(String::new());
+        }
+    }
+    Some(names)
+}
+
 fn is_pure_value_expr(expr: &Expr) -> bool {
     matches!(
         expr,
@@ -842,6 +882,64 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     // Generic bind assignment on non-variable lhs (e.g. `($a, $b) := |(f)`).
     // Keep this as a parse fallback so complex bind lvalues don't fail early.
     if !matches!(expr, Expr::AssignExpr { .. }) && rest.starts_with(":=") {
+        // Signature binding: `:($f, $o, $) := @a`
+        // Extract variable names from the Signature literal and generate assignments.
+        if let Some(param_names) = extract_signature_param_names(&expr) {
+            let r = &rest[2..];
+            let (r, _) = ws(r)?;
+            let (r, rhs) = super::assign::parse_assign_expr_or_comma(r).map_err(|err| PError {
+                messages: merge_expected_messages(
+                    "expected right-hand expression after ':='",
+                    &err.messages,
+                ),
+                remaining_len: err.remaining_len.or(Some(r.len())),
+                exception: None,
+            })?;
+            // Generate: $tmp = rhs; $f := $tmp[0]; $o := $tmp[1]; ...
+            let tmp_name = format!(
+                "__sig_bind_tmp_{}",
+                TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
+            );
+            let mut stmts = Vec::new();
+            // Declare and assign the temp variable
+            stmts.push(Stmt::VarDecl {
+                name: tmp_name.clone(),
+                expr: rhs,
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+                where_constraint: None,
+            });
+            // For each named param, bind to the corresponding index
+            for (i, sigiled_name) in param_names.iter().enumerate() {
+                if sigiled_name.is_empty() {
+                    // Anonymous param ($) — skip binding
+                    continue;
+                }
+                let index_expr = Expr::Index {
+                    target: Box::new(Expr::Var(tmp_name.clone())),
+                    index: Box::new(Expr::Literal(Value::Int(i as i64))),
+                };
+                // For Stmt::Assign, scalar vars ($x) use name "x" (no sigil),
+                // but array (@a) and hash (%h) vars keep the sigil.
+                let assign_name = if let Some(stripped) = sigiled_name.strip_prefix('$') {
+                    stripped.to_string()
+                } else {
+                    sigiled_name.clone()
+                };
+                stmts.push(Stmt::Assign {
+                    name: assign_name,
+                    expr: index_expr,
+                    op: crate::ast::AssignOp::Bind,
+                });
+            }
+            let stmt = Stmt::SyntheticBlock(stmts);
+            return parse_statement_modifier(r, stmt);
+        }
         // Reject binding to a literal: `0 := 1` → X::Bind
         if is_literal_expr(&expr) {
             let ex = crate::value::Value::make_instance(
