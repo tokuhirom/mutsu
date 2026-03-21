@@ -125,6 +125,9 @@ impl VM {
                             }
                             self.stack.truncate(base);
                         }
+                        // Process pending DESTROY submethods at loop iteration boundaries,
+                        // mimicking GC-like behavior so DESTROY fires during execution.
+                        self.interpreter.run_pending_instance_destroys()?;
                         break 'body_redo;
                     }
                     Err(e) if e.is_succeed => {
