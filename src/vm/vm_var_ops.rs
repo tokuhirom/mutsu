@@ -791,6 +791,19 @@ impl VM {
             } else {
                 Value::str(name.to_string())
             }
+        } else if name == "self" {
+            // `self` used outside of a method context
+            let mut err = RuntimeError::new("'self' used where no object is available".to_string());
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert(
+                "message".to_string(),
+                Value::str("'self' used where no object is available".to_string()),
+            );
+            err.exception = Some(Box::new(Value::make_instance(
+                Symbol::intern("X::Syntax::Self::WithoutObject"),
+                attrs,
+            )));
+            return Err(err);
         } else {
             Value::str(name.to_string())
         };
