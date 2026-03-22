@@ -2261,6 +2261,10 @@ impl Interpreter {
             "substr" => {
                 return self.dispatch_substr(target, &args);
             }
+            "substr-rw" => {
+                // In non-lvalue context, substr-rw just returns the substring
+                return self.dispatch_substr_rw(target, &args);
+            }
             "trans" => {
                 return self.dispatch_trans(target, &args);
             }

@@ -835,6 +835,7 @@ roast/S32-str/sprintf-s.t
 roast/S32-str/sprintf-u.t
 roast/S32-str/sprintf-x.t
 roast/S32-str/starts-with.t
+roast/S32-str/substr-rw.t
 roast/S32-str/substr.t
 roast/S32-str/tc.t
 roast/S32-str/tclc.t
