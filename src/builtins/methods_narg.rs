@@ -337,6 +337,42 @@ pub(crate) fn native_method_1arg(
                 ch, &prop_name,
             )))
         }
+        "unimatch" => {
+            let prop_value = arg.to_string_value();
+            match target {
+                Value::Package(_) => {
+                    let msg = "Cannot resolve caller unimatch".to_string();
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("message".to_string(), Value::str(msg.clone()));
+                    let ex = Value::make_instance(
+                        crate::symbol::Symbol::intern("X::Multi::NoMatch"),
+                        attrs,
+                    );
+                    let mut err = RuntimeError::new(&msg);
+                    err.exception = Some(Box::new(ex));
+                    return Some(Err(err));
+                }
+                Value::Int(i) => {
+                    let cp = *i as u32;
+                    return Some(Ok(crate::builtins::uniprop::unimatch_for_codepoint(
+                        cp,
+                        &prop_value,
+                        None,
+                    )));
+                }
+                _ => {}
+            }
+            let s = target.to_string_value();
+            if s.is_empty() {
+                return Some(Ok(Value::Nil));
+            }
+            let ch = s.chars().next().unwrap();
+            Some(Ok(Value::Bool(crate::builtins::uniprop::unimatch(
+                ch,
+                &prop_value,
+                None,
+            ))))
+        }
         "uniprops" => {
             let prop_name = arg.to_string_value();
             let s = target.to_string_value();
@@ -1870,6 +1906,33 @@ pub(crate) fn native_method_2arg(
 
     match method {
         "expmod" => Some(crate::builtins::expmod(target, arg1, arg2)),
+        "unimatch" => {
+            // target.unimatch(prop_value, prop_name)
+            let prop_value = arg1.to_string_value();
+            let prop_name = arg2.to_string_value();
+            match target {
+                Value::Int(i) => {
+                    let cp = *i as u32;
+                    Some(Ok(crate::builtins::uniprop::unimatch_for_codepoint(
+                        cp,
+                        &prop_value,
+                        Some(&prop_name),
+                    )))
+                }
+                _ => {
+                    let s = target.to_string_value();
+                    if s.is_empty() {
+                        return Some(Ok(Value::Nil));
+                    }
+                    let ch = s.chars().next().unwrap();
+                    Some(Ok(Value::Bool(crate::builtins::uniprop::unimatch(
+                        ch,
+                        &prop_value,
+                        Some(&prop_name),
+                    ))))
+                }
+            }
+        }
         "fmt" => {
             let fmt_str = arg1.to_string_value();
             let sep = arg2.to_string_value();

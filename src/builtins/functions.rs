@@ -1120,6 +1120,44 @@ fn native_function_2arg(
                 }
             }
         }
+        "unimatch" => {
+            // unimatch(target, property_value)
+            let prop_value = arg2.to_string_value();
+            match arg1 {
+                Value::Package(_) => {
+                    let msg = "Cannot resolve caller unimatch".to_string();
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("message".to_string(), Value::str(msg.clone()));
+                    let ex = Value::make_instance(
+                        crate::symbol::Symbol::intern("X::Multi::NoMatch"),
+                        attrs,
+                    );
+                    let mut err = RuntimeError::new(&msg);
+                    err.exception = Some(Box::new(ex));
+                    Some(Err(err))
+                }
+                Value::Int(i) => {
+                    let cp = *i as u32;
+                    Some(Ok(super::uniprop::unimatch_for_codepoint(
+                        cp,
+                        &prop_value,
+                        None,
+                    )))
+                }
+                _ => {
+                    let s = arg1.to_string_value();
+                    if s.is_empty() {
+                        return Some(Ok(Value::Nil));
+                    }
+                    let ch = s.chars().next().unwrap();
+                    Some(Ok(Value::Bool(super::uniprop::unimatch(
+                        ch,
+                        &prop_value,
+                        None,
+                    ))))
+                }
+            }
+        }
         _ => None,
     }
 }
@@ -1132,6 +1170,33 @@ fn native_function_3arg(
 ) -> Option<Result<Value, RuntimeError>> {
     match name {
         "expmod" => Some(crate::builtins::expmod(arg1, arg2, arg3)),
+        "unimatch" => {
+            // unimatch(target, property_value, property_name)
+            let prop_value = arg2.to_string_value();
+            let prop_name = arg3.to_string_value();
+            match arg1 {
+                Value::Int(i) => {
+                    let cp = *i as u32;
+                    Some(Ok(super::uniprop::unimatch_for_codepoint(
+                        cp,
+                        &prop_value,
+                        Some(&prop_name),
+                    )))
+                }
+                _ => {
+                    let s = arg1.to_string_value();
+                    if s.is_empty() {
+                        return Some(Ok(Value::Nil));
+                    }
+                    let ch = s.chars().next().unwrap();
+                    Some(Ok(Value::Bool(super::uniprop::unimatch(
+                        ch,
+                        &prop_value,
+                        Some(&prop_name),
+                    ))))
+                }
+            }
+        }
         "substr" => {
             if matches!(arg1, Value::Junction { .. })
                 || matches!(arg2, Value::Junction { .. })

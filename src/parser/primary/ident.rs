@@ -743,6 +743,7 @@ pub(super) fn is_listop(name: &str) -> bool {
             | "elems"
             | "end"
             | "uniprop"
+            | "unimatch"
             | "uniname"
     ) || is_expr_listop(name)
 }

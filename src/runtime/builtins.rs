@@ -3445,6 +3445,7 @@ impl Interpreter {
                 | "zprintf"
                 | "uniname"
                 | "uniprop"
+                | "unimatch"
                 | "uniparse"
                 | "parse-names"
         )
