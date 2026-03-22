@@ -94,6 +94,19 @@ impl Interpreter {
             },
             "Str" => self.call_method_with_values(value, "Str", vec![])?,
             "Bool" => Value::Bool(value.truthy()),
+            "Uni" => {
+                // Uni(codepoint) creates a Uni from a single codepoint value
+                let cp = match &value {
+                    Value::Int(i) => *i as u32,
+                    Value::Num(f) => *f as u32,
+                    _ => value.to_string_value().parse::<u32>().unwrap_or(0),
+                };
+                let text: String = char::from_u32(cp).into_iter().collect();
+                Value::Uni {
+                    form: String::new(),
+                    text,
+                }
+            }
             _ => Value::Nil,
         };
         Ok(coerced)

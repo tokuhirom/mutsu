@@ -2660,6 +2660,27 @@ impl VM {
             (target, idxs)
         };
 
+        // Uni: check exists based on codepoint count
+        if let Value::Uni { text, .. } = &target {
+            let len = text.chars().count() as i64;
+            if indices.len() == 1 && !is_zen {
+                let i = indices[0];
+                let exists = i >= 0 && i < len;
+                let result = exists ^ effective_negated;
+                self.stack.push(Value::Bool(result));
+                return Ok(());
+            }
+            let vals: Vec<Value> = indices
+                .iter()
+                .map(|&i| {
+                    let exists = i >= 0 && i < len;
+                    Value::Bool(exists ^ effective_negated)
+                })
+                .collect();
+            self.stack.push(Value::array(vals));
+            return Ok(());
+        }
+
         let items = match &target {
             Value::Array(items, ..) => items.as_ref(),
             _ => &[] as &[Value],
