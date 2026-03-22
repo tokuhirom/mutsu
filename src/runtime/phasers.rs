@@ -457,6 +457,7 @@ fn lift_phasers_from_closure_stmt(stmt: &mut Stmt, check: &mut Vec<Stmt>, init: 
 fn reorder_at_level(stmts: &mut Vec<Stmt>, extra_check: Vec<Stmt>, extra_init: Vec<Stmt>) {
     let mut var_decls: Vec<Stmt> = Vec::new();
     let mut use_stmts: Vec<Stmt> = Vec::new();
+    let mut begin: Vec<Stmt> = Vec::new();
     let mut check: Vec<Vec<Stmt>> = Vec::new();
     let mut init: Vec<Vec<Stmt>> = Vec::new();
     let mut rest: Vec<Stmt> = Vec::new();
@@ -481,12 +482,13 @@ fn reorder_at_level(stmts: &mut Vec<Stmt>, extra_check: Vec<Stmt>, extra_init: V
         if let Stmt::Phaser { kind, body } = &stmt {
             match kind {
                 PhaserKind::Begin => {
-                    // BEGIN phasers are kept in-place (not extracted).
-                    // They are already compiled inline by the compiler and
-                    // run at the correct time. Extracting them breaks array/hash
-                    // container assignments because the compiler allocates
-                    // different local slots for the inlined body vs the rest.
-                    rest.push(stmt);
+                    // BEGIN phasers are kept as whole Stmt::Phaser nodes
+                    // (not extracted into raw body stmts) to preserve compiler
+                    // slot allocation for array/hash container assignments.
+                    // They are placed in a separate bucket so they run before
+                    // CHECK blocks (BEGIN runs first in forward order, then
+                    // CHECK runs in reverse order).
+                    begin.push(stmt);
                     continue;
                 }
                 PhaserKind::Check => {
@@ -551,9 +553,10 @@ fn reorder_at_level(stmts: &mut Vec<Stmt>, extra_check: Vec<Stmt>, extra_init: V
     }
 
     // Reconstruct: VarDecls first, then `use` (compile-time imports),
-    // then CHECK (reverse), INIT (forward), then rest.
+    // then BEGIN (forward), CHECK (reverse), INIT (forward), then rest.
     stmts.extend(var_decls);
     stmts.extend(use_stmts);
+    stmts.extend(begin);
     for body in check.iter().rev() {
         stmts.extend(body.iter().cloned());
     }
