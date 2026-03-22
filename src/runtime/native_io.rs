@@ -1739,7 +1739,41 @@ impl Interpreter {
         &self,
         attributes: &HashMap<String, Value>,
         method: &str,
+        args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        // Check if this is a writable stdin pipe (from run :in)
+        if let Some(Value::Int(pid)) = attributes.get("proc-pid") {
+            let pid_u32 = *pid as u32;
+            match method {
+                "print" => {
+                    // Write to the child's stdin
+                    if let Ok(map) = super::native_methods::proc_stdin_map().lock()
+                        && let Some(stdin_arc) = map.get(&pid_u32)
+                        && let Ok(mut guard) = stdin_arc.lock()
+                        && let Some(ref mut stdin) = *guard
+                    {
+                        use std::io::Write;
+                        for arg in args {
+                            let s = arg.to_string_value();
+                            let _ = stdin.write_all(s.as_bytes());
+                        }
+                        let _ = stdin.flush();
+                    }
+                    return Ok(Value::Bool(true));
+                }
+                "close" => {
+                    // Close the child's stdin (drop it)
+                    if let Ok(map) = super::native_methods::proc_stdin_map().lock()
+                        && let Some(stdin_arc) = map.get(&pid_u32)
+                        && let Ok(mut guard) = stdin_arc.lock()
+                    {
+                        *guard = None; // Drop the ChildStdin
+                    }
+                    return Ok(Value::Bool(true));
+                }
+                _ => {}
+            }
+        }
         let content = attributes
             .get("content")
             .map(|v| v.to_string_value())

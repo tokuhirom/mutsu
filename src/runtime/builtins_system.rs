@@ -1,5 +1,35 @@
 use super::*;
 use crate::symbol::Symbol;
+use std::sync::OnceLock;
+
+/// State for a live child process (when `:in` is used with `run`).
+pub(super) struct LiveProcState {
+    pub(super) child: std::process::Child,
+    pub(super) capture_out: bool,
+    pub(super) capture_err: bool,
+}
+
+type LiveProcMap = std::sync::Mutex<HashMap<i64, LiveProcState>>;
+
+pub(super) fn live_proc_map() -> &'static LiveProcMap {
+    static MAP: OnceLock<LiveProcMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+/// Cached results from finalized live procs.
+pub(super) struct FinalizedProc {
+    pub exitcode: i64,
+    pub signal: i64,
+    pub captured_out: Option<String>,
+    pub captured_err: Option<String>,
+}
+
+type FinalizedProcMap = std::sync::Mutex<HashMap<i64, FinalizedProc>>;
+
+pub(super) fn finalized_proc_map() -> &'static FinalizedProcMap {
+    static MAP: OnceLock<FinalizedProcMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
 
 /// Options extracted from named arguments for run/shell.
 struct ProcOptions {
@@ -7,6 +37,7 @@ struct ProcOptions {
     env: HashMap<String, String>,
     capture_err: bool,
     capture_out: bool,
+    capture_in: bool,
     win_verbatim_args: bool,
 }
 
@@ -512,7 +543,7 @@ impl Interpreter {
     }
 
     /// Create an IO::Pipe instance wrapping captured content.
-    fn make_io_pipe(content: String) -> Value {
+    pub(super) fn make_io_pipe(content: String) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("content".to_string(), Value::str(content));
         Value::make_instance(Symbol::intern("IO::Pipe"), attrs)
@@ -525,6 +556,7 @@ impl Interpreter {
             env: HashMap::new(),
             capture_err: false,
             capture_out: false,
+            capture_in: false,
             win_verbatim_args: false,
         };
         for value in args.iter().skip(skip) {
@@ -547,6 +579,9 @@ impl Interpreter {
                         "out" => {
                             opts.capture_out = inner.truthy();
                         }
+                        "in" => {
+                            opts.capture_in = inner.truthy();
+                        }
                         "win-verbatim-args" => {
                             opts.win_verbatim_args = inner.truthy();
                         }
@@ -559,6 +594,7 @@ impl Interpreter {
                     "cwd" => opts.cwd = Some(inner.to_string_value()),
                     "err" => opts.capture_err = inner.truthy(),
                     "out" => opts.capture_out = inner.truthy(),
+                    "in" => opts.capture_in = inner.truthy(),
                     "win-verbatim-args" => opts.win_verbatim_args = inner.truthy(),
                     _ => {}
                 }
@@ -665,6 +701,9 @@ impl Interpreter {
         } else {
             cmd.stderr(std::process::Stdio::null());
         }
+        if opts.capture_in {
+            cmd.stdin(std::process::Stdio::piped());
+        }
 
         if let Some(cwd) = opts_cwd.clone() {
             cmd.current_dir(cwd);
@@ -676,6 +715,45 @@ impl Interpreter {
         match cmd.spawn() {
             Ok(mut child) => {
                 let pid = child.id() as i64;
+
+                // When :in is specified, return a live Proc immediately.
+                // The child's stdin is accessible via $proc.in, and
+                // stdout/stderr/exitcode are read lazily when accessed.
+                if opts.capture_in {
+                    let stdin_handle = child.stdin.take();
+                    // Store child in global map for later access
+                    if let Ok(mut map) = live_proc_map().lock() {
+                        map.insert(
+                            pid,
+                            LiveProcState {
+                                child,
+                                capture_out: opts.capture_out,
+                                capture_err: opts.capture_err,
+                            },
+                        );
+                    }
+                    // Create an IO::Pipe for stdin
+                    let in_pipe = if let Some(stdin) = stdin_handle {
+                        // Store in proc_stdin_map for .print/.close
+                        if let Ok(mut map) = super::native_methods::proc_stdin_map().lock() {
+                            map.insert(pid as u32, Arc::new(std::sync::Mutex::new(Some(stdin))));
+                        }
+                        let mut in_attrs = HashMap::new();
+                        in_attrs.insert("proc-pid".to_string(), Value::Int(pid));
+                        Value::make_instance(Symbol::intern("IO::Pipe"), in_attrs)
+                    } else {
+                        Value::Nil
+                    };
+                    let mut attrs = HashMap::new();
+                    attrs.insert("exitcode".to_string(), Value::Int(-1));
+                    attrs.insert("signal".to_string(), Value::Int(0));
+                    attrs.insert("pid".to_string(), Value::Int(pid));
+                    attrs.insert("command".to_string(), command_val);
+                    attrs.insert("in".to_string(), in_pipe);
+                    attrs.insert("live".to_string(), Value::Bool(true));
+                    return Ok(Value::make_instance(Symbol::intern("Proc"), attrs));
+                }
+
                 let captured_out = if opts.capture_out {
                     child.stdout.take().map(|mut s| {
                         let mut buf = String::new();
