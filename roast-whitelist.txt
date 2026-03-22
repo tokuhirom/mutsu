@@ -332,6 +332,7 @@ roast/S06-currying/named.t
 roast/S06-currying/slurpy.t
 roast/S06-multi/compile-time.t
 roast/S06-multi/lexical-multis.t
+roast/S06-multi/positional-vs-named.t
 roast/S06-multi/proto.t
 roast/S06-multi/redispatch.t
 roast/S06-multi/unpackability.t

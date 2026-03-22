@@ -2244,7 +2244,12 @@ impl Interpreter {
                     let arg = unwrap_varref_value(arg.clone());
                     if let Value::Pair(key, _) = arg {
                         let consumed = param_defs.iter().any(|pd| {
-                            (pd.named && pd.name == key) || pd.name == format!(":{}", key)
+                            if pd.named {
+                                let bare = pd.name.trim_start_matches(|c| "$@%&".contains(c));
+                                bare == key
+                            } else {
+                                pd.name == format!(":{}", key)
+                            }
                         });
                         if !consumed {
                             return false;
@@ -2265,10 +2270,10 @@ impl Interpreter {
                 })
                 .collect();
             for pd in param_defs.iter().filter(|pd| pd.named) {
-                let name = &pd.name;
+                let bare_name = pd.name.trim_start_matches(|c: char| "$@%&".contains(c));
                 let arg_val = named_args
                     .iter()
-                    .find(|(k, _)| k == name || *k == format!(":{}", name))
+                    .find(|(k, _)| k == bare_name)
                     .map(|(_, v)| v.clone());
 
                 // Check required named params have corresponding args
