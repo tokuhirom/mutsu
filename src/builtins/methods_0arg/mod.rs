@@ -1726,7 +1726,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 ..
             } = target
                 && class_name == "Failure"
-                && !attributes.get("handled").is_some_and(Value::truthy)
+                && !target.is_failure_handled()
                 && let Some(ex) = attributes.get("exception")
             {
                 let msg = ex.to_string_value();
@@ -1752,12 +1752,20 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 _ => None, // fall through to slow path for instances etc.
             }
         }
-        "defined" => Some(Ok(Value::Bool(match target {
-            Value::Nil | Value::Package(_) => false,
-            Value::Slip(items) if items.is_empty() => false,
-            Value::Instance { class_name, .. } if class_name == "Failure" => false,
-            _ => true,
-        }))),
+        "defined" => {
+            // Calling .defined on a Failure marks it as handled
+            if let Value::Instance { class_name, .. } = target
+                && class_name == "Failure"
+            {
+                target.mark_failure_handled();
+            }
+            Some(Ok(Value::Bool(match target {
+                Value::Nil | Value::Package(_) => false,
+                Value::Slip(items) if items.is_empty() => false,
+                Value::Instance { class_name, .. } if class_name == "Failure" => false,
+                _ => true,
+            })))
+        }
         "DEFINITE" => Some(Ok(Value::Bool(match target {
             Value::Nil | Value::Package(_) | Value::CustomType { .. } => false,
             Value::Slip(items) if items.is_empty() => false,
@@ -1804,6 +1812,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 // runtime context. Fall through to the runtime handler.
                 None
             } else {
+                // Calling .Bool on a Failure marks it as handled
+                if let Value::Instance { class_name, .. } = target
+                    && class_name == "Failure"
+                {
+                    target.mark_failure_handled();
+                }
                 Some(Ok(Value::Bool(target.truthy())))
             }
         }
@@ -3070,8 +3084,24 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             let reversed: String = s.graphemes(true).rev().collect::<String>().nfc().collect();
             Some(Ok(Value::str(reversed)))
         }
-        "so" => Some(Ok(Value::Bool(target.truthy()))),
-        "not" => Some(Ok(Value::Bool(!target.truthy()))),
+        "so" => {
+            // Calling .so on a Failure marks it as handled
+            if let Value::Instance { class_name, .. } = target
+                && class_name == "Failure"
+            {
+                target.mark_failure_handled();
+            }
+            Some(Ok(Value::Bool(target.truthy())))
+        }
+        "not" => {
+            // Calling .not on a Failure marks it as handled
+            if let Value::Instance { class_name, .. } = target
+                && class_name == "Failure"
+            {
+                target.mark_failure_handled();
+            }
+            Some(Ok(Value::Bool(!target.truthy())))
+        }
         "is-lazy" => {
             // For Iterator instances, check the stored is_lazy attribute
             if let Value::Instance {

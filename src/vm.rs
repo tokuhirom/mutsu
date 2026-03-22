@@ -74,12 +74,14 @@ impl VM {
     fn mark_failure_handled_on_stack(stack: &mut [Value]) {
         if let Some(Value::Instance {
             class_name,
+            id,
             attributes,
             ..
         }) = stack.last_mut()
             && *class_name == "Failure"
         {
             Arc::make_mut(attributes).insert("handled".to_string(), Value::Bool(true));
+            crate::value::mark_failure_handled(*id);
         }
     }
 
@@ -634,13 +636,9 @@ impl VM {
                     {
                         // When assigning an unhandled Failure to a typed variable
                         // that can't hold it, explode the Failure first (Raku behavior)
-                        if let Value::Instance {
-                            class_name,
-                            attributes,
-                            ..
-                        } = &val
+                        if let Value::Instance { class_name, .. } = &val
                             && class_name.resolve() == "Failure"
-                            && !attributes.get("handled").is_some_and(Value::truthy)
+                            && !val.is_failure_handled()
                             && let Some(err) =
                                 self.interpreter.failure_to_runtime_error_if_unhandled(&val)
                         {

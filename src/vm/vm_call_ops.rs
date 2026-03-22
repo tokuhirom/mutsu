@@ -648,13 +648,9 @@ impl VM {
         }
         // Unhandled Failure explosion: calling a non-Failure method on an unhandled
         // Failure should throw the stored exception (Raku behavior).
-        if let Value::Instance {
-            class_name,
-            attributes,
-            ..
-        } = &target
+        if let Value::Instance { class_name, .. } = &target
             && class_name.resolve() == "Failure"
-            && !attributes.get("handled").is_some_and(Value::truthy)
+            && !target.is_failure_handled()
             && !matches!(
                 method.as_str(),
                 "exception"
@@ -663,6 +659,7 @@ impl VM {
                     | "defined"
                     | "Bool"
                     | "so"
+                    | "not"
                     | "gist"
                     | "Str"
                     | "raku"
@@ -1145,6 +1142,23 @@ impl VM {
                 }
             }
             return Ok(result);
+        }
+        // Nil method fallback for CallMethodMut: if the target is Nil and
+        // the method is not a known type method, return Nil instead of throwing
+        // "method not found". This mirrors the CallMethod Nil dispatch behavior.
+        if matches!(&target, Value::Nil) {
+            let result =
+                self.interpreter
+                    .call_method_mut_with_values(target_name, target, method, args);
+            return match result {
+                Err(ref e)
+                    if e.message.contains("Unknown method")
+                        || e.message.contains("No matching candidates") =>
+                {
+                    Ok(Value::Nil)
+                }
+                other => other,
+            };
         }
         self.interpreter
             .call_method_mut_with_values(target_name, target, method, args)

@@ -203,6 +203,36 @@ impl Value {
         }
     }
 
+    /// Check if this Failure instance is handled.
+    /// Returns true if handled, false otherwise.
+    /// Panics if called on a non-Failure.
+    pub(crate) fn is_failure_handled(&self) -> bool {
+        if let Value::Instance {
+            class_name,
+            attributes,
+            id,
+            ..
+        } = self
+            && class_name.resolve() == "Failure"
+        {
+            // Check the global registry first (shared across clones)
+            if let Some(handled) = super::is_failure_handled(*id) {
+                return handled;
+            }
+            // Fall back to the attribute
+            attributes.get("handled").is_some_and(|v| v.truthy())
+        } else {
+            false
+        }
+    }
+
+    /// Mark this Failure as handled in the global registry.
+    pub(crate) fn mark_failure_handled(&self) {
+        if let Value::Instance { id, .. } = self {
+            super::mark_failure_handled(*id);
+        }
+    }
+
     pub(crate) fn truthy(&self) -> bool {
         match self {
             Value::Bool(b) => *b,

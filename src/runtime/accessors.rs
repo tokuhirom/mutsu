@@ -152,10 +152,7 @@ impl Interpreter {
         if class_name != "Failure" {
             return None;
         }
-        let handled = attributes
-            .get("handled")
-            .is_some_and(crate::value::Value::truthy);
-        if handled {
+        if value.is_failure_handled() {
             return None;
         }
         if let Some(exception) = attributes.get("exception") {

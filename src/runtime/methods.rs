@@ -220,13 +220,9 @@ impl Interpreter {
         }
         // Unhandled Failure explosion: calling a non-Failure method on an unhandled
         // Failure should throw the stored exception (Raku behavior).
-        if let Value::Instance {
-            class_name,
-            attributes,
-            ..
-        } = &target
+        if let Value::Instance { class_name, .. } = &target
             && class_name.resolve() == "Failure"
-            && !attributes.get("handled").is_some_and(Value::truthy)
+            && !target.is_failure_handled()
             && !matches!(
                 method,
                 "exception"
@@ -235,6 +231,7 @@ impl Interpreter {
                     | "defined"
                     | "Bool"
                     | "so"
+                    | "not"
                     | "gist"
                     | "Str"
                     | "raku"
@@ -1985,15 +1982,18 @@ impl Interpreter {
                 attrs.insert("handled".to_string(), Value::Bool(false));
                 return Ok(Value::make_instance(Symbol::intern("Failure"), attrs));
             }
-            "handled"
-                if args.is_empty()
-                    && matches!(&target, Value::Instance { class_name, .. } if class_name == "Failure") =>
+            "handled" if matches!(&target, Value::Instance { class_name, .. } if class_name == "Failure") =>
             {
-                if let Value::Instance { attributes, .. } = &target {
-                    return Ok(attributes
-                        .get("handled")
-                        .cloned()
-                        .unwrap_or(Value::Bool(false)));
+                if args.is_empty() {
+                    // Read the handled state
+                    return Ok(Value::Bool(target.is_failure_handled()));
+                } else if args.len() == 1 {
+                    // Set the handled state: $failure.handled = value
+                    let val = args[0].truthy();
+                    if let Value::Instance { id, .. } = &target {
+                        crate::value::set_failure_handled(*id, val);
+                    }
+                    return Ok(Value::Bool(val));
                 }
             }
             "are" => {
