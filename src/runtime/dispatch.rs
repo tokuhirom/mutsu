@@ -31,7 +31,8 @@ impl Interpreter {
 
     fn candidate_uses_order_sensitive_dispatch(&self, def: &FunctionDef) -> bool {
         Self::dispatch_visible_params(def).any(|p| {
-            p.where_constraint.is_some()
+            p.literal_value.is_some()
+                || p.where_constraint.is_some()
                 || p.type_constraint
                     .as_deref()
                     .map(Self::constraint_base_name)
@@ -192,7 +193,10 @@ impl Interpreter {
     fn candidate_specificity_rank(
         &self,
         def: &FunctionDef,
-    ) -> (usize, usize, usize, usize, usize, usize, usize) {
+    ) -> (usize, usize, usize, usize, usize, usize, usize, usize) {
+        let literal_value_count = Self::dispatch_visible_params(def)
+            .filter(|p| p.literal_value.is_some())
+            .count();
         let where_count = Self::dispatch_visible_params(def)
             .filter(|p| p.where_constraint.is_some())
             .count();
@@ -234,6 +238,7 @@ impl Interpreter {
             })
             .count();
         (
+            literal_value_count,
             where_count,
             subset_type_count,
             typed_param_count,

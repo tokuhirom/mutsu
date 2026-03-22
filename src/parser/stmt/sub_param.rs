@@ -742,6 +742,18 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             || r2.starts_with(']')
             || r2.starts_with("-->")
         {
+            // True/False in signature position are literal Bool values, not type names.
+            // In Raku, `sub f(True)` means "type Bool, smartmatched against True".
+            // Smartmatch against True always succeeds, so the literal check is just
+            // a Bool type constraint. Smartmatch against False always fails, so
+            // sub f(False) would reject all calls (equivalent to an impossible constraint).
+            if tc == "True" || tc == "False" {
+                let mut p = make_param("__type_only__".to_string());
+                p.type_constraint = Some("Bool".to_string());
+                p.named = named;
+                p.slurpy = slurpy;
+                return Ok((r2, p));
+            }
             // Bare identifier as type-only parameter (e.g., enum values in multi dispatch)
             // multi infix:<->(e1, e2) { ... }
             let mut p = make_param("__type_only__".to_string());
@@ -818,7 +830,23 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             || after_lit.starts_with("-->"))
     {
         let mut p = make_param("__literal__".to_string());
-        p.type_constraint = type_constraint;
+        // If no explicit type constraint, infer from the literal value type
+        p.type_constraint = type_constraint.or_else(|| {
+            Some(
+                match &v {
+                    crate::value::Value::Int(_) | crate::value::Value::BigInt(_) => "Int",
+                    crate::value::Value::Num(_) => "Num",
+                    crate::value::Value::Rat(..)
+                    | crate::value::Value::FatRat(..)
+                    | crate::value::Value::BigRat(..) => "Rat",
+                    crate::value::Value::Str(_) => "Str",
+                    crate::value::Value::Bool(_) => "Bool",
+                    crate::value::Value::Complex(..) => "Complex",
+                    _ => return None,
+                }
+                .to_string(),
+            )
+        });
         p.literal_value = Some(v);
         return Ok((after_lit, p));
     }
