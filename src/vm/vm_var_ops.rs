@@ -116,6 +116,12 @@ impl VM {
             Some(Value::Pair(name, _)) if name == SELF_ARRAY_REF_SENTINEL => {
                 Value::Array(items.clone(), kind)
             }
+            // If the element is a hole (Package("Any") from deletion or
+            // uninitialized gap) and a non-Nil default is available,
+            // return the default instead of the hole value.
+            Some(Value::Package(name)) if name == "Any" && !matches!(default, Value::Nil) => {
+                default
+            }
             Some(value) => value.clone(),
             None => default,
         }
@@ -577,6 +583,48 @@ impl VM {
         self.interpreter.env_mut().insert(key, Value::hash(map));
     }
 
+    /// Remove deleted indices from the initialized-index tracking set.
+    /// This must be called after array element deletion and before
+    /// `trim_trailing_array_holes` so that deleted slots are recognized
+    /// as holes and can be trimmed.
+    fn unmark_initialized_indices(&mut self, var_name: &str, idx: &Value) {
+        let key = format!("__mutsu_initialized_index::{}", var_name);
+        let Some(Value::Hash(map)) = self.interpreter.env_mut().get_mut(&key) else {
+            return;
+        };
+        let m = Arc::make_mut(map);
+        Self::unmark_index_entries(m, idx);
+    }
+
+    fn unmark_index_entries(map: &mut std::collections::HashMap<String, Value>, idx: &Value) {
+        match idx {
+            Value::Array(items, ..) => {
+                for item in items.iter() {
+                    Self::unmark_index_entries(map, item);
+                }
+            }
+            Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. } => {
+                let expanded = crate::runtime::utils::value_to_list(idx);
+                for item in &expanded {
+                    Self::unmark_index_entries(map, item);
+                }
+            }
+            Value::Int(i) => {
+                map.remove(&i.to_string());
+            }
+            Value::Num(f) => {
+                map.remove(&(*f as i64).to_string());
+            }
+            _ => {
+                map.remove(&idx.to_string_value());
+            }
+        }
+    }
+
     pub(super) fn exec_get_bare_word_op(
         &mut self,
         code: &CompiledCode,
@@ -862,6 +910,10 @@ impl VM {
                 self.force_lazy_list_vm(ll)?
             };
             target = Value::array(forced);
+        }
+        // Normalize Slip target to List for uniform handling
+        if let Value::Slip(items) = target {
+            target = Value::Array(items, crate::value::ArrayKind::List);
         }
         // Normalize index: convert Seq/LazyList indices to Array for
         // uniform handling in the match below.
@@ -1814,6 +1866,8 @@ impl VM {
             .interpreter
             .var_type_constraint(&var_name)
             .unwrap_or_else(|| "Any".to_string());
+        // Save idx for unmark step (idx is consumed by delete_from_container)
+        let idx_for_unmark = idx.clone();
         let result = if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
             if matches!(container, Value::Mix(_)) && !target_is_mixhash {
                 return Err(RuntimeError::immutable("Mix", "delete"));
@@ -1822,6 +1876,9 @@ impl VM {
         } else {
             Self::delete_from_missing_container(idx)
         };
+        // Remove deleted indices from the initialized-index tracking set
+        // so that trim_trailing_array_holes recognizes them as holes.
+        self.unmark_initialized_indices(&var_name, &idx_for_unmark);
         // Trim trailing holes from arrays after deletion.
         // A "hole" is either Nil (deleted) or an uninitialized Package("Any") slot.
         self.trim_trailing_array_holes(&var_name);
@@ -1836,6 +1893,20 @@ impl VM {
             let container = container.clone();
             self.interpreter
                 .register_container_type_metadata(&container, info);
+        }
+        // Re-register container default if it was lost due to Arc::make_mut.
+        // Use var_default (name-based, survives mutations) as the source of
+        // truth, and sync it to the current container's pointer-based default.
+        if let Some(def) = self.interpreter.var_default(&var_name).cloned()
+            && let Some(container) = self.interpreter.env().get(&var_name).cloned()
+        {
+            if self.interpreter.container_default(&container).is_none() {
+                self.interpreter
+                    .set_container_default(&container, def.clone());
+            }
+            // Sync env value to locals so reads through locals see the
+            // updated container with its default.
+            self.locals_set_by_name(code, &var_name, container);
         }
         self.stack.push(result);
         Ok(())

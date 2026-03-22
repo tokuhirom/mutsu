@@ -1404,6 +1404,23 @@ impl VM {
         {
             val = def.clone();
         }
+        // For array variables with `is default(X)`, replace Nil elements
+        // with the default value (Raku container semantics).
+        if name.starts_with('@')
+            && let Some(def) = self.interpreter.var_default(name).cloned()
+            && let Value::Array(ref items, kind) = val
+        {
+            let is_hole =
+                |v: &Value| matches!(v, Value::Nil) || matches!(v, Value::Package(n) if n == "Any");
+            let has_holes = items.iter().any(is_hole);
+            if has_holes {
+                let replaced: Vec<Value> = items
+                    .iter()
+                    .map(|v| if is_hole(v) { def.clone() } else { v.clone() })
+                    .collect();
+                val = Value::Array(Arc::new(replaced), kind);
+            }
+        }
         if name.starts_with('@') || name.starts_with('%') {
             val = self.coerce_typed_container_assignment(name, val)?;
         }
