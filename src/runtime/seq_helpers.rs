@@ -2611,6 +2611,16 @@ impl Interpreter {
         }
     }
 
+    /// Get raw Value endpoints of a GenericRange (for Whatever detection).
+    fn range_raw_endpoints(v: &Value) -> (Value, Value) {
+        match v {
+            Value::GenericRange { start, end, .. } => {
+                (start.as_ref().clone(), end.as_ref().clone())
+            }
+            _ => (Value::Nil, Value::Nil),
+        }
+    }
+
     /// Check if a range has string endpoints.
     pub(crate) fn range_has_string_endpoints(v: &Value) -> bool {
         match v {
@@ -2690,13 +2700,20 @@ impl Interpreter {
         // For string ranges, compare strings
         if Self::range_has_string_endpoints(range) {
             let v_str = val.to_string_value();
+            let (r_start, r_end) = Self::range_raw_endpoints(range);
+            let start_is_whatever = matches!(r_start, Value::Whatever | Value::HyperWhatever);
+            let end_is_whatever = matches!(r_end, Value::Whatever | Value::HyperWhatever);
             let (r_min_s, r_max_s) = Self::range_raw_string_bounds(range);
-            let min_ok = if r_es {
+            let min_ok = if start_is_whatever {
+                true
+            } else if r_es {
                 v_str > r_min_s
             } else {
                 v_str >= r_min_s
             };
-            let max_ok = if r_ee {
+            let max_ok = if end_is_whatever {
+                true
+            } else if r_ee {
                 v_str < r_max_s
             } else {
                 v_str <= r_max_s

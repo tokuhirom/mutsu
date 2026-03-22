@@ -760,22 +760,46 @@ fn dispatch_capture(
     }
 }
 
+/// Create a X::Cannot::Lazy Failure for .elems on an infinite range.
+fn range_elems_lazy_failure(action: &str) -> Option<Result<Value, RuntimeError>> {
+    let mut ex_attrs = std::collections::HashMap::new();
+    ex_attrs.insert(
+        "message".to_string(),
+        Value::str(format!("Cannot .{} a lazy list", action)),
+    );
+    ex_attrs.insert("action".to_string(), Value::str(format!(".{}", action)));
+    let exception = Value::make_instance(Symbol::intern("X::Cannot::Lazy"), ex_attrs);
+    let mut failure_attrs = std::collections::HashMap::new();
+    failure_attrs.insert("exception".to_string(), exception);
+    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+    Some(Ok(Value::make_instance(
+        Symbol::intern("Failure"),
+        failure_attrs,
+    )))
+}
+
+fn is_infinite_endpoint(v: &Value) -> bool {
+    match v {
+        Value::Whatever | Value::HyperWhatever => true,
+        Value::Num(n) => n.is_infinite(),
+        Value::Rat(n, d) => *d == 0 && *n != 0,
+        Value::FatRat(n, d) => *d == 0 && *n != 0,
+        other => {
+            let n = other.to_f64();
+            n.is_infinite()
+        }
+    }
+}
+
 fn is_infinite_range(value: &Value) -> bool {
     match value {
-        Value::Range(_, end)
-        | Value::RangeExcl(_, end)
-        | Value::RangeExclStart(_, end)
-        | Value::RangeExclBoth(_, end) => *end == i64::MAX,
-        Value::GenericRange { end, .. } => match end.as_ref() {
-            Value::HyperWhatever => true,
-            Value::Num(n) => n.is_infinite() && n.is_sign_positive(),
-            Value::Rat(n, d) => *d == 0 && *n > 0,
-            Value::FatRat(n, d) => *d == 0 && *n > 0,
-            other => {
-                let n = other.to_f64();
-                n.is_infinite() && n.is_sign_positive()
-            }
-        },
+        Value::Range(start, end)
+        | Value::RangeExcl(start, end)
+        | Value::RangeExclStart(start, end)
+        | Value::RangeExclBoth(start, end) => *end == i64::MAX || *start == i64::MIN,
+        Value::GenericRange { start, end, .. } => {
+            is_infinite_endpoint(start) || is_infinite_endpoint(end)
+        }
         _ => false,
     }
 }
@@ -810,14 +834,49 @@ fn is_self_array_ref_marker(v: &Value) -> bool {
     matches!(v, Value::Pair(name, _) if name == "__mutsu_self_array_ref")
 }
 
+/// Format a range endpoint for display, converting i64::MAX to Inf and i64::MIN to -Inf.
+fn range_endpoint_display(v: i64) -> String {
+    if v == i64::MAX {
+        "Inf".to_string()
+    } else if v == i64::MIN {
+        "-Inf".to_string()
+    } else {
+        v.to_string()
+    }
+}
+
 /// Return the gist (compact display) representation of a Range value.
 /// Unlike .Str which iterates and joins with spaces, .gist shows range notation (e.g. "1..5").
 fn range_gist_string(value: &Value) -> String {
     match value {
-        Value::Range(a, b) => format!("{}..{}", a, b),
-        Value::RangeExcl(a, b) => format!("{}..^{}", a, b),
-        Value::RangeExclStart(a, b) => format!("{}^..{}", a, b),
-        Value::RangeExclBoth(a, b) => format!("{}^..^{}", a, b),
+        Value::Range(a, b) => {
+            format!(
+                "{}..{}",
+                range_endpoint_display(*a),
+                range_endpoint_display(*b)
+            )
+        }
+        Value::RangeExcl(a, b) => {
+            format!(
+                "{}..^{}",
+                range_endpoint_display(*a),
+                range_endpoint_display(*b)
+            )
+        }
+        Value::RangeExclStart(a, b) => {
+            format!(
+                "{}^..{}",
+                range_endpoint_display(*a),
+                range_endpoint_display(*b)
+            )
+        }
+        Value::RangeExclBoth(a, b) => {
+            format!(
+                "{}^..^{}",
+                range_endpoint_display(*a),
+                range_endpoint_display(*b)
+            )
+        }
         Value::GenericRange {
             start,
             end,
@@ -826,13 +885,15 @@ fn range_gist_string(value: &Value) -> String {
         } => {
             let start_sep = if *excl_start { "^.." } else { ".." };
             let end_sep = if *excl_end { "^" } else { "" };
-            format!(
-                "{}{}{}{}",
-                start.to_string_value(),
-                start_sep,
-                end_sep,
-                end.to_string_value()
-            )
+            let start_str = match start.as_ref() {
+                Value::Whatever | Value::HyperWhatever => "-Inf".to_string(),
+                _ => start.to_string_value(),
+            };
+            let end_str = match end.as_ref() {
+                Value::Whatever | Value::HyperWhatever => "Inf".to_string(),
+                _ => end.to_string_value(),
+            };
+            format!("{}{}{}{}", start_str, start_sep, end_sep, end_str)
         }
         _ => value.to_string_value(),
     }
@@ -934,7 +995,17 @@ fn raku_value(v: &Value) -> String {
             let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
             format!("slip({})", inner)
         }
-        Value::Str(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
+        Value::Str(s) => {
+            let escaped = s
+                .replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace('$', "\\$")
+                .replace('@', "\\@")
+                .replace('%', "\\%")
+                .replace('&', "\\&")
+                .replace('{', "\\{");
+            format!("\"{}\"", escaped)
+        }
         Value::Int(i) => i.to_string(),
         Value::Rat(n, d) => {
             if *d == 0 {
@@ -1084,18 +1155,52 @@ fn raku_value(v: &Value) -> String {
         }
         Value::Nil => "Nil".to_string(),
         Value::Package(name) => name.resolve().to_string(),
-        Value::Range(a, b) => format!("{}..{}", a, b),
-        Value::RangeExcl(a, b) => format!("{}..^{}", a, b),
-        Value::RangeExclStart(a, b) => format!("{}^..{}", a, b),
-        Value::RangeExclBoth(a, b) => format!("{}^..^{}", a, b),
+        Value::Range(a, b) => {
+            format!(
+                "{}..{}",
+                range_endpoint_display(*a),
+                range_endpoint_display(*b)
+            )
+        }
+        Value::RangeExcl(a, b) => {
+            if *a == 0 {
+                format!("^{}", range_endpoint_display(*b))
+            } else {
+                format!(
+                    "{}..^{}",
+                    range_endpoint_display(*a),
+                    range_endpoint_display(*b)
+                )
+            }
+        }
+        Value::RangeExclStart(a, b) => {
+            format!(
+                "{}^..{}",
+                range_endpoint_display(*a),
+                range_endpoint_display(*b)
+            )
+        }
+        Value::RangeExclBoth(a, b) => {
+            format!(
+                "{}^..^{}",
+                range_endpoint_display(*a),
+                range_endpoint_display(*b)
+            )
+        }
         Value::GenericRange {
             start,
             end,
             excl_start,
             excl_end,
         } => {
-            let start_repr = raku_value(start);
-            let end_repr = raku_value(end);
+            let start_repr = match start.as_ref() {
+                Value::Whatever | Value::HyperWhatever => "-Inf".to_string(),
+                _ => raku_value(start),
+            };
+            let end_repr = match end.as_ref() {
+                Value::Whatever | Value::HyperWhatever => "Inf".to_string(),
+                _ => raku_value(end),
+            };
             let start_sep = if *excl_start { "^.." } else { ".." };
             let end_sep = if *excl_end { "^" } else { "" };
             format!("{}{}{}{}", start_repr, start_sep, end_sep, end_repr)
@@ -2297,10 +2402,25 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         "Cannot call '.elems' on a Channel instance".to_string(),
                     )));
                 }
+                Value::Range(start, end) if *start == i64::MIN || *end == i64::MAX => {
+                    return range_elems_lazy_failure("elems");
+                }
                 Value::Range(start, end) => Value::Int((*end - *start + 1).max(0)),
+                Value::RangeExcl(start, end) if *start == i64::MIN || *end == i64::MAX => {
+                    return range_elems_lazy_failure("elems");
+                }
                 Value::RangeExcl(start, end) => Value::Int((*end - *start).max(0)),
+                Value::RangeExclStart(start, end) if *start == i64::MIN || *end == i64::MAX => {
+                    return range_elems_lazy_failure("elems");
+                }
                 Value::RangeExclStart(start, end) => Value::Int((*end - *start).max(0)),
+                Value::RangeExclBoth(start, end) if *start == i64::MIN || *end == i64::MAX => {
+                    return range_elems_lazy_failure("elems");
+                }
                 Value::RangeExclBoth(start, end) => Value::Int((*end - *start - 1).max(0)),
+                Value::GenericRange { .. } if is_infinite_range(target) => {
+                    return range_elems_lazy_failure("elems");
+                }
                 Value::GenericRange { .. } => {
                     let list = crate::runtime::utils::value_to_list(target);
                     Value::Int(list.len() as i64)
@@ -3353,6 +3473,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     let escaped = s
                         .replace('\\', "\\\\")
                         .replace('"', "\\\"")
+                        .replace('$', "\\$")
+                        .replace('@', "\\@")
+                        .replace('%', "\\%")
+                        .replace('&', "\\&")
+                        .replace('{', "\\{")
                         .replace('\n', "\\n")
                         .replace('\t', "\\t")
                         .replace('\r', "\\r")
@@ -3683,25 +3808,32 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     }
                 })
                 .unwrap_or(Value::Num(f64::INFINITY)))),
-            Value::Range(a, b) => Some(Ok(if a <= b { Value::Int(*a) } else { Value::Nil })),
-            Value::RangeExcl(a, b) => Some(Ok(if a < b { Value::Int(*a) } else { Value::Nil })),
-            Value::RangeExclStart(a, b) => Some(Ok(if a < b {
-                Value::Int(*a + 1)
+            Value::Range(a, _) => Some(Ok(if *a == i64::MIN {
+                Value::Num(f64::NEG_INFINITY)
             } else {
-                Value::Nil
+                Value::Int(*a)
             })),
-            Value::RangeExclBoth(a, b) => Some(Ok(if a + 1 < *b {
-                Value::Int(*a + 1)
+            Value::RangeExcl(a, _) => Some(Ok(if *a == i64::MIN {
+                Value::Num(f64::NEG_INFINITY)
             } else {
-                Value::Nil
+                Value::Int(*a)
+            })),
+            Value::RangeExclStart(a, _) => Some(Ok(if *a == i64::MIN {
+                Value::Num(f64::NEG_INFINITY)
+            } else {
+                Value::Int(*a)
+            })),
+            Value::RangeExclBoth(a, _) => Some(Ok(if *a == i64::MIN {
+                Value::Num(f64::NEG_INFINITY)
+            } else {
+                Value::Int(*a)
             })),
             Value::GenericRange { start, .. } => {
-                let items = crate::runtime::utils::value_to_list(target);
-                if items.len() == 1 && matches!(items.first(), Some(Value::GenericRange { .. })) {
-                    Some(Ok(start.as_ref().clone()))
-                } else {
-                    Some(Ok(items.first().cloned().unwrap_or(Value::Nil)))
-                }
+                let s = start.as_ref();
+                Some(Ok(match s {
+                    Value::Whatever | Value::HyperWhatever => Value::Num(f64::NEG_INFINITY),
+                    _ => s.clone(),
+                }))
             }
             Value::Hash(_) => None,
             Value::Package(_) | Value::Instance { .. } => None,
@@ -3723,31 +3855,60 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     }
                 })
                 .unwrap_or(Value::Num(f64::NEG_INFINITY)))),
-            Value::Range(a, b) => Some(Ok(if a <= b { Value::Int(*b) } else { Value::Nil })),
-            Value::RangeExcl(a, b) => Some(Ok(if a < b {
-                Value::Int(*b - 1)
+            Value::Range(_, b) => Some(Ok(if *b == i64::MAX {
+                Value::Num(f64::INFINITY)
             } else {
-                Value::Nil
+                Value::Int(*b)
             })),
-            Value::RangeExclStart(a, b) => {
-                Some(Ok(if a < b { Value::Int(*b) } else { Value::Nil }))
-            }
-            Value::RangeExclBoth(a, b) => Some(Ok(if a + 1 < *b {
-                Value::Int(*b - 1)
+            Value::RangeExcl(_, b) => Some(Ok(if *b == i64::MAX {
+                Value::Num(f64::INFINITY)
             } else {
-                Value::Nil
+                Value::Int(*b)
+            })),
+            Value::RangeExclStart(_, b) => Some(Ok(if *b == i64::MAX {
+                Value::Num(f64::INFINITY)
+            } else {
+                Value::Int(*b)
+            })),
+            Value::RangeExclBoth(_, b) => Some(Ok(if *b == i64::MAX {
+                Value::Num(f64::INFINITY)
+            } else {
+                Value::Int(*b)
             })),
             Value::GenericRange { end, .. } => {
-                let items = crate::runtime::utils::value_to_list(target);
-                if items.len() == 1 && matches!(items.first(), Some(Value::GenericRange { .. })) {
-                    Some(Ok(end.as_ref().clone()))
-                } else {
-                    Some(Ok(items.last().cloned().unwrap_or(Value::Nil)))
-                }
+                let e = end.as_ref();
+                Some(Ok(match e {
+                    Value::Whatever | Value::HyperWhatever => Value::Num(f64::INFINITY),
+                    _ => e.clone(),
+                }))
             }
             Value::Hash(_) => None,
             Value::Package(_) | Value::Instance { .. } => None,
             _ => Some(Ok(target.clone())),
+        },
+        "excludes-min" => match target {
+            Value::Range(..) => Some(Ok(Value::Bool(false))),
+            Value::RangeExcl(..) => Some(Ok(Value::Bool(false))),
+            Value::RangeExclStart(..) => Some(Ok(Value::Bool(true))),
+            Value::RangeExclBoth(..) => Some(Ok(Value::Bool(true))),
+            Value::GenericRange { excl_start, .. } => Some(Ok(Value::Bool(*excl_start))),
+            _ => None,
+        },
+        "excludes-max" => match target {
+            Value::Range(..) => Some(Ok(Value::Bool(false))),
+            Value::RangeExcl(..) => Some(Ok(Value::Bool(true))),
+            Value::RangeExclStart(..) => Some(Ok(Value::Bool(false))),
+            Value::RangeExclBoth(..) => Some(Ok(Value::Bool(true))),
+            Value::GenericRange { excl_end, .. } => Some(Ok(Value::Bool(*excl_end))),
+            _ => None,
+        },
+        "infinite" => match target {
+            Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. } => Some(Ok(Value::Bool(is_infinite_range(target)))),
+            _ => None,
         },
         "of" => match target {
             // For Array/Hash values, fall through to runtime handler which can

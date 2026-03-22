@@ -336,6 +336,45 @@ impl VM {
         }
     }
 
+    /// Check if a range endpoint is invalid (Range, Complex, Seq, etc.) and return
+    /// X::Range::InvalidArg if so.
+    fn check_range_invalid_arg(left: &Value, right: &Value) -> Option<RuntimeError> {
+        fn is_invalid_endpoint(v: &Value) -> bool {
+            matches!(
+                v,
+                Value::Range(..)
+                    | Value::RangeExcl(..)
+                    | Value::RangeExclStart(..)
+                    | Value::RangeExclBoth(..)
+                    | Value::GenericRange { .. }
+                    | Value::Complex(..)
+                    | Value::Seq(_)
+            )
+        }
+        fn invalid_value(v: &Value) -> Option<&Value> {
+            if is_invalid_endpoint(v) {
+                Some(v)
+            } else {
+                None
+            }
+        }
+        let got = invalid_value(left).or_else(|| invalid_value(right));
+        got.map(|v| {
+            let type_name = crate::runtime::value_type_name(v);
+            let mut ex_attrs = std::collections::HashMap::new();
+            ex_attrs.insert(
+                "message".to_string(),
+                Value::str(format!(
+                    "{} objects are not valid endpoints for Ranges",
+                    type_name
+                )),
+            );
+            ex_attrs.insert("got".to_string(), v.clone());
+            let exception = Value::make_instance(Symbol::intern("X::Range::InvalidArg"), ex_attrs);
+            RuntimeError::from_exception_value(exception)
+        })
+    }
+
     fn scalarize_range_endpoint(value: Value) -> Value {
         match value {
             Value::Scalar(inner) => Self::scalarize_range_endpoint(inner.as_ref().clone()),
@@ -354,9 +393,12 @@ impl VM {
         }
     }
 
-    pub(super) fn exec_make_range_op(&mut self) {
+    pub(super) fn exec_make_range_op(&mut self) -> Result<(), RuntimeError> {
         let right = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
         let left = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
+        if let Some(err) = Self::check_range_invalid_arg(&left, &right) {
+            return Err(err);
+        }
         let result = match (&left, &right) {
             (Value::Int(a), Value::Int(b)) => Value::Range(*a, *b),
             (Value::Int(a), Value::Num(b)) if b.is_infinite() && b.is_sign_positive() => {
@@ -410,23 +452,6 @@ impl VM {
                 excl_start: false,
                 excl_end: false,
             },
-            // Using a Range as an endpoint is illegal (e.g. `0 .. ^10`).
-            (
-                Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)
-                | Value::GenericRange { .. },
-                _,
-            )
-            | (
-                _,
-                Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)
-                | Value::GenericRange { .. },
-            ) => Value::Nil,
             _ => Value::GenericRange {
                 start: Arc::new(left),
                 end: Arc::new(right),
@@ -435,11 +460,15 @@ impl VM {
             },
         };
         self.stack.push(result);
+        Ok(())
     }
 
-    pub(super) fn exec_make_range_excl_op(&mut self) {
+    pub(super) fn exec_make_range_excl_op(&mut self) -> Result<(), RuntimeError> {
         let right = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
         let left = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
+        if let Some(err) = Self::check_range_invalid_arg(&left, &right) {
+            return Err(err);
+        }
         let result = match (&left, &right) {
             (Value::Int(a), Value::Int(b)) => Value::RangeExcl(*a, *b),
             (l, r) if l.is_numeric() || r.is_numeric() => Value::GenericRange {
@@ -456,11 +485,15 @@ impl VM {
             },
         };
         self.stack.push(result);
+        Ok(())
     }
 
-    pub(super) fn exec_make_range_excl_start_op(&mut self) {
+    pub(super) fn exec_make_range_excl_start_op(&mut self) -> Result<(), RuntimeError> {
         let right = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
         let left = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
+        if let Some(err) = Self::check_range_invalid_arg(&left, &right) {
+            return Err(err);
+        }
         let result = match (&left, &right) {
             (Value::Int(a), Value::Int(b)) => Value::RangeExclStart(*a, *b),
             (l, r) if l.is_numeric() || r.is_numeric() => Value::GenericRange {
@@ -477,11 +510,15 @@ impl VM {
             },
         };
         self.stack.push(result);
+        Ok(())
     }
 
-    pub(super) fn exec_make_range_excl_both_op(&mut self) {
+    pub(super) fn exec_make_range_excl_both_op(&mut self) -> Result<(), RuntimeError> {
         let right = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
         let left = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
+        if let Some(err) = Self::check_range_invalid_arg(&left, &right) {
+            return Err(err);
+        }
         let result = match (&left, &right) {
             (Value::Int(a), Value::Int(b)) => Value::RangeExclBoth(*a, *b),
             (l, r) if l.is_numeric() || r.is_numeric() => Value::GenericRange {
@@ -498,6 +535,7 @@ impl VM {
             },
         };
         self.stack.push(result);
+        Ok(())
     }
 
     pub(super) fn exec_num_coerce_op(&mut self) -> Result<(), RuntimeError> {
