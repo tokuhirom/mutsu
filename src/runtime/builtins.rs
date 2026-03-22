@@ -634,6 +634,7 @@ impl Interpreter {
             "reverse" => self.builtin_reverse(&args),
             "sort" => self.builtin_sort(&args),
             "unique" => self.builtin_unique(&args),
+            "repeated" => self.builtin_repeated(&args),
             "squish" => self.builtin_squish(&args),
             "reduce" => self.builtin_reduce(&args),
             "produce" => self.builtin_produce(&args),
@@ -3423,6 +3424,7 @@ impl Interpreter {
                 | "splice"
                 | "flat"
                 | "unique"
+                | "repeated"
                 | "squish"
                 | "min"
                 | "max"

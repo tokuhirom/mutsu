@@ -642,6 +642,7 @@ impl VM {
                 | "sum"
                 | "flat"
                 | "unique"
+                | "repeated"
                 | "squish"
                 | "classify"
                 | "categorize"

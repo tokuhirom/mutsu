@@ -1663,6 +1663,7 @@ impl Interpreter {
                     | "sum"
                     | "flat"
                     | "unique"
+                    | "repeated"
                     | "squish"
                     | "classify"
                     | "categorize"
@@ -2548,6 +2549,9 @@ impl Interpreter {
                 {
                     return self.dispatch_unique(target, &args);
                 }
+            }
+            "repeated" => {
+                return self.dispatch_repeated(target, &args);
             }
             "squish" => {
                 if let Value::Instance { class_name, .. } = &target
