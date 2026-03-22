@@ -130,6 +130,32 @@ impl Interpreter {
         {
             return self.call_method_with_values(target.clone(), "substr", rest.to_vec());
         }
+        if name == "substr-rw"
+            && let Some((_target, rest)) = args.split_first()
+        {
+            // Try to get the variable name of the first argument for Proxy support
+            let arg_sources = self.pending_call_arg_sources.clone().unwrap_or_default();
+            if let Some(Some(var_name)) = arg_sources.first() {
+                return self.make_substr_rw_proxy(var_name, rest);
+            }
+            // Fallback: search env for matching value to find variable name
+            let target_var = {
+                let target = &args[0];
+                let mut found = None;
+                for (k, v) in self.env.iter() {
+                    if crate::runtime::values_identical(v, target) && !k.starts_with("__") {
+                        found = Some(k.clone());
+                        break;
+                    }
+                }
+                found
+            };
+            if let Some(ref var_name) = target_var {
+                return self.make_substr_rw_proxy(var_name, rest);
+            }
+            // No variable name available, just return the substring
+            return self.call_method_with_values(args[0].clone(), "substr-rw", rest.to_vec());
+        }
         if name == "unpolar"
             && let Some((target, rest)) = args.split_first()
         {

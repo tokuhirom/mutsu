@@ -560,6 +560,9 @@ impl Interpreter {
                 return Ok(value);
             }
         }
+        if method == "substr-rw" {
+            return self.assign_substr_rw(target_var, target, method_args, value);
+        }
         if method == "subbuf-rw" {
             return self.assign_subbuf_rw(target_var, target, method_args, value);
         }
@@ -2485,6 +2488,106 @@ impl Interpreter {
         } else {
             hash.insert(key, value);
         }
+    }
+
+    fn assign_substr_rw(
+        &mut self,
+        target_var: Option<&str>,
+        target: Value,
+        method_args: Vec<Value>,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        let s = target.to_string_value();
+        let chars: Vec<char> = s.chars().collect();
+        let str_len = chars.len();
+
+        // Resolve start and end using the same logic as dispatch_substr
+        let (start, end) = self.resolve_substr_rw_range(&method_args, str_len)?;
+
+        let replacement = value.to_string_value();
+
+        // Build new string: prefix + replacement + suffix
+        let prefix: String = chars[..start].iter().collect();
+        let suffix: String = chars[end..].iter().collect();
+        let new_str = format!("{}{}{}", prefix, replacement, suffix);
+
+        let result = Value::str(new_str);
+        if let Some(var) = target_var {
+            self.env.insert(var.to_string(), result.clone());
+        }
+        Ok(result)
+    }
+
+    /// Resolve substr-rw start and end positions from arguments.
+    /// Reuses the same logic as dispatch_substr for consistency.
+    pub(crate) fn resolve_substr_rw_range(
+        &mut self,
+        method_args: &[Value],
+        str_len: usize,
+    ) -> Result<(usize, usize), RuntimeError> {
+        // Check if first arg is a Range
+        if let Some(first_arg) = method_args.first()
+            && let Some((range_start, range_end)) = self.substr_extract_range(first_arg, str_len)?
+        {
+            let rs: usize = range_start.min(str_len);
+            let re: usize = range_end.min(str_len);
+            return Ok((rs, re));
+        }
+
+        // First arg: start position
+        let start_raw: i64 = if let Some(pos) = method_args.first() {
+            self.substr_resolve_position(pos, str_len)?
+        } else {
+            0
+        };
+
+        let start = if start_raw < 0 {
+            (str_len as i64 + start_raw).max(0) as usize
+        } else {
+            (start_raw as usize).min(str_len)
+        };
+
+        // Second arg: length
+        let end = if let Some(len_val) = method_args.get(1) {
+            match len_val {
+                Value::Int(i) => {
+                    let len = (*i).max(0) as usize;
+                    (start + len).min(str_len)
+                }
+                Value::Num(f) if f.is_infinite() && *f > 0.0 => str_len,
+                Value::Num(f) => {
+                    let len = (*f as i64).max(0) as usize;
+                    (start + len).min(str_len)
+                }
+                Value::Rat(n, d) if *d != 0 => {
+                    let len = (*n / *d).max(0) as usize;
+                    (start + len).min(str_len)
+                }
+                Value::Whatever => str_len,
+                Value::Sub { .. } => {
+                    // WhateverCode/Callable: call with remaining length
+                    let remaining = if start <= str_len {
+                        (str_len - start) as i64
+                    } else {
+                        0
+                    };
+                    let result =
+                        self.eval_call_on_value(len_val.clone(), vec![Value::Int(remaining)])?;
+                    let len = match &result {
+                        Value::Int(i) => (*i).max(0) as usize,
+                        Value::Num(f) => (*f as i64).max(0) as usize,
+                        Value::Rat(n, d) if *d != 0 => (*n / *d).max(0) as usize,
+                        _ => 0,
+                    };
+                    (start + len).min(str_len)
+                }
+                _ => str_len,
+            }
+        } else {
+            str_len
+        };
+
+        Ok((start, end))
     }
 
     fn assign_subbuf_rw(

@@ -999,6 +999,43 @@ impl VM {
                 .env_mut()
                 .insert(readonly_key, Value::Bool(false));
         }
+        // If the current value is a Proxy (in locals or env), invoke STORE instead of overwriting
+        {
+            let current_proxy = code
+                .locals
+                .iter()
+                .position(|n| n == &name)
+                .and_then(|idx| {
+                    if idx < self.locals.len() {
+                        let v = &self.locals[idx];
+                        if matches!(v, Value::Proxy { .. }) {
+                            Some(v.clone())
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .or_else(|| {
+                    self.get_env_with_main_alias(&name).and_then(|v| {
+                        if matches!(&v, Value::Proxy { .. }) {
+                            Some(v)
+                        } else {
+                            None
+                        }
+                    })
+                });
+            if let Some(Value::Proxy { ref storer, .. }) = current_proxy
+                && !matches!(storer.as_ref(), Value::Nil)
+            {
+                let proxy_val = current_proxy.unwrap();
+                self.interpreter
+                    .assign_proxy_lvalue(proxy_val, val.clone())?;
+                self.stack.push(val);
+                return Ok(());
+            }
+        }
         self.update_local_if_exists(code, &name, &val);
         self.set_env_with_main_alias(&name, val.clone());
         // Track topic mutations for map rw writeback: when `$_` (= "_") is

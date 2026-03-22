@@ -927,8 +927,114 @@ impl Interpreter {
         Ok(Value::str(chars[start..end].iter().collect()))
     }
 
+    /// substr-rw in non-lvalue context: just return the substring (same as substr).
+    /// When a variable name is available, returns a Proxy for binding support.
+    pub(super) fn dispatch_substr_rw(
+        &mut self,
+        target: Value,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        self.dispatch_substr(target, args)
+    }
+
+    /// Create a Proxy for substr-rw binding.
+    /// The Proxy's FETCH returns the current substring and STORE modifies the original string.
+    pub(crate) fn make_substr_rw_proxy(
+        &mut self,
+        var_name: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let target = self
+            .env
+            .get(var_name)
+            .cloned()
+            .unwrap_or(Value::str(String::new()));
+        let s = target.to_string_value();
+        let chars: Vec<char> = s.chars().collect();
+        let str_len = chars.len();
+
+        // Resolve range
+        let (start, end) = self.resolve_substr_rw_range(args, str_len)?;
+        let len = end - start;
+
+        let make_param_def = |name: &str| crate::ast::ParamDef {
+            name: name.to_string(),
+            default: None,
+            multi_invocant: false,
+            required: false,
+            named: false,
+            slurpy: false,
+            double_slurpy: false,
+            sigilless: false,
+            type_constraint: None,
+            literal_value: None,
+            sub_signature: None,
+            where_constraint: None,
+            traits: Vec::new(),
+            optional_marker: false,
+            outer_sub_signature: None,
+            code_signature: None,
+            is_invocant: false,
+            shape_constraints: None,
+        };
+
+        // Create FETCH sub: reads substr from the variable
+        let fetch_body = vec![crate::ast::Stmt::Expr(crate::ast::Expr::MethodCall {
+            target: Box::new(crate::ast::Expr::Var(var_name.to_string())),
+            name: crate::symbol::Symbol::intern("substr"),
+            args: vec![
+                crate::ast::Expr::Literal(Value::Int(start as i64)),
+                crate::ast::Expr::Literal(Value::Int(len as i64)),
+            ],
+            modifier: None,
+            quoted: false,
+        })];
+        let fetcher = Value::make_sub(
+            crate::symbol::Symbol::intern(""),
+            crate::symbol::Symbol::intern("__substr_rw_fetch"),
+            vec!["$".to_string()],
+            vec![make_param_def("$")],
+            fetch_body,
+            false,
+            self.env.clone(),
+        );
+
+        // Create STORE sub: modifies the variable via substr-rw lvalue assignment
+        let store_body = vec![crate::ast::Stmt::Expr(crate::ast::Expr::Call {
+            name: crate::symbol::Symbol::intern("__mutsu_assign_named_sub_lvalue"),
+            args: vec![
+                crate::ast::Expr::Literal(Value::str("substr-rw".to_string())),
+                crate::ast::Expr::ArrayLiteral(vec![
+                    crate::ast::Expr::Var(var_name.to_string()),
+                    crate::ast::Expr::Literal(Value::Int(start as i64)),
+                    crate::ast::Expr::Literal(Value::Int(len as i64)),
+                ]),
+                crate::ast::Expr::Var("__mutsu_substr_rw_store_value".to_string()),
+            ],
+        })];
+        let storer = Value::make_sub(
+            crate::symbol::Symbol::intern(""),
+            crate::symbol::Symbol::intern("__substr_rw_store"),
+            vec!["$".to_string(), "__mutsu_substr_rw_store_value".to_string()],
+            vec![
+                make_param_def("$"),
+                make_param_def("__mutsu_substr_rw_store_value"),
+            ],
+            store_body,
+            false,
+            self.env.clone(),
+        );
+
+        Ok(Value::Proxy {
+            fetcher: Box::new(fetcher),
+            storer: Box::new(storer),
+            subclass: None,
+            decontainerized: false,
+        })
+    }
+
     /// Resolve a position argument to an i64, handling Int, Num, Rat, WhateverCode/Sub.
-    fn substr_resolve_position(
+    pub(crate) fn substr_resolve_position(
         &mut self,
         pos: &Value,
         total_len: usize,
@@ -954,7 +1060,7 @@ impl Interpreter {
 
     /// Extract start/end indices from a Range value for substr.
     /// Returns Some((start, end)) if the value is a Range, None otherwise.
-    fn substr_extract_range(
+    pub(crate) fn substr_extract_range(
         &mut self,
         val: &Value,
         total_len: usize,

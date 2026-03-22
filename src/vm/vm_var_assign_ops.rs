@@ -1586,6 +1586,16 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let idx = idx as usize;
 
+        // If the current local is a Proxy, invoke STORE instead of overwriting
+        if let Value::Proxy { storer, .. } = &self.locals[idx]
+            && !matches!(storer.as_ref(), Value::Nil)
+        {
+            let val = self.stack.pop().unwrap_or(Value::Nil);
+            let proxy_val = self.locals[idx].clone();
+            self.interpreter.assign_proxy_lvalue(proxy_val, val)?;
+            return Ok(());
+        }
+
         // Fast path for simple scalar variables — skip all metadata checks
         if code.simple_locals[idx] {
             let mut val = self.stack.pop().unwrap_or(Value::Nil);

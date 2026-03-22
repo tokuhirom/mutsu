@@ -2481,7 +2481,9 @@ impl VM {
             self.interpreter.set_pending_call_arg_sources(arg_sources);
             let result = self.interpreter.call_function(name, args);
             self.interpreter.set_pending_call_arg_sources(None);
-            self.interpreter.maybe_fetch_rw_proxy(result?, true)
+            // substr-rw returns a Proxy that must be preserved (not auto-FETCHed)
+            let auto_fetch = name != "substr-rw";
+            self.interpreter.maybe_fetch_rw_proxy(result?, auto_fetch)
         }
     }
 
