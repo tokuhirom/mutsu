@@ -767,11 +767,20 @@ impl Interpreter {
             return Ok(());
         }
         if let Some(state) = &self.test_state {
-            if let Some(planned) = state.planned {
-                let _ = planned;
-            }
+            let plan_mismatch = matches!(state.planned, Some(planned) if planned != state.ran);
             if state.failed > 0 {
                 self.emit_test_summary_diag(state.planned, state.ran, state.failed);
+                return Err(RuntimeError::new("Test failures"));
+            }
+            if plan_mismatch {
+                if let Some(planned) = state.planned {
+                    self.stderr_output.push_str(&format!(
+                        "# You planned {} test, but ran {}\n",
+                        planned, state.ran
+                    ));
+                }
+                // Dubious: exit code 255
+                self.exit_code = 255;
                 return Err(RuntimeError::new("Test failures"));
             }
         }
