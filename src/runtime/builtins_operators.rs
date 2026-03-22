@@ -272,6 +272,7 @@ impl Interpreter {
                     && k != "@_"
                     && k != "%_"
                     && ((restored_env.contains_key(k)
+                        && !excluded_names.contains(k)
                         && matches!(v, Value::Array(..) | Value::Hash(..)))
                         || scalar_writeback
                         || k.starts_with("__mutsu_var_meta::"))

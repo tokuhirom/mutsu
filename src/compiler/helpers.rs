@@ -475,6 +475,19 @@ impl Compiler {
         None
     }
 
+    /// Recursively allocate local variable slots for sub_signature parameters
+    /// (array/hash unpacking in function signatures like `sub f([$a, *@b]) { ... }`).
+    fn alloc_sub_signature_locals(compiler: &mut Compiler, sub_params: &[crate::ast::ParamDef]) {
+        for sp in sub_params {
+            if !sp.name.is_empty() {
+                compiler.alloc_local(&sp.name);
+            }
+            if let Some(nested) = &sp.sub_signature {
+                Self::alloc_sub_signature_locals(compiler, nested);
+            }
+        }
+    }
+
     /// Compile a SubDecl body to a CompiledFunction and store it.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn compile_sub_body(
@@ -540,6 +553,15 @@ impl Compiler {
         for pd in param_defs {
             if !pd.name.is_empty() {
                 sub_compiler.alloc_local(&pd.name);
+            }
+            // Also allocate locals for sub_signature parameters (array unpacking)
+            // so that they get proper local slots and don't leak between recursive calls.
+            if let Some(sub_params) = &pd.sub_signature {
+                Self::alloc_sub_signature_locals(&mut sub_compiler, sub_params);
+            }
+            // Also allocate locals for outer_sub_signature parameters
+            if let Some(outer_params) = &pd.outer_sub_signature {
+                Self::alloc_sub_signature_locals(&mut sub_compiler, outer_params);
             }
         }
         // Hoist sub declarations within the sub body

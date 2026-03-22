@@ -376,6 +376,7 @@ roast/S06-signature/sigilless.t
 roast/S06-signature/slurpy-and-interpolation.t
 roast/S06-signature/slurpy-placeholders.t
 roast/S06-signature/tree-node-parameters.t
+roast/S06-signature/unpack-array.t
 roast/S06-signature/unpack-object.t
 roast/S06-signature/unspecified.t
 roast/S06-traits/as.t

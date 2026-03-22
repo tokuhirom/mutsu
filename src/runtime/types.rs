@@ -420,6 +420,18 @@ fn bind_sub_signature_from_value(
                     "Too few positional arguments in sub-signature binding".to_string(),
                 ));
             }
+            // Explicitly bind optional params to their type object (Any)
+            // so that values from an outer scope don't leak into recursive calls.
+            if !sub_pd.name.is_empty() {
+                let default_val = if sub_pd.name.starts_with('@') {
+                    Value::array(vec![])
+                } else if sub_pd.name.starts_with('%') {
+                    Value::hash(std::collections::HashMap::new())
+                } else {
+                    Value::Nil
+                };
+                interpreter.env.insert(sub_pd.name.clone(), default_val);
+            }
             continue;
         };
         if let Value::Pair(key, inner) = &candidate {
