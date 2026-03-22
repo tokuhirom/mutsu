@@ -1305,6 +1305,10 @@ pub(in crate::parser) fn parse_block_body(input: &str) -> PResult<'_, Vec<crate:
 
 /// Check if the input looks like a hash literal start.
 fn is_hash_literal_start(input: &str) -> bool {
+    // %hash variable at start indicates hash literal: {%hash, ...}
+    if input.starts_with('%') && super::super::stmt::ident_pub(&input[1..]).is_ok() {
+        return true;
+    }
     // ident => or "str" => or 'str' =>
     if let Ok((r, _)) = super::super::stmt::ident_pub(input) {
         let (r, _) = ws_inner(r);
