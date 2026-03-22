@@ -353,6 +353,8 @@ impl Interpreter {
                     | "Supply"
                     | "native-descriptor"
                     | "spurt"
+                    | "t"
+                    | "printf"
             )
         {
             return true;

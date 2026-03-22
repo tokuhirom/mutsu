@@ -1286,7 +1286,19 @@ impl Interpreter {
                         .collect();
                     let mut attrs = HashMap::new();
                     attrs.insert("bytes".to_string(), Value::array(byte_vals));
-                    return Ok(Value::make_instance(*class_name, attrs));
+                    // Normalize short buf/blob names to canonical forms
+                    let canonical_name = match cn.as_str() {
+                        "buf8" => Symbol::intern("Buf[uint8]"),
+                        "buf16" => Symbol::intern("Buf[uint16]"),
+                        "buf32" => Symbol::intern("Buf[uint32]"),
+                        "buf64" => Symbol::intern("Buf[uint64]"),
+                        "blob8" => Symbol::intern("Blob[uint8]"),
+                        "blob16" => Symbol::intern("Blob[uint16]"),
+                        "blob32" => Symbol::intern("Blob[uint32]"),
+                        "blob64" => Symbol::intern("Blob[uint64]"),
+                        _ => *class_name,
+                    };
+                    return Ok(Value::make_instance(canonical_name, attrs));
                 }
                 "Rat" => {
                     use num_bigint::BigInt;

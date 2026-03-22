@@ -1343,8 +1343,28 @@ impl Interpreter {
                 .map(Value::str)
                 .unwrap_or(Value::Nil)),
             "getc" => {
-                let bytes = self.read_bytes_from_handle_value(&target_val, 1)?;
-                Ok(Value::str(String::from_utf8_lossy(&bytes).to_string()))
+                let encoding = {
+                    let state = self.handle_state_mut(&target_val)?;
+                    state.encoding.clone()
+                };
+                let needs_decode = !encoding.is_empty()
+                    && encoding != "utf-8"
+                    && encoding != "utf8"
+                    && encoding != "bin";
+                if needs_decode {
+                    // For single-byte encodings, read 1 byte and decode
+                    let bytes = self.read_bytes_from_handle_value(&target_val, 1)?;
+                    if bytes.is_empty() {
+                        Ok(Value::str(String::new()))
+                    } else {
+                        let decoded = self.decode_with_encoding(&bytes, &encoding)?;
+                        Ok(Value::str(decoded))
+                    }
+                } else {
+                    // UTF-8: may need multiple bytes for one character
+                    let bytes = self.read_bytes_from_handle_value(&target_val, 1)?;
+                    Ok(Value::str(String::from_utf8_lossy(&bytes).to_string()))
+                }
             }
             "readchars" => {
                 let count = if let Some(arg) = args.first() {
@@ -1364,9 +1384,26 @@ impl Interpreter {
                 ))
             }
             "lines" => {
+                let limit = args.first().and_then(|arg| match arg {
+                    Value::Int(i) => Some((*i).max(0) as usize),
+                    Value::BigInt(bi) => {
+                        use num_traits::ToPrimitive;
+                        Some(bi.to_usize().unwrap_or(usize::MAX))
+                    }
+                    Value::Whatever => None,
+                    Value::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
+                    Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+                    Value::Rat(n, d) if *d == 0 && *n > 0 => None,
+                    _ => None,
+                });
                 let mut lines = Vec::new();
                 while let Some(line) = self.read_line_from_handle_value(&target_val)? {
                     lines.push(Value::str(line));
+                    if let Some(n) = limit
+                        && lines.len() >= n
+                    {
+                        break;
+                    }
                 }
                 Ok(Value::array(lines))
             }
@@ -1424,8 +1461,9 @@ impl Interpreter {
                         _ => bytes.extend(self.render_str_value(arg).into_bytes()),
                     }
                 }
-                let content = String::from_utf8_lossy(&bytes).to_string();
-                self.write_to_handle_value_trying(&target_val, &content, false, "write")?;
+                // Write raw bytes directly to avoid UTF-8 lossy conversion
+                // which corrupts non-UTF-8 binary data (e.g., ISO-8859-1 encoded bytes)
+                self.write_bytes_to_handle_value(&target_val, &bytes)?;
                 Ok(Value::Bool(true))
             }
             "print" => {
@@ -1434,6 +1472,17 @@ impl Interpreter {
                     content.push_str(&self.render_str_value(arg));
                 }
                 self.write_to_handle_value_trying(&target_val, &content, false, "print")?;
+                Ok(Value::Bool(true))
+            }
+            "printf" => {
+                let fmt = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let rest = &args[1..];
+                super::sprintf::validate_sprintf_directives(&fmt, rest.len())?;
+                let content = super::sprintf::format_sprintf_args(&fmt, rest);
+                self.write_to_handle_value_trying(&target_val, &content, false, "printf")?;
                 Ok(Value::Bool(true))
             }
             "say" => {
@@ -1514,6 +1563,25 @@ impl Interpreter {
             "eof" => {
                 let at_end = self.handle_eof_value(&target_val)?;
                 Ok(Value::Bool(at_end))
+            }
+            "t" => {
+                // Check if the handle is a TTY
+                use std::io::IsTerminal;
+                let state = self.handle_state_mut(&target_val)?;
+                let is_tty = match state.target {
+                    IoHandleTarget::Stdin => std::io::stdin().is_terminal(),
+                    IoHandleTarget::Stdout => std::io::stdout().is_terminal(),
+                    IoHandleTarget::Stderr => std::io::stderr().is_terminal(),
+                    IoHandleTarget::File => {
+                        if let Some(file) = state.file.as_ref() {
+                            file.is_terminal()
+                        } else {
+                            false
+                        }
+                    }
+                    _ => false,
+                };
+                Ok(Value::Bool(is_tty))
             }
             "encoding" => {
                 if let Some(arg) = args.first() {

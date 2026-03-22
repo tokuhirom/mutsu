@@ -881,9 +881,26 @@ impl Interpreter {
             .cloned()
             .or_else(|| self.default_input_handle());
         if let Some(handle) = handle {
+            let limit = args.get(1).and_then(|arg| match arg {
+                Value::Int(i) => Some((*i).max(0) as usize),
+                Value::BigInt(bi) => {
+                    use num_traits::ToPrimitive;
+                    Some(bi.to_usize().unwrap_or(usize::MAX))
+                }
+                Value::Whatever => None,
+                Value::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
+                Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+                Value::Rat(n, d) if *d == 0 && *n > 0 => None,
+                _ => None,
+            });
             let mut lines = Vec::new();
             while let Some(line) = self.read_line_from_handle_value(&handle)? {
                 lines.push(Value::str(line));
+                if let Some(n) = limit
+                    && lines.len() >= n
+                {
+                    break;
+                }
             }
             return Ok(Value::array(lines));
         }

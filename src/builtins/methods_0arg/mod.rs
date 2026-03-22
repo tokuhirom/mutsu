@@ -1317,6 +1317,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         return Some(Err(err));
     }
 
+    // Buf/Blob .values and .list return the byte values as integers
+    if (method == "values" || method == "list")
+        && let Value::Instance { attributes, .. } = target
+        && crate::vm::VM::is_buf_value(target)
+    {
+        if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+            return Some(Ok(Value::array(bytes.to_vec())));
+        }
+        return Some(Ok(Value::array(Vec::new())));
+    }
+
     // CX::Warn methods: message, resume
     if let Value::Instance {
         class_name,
@@ -3343,9 +3354,22 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                                 _ => "0".to_string(),
                             })
                             .collect();
+                        // Normalize short names to canonical forms for .raku
+                        let cn = class_name.resolve();
+                        let canonical = match cn.as_str() {
+                            "buf8" => "Buf[uint8]",
+                            "buf16" => "Buf[uint16]",
+                            "buf32" => "Buf[uint32]",
+                            "buf64" => "Buf[uint64]",
+                            "blob8" => "Blob[uint8]",
+                            "blob16" => "Blob[uint16]",
+                            "blob32" => "Blob[uint32]",
+                            "blob64" => "Blob[uint64]",
+                            other => other,
+                        };
                         Some(Ok(Value::str(format!(
                             "{}.new({})",
-                            class_name,
+                            canonical,
                             elems.join(",")
                         ))))
                     } else {

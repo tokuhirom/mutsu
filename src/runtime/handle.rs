@@ -106,6 +106,18 @@ impl Interpreter {
         if newline {
             payload.push_str(&state.nl_out.clone());
         }
+        // Encode payload using the handle's encoding
+        let encoding = state.encoding.clone();
+        let needs_encoding =
+            !encoding.is_empty() && encoding != "utf-8" && encoding != "utf8" && encoding != "bin";
+        let encoded_bytes = if needs_encoding && matches!(state.target, IoHandleTarget::File) {
+            // Drop mutable borrow on state before calling encode_with_encoding
+            Some(self.encode_with_encoding(&payload, &encoding)?)
+        } else {
+            None
+        };
+        // Re-borrow state after encoding
+        let state = self.handles.get_mut(&id).unwrap();
         state.bytes_written += payload.len() as i64;
         match state.target {
             IoHandleTarget::Stdout => {
@@ -129,7 +141,11 @@ impl Interpreter {
                 let Some(_) = state.file.as_mut() else {
                     return Err(RuntimeError::new("IO::Handle is not attached to a file"));
                 };
-                let payload_bytes = payload.as_bytes();
+                let payload_bytes = if let Some(ref enc_bytes) = encoded_bytes {
+                    enc_bytes.as_slice()
+                } else {
+                    payload.as_bytes()
+                };
                 if let Some(capacity) = state.out_buffer_capacity {
                     if capacity == 0 {
                         Self::flush_file_handle_buffer(state)?;
@@ -180,6 +196,68 @@ impl Interpreter {
         }
     }
 
+    pub(super) fn write_bytes_to_handle_value(
+        &mut self,
+        handle_value: &Value,
+        bytes: &[u8],
+    ) -> Result<(), RuntimeError> {
+        let id = Self::handle_id_from_value(handle_value)
+            .ok_or_else(|| RuntimeError::new("Expected IO::Handle"))?;
+        let state = self
+            .handles
+            .get_mut(&id)
+            .ok_or_else(|| RuntimeError::new("Invalid IO::Handle"))?;
+        if state.closed {
+            return Err(RuntimeError::io_closed("write"));
+        }
+        if matches!(state.mode, IoHandleMode::Read) {
+            return Err(RuntimeError::new("Handle not open for writing"));
+        }
+        state.bytes_written += bytes.len() as i64;
+        match state.target {
+            IoHandleTarget::Stdout => {
+                // For stdout, convert bytes to lossy string and emit
+                let content = String::from_utf8_lossy(bytes).to_string();
+                self.emit_output(&content);
+                Ok(())
+            }
+            IoHandleTarget::Stderr => {
+                if self.subtest_depth == 0 && self.immediate_stdout {
+                    use std::io::Write;
+                    let _ = std::io::stderr().write_all(bytes);
+                    let _ = std::io::stderr().flush();
+                } else {
+                    let content = String::from_utf8_lossy(bytes).to_string();
+                    self.stderr_output.push_str(&content);
+                }
+                Ok(())
+            }
+            IoHandleTarget::File => {
+                if let Some(file) = state.file.as_mut() {
+                    file.write_all(bytes).map_err(|err| {
+                        RuntimeError::new(format!("Failed to write to file: {}", err))
+                    })?;
+                    Ok(())
+                } else {
+                    Err(RuntimeError::new("IO::Handle is not attached to a file"))
+                }
+            }
+            IoHandleTarget::Socket => {
+                if let Some(sock) = state.socket.as_mut() {
+                    sock.write_all(bytes).map_err(|err| {
+                        RuntimeError::new(format!("Failed to write to socket: {}", err))
+                    })?;
+                    Ok(())
+                } else {
+                    Err(RuntimeError::new("Socket not connected"))
+                }
+            }
+            IoHandleTarget::Stdin | IoHandleTarget::ArgFiles => {
+                Err(RuntimeError::new("Cannot write to read-only handle"))
+            }
+        }
+    }
+
     pub(super) fn close_handle_value(
         &mut self,
         handle_value: &Value,
@@ -200,11 +278,11 @@ impl Interpreter {
         Ok(true)
     }
 
-    fn read_record_with_separators<R: Read>(
+    fn read_record_bytes<R: Read>(
         reader: &mut R,
         separators: &[Vec<u8>],
         chomp: bool,
-    ) -> Result<Option<String>, RuntimeError> {
+    ) -> Result<Option<Vec<u8>>, RuntimeError> {
         let mut buffer = Vec::new();
         let mut byte = [0u8];
         let mut read_any = false;
@@ -230,7 +308,18 @@ impl Interpreter {
         if !read_any {
             return Ok(None);
         }
-        Ok(Some(String::from_utf8_lossy(&buffer).to_string()))
+        Ok(Some(buffer))
+    }
+
+    fn read_record_with_separators<R: Read>(
+        reader: &mut R,
+        separators: &[Vec<u8>],
+        chomp: bool,
+    ) -> Result<Option<String>, RuntimeError> {
+        match Self::read_record_bytes(reader, separators, chomp)? {
+            Some(buffer) => Ok(Some(String::from_utf8_lossy(&buffer).to_string())),
+            None => Ok(None),
+        }
     }
 
     pub(super) fn read_line_from_handle_value(
@@ -242,6 +331,9 @@ impl Interpreter {
             return Err(RuntimeError::io_closed("handle operation"));
         }
         state.read_attempted = true;
+        let encoding = state.encoding.clone();
+        let needs_decode =
+            !encoding.is_empty() && encoding != "utf-8" && encoding != "utf8" && encoding != "bin";
         match state.target {
             IoHandleTarget::Stdout | IoHandleTarget::Stderr => {
                 Err(RuntimeError::new("Handle not readable"))
@@ -253,11 +345,23 @@ impl Interpreter {
                 Self::read_record_with_separators(&mut stdin, &seps, chomp)
             }
             IoHandleTarget::File => {
+                let seps = state.line_separators.clone();
+                let chomp = state.line_chomp;
                 let file = state
                     .file
                     .as_mut()
                     .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
-                Self::read_record_with_separators(file, &state.line_separators, state.line_chomp)
+                if needs_decode {
+                    match Self::read_record_bytes(file, &seps, chomp)? {
+                        Some(bytes) => {
+                            let decoded = self.decode_with_encoding(&bytes, &encoding)?;
+                            Ok(Some(decoded))
+                        }
+                        None => Ok(None),
+                    }
+                } else {
+                    Self::read_record_with_separators(file, &seps, chomp)
+                }
             }
             IoHandleTarget::Socket => {
                 let sock = state

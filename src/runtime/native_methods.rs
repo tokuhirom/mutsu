@@ -3660,7 +3660,7 @@ impl Interpreter {
 
                 let mut attrs = HashMap::new();
                 attrs.insert("bytes".to_string(), Value::array(bytes));
-                Ok(Value::make_instance(Symbol::intern("blob8"), attrs))
+                Ok(Value::make_instance(Symbol::intern("Blob[uint8]"), attrs))
             }
             "WHAT" => Ok(Value::Package(Symbol::intern("Encoding::Encoder"))),
             _ => Ok(Value::Nil),
