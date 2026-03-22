@@ -1307,13 +1307,13 @@ pub(in crate::parser) fn parse_block_body(input: &str) -> PResult<'_, Vec<crate:
 fn is_hash_literal_start(input: &str) -> bool {
     // %hash variable at start indicates hash literal: {%hash, ...}
     // But {%hash{$_}} or {%hash.foo} is a block containing a hash expression.
-    if input.starts_with('%') {
-        if let Ok((r, _)) = super::super::stmt::ident_pub(&input[1..]) {
-            let (r, _) = ws_inner(r);
-            // If followed by comma, closing brace, or fat arrow, it's a hash literal
-            if r.starts_with(',') || r.starts_with('}') || r.starts_with("=>") {
-                return true;
-            }
+    if let Some(stripped) = input.strip_prefix('%')
+        && let Ok((r, _)) = super::super::stmt::ident_pub(stripped)
+    {
+        let (r, _) = ws_inner(r);
+        // If followed by comma, closing brace, or fat arrow, it's a hash literal
+        if r.starts_with(',') || r.starts_with('}') || r.starts_with("=>") {
+            return true;
         }
     }
     // ident => or "str" => or 'str' =>
