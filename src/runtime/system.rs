@@ -383,12 +383,6 @@ impl Interpreter {
         Duration::from_secs_f64(secs)
     }
 
-    pub(super) fn system_time_from_value(val: Option<Value>) -> Option<SystemTime> {
-        let secs = Self::seconds_from_value(val)?;
-        let secs = secs.max(0.0);
-        Some(UNIX_EPOCH + Duration::from_secs_f64(secs))
-    }
-
     pub(super) fn hostname() -> String {
         env::var("HOSTNAME")
             .ok()
