@@ -2445,6 +2445,14 @@ impl VM {
             }
             self.interpreter
                 .maybe_fetch_rw_proxy(result?, cf_auto_fetch)
+        } else if self.interpreter.has_multi_candidates(name) && !self.interpreter.has_proto(name) {
+            // User-defined multi candidates take priority over builtins.
+            // Call call_function_fallback directly to bypass the builtin match
+            // in call_function, which would shadow user-defined multi subs.
+            self.interpreter.set_pending_call_arg_sources(arg_sources);
+            let result = self.interpreter.call_function_fallback(name, &args);
+            self.interpreter.set_pending_call_arg_sources(None);
+            self.interpreter.maybe_fetch_rw_proxy(result?, true)
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(name), &args) {
             native_result
         } else {

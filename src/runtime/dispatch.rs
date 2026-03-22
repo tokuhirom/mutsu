@@ -166,13 +166,20 @@ impl Interpreter {
             })
             .cloned()
             .collect();
+        // Compare dispatch shapes as sorted multisets so that candidates with
+        // the same set of typed parameters in a different order are still
+        // detected as tied (e.g. `foo(S $a, T $b)` vs `foo(T $a, S $b)`).
+        let mut best_shape_sorted = best_shape.clone();
+        best_shape_sorted.sort();
         if tied.len() > 1
             && tied
                 .iter()
                 .all(|def| !self.candidate_uses_order_sensitive_dispatch(def))
-            && tied
-                .iter()
-                .all(|def| self.candidate_dispatch_shape(def) == best_shape)
+            && tied.iter().all(|def| {
+                let mut shape = self.candidate_dispatch_shape(def);
+                shape.sort();
+                shape == best_shape_sorted
+            })
         {
             self.pending_dispatch_error =
                 Some(self.ambiguous_multi_dispatch_error(name, args, &tied));
@@ -185,7 +192,7 @@ impl Interpreter {
     fn candidate_specificity_rank(
         &self,
         def: &FunctionDef,
-    ) -> (usize, usize, usize, usize, usize, usize) {
+    ) -> (usize, usize, usize, usize, usize, usize, usize) {
         let where_count = Self::dispatch_visible_params(def)
             .filter(|p| p.where_constraint.is_some())
             .count();
@@ -213,6 +220,12 @@ impl Interpreter {
         let named_count = Self::dispatch_visible_params(def)
             .filter(|p| p.named)
             .count();
+        // Required named params (`:$a!`) are more specific than optional ones
+        let required_named_count = def
+            .param_defs
+            .iter()
+            .filter(|p| p.named && p.required)
+            .count();
         let trait_count = Self::dispatch_visible_params(def)
             .filter(|p| {
                 p.traits
@@ -226,6 +239,7 @@ impl Interpreter {
             typed_param_count,
             subsig_count,
             named_count,
+            required_named_count,
             trait_count,
         )
     }

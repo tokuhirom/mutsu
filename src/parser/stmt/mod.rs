@@ -308,6 +308,14 @@ pub(super) fn parse_sub_name_pub(input: &str) -> PResult<'_, String> {
     sub::parse_sub_name(input)
 }
 
+/// Public accessor for sub_decl_with_semicolon_mode (used by primary/ident.rs for multi sub exprs).
+pub(super) fn sub_decl_with_semicolon_mode_pub(
+    input: &str,
+    allow_main_semicolon_decl: bool,
+) -> PResult<'_, Stmt> {
+    sub::sub_decl_with_semicolon_mode(input, allow_main_semicolon_decl)
+}
+
 /// Public accessor for constant declaration parser (used by primary.rs in expression context).
 pub(super) fn constant_decl_pub(input: &str) -> PResult<'_, Stmt> {
     decl::constant_decl(input)
@@ -594,6 +602,7 @@ const STMT_PARSERS: &[StmtParser] = &[
     class::does_decl,
     class::trusts_decl,
     class::proto_decl,
+    sub::anon_multi_check,
     sub::sub_decl,
     sub::method_decl,
     sub::submethod_decl,

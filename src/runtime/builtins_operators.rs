@@ -4,7 +4,7 @@ use crate::token_kind::TokenKind;
 use num_traits::{Signed, ToPrimitive, Zero};
 
 impl Interpreter {
-    pub(super) fn call_function_fallback(
+    pub(crate) fn call_function_fallback(
         &mut self,
         name: &str,
         args: &[Value],
