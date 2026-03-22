@@ -681,12 +681,10 @@ impl Compiler {
                 // When a single ArrayLiteral is the sole element (e.g., [<a b c>]
                 // or [(1,2,3)]), flatten it so items become direct array elements.
                 // Multiple comma-separated items stay as-is: [(0,1),(2,3)] → 2 Lists.
-                // A trailing comma with a nested BracketArray (e.g. `[[2],]`) prevents
-                // single-element flattening so the inner array stays nested.
-                let nested_array_with_comma = *trailing_comma
-                    && elems.len() == 1
-                    && matches!(elems[0], Expr::BracketArray(..));
-                if elems.len() == 1 && !nested_array_with_comma {
+                // A trailing comma with a single element (e.g. `[[2],]`, `[@a,]`)
+                // prevents single-element flattening so the inner value stays nested.
+                let single_with_trailing_comma = *trailing_comma && elems.len() == 1;
+                if elems.len() == 1 && !single_with_trailing_comma {
                     if let Expr::ArrayLiteral(items) = &elems[0] {
                         for item in items {
                             self.compile_expr(item);
@@ -700,7 +698,7 @@ impl Compiler {
                     for elem in elems {
                         self.compile_expr(elem);
                     }
-                    if nested_array_with_comma {
+                    if single_with_trailing_comma {
                         self.code
                             .emit(OpCode::MakeRealArrayNoFlatten(elems.len() as u32));
                     } else {
@@ -2436,7 +2434,7 @@ impl Compiler {
             Expr::CallOn { target, args } => {
                 // @($x) — array contextualizer: coerce single arg to Array
                 if let Expr::ArrayVar(name) = target.as_ref()
-                    && name == "__ANON_ARRAY__"
+                    && (name == "__ANON_ARRAY__" || name.starts_with("__ANON_ARRAY_"))
                     && args.len() == 1
                 {
                     self.compile_expr(&args[0]);

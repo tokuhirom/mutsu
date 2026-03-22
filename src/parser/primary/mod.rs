@@ -619,7 +619,7 @@ mod tests {
     fn primary_bare_at_sigil_parses_as_anon_array() {
         let (rest, expr) = primary("@").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::ArrayVar(ref n) if n.as_str() == "__ANON_ARRAY__"));
+        assert!(matches!(expr, Expr::ArrayVar(ref n) if n.starts_with("__ANON_ARRAY_")));
     }
 
     #[test]

@@ -154,6 +154,20 @@ fn lower_if_clause_binding(
 
     let source_binding = next_if_bind_tmp_name();
     let source_expr = Expr::Var(source_binding.trim_start_matches('$').to_string());
+    // For **@ (double slurpy) as the only positional param, pass the condition
+    // as a single argument without slipping, so the list is captured as-is.
+    let has_only_double_slurpy = param_defs
+        .iter()
+        .filter(|p| !p.named)
+        .all(|p| p.double_slurpy);
+    let args = if has_only_double_slurpy {
+        vec![source_expr]
+    } else {
+        vec![Expr::Unary {
+            op: TokenKind::Pipe,
+            expr: Box::new(source_expr),
+        }]
+    };
     let call_expr = Expr::CallOn {
         target: Box::new(Expr::AnonSubParams {
             params: param_defs.iter().map(|p| p.name.clone()).collect(),
@@ -162,10 +176,7 @@ fn lower_if_clause_binding(
             body: then_branch,
             is_rw: false,
         }),
-        args: vec![Expr::Unary {
-            op: TokenKind::Pipe,
-            expr: Box::new(source_expr),
-        }],
+        args,
     };
     (Some(source_binding), vec![Stmt::Expr(call_expr)])
 }

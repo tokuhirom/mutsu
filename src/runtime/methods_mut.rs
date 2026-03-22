@@ -1402,20 +1402,22 @@ impl Interpreter {
                     // as-is (no recursive flattening).
                     let flat_values = flatten_append_args(args);
                     self.check_container_element_types(&key, &flat_values)?;
-                    if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
+                    if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);
                         items.extend(flat_values);
-                        return Ok(Value::Nil);
+                        let result = Value::Array(Arc::clone(arc_items), *kind);
+                        return Ok(result);
                     }
                     let mut items = match target {
                         Value::Array(v, ..) => v.to_vec(),
                         _ => Vec::new(),
                     };
                     items.extend(flat_values);
+                    let result = Value::real_array(items.clone());
                     self.env.insert(key, Value::real_array(items));
-                    return Ok(Value::Nil);
+                    return Ok(result);
                 }
-                "unshift" | "prepend" => {
+                "unshift" => {
                     let normalized_args = Self::normalize_push_unshift_args(args);
                     self.check_container_element_types(&key, &normalized_args)?;
                     if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key) {
@@ -1431,6 +1433,27 @@ impl Interpreter {
                         _ => Vec::new(),
                     };
                     let mut pref: Vec<Value> = normalized_args;
+                    pref.extend(items);
+                    let result = Value::real_array(pref.clone());
+                    self.env.insert(key, Value::real_array(pref));
+                    return Ok(result);
+                }
+                "prepend" => {
+                    let flat_values = flatten_append_args(args);
+                    self.check_container_element_types(&key, &flat_values)?;
+                    if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key) {
+                        let items = Arc::make_mut(arc_items);
+                        for (i, arg) in flat_values.iter().enumerate() {
+                            items.insert(i, arg.clone());
+                        }
+                        let result = Value::Array(Arc::clone(arc_items), *kind);
+                        return Ok(result);
+                    }
+                    let items = match target {
+                        Value::Array(v, ..) => v.to_vec(),
+                        _ => Vec::new(),
+                    };
+                    let mut pref: Vec<Value> = flat_values;
                     pref.extend(items);
                     let result = Value::real_array(pref.clone());
                     self.env.insert(key, Value::real_array(pref));
@@ -1698,7 +1721,7 @@ impl Interpreter {
                         .insert(key, Value::Array(Arc::new(items), array_flag));
                     return Ok(out);
                 }
-                "unshift" | "prepend" => {
+                "unshift" => {
                     let normalized_args = Self::normalize_push_unshift_args(args);
                     if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);
@@ -1716,6 +1739,26 @@ impl Interpreter {
                     }
                     let result = Value::Array(Arc::new(items), array_flag);
                     self.env.insert(key, result.clone());
+                    return Ok(result);
+                }
+                "prepend" => {
+                    let flat_values = flatten_append_args(args);
+                    if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key) {
+                        let items = Arc::make_mut(arc_items);
+                        for (i, arg) in flat_values.iter().enumerate() {
+                            items.insert(i, arg.clone());
+                        }
+                        return Ok(Value::Array(Arc::clone(arc_items), *kind));
+                    }
+                    let items = match &target {
+                        Value::Array(v, ..) => v.to_vec(),
+                        _ => Vec::new(),
+                    };
+                    let mut pref: Vec<Value> = flat_values;
+                    pref.extend(items);
+                    let result = Value::Array(Arc::new(pref.clone()), array_flag);
+                    self.env
+                        .insert(key, Value::Array(Arc::new(pref), array_flag));
                     return Ok(result);
                 }
                 "shift" => {
