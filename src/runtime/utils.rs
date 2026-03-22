@@ -460,6 +460,22 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             }
             Value::hash(map)
         }
+        Value::Range(a, b) => {
+            let items: Vec<Value> = (a..=b).map(Value::Int).collect();
+            coerce_to_hash(Value::Array(items.into(), ArrayKind::List))
+        }
+        Value::RangeExcl(a, b) => {
+            let items: Vec<Value> = (a..b).map(Value::Int).collect();
+            coerce_to_hash(Value::Array(items.into(), ArrayKind::List))
+        }
+        Value::RangeExclStart(a, b) => {
+            let items: Vec<Value> = (a + 1..=b).map(Value::Int).collect();
+            coerce_to_hash(Value::Array(items.into(), ArrayKind::List))
+        }
+        Value::RangeExclBoth(a, b) => {
+            let items: Vec<Value> = (a + 1..b).map(Value::Int).collect();
+            coerce_to_hash(Value::Array(items.into(), ArrayKind::List))
+        }
         Value::Nil => Value::hash(HashMap::new()),
         Value::Instance {
             class_name,

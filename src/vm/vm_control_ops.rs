@@ -714,8 +714,21 @@ impl VM {
             let Some(current_val) = self.interpreter.env().get(var_name).cloned() else {
                 return;
             };
-            self.set_env_with_main_alias(source, current_val.clone());
-            self.update_local_if_exists(code, source, &current_val);
+            // If the source variable holds a Pair, update only the pair's value
+            // (this handles `for $pair.value -> $v is rw { ... }`)
+            let writeback_val = if let Some(existing) = self.get_env_with_main_alias(source) {
+                match existing {
+                    Value::Pair(key, _) => Value::Pair(key, Box::new(current_val.clone())),
+                    Value::ValuePair(key, _) => {
+                        Value::ValuePair(key, Box::new(current_val.clone()))
+                    }
+                    _ => current_val.clone(),
+                }
+            } else {
+                current_val.clone()
+            };
+            self.set_env_with_main_alias(source, writeback_val.clone());
+            self.update_local_if_exists(code, source, &writeback_val);
         }
     }
 
