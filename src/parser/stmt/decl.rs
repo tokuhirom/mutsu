@@ -2139,22 +2139,21 @@ pub(super) fn parse_destructuring_decl(
     // Parse optional `is default(expr)` trait on grouped declaration
     let mut rest = rest;
     let mut group_default_expr: Option<Expr> = None;
-    if let Some(r) = keyword("is", rest) {
-        if let Ok((r, _)) = ws1(r) {
-            if let Some(r) = keyword("default", r) {
-                let (r, _) = ws(r)?;
-                if let Some(inner) = r.strip_prefix('(') {
-                    let (inner, _) = ws(inner)?;
-                    let (inner, default_expr) = expression(inner)?;
-                    let (inner, _) = ws(inner)?;
-                    let inner = inner
-                        .strip_prefix(')')
-                        .ok_or_else(|| PError::expected("closing paren in is default"))?;
-                    group_default_expr = Some(default_expr);
-                    let (r2, _) = ws(inner)?;
-                    rest = r2;
-                }
-            }
+    if let Some(r) = keyword("is", rest)
+        && let Ok((r, _)) = ws1(r)
+        && let Some(r) = keyword("default", r)
+    {
+        let (r, _) = ws(r)?;
+        if let Some(inner) = r.strip_prefix('(') {
+            let (inner, _) = ws(inner)?;
+            let (inner, default_expr) = expression(inner)?;
+            let (inner, _) = ws(inner)?;
+            let inner = inner
+                .strip_prefix(')')
+                .ok_or_else(|| PError::expected("closing paren in is default"))?;
+            group_default_expr = Some(default_expr);
+            let (r2, _) = ws(inner)?;
+            rest = r2;
         }
     }
 
@@ -2399,33 +2398,32 @@ fn has_decl_list(input: &str) -> PResult<'_, Stmt> {
     let (mut rest, _) = ws(rest)?;
 
     // Parse optional `is default(expr)` trait on grouped has declaration
-    if let Some(r) = keyword("is", rest) {
-        if let Ok((r, _)) = ws1(r) {
-            if let Some(r) = keyword("default", r) {
-                let (r, _) = ws(r)?;
-                if let Some(inner) = r.strip_prefix('(') {
-                    let (inner, _) = ws(inner)?;
-                    let (inner, default_expr) = expression(inner)?;
-                    let (inner, _) = ws(inner)?;
-                    let inner = inner
-                        .strip_prefix(')')
-                        .ok_or_else(|| PError::expected("closing paren in is default"))?;
-                    // Apply the default to all attributes in the list
-                    for stmt in &mut stmts {
-                        if let Stmt::HasDecl {
-                            default,
-                            is_default,
-                            ..
-                        } = stmt
-                        {
-                            *default = Some(default_expr.clone());
-                            *is_default = Some(default_expr.clone());
-                        }
-                    }
-                    let (r2, _) = ws(inner)?;
-                    rest = r2;
+    if let Some(r) = keyword("is", rest)
+        && let Ok((r, _)) = ws1(r)
+        && let Some(r) = keyword("default", r)
+    {
+        let (r, _) = ws(r)?;
+        if let Some(inner) = r.strip_prefix('(') {
+            let (inner, _) = ws(inner)?;
+            let (inner, default_expr) = expression(inner)?;
+            let (inner, _) = ws(inner)?;
+            let inner = inner
+                .strip_prefix(')')
+                .ok_or_else(|| PError::expected("closing paren in is default"))?;
+            // Apply the default to all attributes in the list
+            for stmt in &mut stmts {
+                if let Stmt::HasDecl {
+                    default,
+                    is_default,
+                    ..
+                } = stmt
+                {
+                    *default = Some(default_expr.clone());
+                    *is_default = Some(default_expr.clone());
                 }
             }
+            let (r2, _) = ws(inner)?;
+            rest = r2;
         }
     }
 

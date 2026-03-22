@@ -2412,7 +2412,7 @@ impl VM {
 
         // Register `is default(...)` values for attribute variables so that
         // .VAR.default returns the correct value inside methods.
-        for (attr_name, _) in &attributes {
+        for attr_name in attributes.keys() {
             if attr_name.contains('\0') || attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
                 continue;
             }

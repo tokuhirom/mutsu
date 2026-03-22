@@ -3190,17 +3190,6 @@ impl Interpreter {
         self.var_defaults.get(name)
     }
 
-    /// Set the evaluated `is default(...)` value for a class attribute.
-    pub(crate) fn set_class_attribute_default(
-        &mut self,
-        class_name: &str,
-        attr_name: &str,
-        value: Value,
-    ) {
-        self.class_attribute_defaults
-            .insert((class_name.to_string(), attr_name.to_string()), value);
-    }
-
     /// Get the evaluated `is default(...)` value for a class attribute.
     pub(crate) fn class_attribute_default(
         &self,

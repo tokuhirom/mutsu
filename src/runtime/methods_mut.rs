@@ -802,13 +802,11 @@ impl Interpreter {
                     };
                     // When Nil is assigned to an attribute with `is default(...)`,
                     // restore the default value instead of setting Nil.
-                    if matches!(assigned_value, Value::Nil) {
-                        if let Some(def) = self
-                            .class_attribute_default(&qualifier, &attr_name)
-                            .cloned()
-                        {
-                            assigned_value = def;
-                        }
+                    if matches!(assigned_value, Value::Nil)
+                        && let Some(def) =
+                            self.class_attribute_default(qualifier, &attr_name).cloned()
+                    {
+                        assigned_value = def;
                     }
                     updated.insert(attr_name, assigned_value.clone());
                     let cn = *class_name;
@@ -857,13 +855,12 @@ impl Interpreter {
                     };
                     // When Nil is assigned to an attribute with `is default(...)`,
                     // restore the default value instead of setting Nil.
-                    if matches!(assigned_value, Value::Nil) {
-                        if let Some(def) = self
-                            .class_attribute_default(&qualifier, actual_method)
+                    if matches!(assigned_value, Value::Nil)
+                        && let Some(def) = self
+                            .class_attribute_default(qualifier, actual_method)
                             .cloned()
-                        {
-                            assigned_value = def;
-                        }
+                    {
+                        assigned_value = def;
                     }
                     updated.insert(actual_method.to_string(), assigned_value.clone());
                     let cn = *class_name;
@@ -1028,13 +1025,12 @@ impl Interpreter {
                     Self::normalize_rw_accessor_assignment(updated.get(&attr_key).cloned(), value);
                 // When Nil is assigned to an attribute with `is default(...)`,
                 // restore the default value instead of setting Nil.
-                if matches!(assigned_value, Value::Nil) {
-                    if let Some(def) = self
+                if matches!(assigned_value, Value::Nil)
+                    && let Some(def) = self
                         .class_attribute_default(&class_name.resolve(), method)
                         .cloned()
-                    {
-                        assigned_value = def;
-                    }
+                {
+                    assigned_value = def;
                 }
                 updated.insert(attr_key.clone(), assigned_value.clone());
                 if let Some(var_name) = target_var {
@@ -1128,13 +1124,12 @@ impl Interpreter {
             };
             // When Nil is assigned to an attribute with `is default(...)`,
             // restore the default value instead of setting Nil.
-            if matches!(assigned_value, Value::Nil) {
-                if let Some(def) = self
+            if matches!(assigned_value, Value::Nil)
+                && let Some(def) = self
                     .class_attribute_default(&class_name.resolve(), &attr_name)
                     .cloned()
-                {
-                    assigned_value = def;
-                }
+            {
+                assigned_value = def;
             }
             updated.insert(attr_name, assigned_value.clone());
             if let Some(var_name) = target_var {
