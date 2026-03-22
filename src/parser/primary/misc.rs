@@ -1261,8 +1261,9 @@ pub(in crate::parser) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
     }
 
     // Try to detect if this is a hash literal: { key => val, ... }
-    // Heuristic: if after ws we see `ident =>` or `"str" =>` or `'str' =>`, it's a hash
-    if is_hash_literal_start(r) {
+    // Heuristic: if after ws we see `ident =>` or `"str" =>` or `'str' =>`, it's a hash.
+    // However, placeholder variables ($^x, @^x, %^x) force it to be a block.
+    if is_hash_literal_start(r) && !body_has_placeholder_vars(r) {
         return parse_hash_literal_body(r);
     }
 
@@ -1303,17 +1304,66 @@ pub(in crate::parser) fn parse_block_body(input: &str) -> PResult<'_, Vec<crate:
     result
 }
 
+/// Scan the body (between { and matching }) for placeholder variables ($^x, @^x, %^x).
+/// If any are found, the block should be treated as a Block, not a Hash.
+fn body_has_placeholder_vars(input: &str) -> bool {
+    let mut depth = 1u32;
+    let mut chars = input.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+            }
+            '$' | '@' | '%' => {
+                if let Some(&'^') = chars.peek() {
+                    chars.next(); // consume '^'
+                    if let Some(&next) = chars.peek()
+                        && (next.is_alphabetic() || next == '_')
+                    {
+                        return true;
+                    }
+                }
+            }
+            // Skip string contents to avoid false positives
+            '\'' => {
+                for sc in chars.by_ref() {
+                    if sc == '\'' {
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 /// Check if the input looks like a hash literal start.
 fn is_hash_literal_start(input: &str) -> bool {
     // %hash variable at start indicates hash literal: {%hash, ...}
+    // Also handles twigil forms like %*dyn, %!attr, %?config, etc.
     // But {%hash{$_}} or {%hash.foo} is a block containing a hash expression.
-    if let Some(stripped) = input.strip_prefix('%')
-        && let Ok((r, _)) = super::super::stmt::ident_pub(stripped)
-    {
-        let (r, _) = ws_inner(r);
-        // If followed by comma, closing brace, or fat arrow, it's a hash literal
-        if r.starts_with(',') || r.starts_with('}') || r.starts_with("=>") {
-            return true;
+    if let Some(stripped) = input.strip_prefix('%') {
+        // Skip optional twigil (* ! ? ^)
+        let after_twigil = if stripped.starts_with('*')
+            || stripped.starts_with('!')
+            || stripped.starts_with('?')
+            || stripped.starts_with('^')
+        {
+            &stripped[1..]
+        } else {
+            stripped
+        };
+        if let Ok((r, _)) = super::super::stmt::ident_pub(after_twigil) {
+            let (r, _) = ws_inner(r);
+            // If followed by comma, closing brace, or fat arrow, it's a hash literal
+            if r.starts_with(',') || r.starts_with('}') || r.starts_with("=>") {
+                return true;
+            }
         }
     }
     // ident => or "str" => or 'str' =>
@@ -1323,10 +1373,10 @@ fn is_hash_literal_start(input: &str) -> bool {
             return true;
         }
     }
-    // numeric key => val
+    // numeric key => val or numeric R=> val (reverse fat arrow, produces a Pair)
     if let Ok((r, _)) = super::number::integer(input) {
         let (r, _) = ws_inner(r);
-        if r.starts_with("=>") {
+        if r.starts_with("=>") || r.starts_with("R=>") {
             return true;
         }
     }
@@ -1649,16 +1699,20 @@ fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
                 continue;
             }
 
-            pending_key = Some(key);
-            let (r_key, _) = ws_inner(r_key);
-            if let Some(stripped) = r_key.strip_prefix(',') {
-                rest = stripped;
-            } else if let Some(stripped) = r_key.strip_prefix(';') {
-                rest = stripped;
-            } else {
-                rest = r_key;
+            // If followed by R=> (reverse fat arrow meta-operator), don't treat as
+            // simple key — fall through to expression parsing which handles R=> correctly.
+            if !after_key.starts_with("R=>") {
+                pending_key = Some(key);
+                let (r_key, _) = ws_inner(r_key);
+                if let Some(stripped) = r_key.strip_prefix(',') {
+                    rest = stripped;
+                } else if let Some(stripped) = r_key.strip_prefix(';') {
+                    rest = stripped;
+                } else {
+                    rest = r_key;
+                }
+                continue;
             }
-            continue;
         }
 
         let (r, item) = super::super::expr::expression(r)?;
@@ -1758,6 +1812,16 @@ fn hash_pair_from_expr(expr: &Expr) -> Result<Option<(String, Expr)>, PError> {
         } => Ok(Some((
             hash_key_from_expr((**left).clone())?,
             (**right).clone(),
+        ))),
+        // R=> (reverse fat arrow): `1 R=> "a"` → key="a", value=1
+        Expr::MetaOp {
+            meta,
+            op,
+            left,
+            right,
+        } if meta == "R" && op == "=>" => Ok(Some((
+            hash_key_from_expr((**right).clone())?,
+            (**left).clone(),
         ))),
         Expr::PositionalPair(inner) => hash_pair_from_expr(inner),
         _ => Ok(None),

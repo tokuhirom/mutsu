@@ -231,6 +231,14 @@ impl Compiler {
                     });
                     self.code.patch_block_pre_end(idx);
                     self.code.patch_block_enter_end(idx);
+                    // Hoist sub declarations: register subs first so forward
+                    // references like `&fa` work before the sub is textually
+                    // declared (Raku sub hoisting semantics).
+                    for s in stmts.iter() {
+                        if matches!(s, Stmt::SubDecl { .. }) {
+                            self.compile_stmt(s);
+                        }
+                    }
                     for s in stmts {
                         self.compile_stmt(s);
                     }

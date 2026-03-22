@@ -346,6 +346,7 @@ roast/S06-operator-overloading/methods.t
 roast/S06-operator-overloading/prefix.t
 roast/S06-operator-overloading/semicolon.t
 roast/S06-operator-overloading/term.t
+roast/S06-other/anon-hashes-vs-blocks.t
 roast/S06-other/introspection.t
 roast/S06-other/main-eval.t
 roast/S06-other/main-semicolon.t
