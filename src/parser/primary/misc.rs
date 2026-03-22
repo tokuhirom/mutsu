@@ -1868,7 +1868,7 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
             }
         }
         let (r, _) = parse_char(r, ']')?;
-        return Ok((r, (name, Some(Expr::ArrayLiteral(items)))));
+        return Ok((r, (name, Some(Expr::BracketArray(items, false)))));
     }
 
     // :name{...} (block/hash-valued colonpair)

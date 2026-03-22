@@ -31,6 +31,18 @@ impl Interpreter {
         if let Value::Instance { class_name, .. } = &target {
             return self.dispatch_new(Value::Package(*class_name), args);
         }
+        // Calling .new() on a concrete Hash/Bag/Mix delegates to the type constructor
+        {
+            let type_pkg = match &target {
+                Value::Hash(_) => Some("Hash"),
+                Value::Bag(_) => Some("BagHash"),
+                Value::Mix(_) => Some("MixHash"),
+                _ => None,
+            };
+            if let Some(type_name) = type_pkg {
+                return self.dispatch_new(Value::Package(Symbol::intern(type_name)), args);
+            }
+        }
         if let Value::Str(ref name) = target
             && self.enum_types.contains_key(name.as_str())
         {
