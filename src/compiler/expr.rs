@@ -1150,16 +1150,27 @@ impl Compiler {
                     self.compile_method_arg(arg);
                 }
                 let name_idx = self.code.add_constant(Value::str(name.resolve()));
-                let target_name_idx = self.code.add_constant(Value::str(target_name));
                 let modifier_idx =
                     modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
-                self.code.emit(OpCode::CallMethodMut {
-                    name_idx,
-                    arity,
-                    target_name_idx,
-                    modifier_idx,
-                    quoted: *quoted,
-                });
+                // Use CallMethod (non-mut) for read-only special variables like $!
+                // so they benefit from the Nil dispatch path in CallMethod.
+                if target_name == "!" {
+                    self.code.emit(OpCode::CallMethod {
+                        name_idx,
+                        arity,
+                        modifier_idx,
+                        quoted: *quoted,
+                    });
+                } else {
+                    let target_name_idx = self.code.add_constant(Value::str(target_name));
+                    self.code.emit(OpCode::CallMethodMut {
+                        name_idx,
+                        arity,
+                        target_name_idx,
+                        modifier_idx,
+                        quoted: *quoted,
+                    });
+                }
             }
             // Method call on indexed target with mutating method — needs writeback.
             // e.g., %hash<key>.push(4) or @array[0].push(5)

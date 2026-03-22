@@ -164,6 +164,41 @@ pub(crate) fn take_pending_instance_destroys() -> Vec<PendingInstanceDestroy> {
     PENDING_INSTANCE_DESTROYS.with(|pending| std::mem::take(&mut *pending.borrow_mut()))
 }
 
+// Global registry for Failure handled state. Maps Failure instance IDs to
+// their handled flag. This allows the handled state to be shared across
+// all clones of a Failure value (which share the same `id`).
+thread_local! {
+    static FAILURE_HANDLED_REGISTRY: RefCell<HashMap<u64, bool>> = RefCell::new(HashMap::new());
+}
+
+/// Mark a Failure as handled by its instance id.
+pub(crate) fn mark_failure_handled(id: u64) {
+    FAILURE_HANDLED_REGISTRY.with(|reg| {
+        reg.borrow_mut().insert(id, true);
+    });
+}
+
+/// Set the handled state of a Failure by its instance id.
+pub(crate) fn set_failure_handled(id: u64, handled: bool) {
+    FAILURE_HANDLED_REGISTRY.with(|reg| {
+        reg.borrow_mut().insert(id, handled);
+    });
+}
+
+/// Check if a Failure is handled by its instance id.
+/// Returns None if the id is not in the registry (meaning check the attribute).
+pub(crate) fn is_failure_handled(id: u64) -> Option<bool> {
+    FAILURE_HANDLED_REGISTRY.with(|reg| reg.borrow().get(&id).copied())
+}
+
+/// Remove a Failure from the handled registry (cleanup).
+#[allow(dead_code)]
+pub(crate) fn remove_failure_handled(id: u64) {
+    FAILURE_HANDLED_REGISTRY.with(|reg| {
+        reg.borrow_mut().remove(&id);
+    });
+}
+
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum JunctionKind {
     Any,

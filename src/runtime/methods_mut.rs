@@ -560,6 +560,16 @@ impl Interpreter {
                 return Ok(value);
             }
         }
+        // Failure.handled = value: set the handled state via global registry
+        if method == "handled"
+            && method_args.is_empty()
+            && let Value::Instance { class_name, id, .. } = &target
+            && class_name.resolve() == "Failure"
+        {
+            let handled = value.truthy();
+            crate::value::set_failure_handled(*id, handled);
+            return Ok(Value::Bool(handled));
+        }
         if method == "substr-rw" {
             return self.assign_substr_rw(target_var, target, method_args, value);
         }

@@ -648,13 +648,9 @@ impl VM {
         }
         // Unhandled Failure explosion: calling a non-Failure method on an unhandled
         // Failure should throw the stored exception (Raku behavior).
-        if let Value::Instance {
-            class_name,
-            attributes,
-            ..
-        } = &target
+        if let Value::Instance { class_name, .. } = &target
             && class_name.resolve() == "Failure"
-            && !attributes.get("handled").is_some_and(Value::truthy)
+            && !target.is_failure_handled()
             && !matches!(
                 method.as_str(),
                 "exception"
@@ -663,6 +659,7 @@ impl VM {
                     | "defined"
                     | "Bool"
                     | "so"
+                    | "not"
                     | "gist"
                     | "Str"
                     | "raku"
