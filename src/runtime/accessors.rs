@@ -1195,7 +1195,14 @@ impl Interpreter {
             return Self::no_such_symbol_failure(name);
         }
         if let Some(code_name) = name.strip_prefix('&') {
-            return self.resolve_code_var(code_name);
+            let val = self.resolve_code_var(code_name);
+            // When the code variable is not found via ::('&name'), return a
+            // Failure (like Raku's X::NoSuchSymbol) so that attempting to use
+            // the result throws an exception.
+            if matches!(val, Value::Nil) {
+                return Self::no_such_symbol_failure(name);
+            }
+            return val;
         }
         // Scalars are stored without the `$` sigil in the env; strip it for lookup.
         if let Some(bare) = name.strip_prefix('$')

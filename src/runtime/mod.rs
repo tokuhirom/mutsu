@@ -2842,14 +2842,19 @@ impl Interpreter {
             )));
         }
 
+        // Import into the current package scope so that `use Foo` inside
+        // `module Bar { }` makes Foo's exports available as `Bar::name`
+        // rather than polluting the GLOBAL namespace.
+        let target_pkg = self.current_package.clone();
+
         for (name, symbol_tags) in subs {
             if !import_all && symbol_tags.is_disjoint(&requested) {
                 continue;
             }
             let source_single = format!("{module}::{name}");
             let source_prefix = format!("{module}::{name}/");
-            let target_single = format!("GLOBAL::{name}");
-            let target_prefix = format!("GLOBAL::{name}/");
+            let target_single = format!("{target_pkg}::{name}");
+            let target_prefix = format!("{target_pkg}::{name}/");
 
             let function_entries: Vec<(Symbol, FunctionDef)> = self
                 .functions

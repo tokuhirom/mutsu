@@ -399,6 +399,7 @@ roast/S09-multidim/assign.t
 roast/S09-multidim/decl.t
 roast/S09-multidim/indexing.t
 roast/S09-multidim/subs.t
+roast/S10-packages/export.t
 roast/S10-packages/joined-namespaces.t
 roast/S10-packages/require-and-use.t
 roast/S10-packages/use-with-class.t
