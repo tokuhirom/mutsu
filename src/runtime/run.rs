@@ -542,6 +542,7 @@ impl Interpreter {
         }
         self.collect_doc_comments(&preprocessed);
         self.collect_pod_blocks(&preprocessed);
+        self.add_declarator_pod_entries();
         let file_name = self
             .program_path
             .clone()

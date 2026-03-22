@@ -174,6 +174,37 @@ pub(super) type ClassAttributeDef = (
     Option<Expr>,
 );
 
+/// Kind of declaration a doc comment is attached to.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) enum DocDeclKind {
+    #[default]
+    Package, // class, module, package, grammar, role, enum, subset
+    Sub,  // sub, method, submethod, token, rule, regex
+    Attr, // has $.attr
+}
+
+/// A declarator doc comment with leading (#|) and trailing (#=) parts.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct DocComment {
+    pub leading: Option<String>,
+    pub trailing: Option<String>,
+    /// The name of the thing this comment is attached to (for WHEREFORE).
+    pub wherefore_name: String,
+    /// Kind of declaration.
+    pub kind: DocDeclKind,
+}
+
+impl DocComment {
+    fn contents(&self) -> String {
+        match (&self.leading, &self.trailing) {
+            (Some(l), Some(t)) => format!("{}\n{}", l, t),
+            (Some(l), None) => l.clone(),
+            (None, Some(t)) => t.clone(),
+            (None, None) => String::new(),
+        }
+    }
+}
+
 #[derive(Clone, Default)]
 struct ClassDef {
     parents: Vec<String>,
@@ -534,7 +565,9 @@ pub struct Interpreter {
     test_pending_callsite_line: Option<i64>,
     test_assertion_line_stack: Vec<i64>,
     block_stack: Vec<Value>,
-    doc_comments: HashMap<String, String>,
+    doc_comments: HashMap<String, DocComment>,
+    /// Ordered list of doc comments for $=pod
+    doc_comment_list: Vec<DocComment>,
     type_metadata: HashMap<String, HashMap<String, Value>>,
     when_matched: bool,
     gather_items: Vec<Vec<Value>>,
@@ -2160,6 +2193,7 @@ impl Interpreter {
             test_assertion_line_stack: Vec::new(),
             block_stack: Vec::new(),
             doc_comments: HashMap::new(),
+            doc_comment_list: Vec::new(),
             type_metadata: HashMap::new(),
             when_matched: false,
             gather_items: Vec::new(),
@@ -3584,6 +3618,7 @@ impl Interpreter {
             test_assertion_line_stack: Vec::new(),
             block_stack: Vec::new(),
             doc_comments: HashMap::new(),
+            doc_comment_list: Vec::new(),
             type_metadata: self.type_metadata.clone(),
             when_matched: false,
             gather_items: Vec::new(),

@@ -264,19 +264,71 @@ impl Interpreter {
         Ok(Value::Hash(Arc::new(HashMap::new())))
     }
 
-    /// Dispatch .WHY method
+    /// Dispatch .WHY method — returns a Pod::Block::Declarator instance
     pub(super) fn dispatch_why(&self, target: &Value) -> Result<Value, RuntimeError> {
         // Return declarator doc comment attached to this type/package/sub
         let keys: Vec<String> = match target {
             Value::Package(name) => vec![name.resolve()],
-            Value::Instance { class_name, .. } => vec![class_name.resolve()],
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } => {
+                if class_name == "Attribute" {
+                    // Attribute objects: look up by "ClassName::$!attrname"
+                    let mut k = Vec::new();
+                    if let Some(Value::Str(attr_name)) = attributes.get("name") {
+                        // Try __mutsu_attr_owner first, then package
+                        let owner = attributes
+                            .get("__mutsu_attr_owner")
+                            .and_then(|v| match v {
+                                Value::Str(s) => Some(s.to_string()),
+                                _ => None,
+                            })
+                            .or_else(|| {
+                                attributes.get("package").and_then(|v| match v {
+                                    Value::Package(p) => Some(p.resolve()),
+                                    Value::Str(s) => Some(s.to_string()),
+                                    _ => None,
+                                })
+                            });
+                        if let Some(owner) = owner {
+                            k.push(format!("{}::{}", owner, attr_name));
+                        }
+                        k.push(attr_name.to_string());
+                    }
+                    k
+                } else if class_name == "Parameter" {
+                    // Parameter objects: look up by "SubName::param"
+                    let mut k = Vec::new();
+                    if let Some(Value::Str(param_name)) = attributes.get("name") {
+                        k.push(param_name.to_string());
+                    }
+                    k
+                } else {
+                    vec![class_name.resolve()]
+                }
+            }
             Value::Sub(sub_data) => {
                 let mut k = Vec::new();
                 if sub_data.package != "" && sub_data.name != "" {
                     k.push(format!("{}::{}", sub_data.package, sub_data.name));
                 }
                 if sub_data.name != "" {
+                    // Try &-prefixed key first (to disambiguate from package names)
+                    k.push(format!("&{}", sub_data.name.resolve()));
                     k.push(sub_data.name.resolve());
+                }
+                k
+            }
+            Value::Routine { package, name, .. } => {
+                let mut k = Vec::new();
+                if *package != "" && *name != "" {
+                    k.push(format!("{}::{}", package.resolve(), name.resolve()));
+                }
+                if *name != "" {
+                    k.push(format!("&{}", name.resolve()));
+                    k.push(name.resolve());
                 }
                 k
             }
@@ -284,10 +336,38 @@ impl Interpreter {
         };
         for key in keys {
             if let Some(doc) = self.doc_comments.get(&key) {
-                return Ok(Value::str(doc.clone()));
+                return Ok(Self::make_pod_declarator(doc, target.clone()));
             }
         }
         Ok(Value::Nil)
+    }
+
+    /// Create a Pod::Block::Declarator instance from a DocComment
+    pub(crate) fn make_pod_declarator(doc: &super::DocComment, wherefore: Value) -> Value {
+        let mut attrs = HashMap::new();
+        let leading = doc.leading.as_deref().unwrap_or("").to_string();
+        let trailing = doc.trailing.as_deref().unwrap_or("").to_string();
+        attrs.insert(
+            "leading".to_string(),
+            if doc.leading.is_some() {
+                Value::str(leading.clone())
+            } else {
+                Value::str(String::new())
+            },
+        );
+        attrs.insert(
+            "trailing".to_string(),
+            if doc.trailing.is_some() {
+                Value::str(trailing.clone())
+            } else {
+                Value::str(String::new())
+            },
+        );
+        attrs.insert("WHEREFORE".to_string(), wherefore);
+        // contents is leading + trailing joined by newline
+        let contents = doc.contents();
+        attrs.insert("contents".to_string(), Value::str(contents));
+        Value::make_instance(Symbol::intern("Pod::Block::Declarator"), attrs)
     }
 
     /// Dispatch .^name method
