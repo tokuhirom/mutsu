@@ -372,7 +372,7 @@ impl Interpreter {
                 Value::Str(s) => s.parse::<i64>().unwrap_or(0),
                 Value::BigInt(b) => {
                     if b.as_ref() > &num_bigint::BigInt::from(i64::MAX) {
-                        return Err(RuntimeError::out_of_range(
+                        return Ok(RuntimeError::out_of_range_failure(
                             "start",
                             Value::BigInt(b.clone()),
                             "0..Inf",
@@ -388,7 +388,7 @@ impl Interpreter {
         let text = target.to_string_value();
         let len = text.chars().count() as i64;
         if start < 0 || start > len {
-            return Err(RuntimeError::out_of_range(
+            return Ok(RuntimeError::out_of_range_failure(
                 "start",
                 Value::Int(start),
                 &format!("0..{}", len),
@@ -551,14 +551,24 @@ impl Interpreter {
             ]
         };
         let start = if let Some(pos) = positional.get(1) {
-            self.value_to_position(pos)?
+            match self.value_to_position(pos) {
+                Ok(v) => v,
+                Err(err) => {
+                    // Convert out-of-range errors to Failures
+                    return Ok(Self::runtime_error_to_failure(err));
+                }
+            }
         } else {
             0
         };
         let text = target.to_string_value();
         let len = text.chars().count() as i64;
         if start < 0 {
-            return Err(self.out_of_range_error(Value::Int(start)));
+            return Ok(RuntimeError::out_of_range_failure(
+                "start",
+                Value::Int(start),
+                &format!("0..{}", len),
+            ));
         }
         if start > len {
             return Ok(Value::Nil);
@@ -751,6 +761,20 @@ impl Interpreter {
             .collect()
     }
 
+    /// Convert a RuntimeError to a Failure value (for operations that should soft-fail).
+    fn runtime_error_to_failure(err: RuntimeError) -> Value {
+        let ex = if let Some(exception) = err.exception {
+            *exception
+        } else {
+            let mut attrs = HashMap::new();
+            attrs.insert("message".to_string(), Value::str(err.message));
+            Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
+        };
+        let mut failure_attrs = HashMap::new();
+        failure_attrs.insert("exception".to_string(), ex);
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+    }
+
     pub(super) fn out_of_range_error(&self, got: Value) -> RuntimeError {
         let mut attrs = HashMap::new();
         attrs.insert("got".to_string(), got);
@@ -798,13 +822,20 @@ impl Interpreter {
         let text = target.to_string_value();
         let needle = args[0].to_string_value();
         let start = if let Some(pos) = args.get(1) {
-            self.value_to_position(pos)?
+            match self.value_to_position(pos) {
+                Ok(v) => v,
+                Err(err) => return Ok(Self::runtime_error_to_failure(err)),
+            }
         } else {
             0
         };
         let len = text.chars().count() as i64;
         if start < 0 || start > len {
-            return Err(self.out_of_range_error(Value::Int(start)));
+            return Ok(RuntimeError::out_of_range_failure(
+                "start",
+                Value::Int(start),
+                &format!("0..{}", len),
+            ));
         }
         let substr: String = text
             .chars()

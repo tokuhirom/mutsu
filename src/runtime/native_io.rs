@@ -12,6 +12,15 @@ fn io_exception(class_name: &str, message: String) -> RuntimeError {
     err
 }
 
+fn io_exception_failure(class_name: &str, message: String) -> Value {
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message));
+    let ex = Value::make_instance(Symbol::intern(class_name), attrs);
+    let mut failure_attrs = HashMap::new();
+    failure_attrs.insert("exception".to_string(), ex);
+    Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+}
+
 enum IoPathExtensionPartsSpec {
     Exact(i64),
     Range { low: i64, high: i64 },
@@ -479,7 +488,7 @@ impl Interpreter {
                         && dest_buf.exists()
                         && fs::canonicalize(&path_buf).ok() == fs::canonicalize(&dest_buf).ok())
                 {
-                    return Err(io_exception(
+                    return Ok(io_exception_failure(
                         "X::IO::Copy",
                         format!(
                             "Failed to copy '{}': source and destination are the same file",
@@ -488,7 +497,7 @@ impl Interpreter {
                     ));
                 }
                 if createonly && dest_buf.exists() {
-                    return Err(io_exception(
+                    return Ok(io_exception_failure(
                         "X::IO::Copy",
                         format!("Failed to copy '{}': destination already exists", p),
                     ));
