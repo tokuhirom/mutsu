@@ -261,6 +261,13 @@ impl Interpreter {
         if let Value::Package(name) = target {
             return Ok(self.package_stash_value(&name.resolve()));
         }
+        // For instances, WHO returns the stash of their class
+        if let Value::Instance { class_name, .. } = target {
+            return Ok(self.package_stash_value(&class_name.resolve()));
+        }
+        if let Value::CustomType { name, .. } = target {
+            return Ok(self.package_stash_value(&name.resolve()));
+        }
         Ok(Value::Hash(Arc::new(HashMap::new())))
     }
 
