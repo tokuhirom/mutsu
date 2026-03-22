@@ -1085,9 +1085,7 @@ impl Interpreter {
             self.test_ok(assert_ok, &desc, todo)?;
         }
         self.test_ok(ok, &desc, false)?;
-        if !ok
-            && let Some(err_msg) = eval_err_msg
-        {
+        if !ok && let Some(err_msg) = eval_err_msg {
             // Emit error details to stderr as diag, matching Raku behavior
             let diag = format!("# Error: {}\n", err_msg);
             self.stderr_output.push_str(&diag);
