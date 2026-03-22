@@ -1737,7 +1737,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }))),
         "WHICH" => {
             let which_str = match target {
-                Value::Package(name) => name.resolve(),
+                Value::Package(name) => format!("{}|U{}", name.resolve(), name.id()),
+                Value::CustomType { name, id, .. } => {
+                    format!("{}|U{}", name.resolve(), id)
+                }
                 Value::Int(n) => format!("Int|{}", n),
                 Value::BigInt(n) => format!("Int|{}", n),
                 Value::Num(n) => format!("Num|{}", n),
@@ -1746,7 +1749,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Value::Rat(n, d) => format!("Rat|{}/{}", n, d),
                 Value::FatRat(n, d) => format!("FatRat|{}/{}", n, d),
                 Value::Complex(r, i) => format!("Complex|{}+{}i", r, i),
-                Value::Nil => "Any|U140803128".to_string(),
+                Value::Nil => format!("Nil|U{}", Symbol::intern("Nil").id()),
                 _ => format!(
                     "{:?}|0x{:p}",
                     runtime::utils::value_type_name(target),
@@ -3487,7 +3490,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     Some(Ok(Value::str(format!("Mix({})", inner))))
                 }
             }
-            Value::Package(_) | Value::Instance { .. } | Value::Enum { .. } => None,
+            Value::Package(name) => {
+                if method == "gist" {
+                    let full = name.resolve();
+                    let short = full.rsplit("::").next().unwrap_or(&full);
+                    Some(Ok(Value::str(format!("({})", short))))
+                } else {
+                    // .raku returns the full type name
+                    Some(Ok(Value::str(name.resolve())))
+                }
+            }
+            Value::Instance { .. } | Value::Enum { .. } => None,
             Value::Version {
                 parts, plus, minus, ..
             } => {
