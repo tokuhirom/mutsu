@@ -384,19 +384,31 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
     match value {
         Value::Hash(_) => value,
         Value::Array(items, ..) => {
+            // Flatten nested Hashes into pairs before building the hash.
+            // This handles `%h = %h1, %h2` where each hash should be merged.
+            let mut flat: Vec<Value> = Vec::with_capacity(items.len());
+            for item in items.iter() {
+                if let Value::Hash(h) = item {
+                    for (k, v) in h.iter() {
+                        flat.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                    }
+                } else {
+                    flat.push(item.clone());
+                }
+            }
             let mut map = HashMap::new();
             let mut i = 0;
-            while i < items.len() {
-                if let Value::Pair(k, v) = &items[i] {
+            while i < flat.len() {
+                if let Value::Pair(k, v) = &flat[i] {
                     map.insert(k.clone(), *v.clone());
                     i += 1;
-                } else if let Value::ValuePair(k, v) = &items[i] {
+                } else if let Value::ValuePair(k, v) = &flat[i] {
                     map.insert(k.to_string_value(), *v.clone());
                     i += 1;
                 } else {
-                    let key = items[i].to_string_value();
-                    let val = if i + 1 < items.len() {
-                        items[i + 1].clone()
+                    let key = flat[i].to_string_value();
+                    let val = if i + 1 < flat.len() {
+                        flat[i + 1].clone()
                     } else {
                         Value::Nil
                     };

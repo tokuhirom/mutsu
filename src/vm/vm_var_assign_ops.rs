@@ -225,7 +225,32 @@ impl VM {
         resolved
     }
 
-    fn coerce_typed_container_assignment(
+    /// Try to reconstruct a typed value from a stringified hash key.
+    /// Hash keys are always stored as strings, but for key-constrained hashes
+    /// (e.g. `%h{Int}`), we need to check the original type. If the string
+    /// looks like a valid value of the target type, return that typed value.
+    fn try_reconstruct_typed_key(key: &str, target_type: &str) -> Value {
+        match target_type {
+            "Int" => {
+                if let Ok(n) = key.parse::<i64>() {
+                    return Value::Int(n);
+                }
+            }
+            "Num" => {
+                if let Ok(n) = key.parse::<f64>() {
+                    return Value::Num(n);
+                }
+            }
+            "Numeric" | "Real" | "Cool" | "Any" | "Mu" => {
+                // These accept strings, so just return the string
+                return Value::str(key.to_string());
+            }
+            _ => {}
+        }
+        Value::str(key.to_string())
+    }
+
+    pub(super) fn coerce_typed_container_assignment(
         &mut self,
         var_name: &str,
         value: Value,
@@ -263,24 +288,26 @@ impl VM {
             let mut coerced_map = std::collections::HashMap::with_capacity(map.len());
             for (key, val) in map.iter() {
                 let coerced_key = if let Some(constraint) = &key_constraint {
-                    let key_value = Value::str(key.clone());
+                    // Hash keys are always stored as strings internally, but for
+                    // key-constrained hashes (e.g. %h{Int}), we need to check
+                    // that the key can be interpreted as the constraint type.
+                    // Since hash construction stringifies pair keys (e.g. 1 => 2
+                    // becomes "1" => 2), we try to reconstruct the typed value
+                    // from the string key before checking the constraint.
                     let target_type =
                         coercion_target(constraint).unwrap_or_else(|| constraint.clone());
-                    let coerced = if self
+                    let key_as_typed_value = Self::try_reconstruct_typed_key(key, &target_type);
+                    if !self
                         .interpreter
-                        .type_matches_value(&target_type, &key_value)
+                        .type_matches_value(&target_type, &key_as_typed_value)
                     {
-                        key_value.clone()
-                    } else {
-                        self.interpreter
-                            .try_coerce_value_for_constraint(constraint, key_value.clone())?
-                    };
-                    if !self.interpreter.type_matches_value(&target_type, &coerced) {
                         return Err(RuntimeError::new(runtime::utils::type_check_element_error(
-                            var_name, constraint, &key_value,
+                            var_name,
+                            constraint,
+                            &Value::str(key.clone()),
                         )));
                     }
-                    coerced.to_string_value()
+                    key.clone()
                 } else {
                     key.clone()
                 };
@@ -828,6 +855,32 @@ impl VM {
                 if vals.is_empty() {
                     vals.push(Value::Nil);
                 }
+                // Check value type constraint for hash slice assignment
+                if let Some(constraint) = self.interpreter.var_type_constraint(&var_name) {
+                    for v in &vals {
+                        if !matches!(v, Value::Nil)
+                            && !self.interpreter.type_matches_value(&constraint, v)
+                        {
+                            return Err(RuntimeError::new(
+                                runtime::utils::type_check_element_error(&var_name, &constraint, v),
+                            ));
+                        }
+                    }
+                }
+                // Check key type constraint for hash slice assignment
+                if let Some(key_constraint) = self.interpreter.var_hash_key_constraint(&var_name) {
+                    for key in keys.iter() {
+                        if !self.interpreter.type_matches_value(&key_constraint, key) {
+                            return Err(RuntimeError::new(
+                                runtime::utils::type_check_element_error(
+                                    &var_name,
+                                    &key_constraint,
+                                    key,
+                                ),
+                            ));
+                        }
+                    }
+                }
                 if !matches!(self.interpreter.env().get(&var_name), Some(Value::Hash(_))) {
                     self.interpreter.env_mut().insert(
                         var_name.clone(),
@@ -874,6 +927,18 @@ impl VM {
                         &var_name,
                         &constraint,
                         &val,
+                    )));
+                }
+                // Check key type constraint for single-key hash element assignment
+                if var_name.starts_with('%')
+                    && let Some(key_constraint) =
+                        self.interpreter.var_hash_key_constraint(&var_name)
+                    && !self.interpreter.type_matches_value(&key_constraint, &idx)
+                {
+                    return Err(RuntimeError::new(runtime::utils::type_check_element_error(
+                        &var_name,
+                        &key_constraint,
+                        &idx,
                     )));
                 }
                 let range_slice = if let Some(indices) = Self::slice_indices_from_index(&idx) {
@@ -1081,13 +1146,34 @@ impl VM {
         Ok(())
     }
 
-    pub(super) fn exec_index_assign_expr_nested_op(&mut self, code: &CompiledCode, name_idx: u32) {
+    pub(super) fn exec_index_assign_expr_nested_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
         let inner_idx = self.stack.pop().unwrap_or(Value::Nil);
         let outer_idx = self.stack.pop().unwrap_or(Value::Nil);
         let val = self.stack.pop().unwrap_or(Value::Nil);
         let inner_key = inner_idx.to_string_value();
         let outer_key = outer_idx.to_string_value();
+
+        // If the outer hash has a value type constraint, nested autovivification
+        // would need to create a Hash value which won't match the constraint
+        // (e.g. `my Int %h; %h<z><t> = 3` should die because %h<z> can't be a Hash).
+        if var_name.starts_with('%')
+            && let Some(constraint) = self.interpreter.var_type_constraint(&var_name)
+        {
+            let inner_hash = Value::hash(std::collections::HashMap::new());
+            if !self
+                .interpreter
+                .type_matches_value(&constraint, &inner_hash)
+            {
+                return Err(RuntimeError::new(format!(
+                    "Type check failed in assignment to {var_name}; expected {constraint} but got Hash (autovivification)"
+                )));
+            }
+        }
 
         if !self.interpreter.env().contains_key(&var_name) {
             self.interpreter.env_mut().insert(
@@ -1116,7 +1202,7 @@ impl VM {
                     self.update_local_if_exists(code, &var_name, &updated);
                 }
                 self.stack.push(val);
-                return;
+                return Ok(());
             }
         }
 
@@ -1134,6 +1220,7 @@ impl VM {
             self.update_local_if_exists(code, &var_name, &updated);
         }
         self.stack.push(val);
+        Ok(())
     }
 
     /// Generic index assignment on a stack-computed target.
