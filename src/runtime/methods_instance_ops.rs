@@ -1559,7 +1559,15 @@ impl Interpreter {
                                 expected_type, actual, idx
                             )
                         };
-                        return Err(RuntimeError::new(message));
+                        let mut ex_attrs = std::collections::HashMap::new();
+                        ex_attrs.insert("message".to_string(), Value::str(message));
+                        let ex = Value::make_instance(Symbol::intern("X::AdHoc"), ex_attrs);
+                        let mut failure_attrs = std::collections::HashMap::new();
+                        failure_attrs.insert("exception".to_string(), ex);
+                        return Ok(Value::make_instance(
+                            Symbol::intern("Failure"),
+                            failure_attrs,
+                        ));
                     }
                 }
                 Ok(Value::Bool(true))

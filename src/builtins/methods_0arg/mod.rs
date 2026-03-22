@@ -1706,16 +1706,19 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                             }
                         );
                         let mut attrs = std::collections::HashMap::new();
-                        attrs.insert("message".to_string(), Value::str(msg.clone()));
+                        attrs.insert("message".to_string(), Value::str(msg));
                         attrs.insert("source".to_string(), target.clone());
                         attrs.insert("target".to_string(), Value::str_from("Int"));
                         let ex = Value::make_instance(
                             crate::symbol::Symbol::intern("X::Numeric::CannotConvert"),
                             attrs,
                         );
-                        let mut err = RuntimeError::new(msg);
-                        err.exception = Some(Box::new(ex));
-                        return Some(Err(err));
+                        let mut failure_attrs = std::collections::HashMap::new();
+                        failure_attrs.insert("exception".to_string(), ex);
+                        return Some(Ok(Value::make_instance(
+                            crate::symbol::Symbol::intern("Failure"),
+                            failure_attrs,
+                        )));
                     }
                     Value::Int(*f as i64)
                 }

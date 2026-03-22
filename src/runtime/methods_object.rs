@@ -1994,14 +1994,34 @@ impl Interpreter {
                         .and_then(|def| def.methods.get("BUILD"))
                         .is_some();
                     if has_build {
-                        let (_v, updated) = self.run_instance_method(
+                        match self.run_instance_method(
                             mro_class,
                             attrs.clone(),
                             "BUILD",
                             args.clone(),
                             Some(Value::make_instance(*class_name, attrs.clone())),
-                        )?;
-                        attrs = updated;
+                        ) {
+                            Ok((_v, updated)) => {
+                                attrs = updated;
+                            }
+                            Err(err) if err.is_fail => {
+                                // fail in BUILD: return a Failure wrapping the exception
+                                let ex = if let Some(exception) = err.exception {
+                                    *exception
+                                } else {
+                                    let mut ex_attrs = HashMap::new();
+                                    ex_attrs.insert("message".to_string(), Value::str(err.message));
+                                    Value::make_instance(Symbol::intern("X::AdHoc"), ex_attrs)
+                                };
+                                let mut failure_attrs = HashMap::new();
+                                failure_attrs.insert("exception".to_string(), ex);
+                                return Ok(Value::make_instance(
+                                    Symbol::intern("Failure"),
+                                    failure_attrs,
+                                ));
+                            }
+                            Err(err) => return Err(err),
+                        }
                     }
                 }
                 // Check required attributes after all BUILDs have run

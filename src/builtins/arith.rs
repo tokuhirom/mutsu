@@ -634,7 +634,7 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
             let lf = runtime::to_float_value(&l).unwrap_or(0.0);
             let rf = runtime::to_float_value(&r).unwrap_or(1.0);
             if rf == 0.0 {
-                return Err(RuntimeError::numeric_divide_by_zero());
+                return Ok(RuntimeError::divide_by_zero_failure(None, None));
             }
             return Ok(Value::Num(lf / rf));
         }
@@ -689,10 +689,10 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
                 return Err(RuntimeError::numeric_divide_by_zero());
             }
             (Value::Int(_), Value::Num(b)) if *b == 0.0 => {
-                return Err(RuntimeError::numeric_divide_by_zero());
+                return Ok(RuntimeError::divide_by_zero_failure(None, None));
             }
             (Value::Num(_), Value::Int(b)) if *b == 0 => {
-                return Err(RuntimeError::numeric_divide_by_zero());
+                return Ok(RuntimeError::divide_by_zero_failure(None, None));
             }
             (Value::Num(a), Value::Num(b)) => Value::Num(a / b),
             (Value::Int(a), Value::Num(b)) => Value::Num(*a as f64 / b),

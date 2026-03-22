@@ -365,6 +365,7 @@ impl RuntimeError {
     }
 
     /// X::OutOfRange - Index out of range
+    #[allow(dead_code)]
     pub(crate) fn out_of_range(what: &str, got: Value, range: &str) -> Self {
         let msg = format!(
             "Index out of range. Is: {}, should be in {}",
@@ -377,6 +378,25 @@ impl RuntimeError {
         attrs.insert("range".to_string(), Value::str(range.to_string()));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         Self::typed("X::OutOfRange", attrs)
+    }
+
+    /// Create a Failure wrapping an X::OutOfRange exception.
+    /// Used when operations should soft-fail (return Failure) rather than throw.
+    pub(crate) fn out_of_range_failure(what: &str, got: Value, range: &str) -> Value {
+        let msg = format!(
+            "Index out of range. Is: {}, should be in {}",
+            got.to_string_value(),
+            range
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("what".to_string(), Value::str(what.to_string()));
+        attrs.insert("got".to_string(), got);
+        attrs.insert("range".to_string(), Value::str(range.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg));
+        let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
+        let mut failure_attrs = HashMap::new();
+        failure_attrs.insert("exception".to_string(), ex);
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
     /// X::Undeclared - Undeclared name

@@ -3,6 +3,17 @@
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{ArrayKind, RuntimeError, Value};
+
+/// Create a Failure value wrapping an X::OutOfRange exception with the given message.
+/// Used for operations that should soft-fail rather than throw.
+fn out_of_range_failure(message: &str) -> Value {
+    let mut ex_attrs = HashMap::new();
+    ex_attrs.insert("message".to_string(), Value::str(message.to_string()));
+    let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), ex_attrs);
+    let mut failure_attrs = HashMap::new();
+    failure_attrs.insert("exception".to_string(), ex);
+    Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+}
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 use std::collections::HashMap;
@@ -847,22 +858,16 @@ pub(crate) fn native_method_1arg(
                 let radix = match arg {
                     Value::Int(r) if (2..=36).contains(r) => *r as u32,
                     Value::Int(_) => {
-                        return Some(Err(RuntimeError::new(
-                            "X::OutOfRange: base requires radix 2..36",
-                        )));
+                        return Some(Ok(out_of_range_failure("base requires radix 2..36")));
                     }
                     Value::Str(s) => match s.parse::<u32>() {
                         Ok(r) if (2..=36).contains(&r) => r,
                         _ => {
-                            return Some(Err(RuntimeError::new(
-                                "X::OutOfRange: base requires radix 2..36",
-                            )));
+                            return Some(Ok(out_of_range_failure("base requires radix 2..36")));
                         }
                     },
                     _ => {
-                        return Some(Err(RuntimeError::new(
-                            "X::OutOfRange: base requires radix 2..36",
-                        )));
+                        return Some(Ok(out_of_range_failure("base requires radix 2..36")));
                     }
                 };
                 let negative = *i < 0;
@@ -898,22 +903,16 @@ pub(crate) fn native_method_1arg(
                 let radix = match arg {
                     Value::Int(r) if (2..=36).contains(r) => *r as u32,
                     Value::Int(_) => {
-                        return Some(Err(RuntimeError::new(
-                            "X::OutOfRange: base requires radix 2..36",
-                        )));
+                        return Some(Ok(out_of_range_failure("base requires radix 2..36")));
                     }
                     Value::Str(s) => match s.parse::<u32>() {
                         Ok(r) if (2..=36).contains(&r) => r,
                         _ => {
-                            return Some(Err(RuntimeError::new(
-                                "X::OutOfRange: base requires radix 2..36",
-                            )));
+                            return Some(Ok(out_of_range_failure("base requires radix 2..36")));
                         }
                     },
                     _ => {
-                        return Some(Err(RuntimeError::new(
-                            "X::OutOfRange: base requires radix 2..36",
-                        )));
+                        return Some(Ok(out_of_range_failure("base requires radix 2..36")));
                     }
                 };
                 // Convert Num to Rat for precise base conversion
@@ -923,7 +922,7 @@ pub(crate) fn native_method_1arg(
             Value::Rat(n, d) | Value::FatRat(n, d) => {
                 let radix = match parse_radix_checked(arg)? {
                     Ok(r) => r,
-                    Err(e) => return Some(Err(e)),
+                    Err(_) => return Some(Ok(out_of_range_failure("base requires radix 2..36"))),
                 };
                 Some(Ok(Value::str(rat_to_base(*n, *d, radix, BaseDigits::Auto))))
             }
@@ -932,7 +931,7 @@ pub(crate) fn native_method_1arg(
             Value::Instance { attributes, .. } => {
                 let radix = match parse_radix_checked(arg)? {
                     Ok(r) => r,
-                    Err(e) => return Some(Err(e)),
+                    Err(_) => return Some(Ok(out_of_range_failure("base requires radix 2..36"))),
                 };
                 if let Some(val) = attributes.get("value") {
                     match val {
@@ -1956,22 +1955,16 @@ pub(crate) fn native_method_2arg(
                 Value::Str(s) => match s.parse::<u32>() {
                     Ok(r) if (2..=36).contains(&r) => r,
                     _ => {
-                        return Some(Err(RuntimeError::new(
-                            "X::OutOfRange: base requires radix 2..36",
-                        )));
+                        return Some(Ok(out_of_range_failure("base requires radix 2..36")));
                     }
                 },
                 _ => {
-                    return Some(Err(RuntimeError::new(
-                        "X::OutOfRange: base requires radix 2..36",
-                    )));
+                    return Some(Ok(out_of_range_failure("base requires radix 2..36")));
                 }
             };
             let digits_mode = match arg2 {
                 Value::Int(d) if *d < 0 => {
-                    return Some(Err(RuntimeError::new(
-                        "X::OutOfRange: digits must be non-negative",
-                    )));
+                    return Some(Ok(out_of_range_failure("digits must be non-negative")));
                 }
                 Value::Int(d) => BaseDigits::Fixed(*d as u32),
                 Value::Whatever => BaseDigits::Whatever,
