@@ -714,6 +714,10 @@ impl VM {
             } else {
                 format!("{current_package}::{resolved_name}")
             };
+            // If the name was previously suppressed (e.g. by a `my class` in an
+            // earlier block), clear the suppression before running the class body
+            // so that references to the class name inside the body can resolve.
+            self.interpreter.unsuppress_name(&resolved_name);
             self.interpreter.register_class_decl(
                 &qualified_name,
                 parents,
@@ -733,9 +737,6 @@ impl VM {
             {
                 self.interpreter.register_cunion_class(&qualified_name);
             }
-            // If the name was previously suppressed (e.g. by a `my class` in an
-            // earlier block), clear the suppression since we're now re-declaring it.
-            self.interpreter.unsuppress_name(&resolved_name);
             // Register the class name in the lexical env so that
             // ::("ClassName") indirect lookups can find it in the current scope.
             let env = self.interpreter.env_mut();
