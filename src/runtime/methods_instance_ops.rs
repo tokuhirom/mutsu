@@ -1362,12 +1362,10 @@ impl Interpreter {
                     )))
                 }
             }
-            "EVAL" if args.is_empty() => match target {
-                Value::Str(code) => self.call_function("EVAL", vec![Value::Str(code)]),
-                _ => Err(RuntimeError::new(
-                    "X::Method::NotFound: Unknown method value dispatch (fallback disabled): EVAL",
-                )),
-            },
+            "EVAL" if args.is_empty() => {
+                // .EVAL works on strings, Buf, and numeric types
+                self.call_function("EVAL", vec![target])
+            }
             // Metamodel::*HOW methods
             "new_type" if matches!(&target, Value::Package(n) if n.resolve().starts_with("Metamodel::")) =>
             {

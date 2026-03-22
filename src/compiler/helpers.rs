@@ -916,6 +916,22 @@ impl Compiler {
                             }
                             continue;
                         }
+                        Stmt::Call { name, args } => {
+                            let positional: Option<Vec<Expr>> = args
+                                .iter()
+                                .map(|arg| match arg {
+                                    crate::ast::CallArg::Positional(expr) => Some(expr.clone()),
+                                    _ => None,
+                                })
+                                .collect();
+                            if let Some(positional_args) = positional {
+                                sub_compiler.compile_expr(&Expr::Call {
+                                    name: *name,
+                                    args: positional_args,
+                                });
+                                continue;
+                            }
+                        }
                         _ => {}
                     }
                 }

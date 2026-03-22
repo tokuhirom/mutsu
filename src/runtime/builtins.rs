@@ -3280,6 +3280,35 @@ impl Interpreter {
     }
 
     fn builtin_eval(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // EVAL only accepts strings (and Buf), not blocks
+        if let Some(first_arg) = Self::positional_value(args, 0) {
+            match first_arg {
+                Value::Sub(_) | Value::Routine { .. } | Value::WeakSub(_) => {
+                    return Err(RuntimeError::new(
+                        "EVAL() requires a string or Buf argument, not a Block",
+                    ));
+                }
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if crate::runtime::utils::is_buf_like_class(&class_name.resolve()) => {
+                    // Buf argument: decode as UTF-8
+                    if let Some(Value::Array(items, _)) = attributes.get("bytes") {
+                        let bytes: Vec<u8> = items
+                            .iter()
+                            .map(|v| match v {
+                                Value::Int(n) => *n as u8,
+                                _ => v.to_string_value().parse::<u8>().unwrap_or(0),
+                            })
+                            .collect();
+                        let code = String::from_utf8_lossy(&bytes).to_string();
+                        return self.eval_eval_string(&code);
+                    }
+                }
+                _ => {}
+            }
+        }
         let code = Self::positional_string(args, 0);
         if Self::has_invalid_anonymous_rw_trait(&code) {
             return Err(RuntimeError::new(
