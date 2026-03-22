@@ -963,6 +963,10 @@ impl VM {
         if let Some(err) = crate::runtime::Interpreter::take_pending_regex_error() {
             return Err(err);
         }
+        // Check for pending dispatch error (e.g., from Any ~~ Pair method call)
+        if let Some(err) = self.interpreter.take_pending_dispatch_error() {
+            return Err(err);
+        }
         if is_regex {
             // For regex smartmatch, return the Match object (from $/) or Nil
             if matched {

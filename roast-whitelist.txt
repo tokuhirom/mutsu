@@ -200,6 +200,7 @@ roast/S03-smartmatch/any-complex.t
 roast/S03-smartmatch/any-hash-pair.t
 roast/S03-smartmatch/any-method.t
 roast/S03-smartmatch/any-num.t
+roast/S03-smartmatch/any-pair.t
 roast/S03-smartmatch/any-str.t
 roast/S03-smartmatch/any-sub.t
 roast/S03-smartmatch/any-type.t

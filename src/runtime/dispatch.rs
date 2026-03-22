@@ -23,6 +23,10 @@ impl Interpreter {
         self.pending_dispatch_error.take()
     }
 
+    pub(crate) fn set_pending_dispatch_error(&mut self, err: RuntimeError) {
+        self.pending_dispatch_error = Some(err);
+    }
+
     fn dispatch_visible_params<'a>(
         def: &'a FunctionDef,
     ) -> impl Iterator<Item = &'a ParamDef> + 'a {
