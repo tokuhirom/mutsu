@@ -1183,14 +1183,17 @@ impl Interpreter {
     }
 
     pub(super) fn collect_doc_comments(&mut self, input: &str) {
+        use super::DocComment;
+
         self.doc_comments.clear();
-        let mut pending_before: Option<String> = None;
+        self.doc_comment_list.clear();
+        let mut pending_leading: Option<String> = None;
         // The last declaration that can receive trailing #= comments
-        let mut last_declarant: Option<String> = None;
-        // Whether trailing #= has already been started for last_declarant
-        let mut trailing_started = false;
+        let mut last_declarant: Option<(String, super::DocDeclKind)> = None;
         // Track the current class scope for method doc keys
         let mut current_class: Option<String> = None;
+        // Stack of class scopes for nested classes
+        let mut class_stack: Vec<Option<String>> = Vec::new();
 
         fn extract_ident(s: &str) -> String {
             s.trim_start()
@@ -1220,25 +1223,25 @@ impl Interpreter {
                 '[' => Some(']'),
                 '{' => Some('}'),
                 '<' => Some('>'),
-                '\u{00AB}' => Some('\u{00BB}'), // « »
-                '\u{2018}' => Some('\u{2019}'), // ‘ ’
-                '\u{201C}' => Some('\u{201D}'), // “ ”
-                '\u{300C}' => Some('\u{300D}'), // 「 」
-                '\u{300E}' => Some('\u{300F}'), // 『 』
-                '\u{FF08}' => Some('\u{FF09}'), // （ ）
-                '\u{300A}' => Some('\u{300B}'), // 《 》
-                '\u{3008}' => Some('\u{3009}'), // 〈 〉
-                '\u{169B}' => Some('\u{169C}'), // ᚛ ᚜
-                '\u{2045}' => Some('\u{2046}'), // ⁅ ⁆
-                '\u{207D}' => Some('\u{207E}'), // ⁽ ⁾
-                '\u{2768}' => Some('\u{2769}'), // ❨ ❩
-                '\u{276E}' => Some('\u{276F}'), // ❮ ❯
-                '\u{2770}' => Some('\u{2771}'), // ❰ ❱
-                '\u{2772}' => Some('\u{2773}'), // ❲ ❳
-                '\u{27E6}' => Some('\u{27E7}'), // ⟦ ⟧
-                '\u{2985}' => Some('\u{2986}'), // ⦅ ⦆
-                '\u{2993}' => Some('\u{2994}'), // ⦓ ⦔
-                '\u{2995}' => Some('\u{2996}'), // ⦕ ⦖
+                '\u{00AB}' => Some('\u{00BB}'), // << >>
+                '\u{2018}' => Some('\u{2019}'),
+                '\u{201C}' => Some('\u{201D}'),
+                '\u{300C}' => Some('\u{300D}'),
+                '\u{300E}' => Some('\u{300F}'),
+                '\u{FF08}' => Some('\u{FF09}'),
+                '\u{300A}' => Some('\u{300B}'),
+                '\u{3008}' => Some('\u{3009}'),
+                '\u{169B}' => Some('\u{169C}'),
+                '\u{2045}' => Some('\u{2046}'),
+                '\u{207D}' => Some('\u{207E}'),
+                '\u{2768}' => Some('\u{2769}'),
+                '\u{276E}' => Some('\u{276F}'),
+                '\u{2770}' => Some('\u{2771}'),
+                '\u{2772}' => Some('\u{2773}'),
+                '\u{27E6}' => Some('\u{27E7}'),
+                '\u{2985}' => Some('\u{2986}'),
+                '\u{2993}' => Some('\u{2994}'),
+                '\u{2995}' => Some('\u{2996}'),
                 _ => None,
             }
         }
@@ -1334,6 +1337,175 @@ impl Interpreter {
             }
         }
 
+        /// Check if a line (after stripping optional prefix keywords) contains
+        /// a trailing #= comment on the same line. Returns (line_without_trailing, trailing_text).
+        fn extract_inline_trailing(line: &str) -> (String, Option<String>) {
+            // Look for #= not inside strings
+            let mut in_sq = false;
+            let mut in_dq = false;
+            let bytes = line.as_bytes();
+            let mut i = 0;
+            while i < bytes.len() {
+                let b = bytes[i];
+                if b == b'\'' && !in_dq {
+                    in_sq = !in_sq;
+                } else if b == b'"' && !in_sq {
+                    in_dq = !in_dq;
+                } else if b == b'#'
+                    && !in_sq
+                    && !in_dq
+                    && i + 1 < bytes.len()
+                    && bytes[i + 1] == b'='
+                {
+                    // Check it's not #== (comparison)
+                    if i + 2 < bytes.len() && bytes[i + 2] == b'=' {
+                        i += 1;
+                        continue;
+                    }
+                    let before = line[..i].to_string();
+                    let after = line[i + 2..].trim().to_string();
+                    return (before, Some(after));
+                }
+                i += 1;
+            }
+            (line.to_string(), None)
+        }
+
+        /// Try to extract a declarant name from a line, handling various declaration patterns.
+        /// Returns (name, is_class_like) where is_class_like means it opens a class scope.
+        /// Returns (name, is_class_like, kind)
+        fn try_extract_declarant(
+            trimmed: &str,
+            current_class: &Option<String>,
+        ) -> Option<(String, bool, super::DocDeclKind)> {
+            use super::DocDeclKind;
+            // Strip optional scope declarators
+            let s = trimmed
+                .strip_prefix("my ")
+                .or_else(|| trimmed.strip_prefix("our "))
+                .unwrap_or(trimmed);
+
+            // class/module/package/role/grammar declarations
+            for kw in &["class ", "module ", "package ", "grammar "] {
+                if let Some(rest) = s.strip_prefix(kw) {
+                    let name = extract_ident(rest);
+                    if !name.is_empty() {
+                        let full_name = if name.contains("::") {
+                            name
+                        } else if let Some(class) = current_class {
+                            format!("{}::{}", class, name)
+                        } else {
+                            name
+                        };
+                        return Some((full_name, true, DocDeclKind::Package));
+                    }
+                }
+            }
+
+            // role (may have parametric [...])
+            if let Some(rest) = s.strip_prefix("role ") {
+                let name = extract_ident(rest);
+                if !name.is_empty() {
+                    let full_name = if name.contains("::") {
+                        name
+                    } else if let Some(class) = current_class {
+                        format!("{}::{}", class, name)
+                    } else {
+                        name
+                    };
+                    return Some((full_name, true, DocDeclKind::Package));
+                }
+            }
+
+            // sub/method/submethod/token/rule/regex declarations
+            let s2 = s
+                .strip_prefix("multi ")
+                .or_else(|| s.strip_prefix("proto "))
+                .or_else(|| s.strip_prefix("only "))
+                .unwrap_or(s);
+
+            for kw in &["sub ", "method ", "submethod ", "token ", "rule ", "regex "] {
+                if let Some(rest) = s2.strip_prefix(kw) {
+                    let name = extract_ident(rest);
+                    if !name.is_empty() {
+                        let full_name = if kw.starts_with("method")
+                            || kw.starts_with("submethod")
+                            || kw.starts_with("token")
+                            || kw.starts_with("rule")
+                            || kw.starts_with("regex")
+                        {
+                            if let Some(class) = current_class {
+                                format!("{}::{}", class, name)
+                            } else {
+                                name
+                            }
+                        } else {
+                            // Prefix sub names with & to avoid collision with package names
+                            format!("&{}", name)
+                        };
+                        return Some((full_name, false, DocDeclKind::Sub));
+                    }
+                }
+            }
+
+            // has $.attr declarations
+            if let Some(rest) = s.strip_prefix("has ") {
+                let rest = rest.trim_start();
+                let attr_rest =
+                    if rest.starts_with('$') || rest.starts_with('@') || rest.starts_with('%') {
+                        rest
+                    } else {
+                        rest.find(['$', '@', '%'])
+                            .map(|i| &rest[i..])
+                            .unwrap_or(rest)
+                    };
+                if let Some(after_sigil) = attr_rest
+                    .strip_prefix("$.")
+                    .or_else(|| attr_rest.strip_prefix("$!"))
+                    .or_else(|| attr_rest.strip_prefix("@."))
+                    .or_else(|| attr_rest.strip_prefix("@!"))
+                    .or_else(|| attr_rest.strip_prefix("%."))
+                    .or_else(|| attr_rest.strip_prefix("%!"))
+                {
+                    let name = extract_ident(after_sigil);
+                    if !name.is_empty() {
+                        let full_name = if let Some(class) = current_class {
+                            format!("{}::$!{}", class, name)
+                        } else {
+                            format!("$!{}", name)
+                        };
+                        return Some((full_name, false, DocDeclKind::Attr));
+                    }
+                }
+            }
+
+            // enum declaration
+            if let Some(rest) = s.strip_prefix("enum ") {
+                let name = extract_ident(rest);
+                if !name.is_empty() {
+                    return Some((name, false, DocDeclKind::Package));
+                }
+            }
+
+            // subset declaration
+            if let Some(rest) = s.strip_prefix("subset ") {
+                let name = extract_ident(rest);
+                if !name.is_empty() {
+                    return Some((name, false, DocDeclKind::Package));
+                }
+            }
+
+            // unit module
+            if let Some(rest) = s.strip_prefix("unit module") {
+                let name = extract_ident(rest);
+                if !name.is_empty() {
+                    return Some((name, false, DocDeclKind::Package));
+                }
+            }
+
+            None
+        }
+
         let lines: Vec<&str> = input.lines().collect();
         let mut idx = 0usize;
         while idx < lines.len() {
@@ -1342,105 +1514,188 @@ impl Interpreter {
 
             // Leading doc comment (#|)
             if let Some((text, next_idx, _is_block)) = parse_doc_comment(&lines, idx, "#|") {
-                pending_before = append_doc_text(pending_before.take(), &text);
+                pending_leading = append_doc_text(pending_leading.take(), &text);
                 last_declarant = None;
                 idx = next_idx;
                 continue;
             }
 
-            // Trailing doc comment (#=)
+            // Trailing doc comment (#=) on its own line
             if let Some((text, next_idx, _is_block)) = parse_doc_comment(&lines, idx, "#=") {
                 if !text.is_empty()
-                    && let Some(ref name) = last_declarant
+                    && let Some((ref name, ref kind)) = last_declarant
                 {
-                    let entry = self.doc_comments.entry(name.clone()).or_default();
-                    if entry.is_empty() {
-                        entry.push_str(&text);
-                    } else if trailing_started {
-                        // Consecutive #= lines: join with space
-                        entry.push(' ');
-                        entry.push_str(&text);
-                    } else {
-                        // First #= after leading #|: join with newline
-                        entry.push('\n');
-                        entry.push_str(&text);
-                    }
-                    trailing_started = true;
+                    let entry = self
+                        .doc_comments
+                        .entry(name.clone())
+                        .or_insert_with(|| DocComment {
+                            wherefore_name: name.clone(),
+                            kind: kind.clone(),
+                            ..Default::default()
+                        });
+                    entry.trailing = append_doc_text(entry.trailing.take(), &text);
                 }
                 idx = next_idx;
                 continue;
             }
 
             // Not a doc comment line — check for declarations
-            last_declarant = None;
-            trailing_started = false;
-
-            // Skip empty lines and plain comments
-            if trimmed.is_empty() || trimmed.starts_with('#') {
-                idx += 1;
-                continue;
-            }
-
-            // unit module
-            if let Some(rest) = trimmed.strip_prefix("unit module") {
-                let name = extract_ident(rest);
-                if !name.is_empty() {
-                    if let Some(before) = pending_before.take() {
-                        self.doc_comments.insert(name.clone(), before);
-                    }
-                    last_declarant = Some(name);
+            // Skip empty lines and plain comments (but not #| or #=)
+            if trimmed.is_empty()
+                || (trimmed.starts_with('#')
+                    && !trimmed.starts_with("#|")
+                    && !trimmed.starts_with("#="))
+            {
+                // Don't reset last_declarant for empty/comment lines within a class body
+                // but do reset pending_leading if we see a regular comment
+                if trimmed.starts_with('#')
+                    && !trimmed.starts_with("#|")
+                    && !trimmed.starts_with("#=")
+                {
+                    // Regular comment — don't affect doc comments
                 }
                 idx += 1;
                 continue;
             }
 
-            // class declaration
-            let class_rest = trimmed
-                .strip_prefix("my ")
-                .or(Some(trimmed))
-                .and_then(|s| s.strip_prefix("class "));
-            if let Some(rest) = class_rest {
-                let name = extract_ident(rest);
-                if !name.is_empty() {
-                    if let Some(before) = pending_before.take() {
-                        self.doc_comments.insert(name.clone(), before);
+            // Opening brace tracking for class scope
+            if trimmed == "}" {
+                if let Some(prev) = class_stack.pop() {
+                    current_class = prev;
+                } else {
+                    current_class = None;
+                }
+                last_declarant = None;
+                idx += 1;
+                continue;
+            }
+
+            // Check for inline trailing #= on the same line as a declaration
+            let (line_without_trailing, inline_trailing) = extract_inline_trailing(trimmed);
+            let check_line = line_without_trailing.trim();
+
+            if let Some((name, is_class_like, kind)) =
+                try_extract_declarant(check_line, &current_class)
+            {
+                let leading = pending_leading.take();
+                let has_leading = leading.is_some();
+                let has_inline_trailing = inline_trailing.is_some();
+                // Only create doc_comments entry if there's actual doc content
+                if has_leading || has_inline_trailing {
+                    let entry =
+                        self.doc_comments
+                            .entry(name.clone())
+                            .or_insert_with(|| DocComment {
+                                wherefore_name: name.clone(),
+                                kind: kind.clone(),
+                                ..Default::default()
+                            });
+                    entry.kind = kind.clone();
+                    if has_leading {
+                        entry.leading = leading;
                     }
-                    last_declarant = Some(name.clone());
+                    if let Some(ref trail) = inline_trailing {
+                        entry.trailing = append_doc_text(entry.trailing.take(), trail);
+                    }
+                }
+                // Always set last_declarant so trailing #= on the next line can attach
+                last_declarant = Some((name.clone(), kind.clone()));
+                if is_class_like {
+                    class_stack.push(current_class.take());
                     current_class = Some(name);
                 }
-                idx += 1;
-                continue;
+            } else {
+                // Not a recognized declaration — discard pending leading
+                pending_leading = None;
+                last_declarant = None;
             }
 
-            // method/submethod declaration
-            let method_rest = trimmed
-                .strip_prefix("multi method ")
-                .or_else(|| trimmed.strip_prefix("method "))
-                .or_else(|| trimmed.strip_prefix("submethod "));
-            if let Some(rest) = method_rest {
-                let name = extract_ident(rest);
-                if !name.is_empty() {
-                    let full_name = if let Some(ref class) = current_class {
-                        format!("{}::{}", class, name)
-                    } else {
-                        name
-                    };
-                    if let Some(before) = pending_before.take() {
-                        self.doc_comments.insert(full_name.clone(), before);
-                    }
-                    last_declarant = Some(full_name);
-                }
-                idx += 1;
-                continue;
-            }
-
-            // Closing brace exits class scope
-            if trimmed == "}" {
-                current_class = None;
-            }
-
-            pending_before = None;
             idx += 1;
         }
+
+        // Build ordered doc_comment_list: collect names in order during a simple re-scan
+        self.doc_comment_list.clear();
+        let mut seen_names = std::collections::HashSet::new();
+        let _ = &self.doc_comments; // used below
+        // Collect keys that have actual content, in source order
+        // Since HashMap doesn't preserve order, re-scan declarations
+        {
+            let mut cur_class2: Option<String> = None;
+            let mut cls_stack2: Vec<Option<String>> = Vec::new();
+            let mut idx2 = 0usize;
+            while idx2 < lines.len() {
+                let trimmed2 = lines[idx2].trim_start();
+                if parse_doc_comment(&lines, idx2, "#|").is_some()
+                    || parse_doc_comment(&lines, idx2, "#=").is_some()
+                {
+                    // Skip doc comment lines — they were handled in first pass
+                    let (_, next_idx, _) = parse_doc_comment(&lines, idx2, "#|")
+                        .or_else(|| parse_doc_comment(&lines, idx2, "#="))
+                        .unwrap();
+                    idx2 = next_idx;
+                    continue;
+                }
+                if trimmed2.is_empty() || (trimmed2.starts_with('#')) {
+                    idx2 += 1;
+                    continue;
+                }
+                if trimmed2 == "}" {
+                    if let Some(prev) = cls_stack2.pop() {
+                        cur_class2 = prev;
+                    } else {
+                        cur_class2 = None;
+                    }
+                    idx2 += 1;
+                    continue;
+                }
+                let (lwt, _) = extract_inline_trailing(trimmed2);
+                let ck = lwt.trim();
+                if let Some((name, is_cls, _kind)) = try_extract_declarant(ck, &cur_class2) {
+                    if !seen_names.contains(&name)
+                        && let Some(dc) = self.doc_comments.get(&name)
+                    {
+                        seen_names.insert(name.clone());
+                        self.doc_comment_list.push(dc.clone());
+                    }
+                    if is_cls {
+                        cls_stack2.push(cur_class2.take());
+                        cur_class2 = Some(name);
+                    }
+                }
+                idx2 += 1;
+            }
+        }
+    }
+
+    /// Add Pod::Block::Declarator entries to $=pod from doc_comment_list.
+    pub(super) fn add_declarator_pod_entries(&mut self) {
+        use super::DocDeclKind;
+        // Get existing $=pod entries
+        let mut pod_entries: Vec<Value> = if let Some(Value::Array(arr, _)) = self.env.get("=pod") {
+            arr.iter().cloned().collect()
+        } else {
+            Vec::new()
+        };
+        // Add declarator doc entries
+        // TODO: For Sub/Method/Attr, the WHEREFORE should ideally be the actual
+        // runtime object, not a Package placeholder. Currently we use the type
+        // name as a Package value so .^name returns the correct type.
+        for dc in &self.doc_comment_list {
+            let wherefore = match dc.kind {
+                DocDeclKind::Package => {
+                    Value::Package(crate::symbol::Symbol::intern(&dc.wherefore_name))
+                }
+                DocDeclKind::Sub => {
+                    // Use "Sub" as the type name — in mutsu, ^name returns "Sub"
+                    // for both subs and methods.
+                    Value::Package(crate::symbol::Symbol::intern("Sub"))
+                }
+                DocDeclKind::Attr => Value::Package(crate::symbol::Symbol::intern("Attribute")),
+            };
+            let pod_entry = Interpreter::make_pod_declarator(dc, wherefore);
+            pod_entries.push(pod_entry);
+        }
+        self.env
+            .insert("=pod".to_string(), Value::array(pod_entries));
     }
 }

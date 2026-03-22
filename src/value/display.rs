@@ -677,6 +677,14 @@ impl Value {
                     crate::builtins::methods_0arg::temporal::datetime_attrs(attributes);
                 crate::builtins::methods_0arg::temporal::format_datetime(y, mo, d, h, mi, s, tz)
             }
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Pod::Block::Declarator" => attributes
+                .get("contents")
+                .map(|v: &Value| v.to_string_value())
+                .unwrap_or_default(),
             Value::Instance { class_name, .. } => format!("{}()", class_name),
             Value::Junction { kind, values } => {
                 let kind_str = match kind {
