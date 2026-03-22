@@ -18,12 +18,32 @@ impl Interpreter {
                 }
             })
             .collect();
+        // Also exclude sub_signature parameter names (array unpacking) so that
+        // recursive calls don't write back inner-scope values to the caller.
+        for pd in &def.param_defs {
+            Self::collect_sub_signature_names(&pd.sub_signature, &mut names);
+        }
         for stmt in &def.body {
             if let Stmt::VarDecl { name, .. } = stmt {
                 names.insert(name.clone());
             }
         }
         names
+    }
+
+    /// Recursively collect variable names from sub_signature parameters.
+    fn collect_sub_signature_names(
+        sub_sig: &Option<Vec<crate::ast::ParamDef>>,
+        names: &mut std::collections::HashSet<String>,
+    ) {
+        if let Some(params) = sub_sig {
+            for sp in params {
+                if !sp.name.is_empty() {
+                    names.insert(sp.name.clone());
+                }
+                Self::collect_sub_signature_names(&sp.sub_signature, names);
+            }
+        }
     }
 
     /// Call a specific FunctionDef directly, bypassing the built-in function dispatch.
@@ -145,6 +165,7 @@ impl Interpreter {
                 && k != "@_"
                 && k != "%_"
                 && ((restored_env.contains_key(k)
+                    && !excluded_names.contains(k)
                     && matches!(v, Value::Array(..) | Value::Hash(..)))
                     || scalar_writeback
                     || k.starts_with("__mutsu_var_meta::"))

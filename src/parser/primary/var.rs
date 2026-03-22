@@ -481,9 +481,20 @@ fn parse_interpolation_qualified_ident_with_hyphens_or_empty(input: &str) -> (&s
             break;
         }
         let mut end = first.len_utf8();
+        let rest_bytes = rest.as_bytes();
         for c in rest[end..].chars() {
-            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+            if c.is_ascii_alphanumeric() || c == '_' {
                 end += c.len_utf8();
+            } else if c == '-' {
+                // Kebab-case: hyphen is part of the identifier only when
+                // followed by an alphabetic character (e.g. `$my-var`).
+                // A trailing hyphen (`$a-`) is NOT part of the name.
+                let next_pos = end + 1; // '-' is ASCII, always 1 byte
+                if next_pos < rest_bytes.len() && rest_bytes[next_pos].is_ascii_alphabetic() {
+                    end += c.len_utf8();
+                } else {
+                    break;
+                }
             } else {
                 break;
             }
