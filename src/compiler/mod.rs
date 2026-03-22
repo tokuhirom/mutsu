@@ -306,10 +306,10 @@ impl Compiler {
                 Expr::HashVar(name) => Some(format!("%{}", name)),
                 _ => None,
             },
-            // Handle @a.values and @a.kv → source is @a
+            // Handle @a.values, @a.kv, $pair.value → source is @a / $pair
             Expr::MethodCall {
                 target, name, args, ..
-            } if args.is_empty() && (*name == "values" || *name == "kv") => {
+            } if args.is_empty() && (*name == "values" || *name == "kv" || *name == "value") => {
                 Self::for_iterable_source_name(target)
             }
             _ => None,
