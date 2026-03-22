@@ -84,6 +84,11 @@ impl Symbol {
         let table = global_table().read().unwrap();
         table.id_to_str[self.0 as usize].clone()
     }
+
+    /// Return the internal numeric ID of this symbol (unique per interned string).
+    pub fn id(&self) -> u32 {
+        self.0
+    }
 }
 
 impl fmt::Debug for Symbol {

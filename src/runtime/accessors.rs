@@ -1223,12 +1223,24 @@ impl Interpreter {
             return Value::Package(Symbol::intern(name));
         }
 
+        // Check if the full compound name (e.g. "IO::Path") is a known type
+        // before splitting on "::".
+        if name.contains("::")
+            && (crate::runtime::utils::is_known_compound_type(name)
+                || self.has_class(name)
+                || self.is_role(name))
+        {
+            return Value::Package(Symbol::intern(name));
+        }
+
         let mut parts = name.split("::").filter(|part| !part.is_empty());
         let Some(first) = parts.next() else {
             return Self::no_such_symbol_failure(name);
         };
 
-        let mut current = if let Some(value) = self.env.get(first) {
+        let mut current = if let Some(value) = self.env.get(first)
+            && !matches!(value, Value::Nil)
+        {
             value.clone()
         } else if crate::runtime::utils::is_known_type_constraint(first)
             || (name.contains("::")
