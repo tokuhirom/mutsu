@@ -635,6 +635,14 @@ impl Value {
                 class_name,
                 attributes,
                 ..
+            } if class_name == "Stash" => attributes
+                .get("name")
+                .map(|v: &Value| v.to_string_value())
+                .unwrap_or_default(),
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
             } if class_name == "Method" || class_name == "Sub" || class_name == "Routine" => {
                 attributes
                     .get("name")

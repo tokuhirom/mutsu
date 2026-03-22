@@ -3572,6 +3572,18 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     Some(Ok(Value::str(name.resolve())))
                 }
             }
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Stash" && (method == "gist" || method == "Str") => {
+                // Stash.gist and Stash.Str return the package name
+                if let Some(Value::Str(name)) = attributes.get("name") {
+                    Some(Ok(Value::str(name.to_string())))
+                } else {
+                    Some(Ok(Value::str(String::new())))
+                }
+            }
             Value::Instance { .. } | Value::Enum { .. } => None,
             Value::Version {
                 parts, plus, minus, ..
