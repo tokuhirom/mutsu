@@ -2774,6 +2774,40 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Instance { class_name, .. } if class_name == "Supply" => None,
             _ => Some(Ok(target.clone())),
         },
+        "repeated" => match target {
+            Value::Array(items, ..) => {
+                let mut seen: Vec<Value> = Vec::new();
+                let mut result = Vec::new();
+                for item in items.iter() {
+                    if seen
+                        .iter()
+                        .any(|existing| crate::runtime::values_identical(existing, item))
+                    {
+                        result.push(item.clone());
+                    } else {
+                        seen.push(item.clone());
+                    }
+                }
+                Some(Ok(Value::array(result)))
+            }
+            Value::Seq(items) | Value::Slip(items) => {
+                let mut seen: Vec<Value> = Vec::new();
+                let mut result = Vec::new();
+                for item in items.iter() {
+                    if seen
+                        .iter()
+                        .any(|existing| crate::runtime::values_identical(existing, item))
+                    {
+                        result.push(item.clone());
+                    } else {
+                        seen.push(item.clone());
+                    }
+                }
+                Some(Ok(Value::array(result)))
+            }
+            Value::LazyList(_) => None,
+            _ => Some(Ok(Value::array(Vec::new()))),
+        },
         "floor" => match target {
             Value::Num(f) if f.is_nan() || f.is_infinite() => Some(Ok(Value::Num(*f))),
             Value::Num(f) => Some(Ok(Value::Int(f.floor() as i64))),

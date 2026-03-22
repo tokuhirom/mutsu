@@ -986,6 +986,95 @@ impl Interpreter {
         Ok(Value::array(unique_items))
     }
 
+    pub(super) fn dispatch_repeated(
+        &mut self,
+        target: Value,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let mut as_func: Option<Value> = None;
+        let mut with_func: Option<Value> = None;
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                if key == "as" && value.truthy() {
+                    as_func = Some(value.as_ref().clone());
+                    continue;
+                }
+                if key == "with" && value.truthy() {
+                    with_func = Some(value.as_ref().clone());
+                    continue;
+                }
+            }
+        }
+
+        let items: Vec<Value> = if let Some(list_items) = target.as_list_items() {
+            list_items.to_vec()
+        } else {
+            match target {
+                Value::LazyList(ll) => self.force_lazy_list_bridge(&ll)?,
+                v @ (Value::Range(..)
+                | Value::RangeExcl(..)
+                | Value::RangeExclStart(..)
+                | Value::RangeExclBoth(..)
+                | Value::GenericRange { .. }) => Self::value_to_list(&v),
+                other => vec![other],
+            }
+        };
+        let mut seen_keys: Vec<Value> = Vec::new();
+        let mut repeated_items: Vec<Value> = Vec::new();
+        for item in items {
+            let key = if let Some(func) = as_func.clone() {
+                self.call_sub_value(func, vec![item.clone()], true)?
+            } else {
+                item.clone()
+            };
+
+            let mut duplicate = false;
+            for seen in &seen_keys {
+                let is_same = if let Some(func) = with_func.clone() {
+                    self.call_sub_value(func, vec![seen.clone(), key.clone()], true)?
+                        .truthy()
+                } else if let (
+                    Value::Instance {
+                        class_name: seen_class,
+                        id: seen_id,
+                        ..
+                    },
+                    Value::Instance {
+                        class_name: key_class,
+                        id: key_id,
+                        ..
+                    },
+                ) = (seen, &key)
+                {
+                    if *seen_id == 0
+                        && *key_id == 0
+                        && seen_class == key_class
+                        && seen_class.resolve() != "Stash"
+                        && seen_class.resolve() != "Supply"
+                    {
+                        false
+                    } else {
+                        values_identical(seen, &key)
+                    }
+                } else {
+                    values_identical(seen, &key)
+                };
+                if is_same {
+                    duplicate = true;
+                    break;
+                }
+            }
+
+            if duplicate {
+                repeated_items.push(item);
+            } else {
+                seen_keys.push(key);
+            }
+        }
+
+        Ok(Value::array(repeated_items))
+    }
+
     pub(crate) fn dispatch_squish(
         &mut self,
         target: Value,
