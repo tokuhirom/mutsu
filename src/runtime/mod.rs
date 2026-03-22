@@ -217,6 +217,8 @@ struct RoleCandidateDef {
     type_params: Vec<String>,
     type_param_defs: Vec<ParamDef>,
     role_def: RoleDef,
+    /// Parent classes/roles declared via `is` on this candidate.
+    parents: Vec<String>,
 }
 
 #[derive(Debug, Clone)]

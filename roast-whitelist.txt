@@ -492,6 +492,7 @@ roast/S14-roles/namespaced.t
 roast/S14-roles/parameter-subtyping.t
 roast/S14-roles/parameterized-basic.t
 roast/S14-roles/stubs.t
+roast/S14-roles/typecheck.t
 roast/S14-traits/variables.t
 roast/S15-literals/identifiers.t
 roast/S15-literals/numbers.t

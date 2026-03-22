@@ -1123,6 +1123,27 @@ impl Interpreter {
         if constraint == value_type {
             return true;
         }
+        // Qualified name matching: GH2613::R1 should match R1 and vice versa.
+        // When one name is qualified (contains ::) and the other is a short name,
+        // check if the short name matches the last component of the qualified name.
+        if constraint.contains("::")
+            && !value_type.contains("::")
+            && constraint
+                .rsplit("::")
+                .next()
+                .is_some_and(|short| short == value_type)
+        {
+            return true;
+        }
+        if value_type.contains("::")
+            && !constraint.contains("::")
+            && value_type
+                .rsplit("::")
+                .next()
+                .is_some_and(|short| short == constraint)
+        {
+            return true;
+        }
         if constraint == "Setty" && matches!(value_type, "Set" | "SetHash") {
             return true;
         }
@@ -1582,6 +1603,21 @@ impl Interpreter {
         false
     }
 
+    /// Resolve a potentially qualified role name to its registered key.
+    /// If `name` is in `self.roles`, returns it as-is. Otherwise, if `name`
+    /// contains `::`, tries the short name (after the last `::`).
+    fn resolve_role_key<'a>(&self, name: &'a str) -> Option<&'a str> {
+        if self.roles.contains_key(name) {
+            return Some(name);
+        }
+        if let Some(short) = name.rsplit("::").next()
+            && self.roles.contains_key(short)
+        {
+            return Some(short);
+        }
+        None
+    }
+
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
         if let Value::Scalar(inner) = value {
             return self.type_matches_value(constraint, inner.as_ref());
@@ -1815,7 +1851,10 @@ impl Interpreter {
             return true;
         }
         // Role constraints should accept composed role instances/mixins.
-        if self.roles.contains_key(constraint) && value.does_check(constraint) {
+        // Use resolve_role_key to handle qualified names (e.g. GH2613::R1 → R1).
+        let resolved_constraint = self.resolve_role_key(constraint).map(|s| s.to_string());
+        let effective_constraint = resolved_constraint.as_deref().unwrap_or(constraint);
+        if resolved_constraint.is_some() && value.does_check(effective_constraint) {
             return true;
         }
         // Type-object checks: Package values should respect declared class/role ancestry.
@@ -1836,11 +1875,14 @@ impl Interpreter {
                 return true;
             }
             let mro = self.class_mro(&package_name.resolve());
-            if mro.iter().any(|parent| parent == constraint) {
+            if mro
+                .iter()
+                .any(|parent| Self::type_matches(effective_constraint, parent))
+            {
                 return true;
             }
             // Check transitive role composition through class_composed_roles and role_parents
-            if self.roles.contains_key(constraint) {
+            if resolved_constraint.is_some() {
                 let mut role_stack: Vec<String> = Vec::new();
                 let mut seen_roles = HashSet::new();
                 // Collect all composed roles from the class and its parents
@@ -1856,13 +1898,13 @@ impl Interpreter {
                     if !seen_roles.insert(role_name.clone()) {
                         continue;
                     }
-                    if role_name == constraint {
+                    if Self::type_matches(effective_constraint, &role_name) {
                         return true;
                     }
                     if let Some(rparents) = self.role_parents.get(&role_name) {
                         for rp in rparents {
                             let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
-                            if self.roles.contains_key(rp_base) {
+                            if self.resolve_role_key(rp_base).is_some() {
                                 role_stack.push(rp_base.to_string());
                             }
                         }
@@ -1876,19 +1918,62 @@ impl Interpreter {
             {
                 return true;
             }
-            if self.roles.contains_key(&package_name.resolve()) {
-                let mut stack: Vec<String> = vec![package_name.resolve()];
+            let pkg_resolved = package_name.resolve();
+            let pkg_base = pkg_resolved
+                .split_once('[')
+                .map(|(b, _)| b)
+                .unwrap_or(&pkg_resolved);
+            if self.roles.contains_key(pkg_base) {
+                // For role groups, use candidate-specific parents:
+                // - Curried roles (e.g. R[Int]): use parametric candidate's parents
+                // - Bare role name: use non-parametric candidate's parents
+                let candidate_parents = self.role_candidates.get(pkg_base).and_then(|candidates| {
+                    if pkg_resolved.contains('[') {
+                        // Curried: find the parametric candidate
+                        candidates
+                            .iter()
+                            .find(|c| !c.type_params.is_empty())
+                            .map(|c| c.parents.clone())
+                    } else {
+                        // Bare: find the non-parametric candidate
+                        candidates
+                            .iter()
+                            .find(|c| c.type_params.is_empty())
+                            .map(|c| c.parents.clone())
+                    }
+                });
+                let initial_parents = candidate_parents
+                    .or_else(|| self.role_parents.get(pkg_base).cloned())
+                    .unwrap_or_default();
+                let mut stack: Vec<String> = initial_parents;
                 let mut seen = HashSet::new();
-                while let Some(role) = stack.pop() {
-                    if !seen.insert(role.clone()) {
+                while let Some(parent) = stack.pop() {
+                    if !seen.insert(parent.clone()) {
                         continue;
                     }
-                    if let Some(parents) = self.role_parents.get(&role) {
-                        for parent in parents {
-                            if parent == constraint {
+                    if Self::type_matches(effective_constraint, &parent) {
+                        return true;
+                    }
+                    // Walk parent's MRO for transitive parent matching
+                    let parent_mro = self.class_mro(&parent);
+                    if parent_mro
+                        .iter()
+                        .any(|p| Self::type_matches(effective_constraint, p))
+                    {
+                        return true;
+                    }
+                    // Also check composed roles of the parent class
+                    if let Some(composed) = self.class_composed_roles.get(&parent) {
+                        for cr in composed {
+                            let cr_base = cr.split_once('[').map(|(b, _)| b).unwrap_or(cr.as_str());
+                            if Self::type_matches(effective_constraint, cr_base) {
                                 return true;
                             }
-                            stack.push(parent.clone());
+                        }
+                    }
+                    if let Some(rparents) = self.role_parents.get(&parent) {
+                        for rp in rparents {
+                            stack.push(rp.clone());
                         }
                     }
                 }
