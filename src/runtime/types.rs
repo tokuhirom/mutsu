@@ -2220,6 +2220,11 @@ impl Interpreter {
                             .eval_block_value(body)
                             .map(|v| v.truthy())
                             .unwrap_or(false),
+                        Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
+                            self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())])
+                                .map(|v| v.truthy())
+                                .unwrap_or(false)
+                        }
                         expr => self
                             .eval_block_value(&[Stmt::Expr(expr.clone())])
                             .map(|v| self.smart_match(arg, &v))
@@ -2794,6 +2799,38 @@ impl Interpreter {
                         }
                     }
                 }
+                // Check where constraint for named params after binding
+                if found && let Some(where_expr) = &pd.where_constraint {
+                    let bound_val = self.env.get(&pd.name).cloned().unwrap_or(Value::Nil);
+                    let saved_topic = self.env.get("_").cloned();
+                    self.env.insert("_".to_string(), bound_val.clone());
+                    let ok = match where_expr.as_ref() {
+                        Expr::AnonSub { body, .. } => self
+                            .eval_block_value(body)
+                            .map(|v| v.truthy())
+                            .unwrap_or(false),
+                        Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
+                            self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())])
+                                .map(|v| v.truthy())
+                                .unwrap_or(false)
+                        }
+                        expr => self
+                            .eval_block_value(&[Stmt::Expr(expr.clone())])
+                            .map(|v| self.smart_match(&bound_val, &v))
+                            .unwrap_or(false),
+                    };
+                    if let Some(previous) = saved_topic {
+                        self.env.insert("_".to_string(), previous);
+                    } else {
+                        self.env.remove("_");
+                    }
+                    if !ok {
+                        return Err(RuntimeError::new(format!(
+                            "X::TypeCheck::Binding::Parameter: where constraint failed for parameter '{}'",
+                            pd.name
+                        )));
+                    }
+                }
                 if !found && let Some(default_expr) = &pd.default {
                     let value = self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?;
                     let value = self.checked_default_param_value(pd, value)?;
@@ -2815,8 +2852,13 @@ impl Interpreter {
                         return Err(err);
                     }
                     if !pd.name.is_empty() {
-                        self.bind_param_value(&pd.name, value);
+                        self.bind_param_value(&pd.name, value.clone());
                         self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
+                    }
+                    // For renamed named params like :foo($y) = $x, also bind the
+                    // sub-signature variable ($y) to the default value.
+                    if let Some(sub_params) = &pd.sub_signature {
+                        bind_named_rename_sub_signature(self, sub_params, &Box::new(value))?;
                     }
                 } else if !found && pd.required {
                     return Err(RuntimeError::new(format!(
@@ -3130,6 +3172,14 @@ impl Interpreter {
                                 .eval_block_value(body)
                                 .map(|v| v.truthy())
                                 .unwrap_or(false),
+                            // Method calls on $_ (topic) in where constraints:
+                            // evaluate and check truthiness of the result, not smart-match.
+                            // `where .method: args` is equivalent to `where { .method: args }`.
+                            Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
+                                self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())])
+                                    .map(|v| v.truthy())
+                                    .unwrap_or(false)
+                            }
                             expr => self
                                 .eval_block_value(&[Stmt::Expr(expr.clone())])
                                 .map(|v| self.smart_match(&value, &v))
@@ -3222,6 +3272,11 @@ impl Interpreter {
             for arg in plain_args.iter() {
                 let arg = unwrap_varref_value(arg.clone());
                 if let Value::Pair(key, _) = arg {
+                    // Empty-string named args (e.g. from `'' => val` in a hash) are
+                    // silently ignored — they cannot bind to any named parameter.
+                    if key.is_empty() {
+                        continue;
+                    }
                     // Check if this named arg was consumed by a named param or colon placeholder
                     let consumed = param_defs.iter().any(|pd| {
                         if (pd.named && pd.name == key)

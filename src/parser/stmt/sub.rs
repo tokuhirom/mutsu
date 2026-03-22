@@ -1199,19 +1199,28 @@ fn reject_invocant_in_sub(params: &[ParamDef]) -> Result<(), PError> {
     Ok(())
 }
 
+/// Strip sigil prefix from a parameter name, returning the bare name.
+fn strip_param_sigil(name: &str) -> &str {
+    name.strip_prefix('@')
+        .or_else(|| name.strip_prefix('%'))
+        .or_else(|| name.strip_prefix('&'))
+        .unwrap_or(name)
+}
+
 /// Check for duplicate parameter names in a signature.
 /// Anonymous parameters (e.g. `$`, `@`, `%`) are excluded.
 fn check_duplicate_params(params: &[ParamDef]) -> Result<(), PError> {
     let mut seen = std::collections::HashSet::new();
+    // Track named parameter base names (without sigils) to detect NameClash
+    let mut seen_named_bases = std::collections::HashMap::<String, String>::new();
+
+    // Collect all variable names including those from sub-signatures of renamed params
+    // (e.g. :foo($x) produces variable $x which must not clash with :$x)
+    let mut all_var_names: Vec<String> = Vec::new();
+
     for p in params {
         let name = &p.name;
-        // Skip anonymous, type-only, and literal parameters
-        // Anonymous names may be bare (__ANON_*) or sigil-prefixed (@__ANON_ARRAY__, etc.)
-        let name_without_sigil = name
-            .strip_prefix('@')
-            .or_else(|| name.strip_prefix('%'))
-            .or_else(|| name.strip_prefix('&'))
-            .unwrap_or(name);
+        let name_without_sigil = strip_param_sigil(name);
         if name.is_empty()
             || name_without_sigil.starts_with("__ANON_")
             || name == "__type_only__"
@@ -1222,7 +1231,6 @@ fn check_duplicate_params(params: &[ParamDef]) -> Result<(), PError> {
         }
         // Reconstruct the display name with sigil for error message
         let display_name = if name.starts_with("__type_capture__") {
-            // Type capture like ::T
             name.strip_prefix("__type_capture__")
                 .unwrap_or(name)
                 .to_string()
@@ -1247,7 +1255,73 @@ fn check_duplicate_params(params: &[ParamDef]) -> Result<(), PError> {
             let ex = Value::make_instance(Symbol::intern("X::Redeclaration"), attrs);
             return Err(PError::fatal_with_exception(msg, Box::new(ex)));
         }
+
+        // For named params, check that the base name (without sigil) is unique
+        // e.g. :$a and :@a share base name "a" → X::Signature::NameClash
+        if p.named {
+            let base = name_without_sigil.to_string();
+            if !base.is_empty() {
+                if let Some(prev_display) = seen_named_bases.get(&base) {
+                    if *prev_display != display_name {
+                        let msg = format!(
+                            "X::Signature::NameClash: Name {} used for more than one named parameter",
+                            base
+                        );
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("name".to_string(), Value::str(base));
+                        attrs.insert("message".to_string(), Value::str(msg.clone()));
+                        let ex =
+                            Value::make_instance(Symbol::intern("X::Signature::NameClash"), attrs);
+                        return Err(PError::fatal_with_exception(msg, Box::new(ex)));
+                    }
+                } else {
+                    seen_named_bases.insert(base, display_name.clone());
+                }
+            }
+        }
+
+        // Collect the variable name for this param
+        all_var_names.push(display_name);
+
+        // For named params with sub-signature (renamed params like :foo($x)),
+        // also collect the inner variable names
+        if p.named
+            && let Some(sub_params) = &p.sub_signature
+        {
+            for sp in sub_params {
+                let sp_name = &sp.name;
+                let sp_without_sigil = strip_param_sigil(sp_name);
+                if sp_name.is_empty() || sp_without_sigil.starts_with("__ANON_") {
+                    continue;
+                }
+                let sp_display = if sp_name.starts_with('@')
+                    || sp_name.starts_with('%')
+                    || sp_name.starts_with('&')
+                    || sp.sigilless
+                {
+                    sp_name.clone()
+                } else {
+                    format!("${}", sp_name)
+                };
+                all_var_names.push(sp_display);
+            }
+        }
     }
+
+    // Check for duplicate variable names across all params including sub-signature vars
+    let mut var_seen = std::collections::HashSet::new();
+    for vn in &all_var_names {
+        if !var_seen.insert(vn.clone()) {
+            let msg = format!("X::Redeclaration: Redeclaration of symbol '{}'", vn);
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("symbol".to_string(), Value::str(vn.clone()));
+            attrs.insert("what".to_string(), Value::str("symbol".to_string()));
+            attrs.insert("message".to_string(), Value::str(msg.clone()));
+            let ex = Value::make_instance(Symbol::intern("X::Redeclaration"), attrs);
+            return Err(PError::fatal_with_exception(msg, Box::new(ex)));
+        }
+    }
+
     Ok(())
 }
 
