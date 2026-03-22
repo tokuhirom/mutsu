@@ -3448,6 +3448,8 @@ impl Interpreter {
                 | "unimatch"
                 | "uniparse"
                 | "parse-names"
+                | "symlink"
+                | "link"
         )
     }
 

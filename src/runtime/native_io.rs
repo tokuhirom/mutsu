@@ -675,6 +675,54 @@ impl Interpreter {
                     p, err
                 ))),
             },
+            "symlink" => {
+                // IO::Path.symlink($name, :$absolute = True)
+                // Creates a symlink named $name pointing to self (the target).
+                let link_name = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .ok_or_else(|| RuntimeError::new("symlink requires a link name"))?;
+                // Check :absolute named arg (defaults to True)
+                // named_bool returns false if not present, so we invert the logic:
+                // :!absolute → Pair("absolute", false) → named_bool returns false → absolute=false
+                // :absolute  → Pair("absolute", true)  → named_bool returns true  → absolute=true
+                // absent     → named_bool returns false → but default should be true
+                let absolute = Self::named_value(&args, "absolute")
+                    .map(|v| v.truthy())
+                    .unwrap_or(true);
+                let link_buf = self.resolve_path(&link_name);
+                // Determine the target path: if :absolute (default), use the resolved
+                // absolute path; if :!absolute, use the original path string as-is.
+                let target_for_symlink = if absolute {
+                    path_buf.clone()
+                } else {
+                    std::path::PathBuf::from(&p)
+                };
+                #[cfg(unix)]
+                {
+                    match unix_fs::symlink(&target_for_symlink, &link_buf) {
+                        Ok(()) => Ok(Value::Bool(true)),
+                        Err(err) => Ok(Self::make_symlink_failure(&p, &link_name, &err)),
+                    }
+                }
+                #[cfg(windows)]
+                {
+                    let metadata = fs::metadata(&target_for_symlink);
+                    let result = if metadata.map(|meta| meta.is_dir()).unwrap_or(false) {
+                        windows_fs::symlink_dir(&target_for_symlink, &link_buf)
+                    } else {
+                        windows_fs::symlink_file(&target_for_symlink, &link_buf)
+                    };
+                    match result {
+                        Ok(()) => Ok(Value::Bool(true)),
+                        Err(err) => Ok(Self::make_symlink_failure(&p, &link_name, &err)),
+                    }
+                }
+                #[cfg(not(any(unix, windows)))]
+                {
+                    Err(RuntimeError::new("symlink not supported on this platform"))
+                }
+            }
             "watch" => {
                 let supply_id = super::native_methods::next_supply_id();
                 let (tx, rx) = std::sync::mpsc::channel();
