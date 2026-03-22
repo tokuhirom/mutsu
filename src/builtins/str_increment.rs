@@ -26,6 +26,7 @@ const MAGIC_RANGES: &[(char, char)] = &[
     ('\u{0A66}', '\u{0A6F}'), // Gurmukhi digits
     ('\u{0AE6}', '\u{0AEF}'), // Gujarati digits
     ('\u{0B66}', '\u{0B6F}'), // Oriya digits
+    ('\u{0E50}', '\u{0E59}'), // Thai digits
 ];
 
 /// Find which magic range a character belongs to.
@@ -94,6 +95,7 @@ fn is_digit_range(ch: char) -> bool {
             | Some(('\u{0A66}', '\u{0A6F}'))
             | Some(('\u{0AE6}', '\u{0AEF}'))
             | Some(('\u{0B66}', '\u{0B6F}'))
+            | Some(('\u{0E50}', '\u{0E59}'))
     )
 }
 
