@@ -2117,11 +2117,34 @@ impl Interpreter {
         predicate: Option<&Expr>,
         version: &str,
     ) {
+        // When the predicate is `* ~~ <expr>` (Whatever on LHS of SmartMatch),
+        // the parser doesn't wrap it as WhateverCode (to avoid breaking other
+        // smartmatch semantics). Convert it here to a Lambda so the subset
+        // check correctly evaluates `$_ ~~ <expr>` against the candidate value.
+        let predicate = predicate.map(|pred| {
+            if let Expr::Binary {
+                left,
+                op: crate::token_kind::TokenKind::SmartMatch,
+                right,
+            } = pred
+                && matches!(left.as_ref(), Expr::Whatever)
+            {
+                return Expr::Lambda {
+                    param: "_".to_string(),
+                    body: vec![Stmt::Expr(Expr::Binary {
+                        left: Box::new(Expr::Var("_".to_string())),
+                        op: crate::token_kind::TokenKind::SmartMatch,
+                        right: right.clone(),
+                    })],
+                };
+            }
+            pred.clone()
+        });
         self.subsets.insert(
             name.to_string(),
             SubsetDef {
                 base: base.to_string(),
-                predicate: predicate.cloned(),
+                predicate,
                 version: version.to_string(),
             },
         );
