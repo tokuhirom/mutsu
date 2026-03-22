@@ -1550,8 +1550,15 @@ impl VM {
                 .resolve_suppressed_type(declared_constraint)
                 .is_none()
             {
-                // Unknown user-defined type — reject it
-                return Err(RuntimeError::undeclared("type", constraint));
+                // Unknown user-defined type — reject it.
+                // Include "Malformed my" in the message to match Raku's error output
+                // (raku reports both "Type '...' is not declared" and "Malformed my").
+                let msg = format!("Type '{}' is not declared. Malformed my", constraint);
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("what".to_string(), Value::str("type".to_string()));
+                attrs.insert("symbol".to_string(), Value::str(constraint.to_string()));
+                attrs.insert("message".to_string(), Value::str(msg.clone()));
+                return Err(RuntimeError::typed("X::Undeclared", attrs));
             }
         }
         if !matches!(value, Value::Nil) && !self.interpreter.type_matches_value(constraint, &value)

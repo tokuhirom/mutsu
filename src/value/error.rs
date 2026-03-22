@@ -400,6 +400,7 @@ impl RuntimeError {
     }
 
     /// X::Undeclared - Undeclared name
+    #[allow(dead_code)]
     pub(crate) fn undeclared(what: &str, name: &str) -> Self {
         let msg = format!("Undeclared {} '{}'", what, name);
         let mut attrs = HashMap::new();

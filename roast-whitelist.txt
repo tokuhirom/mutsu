@@ -476,6 +476,7 @@ roast/S12-methods/trusts.t
 roast/S12-methods/typed-attributes.t
 roast/S12-methods/what.t
 roast/S12-subset/multi-dispatch.t
+roast/S12-subset/type-subset.t
 roast/S12-traits/precomp.t
 roast/S13-overloading/fallbacks-deep.t
 roast/S13-overloading/metaoperators.t
