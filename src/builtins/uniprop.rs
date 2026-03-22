@@ -84,6 +84,27 @@ fn try_binary_property(ch: char, prop: &str) -> Option<bool> {
         "Full_Composition_Exclusion" | "Comp_Ex" => {
             return Some(check_full_composition_exclusion(ch));
         }
+        "Pattern_White_Space" => r"^\p{Pattern_White_Space}$",
+        "Pattern_Syntax" => r"^\p{Pattern_Syntax}$",
+        "Other_Alphabetic" | "OAlpha" => r"^\p{Other_Alphabetic}$",
+        "Other_Lowercase" | "OLower" => r"^\p{Other_Lowercase}$",
+        "Other_Uppercase" | "OUpper" => r"^\p{Other_Uppercase}$",
+        "Other_Math" | "OMath" => r"^\p{Other_Math}$",
+        "Unified_Ideograph" | "UIdeo" => r"^\p{Unified_Ideograph}$",
+        "Noncharacter_Code_Point" | "NChar" => r"^\p{Noncharacter_Code_Point}$",
+        "Other_Grapheme_Extend" | "OGr_Ext" => r"^\p{Other_Grapheme_Extend}$",
+        "Other_ID_Continue" | "OIDC" => r"^\p{Other_ID_Continue}$",
+        "Other_ID_Start" | "OIDS" => r"^\p{Other_ID_Start}$",
+        "Other_Default_Ignorable_Code_Point" | "ODI" => r"^\p{Other_Default_Ignorable_Code_Point}$",
+        "XID_Start" | "XIDS" => r"^\p{XID_Start}$",
+        "XID_Continue" | "XIDC" => r"^\p{XID_Continue}$",
+        "Emoji" => r"^\p{Emoji}$",
+        "Emoji_Presentation" => r"^\p{Emoji_Presentation}$",
+        "Emoji_Modifier" => r"^\p{Emoji_Modifier}$",
+        "Emoji_Modifier_Base" => r"^\p{Emoji_Modifier_Base}$",
+        "Emoji_Component" => r"^\p{Emoji_Component}$",
+        "Extended_Pictographic" => r"^\p{Extended_Pictographic}$",
+        "Regional_Indicator" => r"^\p{Regional_Indicator}$",
         _ => return None,
     };
     Some(check_binary_property(ch, pattern))
@@ -1061,5 +1082,106 @@ pub(crate) fn unicode_property_value_for_codepoint(cp: u32, prop: Option<&str>) 
                 _ => Value::str_from(""),
             }
         }
+    }
+}
+
+/// Check if a character matches a Unicode property value.
+/// `prop_value` is the value to match (e.g., "Nd", "L", "Hebrew", "Pattern_White_Space").
+/// `prop_name` is an optional property name (e.g., "sc" for Script). If None, the function
+/// tries general category, binary properties, script, and block in order.
+pub(crate) fn unimatch(ch: char, prop_value: &str, prop_name: Option<&str>) -> bool {
+    if let Some(pn) = prop_name {
+        // Explicit property name given — check that specific property
+        return unimatch_property(ch, prop_value, pn);
+    }
+
+    // No explicit property name — try matching in order:
+    // 1. General Category (exact or parent match)
+    if unimatch_general_category(ch, prop_value) {
+        return true;
+    }
+
+    // 2. Binary properties
+    if let Some(b) = try_binary_property(ch, prop_value) {
+        return b;
+    }
+
+    // 3. Script name
+    let script = super::unicode::unicode_script_name(ch);
+    if script.eq_ignore_ascii_case(prop_value) {
+        return true;
+    }
+
+    // 4. Block name (normalize underscores/spaces/case)
+    let block = unicode_block(ch);
+    if block_matches(&block, prop_value) {
+        return true;
+    }
+
+    false
+}
+
+/// Match against a specific named property.
+fn unimatch_property(ch: char, prop_value: &str, prop_name: &str) -> bool {
+    match prop_name {
+        "gc" | "General_Category" => unimatch_general_category(ch, prop_value),
+        "sc" | "Script" => {
+            let script = super::unicode::unicode_script_name(ch);
+            script.eq_ignore_ascii_case(prop_value)
+        }
+        "blk" | "Block" => {
+            let block = unicode_block(ch);
+            block_matches(&block, prop_value)
+        }
+        _ => {
+            // Try to get the property value and compare
+            let val = unicode_property_value(ch, prop_name);
+            let val_str = val.to_string_value();
+            val_str.eq_ignore_ascii_case(prop_value)
+        }
+    }
+}
+
+/// Check if a character's general category matches the given value.
+/// Supports exact matches ("Lu"), parent category matches ("L" matches "Lu", "Ll", etc.),
+/// and the "LC" alias for cased letters (Lu, Ll, Lt).
+fn unimatch_general_category(ch: char, cat: &str) -> bool {
+    let gc = super::unicode::unicode_general_category(ch);
+
+    // Exact match
+    if gc == cat {
+        return true;
+    }
+
+    // Parent category match: single-letter category matches any two-letter sub-category
+    // starting with that letter (e.g., "L" matches "Lu", "Ll", "Lt", "Lm", "Lo")
+    if cat.len() == 1 && gc.len() == 2 && gc.starts_with(cat) {
+        return true;
+    }
+
+    // LC (Cased_Letter) matches Lu, Ll, Lt
+    if cat == "LC" && (gc == "Lu" || gc == "Ll" || gc == "Lt") {
+        return true;
+    }
+
+    false
+}
+
+/// Check if a block name matches, normalizing case, underscores, spaces, and hyphens.
+fn block_matches(block: &str, target: &str) -> bool {
+    let normalize = |s: &str| -> String {
+        s.chars()
+            .filter(|c| *c != '_' && *c != ' ' && *c != '-')
+            .flat_map(|c| c.to_lowercase())
+            .collect()
+    };
+    normalize(block) == normalize(target)
+}
+
+/// unimatch for a codepoint (u32), handling invalid chars.
+pub(crate) fn unimatch_for_codepoint(cp: u32, prop_value: &str, prop_name: Option<&str>) -> Value {
+    match char::from_u32(cp) {
+        Some(ch) => Value::Bool(unimatch(ch, prop_value, prop_name)),
+        None => Value::Bool(false),
     }
 }

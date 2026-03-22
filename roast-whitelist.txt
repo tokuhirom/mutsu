@@ -564,6 +564,7 @@ roast/S15-normalization/nfkd-sanity.t
 roast/S15-string-types/NF-types.t
 roast/S15-string-types/NFK-types.t
 roast/S15-string-types/Str.t
+roast/S15-unicode-information/unimatch-general.t
 roast/S15-unicode-information/uniprop.t
 roast/S16-filehandles/chmod.t
 roast/S16-filehandles/io_in_while_loops.t
