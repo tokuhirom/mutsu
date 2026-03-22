@@ -1017,20 +1017,48 @@ impl Interpreter {
         thread::sleep(duration);
         let elapsed = start.elapsed();
         let remaining = duration.checked_sub(elapsed).unwrap_or_default();
-        Ok(Value::Num(remaining.as_secs_f64()))
+        Ok(crate::builtins::arith::make_duration_value(
+            remaining.as_secs_f64(),
+        ))
     }
 
     pub(super) fn builtin_sleep_till(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        if let Some(target_time) = Self::system_time_from_value(args.first().cloned()) {
-            let now = std::time::SystemTime::UNIX_EPOCH
-                + std::time::Duration::from_secs_f64(crate::value::current_time_secs_f64());
-            if target_time <= now {
+        let arg = args.first().cloned();
+        // Extract the target POSIX timestamp, handling Instant (TAI) values
+        let target_posix = match &arg {
+            Some(Value::Instance {
+                class_name,
+                attributes,
+                ..
+            }) if class_name.resolve() == "Instant" => {
+                // Instant stores TAI time; convert back to POSIX
+                attributes
+                    .get("value")
+                    .and_then(super::to_float_value)
+                    .map(crate::builtins::methods_0arg::temporal::instant_to_posix)
+            }
+            Some(Value::Instance {
+                class_name,
+                attributes,
+                ..
+            }) if class_name.resolve() == "DateTime" => {
+                // Compute posix from DateTime attributes
+                use crate::builtins::methods_0arg::temporal::{datetime_attrs, datetime_to_posix};
+                let (year, month, day, hour, minute, second, timezone) = datetime_attrs(attributes);
+                Some(datetime_to_posix(
+                    year, month, day, hour, minute, second, timezone,
+                ))
+            }
+            _ => Self::seconds_from_value(arg),
+        };
+        if let Some(target) = target_posix {
+            let now = crate::value::current_time_secs_f64();
+            if target <= now {
                 return Ok(Value::Bool(false));
             }
-            if let Ok(diff) = target_time.duration_since(now) {
-                thread::sleep(diff);
-                return Ok(Value::Bool(true));
-            }
+            let diff_secs = target - now;
+            thread::sleep(Duration::from_secs_f64(diff_secs));
+            return Ok(Value::Bool(true));
         }
         Ok(Value::Bool(false))
     }

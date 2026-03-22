@@ -214,6 +214,10 @@ fn instance_datetime_parts(value: &Value) -> Option<(i64, i64, i64, i64, i64, f6
     }
 }
 
+pub fn make_duration_value(secs: f64) -> Value {
+    make_duration(secs)
+}
+
 fn make_duration(secs: f64) -> Value {
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("value".to_string(), Value::Num(secs));
