@@ -806,6 +806,26 @@ impl Interpreter {
                     .cloned()
                     .zip(role_arg_values.iter().cloned())
                     .collect();
+                // Execute deferred body statements from parameterized roles
+                // with concrete type parameter bindings. These statements
+                // (e.g., `my T $v .= new;`) may create closure variables that
+                // are referenced by composed methods, so we must keep their
+                // effects on the env (only clean up the type capture markers).
+                if !role.deferred_body_stmts.is_empty() {
+                    // Bind type parameters as type captures
+                    for (param_name, param_value) in &role_param_values {
+                        self.bind_type_capture(param_name, param_value);
+                    }
+                    for stmt in &role.deferred_body_stmts {
+                        self.run_block_raw(std::slice::from_ref(stmt))?;
+                    }
+                    // Remove type capture markers (but keep the variables
+                    // created by the deferred stmts for method closures)
+                    for param_name in role_param_values.keys() {
+                        self.env.remove(&format!("__type_capture__{}", param_name));
+                        // Don't remove the param name itself - methods may need it
+                    }
+                }
                 if let Some(parent_specs) = self.role_parents.get(base_role_name).cloned() {
                     for parent_spec in parent_specs {
                         let resolved_parent = if let Some(v) = role_param_values.get(&parent_spec) {
@@ -1783,7 +1803,9 @@ impl Interpreter {
             wildcard_handles: Vec::new(),
             role_id: super::next_role_id(),
             attribute_conflicts: Vec::new(),
+            deferred_body_stmts: Vec::new(),
         };
+        let is_parametric = !type_params.is_empty();
         let flattened_body: Vec<&Stmt> = body
             .iter()
             .flat_map(|s| match s {
@@ -2032,7 +2054,13 @@ impl Interpreter {
                     role_def.is_stub_role = true;
                 }
                 _ => {
-                    self.run_block_raw(std::slice::from_ref(stmt))?;
+                    if is_parametric {
+                        // Defer non-method/non-attribute statements until composition
+                        // time so they can be re-evaluated with concrete type bindings.
+                        role_def.deferred_body_stmts.push(stmt.clone());
+                    } else {
+                        self.run_block_raw(std::slice::from_ref(stmt))?;
+                    }
                 }
             }
         }

@@ -210,6 +210,10 @@ pub(crate) struct RoleDef {
     /// Attribute conflicts detected during role-to-role composition.
     /// Each entry is (attr_name, declaring_role, conflicting_role).
     pub(crate) attribute_conflicts: Vec<(String, String, String)>,
+    /// Body statements deferred until composition time (for parameterized roles).
+    /// These are non-method/non-attribute statements that may reference type parameters
+    /// and must be re-executed for each class composition with concrete type bindings.
+    pub(crate) deferred_body_stmts: Vec<Stmt>,
 }
 
 #[derive(Debug, Clone)]
@@ -2190,6 +2194,7 @@ impl Interpreter {
                         wildcard_handles: Vec::new(),
                         role_id: 0,
                         attribute_conflicts: Vec::new(),
+                        deferred_body_stmts: Vec::new(),
                     },
                 );
                 roles.insert(
@@ -2203,6 +2208,7 @@ impl Interpreter {
                         wildcard_handles: Vec::new(),
                         role_id: 0,
                         attribute_conflicts: Vec::new(),
+                        deferred_body_stmts: Vec::new(),
                     },
                 );
                 roles.insert(
@@ -2216,6 +2222,7 @@ impl Interpreter {
                         wildcard_handles: Vec::new(),
                         role_id: 0,
                         attribute_conflicts: Vec::new(),
+                        deferred_body_stmts: Vec::new(),
                     },
                 );
                 roles.insert(
@@ -2229,6 +2236,7 @@ impl Interpreter {
                         wildcard_handles: Vec::new(),
                         role_id: 0,
                         attribute_conflicts: Vec::new(),
+                        deferred_body_stmts: Vec::new(),
                     },
                 );
                 // CompUnit::Repository role with required stub methods
@@ -2266,6 +2274,7 @@ impl Interpreter {
                             wildcard_handles: Vec::new(),
                             role_id: 0,
                             attribute_conflicts: Vec::new(),
+                            deferred_body_stmts: Vec::new(),
                         },
                     );
                 }
