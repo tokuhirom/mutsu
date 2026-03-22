@@ -276,6 +276,10 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
         let line = current_line_number(input);
         return Ok((rest, Expr::Literal(Value::Int(line))));
     }
+    // $?TABSTOP is a compile-time constant: hardcoded to 8
+    if full_name == "?TABSTOP" {
+        return Ok((rest, Expr::Literal(Value::Int(8))));
+    }
     // Normalize positional capture variables: $00 → $0, $01 → $1, etc.
     // Strip leading zeros from all-digit variable names so $00 resolves to $0.
     let full_name = if !full_name.is_empty()
