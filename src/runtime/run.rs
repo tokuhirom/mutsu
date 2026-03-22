@@ -930,7 +930,16 @@ impl Interpreter {
             .ok_or_else(|| RuntimeError::new(format!("Module not found: {}", module)))?;
         let (stmts, _precompiled) = self.parse_module_source(module, &source_path)?;
         if !Self::should_skip_runtime_for_use_only_module(&stmts) {
-            self.run_block(&stmts)?;
+            // Module files should be compiled in a fresh GLOBAL scope, not
+            // inheriting the caller's current_package.  Otherwise the compiler
+            // would qualify top-level declarations inside the module file with
+            // the caller's package (e.g. `Export_PackB::Export_PackA::foo`
+            // instead of `Export_PackA::foo`).
+            let saved_package = self.current_package.clone();
+            self.current_package = "GLOBAL".to_string();
+            let result = self.run_block(&stmts);
+            self.current_package = saved_package;
+            result?;
         }
         Ok(())
     }
