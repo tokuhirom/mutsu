@@ -2474,6 +2474,10 @@ impl Interpreter {
                 let block = args.first().cloned().unwrap_or(Value::Nil);
                 return self.deepmap_iterate(&block, &target);
             }
+            "nodemap" => {
+                let block = args.first().cloned().unwrap_or(Value::Nil);
+                return self.nodemap_iterate(&block, &target);
+            }
             "max" | "min" => {
                 if let Value::Instance { class_name, .. } = &target
                     && class_name == "Supply"

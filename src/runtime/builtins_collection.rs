@@ -2038,6 +2038,16 @@ impl Interpreter {
         self.duckmap_iterate(&block, &obj)
     }
 
+    /// `deepmap(&block, \obj)` — apply block to every leaf element, preserving structure.
+    pub(super) fn builtin_deepmap(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 2 {
+            return Err(RuntimeError::new("deepmap requires a block and an object"));
+        }
+        let block = args[0].clone();
+        let obj = args[1].clone();
+        self.deepmap_iterate(&block, &obj)
+    }
+
     /// Iterate over the elements of a value, applying duckmap to each.
     /// This is the entry point for both the method and function forms.
     pub(crate) fn duckmap_iterate(
@@ -2099,11 +2109,94 @@ impl Interpreter {
         block: &Value,
         target: &Value,
     ) -> Result<Value, RuntimeError> {
+        self.deepmap_iterate_inner(block, target, false)
+    }
+
+    /// Inner recursive helper. `itemize_result` is true for nested calls
+    /// so that sublists get wrapped in Scalar containers.
+    fn deepmap_iterate_inner(
+        &mut self,
+        block: &Value,
+        target: &Value,
+        itemize_result: bool,
+    ) -> Result<Value, RuntimeError> {
+        match target {
+            // Type objects (e.g. Array, Hash) — return as-is to avoid hanging
+            Value::Package(_) => Ok(target.clone()),
+            Value::Array(items, kind) => {
+                let mut result = Vec::new();
+                for item in items.iter() {
+                    match self.deepmap_iterate_inner(block, item, true) {
+                        Ok(v) => result.push(v),
+                        Err(e) if e.is_next => continue,
+                        Err(e) => return Err(e),
+                    }
+                }
+                let arr_kind = if kind.is_real_array() {
+                    if itemize_result {
+                        crate::value::ArrayKind::ItemArray
+                    } else {
+                        crate::value::ArrayKind::Array
+                    }
+                } else if itemize_result {
+                    crate::value::ArrayKind::ItemList
+                } else {
+                    crate::value::ArrayKind::List
+                };
+                Ok(Value::Array(std::sync::Arc::new(result), arr_kind))
+            }
+            Value::Seq(items) => {
+                let mut result = Vec::new();
+                for item in items.iter() {
+                    match self.deepmap_iterate_inner(block, item, true) {
+                        Ok(v) => result.push(v),
+                        Err(e) if e.is_next => continue,
+                        Err(e) => return Err(e),
+                    }
+                }
+                if itemize_result {
+                    // Itemize the result as a list
+                    Ok(Value::Array(
+                        std::sync::Arc::new(result),
+                        crate::value::ArrayKind::ItemList,
+                    ))
+                } else {
+                    Ok(Value::Seq(std::sync::Arc::new(result)))
+                }
+            }
+            Value::Hash(map) => {
+                let mut result = std::collections::HashMap::new();
+                for (k, v) in map.iter() {
+                    match self.deepmap_iterate_inner(block, v, true) {
+                        Ok(val) => {
+                            result.insert(k.clone(), val);
+                        }
+                        Err(e) if e.is_next => continue,
+                        Err(e) => return Err(e),
+                    }
+                }
+                Ok(Value::Hash(std::sync::Arc::new(result)))
+            }
+            // Leaf value: apply the block
+            _ => self.call_sub_value(block.clone(), vec![target.clone()], false),
+        }
+    }
+
+    /// `nodemap` — apply a block to each element without descending into sublists.
+    pub(crate) fn nodemap_iterate(
+        &mut self,
+        block: &Value,
+        target: &Value,
+    ) -> Result<Value, RuntimeError> {
         match target {
             Value::Array(items, kind) => {
                 let mut result = Vec::new();
                 for item in items.iter() {
-                    result.push(self.deepmap_iterate(block, item)?);
+                    match self.call_sub_value(block.clone(), vec![item.clone()], false) {
+                        Ok(v) => result.push(v),
+                        Err(e) if e.is_next => continue,
+                        Err(e) => return Err(e),
+                    }
                 }
                 if kind.is_real_array() {
                     Ok(Value::real_array(result))
@@ -2114,18 +2207,15 @@ impl Interpreter {
             Value::Seq(items) => {
                 let mut result = Vec::new();
                 for item in items.iter() {
-                    result.push(self.deepmap_iterate(block, item)?);
+                    match self.call_sub_value(block.clone(), vec![item.clone()], false) {
+                        Ok(v) => result.push(v),
+                        Err(e) if e.is_next => continue,
+                        Err(e) => return Err(e),
+                    }
                 }
                 Ok(Value::Seq(std::sync::Arc::new(result)))
             }
-            Value::Hash(map) => {
-                let mut result = std::collections::HashMap::new();
-                for (k, v) in map.iter() {
-                    result.insert(k.clone(), self.deepmap_iterate(block, v)?);
-                }
-                Ok(Value::Hash(std::sync::Arc::new(result)))
-            }
-            // Leaf value: apply the block
+            // Single value: apply the block directly
             _ => self.call_sub_value(block.clone(), vec![target.clone()], false),
         }
     }
