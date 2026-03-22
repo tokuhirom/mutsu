@@ -413,6 +413,7 @@ roast/S11-modules/runtime.t
 roast/S12-attributes/augment-and-initialization.t
 roast/S12-attributes/defaults.t
 roast/S12-attributes/delegation.t
+roast/S12-attributes/inheritance.t
 roast/S12-attributes/mutators.t
 roast/S12-attributes/recursive.t
 roast/S12-attributes/smiley.t

@@ -2340,6 +2340,11 @@ impl VM {
 
         // Bind attributes
         for (attr_name, attr_val) in &attributes {
+            // Skip class-qualified private attribute entries (ClassName\0attrName)
+            // — these are handled below when binding $!attr for the owner class.
+            if attr_name.contains('\0') {
+                continue;
+            }
             if let Some(actual_attr) = attr_name.strip_prefix(ATTR_ALIAS_META_PREFIX) {
                 if let Value::Str(source_name) = attr_val {
                     // Set up bidirectional alias: !x ↔ alias_name
@@ -2369,17 +2374,22 @@ impl VM {
                 }
                 continue;
             }
+            // For private attributes ($!attr), prefer the class-qualified value
+            // from the method's owner class. This ensures that when Parent and Child
+            // both declare `$!priv`, Parent's method gets Parent's value.
+            let qualified_key = format!("{}\0{}", owner_class, attr_name);
+            let private_val = attributes.get(&qualified_key).unwrap_or(attr_val);
             self.interpreter
                 .env_mut()
-                .insert(format!("!{}", attr_name), attr_val.clone());
+                .insert(format!("!{}", attr_name), private_val.clone());
             self.interpreter
                 .env_mut()
                 .insert(format!(".{}", attr_name), attr_val.clone());
-            match attr_val {
+            match private_val {
                 Value::Array(..) => {
                     self.interpreter
                         .env_mut()
-                        .insert(format!("@!{}", attr_name), attr_val.clone());
+                        .insert(format!("@!{}", attr_name), private_val.clone());
                     self.interpreter
                         .env_mut()
                         .insert(format!("@.{}", attr_name), attr_val.clone());
@@ -2387,7 +2397,7 @@ impl VM {
                 Value::Hash(..) => {
                     self.interpreter
                         .env_mut()
-                        .insert(format!("%!{}", attr_name), attr_val.clone());
+                        .insert(format!("%!{}", attr_name), private_val.clone());
                     self.interpreter
                         .env_mut()
                         .insert(format!("%.{}", attr_name), attr_val.clone());
@@ -2539,6 +2549,10 @@ impl VM {
             method_local_keys.insert(p.clone());
         }
         for attr_name in attributes.keys() {
+            // Skip class-qualified private attribute keys
+            if attr_name.contains('\0') {
+                continue;
+            }
             if let Some(actual_attr) = attr_name.strip_prefix(ATTR_ALIAS_META_PREFIX) {
                 // Add the alias name itself to method_local_keys
                 if let Some(Value::Str(alias_name)) = attributes.get(attr_name) {
@@ -2824,6 +2838,11 @@ impl VM {
 fn writeback_attributes(env: &HashMap<String, Value>, attributes: &mut HashMap<String, Value>) {
     for attr_name in attributes.keys().cloned().collect::<Vec<_>>() {
         if attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
+            continue;
+        }
+        // Skip class-qualified private attribute keys (ClassName\0attrName).
+        // These are written back separately below.
+        if attr_name.contains('\0') {
             continue;
         }
         let original = attributes.get(&attr_name).cloned().unwrap_or(Value::Nil);

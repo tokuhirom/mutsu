@@ -2124,6 +2124,54 @@ impl Interpreter {
                         )?;
                     }
                 }
+                // Initialize per-class private attributes: when a parent and child
+                // both declare an attribute with the same name, each class gets its
+                // own copy stored under a qualified key ("ClassName\0attrName").
+                // Methods access $!attr via the qualified key for their owner class.
+                {
+                    let per_class_attrs = self.collect_per_class_attrs(class_key);
+                    for (
+                        declaring_class,
+                        (attr_name, _is_public, default, _is_rw, _is_required, sigil, _),
+                    ) in per_class_attrs
+                    {
+                        let qualified_key = format!("{}\0{}", declaring_class, attr_name);
+                        if attrs.contains_key(&qualified_key) {
+                            continue;
+                        }
+                        // Use the unqualified value if it was provided via constructor args
+                        // and this is the most-derived class declaring this attribute
+                        if declaring_class == class_key
+                            && let Some(val) = attrs.get(&attr_name)
+                        {
+                            attrs.insert(qualified_key, val.clone());
+                            continue;
+                        }
+                        // Evaluate the default expression for this class's attribute
+                        let val = if let Some(expr) = default {
+                            let temp_self = Value::make_instance(*class_name, attrs.clone());
+                            let old_self = self.env.get("self").cloned();
+                            self.env.insert("self".to_string(), temp_self);
+                            let result = self.eval_block_value(&[Stmt::Expr(expr)]);
+                            if let Some(old) = old_self {
+                                self.env.insert("self".to_string(), old);
+                            } else {
+                                self.env.remove("self");
+                            }
+                            match result {
+                                Ok(v) => Self::coerce_attr_value_by_sigil(v, sigil),
+                                Err(_) => Value::Nil,
+                            }
+                        } else {
+                            match sigil {
+                                '@' => Value::real_array(Vec::new()),
+                                '%' => Value::hash(HashMap::new()),
+                                _ => Value::Nil,
+                            }
+                        };
+                        attrs.insert(qualified_key, val);
+                    }
+                }
                 let instance = Value::make_instance(*class_name, attrs);
                 if let Some(type_args) = type_args.as_ref() {
                     if self.class_mro(class_key).iter().any(|n| n == "Array") {
