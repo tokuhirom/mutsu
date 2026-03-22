@@ -1722,6 +1722,7 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
                 y, mo, d, h, mi, s, tz,
             ))
         }
+        Value::Uni { ref text, .. } => Value::Int(text.chars().count() as i64),
         _ => Value::Int(0),
     }
 }

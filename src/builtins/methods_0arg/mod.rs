@@ -620,12 +620,30 @@ pub(crate) fn native_method_0arg(
                 return Some(Ok(Value::array(parts)));
             }
             "Str" => return Some(Ok(Value::str(text.clone()))),
+            "Int" | "Numeric" => {
+                return Some(Ok(Value::Int(text.chars().count() as i64)));
+            }
             "list" => {
                 let codepoints: Vec<Value> = text.chars().map(|c| Value::Int(c as i64)).collect();
                 return Some(Ok(Value::array(codepoints)));
             }
             "elems" => {
                 return Some(Ok(Value::Int(text.chars().count() as i64)));
+            }
+            "raku" | "perl" => {
+                let codepoints: Vec<String> = text
+                    .chars()
+                    .map(|c| format!("0x{:04X}", c as u32))
+                    .collect();
+                return Some(Ok(Value::str(format!(
+                    "Uni.new({})",
+                    codepoints.join(", ")
+                ))));
+            }
+            "gist" => {
+                let codepoints: Vec<String> =
+                    text.chars().map(|c| format!("{:04X}", c as u32)).collect();
+                return Some(Ok(Value::str(format!("Uni:0x<{}>", codepoints.join(" ")))));
             }
             "NFC" | "NFD" | "NFKC" | "NFKD" => {
                 let normalized: String = match method {

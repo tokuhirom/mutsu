@@ -469,7 +469,7 @@ impl Interpreter {
             "samewith" => self.builtin_samewith(&args),
             "nextcallee" => self.builtin_nextcallee(),
             // Type coercion
-            "Int" | "Num" | "Str" | "Bool" => self.builtin_coerce(name, &args),
+            "Int" | "Num" | "Str" | "Bool" | "Uni" => self.builtin_coerce(name, &args),
             "UNBASE" => self.builtin_unbase(&args),
             "RADIX_LIST" => self.builtin_radix_list(&args),
             // Grammar helpers
