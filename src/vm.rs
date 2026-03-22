@@ -627,6 +627,12 @@ impl VM {
                 } else {
                     raw_val
                 };
+                if (name.starts_with('@') || name.starts_with('%'))
+                    && (self.interpreter.var_type_constraint(&name).is_some()
+                        || self.interpreter.var_hash_key_constraint(&name).is_some())
+                {
+                    val = self.coerce_typed_container_assignment(&name, val)?;
+                }
                 if let Some(constraint) = self.interpreter.var_type_constraint(&name)
                     && !name.starts_with('%')
                     && !name.starts_with('@')
@@ -1615,7 +1621,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::IndexAssignExprNested(name_idx) => {
-                self.exec_index_assign_expr_nested_op(code, *name_idx);
+                self.exec_index_assign_expr_nested_op(code, *name_idx)?;
                 *ip += 1;
             }
 
