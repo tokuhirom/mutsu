@@ -245,11 +245,18 @@ impl Interpreter {
                 .insert(format!("{}::{}", self.current_package, name), assoc.clone());
         }
         if multi {
-            let arity = param_defs
-                .iter()
-                .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))
-                .count();
-            let type_sig: Vec<&str> = param_defs
+            let arity = if def.param_defs.is_empty() && !params.is_empty() {
+                // Auto-params ($^a, $^b): param_defs is empty but params
+                // contains the placeholder variable names.
+                params.len()
+            } else {
+                def.param_defs
+                    .iter()
+                    .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))
+                    .count()
+            };
+            let type_sig: Vec<&str> = def
+                .param_defs
                 .iter()
                 .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))
                 .map(|p| p.type_constraint.as_deref().unwrap_or("Any"))

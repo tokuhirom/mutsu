@@ -120,7 +120,22 @@ impl Interpreter {
         let mut matches = Vec::new();
         let mut seen = std::collections::HashSet::new();
         for (_, def) in candidates {
-            if self.args_match_param_types(args, &def.param_defs) {
+            // For auto-param subs ($^a, $^b) with empty param_defs but
+            // non-empty params, check arity against params.len() since
+            // args_match_param_types cannot handle this case.
+            let type_ok = if def.param_defs.is_empty()
+                && !def.params.is_empty()
+                && def.params.iter().all(|p| p.starts_with('^'))
+            {
+                let positional_arg_count = args
+                    .iter()
+                    .filter(|arg| !matches!(arg, Value::Pair(..) | Value::ValuePair(..)))
+                    .count();
+                positional_arg_count == def.params.len()
+            } else {
+                self.args_match_param_types(args, &def.param_defs)
+            };
+            if type_ok {
                 let fingerprint =
                     crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
                 if !seen.insert(fingerprint) {

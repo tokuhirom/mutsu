@@ -339,6 +339,19 @@ impl VM {
     pub(super) fn exec_concat_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // Thread over junctions
+        if matches!(left, Value::Junction { .. }) || matches!(right, Value::Junction { .. }) {
+            let result = self
+                .eval_binary_with_junctions(left, right, |vm, l, r| Ok(vm.concat_values(l, r)))
+                .unwrap_or(Value::Nil);
+            self.stack.push(result);
+            return;
+        }
+        let result = self.concat_values(left, right);
+        self.stack.push(result);
+    }
+
+    fn concat_values(&self, left: Value, right: Value) -> Value {
         // Buf ~ Buf → Buf (byte concatenation, preserving LHS type)
         if Self::is_buf_value(&left) && Self::is_buf_value(&right) {
             let result_class = if let Value::Instance { class_name, .. } = &left {
@@ -351,8 +364,7 @@ impl VM {
             let byte_vals: Vec<Value> = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("bytes".to_string(), Value::array(byte_vals));
-            self.stack.push(Value::make_instance(result_class, attrs));
-            return;
+            return Value::make_instance(result_class, attrs);
         }
         // Buf ~ non-Buf or non-Buf ~ Buf: decode the Buf and produce a Str
         if Self::is_buf_value(&left) || Self::is_buf_value(&right) {
@@ -370,8 +382,7 @@ impl VM {
             };
             let concatenated = format!("{}{}", left_str, right_str);
             let normalized: String = concatenated.nfc().collect();
-            self.stack.push(Value::str(normalized));
-            return;
+            return Value::str(normalized);
         }
         let concatenated = format!(
             "{}{}",
@@ -379,7 +390,7 @@ impl VM {
             crate::runtime::utils::coerce_to_str(&right)
         );
         let normalized: String = concatenated.nfc().collect();
-        self.stack.push(Value::str(normalized));
+        Value::str(normalized)
     }
 
     pub fn is_buf_value(val: &Value) -> bool {
@@ -731,6 +742,7 @@ impl VM {
             Value::Str(_) => "Str".to_string(),
             Value::Package(name) => name.resolve(),
             Value::Enum { enum_type, .. } => enum_type.resolve(),
+            Value::Instance { class_name, .. } => class_name.resolve(),
             _ => "Any".to_string(),
         };
         // If left is already a Mixin, add to existing mixins
@@ -766,6 +778,25 @@ impl VM {
         }
         // When the RHS is an enum value, `does` acts as a mixin (like `but`).
         if matches!(&right, Value::Enum { .. }) {
+            return Ok(Self::apply_but_mixin(left, right));
+        }
+        // When the RHS is a concrete value (Str, Int, Bool, etc.), `does` acts
+        // as a mutating mixin — it overrides the corresponding type method.
+        // For example, `$o does "modded"` makes `$o.Str` return "modded".
+        if matches!(
+            &right,
+            Value::Str(_)
+                | Value::Int(_)
+                | Value::BigInt(_)
+                | Value::Num(_)
+                | Value::Bool(_)
+                | Value::Rat(..)
+        ) {
+            return Ok(Self::apply_but_mixin(left, right));
+        }
+        // When the RHS is an Instance, mix it in so that calling .$ClassName
+        // on the result returns that instance.
+        if matches!(&right, Value::Instance { .. }) {
             return Ok(Self::apply_but_mixin(left, right));
         }
         // Pure check: does the value conform to the named role/type?
