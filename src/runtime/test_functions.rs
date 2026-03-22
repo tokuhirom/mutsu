@@ -413,16 +413,26 @@ impl Interpreter {
     }
 
     fn test_fn_done_testing(&mut self) -> Result<Value, RuntimeError> {
-        let ran = {
+        let already_planned = {
             let state = self.test_state.get_or_insert_with(TestState::new);
-            if state.planned.is_some() {
-                return Ok(Value::Nil);
-            }
-            state.planned = Some(state.ran);
-            state.ran
+            state.planned.is_some()
         };
-        self.emit_output(&format!("1..{}\n", ran));
-        Ok(Value::Nil)
+        if !already_planned {
+            let ran = {
+                let state = self.test_state.get_or_insert_with(TestState::new);
+                state.planned = Some(state.ran);
+                state.ran
+            };
+            self.emit_output(&format!("1..{}\n", ran));
+        }
+        // Return True if all tests passed and plan matches, False otherwise
+        let state = self.test_state.as_ref().unwrap();
+        let plan_matches = match state.planned {
+            Some(planned) => planned == state.ran,
+            None => true,
+        };
+        let all_passed = state.failed == 0 && plan_matches;
+        Ok(Value::Bool(all_passed))
     }
 
     fn test_fn_skip(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
