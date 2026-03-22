@@ -537,6 +537,30 @@ impl VM {
         if let Some(result) = pure_smart_match(left, right) {
             return result;
         }
+
+        // Any ~~ Pair: call method named by pair key on the object, coerce result
+        // to Bool, and compare with pair value coerced to Bool.
+        // Per S03: ?."{X.key}" === ?X.value
+        if let Value::Pair(key, val) = right
+            && matches!(left, Value::Instance { .. })
+        {
+            let method_name = key.as_str();
+            match self
+                .interpreter
+                .call_method_with_values(left.clone(), method_name, vec![])
+            {
+                Ok(result) => {
+                    return result.truthy() == val.truthy();
+                }
+                Err(err) => {
+                    // Non-existing method or attribute dies.
+                    // Set pending dispatch error so the caller can propagate it.
+                    self.interpreter.set_pending_dispatch_error(err);
+                    return false;
+                }
+            }
+        }
+
         // Fall back to interpreter for complex cases
         self.interpreter.smart_match_values(left, right)
     }
