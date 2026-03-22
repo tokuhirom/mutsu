@@ -611,6 +611,7 @@ impl Interpreter {
             "lol" => Ok(Value::array(args.clone())),
             "flat" => self.builtin_flat(&args),
             "duckmap" => self.builtin_duckmap(&args),
+            "deepmap" => self.builtin_deepmap(&args),
             "slip" | "Slip" => self.builtin_slip(&args),
             "take" => {
                 let value = if args.len() <= 1 {
