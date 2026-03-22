@@ -730,7 +730,7 @@ impl Interpreter {
                 Err(err) => Ok(Self::make_symlink_failure(&target, &link, &err)),
             }
         }
-        #[cfg(not(unix))]
+        #[cfg(windows)]
         {
             let metadata = fs::metadata(&target_buf);
             let result = if metadata.map(|meta| meta.is_dir()).unwrap_or(false) {
@@ -742,6 +742,10 @@ impl Interpreter {
                 Ok(()) => Ok(Value::Bool(true)),
                 Err(err) => Ok(Self::make_symlink_failure(&target, &link, &err)),
             }
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            Err(RuntimeError::new("symlink not supported on this platform"))
         }
     }
 
