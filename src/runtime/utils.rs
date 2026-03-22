@@ -1208,49 +1208,6 @@ pub(crate) fn parse_radix_number_body(body: &str, base: u32) -> Option<Value> {
     Some(crate::value::make_big_rat(numerator, denominator))
 }
 
-/// Parse `0x`, `0o`, `0b`, `0d` prefixed integer literals from strings.
-/// E.g. `"0xFF"` → 255, `"0o77"` → 63, `"0b1010"` → 10, `"0d42"` → 42.
-pub(crate) fn parse_0_prefixed_radix_literal(s: &str) -> Option<Value> {
-    let s = s.trim();
-    if !s.starts_with('0') || s.len() < 3 {
-        return None;
-    }
-    let (base, digits) = match s.as_bytes()[1] {
-        b'x' | b'X' => (16, &s[2..]),
-        b'o' | b'O' => (8, &s[2..]),
-        b'b' | b'B' => (2, &s[2..]),
-        b'd' | b'D' => (10, &s[2..]),
-        _ => return None,
-    };
-    // Strip underscores (Raku allows underscores in numeric literals)
-    let clean: String = digits.chars().filter(|&c| c != '_').collect();
-    if clean.is_empty() {
-        return None;
-    }
-    i64::from_str_radix(&clean, base)
-        .ok()
-        .map(Value::Int)
-        .or_else(|| {
-            use num_bigint::BigInt;
-            use num_traits::Num;
-            BigInt::from_str_radix(&clean, base)
-                .ok()
-                .map(|b| Value::BigInt(std::sync::Arc::new(b)))
-        })
-}
-
-pub(crate) fn parse_prefixed_generic_radix_literal(s: &str) -> Option<Value> {
-    let rest = s.strip_prefix(':')?;
-    let (rest, base_clean) = parse_unicode_decimal_digits(rest)?;
-    let base: u32 = base_clean.parse().ok()?;
-    let rest = rest.strip_prefix('<')?;
-    let close_pos = rest.find('>')?;
-    if !rest[close_pos + 1..].trim().is_empty() {
-        return None;
-    }
-    parse_radix_number_body(&rest[..close_pos], base)
-}
-
 pub(crate) fn coerce_to_numeric(val: Value) -> Value {
     match val {
         Value::Mixin(inner, _) => coerce_to_numeric(inner.as_ref().clone()),
@@ -1264,15 +1221,8 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
         Value::Bool(b) => Value::Int(if b { 1 } else { 0 }),
         Value::Enum { value, .. } => Value::Int(value.as_i64()),
         Value::Str(ref s) => {
-            let s = s.trim();
-            if let Some(v) = parse_prefixed_generic_radix_literal(s) {
+            if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(s) {
                 v
-            } else if let Some(v) = parse_0_prefixed_radix_literal(s) {
-                v
-            } else if let Ok(i) = s.parse::<i64>() {
-                Value::Int(i)
-            } else if let Ok(f) = s.parse::<f64>() {
-                Value::Num(f)
             } else {
                 Value::Int(0)
             }

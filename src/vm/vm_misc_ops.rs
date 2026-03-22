@@ -550,12 +550,13 @@ impl VM {
         };
         if let Value::Str(s) = &val {
             let trimmed = s.trim();
-            if !trimmed.is_empty()
-                && trimmed.parse::<i64>().is_err()
-                && trimmed.parse::<f64>().is_err()
-                && crate::runtime::utils::parse_prefixed_generic_radix_literal(trimmed).is_none()
-                && crate::runtime::utils::parse_0_prefixed_radix_literal(trimmed).is_none()
-            {
+            if trimmed.is_empty() {
+                self.stack.push(Value::Int(0));
+                return Ok(());
+            }
+            if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(trimmed) {
+                self.stack.push(v);
+            } else {
                 let mut ex_attrs = std::collections::HashMap::new();
                 ex_attrs.insert(
                     "message".to_string(),
@@ -572,8 +573,8 @@ impl VM {
                     Symbol::intern("Failure"),
                     failure_attrs,
                 ));
-                return Ok(());
             }
+            return Ok(());
         }
         let result = crate::runtime::utils::coerce_to_numeric(val);
         self.stack.push(result);

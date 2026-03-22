@@ -1127,6 +1127,13 @@ impl VM {
         if !matches!(value, Value::Instance { .. }) {
             return Ok(value);
         }
+        // Unhandled Failure: throw the stored exception
+        if let Some(err) = self
+            .interpreter
+            .failure_to_runtime_error_if_unhandled(&value)
+        {
+            return Err(err);
+        }
         // Match coerces to Numeric via its matched string
         if let Value::Instance {
             class_name,

@@ -800,6 +800,7 @@ roast/S32-str/index.t
 roast/S32-str/lc.t
 roast/S32-str/length.t
 roast/S32-str/lines.t
+roast/S32-str/numeric.t
 roast/S32-str/ords.t
 roast/S32-str/pos.t
 roast/S32-str/rindex.t
