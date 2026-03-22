@@ -164,7 +164,7 @@ fn indent_line_positive(line: &str, steps: usize, tabstop: usize) -> String {
             return " ".repeat(leading.len() + steps) + rest;
         } else if first == '\t' {
             // All tabs: if steps is a multiple of tabstop, add tabs
-            if steps % tabstop == 0 {
+            if steps.is_multiple_of(tabstop) {
                 return "\t".repeat(leading.len() + steps / tabstop) + rest;
             }
             // Otherwise add spaces after tabs
@@ -172,9 +172,7 @@ fn indent_line_positive(line: &str, steps: usize, tabstop: usize) -> String {
             return leading_str + &" ".repeat(steps) + rest;
         } else {
             // All same Unicode space: add more of it
-            let extended: String = std::iter::repeat(first)
-                .take(leading.len() + steps)
-                .collect();
+            let extended: String = std::iter::repeat_n(first, leading.len() + steps).collect();
             return extended + rest;
         }
     }
@@ -227,22 +225,16 @@ fn indent_line_negative(line: &str, de_indent: i64, tabstop: usize) -> String {
 
     // Coalesce: if pos is not tabstop-aligned, look ahead for a tab
     // within the next (tabstop - pos%tabstop) chars and absorb it
-    if idx < indent_chars.len() && pos % tabstop != 0 {
+    if idx < indent_chars.len() && !pos.is_multiple_of(tabstop) {
         let check_count = tabstop - (pos % tabstop);
         let look_end = (idx + check_count).min(indent_chars.len());
         // Find the first tab in the look-ahead range
-        let mut tab_offset = None;
-        for k in idx..look_end {
-            if indent_chars[k].0 == '\t' {
-                tab_offset = Some(k - idx);
-                break;
-            }
-        }
+        let tab_offset = indent_chars[idx..look_end]
+            .iter()
+            .position(|(ch, _)| *ch == '\t');
         if let Some(offset) = tab_offset {
             // Remove everything from idx to idx+offset (inclusive)
-            for _ in 0..=offset {
-                idx += 1;
-            }
+            idx += offset + 1;
             pos -= pos % tabstop;
             pos += tabstop;
         }
@@ -250,8 +242,8 @@ fn indent_line_negative(line: &str, de_indent: i64, tabstop: usize) -> String {
 
     // Build result: remaining indent chars + overshoot spaces + rest
     let mut result = String::new();
-    for i in idx..indent_chars.len() {
-        result.push(indent_chars[i].0);
+    for (ch, _) in indent_chars.iter().skip(idx) {
+        result.push(*ch);
     }
     if pos > de_indent {
         result.push_str(&" ".repeat(pos - de_indent));
