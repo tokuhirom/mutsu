@@ -218,6 +218,7 @@ roast/S04-blocks-and-statements/let.t
 roast/S04-blocks-and-statements/pointy-rw.t
 roast/S04-exception-handlers/top-level.t
 roast/S04-exceptions/control_across_runloop.t
+roast/S04-exceptions/fail-6e.t
 roast/S04-phasers/begin.t
 roast/S04-phasers/end.t
 roast/S04-phasers/exit-in-check.t
@@ -613,6 +614,7 @@ roast/S17-promise/basic.t
 roast/S17-promise/in.t
 roast/S17-promise/lock-async-stress.t
 roast/S17-promise/lock-async-stress2.t
+roast/S17-promise/lock-async-stress2.t
 roast/S17-promise/stress.t
 roast/S17-scheduler/times.t
 roast/S17-supply/Promise.t
@@ -640,6 +642,7 @@ roast/S17-supply/merge.t
 roast/S17-supply/min.t
 roast/S17-supply/on-demand.t
 roast/S17-supply/reduce.t
+roast/S17-supply/repeated.t
 roast/S17-supply/reverse.t
 roast/S17-supply/rotate.t
 roast/S17-supply/rotor.t
@@ -769,6 +772,8 @@ roast/S32-list/first-p.t
 roast/S32-list/first-v.t
 roast/S32-list/flat.t
 roast/S32-list/grep-k.t
+roast/S32-list/grep-kv.t
+roast/S32-list/grep-p.t
 roast/S32-list/grep.t
 roast/S32-list/join.t
 roast/S32-list/map_function_return_values.t
