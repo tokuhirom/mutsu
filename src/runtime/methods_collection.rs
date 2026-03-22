@@ -121,90 +121,87 @@ impl Interpreter {
         Ok(Value::bag(counts))
     }
 
-    pub(super) fn dispatch_to_mix(&self, target: Value) -> Result<Value, RuntimeError> {
-        let mut weights: HashMap<String, f64> = HashMap::new();
-        match target {
-            Value::Mix(_) => return Ok(target),
-            Value::Array(items, ..) => {
-                for item in items.iter() {
-                    match item {
-                        Value::Pair(k, v) => {
-                            let w = match v.as_ref() {
-                                Value::Int(i) => *i as f64,
-                                Value::Num(n) => *n,
-                                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                                _ => 1.0,
-                            };
-                            *weights.entry(k.clone()).or_insert(0.0) += w;
-                        }
-                        Value::ValuePair(k, v) => {
-                            let w = match v.as_ref() {
-                                Value::Int(i) => *i as f64,
-                                Value::Num(n) => *n,
-                                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                                _ => 1.0,
-                            };
-                            *weights.entry(k.to_string_value()).or_insert(0.0) += w;
-                        }
-                        _ => {
-                            *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
-                        }
-                    }
+    fn mix_pair_weight(v: &Value) -> f64 {
+        match v {
+            Value::Int(i) => *i as f64,
+            Value::Num(n) => *n,
+            Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+            Value::Bool(b) => {
+                if *b {
+                    1.0
+                } else {
+                    0.0
                 }
             }
-            Value::Set(s) => {
-                for k in s.iter() {
-                    weights.insert(k.clone(), 1.0);
+            _ => {
+                if v.truthy() {
+                    1.0
+                } else {
+                    0.0
                 }
             }
-            Value::Bag(b) => {
-                for (k, v) in b.iter() {
-                    weights.insert(k.clone(), *v as f64);
-                }
-            }
+        }
+    }
+
+    fn mix_add_item(weights: &mut HashMap<String, f64>, item: &Value) {
+        match item {
             Value::Pair(k, v) => {
-                let w = match v.as_ref() {
-                    Value::Int(i) => *i as f64,
-                    Value::Num(n) => *n,
-                    Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                    _ => 1.0,
-                };
+                let w = Self::mix_pair_weight(v);
                 *weights.entry(k.clone()).or_insert(0.0) += w;
             }
             Value::ValuePair(k, v) => {
-                let w = match v.as_ref() {
-                    Value::Int(i) => *i as f64,
-                    Value::Num(n) => *n,
-                    Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                    _ => 1.0,
-                };
+                let w = Self::mix_pair_weight(v);
                 *weights.entry(k.to_string_value()).or_insert(0.0) += w;
             }
             Value::Hash(h) => {
                 for (k, v) in h.iter() {
-                    let w = match v {
-                        Value::Int(i) => *i as f64,
-                        Value::Num(n) => *n,
-                        Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                        Value::Bool(b) => {
-                            if *b {
-                                1.0
-                            } else {
-                                0.0
-                            }
-                        }
-                        _ => {
-                            if v.truthy() {
-                                1.0
-                            } else {
-                                0.0
-                            }
-                        }
-                    };
+                    let w = Self::mix_pair_weight(v);
                     if w != 0.0 {
-                        weights.insert(k.clone(), w);
+                        *weights.entry(k.clone()).or_insert(0.0) += w;
                     }
                 }
+            }
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                for sub_item in items.iter() {
+                    Self::mix_add_item(weights, sub_item);
+                }
+            }
+            Value::Set(s) => {
+                for k in s.iter() {
+                    *weights.entry(k.clone()).or_insert(0.0) += 1.0;
+                }
+            }
+            Value::Bag(b) => {
+                for (k, v) in b.iter() {
+                    *weights.entry(k.clone()).or_insert(0.0) += *v as f64;
+                }
+            }
+            Value::Mix(m) => {
+                for (k, v) in m.iter() {
+                    *weights.entry(k.clone()).or_insert(0.0) += v;
+                }
+            }
+            _ => {
+                *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
+            }
+        }
+    }
+
+    pub(super) fn dispatch_to_mix(&self, target: Value) -> Result<Value, RuntimeError> {
+        let mut weights: HashMap<String, f64> = HashMap::new();
+        match target {
+            Value::Mix(_) => return Ok(target),
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                for item in items.iter() {
+                    Self::mix_add_item(&mut weights, item);
+                }
+            }
+            ref other @ (Value::Set(_)
+            | Value::Bag(_)
+            | Value::Pair(..)
+            | Value::ValuePair(..)
+            | Value::Hash(_)) => {
+                Self::mix_add_item(&mut weights, other);
             }
             other if other.is_range() => {
                 for item in Self::value_to_list(&other) {

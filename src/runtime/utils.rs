@@ -1676,7 +1676,16 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
         Value::Hash(items) => Value::Int(items.len() as i64),
         Value::Set(items) => Value::Int(items.len() as i64),
         Value::Bag(items) => Value::Int(items.values().sum()),
-        Value::Mix(items) => Value::Num(items.values().sum()),
+        Value::Mix(items) => {
+            let total: f64 = items.values().copied().fold(0.0, std::ops::Add::add);
+            if total == 0.0 && items.is_empty() {
+                Value::Int(0)
+            } else if (total - (total as i64 as f64)).abs() < f64::EPSILON {
+                Value::Int(total as i64)
+            } else {
+                Value::Num(total)
+            }
+        }
         Value::LazyList(ll) => {
             if let Some(cached) = ll.cache.lock().unwrap().as_ref() {
                 Value::Int(cached.len() as i64)

@@ -2952,6 +2952,74 @@ impl Interpreter {
                         "Cannot call .grab on a Supply type object",
                     ));
                 }
+                // MixHash.grab: select and remove random element(s)
+                if let Value::Mix(ref mix) = target {
+                    let count = if args.is_empty() {
+                        1usize
+                    } else {
+                        match &args[0] {
+                            Value::Whatever => mix.len(),
+                            v => v.to_f64().max(0.0) as usize,
+                        }
+                    };
+                    if mix.is_empty() || count == 0 {
+                        return Ok(Value::Nil);
+                    }
+                    use crate::builtins::rng::builtin_rand;
+                    let mut grabbed = Vec::new();
+                    let mut remaining = (**mix).clone();
+                    for _ in 0..count {
+                        if remaining.is_empty() {
+                            break;
+                        }
+                        let ks: Vec<String> = remaining.keys().cloned().collect();
+                        let idx = (builtin_rand() * ks.len() as f64) as usize % ks.len();
+                        let key = ks[idx].clone();
+                        remaining.remove(&key);
+                        grabbed.push(Value::str(key));
+                    }
+                    return Ok(if grabbed.len() == 1 && args.is_empty() {
+                        grabbed.into_iter().next().unwrap()
+                    } else {
+                        Value::Seq(Arc::new(grabbed))
+                    });
+                }
+            }
+            "grabpairs" => {
+                // MixHash.grabpairs: select and remove random pair(s)
+                if let Value::Mix(ref mix) = target {
+                    let count = if args.is_empty() {
+                        1usize
+                    } else {
+                        match &args[0] {
+                            Value::Whatever => mix.len(),
+                            v => v.to_f64().max(0.0) as usize,
+                        }
+                    };
+                    if mix.is_empty() || count == 0 {
+                        return Ok(Value::Seq(Arc::new(Vec::new())));
+                    }
+                    use crate::builtins::rng::builtin_rand;
+                    let mut grabbed = Vec::new();
+                    let mut remaining = (**mix).clone();
+                    for _ in 0..count {
+                        if remaining.is_empty() {
+                            break;
+                        }
+                        let ks: Vec<String> = remaining.keys().cloned().collect();
+                        let idx = (builtin_rand() * ks.len() as f64) as usize % ks.len();
+                        let key = ks[idx].clone();
+                        let weight = remaining.remove(&key).unwrap_or(0.0);
+                        let weight_val = if (weight - (weight as i64 as f64)).abs() < f64::EPSILON {
+                            Value::Int(weight as i64)
+                        } else {
+                            Value::Num(weight)
+                        };
+                        grabbed.push(Value::Pair(key, Box::new(weight_val)));
+                    }
+                    // TODO: compile to bytecode - should mutate the original variable
+                    return Ok(Value::Seq(Arc::new(grabbed)));
+                }
             }
             "skip" => {
                 if let Value::Instance {

@@ -1156,6 +1156,16 @@ impl Interpreter {
         {
             return true;
         }
+        // SetHash/BagHash/MixHash are mutable variants sharing the same Value variants
+        if constraint == "SetHash" && value_type == "Set" {
+            return true;
+        }
+        if constraint == "BagHash" && value_type == "Bag" {
+            return true;
+        }
+        if constraint == "MixHash" && value_type == "Mix" {
+            return true;
+        }
         if constraint == "Setty" && matches!(value_type, "Set" | "SetHash") {
             return true;
         }

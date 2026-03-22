@@ -1372,22 +1372,20 @@ impl Interpreter {
                     return Ok(Value::bag(counts));
                 }
                 "Mix" | "MixHash" => {
+                    // MixHash.new treats all positional arguments as elements
+                    // to count. Pairs are NOT decomposed into key=>weight;
+                    // they are stringified and treated as individual elements.
+                    // Only .MixHash coercion decomposes pairs.
+                    // QuantHash types (Set, Bag, Mix) are treated as single
+                    // elements, not flattened.
                     let mut weights: HashMap<String, f64> = HashMap::new();
                     for arg in &args {
-                        for item in Self::value_to_list(arg) {
-                            match &item {
-                                Value::Pair(k, v) => {
-                                    let w = match v.as_ref() {
-                                        Value::Int(i) => *i as f64,
-                                        Value::Num(n) => *n,
-                                        Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                                        _ => 1.0,
-                                    };
-                                    *weights.entry(k.clone()).or_insert(0.0) += w;
-                                }
-                                _ => {
-                                    *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
-                                }
+                        // Don't flatten QuantHash types
+                        if matches!(arg, Value::Set(_) | Value::Bag(_) | Value::Mix(_)) {
+                            *weights.entry(arg.to_string_value()).or_insert(0.0) += 1.0;
+                        } else {
+                            for item in Self::value_to_list(arg) {
+                                *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
                             }
                         }
                     }
