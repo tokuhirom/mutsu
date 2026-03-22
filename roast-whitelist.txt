@@ -630,7 +630,6 @@ roast/S17-supply/merge.t
 roast/S17-supply/min.t
 roast/S17-supply/on-demand.t
 roast/S17-supply/reduce.t
-roast/S17-supply/repeated.t
 roast/S17-supply/reverse.t
 roast/S17-supply/rotate.t
 roast/S17-supply/rotor.t

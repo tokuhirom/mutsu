@@ -2551,7 +2551,10 @@ impl Interpreter {
                 }
             }
             "repeated" => {
-                return self.dispatch_repeated(target, &args);
+                if !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply")
+                {
+                    return self.dispatch_repeated(target, &args);
+                }
             }
             "squish" => {
                 if let Value::Instance { class_name, .. } = &target
