@@ -151,6 +151,7 @@ mod seq_helpers;
 mod sequence;
 mod signal_watcher;
 pub(super) mod sprintf;
+pub(crate) mod str_numeric;
 mod subtest;
 mod system;
 mod test_functions;

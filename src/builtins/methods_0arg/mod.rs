@@ -1757,10 +1757,34 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     if let Some(v) = parse_raku_int_from_str(s) {
                         v
                     } else {
-                        return Some(Err(RuntimeError::new(format!(
-                            "X::Str::Numeric: Cannot convert string '{}' to a number",
-                            s
-                        ))));
+                        // Return a Failure (lazy exception) instead of throwing
+                        let mut ex_attrs = std::collections::HashMap::new();
+                        ex_attrs.insert("source".to_string(), Value::str(s.to_string()));
+                        ex_attrs.insert(
+                            "reason".to_string(),
+                            Value::str(
+                                "base-10 number must begin with valid digits or '.'".to_string(),
+                            ),
+                        );
+                        ex_attrs.insert("pos".to_string(), Value::Int(0));
+                        ex_attrs.insert(
+                            "message".to_string(),
+                            Value::str(format!(
+                                "Cannot convert string to number: base-10 number must begin with valid digits or '.' in '{}'",
+                                s
+                            )),
+                        );
+                        let ex = Value::make_instance(
+                            crate::symbol::Symbol::intern("X::Str::Numeric"),
+                            ex_attrs,
+                        );
+                        let mut failure_attrs = std::collections::HashMap::new();
+                        failure_attrs.insert("exception".to_string(), ex);
+                        failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                        return Some(Ok(Value::make_instance(
+                            crate::symbol::Symbol::intern("Failure"),
+                            failure_attrs,
+                        )));
                     }
                 }
                 Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
@@ -1770,6 +1794,68 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 _ => return None,
             };
             Some(Ok(result))
+        }
+        "UInt" => {
+            // First coerce to Int, then check non-negative
+            let int_result = match target {
+                Value::Int(i) => Some(Value::Int(*i)),
+                Value::BigInt(_) => Some(target.clone()),
+                Value::Num(f) if f.is_finite() => Some(Value::Int(f.trunc() as i64)),
+                Value::Rat(n, d) if *d != 0 => Some(Value::Int(*n / *d)),
+                Value::Bool(b) => Some(Value::Int(if *b { 1 } else { 0 })),
+                Value::Str(s) => {
+                    if let Some(v) = parse_raku_int_from_str(s) {
+                        Some(v)
+                    } else {
+                        // Return Failure for invalid string
+                        let mut ex_attrs = std::collections::HashMap::new();
+                        ex_attrs.insert("source".to_string(), Value::str(s.to_string()));
+                        ex_attrs.insert(
+                            "reason".to_string(),
+                            Value::str(
+                                "base-10 number must begin with valid digits or '.'".to_string(),
+                            ),
+                        );
+                        ex_attrs.insert("pos".to_string(), Value::Int(0));
+                        ex_attrs.insert(
+                            "message".to_string(),
+                            Value::str(format!(
+                                "Cannot convert string to number: base-10 number must begin with valid digits or '.' in '{}'",
+                                s
+                            )),
+                        );
+                        let ex = Value::make_instance(
+                            crate::symbol::Symbol::intern("X::Str::Numeric"),
+                            ex_attrs,
+                        );
+                        let mut failure_attrs = std::collections::HashMap::new();
+                        failure_attrs.insert("exception".to_string(), ex);
+                        failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                        return Some(Ok(Value::make_instance(
+                            crate::symbol::Symbol::intern("Failure"),
+                            failure_attrs,
+                        )));
+                    }
+                }
+                _ => None,
+            };
+            if let Some(int_val) = int_result {
+                // Check non-negative
+                let is_neg = match &int_val {
+                    Value::Int(i) => *i < 0,
+                    Value::BigInt(n) => n.sign() == num_bigint::Sign::Minus,
+                    _ => false,
+                };
+                if is_neg {
+                    return Some(Err(RuntimeError::new(format!(
+                        "Coercion to UInt out of range. Is: {}, should be in 0..^Inf",
+                        int_val.to_string_value()
+                    ))));
+                }
+                Some(Ok(int_val))
+            } else {
+                None
+            }
         }
         "Num" => {
             let result = match target {
