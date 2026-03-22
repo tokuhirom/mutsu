@@ -441,11 +441,17 @@ impl Interpreter {
             Some(Value::Int(n)) => (*n).max(1) as usize,
             _ => 1usize,
         };
+        // Raku TAP format: `ok N - # SKIP reason` with `#` in reason escaped as ` \#`
+        let escaped_desc = desc.replace('#', " \\#");
         let mut lines = Vec::with_capacity(count);
         let state = self.test_state.get_or_insert_with(TestState::new);
         for _ in 0..count {
             state.ran += 1;
-            lines.push(format!("ok {} - {} # SKIP\n", state.ran, desc));
+            if escaped_desc.is_empty() {
+                lines.push(format!("ok {} - # SKIP {}\n", state.ran, desc));
+            } else {
+                lines.push(format!("ok {} - # SKIP {}\n", state.ran, escaped_desc));
+            }
         }
         for line in lines {
             self.emit_output(&line);
@@ -455,16 +461,17 @@ impl Interpreter {
 
     fn test_fn_skip_rest(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let desc = Self::positional_string(args, 0);
+        let escaped_desc = desc.replace('#', " \\#");
         let mut lines = Vec::new();
         {
             let state = self.test_state.get_or_insert_with(TestState::new);
             if let Some(planned) = state.planned {
                 while state.ran < planned {
                     state.ran += 1;
-                    if desc.is_empty() {
-                        lines.push(format!("ok {} # SKIP\n", state.ran));
+                    if escaped_desc.is_empty() {
+                        lines.push(format!("ok {} - # SKIP\n", state.ran));
                     } else {
-                        lines.push(format!("ok {} - {} # SKIP\n", state.ran, desc));
+                        lines.push(format!("ok {} - # SKIP {}\n", state.ran, escaped_desc));
                     }
                 }
             }
@@ -1036,7 +1043,19 @@ impl Interpreter {
             }
             nested.env.insert(k.clone(), v.clone());
         }
-        let ok = nested.eval_eval_string(&code).is_ok();
+        let eval_result = nested.eval_eval_string(&code);
+        let ok = eval_result.is_ok();
+        let eval_err_msg = match &eval_result {
+            Err(e) => {
+                let msg = if e.code.is_some_and(|c| c.is_parse()) {
+                    format!("Unable to parse expression; {}", e.message)
+                } else {
+                    e.message.clone()
+                };
+                Some(msg)
+            }
+            Ok(_) => None,
+        };
         if ok {
             self.sync_eval_definition_state(&nested);
         }
@@ -1066,6 +1085,14 @@ impl Interpreter {
             self.test_ok(assert_ok, &desc, todo)?;
         }
         self.test_ok(ok, &desc, false)?;
+        if !ok && let Some(err_msg) = eval_err_msg {
+            // Emit error details to stderr as diag, matching Raku behavior
+            let diag = format!("# Error: {}\n", err_msg);
+            self.stderr_output.push_str(&diag);
+            if self.immediate_stdout {
+                eprint!("{}", diag);
+            }
+        }
         Ok(Value::Bool(ok))
     }
 
