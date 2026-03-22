@@ -1737,6 +1737,19 @@ impl Interpreter {
         self.classes.remove(name);
         self.hidden_classes.remove(name);
         self.class_composed_roles.remove(name);
+        // When registering a parametric variant of an existing non-parametric role
+        // (forming a role group), save the non-parametric role's parents so we can
+        // restore them after the parametric variant adds its own parents.
+        let prev_parents = if !type_params.is_empty()
+            && self
+                .roles
+                .get(name)
+                .is_some_and(|existing| !existing.is_stub_role)
+        {
+            self.role_parents.get(name).cloned()
+        } else {
+            None
+        };
         self.role_parents.remove(name);
         self.role_hides.remove(name);
         let mut role_def = RoleDef {
@@ -2010,6 +2023,9 @@ impl Interpreter {
         if has_expr_default {
             role_def.captured_env = Some((*self.env).clone());
         }
+        // Capture the parents that were added during this registration
+        // (these are the parents specific to this candidate).
+        let candidate_parents = self.role_parents.get(name).cloned().unwrap_or_default();
         self.role_candidates
             .entry(name.to_string())
             .or_default()
@@ -2017,6 +2033,7 @@ impl Interpreter {
                 type_params: type_params.to_vec(),
                 type_param_defs: type_param_defs.to_vec(),
                 role_def: role_def.clone(),
+                parents: candidate_parents,
             });
         if self
             .roles
@@ -2028,6 +2045,17 @@ impl Interpreter {
         if !type_params.is_empty() && !self.role_type_params.contains_key(name) {
             self.role_type_params
                 .insert(name.to_string(), type_params.to_vec());
+        }
+        // When a parametric variant was registered over an existing non-parametric
+        // role (forming a role group), merge the previous parents back into
+        // role_parents so that role_parent_args_for can find all candidates' parents.
+        if let Some(prev) = prev_parents {
+            let current = self.role_parents.entry(name.to_string()).or_default();
+            for p in prev {
+                if !current.contains(&p) {
+                    current.push(p);
+                }
+            }
         }
         Ok(())
     }

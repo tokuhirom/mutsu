@@ -2078,7 +2078,7 @@ impl Interpreter {
                 }
                 true
             }
-            // Parametric role ~~ base role: R1[C1] ~~ R1
+            // Parametric role ~~ base role/class: R1[C1] ~~ R1, or R1[T] ~~ ParentClass
             (
                 Value::ParametricRole {
                     base_name: lhs_base,
@@ -2087,11 +2087,50 @@ impl Interpreter {
                 Value::Package(rhs_name),
             ) => {
                 let rhs_resolved = rhs_name.resolve();
-                lhs_base.resolve() == rhs_resolved
+                let lhs_base_resolved = lhs_base.resolve();
+                if lhs_base_resolved == rhs_resolved
                     || self
-                        .role_parent_args_for(&lhs_base.resolve(), lhs_args, &rhs_resolved)
+                        .role_parent_args_for(&lhs_base_resolved, lhs_args, &rhs_resolved)
                         .is_some()
-                    || self.role_is_subtype(&lhs_base.resolve(), &rhs_resolved)
+                    || self.role_is_subtype(&lhs_base_resolved, &rhs_resolved)
+                {
+                    return true;
+                }
+                // Check if the parametric candidate's `is` parents include the RHS class.
+                // For role groups, look up the parametric candidate's parents.
+                if let Some(candidates) = self.role_candidates.get(&lhs_base_resolved)
+                    && let Some(candidate) = candidates.iter().find(|c| !c.type_params.is_empty())
+                {
+                    let mut stack: Vec<String> = candidate.parents.clone();
+                    let mut seen = HashSet::new();
+                    while let Some(parent) = stack.pop() {
+                        if !seen.insert(parent.clone()) {
+                            continue;
+                        }
+                        if Self::type_matches(&rhs_resolved, &parent) {
+                            return true;
+                        }
+                        // Walk parent's MRO for transitive matching
+                        let parent_mro = self.class_mro(&parent);
+                        if parent_mro
+                            .iter()
+                            .any(|p| Self::type_matches(&rhs_resolved, p))
+                        {
+                            return true;
+                        }
+                        // Check composed roles of parent class
+                        if let Some(composed) = self.class_composed_roles.get(&parent) {
+                            for cr in composed {
+                                let cr_base =
+                                    cr.split_once('[').map(|(b, _)| b).unwrap_or(cr.as_str());
+                                if Self::type_matches(&rhs_resolved, cr_base) {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+                false
             }
             // Value instance/mixin ~~ parametric role: check composed role + type arguments.
             (
