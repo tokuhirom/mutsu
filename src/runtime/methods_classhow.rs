@@ -396,41 +396,27 @@ impl Interpreter {
                 let Value::Sub(sub_data) = method_value else {
                     return Ok(Value::Nil);
                 };
+                // Filter out invocant params from param_defs since MethodDef
+                // stores only the user-visible parameters (the invocant is
+                // added implicitly during dispatch).
+                let filtered_param_defs: Vec<ParamDef> = sub_data
+                    .param_defs
+                    .iter()
+                    .filter(|pd| !pd.is_invocant)
+                    .cloned()
+                    .collect();
                 let def = MethodDef {
                     params: sub_data.params.clone(),
-                    param_defs: sub_data
-                        .params
-                        .iter()
-                        .map(|name| ParamDef {
-                            name: name.clone(),
-                            default: None,
-                            multi_invocant: true,
-                            required: false,
-                            named: false,
-                            slurpy: false,
-                            double_slurpy: false,
-                            sigilless: false,
-                            type_constraint: None,
-                            literal_value: None,
-                            sub_signature: None,
-                            where_constraint: None,
-                            traits: Vec::new(),
-                            optional_marker: false,
-                            outer_sub_signature: None,
-                            code_signature: None,
-                            is_invocant: false,
-                            shape_constraints: None,
-                        })
-                        .collect(),
+                    param_defs: filtered_param_defs,
                     body: std::sync::Arc::new(sub_data.body.clone()),
-                    is_rw: false,
+                    is_rw: sub_data.is_rw,
                     is_private: false,
                     is_multi: false,
                     is_my: false,
                     role_origin: None,
                     original_role: None,
                     return_type: None,
-                    compiled_code: None,
+                    compiled_code: sub_data.compiled_code.clone(),
                     delegation: None,
                 };
                 if let Some(class_def) = self.classes.get_mut(&class_name) {
