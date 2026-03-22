@@ -1,5 +1,127 @@
-use crate::value::Value;
+use crate::symbol::Symbol;
+use crate::value::{RuntimeError, Value};
 use num_bigint::BigInt;
+
+/// Validate sprintf format directives. Throws typed exceptions for:
+/// - Unsupported directives (X::Str::Sprintf::Directives::Unsupported)
+/// - Arg count mismatch (X::Str::Sprintf::Directives::Count)
+pub(crate) fn validate_sprintf_directives(fmt: &str, arg_count: usize) -> Result<(), RuntimeError> {
+    let mut chars = fmt.chars().peekable();
+    let mut expected_args = 0usize;
+    while let Some(c) = chars.next() {
+        if c != '%' {
+            continue;
+        }
+        if chars.peek() == Some(&'%') {
+            chars.next();
+            continue;
+        }
+        // Skip flags
+        while let Some(f) = chars.peek().copied() {
+            if f == '-' || f == '+' || f == ' ' || f == '#' || f == '0' {
+                chars.next();
+            } else {
+                break;
+            }
+        }
+        // Skip width
+        if chars.peek() == Some(&'*') {
+            chars.next();
+            expected_args += 1;
+        } else {
+            while let Some(d) = chars.peek().copied() {
+                if d.is_ascii_digit() {
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
+        }
+        // Skip precision
+        if chars.peek() == Some(&'.') {
+            chars.next();
+            if chars.peek() == Some(&'*') {
+                chars.next();
+                expected_args += 1;
+            } else {
+                while let Some(d) = chars.peek().copied() {
+                    if d.is_ascii_digit() {
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        let spec = chars.next().unwrap_or('?');
+        if !matches!(
+            spec,
+            's' | 'd'
+                | 'i'
+                | 'u'
+                | 'x'
+                | 'X'
+                | 'o'
+                | 'b'
+                | 'B'
+                | 'f'
+                | 'F'
+                | 'e'
+                | 'E'
+                | 'g'
+                | 'G'
+                | 'c'
+        ) {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("directive".to_string(), Value::str(format!("%{}", spec)));
+            attrs.insert(
+                "message".to_string(),
+                Value::str(format!(
+                    "Directive {} is not valid in a sprintf format",
+                    spec
+                )),
+            );
+            let mut err = RuntimeError::new(format!(
+                "Directive {} is not valid in a sprintf format",
+                spec
+            ));
+            err.exception = Some(Box::new(Value::make_instance(
+                Symbol::intern("X::Str::Sprintf::Directives::Unsupported"),
+                attrs,
+            )));
+            return Err(err);
+        }
+        expected_args += 1;
+    }
+    if expected_args != arg_count {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("args-have".to_string(), Value::Int(arg_count as i64));
+        attrs.insert("args-used".to_string(), Value::Int(expected_args as i64));
+        attrs.insert(
+            "message".to_string(),
+            Value::str(format!(
+                "Your printf-style directives specify {} arguments, but {} argument{} {} supplied",
+                expected_args,
+                arg_count,
+                if arg_count == 1 { "" } else { "s" },
+                if arg_count == 1 { "was" } else { "were" },
+            )),
+        );
+        let mut err = RuntimeError::new(format!(
+            "Your printf-style directives specify {} arguments, but {} argument{} {} supplied",
+            expected_args,
+            arg_count,
+            if arg_count == 1 { "" } else { "s" },
+            if arg_count == 1 { "was" } else { "were" },
+        ));
+        err.exception = Some(Box::new(Value::make_instance(
+            Symbol::intern("X::Str::Sprintf::Directives::Count"),
+            attrs,
+        )));
+        return Err(err);
+    }
+    Ok(())
+}
 
 pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
     match arg {
