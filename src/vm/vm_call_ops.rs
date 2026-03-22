@@ -1143,23 +1143,6 @@ impl VM {
             }
             return Ok(result);
         }
-        // Nil method fallback for CallMethodMut: if the target is Nil and
-        // the method is not a known type method, return Nil instead of throwing
-        // "method not found". This mirrors the CallMethod Nil dispatch behavior.
-        if matches!(&target, Value::Nil) {
-            let result =
-                self.interpreter
-                    .call_method_mut_with_values(target_name, target, method, args);
-            return match result {
-                Err(ref e)
-                    if e.message.contains("Unknown method")
-                        || e.message.contains("No matching candidates") =>
-                {
-                    Ok(Value::Nil)
-                }
-                other => other,
-            };
-        }
         self.interpreter
             .call_method_mut_with_values(target_name, target, method, args)
     }
