@@ -17,6 +17,7 @@ use super::misc::parse_block_body;
 use crate::token_kind::TokenKind;
 
 static ANON_STATE_COUNTER: AtomicU64 = AtomicU64::new(0);
+static ANON_ARRAY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Build a string concatenation expression: left ~ right
 fn concat_exprs(left: Expr, right: Expr) -> Expr {
@@ -548,11 +549,12 @@ pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
     {
         return Ok((r2, Expr::ArrayVar(name)));
     }
-    // Bare @ (anonymous array variable)
+    // Bare @ (anonymous array variable) — each occurrence gets a unique name
     let next_is_ident =
         !rest.is_empty() && rest.chars().next().is_some_and(is_raku_identifier_start);
     if !next_is_ident && twigil.is_empty() {
-        return Ok((rest, Expr::ArrayVar("__ANON_ARRAY__".to_string())));
+        let id = ANON_ARRAY_COUNTER.fetch_add(1, Ordering::Relaxed);
+        return Ok((rest, Expr::ArrayVar(format!("__ANON_ARRAY_{id}__"))));
     }
     let (rest, name) = parse_qualified_ident_with_hyphens(rest)?;
     let (rest, name) = parse_var_name_adverb_suffixes(rest, name);

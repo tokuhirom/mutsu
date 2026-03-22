@@ -1473,6 +1473,24 @@ impl VM {
             self.env_dirty = true;
             return Ok(());
         }
+        // Auto-vivify undefined values (Nil, Any, Mu type objects) to empty Arrays
+        // for mutating list methods. In Raku, calling push/unshift/append/prepend on
+        // an undefined variable auto-vivifies it to an Array.
+        let target = if matches!(method.as_str(), "push" | "unshift" | "append" | "prepend")
+            && (matches!(&target, Value::Nil)
+                || matches!(
+                    &target,
+                    Value::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu")
+                )) {
+            let empty_array = Value::real_array(vec![]);
+            self.interpreter
+                .env_mut()
+                .insert(target_name.to_string(), empty_array.clone());
+            self.env_dirty = true;
+            empty_array
+        } else {
+            target
+        };
         // For .* and .+ modifiers, skip the single-dispatch call and go
         // directly to the all-methods-in-MRO path to avoid double execution.
         match modifier.as_deref() {

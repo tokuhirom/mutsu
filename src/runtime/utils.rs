@@ -275,11 +275,13 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
             Value::Instance {
                 class_name: a_class,
                 id: a_id,
+                attributes: a_attrs,
                 ..
             },
             Value::Instance {
                 class_name: b_class,
                 id: b_id,
+                attributes: b_attrs,
                 ..
             },
         ) => {
@@ -287,6 +289,11 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
             let b_name = b_class.resolve();
             if a_name == b_name && (a_name == "Stash" || a_name == "Supply") {
                 left.eqv(right)
+            } else if a_name == b_name && (a_name == "ObjAt" || a_name == "ValueObjAt") {
+                // ObjAt/ValueObjAt instances are === when their WHICH content matches
+                let a_val = a_attrs.get("WHICH").map(|v| v.to_string_value());
+                let b_val = b_attrs.get("WHICH").map(|v| v.to_string_value());
+                a_val == b_val
             } else {
                 a_id == b_id
             }

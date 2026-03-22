@@ -601,6 +601,10 @@ pub(crate) fn native_method_0arg(
             _ => {}
         }
     }
+    // Any.nl-out returns the default newline separator "\n"
+    if method == "nl-out" {
+        return Some(Ok(Value::str_from("\n")));
+    }
     // Native int coercer methods (.byte(), .int8(), .uint16(), etc.)
     if runtime::native_types::is_native_int_type(method) {
         return Some(native_int_coerce_method(target, method));
