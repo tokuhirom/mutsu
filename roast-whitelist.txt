@@ -761,6 +761,7 @@ roast/S32-list/snip.t
 roast/S32-list/sort.t
 roast/S32-list/squish.t
 roast/S32-list/tail.t
+roast/S32-list/toggle.t
 roast/S32-list/unique.t
 roast/S32-num/abs.t
 roast/S32-num/base.t

@@ -2812,4 +2812,78 @@ impl Interpreter {
 
         Ok(Value::Seq(Arc::new(result)))
     }
+
+    /// Implements the `.toggle` method.
+    ///
+    /// method toggle(*@conditions, Bool :$off --> Seq)
+    ///
+    /// Iterates over the invocant, toggling whether values are emitted based
+    /// on Callable conditions. The switch starts "on" (unless :off is given).
+    /// Each value is tested by the current condition; the switch is set to the
+    /// result. When the switch toggles (changes state), the next condition is
+    /// used. Values are emitted when the switch is "on".
+    pub(super) fn dispatch_toggle(
+        &mut self,
+        target: Value,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        // Extract :off named arg and collect positional callable args
+        let mut start_off = false;
+        let mut conditions: Vec<Value> = Vec::new();
+
+        for arg in args {
+            match arg {
+                Value::Pair(key, value) if key == "off" => {
+                    start_off = value.truthy();
+                }
+                _ => {
+                    conditions.push(arg.clone());
+                }
+            }
+        }
+
+        // Get items to iterate over
+        let items = match &target {
+            // Non-iterable scalar: treat as a single-element list
+            Value::Int(_)
+            | Value::Num(_)
+            | Value::Str(_)
+            | Value::Bool(_)
+            | Value::Rat(..)
+            | Value::FatRat(..)
+            | Value::BigInt(_)
+            | Value::BigRat(..)
+            | Value::Complex(..)
+            | Value::Nil => vec![target.clone()],
+            _ => crate::runtime::utils::value_to_list(&target),
+        };
+
+        let mut result: Vec<Value> = Vec::new();
+        let mut switch_on = !start_off;
+        let mut cond_idx: usize = 0;
+
+        for item in &items {
+            if cond_idx < conditions.len() {
+                let tester = &conditions[cond_idx];
+                let test_result = self
+                    .call_sub_value(tester.clone(), vec![item.clone()], true)?
+                    .truthy();
+
+                let old_on = switch_on;
+                switch_on = test_result;
+
+                // If the switch toggled, advance to the next condition
+                if switch_on != old_on {
+                    cond_idx += 1;
+                }
+            }
+            // No more conditions: switch stays in its current state
+
+            if switch_on {
+                result.push(item.clone());
+            }
+        }
+
+        Ok(Value::Seq(Arc::new(result)))
+    }
 }

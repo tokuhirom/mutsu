@@ -2944,6 +2944,15 @@ impl Interpreter {
                 {
                     return self.dispatch_supply_skip(attributes, &args);
                 }
+                // General list/range skip: skip first N elements
+                let n = if args.is_empty() {
+                    1usize
+                } else {
+                    args[0].to_f64().max(0.0) as usize
+                };
+                let items = crate::runtime::utils::value_to_list(&target);
+                let result: Vec<Value> = items.into_iter().skip(n).collect();
+                return Ok(Value::Seq(Arc::new(result)));
             }
             "join" if args.len() <= 1 => {
                 if matches!(
@@ -2978,6 +2987,9 @@ impl Interpreter {
             }
             "grep" => {
                 return self.dispatch_grep(target, &args);
+            }
+            "toggle" => {
+                return self.dispatch_toggle(target, &args);
             }
             "eager" if args.is_empty() => {
                 return match target {
