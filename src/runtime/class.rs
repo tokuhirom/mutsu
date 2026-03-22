@@ -504,6 +504,40 @@ impl Interpreter {
         attrs
     }
 
+    /// Collect per-class attributes for all classes in the MRO.
+    /// Returns `(declaring_class, ClassAttributeDef)` pairs.
+    /// Unlike `collect_class_attributes`, this does NOT deduplicate by name —
+    /// if Parent and Child both declare an attribute with the same name,
+    /// both entries are returned. Used to initialize class-qualified attribute
+    /// storage so that each class has its own private copy.
+    pub(super) fn collect_per_class_attrs(
+        &mut self,
+        class_name: &str,
+    ) -> Vec<(String, ClassAttributeDef)> {
+        let mro = self.class_mro(class_name);
+        let mut result: Vec<(String, ClassAttributeDef)> = Vec::new();
+        // Track which attribute names appear in multiple classes (need qualified storage)
+        let mut attr_counts: HashMap<String, usize> = HashMap::new();
+        for cn in &mro {
+            if let Some(class_def) = self.classes.get(cn) {
+                for attr in &class_def.attributes {
+                    *attr_counts.entry(attr.0.clone()).or_insert(0) += 1;
+                }
+            }
+        }
+        // Only include attrs that appear in multiple classes (duplicated across hierarchy)
+        for cn in &mro {
+            if let Some(class_def) = self.classes.get(cn) {
+                for attr in &class_def.attributes {
+                    if attr_counts.get(&attr.0).copied().unwrap_or(0) > 1 {
+                        result.push((cn.clone(), attr.clone()));
+                    }
+                }
+            }
+        }
+        result
+    }
+
     /// Collect attributes from a role and all its composed parent roles.
     /// Used when the role has been punned (instantiated via mixin) and we need
     /// to check attribute metadata (e.g. `is rw`).
@@ -771,7 +805,16 @@ impl Interpreter {
         }
 
         for (attr_name, attr_val) in &attributes {
-            self.env.insert(format!("!{}", attr_name), attr_val.clone());
+            // Skip class-qualified private attribute keys (ClassName\0attrName)
+            if attr_name.contains('\0') {
+                continue;
+            }
+            // For private attributes, prefer the class-qualified value from
+            // the method's owner class (so Parent's $!priv != Child's $!priv).
+            let qualified_key = format!("{}\0{}", owner_class, attr_name);
+            let private_val = attributes.get(&qualified_key).unwrap_or(attr_val);
+            self.env
+                .insert(format!("!{}", attr_name), private_val.clone());
             self.env.insert(format!(".{}", attr_name), attr_val.clone());
             self.var_bindings
                 .insert(attr_name.clone(), format!("!{}", attr_name));
@@ -840,6 +883,10 @@ impl Interpreter {
             result
         };
         for attr_name in attributes.keys().cloned().collect::<Vec<_>>() {
+            // Skip class-qualified private attribute keys
+            if attr_name.contains('\0') {
+                continue;
+            }
             let original = attributes.get(&attr_name).cloned().unwrap_or(Value::Nil);
             let env_key = format!("!{}", attr_name);
             let public_env_key = format!(".{}", attr_name);

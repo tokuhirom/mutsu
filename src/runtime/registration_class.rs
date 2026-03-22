@@ -1117,6 +1117,27 @@ impl Interpreter {
                 other => vec![other],
             })
             .collect();
+        // Pre-scan: collect attribute names declared directly in this class body.
+        // Combined with role-composed attributes already in class_def.attributes,
+        // this gives the full set of attributes valid for $!attr access.
+        let mut class_own_attrs: HashSet<String> = class_def
+            .attributes
+            .iter()
+            .map(|(n, ..)| n.clone())
+            .collect();
+        for stmt in &flattened_body {
+            if let Stmt::HasDecl {
+                name: attr_name,
+                is_our,
+                is_my,
+                ..
+            } = stmt
+                && !*is_our
+                && !*is_my
+            {
+                class_own_attrs.insert(attr_name.resolve());
+            }
+        }
         for stmt in flattened_body {
             match stmt {
                 Stmt::HasDecl {
@@ -1211,6 +1232,7 @@ impl Interpreter {
                     return_type,
                 } => {
                     self.validate_private_access_in_stmts(name, method_body)?;
+                    Self::validate_attr_declared_in_class(&class_own_attrs, method_body)?;
                     let resolved_method_name = if let Some(expr) = name_expr {
                         self.eval_block_value(&[Stmt::Expr(expr.clone())])?
                             .to_string_value()
@@ -2274,5 +2296,180 @@ impl Interpreter {
         // Register the role and its composed roles
         self.class_composed_roles
             .insert(role_name.to_string(), composed_roles_list);
+    }
+
+    /// Validate that all `$!attr` references in method bodies refer to attributes
+    /// declared directly in the current class (not inherited from a parent).
+    /// In Raku, private attributes are scoped to the declaring class.
+    fn validate_attr_declared_in_class(
+        class_own_attrs: &HashSet<String>,
+        stmts: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        for stmt in stmts {
+            Self::validate_attr_in_stmt(class_own_attrs, stmt)?;
+        }
+        Ok(())
+    }
+
+    fn validate_attr_in_stmt(
+        class_own_attrs: &HashSet<String>,
+        stmt: &Stmt,
+    ) -> Result<(), RuntimeError> {
+        match stmt {
+            Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
+                Self::validate_attr_in_expr(class_own_attrs, e)?;
+            }
+            Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
+                Self::validate_attr_in_expr(class_own_attrs, expr)?;
+            }
+            Stmt::Say(exprs) | Stmt::Put(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
+                for e in exprs {
+                    Self::validate_attr_in_expr(class_own_attrs, e)?;
+                }
+            }
+            Stmt::If {
+                cond,
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                Self::validate_attr_in_expr(class_own_attrs, cond)?;
+                Self::validate_attr_declared_in_class(class_own_attrs, then_branch)?;
+                Self::validate_attr_declared_in_class(class_own_attrs, else_branch)?;
+            }
+            Stmt::While { cond, body, .. } => {
+                Self::validate_attr_in_expr(class_own_attrs, cond)?;
+                Self::validate_attr_declared_in_class(class_own_attrs, body)?;
+            }
+            Stmt::For { iterable, body, .. } => {
+                Self::validate_attr_in_expr(class_own_attrs, iterable)?;
+                Self::validate_attr_declared_in_class(class_own_attrs, body)?;
+            }
+            Stmt::Loop {
+                init,
+                cond,
+                step,
+                body,
+                ..
+            } => {
+                if let Some(init) = init.as_ref() {
+                    Self::validate_attr_in_stmt(class_own_attrs, init)?;
+                }
+                if let Some(cond) = cond.as_ref() {
+                    Self::validate_attr_in_expr(class_own_attrs, cond)?;
+                }
+                if let Some(step) = step.as_ref() {
+                    Self::validate_attr_in_expr(class_own_attrs, step)?;
+                }
+                Self::validate_attr_declared_in_class(class_own_attrs, body)?;
+            }
+            Stmt::Given { topic, body, .. } => {
+                Self::validate_attr_in_expr(class_own_attrs, topic)?;
+                Self::validate_attr_declared_in_class(class_own_attrs, body)?;
+            }
+            Stmt::When { cond, body, .. } => {
+                Self::validate_attr_in_expr(class_own_attrs, cond)?;
+                Self::validate_attr_declared_in_class(class_own_attrs, body)?;
+            }
+            Stmt::Default(body) => {
+                Self::validate_attr_declared_in_class(class_own_attrs, body)?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn validate_attr_in_expr(
+        class_own_attrs: &HashSet<String>,
+        expr: &Expr,
+    ) -> Result<(), RuntimeError> {
+        match expr {
+            Expr::Var(name) => {
+                if let Some(attr_name) = name.strip_prefix('!') {
+                    // $! by itself is the error variable, not an attribute
+                    if !attr_name.is_empty() && !class_own_attrs.contains(attr_name) {
+                        let mut attrs = HashMap::new();
+                        attrs.insert("name".to_string(), Value::str(format!("$!{}", attr_name)));
+                        let ex =
+                            Value::make_instance(Symbol::intern("X::Attribute::Undeclared"), attrs);
+                        let mut err = RuntimeError::new(format!(
+                            "Attribute $!{} not declared in class",
+                            attr_name
+                        ));
+                        err.exception = Some(Box::new(ex));
+                        return Err(err);
+                    }
+                }
+            }
+            Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
+                Self::validate_attr_in_expr(class_own_attrs, target)?;
+                for arg in args {
+                    Self::validate_attr_in_expr(class_own_attrs, arg)?;
+                }
+            }
+            Expr::Call { args, .. }
+            | Expr::ArrayLiteral(args)
+            | Expr::BracketArray(args, _)
+            | Expr::StringInterpolation(args) => {
+                for arg in args {
+                    Self::validate_attr_in_expr(class_own_attrs, arg)?;
+                }
+            }
+            Expr::Unary { expr, .. }
+            | Expr::PostfixOp { expr, .. }
+            | Expr::Reduction { expr, .. } => {
+                Self::validate_attr_in_expr(class_own_attrs, expr)?;
+            }
+            Expr::Binary { left, right, .. }
+            | Expr::MetaOp { left, right, .. }
+            | Expr::HyperOp { left, right, .. } => {
+                Self::validate_attr_in_expr(class_own_attrs, left)?;
+                Self::validate_attr_in_expr(class_own_attrs, right)?;
+            }
+            Expr::Ternary {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                Self::validate_attr_in_expr(class_own_attrs, cond)?;
+                Self::validate_attr_in_expr(class_own_attrs, then_expr)?;
+                Self::validate_attr_in_expr(class_own_attrs, else_expr)?;
+            }
+            Expr::Index { target, index } => {
+                Self::validate_attr_in_expr(class_own_attrs, target)?;
+                Self::validate_attr_in_expr(class_own_attrs, index)?;
+            }
+            Expr::IndexAssign {
+                target,
+                index,
+                value,
+            } => {
+                Self::validate_attr_in_expr(class_own_attrs, target)?;
+                Self::validate_attr_in_expr(class_own_attrs, index)?;
+                Self::validate_attr_in_expr(class_own_attrs, value)?;
+            }
+            Expr::AssignExpr { expr, .. } => {
+                Self::validate_attr_in_expr(class_own_attrs, expr)?;
+            }
+            Expr::DoBlock { body, .. }
+            | Expr::Block(body)
+            | Expr::Gather(body)
+            | Expr::AnonSub { body, .. }
+            | Expr::AnonSubParams { body, .. }
+            | Expr::Lambda { body, .. } => {
+                Self::validate_attr_declared_in_class(class_own_attrs, body)?;
+            }
+            Expr::Try { body, catch } => {
+                Self::validate_attr_declared_in_class(class_own_attrs, body)?;
+                if let Some(catch) = catch.as_ref() {
+                    Self::validate_attr_declared_in_class(class_own_attrs, catch)?;
+                }
+            }
+            Expr::DoStmt(stmt) => {
+                Self::validate_attr_in_stmt(class_own_attrs, stmt)?;
+            }
+            _ => {}
+        }
+        Ok(())
     }
 }
