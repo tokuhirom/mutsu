@@ -2067,6 +2067,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
                 Value::Bool(b) => Value::Num(if *b { 1.0 } else { 0.0 }),
                 Value::Complex(_, _) => return None, // fall through to runtime for $*TOLERANCE check
+                Value::Array(items, ..) => Value::Num(items.len() as f64),
+                Value::Seq(items) | Value::Slip(items) => Value::Num(items.len() as f64),
                 _ => return None,
             };
             Some(Ok(result))
@@ -3904,7 +3906,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "grab" | "grabpairs" => match target {
             Value::Bag(_) => Some(Err(RuntimeError::immutable("Bag", method))),
             Value::Set(_) => Some(Err(RuntimeError::immutable("Set", method))),
-            Value::Mix(_) => Some(Err(RuntimeError::immutable("Mix", method))),
+            // Mix is used for both Mix (immutable) and MixHash (mutable),
+            // so we can't reject it here. Fall through to runtime dispatch.
             _ => None,
         },
         "first" => match target {

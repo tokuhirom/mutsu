@@ -632,7 +632,7 @@ impl VM {
             .get(&name)
             .and_then(|v| self.interpreter.container_type_metadata(v))
             .and_then(|info| info.declared_type);
-        let target_is_mixhash = declared_type_incdec
+        let _target_is_mixhash = declared_type_incdec
             .as_deref()
             .is_some_and(|t| t == "MixHash");
         let _target_is_baghash = declared_type_incdec
@@ -654,9 +654,13 @@ impl VM {
                         Value::Nil
                     }
                 }
-                Value::Mix(_) if !target_is_mixhash => {
-                    return Err(RuntimeError::assignment_ro(None));
-                }
+                Value::Mix(mix) => mix.get(&key).map_or(Value::Int(0), |w| {
+                    if (*w - (*w as i64 as f64)).abs() < f64::EPSILON {
+                        Value::Int(*w as i64)
+                    } else {
+                        Value::Num(*w)
+                    }
+                }),
                 _ => Value::Nil,
             }
         } else {
@@ -719,7 +723,7 @@ impl VM {
             .get(&var_name)
             .and_then(|v| self.interpreter.container_type_metadata(v))
             .and_then(|info| info.declared_type);
-        let target_is_mixhash = declared_type.as_deref().is_some_and(|t| t == "MixHash");
+        let _target_is_mixhash = declared_type.as_deref().is_some_and(|t| t == "MixHash");
         let _target_is_baghash = declared_type.as_deref().is_some_and(|t| t == "BagHash");
         let _target_is_sethash = declared_type.as_deref().is_some_and(|t| t == "SetHash");
         let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
@@ -1007,9 +1011,6 @@ impl VM {
                             }
                         }
                         Value::Mix(ref mut mix) => {
-                            if !target_is_mixhash {
-                                return Err(RuntimeError::assignment_ro(None));
-                            }
                             let m = Arc::make_mut(mix);
                             let weight = Self::mix_assignment_weight(&val);
                             if weight == 0.0 {

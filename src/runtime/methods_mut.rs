@@ -1860,6 +1860,69 @@ impl Interpreter {
             return Ok(result);
         }
 
+        // MixHash.grabpairs: remove random pairs and return them, mutating the Mix
+        if matches!(&target, Value::Mix(_)) && matches!(method, "grabpairs" | "grab") {
+            let mix = match &target {
+                Value::Mix(m) => (**m).clone(),
+                _ => unreachable!(),
+            };
+            let count = if method == "grabpairs" {
+                if args.is_empty() {
+                    1usize
+                } else {
+                    match &args[0] {
+                        Value::Whatever => mix.len(),
+                        v => v.to_f64().max(0.0) as usize,
+                    }
+                }
+            } else {
+                // grab
+                if args.is_empty() {
+                    1usize
+                } else {
+                    match &args[0] {
+                        Value::Whatever => mix.len(),
+                        v => v.to_f64().max(0.0) as usize,
+                    }
+                }
+            };
+            let keys: Vec<String> = mix.keys().cloned().collect();
+            if keys.is_empty() || count == 0 {
+                return Ok(Value::Seq(Arc::new(Vec::new())));
+            }
+            use crate::builtins::rng::builtin_rand;
+            let mut grabbed = Vec::new();
+            let mut remaining = mix;
+            for _ in 0..count {
+                if remaining.is_empty() {
+                    break;
+                }
+                let ks: Vec<String> = remaining.keys().cloned().collect();
+                let idx = (builtin_rand() * ks.len() as f64) as usize % ks.len();
+                let key = ks[idx].clone();
+                let weight = remaining.remove(&key).unwrap_or(0.0);
+                if method == "grabpairs" {
+                    let weight_val = if (weight - (weight as i64 as f64)).abs() < f64::EPSILON {
+                        Value::Int(weight as i64)
+                    } else {
+                        Value::Num(weight)
+                    };
+                    grabbed.push(Value::Pair(key, Box::new(weight_val)));
+                } else {
+                    // grab: return the key
+                    grabbed.push(Value::str(key));
+                }
+            }
+            // Update the original variable
+            let new_mix = Value::Mix(Arc::new(remaining));
+            self.env.insert(target_var.to_string(), new_mix);
+            return Ok(if grabbed.len() == 1 && args.is_empty() {
+                grabbed.into_iter().next().unwrap()
+            } else {
+                Value::Seq(Arc::new(grabbed))
+            });
+        }
+
         // SharedPromise/SharedChannel are internally mutable — delegate to immutable dispatch
         if matches!(target, Value::Promise(_) | Value::Channel(_)) {
             return self.call_method_with_values(target, method, args);
