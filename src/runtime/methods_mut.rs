@@ -2527,8 +2527,7 @@ impl Interpreter {
     ) -> Result<(usize, usize), RuntimeError> {
         // Check if first arg is a Range
         if let Some(first_arg) = method_args.first()
-            && let Some((range_start, range_end)) =
-                self.substr_extract_range(first_arg, str_len)?
+            && let Some((range_start, range_end)) = self.substr_extract_range(first_arg, str_len)?
         {
             let rs: usize = range_start.min(str_len);
             let re: usize = range_end.min(str_len);
