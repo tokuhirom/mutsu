@@ -1525,14 +1525,14 @@ impl Interpreter {
                 if !text.is_empty()
                     && let Some((ref name, ref kind)) = last_declarant
                 {
-                    let entry = self
-                        .doc_comments
-                        .entry(name.clone())
-                        .or_insert_with(|| DocComment {
-                            wherefore_name: name.clone(),
-                            kind: kind.clone(),
-                            ..Default::default()
-                        });
+                    let entry =
+                        self.doc_comments
+                            .entry(name.clone())
+                            .or_insert_with(|| DocComment {
+                                wherefore_name: name.clone(),
+                                kind: kind.clone(),
+                                ..Default::default()
+                            });
                     entry.trailing = append_doc_text(entry.trailing.take(), &text);
                 }
                 idx = next_idx;
