@@ -419,7 +419,10 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         // Also handles negated forms: :!e, :!d, :!f, :!r, :!w, :!x, :!s, :!z
         (_, Value::Pair(key, val))
             if matches!(val.as_ref(), Value::Bool(_))
-                && matches!(key.as_str(), "e" | "d" | "f" | "r" | "w" | "x" | "s" | "z")
+                && matches!(
+                    key.as_str(),
+                    "e" | "d" | "f" | "l" | "r" | "w" | "x" | "s" | "z"
+                )
                 && !needs_interpreter_lhs(left) =>
         {
             let negated = matches!(val.as_ref(), Value::Bool(false));
@@ -479,6 +482,9 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
                             false
                         }
                     }
+                    "l" => std::fs::symlink_metadata(&p)
+                        .map(|m| m.file_type().is_symlink())
+                        .unwrap_or(false),
                     "s" => std::fs::metadata(&p).map(|m| m.len() > 0).unwrap_or(false),
                     "z" => std::fs::metadata(&p).map(|m| m.len() == 0).unwrap_or(false),
                     _ => false,

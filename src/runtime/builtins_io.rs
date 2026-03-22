@@ -719,28 +719,56 @@ impl Interpreter {
             .get(1)
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("symlink requires a link name"))?;
-        let target_buf = self.resolve_path(&target);
+        // The target path is passed to the OS as-is (relative stays relative).
+        // The link path is resolved to handle CWD.
+        let target_buf = std::path::PathBuf::from(&target);
         let link_buf = self.resolve_path(&link);
         #[cfg(unix)]
         {
-            unix_fs::symlink(&target_buf, &link_buf).map_err(|err| {
-                RuntimeError::new(format!("Failed to symlink '{}': {}", target, err))
-            })?;
-        }
-        #[cfg(windows)]
-        {
-            let metadata = fs::metadata(&target_buf);
-            if metadata.map(|meta| meta.is_dir()).unwrap_or(false) {
-                windows_fs::symlink_dir(&target_buf, &link_buf).map_err(|err| {
-                    RuntimeError::new(format!("Failed to symlink '{}': {}", target, err))
-                })?;
-            } else {
-                windows_fs::symlink_file(&target_buf, &link_buf).map_err(|err| {
-                    RuntimeError::new(format!("Failed to symlink '{}': {}", target, err))
-                })?;
+            match unix_fs::symlink(&target_buf, &link_buf) {
+                Ok(()) => Ok(Value::Bool(true)),
+                Err(err) => Ok(Self::make_symlink_failure(&target, &link, &err)),
             }
         }
-        Ok(Value::Bool(true))
+        #[cfg(not(unix))]
+        {
+            let metadata = fs::metadata(&target_buf);
+            let result = if metadata.map(|meta| meta.is_dir()).unwrap_or(false) {
+                windows_fs::symlink_dir(&target_buf, &link_buf)
+            } else {
+                windows_fs::symlink_file(&target_buf, &link_buf)
+            };
+            match result {
+                Ok(()) => Ok(Value::Bool(true)),
+                Err(err) => Ok(Self::make_symlink_failure(&target, &link, &err)),
+            }
+        }
+    }
+
+    pub(super) fn make_symlink_failure(target: &str, link: &str, err: &std::io::Error) -> Value {
+        use crate::symbol::Symbol;
+        let msg = format!(
+            "Failed to create symlink '{}' for target '{}': {}",
+            link, target, err
+        );
+        let target_io = Value::make_instance_without_destroy(Symbol::intern("IO::Path"), {
+            let mut a = std::collections::HashMap::new();
+            a.insert("path".to_string(), Value::str_from(target));
+            a
+        });
+        let name_io = Value::make_instance_without_destroy(Symbol::intern("IO::Path"), {
+            let mut a = std::collections::HashMap::new();
+            a.insert("path".to_string(), Value::str_from(link));
+            a
+        });
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::str(msg));
+        attrs.insert("target".to_string(), target_io);
+        attrs.insert("name".to_string(), name_io);
+        let ex = Value::make_instance(Symbol::intern("X::IO::Symlink"), attrs);
+        let mut failure_attrs = std::collections::HashMap::new();
+        failure_attrs.insert("exception".to_string(), ex);
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
     pub(super) fn builtin_print(

@@ -1311,6 +1311,7 @@ impl Interpreter {
                     "dir",
                     "spurt",
                     "unlink",
+                    "symlink",
                     "starts-with",
                     "watch",
                 ]
