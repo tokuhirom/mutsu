@@ -1490,6 +1490,61 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 return Err(PError::expected_at("anonymous sub body '{' or '('", r));
             }
         }
+        "multi" => {
+            // multi sub name(...) { ... } in expression context:
+            // Parse as a sub declaration and wrap it so the current candidate
+            // is returned as a value (just that candidate, not the full multi).
+            let (r, _) = super::super::helpers::ws(rest)?;
+            // Only handle `multi sub` in expression context.
+            // Use sub_decl_with_semicolon_mode directly to avoid infinite recursion
+            // (statement_pub -> expr_stmt -> expression -> "multi" -> statement_pub).
+            if keyword("sub", r).is_some() {
+                if let Ok((r2, stmt)) =
+                    super::super::stmt::sub_decl_with_semicolon_mode_pub(input, false)
+                    && let Stmt::SubDecl {
+                        ref params,
+                        ref param_defs,
+                        ref body,
+                        is_rw,
+                        ..
+                    } = stmt
+                {
+                    // Create an anonymous sub expression representing just this candidate
+                    let anon_sub = Expr::AnonSubParams {
+                        params: params.clone(),
+                        param_defs: param_defs.clone(),
+                        return_type: None,
+                        body: body.clone(),
+                        is_rw,
+                    };
+                    return Ok((
+                        r2,
+                        Expr::DoBlock {
+                            body: vec![stmt, Stmt::Expr(anon_sub)],
+                            label: None,
+                        },
+                    ));
+                }
+                // Check for anonymous multi sub
+                let after_sub = keyword("sub", r).unwrap();
+                let after_sub_ws = super::super::helpers::ws(after_sub)
+                    .map(|(r2, _)| r2)
+                    .unwrap_or(after_sub);
+                if after_sub_ws.starts_with('{') || after_sub_ws.starts_with('(') {
+                    return Err(PError::fatal(
+                        "FATAL:X::Anon::Multi: An anonymous routine may not take a multi declarator"
+                            .to_string(),
+                    ));
+                }
+            }
+            // multi { } or multi ( )
+            if r.starts_with('{') || r.starts_with('(') {
+                return Err(PError::fatal(
+                    "FATAL:X::Anon::Multi: An anonymous routine may not take a multi declarator"
+                        .to_string(),
+                ));
+            }
+        }
         "method" => {
             // Anonymous method in expression context: method () { ... } or method { ... }
             let (r, _) = ws(rest)?;

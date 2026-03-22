@@ -632,6 +632,34 @@ pub(super) fn top_level_main_semicolon_decl(input: &str) -> PResult<'_, Stmt> {
     }
 }
 
+/// Detect anonymous routines declared with `only`, `multi`, or `proto` and
+/// throw a fatal X::Anon::Multi parse error, matching Raku's behavior.
+pub(super) fn anon_multi_check(input: &str) -> PResult<'_, Stmt> {
+    // Try each declarator keyword
+    let declarators = ["only", "multi", "proto"];
+    for declarator in &declarators {
+        if let Some(after_kw) = keyword(declarator, input) {
+            // After the declarator, optionally consume whitespace + routine type
+            let after_kw_ws = ws(after_kw).map(|(r, _)| r).unwrap_or(after_kw);
+            let after_type = if let Some(r) = keyword("sub", after_kw_ws) {
+                ws(r).map(|(r, _)| r).unwrap_or(r)
+            } else if let Some(r) = keyword("method", after_kw_ws) {
+                ws(r).map(|(r, _)| r).unwrap_or(r)
+            } else {
+                after_kw_ws
+            };
+            // If what follows is `{` or `(`, this is an anonymous routine
+            if after_type.starts_with('{') || after_type.starts_with('(') {
+                return Err(PError::fatal(format!(
+                    "FATAL:X::Anon::Multi: An anonymous routine may not take a {} declarator",
+                    declarator
+                )));
+            }
+        }
+    }
+    Err(PError::expected("anonymous multi check"))
+}
+
 pub(super) fn sub_decl_with_semicolon_mode(
     input: &str,
     allow_main_semicolon_decl: bool,
