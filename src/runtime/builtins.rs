@@ -3411,6 +3411,10 @@ impl Interpreter {
                 | "rand"
                 | "sprintf"
                 | "zprintf"
+                | "uniname"
+                | "uniprop"
+                | "uniparse"
+                | "parse-names"
         )
     }
 
