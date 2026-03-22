@@ -2472,7 +2472,7 @@ impl Interpreter {
             RegexAtom::CaptureStartMarker | RegexAtom::CaptureEndMarker => {
                 return Some(pos);
             }
-            RegexAtom::Backref(_) => {
+            RegexAtom::Backref(_) | RegexAtom::NamedBackref(_) => {
                 // Backreferences need capture context; can't match without it
                 return None;
             }
@@ -2702,6 +2702,7 @@ impl Interpreter {
             | RegexAtom::CaptureStartMarker
             | RegexAtom::CaptureEndMarker
             | RegexAtom::Backref(_)
+            | RegexAtom::NamedBackref(_)
             | RegexAtom::VarDecl { .. }
             | RegexAtom::ClosureInterpolation { .. }
             | RegexAtom::LeftWordBoundary
@@ -2980,6 +2981,24 @@ impl Interpreter {
                     } else {
                         current_caps.positional.get(*idx).cloned()
                     };
+                if let Some(ref_text) = ref_text {
+                    let ref_chars: Vec<char> = ref_text.chars().collect();
+                    if pos + ref_chars.len() <= chars.len()
+                        && chars[pos..pos + ref_chars.len()] == ref_chars[..]
+                    {
+                        return Some((pos + ref_chars.len(), current_caps.clone()));
+                    }
+                }
+                return None;
+            }
+            RegexAtom::NamedBackref(name) => {
+                // Match the text previously captured by named group $<name>.
+                // Uses the last captured value for the name.
+                let ref_text = current_caps
+                    .named
+                    .get(name.as_str())
+                    .and_then(|vals| vals.last())
+                    .cloned();
                 if let Some(ref_text) = ref_text {
                     let ref_chars: Vec<char> = ref_text.chars().collect();
                     if pos + ref_chars.len() <= chars.len()

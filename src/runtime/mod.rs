@@ -447,6 +447,8 @@ enum RegexAtom {
     EndOfLine,
     /// `$0`, `$1`, etc. — backreference to positional capture group
     Backref(usize),
+    /// `$<name>` — backreference to named capture group
+    NamedBackref(String),
     /// Internal marker used while rewriting `left ~ goal inner`.
     TildeMarker,
     /// Goal matching produced by `~`: match `inner` first, then `goal`,

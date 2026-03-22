@@ -874,11 +874,12 @@ impl Interpreter {
                         continue;
                     }
                 }
+                // $<name> without `=` is a backreference to a named capture
                 tokens.push(RegexToken {
-                    atom: RegexAtom::Literal('$'),
+                    atom: RegexAtom::NamedBackref(capture_name),
                     quant: RegexQuant::One,
                     named_capture: None,
-                    ratchet: false,
+                    ratchet,
                     frugal: false,
                 });
                 continue;

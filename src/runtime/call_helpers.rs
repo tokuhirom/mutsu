@@ -65,8 +65,13 @@ impl Interpreter {
             }
             line.push_str(&state.ran.to_string());
             line.push_str(" - ");
-            if !desc.is_empty() {
-                line.push_str(desc);
+            // Split description on newlines: first line goes on the TAP line,
+            // remaining lines become `# continuation` lines (Raku TAP escaping).
+            let mut desc_lines = desc.splitn(2, '\n');
+            let first_desc_line = desc_lines.next().unwrap_or("");
+            let rest_desc_lines = desc_lines.next(); // remaining after first \n
+            if !first_desc_line.is_empty() {
+                line.push_str(first_desc_line);
             }
             let show_todo = todo && (!is_backend_todo || !success);
             if show_todo {
@@ -80,6 +85,14 @@ impl Interpreter {
                 }
             }
             line.push('\n');
+            // Append continuation lines for newlines in description
+            if let Some(rest) = rest_desc_lines {
+                for cont in rest.split('\n') {
+                    line.push_str("# ");
+                    line.push_str(cont);
+                    line.push('\n');
+                }
+            }
             (!success, todo)
         };
         self.emit_output(&line);
