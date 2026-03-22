@@ -1016,6 +1016,8 @@ impl Interpreter {
                 "NFKC",
                 "NFKD",
                 "encode",
+                "uniparse",
+                "parse-names",
                 "IO",
                 "Numeric",
                 "Int",

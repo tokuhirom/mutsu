@@ -568,8 +568,8 @@ pub(crate) fn native_method_0arg(
                 "comb" | "chars" | "codes" | "words" | "lines" | "chomp" | "chop" | "trim"
                 | "trim-leading" | "trim-trailing" | "uc" | "lc" | "tc" | "tclc" | "fc"
                 | "flip" | "samemark" | "samespace" | "uniname" | "uninames" | "unival"
-                | "univals" | "uniprop" | "uniprops" | "NFC" | "NFD" | "NFKC" | "NFKD"
-                | "encode" => {
+                | "univals" | "uniprop" | "uniprops" | "uniparse" | "parse-names" | "NFC"
+                | "NFD" | "NFKC" | "NFKD" | "encode" => {
                     return native_method_0arg(str_val, method_sym);
                 }
                 _ => {}
@@ -2068,6 +2068,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 .map(|ch| Value::str(crate::builtins::unicode::unicode_char_name(ch)))
                 .collect();
             Some(Ok(Value::array(names)))
+        }
+        "uniparse" | "parse-names" => {
+            let s = target.to_string_value();
+            Some(crate::builtins::functions::uniparse_impl(&s))
         }
         "uniprops" => {
             let s = target.to_string_value();
