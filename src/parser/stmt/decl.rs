@@ -1334,6 +1334,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_alias: false,
             is_our,
             is_my: !is_our && !is_state,
+            is_default: None,
         };
         if apply_modifier {
             return parse_statement_modifier(after_name, stmt);
@@ -2134,6 +2135,29 @@ pub(super) fn parse_destructuring_decl(
     }
     let (rest, _) = parse_char(r, ')')?;
     let (rest, _) = ws(rest)?;
+
+    // Parse optional `is default(expr)` trait on grouped declaration
+    let mut rest = rest;
+    let mut group_default_expr: Option<Expr> = None;
+    if let Some(r) = keyword("is", rest) {
+        if let Ok((r, _)) = ws1(r) {
+            if let Some(r) = keyword("default", r) {
+                let (r, _) = ws(r)?;
+                if let Some(inner) = r.strip_prefix('(') {
+                    let (inner, _) = ws(inner)?;
+                    let (inner, default_expr) = expression(inner)?;
+                    let (inner, _) = ws(inner)?;
+                    let inner = inner
+                        .strip_prefix(')')
+                        .ok_or_else(|| PError::expected("closing paren in is default"))?;
+                    group_default_expr = Some(default_expr);
+                    let (r2, _) = ws(inner)?;
+                    rest = r2;
+                }
+            }
+        }
+    }
+
     let is_binding = rest.starts_with(":=") || rest.starts_with("::=");
     if rest.starts_with('=') || rest.starts_with("::=") || rest.starts_with(":=") {
         let rest = if let Some(stripped) = rest.strip_prefix("::=") {
@@ -2291,7 +2315,16 @@ pub(super) fn parse_destructuring_decl(
     let (rest, _) = opt_char(rest, ';');
     let mut stmts = Vec::new();
     for dvar in &vars {
-        let expr = dvar.default.clone().unwrap_or(Expr::Literal(Value::Nil));
+        let expr = if let Some(ref def_expr) = group_default_expr {
+            dvar.default.clone().unwrap_or_else(|| def_expr.clone())
+        } else {
+            dvar.default.clone().unwrap_or(Expr::Literal(Value::Nil))
+        };
+        let traits = if let Some(ref def_expr) = group_default_expr {
+            vec![("default".to_string(), Some(def_expr.clone()))]
+        } else {
+            Vec::new()
+        };
         stmts.push(Stmt::VarDecl {
             name: dvar.name.clone(),
             expr,
@@ -2301,7 +2334,7 @@ pub(super) fn parse_destructuring_decl(
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
-            custom_traits: Vec::new(),
+            custom_traits: traits,
             where_constraint: None,
         });
     }
@@ -2354,6 +2387,7 @@ fn has_decl_list(input: &str) -> PResult<'_, Stmt> {
             is_alias,
             is_our: false,
             is_my: false,
+            is_default: None,
         });
         let (r, _) = ws(rest)?;
         rest = r;
@@ -2362,7 +2396,39 @@ fn has_decl_list(input: &str) -> PResult<'_, Stmt> {
             rest = &rest[1..];
         }
     }
-    let (rest, _) = ws(rest)?;
+    let (mut rest, _) = ws(rest)?;
+
+    // Parse optional `is default(expr)` trait on grouped has declaration
+    if let Some(r) = keyword("is", rest) {
+        if let Ok((r, _)) = ws1(r) {
+            if let Some(r) = keyword("default", r) {
+                let (r, _) = ws(r)?;
+                if let Some(inner) = r.strip_prefix('(') {
+                    let (inner, _) = ws(inner)?;
+                    let (inner, default_expr) = expression(inner)?;
+                    let (inner, _) = ws(inner)?;
+                    let inner = inner
+                        .strip_prefix(')')
+                        .ok_or_else(|| PError::expected("closing paren in is default"))?;
+                    // Apply the default to all attributes in the list
+                    for stmt in &mut stmts {
+                        if let Stmt::HasDecl {
+                            default,
+                            is_default,
+                            ..
+                        } = stmt
+                        {
+                            *default = Some(default_expr.clone());
+                            *is_default = Some(default_expr.clone());
+                        }
+                    }
+                    let (r2, _) = ws(inner)?;
+                    rest = r2;
+                }
+            }
+        }
+    }
+
     let (rest, _) = opt_char(rest, ';');
     Ok((rest, Stmt::SyntheticBlock(stmts)))
 }
@@ -2621,7 +2687,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         } else {
             (rest, Some(expr))
         }
-    } else if let Some(default_expr) = is_default_trait {
+    } else if let Some(default_expr) = is_default_trait.clone() {
         // `is default(expr)` was used — apply it as the default value
         (rest, Some(default_expr))
     } else {
@@ -2740,6 +2806,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             is_alias,
             is_our: false,
             is_my: false,
+            is_default: is_default_trait,
         },
     ))
 }

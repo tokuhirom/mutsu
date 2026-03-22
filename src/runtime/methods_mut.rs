@@ -795,11 +795,21 @@ impl Interpreter {
                     } else {
                         None
                     };
-                    let assigned_value = if method_args.is_empty() {
+                    let mut assigned_value = if method_args.is_empty() {
                         Self::normalize_rw_accessor_assignment(current, value)
                     } else {
                         value
                     };
+                    // When Nil is assigned to an attribute with `is default(...)`,
+                    // restore the default value instead of setting Nil.
+                    if matches!(assigned_value, Value::Nil) {
+                        if let Some(def) = self
+                            .class_attribute_default(&qualifier, &attr_name)
+                            .cloned()
+                        {
+                            assigned_value = def;
+                        }
+                    }
                     updated.insert(attr_name, assigned_value.clone());
                     let cn = *class_name;
                     if let Some(var_name) = target_var {
@@ -840,11 +850,21 @@ impl Interpreter {
                     } else {
                         None
                     };
-                    let assigned_value = if method_args.is_empty() {
+                    let mut assigned_value = if method_args.is_empty() {
                         Self::normalize_rw_accessor_assignment(current, value)
                     } else {
                         value
                     };
+                    // When Nil is assigned to an attribute with `is default(...)`,
+                    // restore the default value instead of setting Nil.
+                    if matches!(assigned_value, Value::Nil) {
+                        if let Some(def) = self
+                            .class_attribute_default(&qualifier, actual_method)
+                            .cloned()
+                        {
+                            assigned_value = def;
+                        }
+                    }
                     updated.insert(actual_method.to_string(), assigned_value.clone());
                     let cn = *class_name;
                     if let Some(var_name) = target_var {
@@ -970,7 +990,14 @@ impl Interpreter {
                 // Check type constraint on the attribute before assignment.
                 // For @ and % attributes, the type constraint applies to elements/values,
                 // not to the container itself, so skip the container-level check.
+                // Skip the check when Nil is assigned and the attribute has `is default(...)`
+                // because Nil will be replaced by the default value.
+                let nil_has_default = matches!(value, Value::Nil)
+                    && self
+                        .class_attribute_default(&class_name.resolve(), method)
+                        .is_some();
                 if attr_sigil == '$'
+                    && !nil_has_default
                     && let Some(type_constraint) =
                         self.get_attr_type_constraint(&class_name.resolve(), method)
                     && !self.type_matches_value(&type_constraint, &value)
@@ -997,8 +1024,18 @@ impl Interpreter {
                     method.to_string()
                 };
                 let mut updated = (*attributes).clone();
-                let assigned_value =
+                let mut assigned_value =
                     Self::normalize_rw_accessor_assignment(updated.get(&attr_key).cloned(), value);
+                // When Nil is assigned to an attribute with `is default(...)`,
+                // restore the default value instead of setting Nil.
+                if matches!(assigned_value, Value::Nil) {
+                    if let Some(def) = self
+                        .class_attribute_default(&class_name.resolve(), method)
+                        .cloned()
+                    {
+                        assigned_value = def;
+                    }
+                }
                 updated.insert(attr_key.clone(), assigned_value.clone());
                 if let Some(var_name) = target_var {
                     self.overwrite_instance_bindings_by_identity(
@@ -1084,11 +1121,21 @@ impl Interpreter {
             } else {
                 None
             };
-            let assigned_value = if method_args.is_empty() {
+            let mut assigned_value = if method_args.is_empty() {
                 Self::normalize_rw_accessor_assignment(current, value)
             } else {
                 value
             };
+            // When Nil is assigned to an attribute with `is default(...)`,
+            // restore the default value instead of setting Nil.
+            if matches!(assigned_value, Value::Nil) {
+                if let Some(def) = self
+                    .class_attribute_default(&class_name.resolve(), &attr_name)
+                    .cloned()
+                {
+                    assigned_value = def;
+                }
+            }
             updated.insert(attr_name, assigned_value.clone());
             if let Some(var_name) = target_var {
                 self.overwrite_instance_bindings_by_identity(

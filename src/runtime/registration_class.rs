@@ -1175,6 +1175,7 @@ impl Interpreter {
                     is_alias,
                     is_our,
                     is_my,
+                    is_default,
                 } => {
                     let attr_name_str = attr_name.resolve();
 
@@ -1216,6 +1217,24 @@ impl Interpreter {
                         *sigil,
                         where_constraint.as_ref().map(|wc| wc.as_ref().clone()),
                     ));
+                    // Store `is default(...)` trait value for this attribute.
+                    // When is_default is set, the evaluated value is stored for
+                    // .VAR.default and Nil-restore behavior.
+                    // When only `default` is set (from `is default(X)` without `= value`),
+                    // also store it as the is_default trait value.
+                    if let Some(is_default_expr) = is_default {
+                        if let Ok(val) =
+                            self.eval_block_value(&[Stmt::Expr(is_default_expr.clone())])
+                        {
+                            self.class_attribute_defaults
+                                .insert((name.to_string(), attr_name_str.clone()), val);
+                        }
+                    } else if default.is_some() {
+                        // No explicit `is default(X)`, but there IS a `default` expr.
+                        // This means either `has $.a = expr` or `has $.a is default(expr)` without `= value`.
+                        // We can't distinguish here, so we DON'T set class_attribute_defaults
+                        // (it would be wrong for `has $.a = 42` — Nil should give (Any), not 42).
+                    }
                     if *is_alias {
                         class_def.alias_attributes.insert(attr_name_str.clone());
                     }
@@ -1672,6 +1691,7 @@ impl Interpreter {
                     is_alias,
                     is_our: _,
                     is_my: _,
+                    is_default: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     let attr_var_name = if *is_public {
@@ -1830,6 +1850,7 @@ impl Interpreter {
                     is_alias: _,
                     is_our: _,
                     is_my: _,
+                    is_default: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     // Check if this attribute already exists from a composed role
