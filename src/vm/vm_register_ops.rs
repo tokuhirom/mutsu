@@ -504,6 +504,35 @@ impl VM {
             {
                 self.interpreter
                     .set_container_default(&container, default_value.clone());
+                // Replace existing Nil and uninitialized (Package("Any"))
+                // elements with the default value (Raku container semantics:
+                // Nil/uninitialized slots in a defaulted container become
+                // the default).
+                if name.starts_with('@')
+                    && let Value::Array(ref items, kind) = container
+                {
+                    let is_hole = |v: &Value| {
+                        matches!(v, Value::Nil) || matches!(v, Value::Package(n) if n == "Any")
+                    };
+                    let has_holes = items.iter().any(is_hole);
+                    if has_holes {
+                        let replaced: Vec<Value> = items
+                            .iter()
+                            .map(|v| {
+                                if is_hole(v) {
+                                    default_value.clone()
+                                } else {
+                                    v.clone()
+                                }
+                            })
+                            .collect();
+                        let new_arr = Value::Array(Arc::new(replaced), kind);
+                        self.interpreter
+                            .set_container_default(&new_arr, default_value.clone());
+                        self.locals_set_by_name(code, &name, new_arr.clone());
+                        self.set_env_with_main_alias(&name, new_arr);
+                    }
+                }
             }
             // If the variable is currently Nil (uninitialized scalar), set it to the default.
             if !name.starts_with('@') && !name.starts_with('%') {

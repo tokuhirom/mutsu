@@ -767,7 +767,32 @@ impl VM {
                         unreachable!()
                     }
                 } else if !skip_native {
-                    if let Some(native_result) =
+                    // .Slip on arrays with `is default(X)`: fill holes with
+                    // the default value instead of leaving Package("Any").
+                    if method == "Slip" && args.is_empty() && matches!(&target, Value::Array(..)) {
+                        if let Some(def) = self.interpreter.container_default(&target).cloned() {
+                            let Value::Array(items, ..) = &target else {
+                                unreachable!()
+                            };
+                            let converted: Vec<Value> = items
+                                .iter()
+                                .map(|v| {
+                                    if matches!(v, Value::Package(name) if name == "Any") {
+                                        def.clone()
+                                    } else {
+                                        v.clone()
+                                    }
+                                })
+                                .collect();
+                            Ok(Value::Slip(std::sync::Arc::new(converted)))
+                        } else if let Some(native_result) =
+                            self.try_native_method(&target, Symbol::intern(&method), &args)
+                        {
+                            native_result
+                        } else {
+                            self.try_compiled_method_or_interpret(target, &method, args)
+                        }
+                    } else if let Some(native_result) =
                         self.try_native_method(&target, Symbol::intern(&method), &args)
                     {
                         native_result
