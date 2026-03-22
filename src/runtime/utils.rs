@@ -1002,7 +1002,9 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                 } else {
                     None
                 };
-                let end_num = if end.is_numeric() {
+                let end_num = if matches!(end.as_ref(), Value::Whatever | Value::HyperWhatever) {
+                    Some(Value::Num(f64::INFINITY))
+                } else if end.is_numeric() {
                     Some(end.as_ref().clone())
                 } else if let Value::Str(s) = end.as_ref() {
                     let coerced = coerce_to_numeric(Value::str((**s).clone()));

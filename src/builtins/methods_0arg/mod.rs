@@ -776,7 +776,7 @@ fn is_infinite_range(value: &Value) -> bool {
     }
 }
 
-fn is_value_lazy(value: &Value) -> bool {
+pub(crate) fn is_value_lazy(value: &Value) -> bool {
     matches!(value, Value::LazyList(_)) || is_infinite_range(value)
 }
 
@@ -2789,7 +2789,20 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
         "so" => Some(Ok(Value::Bool(target.truthy()))),
         "not" => Some(Ok(Value::Bool(!target.truthy()))),
-        "is-lazy" => Some(Ok(Value::Bool(is_value_lazy(target)))),
+        "is-lazy" => {
+            // For Iterator instances, check the stored is_lazy attribute
+            if let Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } = target
+                && class_name == "Iterator"
+            {
+                let lazy = matches!(attributes.get("is_lazy"), Some(Value::Bool(true)));
+                return Some(Ok(Value::Bool(lazy)));
+            }
+            Some(Ok(Value::Bool(is_value_lazy(target))))
+        }
         "lazy" => {
             if is_value_lazy(target) {
                 if let Value::LazyList(list) = target {

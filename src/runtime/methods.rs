@@ -2386,10 +2386,14 @@ impl Interpreter {
                         return Ok(Value::make_instance(Symbol::intern("Iterator"), attrs));
                     }
                 }
+                let lazy = crate::builtins::methods_0arg::is_value_lazy(&target);
                 let items = crate::runtime::utils::value_to_list(&target);
                 let mut attrs = HashMap::new();
                 attrs.insert("items".to_string(), Value::array(items));
                 attrs.insert("index".to_string(), Value::Int(0));
+                if lazy {
+                    attrs.insert("is_lazy".to_string(), Value::Bool(true));
+                }
                 return Ok(Value::make_instance(Symbol::intern("Iterator"), attrs));
             }
             "produce" => {
