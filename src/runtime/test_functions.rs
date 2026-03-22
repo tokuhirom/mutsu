@@ -2643,8 +2643,12 @@ impl Interpreter {
             );
         }
         let mut cmd = Command::new(&exe);
+        // Split compiler args by whitespace to match raku's Test::Util behavior
+        // which joins them with spaces in a shell command.
         for arg in compiler_args {
-            cmd.arg(arg);
+            for part in arg.split_whitespace() {
+                cmd.arg(part);
+            }
         }
         cmd.arg(temp_code_path.as_os_str());
         for arg in run_args {
@@ -2689,21 +2693,56 @@ impl Interpreter {
         run_args: &Option<Vec<Value>>,
         compiler_args: &[String],
     ) -> (String, String, i64) {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
         let exe = std::env::current_exe()
             .unwrap_or_else(|_| std::path::PathBuf::from("target/debug/mutsu"));
         let mut cmd = std::process::Command::new(&exe);
+        // Split compiler args by whitespace to match raku's Test::Util behavior
+        // which joins them with spaces in a shell command.
+        let mut compiler_has_e = false;
         for arg in compiler_args {
-            cmd.arg(arg);
+            for part in arg.split_whitespace() {
+                if part == "-e" || part == "-ne" || part == "-pe" {
+                    compiler_has_e = true;
+                }
+                cmd.arg(part);
+            }
         }
         if let Some(items) = run_args {
             for item in items {
                 cmd.arg(item.to_string_value());
             }
         }
-        if !program.is_empty() {
-            cmd.arg("-e").arg(program);
-        }
-        match cmd.output() {
+        // When compiler-args contain -e (e.g. '-n -e .say'), write the program
+        // to a temp file and pass it as a positional arg (matching raku's
+        // Test::Util behavior). Otherwise pass it with -e.
+        let temp_code_path = if compiler_has_e && !program.is_empty() {
+            let stamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            let path = std::env::temp_dir().join(format!(
+                "mutsu-isrun-{}-{}.raku",
+                std::process::id(),
+                stamp
+            ));
+            if std::fs::write(&path, program).is_err() {
+                return (
+                    String::new(),
+                    "Failed to create temporary source file".to_string(),
+                    1,
+                );
+            }
+            cmd.arg(path.as_os_str());
+            Some(path)
+        } else {
+            if !program.is_empty() {
+                cmd.arg("-e").arg(program);
+            }
+            None
+        };
+        let result = match cmd.output() {
             Ok(output) => {
                 let out = String::from_utf8_lossy(&output.stdout).to_string();
                 let err = String::from_utf8_lossy(&output.stderr).to_string();
@@ -2711,7 +2750,11 @@ impl Interpreter {
                 (out, err, status)
             }
             Err(e) => (String::new(), format!("Failed to run subprocess: {}", e), 1),
+        };
+        if let Some(path) = temp_code_path {
+            let _ = std::fs::remove_file(&path);
         }
+        result
     }
 
     fn extract_run_output(

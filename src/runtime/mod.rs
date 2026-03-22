@@ -354,6 +354,10 @@ struct IoHandleState {
     /// Used to implement Raku's eof semantics: a freshly opened file at
     /// position 0 with size 0 returns False for .eof until a read is attempted.
     read_attempted: bool,
+    /// For ArgFiles: index into @*ARGS tracking which file we're reading
+    argfiles_index: usize,
+    /// For ArgFiles: currently open file reader (buffered)
+    argfiles_reader: Option<std::io::BufReader<fs::File>>,
 }
 
 #[derive(Clone)]
@@ -1132,8 +1136,8 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: [
-                    "exitcode", "signal", "command", "pid", "err", "out", "Numeric", "Int", "Bool",
-                    "Str", "gist",
+                    "exitcode", "signal", "command", "pid", "err", "out", "in", "Numeric", "Int",
+                    "Bool", "Str", "gist",
                 ]
                 .iter()
                 .map(|s| s.to_string())
@@ -1447,7 +1451,7 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: ["slurp", "Str", "gist"]
+                native_methods: ["slurp", "Str", "gist", "print", "close"]
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
@@ -3598,6 +3602,8 @@ impl Interpreter {
                 nl_out: handle.nl_out.clone(),
                 bytes_written: handle.bytes_written,
                 read_attempted: handle.read_attempted,
+                argfiles_index: handle.argfiles_index,
+                argfiles_reader: None, // Cannot clone BufReader; will reopen if needed
             };
             cloned_handles.insert(*id, cloned);
         }

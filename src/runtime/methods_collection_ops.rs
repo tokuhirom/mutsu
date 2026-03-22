@@ -2081,6 +2081,8 @@ impl Interpreter {
             nl_out: "\n".to_string(),
             bytes_written: 0,
             read_attempted: false,
+            argfiles_index: 0,
+            argfiles_reader: None,
         };
         self.handles.insert(id, state);
         let mut attrs = HashMap::new();
@@ -2400,6 +2402,8 @@ impl Interpreter {
                 nl_out: "\n".to_string(),
                 bytes_written: 0,
                 read_attempted: false,
+                argfiles_index: 0,
+                argfiles_reader: None,
             };
             self.handles.insert(id, state);
             let mut attrs = HashMap::new();

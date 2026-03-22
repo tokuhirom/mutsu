@@ -54,6 +54,7 @@ fn main() {
     let mut repl_flag = false;
     let mut no_precomp = false;
     let mut auto_print = false;
+    let mut auto_loop = false;
     let mut lib_paths: Vec<String> = Vec::new();
     let mut preload_modules: Vec<String> = Vec::new();
     let mut filtered_args: Vec<String> = Vec::new();
@@ -72,6 +73,28 @@ fn main() {
             no_precomp = true;
         } else if arg == "-p" {
             auto_print = true;
+        } else if arg == "-n" {
+            auto_loop = true;
+        } else if arg == "-ne" {
+            // Combined -n -e: enable auto-loop and treat the next arg as code
+            auto_loop = true;
+            if let Some(code) = iter.next() {
+                filtered_args.push("-e".to_string());
+                filtered_args.push(code.clone());
+            } else {
+                eprintln!("Usage: {} -ne <code>", args[0]);
+                std::process::exit(1);
+            }
+        } else if arg == "-pe" {
+            // Combined -p -e: enable auto-print and treat the next arg as code
+            auto_print = true;
+            if let Some(code) = iter.next() {
+                filtered_args.push("-e".to_string());
+                filtered_args.push(code.clone());
+            } else {
+                eprintln!("Usage: {} -pe <code>", args[0]);
+                std::process::exit(1);
+            }
         } else if arg.starts_with("--parser=") {
             eprintln!("--parser option is no longer supported");
             std::process::exit(1);
@@ -168,6 +191,8 @@ fn main() {
 
     let input = if auto_print {
         format!("for lines() {{ {};\n.say;\n}}", input)
+    } else if auto_loop {
+        format!("for lines() {{ {};\n}}", input)
     } else {
         input
     };

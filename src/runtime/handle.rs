@@ -326,6 +326,19 @@ impl Interpreter {
         &mut self,
         handle_value: &Value,
     ) -> Result<Option<String>, RuntimeError> {
+        // Pre-extract @*ARGS file list for ArgFiles handle before borrowing state
+        let argfiles_list: Vec<String> = self
+            .env
+            .get("@*ARGS")
+            .and_then(|v| {
+                if let Value::Array(items, ..) = v {
+                    Some(items.iter().map(|v| v.to_string_value()).collect())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+
         let state = self.handle_state_mut(handle_value)?;
         if state.closed {
             return Err(RuntimeError::io_closed("handle operation"));
@@ -338,11 +351,44 @@ impl Interpreter {
             IoHandleTarget::Stdout | IoHandleTarget::Stderr => {
                 Err(RuntimeError::new("Handle not readable"))
             }
-            IoHandleTarget::Stdin | IoHandleTarget::ArgFiles => {
+            IoHandleTarget::Stdin => {
                 let seps = state.line_separators.clone();
                 let chomp = state.line_chomp;
                 let mut stdin = std::io::stdin().lock();
                 Self::read_record_with_separators(&mut stdin, &seps, chomp)
+            }
+            IoHandleTarget::ArgFiles => {
+                let seps = state.line_separators.clone();
+                let chomp = state.line_chomp;
+                if argfiles_list.is_empty() {
+                    // No file args — read from stdin
+                    let mut stdin = std::io::stdin().lock();
+                    Self::read_record_with_separators(&mut stdin, &seps, chomp)
+                } else {
+                    // Read from files listed in @*ARGS sequentially
+                    loop {
+                        if state.argfiles_index >= argfiles_list.len() {
+                            return Ok(None);
+                        }
+                        // Open the next file if we don't have a reader
+                        if state.argfiles_reader.is_none() {
+                            let path = &argfiles_list[state.argfiles_index];
+                            let file = std::fs::File::open(path).map_err(|e| {
+                                RuntimeError::new(format!("Failed to open file '{}': {}", path, e))
+                            })?;
+                            state.argfiles_reader = Some(std::io::BufReader::new(file));
+                        }
+                        let reader = state.argfiles_reader.as_mut().unwrap();
+                        match Self::read_record_with_separators(reader, &seps, chomp)? {
+                            Some(line) => return Ok(Some(line)),
+                            None => {
+                                // Current file exhausted, move to next
+                                state.argfiles_reader = None;
+                                state.argfiles_index += 1;
+                            }
+                        }
+                    }
+                }
             }
             IoHandleTarget::File => {
                 let seps = state.line_separators.clone();
@@ -809,6 +855,8 @@ impl Interpreter {
             nl_out: nl_out.unwrap_or_else(|| "\n".to_string()),
             bytes_written: 0,
             read_attempted: false,
+            argfiles_index: 0,
+            argfiles_reader: None,
         };
         self.handles.insert(id, state);
         Ok(self.make_handle_instance_with_bin(id, bin))
