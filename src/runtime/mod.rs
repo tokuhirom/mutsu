@@ -592,6 +592,9 @@ pub struct Interpreter {
     role_type_params: HashMap<String, Vec<String>>,
     class_role_param_bindings: HashMap<String, HashMap<String, Value>>,
     attribute_build_overrides: HashMap<(String, String), Value>,
+    /// Evaluated `is default(...)` values for class attributes.
+    /// Maps (class_name, attr_name) to the default value that should be restored when Nil is assigned.
+    class_attribute_defaults: HashMap<(String, String), Value>,
     subsets: HashMap<String, SubsetDef>,
     proto_subs: HashSet<String>,
     proto_tokens: HashSet<String>,
@@ -2321,6 +2324,7 @@ impl Interpreter {
             role_type_params: HashMap::new(),
             class_role_param_bindings: HashMap::new(),
             attribute_build_overrides: HashMap::new(),
+            class_attribute_defaults: HashMap::new(),
             subsets: HashMap::new(),
             proto_subs: HashSet::new(),
             proto_tokens: HashSet::new(),
@@ -3186,6 +3190,16 @@ impl Interpreter {
         self.var_defaults.get(name)
     }
 
+    /// Get the evaluated `is default(...)` value for a class attribute.
+    pub(crate) fn class_attribute_default(
+        &self,
+        class_name: &str,
+        attr_name: &str,
+    ) -> Option<&Value> {
+        self.class_attribute_defaults
+            .get(&(class_name.to_string(), attr_name.to_string()))
+    }
+
     /// Set the element default for a container (Array/Hash) by Arc pointer identity.
     pub(crate) fn set_container_default(&mut self, value: &Value, default: Value) {
         let id = match value {
@@ -3641,6 +3655,7 @@ impl Interpreter {
             role_type_params: self.role_type_params.clone(),
             class_role_param_bindings: self.class_role_param_bindings.clone(),
             attribute_build_overrides: self.attribute_build_overrides.clone(),
+            class_attribute_defaults: self.class_attribute_defaults.clone(),
             subsets: self.subsets.clone(),
             proto_subs: self.proto_subs.clone(),
             proto_tokens: self.proto_tokens.clone(),

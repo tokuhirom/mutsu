@@ -2410,6 +2410,30 @@ impl VM {
             }
         }
 
+        // Register `is default(...)` values for attribute variables so that
+        // .VAR.default returns the correct value inside methods.
+        for attr_name in attributes.keys() {
+            if attr_name.contains('\0') || attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
+                continue;
+            }
+            // Check both the owner class and the receiver class for defaults
+            let default_val = self
+                .interpreter
+                .class_attribute_default(owner_class, attr_name)
+                .or_else(|| {
+                    self.interpreter
+                        .class_attribute_default(receiver_class_name, attr_name)
+                })
+                .cloned();
+            if let Some(def) = default_val {
+                // Register for $!attr and $.attr variable names
+                self.interpreter
+                    .set_var_default(&format!("!{}", attr_name), def.clone());
+                self.interpreter
+                    .set_var_default(&format!(".{}", attr_name), def);
+            }
+        }
+
         // Bind method parameters
         match self
             .interpreter

@@ -622,6 +622,11 @@ pub(crate) enum Stmt {
         is_our: bool,
         /// `my $.x` — lexically-scoped class attribute (shared across instances)
         is_my: bool,
+        /// `is default(expr)` trait — the value to restore when Nil is assigned.
+        /// When set, this value should be used both as the default for `.VAR.default`
+        /// and as the restore value when Nil is assigned to the attribute.
+        /// Distinct from `default` which may be an explicit `= expr` initializer.
+        is_default: Option<Expr>,
     },
     MethodDecl {
         name: Symbol,
