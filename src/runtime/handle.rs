@@ -215,6 +215,23 @@ impl Interpreter {
         }
         state.bytes_written += bytes.len() as i64;
         match state.target {
+            IoHandleTarget::Stdout => {
+                // For stdout, convert bytes to lossy string and emit
+                let content = String::from_utf8_lossy(bytes).to_string();
+                self.emit_output(&content);
+                Ok(())
+            }
+            IoHandleTarget::Stderr => {
+                if self.subtest_depth == 0 && self.immediate_stdout {
+                    use std::io::Write;
+                    let _ = std::io::stderr().write_all(bytes);
+                    let _ = std::io::stderr().flush();
+                } else {
+                    let content = String::from_utf8_lossy(bytes).to_string();
+                    self.stderr_output.push_str(&content);
+                }
+                Ok(())
+            }
             IoHandleTarget::File => {
                 if let Some(file) = state.file.as_mut() {
                     file.write_all(bytes).map_err(|err| {
@@ -235,7 +252,9 @@ impl Interpreter {
                     Err(RuntimeError::new("Socket not connected"))
                 }
             }
-            _ => Err(RuntimeError::new("Cannot write raw bytes to this handle")),
+            IoHandleTarget::Stdin | IoHandleTarget::ArgFiles => {
+                Err(RuntimeError::new("Cannot write to read-only handle"))
+            }
         }
     }
 
