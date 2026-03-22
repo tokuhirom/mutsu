@@ -1342,19 +1342,19 @@ impl VM {
 
             // -- Range creation --
             OpCode::MakeRange => {
-                self.exec_make_range_op();
+                self.exec_make_range_op()?;
                 *ip += 1;
             }
             OpCode::MakeRangeExcl => {
-                self.exec_make_range_excl_op();
+                self.exec_make_range_excl_op()?;
                 *ip += 1;
             }
             OpCode::MakeRangeExclStart => {
-                self.exec_make_range_excl_start_op();
+                self.exec_make_range_excl_start_op()?;
                 *ip += 1;
             }
             OpCode::MakeRangeExclBoth => {
-                self.exec_make_range_excl_both_op();
+                self.exec_make_range_excl_both_op()?;
                 *ip += 1;
             }
 
