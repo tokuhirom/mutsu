@@ -1763,6 +1763,30 @@ impl Interpreter {
             return Ok(into_target.unwrap_or_else(|| Value::hash(HashMap::new())));
         };
 
+        // Check for lazy lists — classify/categorize cannot operate on lazy lists
+        for arg in &positional {
+            let is_lazy = matches!(arg, Value::LazyList(_));
+            if is_lazy {
+                let mut attrs = HashMap::new();
+                attrs.insert(
+                    "action".to_string(),
+                    Value::str_from(if name == "categorize" {
+                        ".categorize-list"
+                    } else {
+                        ".classify-list"
+                    }),
+                );
+                attrs.insert(
+                    "message".to_string(),
+                    Value::str(format!("Cannot {}-list a lazy list", name)),
+                );
+                let exception = Value::make_instance(Symbol::intern("X::Cannot::Lazy"), attrs);
+                let mut err = RuntimeError::new("X::Cannot::Lazy");
+                err.exception = Some(Box::new(exception));
+                return Err(err);
+            }
+        }
+
         // Flatten list/array arguments into individual items and force lazy inputs.
         let mut items = Vec::new();
         for arg in &positional {
@@ -1788,6 +1812,9 @@ impl Interpreter {
             Some(Value::Mix(m)) => Some(m.as_ref().clone()),
             _ => None,
         };
+
+        // Track classification level depth across all items for mixed-level detection
+        let mut expected_level: Option<usize> = None;
 
         for item in &items {
             let mapped = match &mapper {
@@ -1862,8 +1889,31 @@ impl Interpreter {
                     vec![path]
                 }
             };
-            for path in paths {
-                insert_nested_bucket(&mut buckets, &path, mapped_item.clone(), name)?;
+            for path in &paths {
+                if let Some(expected) = expected_level {
+                    if path.len() != expected {
+                        let msg = format!(
+                            "X::Invalid::ComputedValue: mixed-level {}",
+                            if name == "categorize" {
+                                "categorization"
+                            } else {
+                                "classification"
+                            }
+                        );
+                        let mut attrs = HashMap::new();
+                        attrs.insert("message".to_string(), Value::str(msg.clone()));
+                        let exception = Value::make_instance(
+                            Symbol::intern("X::Invalid::ComputedValue"),
+                            attrs,
+                        );
+                        let mut err = RuntimeError::new(msg);
+                        err.exception = Some(Box::new(exception));
+                        return Err(err);
+                    }
+                } else {
+                    expected_level = Some(path.len());
+                }
+                insert_nested_bucket(&mut buckets, path, mapped_item.clone(), name)?;
             }
         }
 

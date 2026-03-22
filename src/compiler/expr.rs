@@ -2447,19 +2447,29 @@ impl Compiler {
                     });
                     return;
                 }
-                // %($x) — hash contextualizer: coerce single arg to Hash
+                // %(args) — hash contextualizer or hash construction
                 if let Expr::HashVar(name) = target.as_ref()
                     && name == "__ANON_HASH__"
-                    && args.len() == 1
                 {
-                    self.compile_expr(&args[0]);
-                    let method_idx = self.code.add_constant(Value::str_from("Hash"));
-                    self.code.emit(OpCode::CallMethod {
-                        name_idx: method_idx,
-                        arity: 0,
-                        modifier_idx: None,
-                        quoted: false,
-                    });
+                    if args.len() == 1 {
+                        // %($x) — hash contextualizer: coerce single arg to Hash
+                        self.compile_expr(&args[0]);
+                        let method_idx = self.code.add_constant(Value::str_from("Hash"));
+                        self.code.emit(OpCode::CallMethod {
+                            name_idx: method_idx,
+                            arity: 0,
+                            modifier_idx: None,
+                            quoted: false,
+                        });
+                    } else {
+                        // %(k1 => v1, k2 => v2, ...) — hash construction from pairs
+                        // Compile each arg as a pair, then collect into a hash
+                        let n = args.len() as u32;
+                        for arg in args {
+                            self.compile_expr(arg);
+                        }
+                        self.code.emit(OpCode::MakeHashFromPairs(n));
+                    }
                     return;
                 }
                 if let Expr::CodeVar(name) = target.as_ref() {

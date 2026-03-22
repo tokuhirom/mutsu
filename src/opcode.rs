@@ -224,6 +224,8 @@ pub(crate) enum OpCode {
     /// Like MakeRealArray but never flattens a single element (from `[x,]` trailing comma).
     MakeRealArrayNoFlatten(u32),
     MakeHash(u32),
+    /// Build a Hash from `count` Pair values on the stack (from `%(k=>v, ...)` syntax).
+    MakeHashFromPairs(u32),
     /// Create a Capture from `count` items on stack. Pair values become named args,
     /// non-Pair values become positional args. Slip values are flattened.
     MakeCapture(u32),

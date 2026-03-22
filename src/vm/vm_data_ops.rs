@@ -90,6 +90,29 @@ impl VM {
         self.stack.push(Value::hash(map));
     }
 
+    /// Build a Hash from N Pair values on the stack (from `%(k=>v, ...)` syntax).
+    pub(super) fn exec_make_hash_from_pairs_op(&mut self, n: u32) {
+        let n = n as usize;
+        let start = self.stack.len() - n;
+        let items: Vec<Value> = self.stack.drain(start..).collect();
+        let mut map = HashMap::new();
+        for item in items {
+            match item {
+                Value::Pair(k, v) => {
+                    map.insert(k, *v);
+                }
+                Value::ValuePair(k, v) => {
+                    map.insert(k.to_string_value(), *v);
+                }
+                _ => {
+                    // Non-pair values: use stringified value as key mapped to True
+                    map.insert(item.to_string_value(), Value::Bool(true));
+                }
+            }
+        }
+        self.stack.push(Value::hash(map));
+    }
+
     pub(super) fn exec_make_capture_op(&mut self, n: u32) {
         let n = n as usize;
         let start = self.stack.len() - n;

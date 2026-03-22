@@ -563,6 +563,12 @@ fn is_postfix_operator_char(c: char) -> bool {
     if c.is_whitespace() || c.is_alphanumeric() || c == '_' {
         return false;
     }
+    // Exclude characters that are infix operators or special symbols
+    // U+2026 HORIZONTAL ELLIPSIS (…) is the sequence infix operator
+    // U+221E INFINITY (∞) is a numeric literal, not an operator char
+    if c == '\u{2026}' || c == '\u{221E}' {
+        return false;
+    }
     !matches!(
         c,
         '.' | ','
