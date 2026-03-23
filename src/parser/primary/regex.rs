@@ -15,14 +15,15 @@ fn process_trans_escapes(raw: &str) -> String {
     let mut rest = raw;
     while !rest.is_empty() {
         if rest.starts_with('\\') && rest.len() >= 2 {
-            if let Some((remaining, _)) =
-                super::string::process_escape_sequence(rest, &mut result, &[])
-            {
-                rest = remaining;
-            } else {
-                // Unknown escape: keep as-is
-                result.push('\\');
-                rest = &rest[1..];
+            match super::string::process_escape_sequence(rest, &mut result, &[]) {
+                Ok(Some((remaining, _))) => {
+                    rest = remaining;
+                }
+                Ok(None) | Err(_) => {
+                    // Unknown escape: keep as-is
+                    result.push('\\');
+                    rest = &rest[1..];
+                }
             }
         } else {
             let ch = rest.chars().next().unwrap();
