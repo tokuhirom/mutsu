@@ -653,9 +653,14 @@ impl Interpreter {
                     }
                     let result = Value::hash(map);
                     // Register type metadata for typed hashes (e.g. Hash[Int].new)
-                    if let Some(ref ta) = type_args {
-                        let value_type = ta.first().cloned().unwrap_or_default();
-                        let key_type = ta.get(1).cloned();
+                    // or Map.new (always register Map declared_type)
+                    let is_map = class_name.resolve() == "Map";
+                    if type_args.is_some() || is_map {
+                        let (value_type, key_type) = if let Some(ref ta) = type_args {
+                            (ta.first().cloned().unwrap_or_default(), ta.get(1).cloned())
+                        } else {
+                            (String::new(), None)
+                        };
                         let info = crate::runtime::ContainerTypeInfo {
                             value_type,
                             key_type,

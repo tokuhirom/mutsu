@@ -986,7 +986,7 @@ fn format_temporal_num(f: f64) -> String {
     }
 }
 
-fn raku_value(v: &Value) -> String {
+pub fn raku_value(v: &Value) -> String {
     match v {
         Value::Array(items, kind) => {
             // Shaped arrays: Array.new(:shape(d1, d2), [row1], [row2])

@@ -1941,6 +1941,9 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             let mut stmts = Vec::new();
             if bound_name.starts_with('%') {
                 stmts.push(Stmt::MarkReadonly(bound_name.clone()));
+                // Add MarkBind so the compiler emits MarkBindContext,
+                // preserving the container identity (e.g. Map stays Map).
+                stmts.push(Stmt::MarkBind);
             }
             stmts.push(stmt);
             if is_array {

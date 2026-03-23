@@ -1375,6 +1375,61 @@ impl VM {
             });
         }
 
+        // For Hash values with declared_type "Map", override gist/raku/perl
+        // to use Map.new((...)) format instead of {...} format.
+        if let Value::Hash(map) = target {
+            let is_map = matches!(method_name.as_str(), "gist" | "raku" | "perl")
+                && self
+                    .interpreter
+                    .container_type_metadata(target)
+                    .and_then(|info| info.declared_type)
+                    .is_some_and(|dt| dt == "Map");
+            if is_map {
+                if map.is_empty() {
+                    return Some(Ok(Value::str("Map.new".to_string())));
+                }
+                let mut sorted_keys: Vec<&String> = map.keys().collect();
+                sorted_keys.sort();
+                if method_name == "gist" {
+                    let total = sorted_keys.len();
+                    let truncated = total > 100;
+                    let display_keys = if truncated {
+                        &sorted_keys[..100]
+                    } else {
+                        &sorted_keys[..]
+                    };
+                    let mut parts: Vec<String> = display_keys
+                        .iter()
+                        .map(|k| format!("{} => {}", k, crate::runtime::gist_value(&map[*k])))
+                        .collect();
+                    if truncated {
+                        parts.push("...".to_string());
+                    }
+                    return Some(Ok(Value::str(format!("Map.new(({}))", parts.join(", ")))));
+                } else {
+                    let parts: Vec<String> = sorted_keys
+                        .iter()
+                        .map(|k| {
+                            let v = &map[*k];
+                            if let Value::Bool(true) = v {
+                                format!(":{}", k)
+                            } else if let Value::Bool(false) = v {
+                                format!(":!{}", k)
+                            } else {
+                                let repr = if matches!(v, Value::Nil) {
+                                    "Any".to_string()
+                                } else {
+                                    crate::builtins::methods_0arg::raku_value(v)
+                                };
+                                format!(":{}({})", k, repr)
+                            }
+                        })
+                        .collect();
+                    return Some(Ok(Value::str(format!("Map.new(({}))", parts.join(", ")))));
+                }
+            }
+        }
+
         result
     }
 

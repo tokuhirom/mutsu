@@ -828,6 +828,21 @@ impl VM {
         } else {
             val
         };
+        // Map containers are immutable - prevent assignment and binding to keys
+        if declared_type.as_deref().is_some_and(|t| t == "Map") {
+            if bind_mode {
+                return Err(RuntimeError::typed(
+                    "X::Bind",
+                    [("target".to_string(), Value::str(var_name.clone()))]
+                        .into_iter()
+                        .collect(),
+                ));
+            } else {
+                return Err(RuntimeError::new(
+                    "Cannot modify an immutable Map (Map)".to_string(),
+                ));
+            }
+        }
         let encoded_idx = Self::encode_bound_index(&idx);
         let is_bound_index = if bind_mode {
             self.is_bound_index(&var_name, &encoded_idx)
@@ -1607,7 +1622,9 @@ impl VM {
                 val = Value::Array(Arc::new(replaced), kind);
             }
         }
-        if name.starts_with('@') || name.starts_with('%') {
+        // Skip typed container coercion for `:=` binding — it would create
+        // a new Arc and lose container identity (e.g. Map metadata).
+        if !is_bind && (name.starts_with('@') || name.starts_with('%')) {
             val = self.coerce_typed_container_assignment(name, val)?;
         }
         if let Some(constraint) = self.interpreter.var_type_constraint(name)

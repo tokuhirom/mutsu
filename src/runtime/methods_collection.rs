@@ -226,8 +226,34 @@ impl Interpreter {
     }
 
     pub(super) fn dispatch_to_map(&self, target: Value) -> Result<Value, RuntimeError> {
-        // Map is stored as Hash internally in mutsu; .Map on a Hash returns it as-is
-        self.dispatch_to_hash_impl(target, true)
+        // Map is stored as Hash internally in mutsu.
+        // When converting from Hash to Map, decontainerize all values
+        // (Map values are not wrapped in Scalar containers).
+        match target {
+            Value::Hash(ref map) => {
+                // Check if already a Map (same identity)
+                if self
+                    .container_type_metadata(&target)
+                    .and_then(|info| info.declared_type)
+                    .is_some_and(|dt| dt == "Map")
+                {
+                    return Ok(target);
+                }
+                // Decontainerize values for the new Map
+                let deconted: HashMap<String, Value> = map
+                    .iter()
+                    .map(|(k, v)| {
+                        let deconted = match v {
+                            Value::Scalar(inner) => (**inner).clone(),
+                            other => other.clone(),
+                        };
+                        (k.clone(), deconted)
+                    })
+                    .collect();
+                Ok(Value::hash(deconted))
+            }
+            _ => self.dispatch_to_hash_impl(target, true),
+        }
     }
 
     pub(super) fn dispatch_to_hash(&self, target: Value) -> Result<Value, RuntimeError> {
