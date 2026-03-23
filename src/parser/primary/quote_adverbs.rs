@@ -528,7 +528,7 @@ fn process_b_mode_escape<'a>(
     }
 
     // Standard escape sequences via existing handler
-    if let Some((r, _needs_continue)) =
+    if let Ok(Some((r, _needs_continue))) =
         process_escape_sequence(rest, current, &['%', '&', '{', '}', '\'', '"'])
     {
         return Some(r);

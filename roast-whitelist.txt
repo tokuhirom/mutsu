@@ -42,6 +42,7 @@ roast/S02-literals/adverbs.t
 roast/S02-literals/array-interpolation.t
 roast/S02-literals/autoref.t
 roast/S02-literals/char-by-name.t
+roast/S02-literals/char-by-number.t
 roast/S02-literals/fmt-interpolation.t
 roast/S02-literals/format.t
 roast/S02-literals/hash-interpolation.t
