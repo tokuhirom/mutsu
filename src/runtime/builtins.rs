@@ -1529,9 +1529,7 @@ impl Interpreter {
             _ => return Ok(Value::Nil),
         }
 
-        if delete_after
-            && let Some(var_name) = var_name.as_ref()
-        {
+        if delete_after && let Some(var_name) = var_name.as_ref() {
             // Get hole type before mutable borrow
             let hole_type = self
                 .var_type_constraint(var_name)
@@ -1545,8 +1543,7 @@ impl Interpreter {
                         }
                     }
                     Value::Array(items, ..) => {
-                        let hole_value =
-                            Value::Package(crate::symbol::Symbol::intern(&hole_type));
+                        let hole_value = Value::Package(crate::symbol::Symbol::intern(&hole_type));
                         let arr = std::sync::Arc::make_mut(items);
                         for idx in &indices {
                             let i = match idx {
@@ -1562,9 +1559,7 @@ impl Interpreter {
                         while let Some(last) = arr.last() {
                             let is_hole = match last {
                                 Value::Nil => true,
-                                Value::Package(name) => {
-                                    name == "Any" || name == hole_type.as_str()
-                                }
+                                Value::Package(name) => name == "Any" || name == hole_type.as_str(),
                                 _ => false,
                             };
                             if is_hole {
