@@ -70,6 +70,9 @@ fn main() {
         if arg == "--help" || arg == "-h" {
             print_help(&args[0]);
             return;
+        } else if arg == "--version" || arg == "-v" {
+            println!("mutsu 0.1.0");
+            return;
         } else if arg == "--dump-ast" {
             dump_ast = true;
         } else if arg == "--doc" {

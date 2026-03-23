@@ -2066,6 +2066,27 @@ impl Interpreter {
             .unwrap_or_default();
         match method {
             "slurp" | "Str" | "gist" => Ok(Value::str(content)),
+            "encoding" => Ok(Value::str("utf8".to_string())),
+            "close" => {
+                // TODO: should return the parent Proc object for identity
+                Ok(Value::Bool(true))
+            }
+            "split" => {
+                // Basic split for IO::Pipe
+                let separator = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let skip_empty = args
+                    .iter()
+                    .any(|a| matches!(a, Value::Pair(k, v) if k == "skip-empty" && v.truthy()));
+                let parts: Vec<Value> = content
+                    .split(&separator)
+                    .filter(|s| !skip_empty || !s.is_empty())
+                    .map(|s| Value::str(s.to_string()))
+                    .collect();
+                Ok(Value::array(parts))
+            }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on IO::Pipe",
                 method

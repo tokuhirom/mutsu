@@ -345,4 +345,45 @@ impl Interpreter {
         }
         Ok(val)
     }
+
+    /// Sink a Proc with non-zero exitcode: throw X::Proc::Unsuccessful.
+    pub(super) fn sink_proc_to_error(val: Value) -> Result<Value, RuntimeError> {
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &val
+            && class_name.resolve() == "Proc"
+        {
+            let exitcode = match attributes.get("exitcode") {
+                Some(Value::Int(i)) => *i,
+                _ => 0,
+            };
+            if exitcode != 0 {
+                let signal = match attributes.get("signal") {
+                    Some(Value::Int(i)) => *i,
+                    _ => 0,
+                };
+                let command = attributes
+                    .get("command")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let msg = format!(
+                    "The spawned command '{}' exited unsuccessfully (exit code: {}, signal: {})",
+                    command, exitcode, signal
+                );
+                let mut ex_attrs = std::collections::HashMap::new();
+                ex_attrs.insert("message".to_string(), Value::str(msg.clone()));
+                ex_attrs.insert("proc".to_string(), val);
+                let exception = Value::make_instance(
+                    crate::symbol::Symbol::intern("X::Proc::Unsuccessful"),
+                    ex_attrs,
+                );
+                let mut err = RuntimeError::new(msg);
+                err.exception = Some(Box::new(exception));
+                return Err(err);
+            }
+        }
+        Ok(val)
+    }
 }

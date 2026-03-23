@@ -991,6 +991,7 @@ pub(crate) fn is_known_compound_type(name: &str) -> bool {
             | "X::Proc::Async::MustBeStarted"
             | "X::Proc::Async::OpenForWriting"
             | "X::Proc::Async::TapBeforeSpawn"
+            | "X::Proc::Unsuccessful"
             | "X::Promise::CauseOnlyValidOnBroken"
             | "X::Promise::Combinator"
             | "X::Promise::Vowed"
