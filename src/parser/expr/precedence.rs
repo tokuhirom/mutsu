@@ -336,9 +336,9 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         )),
         Expr::MultiDimIndex { target, dimensions } => Ok((
             r,
-            Expr::IndexAssign {
+            Expr::MultiDimIndexAssign {
                 target,
-                index: Box::new(Expr::ArrayLiteral(dimensions)),
+                dimensions,
                 value: Box::new(rhs),
             },
         )),
@@ -411,9 +411,9 @@ fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             index,
             value: Box::new(value),
         },
-        Expr::MultiDimIndex { target, dimensions } => Expr::IndexAssign {
+        Expr::MultiDimIndex { target, dimensions } => Expr::MultiDimIndexAssign {
             target,
-            index: Box::new(Expr::ArrayLiteral(dimensions)),
+            dimensions,
             value: Box::new(value),
         },
         Expr::Call { name, args } => Expr::Call {
@@ -511,9 +511,9 @@ fn build_compound_assign_target_expr(target: Expr, op_name: &str, value: Expr) -
                 target: target.clone(),
                 dimensions: dimensions.clone(),
             };
-            Expr::IndexAssign {
+            Expr::MultiDimIndexAssign {
                 target,
-                index: Box::new(Expr::ArrayLiteral(dimensions)),
+                dimensions,
                 value: Box::new(compound_assigned_value_expr(lhs_expr, op, value)),
             }
         }
@@ -1448,9 +1448,9 @@ fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
             index,
             value: Box::new(source),
         },
-        Expr::MultiDimIndex { target, dimensions } => Expr::IndexAssign {
+        Expr::MultiDimIndex { target, dimensions } => Expr::MultiDimIndexAssign {
             target,
-            index: Box::new(Expr::ArrayLiteral(dimensions)),
+            dimensions,
             value: Box::new(source),
         },
         Expr::Call { name, mut args } => {

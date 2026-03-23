@@ -1994,75 +1994,87 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = r;
                 continue;
             }
-            let (r, index) = {
-                let (r, index) = parse_bracket_indices(r)?;
+            let (r, parsed) = {
+                let (r, parsed) = parse_bracket_indices_inner(r)?;
                 let (r, _) = ws(r)?;
                 let (r, _) = parse_char(r, '}')?;
-                (r, index)
+                (r, parsed)
             };
             // Allow whitespace before adverbs
             let (r_adv, _) = ws(r)?;
-            // Check for :exists / :!exists / :delete adverbs on curly-brace subscript
-            let indexed = Expr::Index {
-                target: Box::new(expr.clone()),
-                index: Box::new(index.clone()),
-            };
-            if let Some((r_after, exists_expr)) = try_parse_exists_adverb(r_adv, indexed) {
-                expr = exists_expr;
-                rest = r_after;
-                continue;
-            }
-            // Try :delete:exists combination first
-            if let Some((r_after_delete, delete_adv)) = parse_delete_adverb(r_adv) {
-                let indexed_expr = Expr::Index {
-                    target: Box::new(expr.clone()),
-                    index: Box::new(index.clone()),
-                };
-                if let Some((r_after, mut exists_expr)) =
-                    try_parse_exists_adverb(r_after_delete, indexed_expr.clone())
-                {
-                    if let Expr::Exists { delete, .. } = &mut exists_expr {
-                        *delete = matches!(delete_adv, DeleteAdverb::Delete(_));
-                    }
-                    expr = exists_expr;
-                    rest = r_after;
+            match parsed {
+                ParsedBracketIndex::MultiDim(dimensions) => {
+                    expr = Expr::MultiDimIndex {
+                        target: Box::new(expr),
+                        dimensions,
+                    };
+                    rest = r;
                     continue;
                 }
-                rest = r_after_delete;
-                match delete_adv {
-                    DeleteAdverb::NoDelete => {
-                        expr = indexed_expr;
+                ParsedBracketIndex::Single(index) => {
+                    // Check for :exists / :!exists / :delete adverbs on curly-brace subscript
+                    let indexed = Expr::Index {
+                        target: Box::new(expr.clone()),
+                        index: Box::new(index.clone()),
+                    };
+                    if let Some((r_after, exists_expr)) = try_parse_exists_adverb(r_adv, indexed) {
+                        expr = exists_expr;
+                        rest = r_after;
+                        continue;
                     }
-                    DeleteAdverb::Delete(None) => {
-                        expr = Expr::MethodCall {
-                            target: Box::new(indexed_expr),
-                            name: Symbol::intern("DELETE-KEY"),
-                            args: vec![],
-                            modifier: None,
-                            quoted: false,
+                    // Try :delete:exists combination first
+                    if let Some((r_after_delete, delete_adv)) = parse_delete_adverb(r_adv) {
+                        let indexed_expr = Expr::Index {
+                            target: Box::new(expr.clone()),
+                            index: Box::new(index.clone()),
                         };
+                        if let Some((r_after, mut exists_expr)) =
+                            try_parse_exists_adverb(r_after_delete, indexed_expr.clone())
+                        {
+                            if let Expr::Exists { delete, .. } = &mut exists_expr {
+                                *delete = matches!(delete_adv, DeleteAdverb::Delete(_));
+                            }
+                            expr = exists_expr;
+                            rest = r_after;
+                            continue;
+                        }
+                        rest = r_after_delete;
+                        match delete_adv {
+                            DeleteAdverb::NoDelete => {
+                                expr = indexed_expr;
+                            }
+                            DeleteAdverb::Delete(None) => {
+                                expr = Expr::MethodCall {
+                                    target: Box::new(indexed_expr),
+                                    name: Symbol::intern("DELETE-KEY"),
+                                    args: vec![],
+                                    modifier: None,
+                                    quoted: false,
+                                };
+                            }
+                            DeleteAdverb::Delete(Some(cond)) => {
+                                let delete_expr = Expr::MethodCall {
+                                    target: Box::new(indexed_expr.clone()),
+                                    name: Symbol::intern("DELETE-KEY"),
+                                    args: vec![],
+                                    modifier: None,
+                                    quoted: false,
+                                };
+                                expr = Expr::Ternary {
+                                    cond: Box::new(cond),
+                                    then_expr: Box::new(delete_expr),
+                                    else_expr: Box::new(indexed_expr),
+                                };
+                            }
+                        }
+                        continue;
                     }
-                    DeleteAdverb::Delete(Some(cond)) => {
-                        let delete_expr = Expr::MethodCall {
-                            target: Box::new(indexed_expr.clone()),
-                            name: Symbol::intern("DELETE-KEY"),
-                            args: vec![],
-                            modifier: None,
-                            quoted: false,
-                        };
-                        expr = Expr::Ternary {
-                            cond: Box::new(cond),
-                            then_expr: Box::new(delete_expr),
-                            else_expr: Box::new(indexed_expr),
-                        };
-                    }
+                    expr = Expr::Index {
+                        target: Box::new(expr),
+                        index: Box::new(index),
+                    };
                 }
-                continue;
             }
-            expr = Expr::Index {
-                target: Box::new(expr),
-                index: Box::new(index),
-            };
             rest = r;
             continue;
         }
