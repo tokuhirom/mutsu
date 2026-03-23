@@ -1181,6 +1181,22 @@ impl Interpreter {
     pub(crate) fn make_io_path_instance(&self, path: &str) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("path".to_string(), Value::str(path.to_string()));
+        // Inherit $*SPEC if set (check both env lookup styles)
+        let spec = self
+            .env
+            .get("$*SPEC")
+            .or_else(|| self.env.get("*SPEC"))
+            .cloned()
+            .or_else(|| self.get_dynamic_var("*SPEC").ok());
+        if let Some(spec) = spec
+            && !matches!(&spec, Value::Nil)
+        {
+            attrs.insert("SPEC".to_string(), spec);
+        }
+        // Set CWD from $*CWD if available
+        if let Some(cwd) = self.get_dynamic_string("$*CWD") {
+            attrs.insert("cwd".to_string(), Value::str(cwd));
+        }
         Value::make_instance(Symbol::intern("IO::Path"), attrs)
     }
 

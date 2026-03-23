@@ -405,6 +405,11 @@ impl Interpreter {
                 } else {
                     String::new()
                 };
+                if path.is_empty() {
+                    return Err(RuntimeError::new(
+                        "Must specify a non-empty string as a path",
+                    ));
+                }
                 if path.contains('\0') {
                     return Err(RuntimeError::new(
                         "X::IO::Null: Found null byte in pathname",

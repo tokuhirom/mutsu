@@ -216,12 +216,8 @@ pub(crate) fn string_succ(s: &str) -> String {
         }
         result
     } else {
-        // No magic characters; increment last char by 1
-        let mut chars = chars;
-        if let Some(last) = chars.last_mut() {
-            *last = char::from_u32(*last as u32 + 1).unwrap_or(*last);
-        }
-        chars.into_iter().collect()
+        // No alphanumeric characters; return string unchanged (Raku behavior)
+        s.to_string()
     }
 }
 
@@ -247,7 +243,8 @@ pub(crate) fn string_pred_checked(s: &str) -> Option<String> {
             }
             return prev_char_in_range(ch, start).map(|c| c.to_string());
         }
-        return char::from_u32(ch as u32 - 1).map(|c| c.to_string());
+        // No alphanumeric character; return unchanged
+        return Some(s.to_string());
     }
     if let Some((seg_start, seg_end)) = find_last_magic_segment(&chars) {
         let segment = &chars[seg_start..=seg_end];
@@ -262,11 +259,8 @@ pub(crate) fn string_pred_checked(s: &str) -> Option<String> {
         }
         Some(result)
     } else {
-        let mut chars = chars;
-        if let Some(last) = chars.last_mut() {
-            *last = char::from_u32(*last as u32 - 1).unwrap_or(*last);
-        }
-        Some(chars.into_iter().collect())
+        // No alphanumeric characters; return string unchanged
+        Some(s.to_string())
     }
 }
 
