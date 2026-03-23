@@ -474,6 +474,48 @@ impl Interpreter {
                 i += 1;
                 continue;
             }
+            // Handle Perl postponed regex (??{EXPR}): evaluate EXPR and use
+            // the result as a sub-pattern.  We can't run arbitrary code, but
+            // we handle the common case where EXPR is a string literal
+            // (e.g. (??{"(?!)"})) by inlining the string content.  For empty
+            // or non-literal EXPR we fall back to a no-op (?:).
+            if !in_char_class
+                && chars[i] == '('
+                && i + 3 < chars.len()
+                && chars[i + 1] == '?'
+                && chars[i + 2] == '?'
+                && chars[i + 3] == '{'
+                && let Some(brace_end) = Self::find_matching_brace(&chars, i + 3)
+            {
+                let after = brace_end + 1;
+                if after < chars.len() && chars[after] == ')' {
+                    let code_body: String = chars[i + 4..brace_end].iter().collect();
+                    let trimmed = code_body.trim();
+                    // Extract string literal content: "..." or '...'
+                    let inlined = if (trimmed.starts_with('"') && trimmed.ends_with('"'))
+                        || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
+                    {
+                        // Strip quotes, use content as regex
+                        trimmed[1..trimmed.len() - 1].to_string()
+                    } else if trimmed.is_empty() {
+                        // Empty code block — no-op
+                        String::new()
+                    } else {
+                        // Unknown code — fall back to no-op
+                        String::new()
+                    };
+                    if inlined.is_empty() {
+                        out.push_str("(?:)");
+                    } else {
+                        // Wrap in non-capturing group so it composes safely
+                        out.push_str("(?:");
+                        out.push_str(&inlined);
+                        out.push(')');
+                    }
+                    i = after + 1;
+                    continue;
+                }
+            }
             // Handle Perl code assertions (?{...}) as zero-width no-op.
             if !in_char_class
                 && chars[i] == '('
