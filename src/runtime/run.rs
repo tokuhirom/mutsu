@@ -453,22 +453,20 @@ impl Interpreter {
                 continue;
             }
 
-            // Emit pending todo before next non-comment, non-empty line
-            if let Some((ref reason, ref mut remaining)) = pending_todo
+            // Emit pending todo before next non-comment, non-empty line.
+            // Emit `todo 'reason', count;` once with the full count so that
+            // the Test module marks the correct number of upcoming tests as
+            // TODO, regardless of how many source lines each test spans.
+            if let Some((ref reason, count)) = pending_todo
                 && !trimmed.is_empty()
                 && !trimmed.starts_with('#')
             {
                 output.push_str(&format!(
-                    "todo {};\n",
-                    Self::raku_single_quoted_literal(reason)
+                    "todo {}, {};\n",
+                    Self::raku_single_quoted_literal(reason),
+                    count
                 ));
-                output.push_str(line);
-                output.push('\n');
-                *remaining -= 1;
-                if *remaining == 0 {
-                    pending_todo = None;
-                }
-                continue; // skip normal append below
+                pending_todo = None;
             }
 
             // #?rakudo N skip 'reason' — count-based skip directive.
@@ -997,8 +995,8 @@ mod tests {
     fn preprocess_rakudo_todo_marks_backend_specific_todo() {
         let src = "#?rakudo todo 'NYI'\nok True, 'still runs';\n#?rakudo 2 todo 'later'\nis 42, 42, 'also runs';\n";
         let out = Interpreter::preprocess_roast_directives(src);
-        assert!(out.contains("todo '__mutsu_backend_todo__:NYI';"));
-        assert!(out.contains("todo '__mutsu_backend_todo__:later';"));
+        assert!(out.contains("todo '__mutsu_backend_todo__:NYI', 1;"));
+        assert!(out.contains("todo '__mutsu_backend_todo__:later', 2;"));
     }
 
     #[test]

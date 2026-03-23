@@ -22,7 +22,7 @@ class PDRegMulti {
 
 my @m = (1..2).map({ PDRegMulti.new(v => $_) });
 # Hyper dispatch on @-variable returns Array (same container type as input)
-is-deeply @m».*mul(2), [(2, 102), (4, 104)], 'hyper .* returns all matching method candidates';
-is-deeply @m».+mul(2), [(2, 102), (4, 104)], 'hyper .+ returns all matching method candidates';
+is-deeply @m».*mul(2), [[2, 102], [4, 104]], 'hyper .* returns all matching method candidates';
+is-deeply @m».+mul(2), [[2, 102], [4, 104]], 'hyper .+ returns all matching method candidates';
 
 is (a => 1, a => 2)>>.<a>, '1 2', 'hyper >>.<key> works on pairs';
