@@ -525,62 +525,82 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Some(Ok(Value::Seq(pairs.into())))
             }
         },
-        "antipairs" => match target {
-            Value::Hash(items) => Some(Ok(Value::array(
-                items
-                    .iter()
-                    .map(|(k, v)| match v {
-                        Value::Str(s) => {
-                            Value::Pair(s.to_string(), Box::new(Value::str(k.clone())))
-                        }
-                        _ => Value::ValuePair(Box::new(v.clone()), Box::new(Value::str(k.clone()))),
+        "antipairs" => {
+            if crate::runtime::utils::is_shaped_array(target) {
+                let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
+                let pairs: Vec<Value> = indexed
+                    .into_iter()
+                    .map(|(idx, val)| {
+                        let key = Value::array(idx.into_iter().map(Value::Int).collect());
+                        make_inverted_pair(val, key)
                     })
-                    .collect(),
-            ))),
-            Value::Bag(items) => Some(Ok(Value::array(
-                items
-                    .iter()
-                    .map(|(k, v)| {
-                        Value::ValuePair(Box::new(Value::Int(*v)), Box::new(Value::str(k.clone())))
-                    })
-                    .collect(),
-            ))),
-            Value::Set(items) => Some(Ok(Value::array(
-                items
-                    .iter()
-                    .map(|k| {
-                        Value::ValuePair(
-                            Box::new(Value::Bool(true)),
-                            Box::new(Value::str(k.clone())),
-                        )
-                    })
-                    .collect(),
-            ))),
-            Value::Mix(items) => Some(Ok(Value::array(
-                items
-                    .iter()
-                    .map(|(k, v)| {
-                        let weight = crate::value::make_rat((*v * 1_000_000.0) as i64, 1_000_000);
-                        // Simplify to Int if the weight is a whole number
-                        let weight_val = if v.fract() == 0.0 {
-                            Value::Int(*v as i64)
-                        } else {
-                            weight
-                        };
-                        Value::ValuePair(Box::new(weight_val), Box::new(Value::str(k.clone())))
-                    })
-                    .collect(),
-            ))),
-            Value::Package(_) => None, // let runtime handle (may be enum type)
-            v if v.is_range() => {
-                let values = crate::runtime::utils::value_to_list(v);
-                Some(Ok(Value::array(positional_antipairs(&values))))
+                    .collect();
+                return Some(Ok(Value::array(pairs)));
             }
-            other => {
-                let values = crate::runtime::utils::value_to_list(other);
-                Some(Ok(Value::array(positional_antipairs(&values))))
+            match target {
+                Value::Hash(items) => Some(Ok(Value::array(
+                    items
+                        .iter()
+                        .map(|(k, v)| match v {
+                            Value::Str(s) => {
+                                Value::Pair(s.to_string(), Box::new(Value::str(k.clone())))
+                            }
+                            _ => Value::ValuePair(
+                                Box::new(v.clone()),
+                                Box::new(Value::str(k.clone())),
+                            ),
+                        })
+                        .collect(),
+                ))),
+                Value::Bag(items) => Some(Ok(Value::array(
+                    items
+                        .iter()
+                        .map(|(k, v)| {
+                            Value::ValuePair(
+                                Box::new(Value::Int(*v)),
+                                Box::new(Value::str(k.clone())),
+                            )
+                        })
+                        .collect(),
+                ))),
+                Value::Set(items) => Some(Ok(Value::array(
+                    items
+                        .iter()
+                        .map(|k| {
+                            Value::ValuePair(
+                                Box::new(Value::Bool(true)),
+                                Box::new(Value::str(k.clone())),
+                            )
+                        })
+                        .collect(),
+                ))),
+                Value::Mix(items) => Some(Ok(Value::array(
+                    items
+                        .iter()
+                        .map(|(k, v)| {
+                            let weight =
+                                crate::value::make_rat((*v * 1_000_000.0) as i64, 1_000_000);
+                            // Simplify to Int if the weight is a whole number
+                            let weight_val = if v.fract() == 0.0 {
+                                Value::Int(*v as i64)
+                            } else {
+                                weight
+                            };
+                            Value::ValuePair(Box::new(weight_val), Box::new(Value::str(k.clone())))
+                        })
+                        .collect(),
+                ))),
+                Value::Package(_) => None, // let runtime handle (may be enum type)
+                v if v.is_range() => {
+                    let values = crate::runtime::utils::value_to_list(v);
+                    Some(Ok(Value::array(positional_antipairs(&values))))
+                }
+                other => {
+                    let values = crate::runtime::utils::value_to_list(other);
+                    Some(Ok(Value::array(positional_antipairs(&values))))
+                }
             }
-        },
+        }
         "kxxv" => match target {
             Value::Bag(items) => {
                 let mut result = Vec::new();
@@ -868,17 +888,25 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             _ => None,
         },
         "permutations" => {
-            let items = target
-                .as_list_items()
-                .map(|items| items.to_vec())
-                .unwrap_or_else(|| runtime::value_to_list(target));
+            let items = if crate::runtime::utils::is_shaped_array(target) {
+                crate::runtime::utils::shaped_array_leaves(target)
+            } else {
+                target
+                    .as_list_items()
+                    .map(|items| items.to_vec())
+                    .unwrap_or_else(|| runtime::value_to_list(target))
+            };
             Some(Ok(Value::Seq(all_permutations(&items).into())))
         }
         "combinations" => {
-            let items = target
-                .as_list_items()
-                .map(|items| items.to_vec())
-                .unwrap_or_else(|| runtime::value_to_list(target));
+            let items = if crate::runtime::utils::is_shaped_array(target) {
+                crate::runtime::utils::shaped_array_leaves(target)
+            } else {
+                target
+                    .as_list_items()
+                    .map(|items| items.to_vec())
+                    .unwrap_or_else(|| runtime::value_to_list(target))
+            };
             Some(Ok(Value::Seq(combinations_all(&items).into())))
         }
         "cache" => {

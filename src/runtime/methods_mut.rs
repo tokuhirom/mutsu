@@ -1852,11 +1852,18 @@ impl Interpreter {
         // map with rw binding: mutations to $_ inside map should write back to the
         // source array elements (Raku semantics: $_ is rw-bound in map).
         if method == "map" && target_var.starts_with('@') {
-            let mut items = Self::value_to_list(&target);
+            let mut items = if crate::runtime::utils::is_shaped_array(&target) {
+                crate::runtime::utils::shaped_array_leaves(&target)
+            } else {
+                Self::value_to_list(&target)
+            };
             let result = self.eval_map_over_items_rw(args.first().cloned(), &mut items)?;
-            // Write mutated elements back to the source array
-            let key = target_var.to_string();
-            self.env.insert(key, Value::real_array(items));
+            // Write mutated elements back to the source array (skip for shaped arrays
+            // since map shouldn't mutate the shaped structure)
+            if !crate::runtime::utils::is_shaped_array(&target) {
+                let key = target_var.to_string();
+                self.env.insert(key, Value::real_array(items));
+            }
             return Ok(result);
         }
 

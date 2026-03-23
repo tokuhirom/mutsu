@@ -261,6 +261,14 @@ impl Interpreter {
         target: Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        // Multi-dim shaped arrays cannot be rotated
+        if let Value::Array(_, kind) = &target
+            && *kind == crate::value::ArrayKind::Shaped
+            && let Some(shape) = crate::runtime::utils::shaped_array_shape(&target)
+            && shape.len() > 1
+        {
+            return Err(RuntimeError::illegal_on_fixed_dimension_array("rotate"));
+        }
         let items = if let Some(list_items) = target.as_list_items() {
             list_items.to_vec()
         } else {
@@ -756,14 +764,31 @@ impl Interpreter {
         let callable_ref = callable_args.first();
 
         match target {
-            Value::Array(mut items, ..) => {
-                let items_mut = Arc::make_mut(&mut items);
-                if return_indices {
-                    let indices = sort_indices(self, items_mut, callable_ref, callable_arity);
-                    Ok(Value::array(indices))
+            Value::Array(ref items_arc, ref kind) => {
+                // For multi-dim shaped arrays, sort over leaves
+                let use_leaves = *kind == crate::value::ArrayKind::Shaped
+                    && items_arc.iter().any(|v| matches!(v, Value::Array(..)));
+                if use_leaves {
+                    let mut leaves = crate::runtime::utils::shaped_array_leaves(&target);
+                    if return_indices {
+                        let indices = sort_indices(self, &leaves, callable_ref, callable_arity);
+                        Ok(Value::array(indices))
+                    } else {
+                        sort_items(self, &mut leaves, callable_ref, callable_arity);
+                        Ok(Value::Seq(Arc::new(leaves)))
+                    }
                 } else {
-                    sort_items(self, items_mut, callable_ref, callable_arity);
-                    Ok(Value::Seq(Arc::new(items_mut.to_vec())))
+                    let Value::Array(mut items, ..) = target else {
+                        unreachable!()
+                    };
+                    let items_mut = Arc::make_mut(&mut items);
+                    if return_indices {
+                        let indices = sort_indices(self, items_mut, callable_ref, callable_arity);
+                        Ok(Value::array(indices))
+                    } else {
+                        sort_items(self, items_mut, callable_ref, callable_arity);
+                        Ok(Value::Seq(Arc::new(items_mut.to_vec())))
+                    }
                 }
             }
             Value::Seq(items) | Value::Slip(items) => {
@@ -2815,7 +2840,11 @@ impl Interpreter {
         } else {
             target
         };
-        let items = Self::value_to_list(&target);
+        let items = if crate::runtime::utils::is_shaped_array(&target) {
+            crate::runtime::utils::shaped_array_leaves(&target)
+        } else {
+            Self::value_to_list(&target)
+        };
 
         if items.is_empty() {
             return Ok(Value::Seq(Arc::new(Vec::new())));
