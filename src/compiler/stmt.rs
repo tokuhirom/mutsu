@@ -361,6 +361,11 @@ impl Compiler {
                     self.code.emit(OpCode::Die);
                     return;
                 }
+                // Track constant declarations so the compiler can avoid itemizing
+                // them in `for` loops (constants have no Scalar container).
+                if custom_traits.iter().any(|(t, _)| t == "__constant") {
+                    self.constant_vars.insert(name.clone());
+                }
                 let is_dynamic = *is_dynamic || self.var_is_dynamic(name);
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::SetVarDynamic {
@@ -405,6 +410,11 @@ impl Compiler {
                     self.compile_call_arg(expr);
                 } else {
                     self.compile_assignment_rhs_for_target(name, expr);
+                }
+                // `constant @x = ...` should store a List, not an Array.
+                // Coerce the value on the stack before storing.
+                if name.starts_with('@') && custom_traits.iter().any(|(t, _)| t == "__constant") {
+                    self.code.emit(OpCode::CoerceToList);
                 }
                 // Skip TypeCheck for hash declarations: the type constraint
                 // applies to element values, not to the collection itself.
@@ -454,11 +464,25 @@ impl Compiler {
                         self.code.emit(OpCode::MarkBindContext);
                         self.bind_vardecl = false;
                     }
+                    // Mark constant context so SetLocal uses List coercion for @ and
+                    // skips Hash coercion for %, matching Raku's constant semantics.
+                    let is_constant = custom_traits.iter().any(|(t, _)| t == "__constant");
+                    if is_constant && (name.starts_with('@') || name.starts_with('%')) {
+                        self.code.emit(OpCode::MarkConstantContext);
+                    }
                     self.code.emit(OpCode::SetLocal(slot));
                     if *is_our {
                         let qualified = self.qualify_variable_name(name);
                         let idx = self.code.add_constant(Value::str(qualified));
-                        self.code.emit(OpCode::SetGlobal(idx));
+                        // Constants should not have their values coerced by the
+                        // @/% container rules: `constant @x` stores a List,
+                        // `constant %x` stores a Map (not Array/Hash).
+                        let is_constant = custom_traits.iter().any(|(t, _)| t == "__constant");
+                        if is_constant {
+                            self.code.emit(OpCode::SetGlobalRaw(idx));
+                        } else {
+                            self.code.emit(OpCode::SetGlobal(idx));
+                        }
                     }
                 }
                 if *is_export {
@@ -712,7 +736,7 @@ impl Compiler {
                 } else {
                     1
                 };
-                let normalized_iterable = Self::normalize_for_iterable(iterable);
+                let normalized_iterable = self.normalize_for_iterable(iterable);
                 self.compile_expr(&normalized_iterable);
                 if let Some(source_name) = Self::for_iterable_source_name(iterable) {
                     let source_idx = self.code.add_constant(Value::str(source_name));

@@ -67,6 +67,8 @@ pub(crate) struct VM {
     resume_ip: Option<usize>,
     /// When true, the next SetLocal is a `:=` bind (preserves container type for `@` vars).
     bind_context: bool,
+    /// When true, the next SetLocal skips @/% container coercion (for `constant @x`).
+    constant_context: bool,
 }
 
 impl VM {
@@ -203,6 +205,7 @@ impl VM {
             locals_dirty: false,
             resume_ip: None,
             bind_context: false,
+            constant_context: false,
         }
     }
 
@@ -576,7 +579,8 @@ impl VM {
                 self.exec_get_pseudo_stash_op(code, *name_idx);
                 *ip += 1;
             }
-            OpCode::SetGlobal(name_idx) => {
+            OpCode::SetGlobalRaw(name_idx) | OpCode::SetGlobal(name_idx) => {
+                let raw_mode = matches!(code.ops[*ip], OpCode::SetGlobalRaw(_));
                 self.bind_context = false;
                 let name = match &code.constants[*name_idx as usize] {
                     Value::Str(s) => s.to_string(),
@@ -620,7 +624,25 @@ impl VM {
                 } else {
                     (raw_val, None)
                 };
-                let mut val = if name.starts_with('%') {
+                let mut val = if raw_mode && name.starts_with('@') {
+                    // Constants with @ sigil coerce to List (not Array).
+                    // `constant @x = 42` gives `(42,)`, not `[42]`.
+                    // Explicit Arrays ([1,2,3]) are preserved.
+                    match raw_val {
+                        Value::Array(items, kind) if kind.is_real_array() => {
+                            Value::Array(items, kind)
+                        }
+                        Value::Array(items, _) => {
+                            Value::Array(items, crate::value::ArrayKind::List)
+                        }
+                        other => Value::Array(
+                            std::sync::Arc::new(vec![other]),
+                            crate::value::ArrayKind::List,
+                        ),
+                    }
+                } else if raw_mode {
+                    raw_val
+                } else if name.starts_with('%') {
                     runtime::coerce_to_hash(raw_val)
                 } else if name.starts_with('@') {
                     runtime::coerce_to_array(raw_val)
@@ -694,15 +716,28 @@ impl VM {
                         .env_mut()
                         .insert(readonly_key.clone(), Value::Bool(false));
                 }
-                self.set_env_with_main_alias(&name, val.clone());
+                if raw_mode && name.starts_with('@') {
+                    // For `constant @x`, bypass set_shared_var's List→Array
+                    // normalization so the container type (List) is preserved.
+                    self.interpreter.env_mut().insert(name.clone(), val.clone());
+                } else {
+                    self.set_env_with_main_alias(&name, val.clone());
+                }
+                // Persist `our`-scoped variables so they survive block-scope
+                // restoration (which only preserves env keys that existed
+                // before the block).  `::('name')` falls back to this store.
+                self.interpreter.set_our_var(name.clone(), val.clone());
                 // Track topic mutations for map rw writeback
                 if name == "_" {
                     self.interpreter
                         .env_mut()
                         .insert("__mutsu_rw_map_topic__".to_string(), val.clone());
                 }
-                // Sync to shared_vars for cross-thread visibility
-                self.interpreter.set_shared_var(&name, val.clone());
+                // Sync to shared_vars for cross-thread visibility.
+                // Skip for raw_mode @-variables to preserve List kind.
+                if !(raw_mode && name.starts_with('@')) {
+                    self.interpreter.set_shared_var(&name, val.clone());
+                }
                 let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
                     if let Value::Str(name) = v {
                         Some(name.to_string())
@@ -853,6 +888,10 @@ impl VM {
             }
             OpCode::MarkBindContext => {
                 self.bind_context = true;
+                *ip += 1;
+            }
+            OpCode::MarkConstantContext => {
+                self.constant_context = true;
                 *ip += 1;
             }
 
@@ -1316,6 +1355,25 @@ impl VM {
             OpCode::Dup => {
                 let val = self.stack.last().unwrap().clone();
                 self.stack.push(val);
+                *ip += 1;
+            }
+            OpCode::CoerceToList => {
+                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let list_val = match val {
+                    // Explicit Arrays ([1,2,3]) are preserved as-is.
+                    Value::Array(_, kind) if kind.is_real_array() => val,
+                    // Comma lists and other non-real arrays become Lists.
+                    Value::Array(items, _) => Value::Array(items, crate::value::ArrayKind::List),
+                    Value::Seq(items) => Value::Array(
+                        std::sync::Arc::new(items.to_vec()),
+                        crate::value::ArrayKind::List,
+                    ),
+                    other => Value::Array(
+                        std::sync::Arc::new(vec![other]),
+                        crate::value::ArrayKind::List,
+                    ),
+                };
+                self.stack.push(list_val);
                 *ip += 1;
             }
             OpCode::Pop => {

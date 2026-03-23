@@ -1561,7 +1561,7 @@ impl Compiler {
         } else {
             1
         };
-        let normalized_iterable = Self::normalize_for_iterable(iterable);
+        let normalized_iterable = self.normalize_for_iterable(iterable);
         self.compile_expr(&normalized_iterable);
         if let Some(source_name) = Self::for_iterable_source_name(iterable) {
             let source_idx = self.code.add_constant(Value::str(source_name));

@@ -17,6 +17,14 @@ pub(crate) enum OpCode {
     SetLocal(u32),
     GetGlobal(u32),
     SetGlobal(u32),
+    /// Like SetGlobal but skips @/% coercion (used for `constant @x` / `constant %x`).
+    SetGlobalRaw(u32),
+    /// Coerce top-of-stack value to a List (ArrayKind::List).
+    /// Used for `constant @x = ...` where the @-sigil should produce a List, not an Array.
+    CoerceToList,
+    /// Mark that the next SetLocal should treat the value as a constant
+    /// (skip @/% container coercion). Similar to MarkBindContext.
+    MarkConstantContext,
     SetVarType {
         name_idx: u32,
         tc_idx: u32,

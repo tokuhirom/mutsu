@@ -1482,7 +1482,15 @@ impl VM {
             .split_once('(')
             .map_or(base_constraint, |(target, _)| target);
         let value = self.stack.last().expect("TypeCheck: empty stack").clone();
-        if let Value::Array(..) = &value {
+        // When the constraint is a container type (List, Array, Positional, Seq, Cool, Any, Mu),
+        // an Array value directly satisfies it — do NOT descend into element-level matching.
+        // Element-level matching is for declarations like `my Int @x = 1, 2, 3`.
+        if let Value::Array(..) = &value
+            && !matches!(
+                declared_constraint,
+                "List" | "Array" | "Positional" | "Seq" | "Cool" | "Any" | "Mu" | "Iterable"
+            )
+        {
             if !self.array_elements_match_constraint(constraint, &value) {
                 return Err(RuntimeError::typed_msg(
                     "X::Syntax::Number::LiteralType",
