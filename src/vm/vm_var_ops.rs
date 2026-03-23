@@ -362,7 +362,7 @@ impl VM {
             .and_then(|s| s.strip_suffix('>'))
     }
 
-    fn array_depth(value: &Value) -> usize {
+    pub(super) fn array_depth(value: &Value) -> usize {
         if let Some(shape) = crate::runtime::utils::shaped_array_shape(value)
             && !shape.is_empty()
         {
@@ -946,6 +946,13 @@ impl VM {
                     let mut failure_attrs = std::collections::HashMap::new();
                     failure_attrs.insert("exception".to_string(), ex);
                     Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+                } else if is_arr == crate::value::ArrayKind::Shaped && (i as usize) >= items.len() {
+                    // Shaped arrays have fixed size; accessing beyond bounds dies
+                    return Err(RuntimeError::new(format!(
+                        "Index {} for dimension 1 out of range (must be 0..{})",
+                        i,
+                        items.len() - 1
+                    )));
                 } else {
                     let default =
                         self.typed_container_default(&Value::Array(items.clone(), is_arr));

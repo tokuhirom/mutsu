@@ -847,9 +847,23 @@ impl VM {
                         if bind_mode && is_bound_index {
                             return Err(RuntimeError::assignment_ro(None));
                         }
-                        // Multidimensional indexing: @arr[0;0] = 'x'
-                        Self::assign_array_multidim(container, keys.as_ref(), val.clone())?;
-                        initialized_marks.push(encoded_idx.clone());
+                        let depth = Self::array_depth(container);
+                        if depth <= 1 && keys.len() > 1 {
+                            // 1D shaped array with multiple indices: slice assignment
+                            for (i, key) in keys.iter().enumerate() {
+                                let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                                Self::assign_array_multidim(
+                                    container,
+                                    std::slice::from_ref(key),
+                                    v,
+                                )?;
+                                initialized_marks.push(Self::encode_bound_index(key));
+                            }
+                        } else {
+                            // Multidimensional indexing: @arr[0;0] = 'x'
+                            Self::assign_array_multidim(container, keys.as_ref(), val.clone())?;
+                            initialized_marks.push(encoded_idx.clone());
+                        }
                     } else {
                         // Flat slice assignment: @a[2,3,4,6] = <foo bar foo bar>
                         // Auto-extend the array to accommodate all indices

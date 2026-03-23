@@ -31,6 +31,23 @@ impl Interpreter {
         if let Value::Instance { class_name, .. } = &target {
             return self.dispatch_new(Value::Package(*class_name), args);
         }
+        // Calling .new() on a concrete Array delegates to the type constructor.
+        // If the array has type metadata (e.g. array[str]), use the declared type.
+        if let Value::Array(..) = &target {
+            let type_name = if let Some(info) = self.container_type_metadata(&target) {
+                if let Some(ref dt) = info.declared_type {
+                    dt.clone()
+                } else if info.value_type != "Any" && info.value_type != "Mu" {
+                    // Construct the parametric type name from value_type
+                    format!("array[{}]", info.value_type)
+                } else {
+                    "Array".to_string()
+                }
+            } else {
+                "Array".to_string()
+            };
+            return self.dispatch_new(Value::Package(Symbol::intern(&type_name)), args);
+        }
         // Calling .new() on a concrete Hash/Bag/Mix delegates to the type constructor
         {
             let type_pkg = match &target {
@@ -449,6 +466,21 @@ impl Interpreter {
                             }
                             _ => None,
                         });
+                        // If no :data, collect positional (non-Pair) args as data
+                        let data = if data.is_none() {
+                            let positional: Vec<Value> = args
+                                .iter()
+                                .filter(|arg| !matches!(arg, Value::Pair(..)))
+                                .cloned()
+                                .collect();
+                            if positional.is_empty() {
+                                None
+                            } else {
+                                Some(Value::array(positional))
+                            }
+                        } else {
+                            data
+                        };
                         let shaped = Self::make_shaped_array(&dims);
                         if let Some(ref data_val) = data
                             && let Some(source_shape) =
@@ -507,8 +539,30 @@ impl Interpreter {
                                 }
                                 let result = Value::Array(std::sync::Arc::new(new_items), is_arr);
                                 crate::runtime::utils::mark_shaped_array(&result, Some(&dims));
+                                // Register type metadata for typed shaped arrays (e.g. array[str].new(:shape(5), ...))
+                                if let Some(ref ta) = type_args
+                                    && let Some(constraint) = ta.first()
+                                {
+                                    let info = crate::runtime::ContainerTypeInfo {
+                                        value_type: constraint.clone(),
+                                        key_type: None,
+                                        declared_type: Some(class_name.resolve()),
+                                    };
+                                    self.register_container_type_metadata(&result, info);
+                                }
                                 return Ok(result);
                             }
+                        }
+                        // Register type metadata for typed shaped arrays (e.g. array[str].new(:shape(5)))
+                        if let Some(ref ta) = type_args
+                            && let Some(constraint) = ta.first()
+                        {
+                            let info = crate::runtime::ContainerTypeInfo {
+                                value_type: constraint.clone(),
+                                key_type: None,
+                                declared_type: Some(class_name.resolve()),
+                            };
+                            self.register_container_type_metadata(&shaped, info);
                         }
                         return Ok(shaped);
                     }
@@ -1547,6 +1601,21 @@ impl Interpreter {
                             }
                             _ => None,
                         });
+                        // If no :data, collect positional (non-Pair) args as data
+                        let data = if data.is_none() {
+                            let positional: Vec<Value> = args
+                                .iter()
+                                .filter(|arg| !matches!(arg, Value::Pair(..)))
+                                .cloned()
+                                .collect();
+                            if positional.is_empty() {
+                                None
+                            } else {
+                                Some(Value::array(positional))
+                            }
+                        } else {
+                            data
+                        };
                         let shaped = Self::make_shaped_array(&dims);
                         let result = if let Some(data_val) = data {
                             let data_items = match data_val {
