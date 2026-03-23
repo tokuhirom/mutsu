@@ -526,6 +526,17 @@ pub(crate) fn native_method_0arg(
         return native_method_0arg(inner, method_sym);
     }
 
+    // Nil absorber for common methods: Nil.message, Nil.payload, etc.
+    // In Raku, calling most methods on Nil returns Nil.
+    if matches!(target, Value::Nil)
+        && matches!(
+            method,
+            "message" | "payload" | "backtrace" | "exception" | "handled"
+        )
+    {
+        return Some(Ok(Value::Nil));
+    }
+
     // For Mixin values, handle Bool/WHICH method specially, then delegate to inner.
     if let Value::Mixin(inner, mixins) = target {
         if method == "Bool"
@@ -1369,6 +1380,66 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     .unwrap_or(Value::str(String::new()))));
             }
             _ => {}
+        }
+    }
+
+    // Exception/X:: methods: gist, Str, message
+    if let Value::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target
+    {
+        let cn = class_name.resolve();
+        if cn == "Exception" || cn.starts_with("X::") || cn.starts_with("CX::") {
+            match method {
+                "gist" => {
+                    if let Some(msg) = attributes.get("message") {
+                        let msg_str = msg.to_string_value();
+                        if !msg_str.is_empty() {
+                            return Some(Ok(Value::str(msg_str)));
+                        }
+                    }
+                    // No message: produce a descriptive gist
+                    if cn == "Exception" {
+                        return Some(Ok(Value::str_from("Unthrown Exception with no message")));
+                    }
+                    if cn == "X::AdHoc" {
+                        if let Some(payload) = attributes.get("payload") {
+                            let payload_str = payload.to_string_value();
+                            if !payload_str.is_empty() {
+                                return Some(Ok(Value::str(payload_str)));
+                            }
+                        }
+                        return Some(Ok(Value::str_from("Unexplained error")));
+                    }
+                    return Some(Ok(Value::str(format!("{} with no message", cn))));
+                }
+                "Str" => {
+                    if let Some(msg) = attributes.get("message") {
+                        let msg_str = msg.to_string_value();
+                        if !msg_str.is_empty() {
+                            return Some(Ok(Value::str(msg_str)));
+                        }
+                    }
+                    if cn == "Exception" {
+                        return Some(Ok(Value::str(format!("Something went wrong in ({})", cn))));
+                    }
+                    return Some(Ok(Value::str(format!("{} with no message", cn))));
+                }
+                "message" => {
+                    if let Some(msg) = attributes.get("message") {
+                        return Some(Ok(msg.clone()));
+                    }
+                    if cn == "X::AdHoc"
+                        && let Some(payload) = attributes.get("payload")
+                    {
+                        return Some(Ok(payload.clone()));
+                    }
+                    return Some(Ok(Value::str(String::new())));
+                }
+                _ => {}
+            }
         }
     }
 

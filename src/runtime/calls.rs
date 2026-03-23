@@ -381,8 +381,32 @@ impl Interpreter {
             call_profile, signature, err.message
         );
         let mut enhanced = RuntimeError::new(enhanced_msg.clone());
-        // Update the exception object's message attribute so $! shows the enhanced message
-        if let Some(ex) = err.exception {
+        // For binding type-check errors on regular calls, wrap as X::TypeCheck::Argument
+        // Only do this when the error has no existing exception and the message is
+        // about a type-only parameter (where the parameter name IS the type constraint),
+        // or about arity mismatch.
+        let is_arity_error = err.message.contains("Too few positionals passed")
+            || err.message.contains("Too many positionals passed");
+        let is_type_only_mismatch = err.exception.is_none()
+            && err
+                .message
+                .contains("X::TypeCheck::Binding::Parameter: Type check failed")
+            && (err.message.contains("for parameter '")
+                || err.message.contains("for __type_only__"));
+        if (is_arity_error || is_type_only_mismatch) && err.exception.is_none() {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), Value::str(enhanced_msg.clone()));
+            attrs.insert("objname".to_string(), Value::str(func_name.to_string()));
+            attrs.insert("signature".to_string(), Value::str(signature));
+            let arg_type_values: Vec<Value> =
+                arg_types.iter().map(|t| Value::str(t.clone())).collect();
+            attrs.insert("arguments".to_string(), Value::array(arg_type_values));
+            enhanced.exception = Some(Box::new(Value::make_instance(
+                crate::symbol::Symbol::intern("X::TypeCheck::Argument"),
+                attrs,
+            )));
+        } else if let Some(ex) = err.exception {
+            // Update the exception object's message attribute so $! shows the enhanced message
             if let Value::Instance {
                 class_name,
                 ref attributes,

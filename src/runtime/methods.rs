@@ -1557,6 +1557,11 @@ impl Interpreter {
             return result;
         }
 
+        // NOTE: Nil absorber is intentionally NOT in the interpreter's method dispatch.
+        // The VM path (vm_call_ops.rs) already handles Nil method absorption.
+        // Adding it here would break delegation (handles), which calls
+        // call_method_with_values on delegate objects that may be Nil.
+
         // Comprehensive split handler (for regex splitters and 3+ args)
         if method == "split"
             && !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply")
@@ -2467,6 +2472,40 @@ impl Interpreter {
                     && class_name == "Supply"
                 {
                     return self.dispatch_supply_map(attributes, &args);
+                }
+                // Validate that the map argument is callable (X::Cannot::Map)
+                if let Some(func) = args.first() {
+                    let is_callable = matches!(
+                        func,
+                        Value::Sub(_)
+                            | Value::Routine { .. }
+                            | Value::WeakSub(_)
+                            | Value::Regex(_)
+                            | Value::RegexWithAdverbs { .. }
+                    ) || (matches!(func, Value::Instance { class_name, .. } if class_name.resolve() == "WhateverCode" || class_name.resolve() == "HyperWhateverCode"))
+                        || matches!(func, Value::Whatever);
+                    if !is_callable {
+                        let mut attrs = HashMap::new();
+                        attrs.insert(
+                            "message".to_string(),
+                            Value::str(format!(
+                                "Cannot map a {} to a {}, it's not callable.",
+                                super::value_type_name(func),
+                                super::value_type_name(&target),
+                            )),
+                        );
+                        let ex = Value::make_instance(
+                            crate::symbol::Symbol::intern("X::Cannot::Map"),
+                            attrs,
+                        );
+                        let mut err = RuntimeError::new(format!(
+                            "X::Cannot::Map: Cannot map a {} to a {}",
+                            super::value_type_name(func),
+                            super::value_type_name(&target),
+                        ));
+                        err.exception = Some(Box::new(ex));
+                        return Err(err);
+                    }
                 }
                 let items = Self::value_to_list(&target);
                 return self.eval_map_over_items(args.first().cloned(), items);

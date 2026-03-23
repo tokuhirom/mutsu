@@ -1530,6 +1530,12 @@ impl VM {
                 self.env_dirty = true;
             }
             _ => {
+                // NOTE: No Nil absorber here for CallMethodMut. Unlike CallMethod
+                // (which handles direct Nil.method calls), CallMethodMut targets
+                // are from variables. Uninitialized variables in mutsu are Nil
+                // (should be Any), so absorbing here would break methods like
+                // .end, .elems, etc. on uninitialized containers.
+                // The CallMethod path has the Nil absorber for direct Nil.method calls.
                 let call_result = if !skip_native {
                     if let Some(native_result) =
                         self.try_native_method(&target, Symbol::intern(&method), &args)
