@@ -219,6 +219,8 @@ impl Interpreter {
         } else {
             rest
         };
+        super::sprintf::validate_sprintf_directives(&fmt, actual_args.len())?;
+        super::sprintf::validate_sprintf_arg_types(&fmt, actual_args)?;
         let rendered = super::sprintf::format_sprintf_args(&fmt, actual_args);
         Ok(Value::str(rendered))
     }

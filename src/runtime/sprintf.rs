@@ -1,127 +1,11 @@
-use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::Value;
 use num_bigint::BigInt;
 
-/// Validate sprintf format directives. Throws typed exceptions for:
-/// - Unsupported directives (X::Str::Sprintf::Directives::Unsupported)
-/// - Arg count mismatch (X::Str::Sprintf::Directives::Count)
-pub(crate) fn validate_sprintf_directives(fmt: &str, arg_count: usize) -> Result<(), RuntimeError> {
-    let mut chars = fmt.chars().peekable();
-    let mut expected_args = 0usize;
-    while let Some(c) = chars.next() {
-        if c != '%' {
-            continue;
-        }
-        if chars.peek() == Some(&'%') {
-            chars.next();
-            continue;
-        }
-        // Skip flags
-        while let Some(f) = chars.peek().copied() {
-            if f == '-' || f == '+' || f == ' ' || f == '#' || f == '0' {
-                chars.next();
-            } else {
-                break;
-            }
-        }
-        // Skip width
-        if chars.peek() == Some(&'*') {
-            chars.next();
-            expected_args += 1;
-        } else {
-            while let Some(d) = chars.peek().copied() {
-                if d.is_ascii_digit() {
-                    chars.next();
-                } else {
-                    break;
-                }
-            }
-        }
-        // Skip precision
-        if chars.peek() == Some(&'.') {
-            chars.next();
-            if chars.peek() == Some(&'*') {
-                chars.next();
-                expected_args += 1;
-            } else {
-                while let Some(d) = chars.peek().copied() {
-                    if d.is_ascii_digit() {
-                        chars.next();
-                    } else {
-                        break;
-                    }
-                }
-            }
-        }
-        let spec = chars.next().unwrap_or('?');
-        if !matches!(
-            spec,
-            's' | 'd'
-                | 'i'
-                | 'u'
-                | 'x'
-                | 'X'
-                | 'o'
-                | 'b'
-                | 'B'
-                | 'f'
-                | 'F'
-                | 'e'
-                | 'E'
-                | 'g'
-                | 'G'
-                | 'c'
-        ) {
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert("directive".to_string(), Value::str(format!("%{}", spec)));
-            attrs.insert(
-                "message".to_string(),
-                Value::str(format!(
-                    "Directive {} is not valid in a sprintf format",
-                    spec
-                )),
-            );
-            let mut err = RuntimeError::new(format!(
-                "Directive {} is not valid in a sprintf format",
-                spec
-            ));
-            err.exception = Some(Box::new(Value::make_instance(
-                Symbol::intern("X::Str::Sprintf::Directives::Unsupported"),
-                attrs,
-            )));
-            return Err(err);
-        }
-        expected_args += 1;
-    }
-    if expected_args != arg_count {
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("args-have".to_string(), Value::Int(arg_count as i64));
-        attrs.insert("args-used".to_string(), Value::Int(expected_args as i64));
-        attrs.insert(
-            "message".to_string(),
-            Value::str(format!(
-                "Your printf-style directives specify {} arguments, but {} argument{} {} supplied",
-                expected_args,
-                arg_count,
-                if arg_count == 1 { "" } else { "s" },
-                if arg_count == 1 { "was" } else { "were" },
-            )),
-        );
-        let mut err = RuntimeError::new(format!(
-            "Your printf-style directives specify {} arguments, but {} argument{} {} supplied",
-            expected_args,
-            arg_count,
-            if arg_count == 1 { "" } else { "s" },
-            if arg_count == 1 { "was" } else { "were" },
-        ));
-        err.exception = Some(Box::new(Value::make_instance(
-            Symbol::intern("X::Str::Sprintf::Directives::Count"),
-            attrs,
-        )));
-        return Err(err);
-    }
-    Ok(())
-}
+use super::sprintf_helpers::{
+    apply_float_minus_zero, apply_width, format_float_fixed, format_g, format_inf_nan,
+    format_rat_fixed, normalize_sci_exponent, sign_prefix,
+};
+pub(crate) use super::sprintf_validate::{validate_sprintf_arg_types, validate_sprintf_directives};
 
 pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
     match arg {
@@ -131,32 +15,53 @@ pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
 }
 
 pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
-    let mut chars = fmt.chars().peekable();
+    let bytes = fmt.as_bytes();
+    let len = bytes.len();
     let mut out = String::new();
+    let mut pos = 0usize;
     let mut arg_index = 0usize;
-    while let Some(c) = chars.next() {
-        if c != '%' {
-            out.push(c);
+    while pos < len {
+        if bytes[pos] != b'%' {
+            out.push(bytes[pos] as char);
+            pos += 1;
             continue;
         }
-        if chars.peek() == Some(&'%') {
-            chars.next();
+        pos += 1; // skip '%'
+        if pos < len && bytes[pos] == b'%' {
             out.push('%');
+            pos += 1;
             continue;
         }
+        // Check for positional argument specifier: N$ (digits followed by '$')
+        let mut positional_arg: Option<usize> = None;
+        {
+            let start = pos;
+            while pos < len && bytes[pos].is_ascii_digit() {
+                pos += 1;
+            }
+            if pos > start && pos < len && bytes[pos] == b'$' {
+                let n: usize = fmt[start..pos].parse().unwrap_or(1);
+                positional_arg = Some(n - 1); // convert 1-based to 0-based
+                pos += 1; // skip '$'
+            } else {
+                pos = start; // reset, not a positional specifier
+            }
+        }
+        // Parse flags
         let mut flags = String::new();
-        while let Some(f) = chars.peek().copied() {
-            if f == '-' || f == '+' || f == ' ' || f == '#' || f == '0' {
-                flags.push(f);
-                chars.next();
+        while pos < len {
+            let b = bytes[pos];
+            if b == b'-' || b == b'+' || b == b' ' || b == b'#' || b == b'0' {
+                flags.push(b as char);
+                pos += 1;
             } else {
                 break;
             }
         }
+        // Parse width
         let mut width = String::new();
-        if chars.peek() == Some(&'*') {
-            // Width from argument
-            chars.next();
+        if pos < len && bytes[pos] == b'*' {
+            pos += 1;
             let w = match args.get(arg_index) {
                 Some(Value::Int(i)) => *i as usize,
                 Some(Value::Num(f)) => *f as usize,
@@ -165,23 +70,19 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
             arg_index += 1;
             width = w.to_string();
         } else {
-            while let Some(d) = chars.peek().copied() {
-                if d.is_ascii_digit() {
-                    width.push(d);
-                    chars.next();
-                } else {
-                    break;
-                }
+            while pos < len && bytes[pos].is_ascii_digit() {
+                width.push(bytes[pos] as char);
+                pos += 1;
             }
         }
+        // Parse precision
         let mut precision = String::new();
         let mut has_precision = false;
-        if chars.peek() == Some(&'.') {
-            chars.next();
+        if pos < len && bytes[pos] == b'.' {
+            pos += 1;
             has_precision = true;
-            if chars.peek() == Some(&'*') {
-                // Variable precision from argument
-                chars.next();
+            if pos < len && bytes[pos] == b'*' {
+                pos += 1;
                 let p = match args.get(arg_index) {
                     Some(Value::Int(i)) => *i as usize,
                     Some(Value::Num(f)) => *f as usize,
@@ -190,42 +91,43 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
                 arg_index += 1;
                 precision = p.to_string();
             } else {
-                while let Some(d) = chars.peek().copied() {
-                    if d.is_ascii_digit() {
-                        precision.push(d);
-                        chars.next();
-                    } else {
-                        break;
-                    }
+                while pos < len && bytes[pos].is_ascii_digit() {
+                    precision.push(bytes[pos] as char);
+                    pos += 1;
                 }
             }
         }
-        let spec = chars.next().unwrap_or('s');
+        let spec = if pos < len {
+            let s = bytes[pos] as char;
+            pos += 1;
+            s
+        } else {
+            's'
+        };
         let width_num = width.parse::<usize>().unwrap_or(0);
         let prec_num = if has_precision {
             Some(precision.parse::<usize>().unwrap_or(0))
         } else {
             None
         };
-        // The 0 flag is ignored when:
-        // - the '-' flag is also present, or
-        // - precision is specified for %s or integer specifiers (b/B/d/i/o/x/X/u)
         let prec_cancels_zero = prec_num.is_some()
             && matches!(spec, 's' | 'b' | 'B' | 'd' | 'i' | 'o' | 'x' | 'X' | 'u');
         let zero_pad = flags.contains('0') && !flags.contains('-') && !prec_cancels_zero;
         let left_align = flags.contains('-');
-        // In Raku, for float specifiers (f/F/e/E), when both '-' and '0' flags are
-        // present, zero-padding takes priority over left-align. Additionally, if the
-        // formatted number has no sign prefix, one leading zero is shifted from the
-        // integer part to the fractional part (precision is effectively incremented).
         let float_minus_zero =
             matches!(spec, 'f' | 'F' | 'e' | 'E') && flags.contains('-') && flags.contains('0');
         let plus_sign = flags.contains('+');
         let space_flag = flags.contains(' ');
         let hash_flag = flags.contains('#');
-        let raw_arg = args.get(arg_index);
-        arg_index += 1;
-        // Unwrap Mixin (allomorphic types like IntStr) to get the inner value
+        // Determine which argument to use
+        let effective_arg_index = if let Some(pa) = positional_arg {
+            pa
+        } else {
+            let idx = arg_index;
+            arg_index += 1;
+            idx
+        };
+        let raw_arg = args.get(effective_arg_index);
         let _mixin_storage: Value;
         let arg = match raw_arg {
             Some(Value::Mixin(inner, _)) => {
@@ -314,7 +216,6 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
                 } else {
                     format!("{}", i)
                 };
-                // Apply precision: minimum number of digits
                 if let Some(p) = prec_num {
                     if p == 0 && abs == "0" {
                         abs.clear();
@@ -355,7 +256,6 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
                 if digits.is_empty() {
                     String::new()
                 } else {
-                    // Raku: hash prefix goes before the sign for %x/%X
                     let neg_sign = if is_neg { "-" } else { "" };
                     let hash_prefix = if hash_flag && !is_zero {
                         if spec == 'X' { "0X" } else { "0x" }
@@ -382,8 +282,6 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
                     String::new()
                 } else {
                     let neg_sign = if is_neg { "-" } else { "" };
-                    // %#o: for non-negative, ensure leading "0" (C-style).
-                    // For negative, prefix "0" goes before the minus sign.
                     if hash_flag && !is_zero {
                         if is_neg {
                             format!("0{}{}", neg_sign, digits)
@@ -404,7 +302,6 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
                 let sign = sign_prefix(is_neg, plus_sign, space_flag);
                 let abs_val = if is_neg { -&i } else { i };
                 let mut digits = abs_val.to_str_radix(2);
-                // Apply precision: minimum number of binary digits
                 if let Some(p) = prec_num {
                     if p == 0 && digits == "0" {
                         digits.clear();
@@ -412,11 +309,9 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
                         digits = format!("{:0>width$}", digits, width = p);
                     }
                 }
-                // When precision makes digits empty, suppress all prefixes
                 if digits.is_empty() {
                     String::new()
                 } else {
-                    // Hash prefix only for non-zero values
                     let hash_prefix = if hash_flag && !is_zero {
                         if spec == 'B' { "0B" } else { "0b" }
                     } else {
@@ -426,15 +321,18 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
                 }
             }
             'f' | 'F' => {
-                let f = float_val();
-                if f.is_infinite() || f.is_nan() {
-                    format_inf_nan(f, plus_sign, space_flag)
+                let p = prec_num.unwrap_or(6);
+                // Use exact rational formatting for Rat/FatRat with high precision
+                if p > 17 {
+                    if let Some(rendered) = format_rat_fixed(arg, p, plus_sign, space_flag) {
+                        rendered
+                    } else {
+                        let f = float_val();
+                        format_float_fixed(f, p, plus_sign, space_flag)
+                    }
                 } else {
-                    let p = prec_num.unwrap_or(6);
-                    let is_neg = f.is_sign_negative() && (f != 0.0 || f.is_sign_negative());
-                    let prefix = sign_prefix(is_neg, plus_sign, space_flag);
-                    let abs = f.abs();
-                    format!("{}{:.*}", prefix, p, abs)
+                    let f = float_val();
+                    format_float_fixed(f, p, plus_sign, space_flag)
                 }
             }
             'e' | 'E' => {
@@ -476,11 +374,8 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
                 None => String::new(),
             },
         };
-        // For %o/%x/%X, zero-padding is plain left-fill (no prefix splitting)
         let plain_zero = matches!(spec, 'o' | 'x' | 'X');
         if float_minus_zero && width_num > 0 {
-            // Raku quirk: -0 combo on floats uses zero-padding (0 wins over -)
-            // then shifts one leading zero into the fractional part when no sign prefix
             apply_float_minus_zero(&mut out, &rendered, width_num);
         } else {
             apply_width(
@@ -489,283 +384,4 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
         }
     }
     out
-}
-
-/// Format a non-negative float using %g/%G rules:
-/// - Use %e/%E if exponent < -4 or >= precision
-/// - Otherwise use %f
-/// - Precision specifies total significant digits
-/// - Trailing zeros are removed (unless # flag is set)
-fn format_g(abs: f64, prec: usize, upper: bool, hash_flag: bool) -> String {
-    // Determine exponent
-    let exp = if abs == 0.0 {
-        0i32
-    } else {
-        abs.log10().floor() as i32
-    };
-    let use_sci = exp < -4 || exp >= prec as i32;
-    if use_sci {
-        // Scientific notation with (prec-1) decimal digits
-        let decimal_digits = prec.saturating_sub(1);
-        let raw = format!("{:.*e}", decimal_digits, abs);
-        let normalized = normalize_sci_exponent(&raw);
-        // Replace 'e' with correct case
-        let normalized = if upper {
-            normalized.replacen('e', "E", 1)
-        } else {
-            normalized
-        };
-        if hash_flag {
-            normalized
-        } else {
-            strip_trailing_zeros_sci(&normalized)
-        }
-    } else {
-        // Fixed notation with (prec - 1 - exp) decimal places
-        let decimal_digits = if prec as i32 > exp + 1 {
-            (prec as i32 - exp - 1) as usize
-        } else {
-            0
-        };
-        let raw = format!("{:.*}", decimal_digits, abs);
-        if hash_flag {
-            raw
-        } else {
-            strip_trailing_zeros_fixed(&raw)
-        }
-    }
-}
-
-/// Strip trailing zeros after decimal point in fixed notation.
-/// "3.1400" -> "3.14", "3.0" -> "3", "100" -> "100"
-fn strip_trailing_zeros_fixed(s: &str) -> String {
-    if s.contains('.') {
-        let trimmed = s.trim_end_matches('0');
-        if let Some(without_dot) = trimmed.strip_suffix('.') {
-            without_dot.to_string()
-        } else {
-            trimmed.to_string()
-        }
-    } else {
-        s.to_string()
-    }
-}
-
-/// Strip trailing zeros in scientific notation mantissa.
-/// "3.1400e+02" -> "3.14e+02", "3.0000e+02" -> "3e+02"
-fn strip_trailing_zeros_sci(s: &str) -> String {
-    let e_pos = s.rfind('e').or_else(|| s.rfind('E'));
-    if let Some(pos) = e_pos {
-        let mantissa = &s[..pos];
-        let exp_part = &s[pos..];
-        if mantissa.contains('.') {
-            let trimmed = mantissa.trim_end_matches('0');
-            if let Some(without_dot) = trimmed.strip_suffix('.') {
-                format!("{}{}", without_dot, exp_part)
-            } else {
-                format!("{}{}", trimmed, exp_part)
-            }
-        } else {
-            s.to_string()
-        }
-    } else {
-        s.to_string()
-    }
-}
-
-/// Format Inf/NaN values consistently across all format specifiers.
-/// Raku always uses "Inf", "-Inf", "NaN" regardless of %e/%E/%f/%g/%G.
-fn format_inf_nan(f: f64, plus_sign: bool, space_flag: bool) -> String {
-    if f.is_nan() {
-        "NaN".to_string()
-    } else {
-        let is_neg = f.is_sign_negative();
-        let prefix = if is_neg {
-            "-"
-        } else if plus_sign {
-            "+"
-        } else if space_flag {
-            " "
-        } else {
-            ""
-        };
-        format!("{}Inf", prefix)
-    }
-}
-
-/// Returns the sign prefix for a numeric value.
-/// - Negative: "-"
-/// - Positive with plus_sign flag: "+"
-/// - Positive with space_flag (and no plus_sign): " "
-/// - Otherwise: ""
-fn sign_prefix(is_neg: bool, plus_sign: bool, space_flag: bool) -> &'static str {
-    if is_neg {
-        "-"
-    } else if plus_sign {
-        "+"
-    } else if space_flag {
-        " "
-    } else {
-        ""
-    }
-}
-
-/// Apply width formatting with proper zero-padding.
-/// When `plain_zero` is true, zero-padding is simple left-fill (for %o/%x/%X).
-/// When false, sign and base prefix are placed before the zeros (for %b/%B/%d/etc).
-fn apply_width(
-    out: &mut String,
-    rendered: &str,
-    width_num: usize,
-    left_align: bool,
-    zero_pad: bool,
-    plain_zero: bool,
-) {
-    let rendered_width = rendered.chars().count();
-    if width_num > rendered_width {
-        let pad_len = width_num - rendered_width;
-        if left_align {
-            out.push_str(rendered);
-            for _ in 0..pad_len {
-                out.push(' ');
-            }
-        } else if zero_pad {
-            if plain_zero {
-                // Simple left zero-fill, no prefix splitting
-                for _ in 0..pad_len {
-                    out.push('0');
-                }
-                out.push_str(rendered);
-            } else {
-                // Sign and base prefix go before zeros.
-                let prefix_len = zero_pad_prefix_len(rendered);
-                if prefix_len > 0 {
-                    out.push_str(&rendered[..prefix_len]);
-                    for _ in 0..pad_len {
-                        out.push('0');
-                    }
-                    out.push_str(&rendered[prefix_len..]);
-                } else {
-                    for _ in 0..pad_len {
-                        out.push('0');
-                    }
-                    out.push_str(rendered);
-                }
-            }
-        } else {
-            for _ in 0..pad_len {
-                out.push(' ');
-            }
-            out.push_str(rendered);
-        }
-    } else {
-        out.push_str(rendered);
-    }
-}
-
-/// Determine the length of the prefix (sign + base indicator) that should
-/// appear before zero-padding.  E.g. "+0b" → 3, "-" → 1, "0x" → 2, "" → 0.
-fn zero_pad_prefix_len(s: &str) -> usize {
-    let bytes = s.as_bytes();
-    let mut pos = 0;
-    // Optional sign character
-    if matches!(bytes.first(), Some(b'+' | b'-' | b' ')) {
-        pos = 1;
-    }
-    // Optional base prefix: 0b, 0B, 0x, 0X, 0o, 0O
-    if pos + 1 < bytes.len() && bytes[pos] == b'0' {
-        let next = bytes[pos + 1];
-        if next == b'b'
-            || next == b'B'
-            || next == b'x'
-            || next == b'X'
-            || next == b'o'
-            || next == b'O'
-        {
-            pos += 2;
-        }
-    }
-    pos
-}
-
-/// Handle Raku's quirky behavior when both '-' and '0' flags are present on float specifiers.
-/// Zero-padding takes priority over left-align, and if the number has no sign prefix,
-/// one leading zero is shifted from the integer part to the fractional part.
-fn apply_float_minus_zero(out: &mut String, rendered: &str, width: usize) {
-    let len = rendered.chars().count();
-    if width <= len {
-        out.push_str(rendered);
-        return;
-    }
-    let pad_len = width - len;
-    let has_sign = matches!(
-        rendered.as_bytes().first(),
-        Some(b'+') | Some(b'-') | Some(b' ')
-    );
-
-    // First, apply zero-padding (same as apply_width with zero_pad=true)
-    let mut padded = String::with_capacity(width);
-    if has_sign {
-        padded.push(rendered.chars().next().unwrap());
-        for _ in 0..pad_len {
-            padded.push('0');
-        }
-        padded.push_str(&rendered[1..]);
-    } else {
-        for _ in 0..pad_len {
-            padded.push('0');
-        }
-        padded.push_str(rendered);
-    }
-
-    // Then, if no sign prefix, shift one leading zero to the fractional part.
-    // This effectively increments precision by 1 while keeping total width the same.
-    if !has_sign && should_shift_zero(&padded) {
-        // Remove leading zero, append '0' to fractional part
-        let mut shifted = String::with_capacity(width);
-        shifted.push_str(&padded[1..]);
-        shifted.push('0');
-        out.push_str(&shifted);
-        return;
-    }
-
-    out.push_str(&padded);
-}
-
-/// Check if a zero-padded float string has a leading zero that can be shifted
-/// to the fractional part (e.g., "0001.00" -> true, "1.00" -> false).
-fn should_shift_zero(padded: &str) -> bool {
-    if let Some(dot_pos) = padded.find('.') {
-        let int_part = &padded[..dot_pos];
-        int_part.len() >= 2 && int_part.starts_with('0')
-    } else {
-        false
-    }
-}
-
-/// Normalize Rust scientific notation (e.g. `1.5e1`) to C-style (`1.5e+01`).
-/// Ensures the exponent has an explicit sign and at least two digits.
-fn normalize_sci_exponent(s: &str) -> String {
-    let e_marker = if s.contains('E') { 'E' } else { 'e' };
-    if let Some(pos) = s.rfind(e_marker) {
-        let (mantissa, exp_part) = s.split_at(pos);
-        let exp_str = &exp_part[1..]; // skip 'e'/'E'
-        let (sign, digits) = if let Some(d) = exp_str.strip_prefix('-') {
-            ("-", d)
-        } else if let Some(d) = exp_str.strip_prefix('+') {
-            ("+", d)
-        } else {
-            ("+", exp_str)
-        };
-        let exp_num: i32 = digits.parse().unwrap_or(0);
-        format!(
-            "{}{}{}{:02}",
-            mantissa,
-            e_marker,
-            sign,
-            exp_num.unsigned_abs()
-        )
-    } else {
-        s.to_string()
-    }
 }
