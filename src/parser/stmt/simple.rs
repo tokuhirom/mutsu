@@ -432,7 +432,7 @@ pub(in crate::parser) fn reset_user_subs() {
     });
 }
 
-pub(in crate::parser) fn set_current_language_version(version: &str) {
+pub(crate) fn set_current_language_version(version: &str) {
     CURRENT_LANGUAGE_VERSION.with(|v| {
         *v.borrow_mut() = version.to_string();
     });
@@ -1057,11 +1057,14 @@ fn find_module_file(module: &str) -> Option<String> {
 fn extract_exported_names(source: &str) -> Vec<String> {
     // Save current scopes — parse_program_partial calls reset_user_subs which clears them
     let saved_scopes = SCOPES.with(|s| s.borrow().clone());
+    // Save the language version — parsing the module may change it via `use v6.*`
+    let saved_language_version = current_language_version();
     let (stmts, _) = crate::parser::parse_program_partial(source);
-    // Restore scopes
+    // Restore scopes and language version
     SCOPES.with(|s| {
         *s.borrow_mut() = saved_scopes;
     });
+    set_current_language_version(&saved_language_version);
     let mut names = HashSet::new();
     for stmt in &stmts {
         match stmt {

@@ -686,6 +686,7 @@ impl VM {
             variants,
             is_export,
             base_type,
+            language_version,
         } = stmt
         {
             let result = self.interpreter.register_enum_decl(
@@ -694,6 +695,11 @@ impl VM {
                 *is_export,
                 base_type.as_deref(),
             )?;
+            // Store language revision metadata from the version captured at parse time
+            if !name.resolve().is_empty() {
+                self.interpreter
+                    .store_language_revision_from_version(&name.resolve(), language_version);
+            }
             // For anonymous enums, push the Map result onto the stack
             if name.resolve().is_empty() {
                 self.stack.push(result);
@@ -722,6 +728,7 @@ impl VM {
             does_parents,
             repr,
             body,
+            language_version,
         } = stmt
         {
             let resolved_name = if let Some(expr) = name_expr {
@@ -799,6 +806,9 @@ impl VM {
                 self.interpreter
                     .register_lexical_class(resolved_name.clone());
             }
+            // Store language revision metadata from the version captured at parse time
+            self.interpreter
+                .store_language_revision_from_version(&qualified_name, language_version);
             self.env_dirty = true;
             Ok(())
         } else {
@@ -843,11 +853,15 @@ impl VM {
             type_params,
             type_param_defs,
             body,
+            language_version,
         } = stmt
         {
             let name_str = name.resolve();
             self.interpreter
                 .register_role_decl(&name_str, type_params, type_param_defs, body)?;
+            // Store language revision metadata from the version captured at parse time
+            self.interpreter
+                .store_language_revision_from_version(&name_str, language_version);
             // Compile role method bodies to bytecode
             self.interpreter.compile_role_methods(&name_str);
             self.interpreter

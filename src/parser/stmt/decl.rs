@@ -2890,6 +2890,7 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
             variants,
             is_export: false,
             base_type: None,
+            language_version: super::simple::current_language_version(),
         },
     ))
 }
@@ -3050,6 +3051,7 @@ fn parse_enum_decl_body_with_type(input: &str, base_type: Option<String>) -> PRe
                         variants: vec![("__DYNAMIC__".to_string(), Some(expr))],
                         is_export,
                         base_type: base_type.clone(),
+                        language_version: super::simple::current_language_version(),
                     },
                 ));
             }
@@ -3065,6 +3067,7 @@ fn parse_enum_decl_body_with_type(input: &str, base_type: Option<String>) -> PRe
                         variants,
                         is_export,
                         base_type: base_type.clone(),
+                        language_version: super::simple::current_language_version(),
                     },
                 ));
             }
@@ -3091,6 +3094,7 @@ fn parse_enum_decl_body_with_type(input: &str, base_type: Option<String>) -> PRe
             variants,
             is_export,
             base_type,
+            language_version: super::simple::current_language_version(),
         },
     ))
 }
