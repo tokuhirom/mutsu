@@ -176,6 +176,44 @@ fn indexed_varref_from_value(value: &Value) -> Option<(String, Value, Option<usi
     None
 }
 
+/// Wrap an integer value to fit within a native integer type's range
+/// for function parameter binding.
+/// For full-width native types (int/int64/uint/uint64), out-of-range values
+/// cause an error (cannot unbox too-wide bigint into native integer).
+fn wrap_native_int_for_binding(
+    constraint: &str,
+    val: Value,
+) -> Result<Value, crate::value::RuntimeError> {
+    use crate::runtime::native_types;
+    use num_bigint::BigInt as NumBigInt;
+    use num_traits::ToPrimitive;
+
+    let (base, _) = strip_type_smiley(constraint);
+    if !native_types::is_native_int_type(base) {
+        return Ok(val);
+    }
+    let big_val = match &val {
+        Value::Int(n) => NumBigInt::from(*n),
+        Value::BigInt(n) => (**n).clone(),
+        _ => return Ok(val),
+    };
+    if native_types::is_in_native_range(base, &big_val) {
+        return Ok(val);
+    }
+    // Full-width native types don't wrap — they should throw on overflow.
+    if matches!(base, "int" | "int64" | "uint" | "uint64") {
+        return Err(crate::value::RuntimeError::new(format!(
+            "Cannot unbox {} bit wide bigint into native integer",
+            big_val.bits()
+        )));
+    }
+    let wrapped = native_types::wrap_native_int(base, &big_val);
+    Ok(wrapped
+        .to_i64()
+        .map(Value::Int)
+        .unwrap_or_else(|| Value::bigint(wrapped)))
+}
+
 fn unwrap_varref_value(value: Value) -> Value {
     if let Some((_, inner)) = varref_from_value(&value) {
         inner
@@ -1231,6 +1269,23 @@ impl Interpreter {
                 "Int" | "Num" | "Rat" | "FatRat" | "Bool" | "UInt"
             )
         {
+            return true;
+        }
+        // Native integer/num types do Real and Numeric
+        if constraint == "Real"
+            && (crate::runtime::native_types::is_native_int_type(value_type)
+                || matches!(value_type, "num" | "num32" | "num64"))
+        {
+            return true;
+        }
+        if constraint == "Numeric"
+            && (crate::runtime::native_types::is_native_int_type(value_type)
+                || matches!(value_type, "num" | "num32" | "num64"))
+        {
+            return true;
+        }
+        // Native str type does Stringy
+        if constraint == "Stringy" && value_type == "str" {
             return true;
         }
         if constraint == "Dateish" && matches!(value_type, "Date" | "DateTime") {
@@ -3176,6 +3231,10 @@ impl Interpreter {
                             }
                             value = Value::hash(map);
                         }
+                    }
+                    // Wrap native integer values for sub parameter binding (overflow wrapping)
+                    if let Some(constraint) = &pd.type_constraint {
+                        value = wrap_native_int_for_binding(constraint, value)?;
                     }
                     // Implicit Any constraint: untyped $ parameters default to Any,
                     // which rejects Junction (a direct subtype of Mu, not Any).

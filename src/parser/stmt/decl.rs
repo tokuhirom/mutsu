@@ -60,6 +60,8 @@ fn typed_default_expr(type_name: &str) -> Expr {
         Expr::Literal(Value::Int(0))
     } else if base == "num" || base == "num32" || base == "num64" {
         Expr::Literal(Value::Num(0.0))
+    } else if base == "str" {
+        Expr::Literal(Value::str_from(""))
     } else {
         Expr::Literal(Value::Nil)
     }

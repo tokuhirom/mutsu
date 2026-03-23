@@ -1411,6 +1411,8 @@ impl VM {
                 } else {
                     val
                 };
+                // Wrap native integer values on assignment (overflow wrapping)
+                let val = Self::wrap_native_int_by_constraint(&constraint, val);
                 self.locals[idx] = val;
             } else {
                 self.locals[idx] = val;
@@ -1533,6 +1535,8 @@ impl VM {
                     .interpreter
                     .try_coerce_value_for_constraint(&constraint, val)?;
             }
+            // Wrap native integer values on assignment (overflow wrapping)
+            val = Self::wrap_native_int_by_constraint(&constraint, val);
         }
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
@@ -2079,5 +2083,35 @@ impl VM {
 
         self.stack.push(current);
         Ok(())
+    }
+
+    /// Wrap an integer value to fit within a native integer type's range.
+    /// For non-native constraints or non-integer values, returns the value unchanged.
+    pub(super) fn wrap_native_int_by_constraint(constraint: &str, val: Value) -> Value {
+        use crate::runtime::native_types;
+        use num_bigint::BigInt as NumBigInt;
+        use num_traits::ToPrimitive;
+
+        let (base, _) = crate::runtime::types::strip_type_smiley(constraint);
+        if !native_types::is_native_int_type(base) {
+            return val;
+        }
+        // Full-width native types don't wrap — they should throw on overflow.
+        if matches!(base, "int" | "int64" | "uint" | "uint64") {
+            return val;
+        }
+        let big_val = match &val {
+            Value::Int(n) => NumBigInt::from(*n),
+            Value::BigInt(n) => (**n).clone(),
+            _ => return val,
+        };
+        if native_types::is_in_native_range(base, &big_val) {
+            return val;
+        }
+        let wrapped = native_types::wrap_native_int(base, &big_val);
+        wrapped
+            .to_i64()
+            .map(Value::Int)
+            .unwrap_or_else(|| Value::bigint(wrapped))
     }
 }

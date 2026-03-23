@@ -1532,6 +1532,16 @@ impl VM {
             self.validate_native_int_assignment(base_constraint, &value)?;
             return Ok(());
         }
+        // Native num/str types cannot hold type objects — reject Nil and Package values.
+        if matches!(base_constraint, "num" | "num32" | "num64" | "str") {
+            if matches!(value, Value::Nil | Value::Package(_)) {
+                return Err(RuntimeError::new(format!(
+                    "Cannot unbox a type object to {}.",
+                    base_constraint
+                )));
+            }
+            return Ok(());
+        }
         if runtime::is_known_type_constraint(base_constraint) {
             if !matches!(value, Value::Nil)
                 && !self.interpreter.type_matches_value(constraint, &value)
@@ -2112,18 +2122,24 @@ impl VM {
             }
         };
 
-        // Check range — throw if out of range
-        if !native_types::is_in_native_range(type_name, &big_val) {
-            return Err(RuntimeError::new(format!(
-                "Cannot assign value {} to native type '{}': value is outside the range",
-                big_val, type_name
-            )));
-        }
+        // Wrap out-of-range values for smaller native types (like C semantics).
+        // Full-width types (int/int64/uint/uint64) throw on overflow.
+        let wrapped = if !native_types::is_in_native_range(type_name, &big_val) {
+            if matches!(type_name, "int" | "int64" | "uint" | "uint64") {
+                return Err(RuntimeError::new(format!(
+                    "Cannot unbox {} bit wide bigint into native integer",
+                    big_val.bits()
+                )));
+            }
+            native_types::wrap_native_int(type_name, &big_val)
+        } else {
+            big_val
+        };
 
         // Coerce to Int on the stack
-        let int_val = big_val.to_i64().map(Value::Int).unwrap_or_else(|| {
+        let int_val = wrapped.to_i64().map(Value::Int).unwrap_or_else(|| {
             // For uint64 values that don't fit in i64, store as BigInt
-            Value::bigint(big_val)
+            Value::bigint(wrapped)
         });
         *self.stack.last_mut().unwrap() = int_val;
         Ok(())

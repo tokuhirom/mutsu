@@ -104,6 +104,7 @@ roast/S02-types/int-uint.t
 roast/S02-types/lazy-lists.t
 roast/S02-types/mu.t
 roast/S02-types/nan.t
+roast/S02-types/native.t
 roast/S02-types/nested_arrays.t
 roast/S02-types/nested_pairs.t
 roast/S02-types/nominalizables.t
