@@ -82,6 +82,12 @@ impl Interpreter {
         let Some(arg) = args.first() else {
             return Ok(Value::Nil);
         };
+        // Type objects should throw an error
+        if matches!(arg, Value::Package(_) | Value::CustomType { .. }) {
+            return Err(RuntimeError::new(
+                "Cannot call unival on a type object".to_string(),
+            ));
+        }
         let ch = match arg {
             Value::Int(i) if *i >= 0 => {
                 let Some(ch) = char::from_u32(*i as u32) else {
@@ -97,6 +103,31 @@ impl Interpreter {
                 ch
             }
         };
+        Self::unival_for_char(ch)
+    }
+
+    pub(super) fn builtin_univals(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let Some(arg) = args.first() else {
+            return Ok(Value::array(Vec::new()));
+        };
+        // Type objects should throw an error
+        if matches!(arg, Value::Package(_) | Value::CustomType { .. }) {
+            return Err(RuntimeError::new(
+                "Cannot call univals on a type object".to_string(),
+            ));
+        }
+        let s = arg.to_string_value();
+        if s.is_empty() {
+            return Ok(Value::array(Vec::new()));
+        }
+        let mut result = Vec::new();
+        for ch in s.chars() {
+            result.push(Self::unival_for_char(ch)?);
+        }
+        Ok(Value::array(result))
+    }
+
+    fn unival_for_char(ch: char) -> Result<Value, RuntimeError> {
         if let Some((n, d)) = crate::builtins::unicode::unicode_rat_value(ch) {
             return Ok(crate::value::make_rat(n, d));
         }
