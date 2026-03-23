@@ -127,8 +127,23 @@ impl Interpreter {
                         .replace('\0', "\\0")
                 };
                 let cwd = instance_cwd.unwrap_or_else(|| Self::stringify_path(&cwd_path));
+                // Derive class name from SPEC attribute
+                let class_name = attributes
+                    .get("SPEC")
+                    .and_then(|s| {
+                        let name = match s {
+                            Value::Package(n) => n.resolve().to_string(),
+                            Value::Instance { class_name, .. } => class_name.resolve().to_string(),
+                            _ => return None,
+                        };
+                        // IO::Spec::Win32 -> IO::Path::Win32
+                        name.strip_prefix("IO::Spec::")
+                            .map(|rest| format!("IO::Path::{}", rest))
+                    })
+                    .unwrap_or_else(|| "IO::Path".to_string());
                 Ok(Value::str(format!(
-                    "IO::Path.new(\"{}\", :CWD(\"{}\"))",
+                    "{}.new(\"{}\", :CWD(\"{}\"))",
+                    class_name,
                     escape(&p),
                     escape(&cwd)
                 )))
@@ -138,29 +153,19 @@ impl Interpreter {
                 attributes.clone(),
             )),
             "basename" => {
-                let bname = if p == "." || p == ".." {
-                    p.clone()
-                } else if p.ends_with("/.") || p.ends_with("\\.") {
-                    ".".to_string()
-                } else if p.ends_with("/..") || p.ends_with("\\..") {
-                    "..".to_string()
-                } else {
-                    original
-                        .file_name()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_default()
-                };
+                let (_, _, bname) = Self::io_path_parts(&p);
                 Ok(Value::str(bname))
             }
             "dirname" => {
-                let dname = original
-                    .parent()
-                    .map(Self::stringify_path)
-                    .unwrap_or_else(|| ".".to_string());
+                let (_, dname, _) = Self::io_path_parts(&p);
                 Ok(Value::str(dname))
             }
             "cleanup" => {
-                let normalized = Self::cleanup_io_path_lexical(&p);
+                let normalized = if Self::is_win32_spec(attributes) {
+                    Self::cleanup_io_path_lexical_win32(&p)
+                } else {
+                    Self::cleanup_io_path_lexical(&p)
+                };
                 Ok(Self::clone_io_path_with_path(attributes, normalized))
             }
             "parts" => {
@@ -187,30 +192,35 @@ impl Interpreter {
                         attributes.clone(),
                     ));
                 }
+                let sep = Self::io_path_sep(attributes);
                 let mut path = p.clone();
                 for _ in 0..levels {
                     if path == "." {
-                        // "." → ".."
                         path = "..".to_string();
-                    } else if path == ".." || path.ends_with("/..") || path.ends_with("\\..") {
-                        // ".." chain → append "/.."
-                        path = format!("{}/..", path);
-                    } else if path == "/" {
-                        // Filesystem root has no parent in Raku; stays at "/"
-                        break;
-                    } else if let Some(par) = Path::new(&path).parent() {
-                        let s = par.to_string_lossy().to_string();
-                        if s.is_empty() {
-                            // bare filename like "foo" → parent is "."
-                            path = ".".to_string();
-                        } else {
-                            path = s;
+                        continue;
+                    }
+                    if path == ".." {
+                        path = format!("..{}{}", sep, "..");
+                        continue;
+                    }
+                    let (volume, dirname, _basename) = Self::io_path_parts(&path);
+                    let full_vol_dir = format!("{}{}", volume, dirname);
+                    if dirname == "/" || dirname == "\\" {
+                        let new_path = format!("{}{}", volume, dirname);
+                        if new_path == path {
+                            // Already at root, stop
+                            break;
                         }
-                    } else {
+                        path = new_path;
+                    } else if dirname == "." && volume.is_empty() {
                         path = ".".to_string();
+                    } else {
+                        path = full_vol_dir;
                     }
                 }
-                Ok(self.make_io_path_instance(&path))
+                let mut new_attrs = attributes.clone();
+                new_attrs.insert("path".to_string(), Value::str(path));
+                Ok(Value::make_instance(Symbol::intern("IO::Path"), new_attrs))
             }
             "sibling" => {
                 let sibling_name = args
@@ -241,8 +251,20 @@ impl Interpreter {
                         "X::IO::Null: Found null byte in pathname",
                     ));
                 }
-                let joined = Self::stringify_path(&original.join(&child_name));
-                Ok(self.make_io_path_instance(&joined))
+                let joined = if Self::is_win32_spec(attributes) {
+                    if p == "." {
+                        child_name.clone()
+                    } else if p.ends_with('\\') || p.ends_with('/') {
+                        format!("{}{}", p, child_name)
+                    } else {
+                        format!("{}\\{}", p, child_name)
+                    }
+                } else {
+                    Self::stringify_path(&original.join(&child_name))
+                };
+                let mut new_attrs = attributes.clone();
+                new_attrs.insert("path".to_string(), Value::str(joined));
+                Ok(Value::make_instance(Symbol::intern("IO::Path"), new_attrs))
             }
             "extension" => {
                 let subst = Self::positional_value(&args, 0).map(|v| v.to_string_value());
@@ -295,19 +317,66 @@ impl Interpreter {
                 }
             }
             "absolute" => {
-                let absolute = Self::stringify_path(&path_buf);
-                Ok(Value::str(absolute))
+                if Self::is_win32_spec(attributes) {
+                    let base = args
+                        .first()
+                        .map(|v| v.to_string_value())
+                        .or_else(|| instance_cwd.clone())
+                        .unwrap_or_else(|| Self::stringify_path(&cwd_path));
+                    let abs = if Self::io_path_is_absolute_win32(&p) {
+                        p.clone()
+                    } else {
+                        let sep = '\\';
+                        if base.ends_with('\\') || base.ends_with('/') {
+                            format!("{}{}", base, p)
+                        } else {
+                            format!("{}{}{}", base, sep, p)
+                        }
+                    };
+                    Ok(Value::str(abs))
+                } else {
+                    let base = args.first().map(|v| v.to_string_value());
+                    if let Some(base) = base {
+                        if original.is_absolute() {
+                            Ok(Value::str(p.clone()))
+                        } else {
+                            let joined = PathBuf::from(&base).join(&p);
+                            Ok(Value::str(Self::stringify_path(&joined)))
+                        }
+                    } else {
+                        let absolute = Self::stringify_path(&path_buf);
+                        Ok(Value::str(absolute))
+                    }
+                }
             }
             "relative" => {
-                let rel_base = instance_cwd
-                    .as_ref()
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| cwd_path.clone());
-                let rel = path_buf
-                    .strip_prefix(&rel_base)
-                    .map(Self::stringify_path)
-                    .unwrap_or_else(|_| Self::stringify_path(&path_buf));
-                Ok(Value::str(rel))
+                if Self::is_win32_spec(attributes) {
+                    let base = args
+                        .first()
+                        .map(|v| v.to_string_value())
+                        .or_else(|| instance_cwd.clone())
+                        .unwrap_or_else(|| Self::stringify_path(&cwd_path));
+                    // Normalize separators for comparison
+                    let norm_p = p.replace('/', "\\");
+                    let norm_base = base.replace('/', "\\");
+                    let rel = norm_p
+                        .strip_prefix(&norm_base)
+                        .and_then(|r| r.strip_prefix('\\'))
+                        .unwrap_or(&norm_p);
+                    Ok(Value::str(rel.to_string()))
+                } else {
+                    let rel_base_arg = args.first().map(|v| v.to_string_value());
+                    let rel_base = rel_base_arg
+                        .as_ref()
+                        .map(PathBuf::from)
+                        .or_else(|| instance_cwd.as_ref().map(PathBuf::from))
+                        .unwrap_or_else(|| cwd_path.clone());
+                    let rel = path_buf
+                        .strip_prefix(&rel_base)
+                        .map(Self::stringify_path)
+                        .unwrap_or_else(|_| Self::stringify_path(&path_buf));
+                    Ok(Value::str(rel))
+                }
             }
             "starts-with" => {
                 let prefix = args
@@ -325,8 +394,40 @@ impl Interpreter {
                 let (volume, _, _) = Self::io_path_parts(&p);
                 Ok(Value::str(volume))
             }
-            "is-absolute" => Ok(Value::Bool(original.is_absolute())),
-            "is-relative" => Ok(Value::Bool(!original.is_absolute())),
+            "is-absolute" => {
+                let abs = if Self::is_win32_spec(attributes) {
+                    Self::io_path_is_absolute_win32(&p)
+                } else {
+                    original.is_absolute()
+                };
+                Ok(Value::Bool(abs))
+            }
+            "is-relative" => {
+                let abs = if Self::is_win32_spec(attributes) {
+                    Self::io_path_is_absolute_win32(&p)
+                } else {
+                    original.is_absolute()
+                };
+                Ok(Value::Bool(!abs))
+            }
+            "succ" => {
+                let (volume, dirname, basename) = Self::io_path_parts(&p);
+                let new_basename = crate::builtins::str_increment::string_succ(&basename);
+                let sep = Self::io_path_sep(attributes);
+                let new_path = Self::join_io_path_parts(&volume, &dirname, &new_basename, sep);
+                let mut new_attrs = attributes.clone();
+                new_attrs.insert("path".to_string(), Value::str(new_path));
+                Ok(Value::make_instance(Symbol::intern("IO::Path"), new_attrs))
+            }
+            "pred" => {
+                let (volume, dirname, basename) = Self::io_path_parts(&p);
+                let new_basename = crate::builtins::str_increment::string_pred(&basename);
+                let sep = Self::io_path_sep(attributes);
+                let new_path = Self::join_io_path_parts(&volume, &dirname, &new_basename, sep);
+                let mut new_attrs = attributes.clone();
+                new_attrs.insert("path".to_string(), Value::str(new_path));
+                Ok(Value::make_instance(Symbol::intern("IO::Path"), new_attrs))
+            }
             "e" => Ok(Value::Bool(path_buf.exists())),
             "f" => Ok(Value::Bool(
                 io_path_metadata(&path_buf, &p, method)?.is_file(),
@@ -827,12 +928,90 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("IO::Path"), new_attrs)
     }
 
+    /// Check if the IO::Path instance has a Win32 SPEC attribute.
+    fn is_win32_spec(attributes: &HashMap<String, Value>) -> bool {
+        attributes
+            .get("SPEC")
+            .map(|s| {
+                let name = match s {
+                    Value::Package(n) => n.resolve().to_string(),
+                    Value::Instance { class_name, .. } => class_name.resolve().to_string(),
+                    _ => String::new(),
+                };
+                name == "IO::Spec::Win32" || name.ends_with("Win32")
+            })
+            .unwrap_or(false)
+    }
+
+    /// Get the directory separator based on the SPEC attribute.
+    fn io_path_sep(attributes: &HashMap<String, Value>) -> char {
+        if Self::is_win32_spec(attributes) {
+            '\\'
+        } else {
+            '/'
+        }
+    }
+
+    /// Check if a path is absolute in the context of a Win32 SPEC.
+    fn io_path_is_absolute_win32(path: &str) -> bool {
+        // On Win32, absolute paths start with: \, /, drive letter + :\, drive letter + :/
+        // or are UNC paths (\\server\share, //server/share)
+        if path.is_empty() {
+            return false;
+        }
+        let bytes = path.as_bytes();
+        // Starts with / or \
+        if bytes[0] == b'/' || bytes[0] == b'\\' {
+            return true;
+        }
+        // Drive letter followed by :\ or :/
+        if path.len() >= 3
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && (bytes[2] == b'\\' || bytes[2] == b'/')
+        {
+            return true;
+        }
+        false
+    }
+
     fn io_path_parts(path: &str) -> (String, String, String) {
         let mut volume = String::new();
         let mut rest = path;
+
+        // Check for UNC paths: \\server\share or //server/share
         if path.len() >= 2 {
             let bytes = path.as_bytes();
-            if bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
+            if (bytes[0] == b'\\' && bytes[1] == b'\\') || (bytes[0] == b'/' && bytes[1] == b'/') {
+                // UNC path: volume is //server/share or \\server\share
+                let after_prefix = &path[2..];
+                // Find the server part (up to next separator)
+                if let Some(sep1) = after_prefix.find(['/', '\\']) {
+                    let server = &after_prefix[..sep1];
+                    let after_server = &after_prefix[sep1 + 1..];
+                    // Find the share part (up to next separator or end)
+                    let share_end = after_server.find(['/', '\\']).unwrap_or(after_server.len());
+                    let share = &after_server[..share_end];
+                    // Volume is prefix + server + sep + share
+                    volume = format!(
+                        "{}{}{}{}",
+                        &path[..2],
+                        server,
+                        &path[2..][sep1..sep1 + 1],
+                        share
+                    );
+                    rest = &after_server[share_end..];
+                    if rest.is_empty() {
+                        // For UNC paths with no trailing content, dirname and basename are both the separator
+                        let sep = &path[0..1];
+                        return (volume, sep.to_string(), sep.to_string());
+                    }
+                } else {
+                    // Just \\something with no separator after
+                    volume = path.to_string();
+                    return (volume, ".".to_string(), ".".to_string());
+                }
+            } else if bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
                 volume.push_str(&path[..2]);
                 rest = &path[2..];
             }
@@ -858,7 +1037,13 @@ impl Interpreter {
             let dirname = if dirname.is_empty() {
                 trimmed[..=idx].to_string()
             } else {
-                dirname.to_string()
+                // Strip trailing separators from dirname (handles "foo//bar" -> "foo")
+                let d = dirname.trim_end_matches(['/', '\\']);
+                if d.is_empty() {
+                    dirname[..1].to_string() // Keep single separator for root paths
+                } else {
+                    d.to_string()
+                }
             };
             (dirname, basename.to_string())
         } else {
@@ -866,6 +1051,24 @@ impl Interpreter {
         };
 
         (volume, dirname, basename)
+    }
+
+    /// Join volume, dirname, and basename into a path string.
+    fn join_io_path_parts(volume: &str, dirname: &str, basename: &str, sep: char) -> String {
+        let mut result = String::new();
+        result.push_str(volume);
+        if dirname == "." && volume.is_empty() {
+            // Relative path with no directory
+            result.push_str(basename);
+        } else if dirname == "/" || dirname == "\\" {
+            result.push_str(dirname);
+            result.push_str(basename);
+        } else {
+            result.push_str(dirname);
+            result.push(sep);
+            result.push_str(basename);
+        }
+        result
     }
 
     fn io_path_extension_part_count(path: &str) -> i64 {
@@ -910,6 +1113,58 @@ impl Interpreter {
         out.push_str(prefix);
         if is_absolute {
             out.push(sep);
+        }
+        if !joined.is_empty() {
+            out.push_str(&joined);
+        }
+        if out.is_empty() { ".".to_string() } else { out }
+    }
+
+    /// Win32-specific cleanup: always uses `\` as separator.
+    pub fn cleanup_io_path_lexical_win32(path: &str) -> String {
+        if path.is_empty() {
+            return ".".to_string();
+        }
+        let mut prefix = String::new();
+        let mut rest = path;
+        // Check for UNC paths
+        let bytes = path.as_bytes();
+        if path.len() >= 2
+            && ((bytes[0] == b'\\' && bytes[1] == b'\\') || (bytes[0] == b'/' && bytes[1] == b'/'))
+        {
+            // Extract UNC volume
+            let after = &path[2..];
+            if let Some(sep1) = after.find(['/', '\\']) {
+                let after_server = &after[sep1 + 1..];
+                let share_end = after_server.find(['/', '\\']).unwrap_or(after_server.len());
+                let unc_end = 2 + sep1 + 1 + share_end;
+                prefix = path[..unc_end].replace('/', "\\");
+                rest = &path[unc_end..];
+            } else {
+                return path.replace('/', "\\");
+            }
+        } else if path.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
+            prefix = path[..2].to_string();
+            rest = &path[2..];
+        }
+        let is_absolute = rest.starts_with('/') || rest.starts_with('\\');
+        let mut stack: Vec<&str> = Vec::new();
+        for seg in rest.split(['/', '\\']) {
+            if seg.is_empty() || seg == "." {
+                continue;
+            }
+            if seg == ".." {
+                if !is_absolute || !stack.is_empty() {
+                    stack.push(seg);
+                }
+                continue;
+            }
+            stack.push(seg);
+        }
+        let joined = stack.join("\\");
+        let mut out = prefix;
+        if is_absolute {
+            out.push('\\');
         }
         if !joined.is_empty() {
             out.push_str(&joined);

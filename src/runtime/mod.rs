@@ -1450,6 +1450,8 @@ impl Interpreter {
                     "symlink",
                     "starts-with",
                     "watch",
+                    "succ",
+                    "pred",
                 ]
                 .iter()
                 .map(|s| s.to_string())

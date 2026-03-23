@@ -435,6 +435,31 @@ impl Interpreter {
         {
             return self.array_mutate_copy(target, method, args);
         }
+        // IO::Spec::* class methods (canonpath, dir-sep, etc.)
+        if let Value::Package(name) = &target {
+            let cn = name.resolve();
+            if cn.starts_with("IO::Spec") {
+                let is_win32 = cn == "IO::Spec::Win32";
+                match method {
+                    "canonpath" => {
+                        let path = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let cleaned = if is_win32 {
+                            Self::cleanup_io_path_lexical_win32(&path)
+                        } else {
+                            Self::cleanup_io_path_lexical(&path)
+                        };
+                        return Ok(Value::str(cleaned));
+                    }
+                    "dir-sep" => {
+                        return Ok(Value::str_from(if is_win32 { "\\" } else { "/" }));
+                    }
+                    _ => {}
+                }
+            }
+        }
         // Buf/Blob.allocate(size, fill?)
         if method == "allocate"
             && let Value::Package(name) = &target
