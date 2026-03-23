@@ -99,6 +99,38 @@ impl VM {
         }
     }
 
+    /// Check if a hash contains any sentinel entries (bound refs or self-refs)
+    /// that need resolution before the hash can be iterated.
+    pub(super) fn hash_has_sentinels(items: &HashMap<String, Value>) -> bool {
+        items.values().any(|v| {
+            matches!(v, Value::Pair(name, _) if name == SELF_HASH_REF_SENTINEL || name == BOUND_HASH_REF_SENTINEL)
+        })
+    }
+
+    /// Resolve all sentinel entries in a hash, returning a new hash with
+    /// bound variable references replaced by their current values.
+    pub(super) fn resolve_hash_for_iteration(&self, items: &Arc<HashMap<String, Value>>) -> Value {
+        let mut resolved = HashMap::new();
+        for (key, value) in items.iter() {
+            let resolved_value = match value {
+                Value::Pair(name, _) if name == SELF_HASH_REF_SENTINEL => {
+                    Value::Hash(items.clone())
+                }
+                Value::Pair(name, source) if name == BOUND_HASH_REF_SENTINEL => {
+                    let source_name = source.to_string_value();
+                    self.interpreter
+                        .env()
+                        .get(&source_name)
+                        .cloned()
+                        .unwrap_or(Value::Nil)
+                }
+                other => other.clone(),
+            };
+            resolved.insert(key.clone(), resolved_value);
+        }
+        Value::Hash(Arc::new(resolved))
+    }
+
     pub(super) fn self_array_ref_marker() -> Value {
         Value::Pair(
             SELF_ARRAY_REF_SENTINEL.to_string(),

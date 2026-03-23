@@ -106,7 +106,15 @@ impl VM {
         {
             return Ok(runtime::utils::coerce_value_to_quanthash(&value));
         }
-        Ok(runtime::coerce_to_hash(value))
+        let hash_val = runtime::coerce_to_hash(value);
+        // Resolve hash sentinel entries (bound variable refs) when assigning
+        // to a new hash variable. Assignment creates new containers.
+        if let Value::Hash(ref items) = hash_val
+            && Self::hash_has_sentinels(items)
+        {
+            return Ok(self.resolve_hash_for_iteration(items));
+        }
+        Ok(hash_val)
     }
 
     fn mix_assignment_weight(value: &Value) -> f64 {
@@ -950,6 +958,14 @@ impl VM {
                 if let Some(constraint) = array_elem_constraint
                     && !matches!(val, Value::Nil)
                     && !self.interpreter.type_matches_value(&constraint, &val)
+                    // Container type constraints (Hash, Array, etc.) apply to the
+                    // whole container, not individual elements. Skip element-level
+                    // type checking for these types.
+                    && !matches!(
+                        constraint.as_str(),
+                        "Hash" | "Array" | "Map" | "List" | "Bag" | "Set" | "Mix"
+                            | "BagHash" | "SetHash" | "MixHash" | "Seq"
+                    )
                 {
                     return Err(RuntimeError::new(runtime::utils::type_check_element_error(
                         &var_name,
@@ -1471,7 +1487,12 @@ impl VM {
 
         let name = &code.locals[idx];
         let mut val = if name.starts_with('%') {
-            self.coerce_hash_var_value(name, raw_popped)?
+            if is_bind {
+                // `:=` binding preserves containers — skip coercion/resolution
+                raw_popped
+            } else {
+                self.coerce_hash_var_value(name, raw_popped)?
+            }
         } else if name.starts_with('@') {
             let mut assigned = if is_bind {
                 // `:=` binding preserves the container type (e.g. List stays List).
