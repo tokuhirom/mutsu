@@ -33,6 +33,8 @@ pub(crate) struct Compiler {
     pub(crate) is_routine: bool,
     /// When true, the current VarDecl is from a `:=` bind declaration.
     bind_vardecl: bool,
+    /// Variables declared as `constant` (no Scalar container).
+    constant_vars: std::collections::HashSet<String>,
 }
 
 impl Compiler {
@@ -50,6 +52,7 @@ impl Compiler {
             accessed_dynamic_vars: std::collections::HashSet::new(),
             is_routine: false,
             bind_vardecl: false,
+            constant_vars: std::collections::HashSet::new(),
         }
     }
 
@@ -343,10 +346,14 @@ impl Compiler {
         )
     }
 
-    fn normalize_for_iterable(iterable: &Expr) -> Expr {
+    fn normalize_for_iterable(&self, iterable: &Expr) -> Expr {
         match iterable {
             // Scalar variables are item containers in `for` and should not be flattened.
-            Expr::Var(_) => Expr::ArrayLiteral(vec![iterable.clone()]),
+            // Exception: `constant $x` binds without a Scalar container, so `for $x`
+            // should iterate the elements (like sigilless variables).
+            Expr::Var(name) if !self.constant_vars.contains(name) => {
+                Expr::ArrayLiteral(vec![iterable.clone()])
+            }
             _ => iterable.clone(),
         }
     }

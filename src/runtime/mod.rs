@@ -718,6 +718,10 @@ pub struct Interpreter {
     import_scope_stack: Vec<ImportScopeSnapshot>,
     pub(crate) strict_mode: bool,
     pub(crate) fatal_mode: bool,
+    /// Persistent store for `our`-scoped variables.  Values are saved here
+    /// by `SetGlobal` so they survive block-scope restoration (which only
+    /// preserves env keys that existed before the block).
+    our_vars: HashMap<String, Value>,
     state_vars: HashMap<String, Value>,
     once_values: HashMap<String, Value>,
     once_scope_stack: Vec<u64>,
@@ -2461,6 +2465,7 @@ impl Interpreter {
             import_scope_stack: Vec::new(),
             strict_mode: false,
             fatal_mode: false,
+            our_vars: HashMap::new(),
             state_vars: HashMap::new(),
             once_values: HashMap::new(),
             once_scope_stack: Vec::new(),
@@ -3811,6 +3816,7 @@ impl Interpreter {
             import_scope_stack: Vec::new(),
             strict_mode: self.strict_mode,
             fatal_mode: self.fatal_mode,
+            our_vars: HashMap::new(),
             state_vars: HashMap::new(),
             once_values: self.once_values.clone(),
             once_scope_stack: Vec::new(),

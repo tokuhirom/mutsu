@@ -558,6 +558,10 @@ impl Interpreter {
         self.wrap_name_to_sub.get(name).cloned()
     }
 
+    pub(crate) fn set_our_var(&mut self, key: String, value: Value) {
+        self.our_vars.insert(key, value);
+    }
+
     pub(crate) fn get_state_var(&self, key: &str) -> Option<&Value> {
         self.state_vars.get(key)
     }
@@ -1212,6 +1216,19 @@ impl Interpreter {
             return value.clone();
         }
         if let Some(value) = self.env.get(name)
+            && !matches!(value, Value::Nil)
+        {
+            return value.clone();
+        }
+        // Fallback: check persistent `our`-scoped variables (constants, `our` decls)
+        // which may have been removed from the lexical env by block-scope restoration.
+        if let Some(bare) = name.strip_prefix('$')
+            && let Some(value) = self.our_vars.get(bare)
+            && !matches!(value, Value::Nil)
+        {
+            return value.clone();
+        }
+        if let Some(value) = self.our_vars.get(name)
             && !matches!(value, Value::Nil)
         {
             return value.clone();

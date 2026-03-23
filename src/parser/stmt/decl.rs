@@ -1029,7 +1029,17 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     }
     // my constant $x = ...
     if keyword("constant", rest).is_some() {
-        let (r, stmt) = constant_decl(rest)?;
+        let (r, mut stmt) = constant_decl(rest)?;
+        // Patch scope: `my constant` → lexical; `our constant` → package scoped.
+        // `constant_decl()` defaults to `is_our: true` (implied `our`), but when
+        // prefixed with `my`/`our` the outer scope declaration should take precedence.
+        if let Stmt::VarDecl {
+            is_our: ref mut our_flag,
+            ..
+        } = stmt
+        {
+            *our_flag = is_our;
+        }
         if apply_modifier {
             return parse_statement_modifier(r, stmt);
         }

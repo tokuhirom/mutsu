@@ -1426,7 +1426,9 @@ impl VM {
         let raw_popped = self.stack.pop().unwrap_or(Value::Nil);
         let (raw_popped, bind_source) = Self::extract_varref_binding(raw_popped);
         let is_bind = self.bind_context || bind_source.is_some();
+        let is_constant = self.constant_context;
         self.bind_context = false;
+        self.constant_context = false;
 
         // Fast path for simple scalar variables — skip all metadata checks
         if code.simple_locals[idx] && bind_source.is_none() && !is_bind {
@@ -1501,14 +1503,34 @@ impl VM {
 
         let name = &code.locals[idx];
         let mut val = if name.starts_with('%') {
-            if is_bind {
-                // `:=` binding preserves containers — skip coercion/resolution
+            if is_constant || is_bind {
+                // `:=` binding or `constant %x` preserves containers — skip coercion.
+                // `constant %x = :42foo` keeps the Pair; `constant %x = bag(...)` keeps the Bag.
                 raw_popped
             } else {
                 self.coerce_hash_var_value(name, raw_popped)?
             }
         } else if name.starts_with('@') {
-            let mut assigned = if is_bind {
+            let mut assigned = if is_constant {
+                // `constant @x` stores a List, not an Array.
+                // Explicit Arrays ([1,2,3]) are preserved.
+                match raw_popped {
+                    Value::Array(items, kind) if kind.is_real_array() => Value::Array(items, kind),
+                    Value::Array(items, _) => Value::Array(items, crate::value::ArrayKind::List),
+                    Value::Seq(items) => Value::Array(
+                        std::sync::Arc::new(items.to_vec()),
+                        crate::value::ArrayKind::List,
+                    ),
+                    Value::LazyList(list) => {
+                        let items = self.force_lazy_list_vm(&list)?;
+                        Value::Array(std::sync::Arc::new(items), crate::value::ArrayKind::List)
+                    }
+                    other => Value::Array(
+                        std::sync::Arc::new(vec![other]),
+                        crate::value::ArrayKind::List,
+                    ),
+                }
+            } else if is_bind {
                 // `:=` binding preserves the container type (e.g. List stays List).
                 match raw_popped {
                     Value::LazyList(list) => Value::real_array(self.force_lazy_list_vm(&list)?),
@@ -1640,9 +1662,9 @@ impl VM {
             return Err(err);
         }
         self.locals[idx] = val.clone();
-        if is_bind && name.starts_with('@') {
-            // For `:=` bind, bypass set_shared_var's List->Array normalization
-            // so the container type is preserved in the environment.
+        if (is_bind || is_constant) && name.starts_with('@') {
+            // For `:=` bind and `constant @x`, bypass set_shared_var's
+            // List->Array normalization so the container type is preserved.
             self.interpreter
                 .env_mut()
                 .insert(name.to_string(), val.clone());
