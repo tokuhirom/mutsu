@@ -675,6 +675,12 @@ pub(super) fn sub_decl_with_semicolon_mode(
         let r = keyword("sub", r).unwrap_or(r);
         let (r, _) = ws(r)?;
         (r, true)
+    } else if let Some(r) = keyword("only", input) {
+        // `only` is functionally equivalent to a regular sub declaration
+        let (r, _) = ws1(r)?;
+        let r = keyword("sub", r).unwrap_or(r);
+        let (r, _) = ws(r)?;
+        (r, false)
     } else {
         let r = keyword("sub", input).ok_or_else(|| PError::expected("sub declaration"))?;
         let (r, _) = ws1(r)?;

@@ -352,22 +352,20 @@ impl Interpreter {
     /// Create a Pod::Block::Declarator instance from a DocComment
     pub(crate) fn make_pod_declarator(doc: &super::DocComment, wherefore: Value) -> Value {
         let mut attrs = HashMap::new();
-        let leading = doc.leading.as_deref().unwrap_or("").to_string();
-        let trailing = doc.trailing.as_deref().unwrap_or("").to_string();
         attrs.insert(
             "leading".to_string(),
-            if doc.leading.is_some() {
+            if let Some(ref leading) = doc.leading {
                 Value::str(leading.clone())
             } else {
-                Value::str(String::new())
+                Value::Nil
             },
         );
         attrs.insert(
             "trailing".to_string(),
-            if doc.trailing.is_some() {
+            if let Some(ref trailing) = doc.trailing {
                 Value::str(trailing.clone())
             } else {
-                Value::str(String::new())
+                Value::Nil
             },
         );
         attrs.insert("WHEREFORE".to_string(), wherefore);
