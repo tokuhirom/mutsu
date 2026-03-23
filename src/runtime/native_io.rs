@@ -351,6 +351,20 @@ impl Interpreter {
                     Self::metadata_is_executable(&io_path_metadata(&path_buf, &p, method)?);
                 Ok(Value::Bool(executable))
             }
+            "rw" => {
+                let meta = io_path_metadata(&path_buf, &p, method)?;
+                Ok(Value::Bool(
+                    metadata_is_readable(&meta) && metadata_is_writable(&meta),
+                ))
+            }
+            "rwx" => {
+                let meta = io_path_metadata(&path_buf, &p, method)?;
+                Ok(Value::Bool(
+                    metadata_is_readable(&meta)
+                        && metadata_is_writable(&meta)
+                        && Self::metadata_is_executable(&meta),
+                ))
+            }
             "mode" => {
                 let metadata = fs::metadata(&path_buf)
                     .map_err(|err| RuntimeError::new(format!("Failed to stat '{}': {}", p, err)))?;
@@ -373,10 +387,23 @@ impl Interpreter {
                 let size = io_path_metadata(&path_buf, &p, method)?.len();
                 Ok(Value::Int(size as i64))
             }
-            "z" => {
-                let zero = io_path_metadata(&path_buf, &p, method)?.len() == 0;
-                Ok(Value::Bool(zero))
-            }
+            "z" => match fs::metadata(&path_buf) {
+                Ok(meta) => Ok(Value::Bool(meta.len() == 0)),
+                Err(_) => {
+                    let message = format!("Failed to find '{}' while trying to do '.z'", p);
+                    let mut attrs = HashMap::new();
+                    attrs.insert("message".to_string(), Value::str(message));
+                    attrs.insert("path".to_string(), Value::str(p.to_string()));
+                    attrs.insert("trying".to_string(), Value::str_from("z"));
+                    let ex = Value::make_instance(Symbol::intern("X::IO::DoesNotExist"), attrs);
+                    let mut failure_attrs = HashMap::new();
+                    failure_attrs.insert("exception".to_string(), ex);
+                    Ok(Value::make_instance(
+                        Symbol::intern("Failure"),
+                        failure_attrs,
+                    ))
+                }
+            },
             "created" => {
                 let ts = fs::metadata(&path_buf)
                     .and_then(|meta| meta.created())
@@ -432,7 +459,7 @@ impl Interpreter {
                 Ok(Value::array(parts))
             }
             "slurp" => {
-                let (_, _, _, bin, _, _, _, _, _) = self.parse_io_flags_values(&args);
+                let (_, _, _, bin, _, _, _, _, _, _) = self.parse_io_flags_values(&args);
                 if bin {
                     let bytes = fs::read(&path_buf).map_err(|err| {
                         RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
@@ -461,6 +488,7 @@ impl Interpreter {
                     out_buffer_capacity,
                     nl_out,
                     enc,
+                    create,
                 ) = self.parse_io_flags_values(&args);
                 self.open_file_handle(
                     &path_buf,
@@ -473,6 +501,7 @@ impl Interpreter {
                     out_buffer_capacity,
                     nl_out,
                     enc,
+                    create,
                 )
             }
             "copy" => {
@@ -1249,6 +1278,7 @@ impl Interpreter {
                     out_buffer_capacity,
                     nl_out,
                     enc,
+                    create,
                 ) = self.parse_io_flags_values(&merged_args);
                 self.open_file_handle(
                     &path_buf,
@@ -1261,6 +1291,7 @@ impl Interpreter {
                     out_buffer_capacity,
                     nl_out,
                     enc,
+                    create,
                 )
             }
             "nl-out" => {

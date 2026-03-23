@@ -740,12 +740,14 @@ impl Interpreter {
         Option<usize>,
         Option<String>,
         Option<String>,
+        bool,
     ) {
         let mut read = false;
         let mut write = false;
         let mut append = false;
         let mut bin = false;
         let mut chomp = true;
+        let mut create = false;
         let mut nl_in: Option<Vec<Vec<u8>>> = None;
         let mut out_buffer: Option<usize> = None;
         let mut nl_out: Option<String> = None;
@@ -763,10 +765,24 @@ impl Interpreter {
                     "a" => append = truthy,
                     "bin" => bin = truthy,
                     "chomp" => chomp = truthy,
+                    "create" => create = truthy,
                     "nl-in" => nl_in = Some(Self::parse_nl_in_value(value)),
                     "nl-out" => nl_out = Some(value.to_string_value()),
                     "out-buffer" => out_buffer = Self::parse_out_buffer_size(value),
                     "enc" => enc = Some(value.to_string_value()),
+                    "mode" => {
+                        // :mode<ro> = read-only, :mode<wo> = write-only, :mode<rw> = read-write
+                        let mode_str = value.to_string_value();
+                        match mode_str.as_str() {
+                            "ro" => read = true,
+                            "wo" => write = true,
+                            "rw" => {
+                                read = true;
+                                write = true;
+                            }
+                            _ => {}
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -786,6 +802,7 @@ impl Interpreter {
             out_buffer,
             nl_out,
             enc,
+            create,
         )
     }
 
@@ -802,6 +819,7 @@ impl Interpreter {
         out_buffer_capacity: Option<usize>,
         nl_out: Option<String>,
         enc: Option<String>,
+        create: bool,
     ) -> Result<Value, RuntimeError> {
         // Opening a directory as a file handle is an error in Raku
         if path.is_dir() {
@@ -816,8 +834,17 @@ impl Interpreter {
         if append {
             options.append(true).create(true);
         } else if write && !read {
-            options.create(true).truncate(true);
+            if create {
+                // :create without truncate - create if missing but don't truncate
+                options.create(true);
+            } else {
+                options.create(true).truncate(true);
+            }
         } else if write && read {
+            options.create(true);
+        }
+        // Explicit :create flag ensures the file is created if it doesn't exist
+        if create {
             options.create(true);
         }
         let file = options.open(path).map_err(|err| {
