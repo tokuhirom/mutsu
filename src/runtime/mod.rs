@@ -24,7 +24,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::ast::{Expr, FunctionDef, ParamDef, PhaserKind, Stmt};
 use crate::env::Env;
-use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
+use crate::opcode::{CompiledCode, CompiledFunction};
 use crate::parse_dispatch;
 use crate::value::{
     ArrayKind, EnumValue, JunctionKind, LazyList, RuntimeError, SharedChannel, SharedPromise,
@@ -110,6 +110,7 @@ mod class;
 mod dispatch;
 mod handle;
 mod io;
+mod main_args;
 mod metamodel;
 mod methods;
 mod methods_classhow;

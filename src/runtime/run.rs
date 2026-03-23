@@ -618,43 +618,8 @@ impl Interpreter {
         // Check for unresolved package/class stubs (X::Package::Stubbed)
         self.check_unresolved_stubs()?;
 
-        // Auto-call MAIN sub if defined
-        if self.resolve_function("MAIN").is_some() {
-            let args_val = self
-                .env
-                .get("@*ARGS")
-                .cloned()
-                .unwrap_or_else(|| Value::array(Vec::new()));
-            let args_list = if let Value::Array(items, ..) = args_val {
-                items.to_vec()
-            } else {
-                Vec::new()
-            };
-
-            let mut main_call = CompiledCode::new();
-            let arity = args_list.len() as u32;
-            for arg in args_list {
-                let arg_idx = main_call.add_constant(arg);
-                main_call.emit(OpCode::LoadConst(arg_idx));
-            }
-            let name_idx = main_call.add_constant(Value::str_from("MAIN"));
-            main_call.emit(OpCode::ExecCall {
-                name_idx,
-                arity,
-                arg_sources_idx: None,
-            });
-
-            let interp = std::mem::take(self);
-            let vm = crate::vm::VM::new(interp);
-            let (interp, main_result) = vm.run(&main_call, &compiled_fns);
-            *self = interp;
-            match main_result {
-                Err(e) if e.return_value.is_some() => {}
-                Err(e) if e.message.is_empty() => {}
-                Err(e) => return Err(e),
-                Ok(_) => {}
-            }
-        }
+        // Auto-call MAIN sub if defined, with CLI argument parsing
+        self.dispatch_main(&compiled_fns)?;
         self.finish()?;
         Ok(self.output.clone())
     }

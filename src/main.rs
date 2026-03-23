@@ -59,7 +59,14 @@ fn main() {
     let mut preload_modules: Vec<String> = Vec::new();
     let mut filtered_args: Vec<String> = Vec::new();
     let mut iter = args[1..].iter();
+    let mut seen_source = false; // true once -e CODE or a filename is consumed
     while let Some(arg) = iter.next() {
+        // Once we've seen the source (code or filename), remaining args are
+        // script arguments passed to @*ARGS / MAIN, not mutsu flags.
+        if seen_source {
+            filtered_args.push(arg.clone());
+            continue;
+        }
         if arg == "--help" || arg == "-h" {
             print_help(&args[0]);
             return;
@@ -75,12 +82,22 @@ fn main() {
             auto_print = true;
         } else if arg == "-n" {
             auto_loop = true;
+        } else if arg == "-e" {
+            if let Some(code) = iter.next() {
+                filtered_args.push("-e".to_string());
+                filtered_args.push(code.clone());
+                seen_source = true;
+            } else {
+                eprintln!("Usage: {} -e <code>", args[0]);
+                std::process::exit(1);
+            }
         } else if arg == "-ne" {
             // Combined -n -e: enable auto-loop and treat the next arg as code
             auto_loop = true;
             if let Some(code) = iter.next() {
                 filtered_args.push("-e".to_string());
                 filtered_args.push(code.clone());
+                seen_source = true;
             } else {
                 eprintln!("Usage: {} -ne <code>", args[0]);
                 std::process::exit(1);
@@ -91,6 +108,7 @@ fn main() {
             if let Some(code) = iter.next() {
                 filtered_args.push("-e".to_string());
                 filtered_args.push(code.clone());
+                seen_source = true;
             } else {
                 eprintln!("Usage: {} -pe <code>", args[0]);
                 std::process::exit(1);
@@ -122,6 +140,10 @@ fn main() {
             preload_modules.push(module.to_string());
         } else {
             filtered_args.push(arg.clone());
+            // If this looks like a filename (not a flag), mark source as seen
+            if !arg.starts_with('-') || arg == "-" {
+                seen_source = true;
+            }
         }
     }
 
