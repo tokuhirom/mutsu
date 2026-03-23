@@ -324,6 +324,15 @@ impl Value {
             Value::CustomType { .. } => false,
             Value::CustomTypeInstance { .. } => true,
             Value::Scalar(inner) => inner.truthy(),
+            Value::LazyThunk(thunk_data) => {
+                let cache = thunk_data.cache.lock().unwrap();
+                if let Some(ref cached) = *cache {
+                    cached.truthy()
+                } else {
+                    // Unforced thunk is truthy (it exists)
+                    true
+                }
+            }
         }
     }
 
@@ -423,6 +432,13 @@ impl Value {
                 return tn.resolve() == type_name;
             }
             Value::Scalar(inner) => return inner.isa_check(type_name),
+            Value::LazyThunk(thunk_data) => {
+                let cache = thunk_data.cache.lock().unwrap();
+                if let Some(ref cached) = *cache {
+                    return cached.isa_check(type_name);
+                }
+                "Scalar" // unforced lazy thunk
+            }
         };
         if my_type == type_name {
             return true;

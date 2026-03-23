@@ -506,6 +506,9 @@ pub enum Value {
     /// A Scalar container wrapping a value (from `.item` or `$()`).
     /// Prevents one level of flattening in list/array context.
     Scalar(Box<Value>),
+    /// A lazy thunk: wraps a Sub that is evaluated on first access and cached.
+    /// Used by `lazy { ... }` statement prefix.
+    LazyThunk(Arc<LazyThunkData>),
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -547,6 +550,25 @@ impl LazyList {
             cache: Mutex::new(Some(items)),
             compiled_code: None,
             compiled_fns: None,
+        }
+    }
+}
+
+// --- LazyThunkData: deferred evaluation with caching ---
+
+#[derive(Debug)]
+pub(crate) struct LazyThunkData {
+    /// The block/sub to evaluate when the thunk is forced.
+    pub(crate) thunk: Value,
+    /// Cached result: None means not yet evaluated.
+    pub(crate) cache: Mutex<Option<Value>>,
+}
+
+impl Clone for LazyThunkData {
+    fn clone(&self) -> Self {
+        Self {
+            thunk: self.thunk.clone(),
+            cache: Mutex::new(self.cache.lock().unwrap().clone()),
         }
     }
 }
@@ -1085,6 +1107,23 @@ impl PartialEq for Value {
             // Mixin vs non-Mixin: delegate to the inner value
             (Value::Mixin(inner, _), other) | (other, Value::Mixin(inner, _)) => {
                 inner.as_ref() == other
+            }
+            // LazyThunk: compare cached values if available
+            (Value::LazyThunk(a), Value::LazyThunk(b)) => {
+                let a_cache = a.cache.lock().unwrap();
+                let b_cache = b.cache.lock().unwrap();
+                match (a_cache.as_ref(), b_cache.as_ref()) {
+                    (Some(av), Some(bv)) => av == bv,
+                    _ => false,
+                }
+            }
+            (Value::LazyThunk(thunk), other) | (other, Value::LazyThunk(thunk)) => {
+                let cache = thunk.cache.lock().unwrap();
+                if let Some(ref cached) = *cache {
+                    cached == other
+                } else {
+                    false
+                }
             }
             _ => false,
         }

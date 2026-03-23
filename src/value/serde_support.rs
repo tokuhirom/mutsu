@@ -302,7 +302,8 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
         | Value::Channel(_)
         | Value::Proxy { .. }
         | Value::CustomType { .. }
-        | Value::CustomTypeInstance { .. } => Err(format!(
+        | Value::CustomTypeInstance { .. }
+        | Value::LazyThunk(_) => Err(format!(
             "cannot serialize Value variant: {:?}",
             std::mem::discriminant(v)
         )),

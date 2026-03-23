@@ -151,6 +151,13 @@ impl Interpreter {
             Value::Scalar(inner) => {
                 return self.call_method_with_values(*inner.clone(), "WHAT", args.clone());
             }
+            Value::LazyThunk(thunk_data) => {
+                let cache = thunk_data.cache.lock().unwrap();
+                if let Some(ref cached) = *cache {
+                    return self.call_method_with_values(cached.clone(), "WHAT", args.clone());
+                }
+                "Scalar"
+            }
         };
         let visible_type_name = if crate::value::is_internal_anon_type_name(type_name) {
             ""

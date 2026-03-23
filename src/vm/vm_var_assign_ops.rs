@@ -1387,6 +1387,12 @@ impl VM {
             return Ok(());
         }
         let val = self.locals[idx].clone();
+        // Force lazy thunks transparently on access
+        if let Value::LazyThunk(ref thunk_data) = val {
+            let forced = self.force_lazy_thunk(thunk_data)?;
+            self.stack.push(forced);
+            return Ok(());
+        }
         // Fast path: non-Nil values are always valid — skip env lookup
         if matches!(val, Value::Nil) {
             if let Some(shared_val) = self.interpreter.get_shared_var(&name) {
@@ -1476,6 +1482,11 @@ impl VM {
                 self.locals[idx] = val;
             } else {
                 self.locals[idx] = val;
+            }
+            // Track lazy-thunk readonly: mark when storing a LazyThunk,
+            // unmark when overwriting a LazyThunk with a non-LazyThunk (rebinding).
+            if matches!(self.locals[idx], Value::LazyThunk(..)) {
+                self.interpreter.mark_readonly(name);
             }
             if self.interpreter.fatal_mode
                 && !name.contains("__mutsu_")
@@ -1662,6 +1673,10 @@ impl VM {
             return Err(err);
         }
         self.locals[idx] = val.clone();
+        // Mark variable as readonly when storing a LazyThunk
+        if matches!(val, Value::LazyThunk(..)) {
+            self.interpreter.mark_readonly(name);
+        }
         if (is_bind || is_constant) && name.starts_with('@') {
             // For `:=` bind and `constant @x`, bypass set_shared_var's
             // List->Array normalization so the container type is preserved.
