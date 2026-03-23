@@ -326,6 +326,12 @@ impl Interpreter {
                     .insert(Symbol::intern(&fq), f.clone());
             }
         }
+        // If this is NOT our-scoped and we're inside a non-GLOBAL package,
+        // mark it as my-scoped so it doesn't appear in the package stash.
+        if !is_our_scoped && self.current_package != "GLOBAL" {
+            let fq = format!("{}::{}", self.current_package, name);
+            self.mark_my_scoped_package_item(fq);
+        }
         let callable_key = format!("__mutsu_callable_id::{}::{}", self.current_package, name);
         self.env.insert(
             callable_key,
