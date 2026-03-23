@@ -2097,7 +2097,7 @@ impl Interpreter {
             line_chomp: true,
             encoding: "utf-8".to_string(),
             file: None,
-            socket: Some(stream),
+            socket: Some(SocketStream::Tcp(stream)),
             listener: None,
             closed: false,
             out_buffer_capacity: None,
@@ -2118,6 +2118,98 @@ impl Interpreter {
             Symbol::intern("IO::Socket::INET"),
             attrs,
         ))
+    }
+
+    /// IO::Socket::INET.listen($host, $port, family => ...)
+    pub(super) fn dispatch_socket_inet_listen(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        // Extract positional and named args
+        let mut positional = Vec::new();
+        let mut family: Option<i64> = None;
+        for arg in args {
+            match arg {
+                Value::Pair(key, value) if key.as_str() == "family" => {
+                    family = Some(match value.as_ref() {
+                        Value::Int(i) => *i,
+                        Value::Enum { value: v, .. } => v.as_i64(),
+                        other => other.to_string_value().parse::<i64>().unwrap_or(0),
+                    });
+                }
+                _ => positional.push(arg.clone()),
+            }
+        }
+        let host = positional
+            .first()
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let port = positional
+            .get(1)
+            .map(|v| match v {
+                Value::Int(i) => *i as u16,
+                Value::Num(f) => *f as u16,
+                other => other.to_string_value().parse::<u16>().unwrap_or(0),
+            })
+            .unwrap_or(0);
+
+        // Build args for dispatch_socket_inet_new in listen mode
+        let mut new_args = vec![
+            Value::Pair("listen".to_string(), Box::new(Value::Bool(true))),
+            Value::Pair("localhost".to_string(), Box::new(Value::str(host))),
+            Value::Pair("localport".to_string(), Box::new(Value::Int(port as i64))),
+        ];
+        if let Some(f) = family {
+            new_args.push(Value::Pair("family".to_string(), Box::new(Value::Int(f))));
+        }
+        self.dispatch_socket_inet_new(&new_args)
+    }
+
+    /// IO::Socket::INET.connect($host, $port, family => ...)
+    pub(super) fn dispatch_socket_inet_connect(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        // Extract positional and named args
+        let mut positional = Vec::new();
+        let mut family: Option<i64> = None;
+        for arg in args {
+            match arg {
+                Value::Pair(key, value) if key.as_str() == "family" => {
+                    family = Some(match value.as_ref() {
+                        Value::Int(i) => *i,
+                        Value::Enum { value: v, .. } => v.as_i64(),
+                        other => other.to_string_value().parse::<i64>().unwrap_or(0),
+                    });
+                }
+                _ => positional.push(arg.clone()),
+            }
+        }
+
+        if family == Some(3) {
+            // PF_UNIX — delegate to dispatch_socket_inet_new with family
+            let host = positional
+                .first()
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            let port = positional
+                .get(1)
+                .map(|v| match v {
+                    Value::Int(i) => *i as u16,
+                    Value::Num(f) => *f as u16,
+                    other => other.to_string_value().parse::<u16>().unwrap_or(0),
+                })
+                .unwrap_or(0);
+            let new_args = vec![
+                Value::Pair("host".to_string(), Box::new(Value::str(host))),
+                Value::Pair("port".to_string(), Box::new(Value::Int(port as i64))),
+                Value::Pair("family".to_string(), Box::new(Value::Int(3))),
+            ];
+            return self.dispatch_socket_inet_new(&new_args);
+        }
+
+        // TCP connect — delegate to existing dispatch_socket_connect
+        self.dispatch_socket_connect(&positional)
     }
 
     pub(super) fn dispatch_socket_async_listen(
@@ -2399,6 +2491,51 @@ impl Interpreter {
 
         if listen {
             // Server mode: bind and listen
+            #[cfg(unix)]
+            if family == Some(3) {
+                // PF_UNIX / PF_LOCAL
+                let path = if !localhost.is_empty() {
+                    localhost.clone()
+                } else if !host.is_empty() {
+                    host.clone()
+                } else {
+                    return Err(RuntimeError::new("PF_UNIX listen requires a socket path"));
+                };
+                let listener = std::os::unix::net::UnixListener::bind(&path).map_err(|e| {
+                    RuntimeError::new(format!("Failed to bind UNIX socket '{}': {}", path, e))
+                })?;
+                let id = self.next_handle_id;
+                self.next_handle_id += 1;
+                let state = IoHandleState {
+                    target: IoHandleTarget::Socket,
+                    mode: IoHandleMode::ReadWrite,
+                    path: Some(path.clone()),
+                    line_separators: self.default_line_separators(),
+                    line_chomp: true,
+                    encoding: "utf-8".to_string(),
+                    file: None,
+                    socket: None,
+                    listener: Some(SocketListener::Unix(listener)),
+                    closed: false,
+                    out_buffer_capacity: None,
+                    out_buffer_pending: Vec::new(),
+                    bin: false,
+                    nl_out: "\n".to_string(),
+                    bytes_written: 0,
+                    read_attempted: false,
+                    argfiles_index: 0,
+                    argfiles_reader: None,
+                };
+                self.handles.insert(id, state);
+                let mut attrs = HashMap::new();
+                attrs.insert("handle".to_string(), Value::Int(id as i64));
+                attrs.insert("localport".to_string(), Value::Int(0i64));
+                attrs.insert("localhost".to_string(), Value::str(path));
+                return Ok(Value::make_instance(
+                    Symbol::intern("IO::Socket::INET"),
+                    attrs,
+                ));
+            }
             let bind_addr = if localhost.is_empty() {
                 format!("0.0.0.0:{}", localport)
             } else {
@@ -2419,7 +2556,7 @@ impl Interpreter {
                 encoding: "utf-8".to_string(),
                 file: None,
                 socket: None,
-                listener: Some(listener),
+                listener: Some(SocketListener::Tcp(listener)),
                 closed: false,
                 out_buffer_capacity: None,
                 out_buffer_pending: Vec::new(),
@@ -2448,6 +2585,52 @@ impl Interpreter {
             ))
         } else {
             // Client mode: connect
+            #[cfg(unix)]
+            if family == Some(3) {
+                // PF_UNIX / PF_LOCAL
+                let path = if !host.is_empty() {
+                    host.clone()
+                } else {
+                    return Err(RuntimeError::new("PF_UNIX connect requires a socket path"));
+                };
+                let stream = std::os::unix::net::UnixStream::connect(&path).map_err(|e| {
+                    RuntimeError::new(format!(
+                        "Failed to connect to UNIX socket '{}': {}",
+                        path, e
+                    ))
+                })?;
+                let id = self.next_handle_id;
+                self.next_handle_id += 1;
+                let state = IoHandleState {
+                    target: IoHandleTarget::Socket,
+                    mode: IoHandleMode::ReadWrite,
+                    path: None,
+                    line_separators: self.default_line_separators(),
+                    line_chomp: true,
+                    encoding: "utf-8".to_string(),
+                    file: None,
+                    socket: Some(SocketStream::Unix(stream)),
+                    listener: None,
+                    closed: false,
+                    out_buffer_capacity: None,
+                    out_buffer_pending: Vec::new(),
+                    bin: false,
+                    nl_out: "\n".to_string(),
+                    bytes_written: 0,
+                    read_attempted: false,
+                    argfiles_index: 0,
+                    argfiles_reader: None,
+                };
+                self.handles.insert(id, state);
+                let mut attrs = HashMap::new();
+                attrs.insert("handle".to_string(), Value::Int(id as i64));
+                attrs.insert("host".to_string(), Value::str(path));
+                attrs.insert("port".to_string(), Value::Int(port as i64));
+                return Ok(Value::make_instance(
+                    Symbol::intern("IO::Socket::INET"),
+                    attrs,
+                ));
+            }
             if host.is_empty() {
                 host = "127.0.0.1".to_string();
             }

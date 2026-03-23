@@ -335,6 +335,94 @@ enum IoHandleMode {
     ReadWrite,
 }
 
+/// Abstraction over TCP and UNIX socket streams so socket I/O code is shared.
+#[derive(Debug)]
+enum SocketStream {
+    Tcp(std::net::TcpStream),
+    #[cfg(unix)]
+    Unix(std::os::unix::net::UnixStream),
+}
+
+impl std::io::Read for SocketStream {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            SocketStream::Tcp(s) => s.read(buf),
+            #[cfg(unix)]
+            SocketStream::Unix(s) => s.read(buf),
+        }
+    }
+}
+
+impl SocketStream {
+    fn try_clone(&self) -> std::io::Result<Self> {
+        match self {
+            SocketStream::Tcp(s) => Ok(SocketStream::Tcp(s.try_clone()?)),
+            #[cfg(unix)]
+            SocketStream::Unix(s) => Ok(SocketStream::Unix(s.try_clone()?)),
+        }
+    }
+
+    fn peer_addr(&self) -> std::io::Result<String> {
+        match self {
+            SocketStream::Tcp(s) => s.peer_addr().map(|a| a.to_string()),
+            #[cfg(unix)]
+            SocketStream::Unix(s) => s.peer_addr().map(|a| {
+                a.as_pathname()
+                    .map_or("(unnamed)".to_string(), |p| p.display().to_string())
+            }),
+        }
+    }
+}
+
+impl std::io::Write for SocketStream {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            SocketStream::Tcp(s) => s.write(buf),
+            #[cfg(unix)]
+            SocketStream::Unix(s) => s.write(buf),
+        }
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            SocketStream::Tcp(s) => s.flush(),
+            #[cfg(unix)]
+            SocketStream::Unix(s) => s.flush(),
+        }
+    }
+}
+
+/// Abstraction over TCP and UNIX socket listeners.
+#[derive(Debug)]
+enum SocketListener {
+    Tcp(std::net::TcpListener),
+    #[cfg(unix)]
+    Unix(std::os::unix::net::UnixListener),
+}
+
+impl SocketListener {
+    fn accept(&self) -> std::io::Result<SocketStream> {
+        match self {
+            SocketListener::Tcp(l) => {
+                let (stream, _addr) = l.accept()?;
+                Ok(SocketStream::Tcp(stream))
+            }
+            #[cfg(unix)]
+            SocketListener::Unix(l) => {
+                let (stream, _addr) = l.accept()?;
+                Ok(SocketStream::Unix(stream))
+            }
+        }
+    }
+
+    fn try_clone(&self) -> std::io::Result<Self> {
+        match self {
+            SocketListener::Tcp(l) => Ok(SocketListener::Tcp(l.try_clone()?)),
+            #[cfg(unix)]
+            SocketListener::Unix(l) => Ok(SocketListener::Unix(l.try_clone()?)),
+        }
+    }
+}
+
 #[derive(Debug)]
 struct IoHandleState {
     target: IoHandleTarget,
@@ -344,8 +432,8 @@ struct IoHandleState {
     line_chomp: bool,
     encoding: String,
     file: Option<fs::File>,
-    socket: Option<std::net::TcpStream>,
-    listener: Option<std::net::TcpListener>,
+    socket: Option<SocketStream>,
+    listener: Option<SocketListener>,
     closed: bool,
     out_buffer_capacity: Option<usize>,
     out_buffer_pending: Vec<u8>,

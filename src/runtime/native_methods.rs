@@ -2745,7 +2745,7 @@ impl Interpreter {
                     let addr = stream
                         .peer_addr()
                         .map_err(|e| RuntimeError::new(format!("getpeername failed: {}", e)))?;
-                    Ok(Value::str(addr.to_string()))
+                    Ok(Value::str(addr))
                 } else {
                     Err(RuntimeError::new("Socket not connected"))
                 }
@@ -2782,7 +2782,7 @@ impl Interpreter {
                 };
                 let listener =
                     listener.ok_or_else(|| RuntimeError::new("Socket is not listening"))?;
-                let (stream, _addr) = listener
+                let stream = listener
                     .accept()
                     .map_err(|e| RuntimeError::new(format!("accept failed: {}", e)))?;
                 // Create a new handle for the accepted connection
