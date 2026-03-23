@@ -152,6 +152,8 @@ mod seq_helpers;
 mod sequence;
 mod signal_watcher;
 pub(super) mod sprintf;
+mod sprintf_helpers;
+mod sprintf_validate;
 pub(crate) mod str_numeric;
 mod subtest;
 mod system;
