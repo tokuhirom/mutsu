@@ -1891,9 +1891,11 @@ impl Interpreter {
             }
             "slurp" => {
                 let has_bin_arg = Self::named_bool(&args, "bin");
-                let is_bin = {
+                let (is_bin, handle_encoding) = {
                     let state = self.handle_state_mut(&target_val)?;
-                    has_bin_arg || state.bin || state.encoding == "bin"
+                    let bin = has_bin_arg || state.bin || state.encoding == "bin";
+                    let enc = state.encoding.clone();
+                    (bin, enc)
                 };
                 let mut all_bytes = Vec::new();
                 loop {
@@ -1906,7 +1908,17 @@ impl Interpreter {
                 if is_bin {
                     return Ok(Self::make_buf(all_bytes));
                 }
-                Ok(Value::str(String::from_utf8_lossy(&all_bytes).to_string()))
+                // Decode using the handle's encoding if it's not UTF-8
+                let needs_decode = !handle_encoding.is_empty()
+                    && handle_encoding != "utf-8"
+                    && handle_encoding != "utf8"
+                    && handle_encoding != "bin";
+                if needs_decode {
+                    let decoded = self.decode_with_encoding(&all_bytes, &handle_encoding)?;
+                    Ok(Value::str(decoded))
+                } else {
+                    Ok(Value::str(String::from_utf8_lossy(&all_bytes).to_string()))
+                }
             }
             "Supply" => self.handle_supply(target, &args),
             "native-descriptor" => {

@@ -29,10 +29,13 @@ impl Interpreter {
         target: &Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        // Extract the first positional (non-Pair) argument as the encoding name
         let encoding = args
-            .first()
+            .iter()
+            .find(|v| !matches!(v, Value::Pair(..)))
             .map(|v| v.to_string_value())
             .unwrap_or_else(|| "utf-8".to_string());
+        let replacement = Self::named_value(args, "replacement").map(|v| v.to_string_value());
         let normalized_encoding = self
             .find_encoding(&encoding)
             .map(|e| e.name.as_str().to_lowercase())
@@ -50,7 +53,11 @@ impl Interpreter {
                 "utf16"
             }
             _ => {
-                let bytes = self.encode_with_encoding(&translated, &encoding)?;
+                let bytes = self.encode_with_encoding_and_replacement(
+                    &translated,
+                    &encoding,
+                    replacement.as_deref(),
+                )?;
                 let bytes_vals: Vec<Value> =
                     bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
                 attrs.insert("bytes".to_string(), Value::array(bytes_vals));

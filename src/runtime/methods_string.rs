@@ -18,6 +18,39 @@ impl Interpreter {
         }
     }
 
+    pub(super) fn encode_with_encoding_and_replacement(
+        &self,
+        input: &str,
+        encoding_name: &str,
+        replacement: Option<&str>,
+    ) -> Result<Vec<u8>, RuntimeError> {
+        let encoding = self
+            .find_encoding(encoding_name)
+            .map(|e| e.name.as_str())
+            .unwrap_or(encoding_name)
+            .to_lowercase();
+
+        if let Some(repl) = replacement
+            && let Some(enc) = Self::lookup_encoding_rs_codec(&encoding)
+        {
+            // Encode character-by-character, replacing unencodable chars with the replacement string
+            let mut result = Vec::new();
+            for ch in input.chars() {
+                let s = ch.to_string();
+                let (encoded, _enc, had_errors) = enc.encode(&s);
+                if had_errors {
+                    // This char cannot be encoded; use the replacement string instead
+                    let (repl_encoded, _, _) = enc.encode(repl);
+                    result.extend_from_slice(&repl_encoded);
+                } else {
+                    result.extend_from_slice(&encoded);
+                }
+            }
+            return Ok(result);
+        }
+        self.encode_with_encoding(input, encoding_name)
+    }
+
     pub(super) fn encode_with_encoding(
         &self,
         input: &str,
