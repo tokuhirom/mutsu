@@ -764,6 +764,29 @@ impl VM {
                         unreachable!()
                     }
                 } else if !skip_native {
+                    // Resolve hash sentinel entries (bound variable refs, self-refs)
+                    // before passing to native methods that iterate hash values.
+                    if let Value::Hash(ref items) = target
+                        && Self::hash_has_sentinels(items)
+                    {
+                        let resolved = self.resolve_hash_for_iteration(items);
+                        if let Some(native_result) =
+                            self.try_native_method(&resolved, Symbol::intern(&method), &args)
+                        {
+                            let result = native_result;
+                            match modifier.as_deref() {
+                                Some("?") => {
+                                    self.stack.push(result.unwrap_or(Value::Nil));
+                                    self.env_dirty = true;
+                                }
+                                _ => {
+                                    self.stack.push(result?);
+                                    self.env_dirty = true;
+                                }
+                            }
+                            return Ok(());
+                        }
+                    }
                     // .Slip on arrays with `is default(X)`: fill holes with
                     // the default value instead of leaving Package("Any").
                     if method == "Slip" && args.is_empty() && matches!(&target, Value::Array(..)) {
@@ -1537,8 +1560,20 @@ impl VM {
                 // .end, .elems, etc. on uninitialized containers.
                 // The CallMethod path has the Nil absorber for direct Nil.method calls.
                 let call_result = if !skip_native {
+                    // Resolve hash sentinel entries (bound variable refs, self-refs)
+                    // before passing to native methods that iterate hash values.
+                    let effective_target = if let Value::Hash(ref items) = target {
+                        if Self::hash_has_sentinels(items) {
+                            Some(self.resolve_hash_for_iteration(items))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    let dispatch_target = effective_target.as_ref().unwrap_or(&target);
                     if let Some(native_result) =
-                        self.try_native_method(&target, Symbol::intern(&method), &args)
+                        self.try_native_method(dispatch_target, Symbol::intern(&method), &args)
                     {
                         native_result
                     } else {
