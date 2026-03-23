@@ -2124,6 +2124,23 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                                 name: Symbol::intern("__mutsu_multidim_delete"),
                                 args,
                             };
+                        } else if let Expr::Call { name, mut args } = expr {
+                            if name == "__mutsu_subscript_adverb" {
+                                // Inject delete flag into the subscript adverb call
+                                args.push(Expr::Literal(Value::Pair(
+                                    "delete".into(),
+                                    Box::new(Value::Bool(true)),
+                                )));
+                                expr = Expr::Call { name, args };
+                            } else {
+                                expr = Expr::MethodCall {
+                                    target: Box::new(Expr::Call { name, args }),
+                                    name: Symbol::intern("DELETE-KEY"),
+                                    args: vec![],
+                                    modifier: None,
+                                    quoted: false,
+                                };
+                            }
                         } else {
                             expr = Expr::MethodCall {
                                 target: Box::new(expr),
@@ -2153,6 +2170,21 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                                 then_expr: Box::new(delete_expr),
                                 else_expr: Box::new(original_expr),
                             };
+                        } else if matches!(&original_expr, Expr::Call { name, .. } if name == "__mutsu_subscript_adverb")
+                        {
+                            // Inject conditional delete into subscript adverb call
+                            if let Expr::Call { name, mut args } = original_expr.clone() {
+                                args.push(Expr::Literal(Value::Pair(
+                                    "delete".into(),
+                                    Box::new(Value::Bool(true)),
+                                )));
+                                let delete_expr = Expr::Call { name, args };
+                                expr = Expr::Ternary {
+                                    cond: Box::new(cond),
+                                    then_expr: Box::new(delete_expr),
+                                    else_expr: Box::new(original_expr),
+                                };
+                            }
                         } else {
                             let delete_expr = Expr::MethodCall {
                                 target: Box::new(original_expr.clone()),
