@@ -710,6 +710,23 @@ impl VM {
             // Hash writeback: not straightforward by index; skip for now
         } else {
             // Scalar binding: write back directly
+            // For kv_mode with arity > 1 on a Pair source (e.g. `for $pair.kv -> $key, $value is rw`),
+            // read the value from the second rw param and reconstruct the Pair.
+            if kv_mode && arity > 1 && rw_param_names.len() >= 2 {
+                if let Some(existing) = self.get_env_with_main_alias(source) {
+                    let val_name = &rw_param_names[1];
+                    if let Some(val) = self.interpreter.env().get(val_name).cloned() {
+                        let writeback_val = match existing {
+                            Value::Pair(key, _) => Value::Pair(key, Box::new(val)),
+                            Value::ValuePair(key, _) => Value::ValuePair(key, Box::new(val)),
+                            _ => return,
+                        };
+                        self.set_env_with_main_alias(source, writeback_val.clone());
+                        self.update_local_if_exists(code, source, &writeback_val);
+                    }
+                }
+                return;
+            }
             let var_name = param_name.as_deref().unwrap_or("_");
             let Some(current_val) = self.interpreter.env().get(var_name).cloned() else {
                 return;
