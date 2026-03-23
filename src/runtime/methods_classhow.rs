@@ -103,6 +103,8 @@ impl Interpreter {
                 | "concretization"
                 | "curried_role"
                 | "pun"
+                | "language-revision"
+                | "submethod_table"
         ) {
             return Some(Value::str(method_name.to_string()));
         }
@@ -665,6 +667,42 @@ impl Interpreter {
                 } else {
                     Ok(Value::array(Vec::new()))
                 }
+            }
+            "language-revision" if !args.is_empty() => {
+                let type_name = match &args[0] {
+                    Value::Package(name) => name.resolve(),
+                    Value::Instance { class_name, .. } => class_name.resolve(),
+                    other => value_type_name(other).to_string(),
+                };
+                if let Some(meta) = self.type_metadata.get(&type_name)
+                    && let Some(rev) = meta.get("language-revision")
+                {
+                    return Ok(rev.clone());
+                }
+                // Default to current language revision
+                let version = crate::parser::current_language_version();
+                let letter = if let Some(rest) = version.strip_prefix("6.") {
+                    rest.chars().next().unwrap_or('c').to_string()
+                } else {
+                    "c".to_string()
+                };
+                Ok(Value::str(letter))
+            }
+            "submethod_table" if !args.is_empty() => {
+                let type_name = match &args[0] {
+                    Value::Package(name) => name.resolve(),
+                    Value::Instance { class_name, .. } => class_name.resolve(),
+                    other => value_type_name(other).to_string(),
+                };
+                let mut table = HashMap::new();
+                if let Some(class_def) = self.classes.get(&type_name) {
+                    for (name, defs) in &class_def.methods {
+                        if defs.iter().any(|d| d.is_my) {
+                            table.insert(name.clone(), Value::str(name.clone()));
+                        }
+                    }
+                }
+                Ok(Value::hash(table))
             }
             _ => Err(RuntimeError::new(format!(
                 "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",

@@ -1562,6 +1562,7 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             does_parents: Vec::new(),
             repr: None,
             body,
+            language_version: crate::parser::current_language_version(),
         })),
     ))
 }
@@ -1611,6 +1612,7 @@ pub(super) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
             type_params: Vec::new(),
             type_param_defs: Vec::new(),
             body,
+            language_version: crate::parser::current_language_version(),
         })),
     ))
 }

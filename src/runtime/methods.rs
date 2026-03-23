@@ -1781,6 +1781,8 @@ impl Interpreter {
                     | "enum_value_list"
                     | "coerce"
                     | "pun"
+                    | "language-revision"
+                    | "submethod_table"
             )
         {
             let mut how_args = args.to_vec();

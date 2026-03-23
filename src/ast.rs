@@ -585,6 +585,8 @@ pub(crate) enum Stmt {
         is_export: bool,
         /// Base type constraint (e.g., `my Str enum ...` has base_type = Some("Str"))
         base_type: Option<String>,
+        /// Language version active when this enum was declared (e.g., "6.c", "6.d", "6.e")
+        language_version: String,
     },
     ClassDecl {
         name: Symbol,
@@ -597,6 +599,8 @@ pub(crate) enum Stmt {
         does_parents: Vec<String>,
         repr: Option<String>,
         body: Vec<Stmt>,
+        /// Language version active when this class was declared (e.g., "6.c", "6.d", "6.e")
+        language_version: String,
     },
     HasDecl {
         name: Symbol,
@@ -646,6 +650,8 @@ pub(crate) enum Stmt {
         type_params: Vec<String>,
         type_param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,
+        /// Language version active when this role was declared (e.g., "6.c", "6.d", "6.e")
+        language_version: String,
     },
     DoesDecl {
         name: Symbol,

@@ -2544,4 +2544,21 @@ impl Interpreter {
         }
         Ok(())
     }
+
+    /// Store a specific language version as type metadata for ^language-revision.
+    pub(crate) fn store_language_revision_from_version(&mut self, name: &str, version: &str) {
+        let revision = language_revision_letter(version);
+        let meta = self.type_metadata.entry(name.to_string()).or_default();
+        meta.insert("language-revision".to_string(), Value::str(revision));
+    }
+}
+
+/// Extract the language revision letter from a version string like "6.c", "6.d", "6.e".
+fn language_revision_letter(version: &str) -> String {
+    // Version is like "6.c", "6.d", "6.e" — extract the letter after the dot
+    if let Some(letter) = version.strip_prefix("6.") {
+        letter.chars().next().unwrap_or('c').to_string()
+    } else {
+        "c".to_string()
+    }
 }

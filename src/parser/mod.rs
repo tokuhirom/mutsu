@@ -25,6 +25,10 @@ pub(crate) fn current_language_version() -> String {
     stmt::simple::current_language_version()
 }
 
+pub(crate) fn set_current_language_version(version: &str) {
+    stmt::simple::set_current_language_version(version);
+}
+
 use std::cell::RefCell;
 
 use crate::ast::Stmt;

@@ -184,6 +184,7 @@ impl Interpreter {
                 does_parents,
                 repr,
                 body: _,
+                language_version,
             } = &stmts[idx]
             {
                 let body: Vec<Stmt> = stmts[idx + 1..].to_vec();
@@ -198,6 +199,7 @@ impl Interpreter {
                     does_parents: does_parents.clone(),
                     repr: repr.clone(),
                     body,
+                    language_version: language_version.clone(),
                 });
             }
             result
@@ -928,6 +930,10 @@ impl Interpreter {
         let source_path = self
             .resolve_module_path(module)
             .ok_or_else(|| RuntimeError::new(format!("Module not found: {}", module)))?;
+        // Save and restore the language version around module loading.
+        // Each module may set its own `use v6.*` which should not leak
+        // into the caller's language version.
+        let saved_language_version = crate::parser::current_language_version();
         let (stmts, _precompiled) = self.parse_module_source(module, &source_path)?;
         if !Self::should_skip_runtime_for_use_only_module(&stmts) {
             // Module files should be compiled in a fresh GLOBAL scope, not
@@ -941,6 +947,7 @@ impl Interpreter {
             self.current_package = saved_package;
             result?;
         }
+        crate::parser::set_current_language_version(&saved_language_version);
         Ok(())
     }
 

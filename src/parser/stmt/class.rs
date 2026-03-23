@@ -568,6 +568,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         does_parents: Vec::new(),
         repr: anon_repr,
         body,
+        language_version: super::simple::current_language_version(),
     };
     // Emit the class registration followed by unregistering the name from the scope
     let unregister = Stmt::Expr(Expr::Call {
@@ -715,6 +716,7 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
         does_parents,
         repr,
         body,
+        language_version: super::simple::current_language_version(),
     };
     let mut stmts = Vec::new();
     for (trait_name, trait_value) in traits {
@@ -985,6 +987,7 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
             type_params,
             type_param_defs,
             body,
+            language_version: super::simple::current_language_version(),
         },
     ))
 }
@@ -1130,6 +1133,7 @@ pub(super) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
             does_parents,
             repr: None,
             body,
+            language_version: super::simple::current_language_version(),
         },
     ))
 }
@@ -1183,6 +1187,7 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 does_parents: Vec::new(),
                 repr: None,
                 body: Vec::new(),
+                language_version: super::simple::current_language_version(),
             },
         ));
     }
