@@ -1863,6 +1863,21 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "Exception".to_string(),
+            ClassDef {
+                parents: vec![],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Exception".to_string()],
+                attribute_types: HashMap::new(),
+                attribute_smileys: HashMap::new(),
+                wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
+            },
+        );
+        classes.insert(
             "X::AdHoc".to_string(),
             ClassDef {
                 parents: vec!["Exception".to_string()],
