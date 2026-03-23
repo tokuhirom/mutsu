@@ -53,6 +53,10 @@ pub(super) fn parse_var_name_from_str(input: &str) -> (&str, String) {
 /// Parse a $variable reference.
 pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '$')?;
+    // Detect Perl 5 special variables and throw X::Syntax::Perl5Var errors.
+    if let Some(err) = detect_perl5_scalar_var(input) {
+        return Err(PError::fatal(err));
+    }
     // Handle $(stmt; expr) — statement block in scalar context
     // Try to parse as a statement list first (for cases like `$(let $a = 23; $a)`)
     if let Some(inner) = input.strip_prefix('(') {
@@ -926,4 +930,101 @@ fn parse_dollar_paren_block(input: &str) -> PResult<'_, Expr> {
             label: None,
         },
     ))
+}
+
+/// Detect Perl 5 special variables that are unsupported in Raku.
+/// Returns `Some(error_message)` if the input starts with a Perl 5 variable pattern,
+/// or `None` if it is a valid Raku variable.
+pub(crate) fn detect_perl5_scalar_var(input: &str) -> Option<String> {
+    // $^A through $^Z (uppercase) are Perl 5 variables.
+    // Raku placeholder parameters use lowercase: $^a through $^z.
+    if input.starts_with('^') && input.len() >= 2 {
+        let next = input.as_bytes()[1];
+        if next.is_ascii_uppercase() {
+            let var_char = next as char;
+            return Some(format!(
+                "X::Syntax::Perl5Var: Unsupported use of $^{} variable",
+                var_char
+            ));
+        }
+    }
+    // $" — Perl 5 list separator; in Raku use .join()
+    if input.starts_with('"') {
+        // Check that this is bare $" not inside a string interpolation context.
+        // $" followed by something that looks like assignment or end of statement.
+        // We need to be careful: in `"$foo"`, the `$` starts interpolation, not $".
+        // This check is called from scalar_var which is called in expression context,
+        // so $" at the start means the Perl 5 variable.
+        return Some(
+            "X::Syntax::Perl5Var: Unsupported use of $\" variable; in Raku please use .join() method"
+                .to_string(),
+        );
+    }
+    // $$ — Perl 5 PID; in Raku use $*PID
+    // $$ is Perl 5's PID variable only when followed by whitespace or assignment.
+    // In all other contexts, $$ is a valid Raku construct (e.g., $$x is scalar deref,
+    // $$$$ in a signature means four anonymous scalar params).
+    if let Some(after) = input.strip_prefix('$') {
+        let is_perl5_pid = after.is_empty()
+            || after.starts_with(' ')
+            || after.starts_with('\t')
+            || after.starts_with('\n')
+            || after.starts_with('\r')
+            || after.starts_with('=')
+            || after.starts_with(';');
+        if is_perl5_pid {
+            return Some(
+                "X::Syntax::Perl5Var: Unsupported use of $$ variable; in Raku please use $*PID"
+                    .to_string(),
+            );
+        }
+    }
+    // $' — Perl 5 postmatch; in Raku use $/.postmatch
+    // Only flag when followed by a space/operator, not when starting a string literal.
+    if let Some(after) = input.strip_prefix('\'') {
+        let looks_like_var = after.is_empty()
+            || after.starts_with(' ')
+            || after.starts_with('=')
+            || after.starts_with(';')
+            || after.starts_with('\n')
+            || after.starts_with(')')
+            || after.starts_with(',');
+        if looks_like_var {
+            return Some(
+                "X::Syntax::Perl5Var: Unsupported use of $' variable; in Raku please use $/.postmatch"
+                    .to_string(),
+            );
+        }
+    }
+    // $\ — Perl 5 output record separator; in Raku use .nl-out attribute
+    // Only flag when followed by whitespace+assignment, to avoid false positives
+    // in other contexts (e.g., `say $\` which should give "Confused").
+    if let Some(after) = input.strip_prefix('\\') {
+        let after_trimmed = after.trim_start();
+        let is_perl5_assignment = !after_trimmed.is_empty()
+            && after_trimmed.starts_with('=')
+            && !after_trimmed.starts_with("==")
+            && !after_trimmed.starts_with("=>");
+        if is_perl5_assignment {
+            return Some(
+                "X::Syntax::Perl5Var: Unsupported use of $\\ variable; in Raku please use the filehandle's .nl-out attribute"
+                    .to_string(),
+            );
+        }
+    }
+    // $# followed by identifier — Perl 5 last index; in Raku use @array.end
+    if let Some(after) = input.strip_prefix('#')
+        && !after.is_empty()
+        && after.chars().next().is_some_and(is_raku_identifier_start)
+    {
+        let end = after
+            .find(|c: char| !is_raku_identifier_continue(c))
+            .unwrap_or(after.len());
+        let name = &after[..end];
+        return Some(format!(
+            "X::Syntax::Perl5Var: Unsupported use of $#{} variable; in Raku please use @{}.end",
+            name, name
+        ));
+    }
+    None
 }

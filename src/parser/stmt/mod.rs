@@ -152,6 +152,12 @@ fn var_name(input: &str) -> PResult<'_, String> {
         || input.starts_with('&')
     {
         let r = &input[1..];
+        // Detect Perl 5 special variables before parsing twigils.
+        if input.starts_with('$')
+            && let Some(err) = super::primary::var::detect_perl5_scalar_var(r)
+        {
+            return Err(PError::fatal(err));
+        }
         // Handle twigils
         let (r, twigil) =
             if r.starts_with('*') || r.starts_with('?') || r.starts_with('!') || r.starts_with('^')
