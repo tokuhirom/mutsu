@@ -843,6 +843,17 @@ pub(crate) fn native_method_1arg(
             Some(Ok(Value::Seq(std::sync::Arc::new(words))))
         }
         "join" => {
+            // Shaped arrays: join over leaves
+            if crate::runtime::utils::is_shaped_array(target) {
+                let leaves = crate::runtime::utils::shaped_array_leaves(target);
+                let sep = arg.to_string_value();
+                let joined = leaves
+                    .iter()
+                    .map(|v| v.to_str_context())
+                    .collect::<Vec<_>>()
+                    .join(&sep);
+                return Some(Ok(Value::str(joined)));
+            }
             if let Some(items) = target.as_list_items() {
                 // If any item is an Instance, fall through to runtime
                 // so user-defined Str() methods can be called.

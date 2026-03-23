@@ -2397,7 +2397,11 @@ impl Interpreter {
                     }
                 }
                 let lazy = crate::builtins::methods_0arg::is_value_lazy(&target);
-                let items = crate::runtime::utils::value_to_list(&target);
+                let items = if crate::runtime::utils::is_shaped_array(&target) {
+                    crate::runtime::utils::shaped_array_leaves(&target)
+                } else {
+                    crate::runtime::utils::value_to_list(&target)
+                };
                 let mut attrs = HashMap::new();
                 attrs.insert("items".to_string(), Value::array(items));
                 attrs.insert("index".to_string(), Value::Int(0));
@@ -2507,7 +2511,11 @@ impl Interpreter {
                         return Err(err);
                     }
                 }
-                let items = Self::value_to_list(&target);
+                let items = if crate::runtime::utils::is_shaped_array(&target) {
+                    crate::runtime::utils::shaped_array_leaves(&target)
+                } else {
+                    Self::value_to_list(&target)
+                };
                 return self.eval_map_over_items(args.first().cloned(), items);
             }
             "duckmap" => {
@@ -3096,7 +3104,11 @@ impl Interpreter {
                         .first()
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
-                    let items = Self::value_to_list(&target);
+                    let items = if crate::runtime::utils::is_shaped_array(&target) {
+                        crate::runtime::utils::shaped_array_leaves(&target)
+                    } else {
+                        Self::value_to_list(&target)
+                    };
                     let mut parts = Vec::with_capacity(items.len());
                     for v in &items {
                         if matches!(v, Value::Instance { .. }) {

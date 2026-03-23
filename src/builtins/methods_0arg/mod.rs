@@ -989,6 +989,21 @@ fn format_temporal_num(f: f64) -> String {
 fn raku_value(v: &Value) -> String {
     match v {
         Value::Array(items, kind) => {
+            // Shaped arrays: Array.new(:shape(d1, d2), [row1], [row2])
+            // Only for multi-dim shaped arrays (shape.len() > 1) to avoid
+            // rendering sub-arrays as Array.new(:shape(n), ...)
+            if *kind == crate::value::ArrayKind::Shaped
+                && let Some(shape) = crate::runtime::utils::shaped_array_shape(v)
+                && shape.len() > 1
+            {
+                let shape_str = shape
+                    .iter()
+                    .map(|d| d.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let rows = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
+                return format!("Array.new(:shape({}), {})", shape_str, rows);
+            }
             let snapshot = |k: ArrayKind| {
                 let inner = items
                     .iter()
@@ -2776,7 +2791,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
         }
         "flat" => match target {
-            Value::Array(items, ..) => {
+            Value::Array(items, kind) => {
+                if *kind == crate::value::ArrayKind::Shaped {
+                    let leaves = crate::runtime::utils::shaped_array_leaves(target);
+                    return Some(Ok(Value::Seq(Arc::new(leaves))));
+                }
                 let mut result = Vec::new();
                 for item in items.iter() {
                     flatten_deep_value(item, &mut result, false);
@@ -2799,15 +2818,30 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
         },
         "sort" => match target {
-            Value::Array(items, ..) => {
-                let mut sorted = (**items).clone();
+            Value::Array(items, kind) => {
+                let mut sorted = if *kind == crate::value::ArrayKind::Shaped
+                    && items.iter().any(|v| matches!(v, Value::Array(..)))
+                {
+                    crate::runtime::utils::shaped_array_leaves(target)
+                } else {
+                    (**items).clone()
+                };
                 sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
                 Some(Ok(Value::array(sorted)))
             }
             _ => None,
         },
         "reverse" => match target {
-            Value::Array(items, _kind) => {
+            Value::Array(items, kind) => {
+                // Multi-dim shaped arrays cannot be reversed
+                if *kind == crate::value::ArrayKind::Shaped
+                    && let Some(shape) = crate::runtime::utils::shaped_array_shape(target)
+                    && shape.len() > 1
+                {
+                    return Some(Err(
+                        crate::value::RuntimeError::illegal_on_fixed_dimension_array("reverse"),
+                    ));
+                }
                 let mut reversed = (**items).clone();
                 reversed.reverse();
                 // .reverse returns a List (Seq in Raku), not an Array
@@ -3310,6 +3344,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             if matches!(target, Value::LazyList(_)) {
                 return None; // fall through to runtime to force
             }
+            if crate::runtime::utils::is_shaped_array(target) {
+                let leaves = crate::runtime::utils::shaped_array_leaves(target);
+                let joined = leaves
+                    .iter()
+                    .map(|v| v.to_str_context())
+                    .collect::<Vec<_>>()
+                    .join("");
+                return Some(Ok(Value::str(joined)));
+            }
             if let Some(items) = target.as_list_items() {
                 // If any item is an Instance, fall through to runtime
                 // so user-defined Str() methods can be called.
@@ -3722,6 +3765,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         other => other.to_string_value(),
                     }
                 }
+                // Shaped arrays: format with newlines between rows
+                if *kind == crate::value::ArrayKind::Shaped
+                    && items.iter().any(|v| matches!(v, Value::Array(..)))
+                {
+                    let rows: Vec<String> = items.iter().map(gist_item).collect();
+                    let inner = rows.join("\n ");
+                    return Some(Ok(Value::str(format!("[{}]", inner))));
+                }
                 let inner = items.iter().map(gist_item).collect::<Vec<_>>().join(" ");
                 Some(Ok(Value::str(gist_array_wrap(&inner, *kind))))
             }
@@ -3913,7 +3964,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
             }
             _ => {
-                let items = runtime::value_to_list(target);
+                let items = if crate::runtime::utils::is_shaped_array(target) {
+                    crate::runtime::utils::shaped_array_leaves(target)
+                } else {
+                    runtime::value_to_list(target)
+                };
                 if items.is_empty() {
                     Some(Ok(Value::Nil))
                 } else {
@@ -3933,7 +3988,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             if let Value::Bag(items) = target {
                 return Some(Ok(sample_weighted_bag_key(items).unwrap_or(Value::Nil)));
             }
-            let items = runtime::value_to_list(target);
+            let items = if crate::runtime::utils::is_shaped_array(target) {
+                crate::runtime::utils::shaped_array_leaves(target)
+            } else {
+                runtime::value_to_list(target)
+            };
             if items.is_empty() {
                 Some(Ok(Value::Nil))
             } else {
