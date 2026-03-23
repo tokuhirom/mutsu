@@ -757,6 +757,7 @@ roast/S32-io/other-stress.t
 roast/S32-io/other.t
 roast/S32-io/out-buffering.t
 roast/S32-io/rename.t
+roast/S32-io/seek.t
 roast/S32-io/signals.t
 roast/S32-io/socket-accept-and-working-threads.t
 roast/S32-io/socket-host-port-split.t
