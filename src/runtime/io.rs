@@ -1365,7 +1365,19 @@ impl Interpreter {
                         continue;
                     }
                     let before = line[..i].to_string();
-                    let after = line[i + 2..].trim().to_string();
+                    let raw = line[i + 2..].trim();
+                    // Handle block form #={...} / #=(...)  / #=[...] / #=<...>
+                    let after = if let Some(inner) = raw.strip_prefix('{') {
+                        inner.strip_suffix('}').unwrap_or(inner).trim().to_string()
+                    } else if let Some(inner) = raw.strip_prefix('(') {
+                        inner.strip_suffix(')').unwrap_or(inner).trim().to_string()
+                    } else if let Some(inner) = raw.strip_prefix('[') {
+                        inner.strip_suffix(']').unwrap_or(inner).trim().to_string()
+                    } else if let Some(inner) = raw.strip_prefix('<') {
+                        inner.strip_suffix('>').unwrap_or(inner).trim().to_string()
+                    } else {
+                        raw.to_string()
+                    };
                     return (before, Some(after));
                 }
                 i += 1;
@@ -1374,7 +1386,6 @@ impl Interpreter {
         }
 
         /// Try to extract a declarant name from a line, handling various declaration patterns.
-        /// Returns (name, is_class_like) where is_class_like means it opens a class scope.
         /// Returns (name, is_class_like, kind)
         fn try_extract_declarant(
             trimmed: &str,
@@ -1426,6 +1437,9 @@ impl Interpreter {
                 .or_else(|| s.strip_prefix("only "))
                 .unwrap_or(s);
 
+            let had_dispatch_prefix =
+                s.starts_with("multi ") || s.starts_with("proto ") || s.starts_with("only ");
+
             for kw in &["sub ", "method ", "submethod ", "token ", "rule ", "regex "] {
                 if let Some(rest) = s2.strip_prefix(kw) {
                     let name = extract_ident(rest);
@@ -1447,6 +1461,14 @@ impl Interpreter {
                         };
                         return Some((full_name, false, DocDeclKind::Sub));
                     }
+                }
+            }
+
+            // multi/proto/only without explicit sub/method keyword: treat as sub
+            if had_dispatch_prefix {
+                let name = extract_ident(s2);
+                if !name.is_empty() {
+                    return Some((format!("&{}", name), false, DocDeclKind::Sub));
                 }
             }
 
