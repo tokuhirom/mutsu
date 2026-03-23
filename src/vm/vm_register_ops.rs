@@ -617,6 +617,29 @@ impl VM {
             }
         }
 
+        // Handle `is Map` on hash variables: register the hash as a Map type
+        // and mark it read-only (Maps are immutable in Raku).
+        if name.starts_with('%') && trait_name == "Map" {
+            if has_arg {
+                self.stack.pop(); // discard unused trait argument
+            }
+            let name_str = name.to_string();
+            // Register container type metadata with declared_type "Map"
+            if let Some(container) = self.locals_get_by_name(code, &name_str) {
+                let info = crate::runtime::ContainerTypeInfo {
+                    value_type: String::new(),
+                    key_type: None,
+                    declared_type: Some("Map".to_string()),
+                };
+                self.interpreter
+                    .register_container_type_metadata(&container, info);
+            }
+            // Mark the variable read-only to prevent mutation
+            self.interpreter.mark_readonly(&name_str);
+            self.env_dirty = true;
+            return Ok(());
+        }
+
         // For array/hash variables with a class trait that inherits from Array[X] or Hash[V,K],
         // propagate the element type constraint so .of works correctly.
         if name.starts_with('@') || name.starts_with('%') {

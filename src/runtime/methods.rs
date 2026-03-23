@@ -2379,7 +2379,17 @@ impl Interpreter {
                     return Ok(Value::Package(Symbol::intern(method)));
                 }
                 if method == "Map" {
-                    return self.dispatch_to_map(target);
+                    let result = self.dispatch_to_map(target)?;
+                    // Register Map declared_type so .gist/.raku/.WHAT work correctly
+                    if matches!(&result, Value::Hash(_)) {
+                        let info = ContainerTypeInfo {
+                            value_type: String::new(),
+                            key_type: None,
+                            declared_type: Some("Map".to_string()),
+                        };
+                        self.register_container_type_metadata(&result, info);
+                    }
+                    return Ok(result);
                 }
                 return self.dispatch_to_hash(target);
             }

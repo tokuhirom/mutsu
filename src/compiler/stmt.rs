@@ -460,7 +460,7 @@ impl Compiler {
                     if *is_our {
                         self.code.emit(OpCode::Dup);
                     }
-                    if self.bind_vardecl && name.starts_with('@') {
+                    if self.bind_vardecl && (name.starts_with('@') || name.starts_with('%')) {
                         self.code.emit(OpCode::MarkBindContext);
                         self.bind_vardecl = false;
                     }
