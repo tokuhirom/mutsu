@@ -415,28 +415,25 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
             Some(Interpreter::value_in_range(l, r))
         }
 
-        // IO::Path/Str ~~ Pair(:e), :d, :f, :r, :w, :x, :s, :z file tests
-        // Also handles negated forms: :!e, :!d, :!f, :!r, :!w, :!x, :!s, :!z
-        (_, Value::Pair(key, val))
-            if matches!(val.as_ref(), Value::Bool(_))
-                && matches!(
-                    key.as_str(),
-                    "e" | "d" | "f" | "l" | "r" | "w" | "x" | "s" | "z"
-                )
-                && !needs_interpreter_lhs(left) =>
+        // IO::Path ~~ Pair(:e), :d, :f, :r, :w, :x, :rw, :rwx, :s, :z file tests
+        // Also handles negated forms: :!e, :!d, :!f, :!r, :!w, :!x, :!rw, :!rwx, :!s, :!z
+        // Note: Str ~~ :d is NOT supported (per Raku spec, only IO::Path has these methods)
+        (
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            },
+            Value::Pair(key, val),
+        ) if class_name == "IO::Path"
+            && matches!(val.as_ref(), Value::Bool(_))
+            && matches!(
+                key.as_str(),
+                "e" | "d" | "f" | "l" | "r" | "w" | "x" | "rw" | "rwx" | "s" | "z"
+            ) =>
         {
             let negated = matches!(val.as_ref(), Value::Bool(false));
-            let path_str = match left {
-                Value::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } if class_name == "IO::Path" => {
-                    attributes.get("path").map(|v| v.to_string_value())
-                }
-                Value::Str(s) => Some(s.to_string()),
-                _ => None,
-            };
+            let path_str = attributes.get("path").map(|v| v.to_string_value());
             if let Some(p) = path_str {
                 let path = std::path::Path::new(&p);
                 let result = match key.as_str() {
@@ -475,6 +472,40 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
                             use std::os::unix::fs::PermissionsExt;
                             std::fs::metadata(&p)
                                 .map(|m| m.permissions().mode() & 0o111 != 0)
+                                .unwrap_or(false)
+                        }
+                        #[cfg(not(unix))]
+                        {
+                            false
+                        }
+                    }
+                    "rw" => {
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            std::fs::metadata(&p)
+                                .map(|m| {
+                                    let mode = m.permissions().mode();
+                                    mode & 0o444 != 0 && mode & 0o222 != 0
+                                })
+                                .unwrap_or(false)
+                        }
+                        #[cfg(not(unix))]
+                        {
+                            std::fs::metadata(&p)
+                                .map(|m| !m.permissions().readonly())
+                                .unwrap_or(false)
+                        }
+                    }
+                    "rwx" => {
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            std::fs::metadata(&p)
+                                .map(|m| {
+                                    let mode = m.permissions().mode();
+                                    mode & 0o444 != 0 && mode & 0o222 != 0 && mode & 0o111 != 0
+                                })
                                 .unwrap_or(false)
                         }
                         #[cfg(not(unix))]
@@ -547,8 +578,16 @@ impl VM {
         // Any ~~ Pair: call method named by pair key on the object, coerce result
         // to Bool, and compare with pair value coerced to Bool.
         // Per S03: ?."{X.key}" === ?X.value
+        // Exclude types with their own Pair smartmatch semantics (Hash checks key+value).
         if let Value::Pair(key, val) = right
-            && matches!(left, Value::Instance { .. })
+            && !matches!(
+                left,
+                Value::Hash(_)
+                    | Value::Array(..)
+                    | Value::Seq(_)
+                    | Value::Slip(_)
+                    | Value::LazyList(_)
+            )
         {
             let method_name = key.as_str();
             match self

@@ -1899,28 +1899,31 @@ impl Interpreter {
             },
             // IO::Path/Str ~~ Pair(:e), :d, :f, :r, :w, :x file tests
             // Also handles negated forms: :!e, :!d, :!f, :!r, :!w, :!x, :!s, :!z
-            (_, Value::Pair(key, val))
-                if matches!(val.as_ref(), Value::Bool(_))
-                    && matches!(key.as_str(), "e" | "d" | "f" | "r" | "w" | "x" | "s" | "z") =>
+            (
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                },
+                Value::Pair(key, val),
+            ) if class_name == "IO::Path"
+                && matches!(val.as_ref(), Value::Bool(_))
+                && matches!(
+                    key.as_str(),
+                    "e" | "d" | "f" | "l" | "r" | "w" | "x" | "rw" | "rwx" | "s" | "z"
+                ) =>
             {
                 let negated = matches!(val.as_ref(), Value::Bool(false));
-                let path_str = match left {
-                    Value::Instance {
-                        class_name,
-                        attributes,
-                        ..
-                    } if class_name == "IO::Path" => {
-                        attributes.get("path").map(|v| v.to_string_value())
-                    }
-                    Value::Str(s) => Some(s.to_string()),
-                    _ => None,
-                };
+                let path_str = attributes.get("path").map(|v| v.to_string_value());
                 if let Some(p) = path_str {
                     let path = std::path::Path::new(&p);
                     let result = match key.as_str() {
                         "e" => path.exists(),
                         "d" => path.is_dir(),
                         "f" => path.is_file(),
+                        "l" => std::fs::symlink_metadata(&p)
+                            .map(|m| m.file_type().is_symlink())
+                            .unwrap_or(false),
                         "r" => {
                             #[cfg(unix)]
                             {
@@ -1953,6 +1956,40 @@ impl Interpreter {
                                 use std::os::unix::fs::PermissionsExt;
                                 std::fs::metadata(&p)
                                     .map(|m| m.permissions().mode() & 0o111 != 0)
+                                    .unwrap_or(false)
+                            }
+                            #[cfg(not(unix))]
+                            {
+                                false
+                            }
+                        }
+                        "rw" => {
+                            #[cfg(unix)]
+                            {
+                                use std::os::unix::fs::PermissionsExt;
+                                std::fs::metadata(&p)
+                                    .map(|m| {
+                                        let mode = m.permissions().mode();
+                                        mode & 0o444 != 0 && mode & 0o222 != 0
+                                    })
+                                    .unwrap_or(false)
+                            }
+                            #[cfg(not(unix))]
+                            {
+                                std::fs::metadata(&p)
+                                    .map(|m| !m.permissions().readonly())
+                                    .unwrap_or(false)
+                            }
+                        }
+                        "rwx" => {
+                            #[cfg(unix)]
+                            {
+                                use std::os::unix::fs::PermissionsExt;
+                                std::fs::metadata(&p)
+                                    .map(|m| {
+                                        let mode = m.permissions().mode();
+                                        mode & 0o444 != 0 && mode & 0o222 != 0 && mode & 0o111 != 0
+                                    })
                                     .unwrap_or(false)
                             }
                             #[cfg(not(unix))]

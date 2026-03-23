@@ -197,6 +197,7 @@ impl Interpreter {
             out_buffer_capacity,
             nl_out,
             enc,
+            create,
         ) = self.parse_io_flags_values(&args[1..]);
         let path_buf = self.resolve_path(&path);
         self.open_file_handle(
@@ -210,6 +211,7 @@ impl Interpreter {
             out_buffer_capacity,
             nl_out,
             enc,
+            create,
         )
     }
 

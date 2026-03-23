@@ -1149,6 +1149,8 @@ impl Interpreter {
                 "r",
                 "w",
                 "x",
+                "rw",
+                "rwx",
                 "s",
                 "z",
                 "extension",

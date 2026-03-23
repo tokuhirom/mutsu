@@ -1331,6 +1331,8 @@ impl Interpreter {
                     "r",
                     "w",
                     "x",
+                    "rw",
+                    "rwx",
                     "mode",
                     "s",
                     "z",
