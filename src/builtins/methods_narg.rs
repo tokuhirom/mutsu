@@ -1903,6 +1903,39 @@ pub(crate) fn native_method_1arg(
             };
             Some(Ok(Value::Num(result)))
         }
+        // Buf/Blob read-int/uint methods (1 arg: offset, uses NativeEndian)
+        "read-uint8" | "read-int8" | "read-uint16" | "read-int16" | "read-uint32"
+        | "read-int32" | "read-uint64" | "read-int64" | "read-uint128" | "read-int128" => {
+            if let Value::Package(type_name) = target {
+                return Some(Err(RuntimeError::new(format!(
+                    "Cannot resolve caller {}({}:U)",
+                    method, type_name,
+                ))));
+            }
+            let bytes = buf_get_bytes(target)?;
+            let offset_i64 = to_int_val(arg);
+            let (size, signed) = read_int_method_info(method);
+            if offset_i64 < 0
+                || (offset_i64 as usize)
+                    .checked_add(size)
+                    .is_none_or(|end| end > bytes.len())
+            {
+                return Some(Err(RuntimeError::new(format!(
+                    "read from out of range. Is: {}, should be in 0..{}",
+                    offset_i64,
+                    bytes.len()
+                ))));
+            }
+            let offset = offset_i64 as usize;
+            // NativeEndian default
+            let endian: i64 = if cfg!(target_endian = "little") { 1 } else { 2 };
+            Some(Ok(read_int_value(
+                &bytes[offset..offset + size],
+                size,
+                signed,
+                endian,
+            )))
+        }
         "EXISTS-KEY" => match target {
             Value::Hash(map) => {
                 let key = arg.to_string_value();
@@ -2174,6 +2207,64 @@ fn read_f64_endian(bytes: &[u8], endian_val: i64) -> f64 {
     }
 }
 
+/// Returns (byte_size, is_signed) for a read-int/uint method name.
+fn read_int_method_info(method: &str) -> (usize, bool) {
+    match method {
+        "read-uint8" => (1, false),
+        "read-int8" => (1, true),
+        "read-uint16" => (2, false),
+        "read-int16" => (2, true),
+        "read-uint32" => (4, false),
+        "read-int32" => (4, true),
+        "read-uint64" => (8, false),
+        "read-int64" => (8, true),
+        "read-uint128" => (16, false),
+        "read-int128" => (16, true),
+        _ => unreachable!(),
+    }
+}
+
+/// Read an integer value from a byte slice with the given endianness.
+/// endian_val: 0=NativeEndian, 1=LittleEndian, 2=BigEndian
+fn read_int_value(bytes: &[u8], size: usize, signed: bool, endian_val: i64) -> Value {
+    // Determine effective endianness: NativeEndian resolves to LE or BE
+    let is_le = match endian_val {
+        1 => true,                           // LittleEndian
+        2 => false,                          // BigEndian
+        _ => cfg!(target_endian = "little"), // NativeEndian
+    };
+
+    // Build unsigned value from bytes
+    let unsigned = if is_le {
+        // Little-endian: first byte is least significant
+        let mut acc = BigInt::ZERO;
+        for &b in bytes[..size].iter().rev() {
+            acc = (acc << 8) | BigInt::from(b);
+        }
+        acc
+    } else {
+        // Big-endian: first byte is most significant
+        let mut acc = BigInt::ZERO;
+        for &b in &bytes[..size] {
+            acc = (acc << 8) | BigInt::from(b);
+        }
+        acc
+    };
+
+    if signed {
+        let bits = size * 8;
+        let sign_bit = BigInt::from(1u8) << (bits - 1);
+        let result = if unsigned >= sign_bit {
+            unsigned - (BigInt::from(1u8) << bits)
+        } else {
+            unsigned
+        };
+        bigint_to_value(result)
+    } else {
+        bigint_to_value(unsigned)
+    }
+}
+
 // ── 2-arg method dispatch ────────────────────────────────────────────
 /// Try to dispatch a 2-argument method call on a Value.
 pub(crate) fn native_method_2arg(
@@ -2438,6 +2529,42 @@ pub(crate) fn native_method_2arg(
                 read_f64_endian(&bytes[offset..offset + 8], endian_val)
             };
             Some(Ok(Value::Num(result)))
+        }
+        // Buf/Blob read-int/uint methods (2 args: offset + endian)
+        "read-uint8" | "read-int8" | "read-uint16" | "read-int16" | "read-uint32"
+        | "read-int32" | "read-uint64" | "read-int64" | "read-uint128" | "read-int128" => {
+            if let Value::Package(type_name) = target {
+                return Some(Err(RuntimeError::new(format!(
+                    "Cannot resolve caller {}({}:U)",
+                    method, type_name,
+                ))));
+            }
+            let bytes = buf_get_bytes(target)?;
+            let offset_i64 = to_int_val(arg1);
+            let endian_val = match arg2 {
+                Value::Enum { value, .. } => value.as_i64(),
+                Value::Int(i) => *i,
+                _ => 0, // NativeEndian
+            };
+            let (size, signed) = read_int_method_info(method);
+            if offset_i64 < 0
+                || (offset_i64 as usize)
+                    .checked_add(size)
+                    .is_none_or(|end| end > bytes.len())
+            {
+                return Some(Err(RuntimeError::new(format!(
+                    "read from out of range. Is: {}, should be in 0..{}",
+                    offset_i64,
+                    bytes.len()
+                ))));
+            }
+            let offset = offset_i64 as usize;
+            Some(Ok(read_int_value(
+                &bytes[offset..offset + size],
+                size,
+                signed,
+                endian_val,
+            )))
         }
         "subbuf" => {
             if !is_buf_like(target) {

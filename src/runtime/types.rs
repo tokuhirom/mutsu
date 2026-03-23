@@ -231,6 +231,53 @@ fn flatten_into_slurpy(values: &[Value], out: &mut Vec<Value>) {
             Value::Array(arr, kind) if !kind.is_itemized() => {
                 flatten_into_slurpy(arr, out);
             }
+            Value::Seq(items) | Value::Slip(items) => {
+                flatten_into_slurpy(items, out);
+            }
+            Value::Range(a, b) => {
+                if *b >= *a {
+                    for i in *a..=*b {
+                        out.push(Value::Int(i));
+                    }
+                }
+            }
+            Value::RangeExcl(a, b) => {
+                if *b > *a {
+                    for i in *a..*b {
+                        out.push(Value::Int(i));
+                    }
+                }
+            }
+            Value::RangeExclStart(a, b) => {
+                let start = a.saturating_add(1);
+                if *b >= start {
+                    for i in start..=*b {
+                        out.push(Value::Int(i));
+                    }
+                }
+            }
+            Value::RangeExclBoth(a, b) => {
+                let start = a.saturating_add(1);
+                if *b > start {
+                    for i in start..*b {
+                        out.push(Value::Int(i));
+                    }
+                }
+            }
+            Value::GenericRange {
+                start,
+                end,
+                excl_start,
+                excl_end,
+            } => {
+                let a = crate::runtime::to_int(start);
+                let b = crate::runtime::to_int(end);
+                let s = if *excl_start { a + 1 } else { a };
+                let e = if *excl_end { b } else { b + 1 };
+                for i in s..e {
+                    out.push(Value::Int(i));
+                }
+            }
             other => {
                 out.push(other.clone());
             }
@@ -2202,12 +2249,26 @@ impl Interpreter {
                         let remaining = args.get(i..).unwrap_or(&[]);
                         for arg in remaining {
                             let arg = unwrap_varref_value(arg.clone());
-                            if !pd.double_slurpy
-                                && let Value::Array(arr, kind) = &arg
-                                && !kind.is_itemized()
-                            {
-                                items.extend(arr.iter().cloned());
-                                continue;
+                            if !pd.double_slurpy {
+                                if let Value::Array(arr, kind) = &arg
+                                    && !kind.is_itemized()
+                                {
+                                    items.extend(arr.iter().cloned());
+                                    continue;
+                                }
+                                if matches!(
+                                    &arg,
+                                    Value::Range(..)
+                                        | Value::RangeExcl(..)
+                                        | Value::RangeExclStart(..)
+                                        | Value::RangeExclBoth(..)
+                                        | Value::GenericRange { .. }
+                                        | Value::Seq(..)
+                                        | Value::Slip(..)
+                                ) {
+                                    flatten_into_slurpy(&[arg], &mut items);
+                                    continue;
+                                }
                             }
                             items.push(arg);
                         }
@@ -2860,6 +2921,15 @@ impl Interpreter {
                                 } else {
                                     flatten_into_slurpy(&arr, &mut items);
                                 }
+                            }
+                            val @ (Value::Range(..)
+                            | Value::RangeExcl(..)
+                            | Value::RangeExclStart(..)
+                            | Value::RangeExclBoth(..)
+                            | Value::GenericRange { .. }
+                            | Value::Seq(..)
+                            | Value::Slip(..)) => {
+                                flatten_into_slurpy(&[val], &mut items);
                             }
                             other => {
                                 items.push(other);
