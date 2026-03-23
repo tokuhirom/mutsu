@@ -1474,6 +1474,17 @@ impl Interpreter {
                         Value::Hash(map) => Some(map),
                         _ => None,
                     });
+                // Get container default value (from `is default(...)` trait)
+                let container_default = var_name
+                    .as_ref()
+                    .and_then(|name| self.var_default(name).cloned());
+                let type_constraint_default = var_name
+                    .as_ref()
+                    .and_then(|name| self.var_type_constraint(name))
+                    .map(|t| Value::Package(Symbol::intern(&t)));
+                let missing_value = container_default
+                    .or(type_constraint_default)
+                    .unwrap_or_else(|| Value::Package(Symbol::intern("Any")));
                 for idx in &indices {
                     let i = match idx {
                         Value::Int(i) => *i,
@@ -1482,7 +1493,7 @@ impl Interpreter {
                     };
                     let key = Value::Int(i);
                     if i < 0 || i as usize >= items.len() {
-                        rows.push((key, Value::Package(Symbol::intern("Any")), false));
+                        rows.push((key, missing_value.clone(), false));
                         continue;
                     }
                     let ui = i as usize;
@@ -1518,14 +1529,48 @@ impl Interpreter {
             _ => return Ok(Value::Nil),
         }
 
-        if delete_after
-            && let Some(var_name) = var_name.as_ref()
-            && let Some(container) = self.env.get_mut(var_name)
-            && let Value::Hash(map) = container
-        {
-            let h = std::sync::Arc::make_mut(map);
-            for idx in &indices {
-                h.remove(&idx.to_string_value());
+        if delete_after && let Some(var_name) = var_name.as_ref() {
+            // Get hole type before mutable borrow
+            let hole_type = self
+                .var_type_constraint(var_name)
+                .unwrap_or_else(|| "Any".to_string());
+            if let Some(container) = self.env.get_mut(var_name) {
+                match container {
+                    Value::Hash(map) => {
+                        let h = std::sync::Arc::make_mut(map);
+                        for idx in &indices {
+                            h.remove(&idx.to_string_value());
+                        }
+                    }
+                    Value::Array(items, ..) => {
+                        let hole_value = Value::Package(crate::symbol::Symbol::intern(&hole_type));
+                        let arr = std::sync::Arc::make_mut(items);
+                        for idx in &indices {
+                            let i = match idx {
+                                Value::Int(i) => *i,
+                                Value::Num(f) => *f as i64,
+                                _ => idx.to_string_value().parse::<i64>().unwrap_or(-1),
+                            };
+                            if i >= 0 && (i as usize) < arr.len() {
+                                arr[i as usize] = hole_value.clone();
+                            }
+                        }
+                        // Trim trailing holes
+                        while let Some(last) = arr.last() {
+                            let is_hole = match last {
+                                Value::Nil => true,
+                                Value::Package(name) => name == "Any" || name == hole_type.as_str(),
+                                _ => false,
+                            };
+                            if is_hole {
+                                arr.pop();
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
 

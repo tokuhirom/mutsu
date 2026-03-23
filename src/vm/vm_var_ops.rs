@@ -1808,6 +1808,11 @@ impl VM {
                 }
             })
             .unwrap_or_default();
+        // Get the type constraint for typed arrays (e.g. "Int" for `my Int @a`)
+        let type_constraint = self
+            .interpreter
+            .var_type_constraint(var_name)
+            .unwrap_or_default();
         let env = self.interpreter.env_mut();
         let Some(container) = env.get_mut(var_name) else {
             return;
@@ -1821,6 +1826,12 @@ impl VM {
             let is_hole = match last {
                 Value::Nil => true,
                 Value::Package(name) if name == "Any" => !initialized.contains(&idx_str),
+                // For typed arrays (e.g. `my Int @a`), the type object is also a hole
+                Value::Package(name)
+                    if !type_constraint.is_empty() && name == type_constraint.as_str() =>
+                {
+                    !initialized.contains(&idx_str)
+                }
                 _ => false,
             };
             if is_hole {
@@ -1921,6 +1932,17 @@ impl VM {
         // Trim trailing holes from arrays after deletion.
         // A "hole" is either Nil (deleted) or an uninitialized Package("Any") slot.
         self.trim_trailing_array_holes(&var_name);
+        // If the deleted value is a hole (Nil or type object like Package("Any")),
+        // substitute the container's default value if one was set via `is default(...)`.
+        let result = if matches!(&result, Value::Nil | Value::Package(_)) {
+            if let Some(def) = self.interpreter.var_default(&var_name) {
+                def.clone()
+            } else {
+                result
+            }
+        } else {
+            result
+        };
         // Re-register type metadata if it was lost due to Arc::make_mut
         if let Some(info) = saved_meta
             && let Some(container) = self.interpreter.env().get(&var_name)
@@ -2805,8 +2827,33 @@ impl VM {
                 && items
                     .get(i as usize)
                     .is_some_and(|v| !matches!(v, Value::Nil));
-            let result = exists ^ effective_negated;
-            self.stack.push(Value::Bool(result));
+            let result_bool = exists ^ effective_negated;
+            let key = Value::Int(i);
+            let result = match adverb_bits {
+                0 | 5 => Value::Bool(result_bool),
+                // :kv — return (index, bool) if exists, else ()
+                1 => {
+                    if exists {
+                        Value::array(vec![key, Value::Bool(result_bool)])
+                    } else {
+                        Value::array(Vec::new())
+                    }
+                }
+                // :!kv — always return (index, bool)
+                2 => Value::array(vec![key, Value::Bool(result_bool)]),
+                // :p — return Pair if exists, else ()
+                3 => {
+                    if exists {
+                        Value::ValuePair(Box::new(key), Box::new(Value::Bool(result_bool)))
+                    } else {
+                        Value::array(Vec::new())
+                    }
+                }
+                // :!p — always return Pair
+                4 => Value::ValuePair(Box::new(key), Box::new(Value::Bool(result_bool))),
+                _ => Value::Bool(result_bool),
+            };
+            self.stack.push(result);
             return Ok(());
         }
 
