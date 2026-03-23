@@ -229,6 +229,7 @@ roast/S04-phasers/exit-in-check.t
 roast/S04-phasers/first.t
 roast/S04-phasers/interpolate.t
 roast/S04-phasers/keep-undo.t
+roast/S04-phasers/multiple.t
 roast/S04-phasers/next.t
 roast/S04-phasers/pre-post.t
 roast/S04-statement-modifiers/for.t
