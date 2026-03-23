@@ -753,6 +753,56 @@ impl Interpreter {
                         return Ok(value);
                     }
                 }
+
+                // Standalone pair (not derived from a hash or array): update the
+                // pair value directly by replacing the variable binding, and also
+                // propagate to any other environment bindings that hold a pair
+                // with the same key and same original value (simulating Raku
+                // container semantics where pair values are aliases).
+                {
+                    let old_value = current_value.as_ref().clone();
+                    // Collect all variable names in the environment that hold an
+                    // equivalent pair (same key and same old value).
+                    let vars_to_update: Vec<String> = self
+                        .env
+                        .iter()
+                        .filter_map(|(name, val)| {
+                            let matches = match val {
+                                Value::Pair(k, v) => k == &key && v.as_ref() == &old_value,
+                                Value::ValuePair(k, v) => {
+                                    k.to_string_value() == key && v.as_ref() == &old_value
+                                }
+                                _ => false,
+                            };
+                            if matches { Some(name.clone()) } else { None }
+                        })
+                        .collect();
+
+                    if !vars_to_update.is_empty() {
+                        for var_name in &vars_to_update {
+                            let current = self.env.get(var_name).cloned();
+                            let new_pair = match current {
+                                Some(Value::Pair(k, _)) => Value::Pair(k, Box::new(value.clone())),
+                                Some(Value::ValuePair(k, _)) => {
+                                    Value::ValuePair(k, Box::new(value.clone()))
+                                }
+                                _ => continue,
+                            };
+                            self.env.insert(var_name.clone(), new_pair);
+                        }
+                        return Ok(value);
+                    } else if let Some(var_name) = target_var {
+                        let new_pair = match &target {
+                            Value::Pair(k, _) => Value::Pair(k.clone(), Box::new(value.clone())),
+                            Value::ValuePair(k, _) => {
+                                Value::ValuePair(k.clone(), Box::new(value.clone()))
+                            }
+                            _ => unreachable!(),
+                        };
+                        self.env.insert(var_name.to_string(), new_pair);
+                        return Ok(value);
+                    }
+                }
             }
         }
 
