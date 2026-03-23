@@ -2151,7 +2151,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         let rhs_rest = rest[1..].trim_start();
         if rhs_rest.starts_with('"') || rhs_rest.starts_with('\'') {
             return Err(PError::fatal(
-                "Unsupported use of $/ variable; in Raku please use the filehandle's .nl-in attribute".to_string(),
+                "X::Syntax::Perl5Var: Unsupported use of $/ variable; in Raku please use the filehandle's .nl-in attribute".to_string(),
             ));
         }
     }
