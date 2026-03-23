@@ -797,6 +797,9 @@ pub struct Interpreter {
     wrap_dispatch_stack: Vec<WrapDispatchFrame>,
     /// Names suppressed by `anon class`. These bare words should error as undeclared.
     suppressed_names: HashSet<String>,
+    /// Fully-qualified names of `my`-scoped classes/subs inside packages.
+    /// These should NOT appear in the parent package's stash.
+    my_scoped_package_items: HashSet<String>,
     /// Stack of lexically-scoped class names per block scope depth.
     /// When a block scope exits, classes registered in that scope get suppressed.
     lexical_class_scopes: Vec<Vec<String>>,
@@ -2493,6 +2496,7 @@ impl Interpreter {
             wrap_handle_counter: 0,
             wrap_dispatch_stack: Vec::new(),
             suppressed_names: HashSet::new(),
+            my_scoped_package_items: HashSet::new(),
             lexical_class_scopes: Vec::new(),
             last_value: None,
             pending_local_updates: Vec::new(),
@@ -2658,6 +2662,17 @@ impl Interpreter {
         if let Some(scope) = self.lexical_class_scopes.last_mut() {
             scope.push(name);
         }
+    }
+
+    /// Mark a fully-qualified name as `my`-scoped within its parent package.
+    /// Items in this set are excluded from the parent package's stash.
+    pub(crate) fn mark_my_scoped_package_item(&mut self, fq_name: String) {
+        self.my_scoped_package_items.insert(fq_name);
+    }
+
+    /// Check if a fully-qualified name is `my`-scoped within its parent package.
+    pub(crate) fn is_my_scoped_package_item(&self, fq_name: &str) -> bool {
+        self.my_scoped_package_items.contains(fq_name)
     }
 
     pub(crate) fn is_name_suppressed(&self, name: &str) -> bool {
@@ -3831,6 +3846,7 @@ impl Interpreter {
             wrap_handle_counter: self.wrap_handle_counter,
             wrap_dispatch_stack: Vec::new(),
             suppressed_names: self.suppressed_names.clone(),
+            my_scoped_package_items: self.my_scoped_package_items.clone(),
             lexical_class_scopes: self.lexical_class_scopes.clone(),
             last_value: None,
             pending_local_updates: Vec::new(),

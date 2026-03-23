@@ -1377,6 +1377,10 @@ impl Interpreter {
             {
                 continue;
             }
+            // Skip my-scoped items (they should not appear in the package stash)
+            if self.is_my_scoped_package_item(key) {
+                continue;
+            }
             if let Some(rest) = Self::stash_member_tail(key, &package_name) {
                 let stash_key = Self::stash_symbol_key_from_env_tail(rest);
                 symbols.insert(stash_key, val.clone());
@@ -1390,6 +1394,11 @@ impl Interpreter {
             };
             let base = rest.split('/').next().unwrap_or(rest);
             if base.is_empty() || base.contains("::") || base.contains(':') {
+                continue;
+            }
+            // Skip my-scoped subs (they should not appear in the package stash)
+            let fq_base = format!("{}::{}", package_name, base);
+            if self.is_my_scoped_package_item(&fq_base) {
                 continue;
             }
             symbols
@@ -1410,6 +1419,10 @@ impl Interpreter {
                 && (self.need_hidden_classes.contains(class_name)
                     || self.need_hidden_classes.contains(class_short))
             {
+                continue;
+            }
+            // Skip my-scoped classes (they should not appear in the package stash)
+            if self.is_my_scoped_package_item(class_name) {
                 continue;
             }
             let Some(rest) = Self::stash_member_tail(class_name, &package_name) else {

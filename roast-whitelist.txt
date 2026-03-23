@@ -801,6 +801,7 @@ roast/S32-list/unique.t
 roast/S32-num/abs.t
 roast/S32-num/base.t
 roast/S32-num/complex-logarithms.t
+roast/S32-num/cool-num.t
 roast/S32-num/exp.t
 roast/S32-num/expmod.t
 roast/S32-num/fatrat.t

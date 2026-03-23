@@ -805,6 +805,9 @@ impl VM {
             if *is_lexical {
                 self.interpreter
                     .register_lexical_class(resolved_name.clone());
+                // Also mark as my-scoped so it's excluded from the parent package stash
+                self.interpreter
+                    .mark_my_scoped_package_item(qualified_name.clone());
             }
             // Store language revision metadata from the version captured at parse time
             self.interpreter

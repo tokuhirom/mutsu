@@ -2601,6 +2601,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     let list = crate::runtime::utils::value_to_list(target);
                     Value::Int(list.len() as i64)
                 }
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Stash" => match attributes.get("symbols") {
+                    Some(Value::Hash(map)) => Value::Int(map.len() as i64),
+                    _ => Value::Int(0),
+                },
                 _ => Value::Int(1),
             };
             Some(Ok(result))

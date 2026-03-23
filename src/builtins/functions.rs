@@ -617,6 +617,14 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             Value::Hash(items) => Some(Ok(Value::Int(items.len() as i64))),
             Value::Str(s) => Some(Ok(Value::Int(s.chars().count() as i64))),
             Value::LazyList(_) => None,
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Stash" => match attributes.get("symbols") {
+                Some(Value::Hash(map)) => Some(Ok(Value::Int(map.len() as i64))),
+                _ => Some(Ok(Value::Int(0))),
+            },
             _ => Some(Ok(Value::Int(1))),
         },
         "reverse" => {
