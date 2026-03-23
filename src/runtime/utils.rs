@@ -1166,6 +1166,15 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::CustomType { .. } => "CustomType",
         Value::CustomTypeInstance { .. } => "CustomTypeInstance",
         Value::Scalar(inner) => value_type_name(inner),
+        Value::LazyThunk(thunk_data) => {
+            let cache = thunk_data.cache.lock().unwrap();
+            if let Some(ref cached) = *cache {
+                // Leak the type name since we need a 'static str
+                // This is fine because type names are a small finite set
+                return value_type_name(cached);
+            }
+            "Scalar"
+        }
     }
 }
 

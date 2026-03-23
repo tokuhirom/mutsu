@@ -541,6 +541,12 @@ impl VM {
                 } else {
                     val
                 };
+                // Force lazy thunks transparently on access
+                let val = if let Value::LazyThunk(ref thunk_data) = val {
+                    self.force_lazy_thunk(thunk_data)?
+                } else {
+                    val
+                };
                 self.stack.push(val);
                 *ip += 1;
             }

@@ -2909,6 +2909,30 @@ impl VM {
 
         Ok(Value::Nil)
     }
+
+    /// Force a lazy thunk: evaluate the sub on first access, cache and return the result.
+    pub(crate) fn force_lazy_thunk(
+        &mut self,
+        thunk_data: &std::sync::Arc<crate::value::LazyThunkData>,
+    ) -> Result<Value, RuntimeError> {
+        // Check cache first
+        {
+            let cache = thunk_data.cache.lock().unwrap();
+            if let Some(ref cached) = *cache {
+                return Ok(cached.clone());
+            }
+        }
+        // Evaluate the thunk (call the sub with no args)
+        let result = self
+            .interpreter
+            .call_sub_value(thunk_data.thunk.clone(), vec![], true)?;
+        // Cache the result
+        {
+            let mut cache = thunk_data.cache.lock().unwrap();
+            *cache = Some(result.clone());
+        }
+        Ok(result)
+    }
 }
 
 /// Write back attribute values from env after method execution.

@@ -3305,6 +3305,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     | Value::GenericRange { .. }
             ) {
                 crate::runtime::utils::value_to_list(target)
+            } else if matches!(target, Value::Sub(..)) {
+                // lazy { block } — create a lazy thunk that evaluates the block on first access
+                return Some(Ok(Value::LazyThunk(std::sync::Arc::new(
+                    crate::value::LazyThunkData {
+                        thunk: target.clone(),
+                        cache: std::sync::Mutex::new(None),
+                    },
+                ))));
             } else {
                 return Some(Ok(target.clone()));
             };
