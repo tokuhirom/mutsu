@@ -661,6 +661,11 @@ impl Interpreter {
                         positional.push(arg.to_string_value());
                     }
                 }
+                Value::Array(elems, _) => {
+                    for elem in elems.iter() {
+                        positional.push(Value::to_string_value(elem));
+                    }
+                }
                 _ => {
                     positional.push(arg.to_string_value());
                 }
@@ -803,7 +808,7 @@ impl Interpreter {
                     )),
                 }
             }
-            Err(err) => {
+            Err(_err) => {
                 // Fallback for cases where $*EXECUTABLE is passed as an IO::Path-ish value
                 // that stringifies ambiguously. Retry with current_exe.
                 if first_arg_io_path || program == "$*EXECUTABLE" || program.ends_with("mutsu") {
@@ -887,7 +892,7 @@ impl Interpreter {
                     0,
                     0,
                     command_val,
-                    opts.capture_err.then(|| err.to_string()),
+                    opts.capture_err.then(String::new),
                     opts.capture_out.then(String::new),
                 ))
             }

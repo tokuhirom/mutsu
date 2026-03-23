@@ -1212,6 +1212,11 @@ impl Interpreter {
             Ok(val) => Self::sink_failure_to_error(val),
             err => err,
         };
+        // Proc with non-zero exitcode in sink context throws X::Proc::Unsuccessful.
+        let result = match result {
+            Ok(ref val) => Self::sink_proc_to_error(val.clone()),
+            err => err,
+        };
         // Normalize type-object representation: "(Exception)" -> "Exception"
         let expected_normalized = expected
             .strip_prefix('(')
