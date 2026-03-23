@@ -779,7 +779,23 @@ impl VM {
         code: &CompiledCode,
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
-        let var_name = Self::const_str(code, name_idx).to_string();
+        let original_var_name = Self::const_str(code, name_idx).to_string();
+        // Resolve sigilless alias: if `h` is a sigilless alias for `%a`,
+        // operate on `%a` directly so in-place mutations are visible.
+        let sigilless_alias_target = {
+            let alias_key = format!("__mutsu_sigilless_alias::{}", original_var_name);
+            self.interpreter.env().get(&alias_key).and_then(|v| {
+                if let Value::Str(target) = v {
+                    Some(target.to_string())
+                } else {
+                    None
+                }
+            })
+        };
+        let var_name = sigilless_alias_target
+            .as_deref()
+            .unwrap_or(&original_var_name)
+            .to_string();
         let declared_type = self
             .interpreter
             .env()
@@ -1199,6 +1215,17 @@ impl VM {
             if let Some(def) = self.interpreter.var_default(&var_name).cloned() {
                 self.interpreter.set_container_default(&updated, def);
             }
+        }
+        // When operating through a sigilless alias (e.g., `h` → `%a`),
+        // sync the modified container back to the alias variable so reads
+        // of the sigilless variable see the updated value.
+        if let Some(ref alias_target) = sigilless_alias_target
+            && let Some(updated_container) = self.interpreter.env().get(alias_target).cloned()
+        {
+            self.interpreter
+                .env_mut()
+                .insert(original_var_name.clone(), updated_container.clone());
+            self.update_local_if_exists(code, &original_var_name, &updated_container);
         }
         self.stack.push(val);
         Ok(())

@@ -2185,6 +2185,10 @@ impl Compiler {
             Expr::HashVar(name) => Some(format!("%{}", name)),
             Expr::ArrayVar(name) => Some(format!("@{}", name)),
             Expr::Var(name) => Some(name.clone()),
+            // Sigilless variables appear as BareWord in the AST.
+            // Treat them as named targets so IndexAssignExprNamed writes
+            // through the sigilless alias back to the original container.
+            Expr::BareWord(name) => Some(name.clone()),
             Expr::AssignExpr { name, .. } => Some(name.clone()),
             Expr::DoStmt(stmt) => match stmt.as_ref() {
                 Stmt::VarDecl { name, .. } | Stmt::Assign { name, .. } => Some(name.clone()),
