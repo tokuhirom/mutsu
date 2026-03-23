@@ -2695,9 +2695,60 @@ impl VM {
     /// a custom Bool method and calls it. Falls back to Value::truthy() otherwise.
     /// Recursively flatten a value like a `*@` slurpy would: non-itemized
     /// Array/List elements are expanded, itemized containers are preserved.
+    /// Ranges and Seqs are also expanded into their elements.
     pub(super) fn flatten_value_for_slurpy(val: &Value, out: &mut Vec<Value>) {
         match val {
             Value::Array(items, kind) if !kind.is_itemized() => {
+                for item in items.iter() {
+                    Self::flatten_value_for_slurpy(item, out);
+                }
+            }
+            Value::Range(a, b) => {
+                if *b >= *a {
+                    for i in *a..=*b {
+                        out.push(Value::Int(i));
+                    }
+                }
+            }
+            Value::RangeExcl(a, b) => {
+                if *b > *a {
+                    for i in *a..*b {
+                        out.push(Value::Int(i));
+                    }
+                }
+            }
+            Value::RangeExclStart(a, b) => {
+                let start = a.saturating_add(1);
+                if *b >= start {
+                    for i in start..=*b {
+                        out.push(Value::Int(i));
+                    }
+                }
+            }
+            Value::RangeExclBoth(a, b) => {
+                let start = a.saturating_add(1);
+                if *b > start {
+                    for i in start..*b {
+                        out.push(Value::Int(i));
+                    }
+                }
+            }
+            Value::GenericRange {
+                start,
+                end,
+                excl_start,
+                excl_end,
+            } => {
+                // Try to convert to integer range for flattening
+                let a = crate::runtime::to_int(start);
+                let b = crate::runtime::to_int(end);
+                let s = if *excl_start { a + 1 } else { a };
+                let e = if *excl_end { b } else { b + 1 };
+                for i in s..e {
+                    out.push(Value::Int(i));
+                }
+            }
+            Value::Seq(items) | Value::Slip(items) => {
                 for item in items.iter() {
                     Self::flatten_value_for_slurpy(item, out);
                 }
