@@ -280,13 +280,32 @@ impl Interpreter {
             if let Some(constraint) = &pd.type_constraint {
                 let base = Self::constraint_base_name(constraint);
                 if i < args.len() {
-                    total += self.type_hierarchy_distance(base, &args[i]);
+                    // Unwrap VarRef Capture wrappers and check the source
+                    // variable's declared type constraint for native type dispatch.
+                    let (arg, var_type) = self.unwrap_varref_for_dispatch(&args[i]);
+                    total +=
+                        self.type_hierarchy_distance_with_var_type(base, &arg, var_type.as_deref());
                 }
             } else {
                 total += 1000;
             }
         }
         total
+    }
+
+    /// Unwrap a VarRef Capture wrapper to get the inner value and the source
+    /// variable's declared type constraint (if any) for dispatch.
+    fn unwrap_varref_for_dispatch(&self, value: &Value) -> (Value, Option<String>) {
+        if let Value::Capture { positional, named } = value
+            && positional.is_empty()
+            && let Some(Value::Str(var_name)) = named.get("__mutsu_varref_name")
+            && let Some(inner) = named.get("__mutsu_varref_value")
+        {
+            let var_type = self.var_type_constraint_fast(var_name).cloned();
+            (inner.clone(), var_type)
+        } else {
+            (value.clone(), None)
+        }
     }
 
     /// Return how many MRO levels separate `constraint` from the actual type
@@ -362,6 +381,73 @@ impl Interpreter {
         }
         // Not found in hierarchy; return a large distance
         500
+    }
+
+    /// Like `type_hierarchy_distance`, but also considers the source variable's
+    /// declared type constraint for native type dispatch.
+    /// When a variable declared as `int` is passed to a multi candidate expecting
+    /// `int`, that should be distance 0 (exact native match). The boxed `Int`
+    /// candidate should be distance 1 (autoboxing penalty).
+    fn type_hierarchy_distance_with_var_type(
+        &self,
+        constraint: &str,
+        value: &Value,
+        var_type: Option<&str>,
+    ) -> usize {
+        let base = if constraint.ends_with(":D") || constraint.ends_with(":U") {
+            &constraint[..constraint.len() - 2]
+        } else {
+            constraint
+        };
+        // If the source variable has a native type constraint, use it for dispatch.
+        if let Some(vt) = var_type
+            && Self::is_native_type_name(vt)
+        {
+            if base == vt {
+                // Exact native type match (e.g., int var → int param)
+                return 0;
+            }
+            // Native type matches its boxed equivalent with a penalty
+            // (e.g., int var → Int param) so the native candidate wins.
+            let boxed = Self::native_to_boxed(vt);
+            if base == boxed {
+                return 1;
+            }
+        }
+        self.type_hierarchy_distance(constraint, value)
+    }
+
+    /// Check if a type name is a native type.
+    fn is_native_type_name(name: &str) -> bool {
+        matches!(
+            name,
+            "int"
+                | "int8"
+                | "int16"
+                | "int32"
+                | "int64"
+                | "uint"
+                | "uint8"
+                | "uint16"
+                | "uint32"
+                | "uint64"
+                | "byte"
+                | "num"
+                | "num32"
+                | "num64"
+                | "str"
+        )
+    }
+
+    /// Map native type names to their boxed equivalents.
+    fn native_to_boxed(native: &str) -> &'static str {
+        match native {
+            "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
+            | "uint32" | "uint64" | "byte" => "Int",
+            "num" | "num32" | "num64" => "Num",
+            "str" => "Str",
+            _ => "Any",
+        }
     }
 
     fn sort_candidates_by_specificity(&self, candidates: &mut [(String, FunctionDef)]) {

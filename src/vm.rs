@@ -659,6 +659,8 @@ impl VM {
                             .interpreter
                             .try_coerce_value_for_constraint(&constraint, val)?;
                     }
+                    // Wrap native integer values on assignment (overflow wrapping)
+                    val = Self::wrap_native_int_by_constraint(&constraint, val);
                 }
                 if self.interpreter.fatal_mode
                     && !name.contains("__mutsu_")

@@ -459,7 +459,7 @@ impl VM {
         err
     }
 
-    pub(super) fn is_builtin_type(name: &str) -> bool {
+    pub(crate) fn is_builtin_type(name: &str) -> bool {
         matches!(
             name,
             "Hash"
@@ -571,6 +571,7 @@ impl VM {
                 | "byte"
                 | "int"
                 | "uint"
+                | "num"
                 | "num32"
                 | "num64"
                 | "str"

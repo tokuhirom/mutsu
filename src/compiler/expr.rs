@@ -158,9 +158,18 @@ impl Compiler {
                 self.code.emit(OpCode::GetHashVar(name_idx));
             }
             Expr::BareWord(name) => {
-                // Check if this bare word is a local variable (e.g., from constant declaration)
+                // Check if this bare word is a local variable (e.g., from constant declaration).
+                // However, if the name is a builtin type (e.g., `int`, `num`, `str`),
+                // don't shadow it with a local variable — emit GetBareWord so the VM
+                // resolves it as a type object.  This prevents `my $int = 3` in an inner
+                // block from shadowing `int` as a type name after the block exits.
                 if let Some(&slot) = self.local_map.get(name.as_str()) {
-                    self.code.emit(OpCode::GetLocal(slot));
+                    if crate::vm::VM::is_builtin_type(name) {
+                        let name_idx = self.code.add_constant(Value::str(name.clone()));
+                        self.code.emit(OpCode::GetBareWord(name_idx));
+                    } else {
+                        self.code.emit(OpCode::GetLocal(slot));
+                    }
                 } else {
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::GetBareWord(name_idx));
