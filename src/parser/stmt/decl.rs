@@ -16,7 +16,7 @@ fn parse_colon_method_arg(input: &str) -> PResult<'_, Expr> {
     expression(input)
 }
 
-use crate::ast::{AssignOp, Expr, HandleSpec, Stmt};
+use crate::ast::{AssignOp, Expr, HandleSpec, PhaserKind, Stmt};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
@@ -32,6 +32,35 @@ use super::super::parse_result::take_while_opt;
 use super::{
     class_decl_body, method_decl_body, method_decl_body_my, parse_comma_or_expr, sub_decl_body,
 };
+
+/// Wrap a statement with a LEAVE phaser for `will leave { ... }`.
+/// The phaser body sets `$_` to the variable and executes the block.
+fn wrap_with_will_leave(stmt: Stmt, var_name: &str, leave_body: Option<Vec<Stmt>>) -> Stmt {
+    match leave_body {
+        None => stmt,
+        Some(body) => {
+            // Build: LEAVE { my $_ = $var; <body> }
+            let mut phaser_body = vec![Stmt::VarDecl {
+                name: "$_".to_string(),
+                expr: Expr::Var(var_name.to_string()),
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+                where_constraint: None,
+            }];
+            phaser_body.extend(body);
+            let phaser = Stmt::Phaser {
+                kind: PhaserKind::Leave,
+                body: phaser_body,
+            };
+            Stmt::SyntheticBlock(vec![stmt, phaser])
+        }
+    }
+}
 
 fn strip_type_smiley_suffix(type_name: &str) -> &str {
     type_name
@@ -1501,6 +1530,23 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         r
     };
 
+    // Parse `will leave { ... }` trait — desugared into a LEAVE phaser.
+    let will_leave_body: Option<Vec<Stmt>> = if let Some(after_will) = keyword("will", rest) {
+        let (r, _) = ws1(after_will)?;
+        let (r, phaser_name) = ident(r)?;
+        if phaser_name != "leave" {
+            return Err(PError::expected("'leave' after 'will'"));
+        }
+        let (r, _) = ws(r)?;
+        let (r, body) = super::block(r)?;
+        rest = r;
+        let (rest2, _) = ws(rest)?;
+        rest = rest2;
+        Some(body)
+    } else {
+        None
+    };
+
     // Postfix container typing: my @a of Int; my %h of Int;
     if let Some(after_of) = keyword("of", rest) {
         let (r, _) = ws1(after_of)?;
@@ -1690,6 +1736,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         } else {
             expr
         };
+        let var_name_for_leave = name.clone();
         let base_stmt = Stmt::VarDecl {
             name: name.clone(),
             expr: expr.clone(),
@@ -1703,6 +1750,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             where_constraint: where_constraint.clone(),
         };
         if let Some(stmt) = rewrite_decl_assignment_or_chain(expr.clone(), base_stmt) {
+            let stmt = wrap_with_will_leave(stmt, &var_name_for_leave, will_leave_body.clone());
             // Handle comma-separated declarations: my $x = 1, my $y = 2
             let (rest, stmt) = parse_comma_chained_decls(rest, stmt)?;
             if apply_modifier {
@@ -1722,6 +1770,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             custom_traits: custom_traits.clone(),
             where_constraint: where_constraint.clone(),
         };
+        let stmt = wrap_with_will_leave(stmt, &var_name_for_leave, will_leave_body.clone());
         // Handle comma-separated declarations: my $x = 1, my $y = 2
         let (rest, stmt) = parse_comma_chained_decls(rest, stmt)?;
         if apply_modifier {
@@ -1919,21 +1968,20 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         shape_dims.as_deref(),
         type_constraint.as_deref(),
     );
-    Ok((
-        rest,
-        Stmt::VarDecl {
-            name,
-            expr,
-            type_constraint,
-            is_state,
-            is_our,
-            is_dynamic: has_dynamic_trait,
-            is_export: has_export_trait,
-            export_tags,
-            custom_traits,
-            where_constraint: where_constraint.clone(),
-        },
-    ))
+    let stmt = Stmt::VarDecl {
+        name: name.clone(),
+        expr,
+        type_constraint,
+        is_state,
+        is_our,
+        is_dynamic: has_dynamic_trait,
+        is_export: has_export_trait,
+        export_tags,
+        custom_traits,
+        where_constraint: where_constraint.clone(),
+    };
+    let stmt = wrap_with_will_leave(stmt, &name, will_leave_body);
+    Ok((rest, stmt))
 }
 
 /// Parse destructuring: ($a, $b, $c) = expr
