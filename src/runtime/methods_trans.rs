@@ -24,6 +24,18 @@ enum TransRule {
     },
     /// Regex-based replacement with closure.
     RegexClosure { pattern: String, closure: Value },
+    /// Multi-character token mapping where some (or all) replacements are closures.
+    /// Each entry in `to_values` is either a static string or a closure.
+    TokenClosureMap {
+        from_tokens: Vec<String>,
+        to_values: Vec<TokenReplacement>,
+    },
+}
+
+/// A replacement value for a token: either a static string or a closure to call.
+enum TokenReplacement {
+    Static(String),
+    Closure(Value),
 }
 
 /// Expand a tr-style spec string: `a..z` becomes all chars from 'a' to 'z'.
@@ -222,14 +234,41 @@ impl Interpreter {
                         | Value::RangeExclBoth(..)
                         | Value::GenericRange { .. }
                 ) {
+                    // Check if the to-side array contains any closures.
+                    let has_closures = if let Value::Array(items, ..) = value.as_ref() {
+                        items.iter().any(is_closure)
+                    } else {
+                        false
+                    };
                     // Check if the from-side array contains any Regex values.
-                    // If so, create per-element rules to preserve regex semantics.
                     let has_regex = if let Value::Array(items, ..) = key.as_ref() {
                         items.iter().any(|v| matches!(v, Value::Regex(..)))
                     } else {
                         false
                     };
-                    if has_regex {
+                    if has_closures {
+                        // Build from_tokens and to_values with closure support
+                        let from_list = value_to_string_list(key);
+                        let to_values: Vec<TokenReplacement> =
+                            if let Value::Array(items, ..) = value.as_ref() {
+                                items
+                                    .iter()
+                                    .map(|v| {
+                                        if is_closure(v) {
+                                            TokenReplacement::Closure(v.clone())
+                                        } else {
+                                            TokenReplacement::Static(v.to_string_value())
+                                        }
+                                    })
+                                    .collect()
+                            } else {
+                                vec![TokenReplacement::Static(value.to_string_value())]
+                            };
+                        rules.push(TransRule::TokenClosureMap {
+                            from_tokens: from_list,
+                            to_values,
+                        });
+                    } else if has_regex {
                         let to_list = value_to_string_list(value);
                         if let Value::Array(items, ..) = key.as_ref() {
                             for (idx, item) in items.iter().enumerate() {
@@ -349,7 +388,7 @@ impl Interpreter {
         complement: bool,
     ) -> Result<String, RuntimeError> {
         if complement {
-            return Ok(self.apply_trans_complement(text, rules, squash, delete));
+            return self.apply_trans_complement(text, rules, squash, delete);
         }
 
         let chars: Vec<char> = text.chars().collect();
@@ -451,6 +490,35 @@ impl Interpreter {
                             found = true;
                         }
                     }
+                    TransRule::TokenClosureMap {
+                        from_tokens,
+                        to_values,
+                    } => {
+                        let remaining: String = chars[i..].iter().collect();
+                        for (ti, token) in from_tokens.iter().enumerate() {
+                            let token_char_len = token.chars().count();
+                            if remaining.starts_with(token.as_str()) && token_char_len > best_len {
+                                best_len = token_char_len;
+                                let matched = token.clone();
+                                match to_values.get(ti) {
+                                    Some(TokenReplacement::Closure(closure)) => {
+                                        best_closure = Some((closure.clone(), matched));
+                                        found = true;
+                                    }
+                                    Some(TokenReplacement::Static(s)) => {
+                                        best_replacement = s.clone();
+                                        best_closure = None;
+                                        found = true;
+                                    }
+                                    None => {
+                                        best_replacement = String::new();
+                                        best_closure = None;
+                                        found = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -499,29 +567,42 @@ impl Interpreter {
     }
 
     fn apply_trans_complement(
-        &self,
+        &mut self,
         text: &str,
         rules: &[TransRule],
         squash: bool,
         delete: bool,
-    ) -> String {
+    ) -> Result<String, RuntimeError> {
         let chars: Vec<char> = text.chars().collect();
         let mut result = String::new();
         let mut last_was_complement = false;
 
-        let complement_replacement: String = rules
-            .first()
-            .map(|rule| match rule {
-                TransRule::CharMap { to_chars, .. } => {
-                    to_chars.first().map(|c| c.to_string()).unwrap_or_default()
-                }
-                TransRule::TokenMap { to_tokens, .. } => {
-                    to_tokens.first().cloned().unwrap_or_default()
-                }
-                TransRule::Regex { replacement, .. } => replacement.clone(),
-                TransRule::CharClosure { .. } | TransRule::RegexClosure { .. } => String::new(),
-            })
-            .unwrap_or_default();
+        // Extract closure for complement replacement if the first rule has one.
+        let complement_closure: Option<Value> = rules.first().and_then(|rule| match rule {
+            TransRule::CharClosure { closure, .. } | TransRule::RegexClosure { closure, .. } => {
+                Some(closure.clone())
+            }
+            _ => None,
+        });
+
+        let complement_replacement: String = if complement_closure.is_some() {
+            String::new() // Will be computed dynamically
+        } else {
+            rules
+                .first()
+                .map(|rule| match rule {
+                    TransRule::CharMap { to_chars, .. } => {
+                        to_chars.first().map(|c| c.to_string()).unwrap_or_default()
+                    }
+                    TransRule::TokenMap { to_tokens, .. } => {
+                        to_tokens.first().cloned().unwrap_or_default()
+                    }
+                    TransRule::Regex { replacement, .. } => replacement.clone(),
+                    TransRule::CharClosure { .. } | TransRule::RegexClosure { .. } => String::new(),
+                    TransRule::TokenClosureMap { .. } => String::new(),
+                })
+                .unwrap_or_default()
+        };
 
         let mut i = 0;
         while i < chars.len() {
@@ -538,7 +619,8 @@ impl Interpreter {
                             best_original = chars[i].to_string();
                         }
                     }
-                    TransRule::TokenMap { from_tokens, .. } => {
+                    TransRule::TokenMap { from_tokens, .. }
+                    | TransRule::TokenClosureMap { from_tokens, .. } => {
                         let remaining: String = chars[i..].iter().collect();
                         for token in from_tokens {
                             let tlen = token.chars().count();
@@ -579,8 +661,18 @@ impl Interpreter {
                     // Skip character.
                 } else if squash {
                     if !last_was_complement {
-                        result.push_str(&complement_replacement);
+                        if let Some(ref closure) = complement_closure {
+                            let replacement =
+                                self.call_closure_for_trans(closure, &chars[i].to_string(), None)?;
+                            result.push_str(&replacement);
+                        } else {
+                            result.push_str(&complement_replacement);
+                        }
                     }
+                } else if let Some(ref closure) = complement_closure {
+                    let replacement =
+                        self.call_closure_for_trans(closure, &chars[i].to_string(), None)?;
+                    result.push_str(&replacement);
                 } else {
                     result.push_str(&complement_replacement);
                 }
@@ -589,6 +681,6 @@ impl Interpreter {
             }
         }
 
-        result
+        Ok(result)
     }
 }
