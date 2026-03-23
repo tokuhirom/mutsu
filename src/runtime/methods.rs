@@ -2741,7 +2741,7 @@ impl Interpreter {
                 if let Value::Package(ref class_name) = target
                     && class_name == "IO::Socket::INET"
                 {
-                    return self.dispatch_socket_connect(&args);
+                    return self.dispatch_socket_inet_connect(&args);
                 }
                 if let Value::Package(ref class_name) = target
                     && class_name == "IO::Socket::Async"
@@ -2750,6 +2750,11 @@ impl Interpreter {
                 }
             }
             "listen" => {
+                if let Value::Package(ref class_name) = target
+                    && class_name == "IO::Socket::INET"
+                {
+                    return self.dispatch_socket_inet_listen(&args);
+                }
                 if let Value::Package(ref class_name) = target
                     && class_name == "IO::Socket::Async"
                 {
