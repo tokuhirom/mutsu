@@ -2410,6 +2410,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Some(Ok(Value::array(props)))
         }
         "unival" => {
+            // Type objects should throw an error
+            if matches!(target, Value::Package(_) | Value::CustomType { .. }) {
+                return Some(Err(RuntimeError::new(
+                    "Invocant of method 'unival' must be an object instance, not a type object"
+                        .to_string(),
+                )));
+            }
             let ch = match target {
                 Value::Int(i) => char::from_u32(*i as u32),
                 _ => {
@@ -2418,7 +2425,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
             };
             let Some(ch) = ch else {
-                return Some(Ok(Value::Num(f64::NAN)));
+                return Some(Ok(Value::Nil));
             };
             if let Some((n, d)) = crate::builtins::unicode::unicode_rat_value(ch) {
                 return Some(Ok(crate::value::make_rat(n, d)));
@@ -2430,6 +2437,41 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 return Some(Ok(Value::Int(n as i64)));
             }
             Some(Ok(Value::Num(f64::NAN)))
+        }
+        "univals" => {
+            // Type objects should throw an error
+            if matches!(target, Value::Package(_) | Value::CustomType { .. }) {
+                return Some(Err(RuntimeError::new(
+                    "Invocant of method 'univals' must be an object instance, not a type object"
+                        .to_string(),
+                )));
+            }
+            let s = match target {
+                Value::Int(i) => {
+                    if let Some(ch) = char::from_u32(*i as u32) {
+                        ch.to_string()
+                    } else {
+                        return Some(Ok(Value::array(Vec::new())));
+                    }
+                }
+                _ => target.to_string_value(),
+            };
+            if s.is_empty() {
+                return Some(Ok(Value::array(Vec::new())));
+            }
+            let mut result = Vec::new();
+            for ch in s.chars() {
+                if let Some((n, d)) = crate::builtins::unicode::unicode_rat_value(ch) {
+                    result.push(crate::value::make_rat(n, d));
+                } else if let Some(n) = crate::builtins::unicode::unicode_numeric_int_value(ch) {
+                    result.push(Value::Int(n));
+                } else if let Some(n) = crate::builtins::unicode::unicode_decimal_digit_value(ch) {
+                    result.push(Value::Int(n as i64));
+                } else {
+                    result.push(Value::Num(f64::NAN));
+                }
+            }
+            Some(Ok(Value::array(result)))
         }
         "chr" => {
             let (code, display) = match target {

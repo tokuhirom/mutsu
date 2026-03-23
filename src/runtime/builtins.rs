@@ -720,6 +720,7 @@ impl Interpreter {
             "ord" => self.builtin_ord(&args),
             "ords" => self.builtin_ords(&args),
             "unival" => self.builtin_unival(&args),
+            "univals" => self.builtin_univals(&args),
             "flip" => self.builtin_flip(&args),
             "lc" => self.builtin_lc(&args),
             "uc" => self.builtin_uc(&args),
@@ -3414,6 +3415,7 @@ impl Interpreter {
                 | "chr"
                 | "ord"
                 | "unival"
+                | "univals"
                 | "chars"
                 | "chomp"
                 | "chop"

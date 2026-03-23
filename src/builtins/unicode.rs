@@ -185,8 +185,18 @@ pub(crate) fn unicode_numeric_int_value(c: char) -> Option<i64> {
 /// General fallback: look up a character's integer value via the Unicode Nl/No table.
 /// Handles characters not explicitly listed above (e.g. cuneiform integers).
 fn unicode_general_int_value(c: char) -> Option<i64> {
-    let (n, d) = super::unicode_numval_table::lookup_nl_no_value(c)?;
-    if d == 1 { Some(n) } else { None }
+    if let Some((n, d)) = super::unicode_numval_table::lookup_nl_no_value(c)
+        && d == 1
+    {
+        return Some(n);
+    }
+    // Also check Lo (Letter, Other) characters with Unihan numeric values
+    if let Some((n, d)) = super::unicode_numval_table::lookup_lo_value(c)
+        && d == 1
+    {
+        return Some(n);
+    }
+    None
 }
 
 /// Return the decimal digit value (0-9) for any Unicode Nd (decimal digit) character.
@@ -206,32 +216,35 @@ pub(crate) fn unicode_decimal_digit_value(c: char) -> Option<u32> {
         return None;
     }
     let cp = c as u32;
-    // Nd blocks are contiguous digits 0..9. Recover the value by offset from zero.
-    let offset16 = cp % 16;
-    if offset16 <= 9 {
-        let base = cp - offset16;
-        let all_digits = (0..=9).all(|i| {
-            char::from_u32(base + i).is_some_and(|ch| {
-                let mut b = [0u8; 4];
-                nd_re.is_match(ch.encode_utf8(&mut b))
-            })
-        });
-        if all_digits {
-            return Some(offset16);
+    // Nd (decimal digit) blocks are always exactly 10 consecutive codepoints
+    // representing digits 0-9. However, multiple blocks can be packed
+    // contiguously (e.g., MATHEMATICAL digit blocks). We find the start of
+    // the full Nd run, then compute our block boundary as the nearest multiple
+    // of 10 within that run.
+    let mut run_start = cp;
+    // Scan backwards to find the start of the contiguous Nd run (limit to 200)
+    for _ in 0..200 {
+        if run_start == 0 {
+            break;
         }
-    }
-    let offset10 = cp % 10;
-    let base = cp - offset10;
-    let all_digits = (0..=9).all(|i| {
-        char::from_u32(base + i).is_some_and(|ch| {
+        let prev = run_start - 1;
+        let is_nd = char::from_u32(prev).is_some_and(|ch| {
             let mut b = [0u8; 4];
             nd_re.is_match(ch.encode_utf8(&mut b))
-        })
-    });
-    if all_digits {
-        return Some(offset10);
+        });
+        if !is_nd {
+            break;
+        }
+        run_start = prev;
     }
-    None
+    // Within the contiguous run, digit blocks are at 10-char boundaries
+    let offset_in_run = cp - run_start;
+    let digit_val = offset_in_run % 10;
+    if digit_val <= 9 {
+        Some(digit_val)
+    } else {
+        None
+    }
 }
 
 /// Return Unicode character name for a given character
