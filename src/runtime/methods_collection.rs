@@ -13,6 +13,11 @@ impl Interpreter {
                                 elems.insert(k.clone());
                             }
                         }
+                        Value::ValuePair(k, v) => {
+                            if v.truthy() {
+                                elems.insert(k.to_string_value());
+                            }
+                        }
                         _ => {
                             elems.insert(item.to_string_value());
                         }
@@ -39,6 +44,11 @@ impl Interpreter {
             Value::Pair(k, v) => {
                 if v.truthy() {
                     elems.insert(k);
+                }
+            }
+            Value::ValuePair(k, v) => {
+                if v.truthy() {
+                    elems.insert(k.to_string_value());
                 }
             }
             other if other.is_range() => {

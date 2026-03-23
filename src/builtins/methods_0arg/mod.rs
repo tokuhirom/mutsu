@@ -3992,6 +3992,19 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 "Cannot call .pick on a Mix (immutable)",
             ))),
             Value::Bag(items) => Some(Ok(sample_weighted_bag_key(items).unwrap_or(Value::Nil))),
+            Value::Set(items) => {
+                if items.is_empty() {
+                    Some(Ok(Value::Nil))
+                } else {
+                    let keys: Vec<&String> = items.iter().collect();
+                    let mut idx =
+                        (crate::builtins::rng::builtin_rand() * keys.len() as f64) as usize;
+                    if idx >= keys.len() {
+                        idx = keys.len() - 1;
+                    }
+                    Some(Ok(Value::str(keys[idx].clone())))
+                }
+            }
             Value::Hash(items) => {
                 if items.is_empty() {
                     Some(Ok(Value::Nil))
@@ -4029,6 +4042,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             if let Value::Bag(items) = target {
                 return Some(Ok(sample_weighted_bag_key(items).unwrap_or(Value::Nil)));
+            }
+            if let Value::Set(items) = target {
+                if items.is_empty() {
+                    return Some(Ok(Value::Nil));
+                }
+                let keys: Vec<&String> = items.iter().collect();
+                let mut idx = (crate::builtins::rng::builtin_rand() * keys.len() as f64) as usize;
+                if idx >= keys.len() {
+                    idx = keys.len() - 1;
+                }
+                return Some(Ok(Value::str(keys[idx].clone())));
             }
             let items = if crate::runtime::utils::is_shaped_array(target) {
                 crate::runtime::utils::shaped_array_leaves(target)

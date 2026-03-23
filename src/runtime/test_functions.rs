@@ -966,7 +966,13 @@ impl Interpreter {
         let type_name = match positionals.get(1) {
             Some(Value::Package(name)) => name.resolve(),
             Some(Value::Nil) => "Nil".to_string(),
-            Some(v) => v.to_string_value(),
+            Some(Value::Str(s)) => s.to_string(),
+            Some(Value::Instance { class_name, .. }) => class_name.resolve(),
+            Some(v) => {
+                // For defined values (e.g., isa-ok $val, 3), extract the type
+                // name from the value's type. This matches Raku's behavior.
+                crate::value::types::what_type_name(v)
+            }
             None => String::new(),
         };
         let desc = positionals

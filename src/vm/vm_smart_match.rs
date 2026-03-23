@@ -303,13 +303,11 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
                     .all(|key| bag.get(key).is_some_and(|count| *count == 1)),
         ),
 
-        // Bag ~~ Set: all bag elements must have count 1 and exist in set
-        (Value::Bag(bag), Value::Set(set)) => Some(
-            bag.len() == set.len()
-                && bag
-                    .iter()
-                    .all(|(key, count)| *count == 1 && set.contains(key)),
-        ),
+        // Bag ~~ Set: keys must match (counts are ignored)
+        (Value::Bag(bag), Value::Set(set)) => {
+            let bag_keys: std::collections::HashSet<&String> = bag.keys().collect();
+            Some(bag_keys.len() == set.len() && bag_keys.iter().all(|key| set.contains(*key)))
+        }
 
         // Set ~~ Mix: all set elements must exist in Mix with unit weights
         (Value::Set(set), Value::Mix(mix)) => Some(
