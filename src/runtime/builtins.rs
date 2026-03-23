@@ -1398,13 +1398,26 @@ impl Interpreter {
             .map(Value::to_string_value)
             .filter(|s| !s.is_empty());
         let mut delete_after = false;
-        for extra in args.iter().skip(4) {
+        let mut adverb_cond: Option<bool> = None;
+        let mut skip_next = false;
+        for (i, extra) in args.iter().skip(4).enumerate() {
+            if skip_next {
+                skip_next = false;
+                continue;
+            }
             match extra {
                 Value::Pair(key, value) if key == "delete" => {
                     delete_after = value.truthy();
                 }
                 Value::ValuePair(key, value) if key.to_string_value() == "delete" => {
                     delete_after = value.truthy();
+                }
+                Value::Str(s) if s.as_ref() == "__adverb_cond__" => {
+                    // The next argument is the dynamic condition expression value.
+                    if let Some(cond_val) = args.get(4 + i + 1) {
+                        adverb_cond = Some(cond_val.truthy());
+                    }
+                    skip_next = true;
                 }
                 _ => {}
             }
@@ -1420,6 +1433,15 @@ impl Interpreter {
             "v" => ("v", false),
             "not-v" | "v0" => ("v", true),
             _ => return Ok(Value::Nil),
+        };
+        // When a dynamic condition was provided (e.g. `:k($ok)`),
+        // override keep_missing based on the condition's truthiness.
+        // If the condition is false, it's like `:!k` (keep_missing = true).
+        // If the condition is true, it's like `:k` (keep_missing = false).
+        let keep_missing = if let Some(cond) = adverb_cond {
+            !cond
+        } else {
+            keep_missing
         };
 
         let mut indices = match index {

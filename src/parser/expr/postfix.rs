@@ -129,56 +129,95 @@ fn parse_dynamic_subscript_adverb(input: &str) -> Option<&str> {
     }
 }
 
-fn parse_subscript_adverb(input: &str) -> Option<(&str, &'static str)> {
+/// Parse a subscript adverb like `:k`, `:!kv`, `:k($ok)`, `:kv(0)`, etc.
+/// Returns (remaining_input, mode_string, optional_dynamic_expr).
+/// When the adverb has a dynamic expression argument (e.g. `:k($var)`),
+/// the third element is `Some(expr)` and the mode is the base adverb name.
+fn parse_subscript_adverb_with_expr(input: &str) -> Option<(&str, &'static str, Option<Expr>)> {
     if input.starts_with(":!kv") && !is_ident_char(input.as_bytes().get(4).copied()) {
-        return Some((&input[4..], "not-kv"));
+        return Some((&input[4..], "not-kv", None));
     }
     if input.starts_with(":!p") && !is_ident_char(input.as_bytes().get(3).copied()) {
-        return Some((&input[3..], "not-p"));
+        return Some((&input[3..], "not-p", None));
     }
     if input.starts_with(":!k") && !is_ident_char(input.as_bytes().get(3).copied()) {
-        return Some((&input[3..], "not-k"));
+        return Some((&input[3..], "not-k", None));
     }
     if input.starts_with(":!v") && !is_ident_char(input.as_bytes().get(3).copied()) {
-        return Some((&input[3..], "not-v"));
+        return Some((&input[3..], "not-v", None));
     }
     if let Some(rest) = input.strip_prefix(":kv(0)") {
-        return Some((rest, "kv0"));
+        return Some((rest, "kv0", None));
     }
     if let Some(rest) = input.strip_prefix(":kv(1)") {
-        return Some((rest, "kv"));
+        return Some((rest, "kv", None));
+    }
+    // :kv(expr) — dynamic adverb with expression
+    if input.starts_with(":kv(")
+        && let Some((rest, expr)) = try_parse_adverb_expr(&input[3..])
+    {
+        return Some((rest, "kv", Some(expr)));
     }
     if input.starts_with(":kv") && !is_ident_char(input.as_bytes().get(3).copied()) {
-        return Some((&input[3..], "kv"));
+        return Some((&input[3..], "kv", None));
     }
     if let Some(rest) = input.strip_prefix(":p(0)") {
-        return Some((rest, "p0"));
+        return Some((rest, "p0", None));
     }
     if let Some(rest) = input.strip_prefix(":p(1)") {
-        return Some((rest, "p"));
+        return Some((rest, "p", None));
+    }
+    // :p(expr)
+    if input.starts_with(":p(")
+        && let Some((rest, expr)) = try_parse_adverb_expr(&input[2..])
+    {
+        return Some((rest, "p", Some(expr)));
     }
     if input.starts_with(":p") && !is_ident_char(input.as_bytes().get(2).copied()) {
-        return Some((&input[2..], "p"));
+        return Some((&input[2..], "p", None));
     }
     if let Some(rest) = input.strip_prefix(":k(0)") {
-        return Some((rest, "k0"));
+        return Some((rest, "k0", None));
     }
     if let Some(rest) = input.strip_prefix(":k(1)") {
-        return Some((rest, "k"));
+        return Some((rest, "k", None));
+    }
+    // :k(expr)
+    if input.starts_with(":k(")
+        && let Some((rest, expr)) = try_parse_adverb_expr(&input[2..])
+    {
+        return Some((rest, "k", Some(expr)));
     }
     if input.starts_with(":k") && !is_ident_char(input.as_bytes().get(2).copied()) {
-        return Some((&input[2..], "k"));
+        return Some((&input[2..], "k", None));
     }
     if let Some(rest) = input.strip_prefix(":v(0)") {
-        return Some((rest, "v0"));
+        return Some((rest, "v0", None));
     }
     if let Some(rest) = input.strip_prefix(":v(1)") {
-        return Some((rest, "v"));
+        return Some((rest, "v", None));
+    }
+    // :v(expr)
+    if input.starts_with(":v(")
+        && let Some((rest, expr)) = try_parse_adverb_expr(&input[2..])
+    {
+        return Some((rest, "v", Some(expr)));
     }
     if input.starts_with(":v") && !is_ident_char(input.as_bytes().get(2).copied()) {
-        return Some((&input[2..], "v"));
+        return Some((&input[2..], "v", None));
     }
     None
+}
+
+/// Try to parse a parenthesized expression for a subscript adverb argument.
+/// Input starts at `(`. Returns `(remaining_after_close_paren, expr)`.
+fn try_parse_adverb_expr(input: &str) -> Option<(&str, Expr)> {
+    let r = input.strip_prefix('(')?;
+    let (r, _) = ws(r).ok()?;
+    let (r, expr) = expression(r).ok()?;
+    let (r, _) = ws(r).ok()?;
+    let (r, _) = parse_char(r, ')').ok()?;
+    Some((r, expr))
 }
 
 /// Extract the variable name from a MultiDimIndex target expression.
@@ -220,11 +259,15 @@ fn parse_delete_adverb(input: &str) -> Option<(&str, DeleteAdverb)> {
     None
 }
 
-fn subscript_adverb_expr(expr: Expr, adverb: &'static str) -> Expr {
+fn subscript_adverb_expr_with_cond(expr: Expr, adverb: &'static str, cond: Option<Expr>) -> Expr {
     // Handle MultiDimIndex: @a[0;0;0]:kv etc.
     if let Expr::MultiDimIndex { target, dimensions } = expr {
         let mut args = vec![*target, Expr::Literal(Value::str(adverb.to_string()))];
         args.extend(dimensions);
+        if let Some(cond_expr) = cond {
+            args.push(Expr::Literal(Value::str("__adverb_cond__".to_string())));
+            args.push(cond_expr);
+        }
         return Expr::Call {
             name: Symbol::intern("__mutsu_multidim_subscript_adverb"),
             args,
@@ -238,14 +281,21 @@ fn subscript_adverb_expr(expr: Expr, adverb: &'static str) -> Expr {
         Expr::HashVar(name) => Expr::Literal(Value::str(format!("%{}", name))),
         _ => Expr::Literal(Value::Nil),
     };
+    let mut args = vec![
+        *target,
+        *index,
+        Expr::Literal(Value::str(adverb.to_string())),
+        var_name,
+    ];
+    // When a dynamic condition is provided (e.g., `:k($ok)`), pass it as
+    // a named Pair so the runtime can decide keep_missing at evaluation time.
+    if let Some(cond_expr) = cond {
+        args.push(Expr::Literal(Value::str("__adverb_cond__".to_string())));
+        args.push(cond_expr);
+    }
     Expr::Call {
         name: Symbol::intern("__mutsu_subscript_adverb"),
-        args: vec![
-            *target,
-            *index,
-            Expr::Literal(Value::str(adverb.to_string())),
-            var_name,
-        ],
+        args,
     }
 }
 
@@ -1802,7 +1852,13 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
 
         // Object constructor shorthand: Type{ :named(...) } / Type{ key => value, ... }.
         // Treat this as Type.new(...) for package/type barewords.
-        if rest.starts_with('{') && matches!(&expr, Expr::BareWord(_)) {
+        // But NOT for sigilless variables (term symbols like \h), which should use
+        // hash subscript semantics instead.
+        if rest.starts_with('{')
+            && matches!(&expr, Expr::BareWord(name) if {
+                crate::parser::stmt::simple::match_user_declared_term_symbol(name).is_none()
+            })
+        {
             let r = &rest[1..];
             let (r, _) = ws(r)?;
             let (r, args) = if r.starts_with('}') {
@@ -1903,11 +1959,13 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         }
 
         // Hash indexing with braces: %hash{"key"}, %hash{$var}, @a[0]{"key"}, etc.
+        // Also handles sigilless variables (BareWord) that are declared term symbols.
         if rest.starts_with('{')
             && matches!(
                 &expr,
                 Expr::HashVar(_)
                     | Expr::Var(_)
+                    | Expr::BareWord(_)
                     | Expr::Index { .. }
                     | Expr::MethodCall { .. }
                     | Expr::Call { .. }
@@ -2032,10 +2090,12 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = r_after;
                 continue;
             }
-            if let Some((r_after_adv, adv_name)) = parse_subscript_adverb(r_adv2) {
+            if let Some((r_after_adv, adv_name, adv_cond)) =
+                parse_subscript_adverb_with_expr(r_adv2)
+            {
                 // Avoid consuming ternary `:v` separator in `?? !!` expressions.
                 if !has_ternary_else_after(r_after_adv) {
-                    expr = subscript_adverb_expr(expr, adv_name);
+                    expr = subscript_adverb_expr_with_cond(expr, adv_name, adv_cond);
                     rest = r_after_adv;
                     continue;
                 }
