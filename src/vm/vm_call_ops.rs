@@ -1816,7 +1816,7 @@ impl VM {
                         *item = updated;
                         v
                     };
-                    results.push(Value::array(vals));
+                    results.push(Value::real_array(vals));
                 }
                 Some("*") => {
                     if !skip_native
@@ -1824,16 +1824,16 @@ impl VM {
                             self.try_native_method(item, Symbol::intern(&method), &item_args)
                     {
                         match native_result {
-                            Ok(v) => results.push(Value::array(vec![v])),
-                            Err(_) => results.push(Value::array(vec![])),
+                            Ok(v) => results.push(Value::real_array(vec![v])),
+                            Err(_) => results.push(Value::real_array(vec![])),
                         }
                     } else {
                         match self.call_method_all_with_temp_target(item, &method, item_args, idx) {
                             Ok((vals, updated)) => {
                                 *item = updated;
-                                results.push(Value::array(vals));
+                                results.push(Value::real_array(vals));
                             }
-                            Err(_) => results.push(Value::array(vec![])),
+                            Err(_) => results.push(Value::real_array(vec![])),
                         }
                     }
                 }
@@ -2119,23 +2119,23 @@ impl VM {
                         *item = updated;
                         v
                     };
-                    results.push(Value::array(vals));
+                    results.push(Value::real_array(vals));
                 }
                 Some("*") => {
                     if let Some(native_result) =
                         self.try_native_method(item, Symbol::intern(method), &item_args)
                     {
                         match native_result {
-                            Ok(v) => results.push(Value::array(vec![v])),
-                            Err(_) => results.push(Value::array(vec![])),
+                            Ok(v) => results.push(Value::real_array(vec![v])),
+                            Err(_) => results.push(Value::real_array(vec![])),
                         }
                     } else {
                         match self.call_method_all_with_temp_target(item, method, item_args, idx) {
                             Ok((vals, updated)) => {
                                 *item = updated;
-                                results.push(Value::array(vals));
+                                results.push(Value::real_array(vals));
                             }
-                            Err(_) => results.push(Value::array(vec![])),
+                            Err(_) => results.push(Value::real_array(vec![])),
                         }
                     }
                 }
