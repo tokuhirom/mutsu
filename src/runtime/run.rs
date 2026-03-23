@@ -720,14 +720,23 @@ impl Interpreter {
             self.halted = false;
             let phasers = self.end_phasers.clone();
             for (body, captured_env) in phasers.iter().rev() {
-                let saved_env = self.env.clone();
+                // Track which keys are being added from captured env
+                // (not already present) so we can remove them after.
+                let mut overlay_keys: Vec<String> = Vec::new();
                 // Overlay captured lexical env on top of current env
                 // so both globals and captured lexicals are visible
                 for (k, v) in captured_env {
+                    if !self.env.contains_key(k) {
+                        overlay_keys.push(k.clone());
+                    }
                     self.env.insert(k.clone(), v.clone());
                 }
                 self.run_block(body)?;
-                self.env = saved_env;
+                // Remove only the overlay keys (captured lexicals not in
+                // the current scope), keeping mutations to shared variables.
+                for k in &overlay_keys {
+                    self.env.remove(k);
+                }
             }
         }
         self.run_pending_instance_destroys()?;

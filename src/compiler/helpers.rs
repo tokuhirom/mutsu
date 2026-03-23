@@ -2427,6 +2427,17 @@ impl Compiler {
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
+                    Stmt::Phaser {
+                        kind: PhaserKind::Begin | PhaserKind::Check | PhaserKind::Init,
+                        body,
+                    } => {
+                        // Phasers in block-final position should leave their
+                        // last expression value on the stack (e.g. when used
+                        // inside string interpolation blocks).
+                        self.compile_block_inline(body);
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
                     _ => {}
                 }
             }
