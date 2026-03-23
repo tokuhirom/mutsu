@@ -688,6 +688,14 @@ impl VM {
                         Value::Num(*w)
                     }
                 }),
+                Value::Set(set) => {
+                    if set.contains(&key) {
+                        Value::Bool(true)
+                    } else {
+                        Value::Bool(false)
+                    }
+                }
+                Value::Bag(bag) => Value::Int(*bag.get(&key).unwrap_or(&0)),
                 _ => Value::Nil,
             }
         } else {
@@ -723,6 +731,26 @@ impl VM {
                         m.insert(key, Self::mix_assignment_weight(&new_val));
                     } else {
                         m.remove(&key);
+                    }
+                }
+                Value::Set(set) => {
+                    let s = Arc::make_mut(set);
+                    if new_val.truthy() {
+                        s.insert(key);
+                    } else {
+                        s.remove(&key);
+                    }
+                }
+                Value::Bag(bag) => {
+                    let b = Arc::make_mut(bag);
+                    let n = match &new_val {
+                        Value::Int(i) => *i,
+                        _ => 0,
+                    };
+                    if n > 0 {
+                        b.insert(key, n);
+                    } else {
+                        b.remove(&key);
                     }
                 }
                 _ => {}

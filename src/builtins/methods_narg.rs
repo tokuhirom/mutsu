@@ -1389,6 +1389,28 @@ pub(crate) fn native_method_1arg(
                 }
                 return Some(Ok(Value::array(result)));
             }
+            // For Set, pick returns keys (strings) without replacement
+            if let Value::Set(set) = target {
+                let mut keys: Vec<String> = set.iter().cloned().collect();
+                let count: usize = match arg {
+                    Value::Whatever => keys.len(),
+                    Value::Num(f) if f.is_infinite() && f.is_sign_positive() => keys.len(),
+                    Value::Int(n) => (*n).max(0) as usize,
+                    Value::Num(f) => (*f as i64).max(0) as usize,
+                    Value::Rat(n, d) if *d != 0 => (*n / *d).max(0) as usize,
+                    _ => 0,
+                };
+                let pick_count = count.min(keys.len());
+                // Fisher-Yates shuffle for without-replacement
+                let len = keys.len();
+                for i in (1..len).rev() {
+                    let j =
+                        (crate::builtins::rng::builtin_rand() * (i + 1) as f64) as usize % (i + 1);
+                    keys.swap(i, j);
+                }
+                keys.truncate(pick_count);
+                return Some(Ok(Value::array(keys.into_iter().map(Value::str).collect())));
+            }
             let mut items = runtime::value_to_list(target);
             Some(Ok(match arg {
                 Value::Whatever => {
@@ -1573,6 +1595,41 @@ pub(crate) fn native_method_1arg(
                     if let Some(v) = sample_weighted_bag_key(items) {
                         result.push(v);
                     }
+                }
+                return Some(Ok(Value::array(result)));
+            }
+            if let Value::Set(items) = target {
+                let keys: Vec<&String> = items.iter().collect();
+                if keys.is_empty() {
+                    return Some(Ok(Value::Seq(Arc::new(Vec::new()))));
+                }
+                if count.is_none() {
+                    let generated = 131_072usize;
+                    let mut out = Vec::with_capacity(generated);
+                    for _ in 0..generated {
+                        let mut idx =
+                            (crate::builtins::rng::builtin_rand() * keys.len() as f64) as usize;
+                        if idx >= keys.len() {
+                            idx = keys.len() - 1;
+                        }
+                        out.push(Value::str(keys[idx].clone()));
+                    }
+                    return Some(Ok(Value::LazyList(Arc::new(
+                        crate::value::LazyList::new_cached(out),
+                    ))));
+                }
+                let count = count.unwrap_or(0);
+                if count == 0 {
+                    return Some(Ok(Value::Seq(Arc::new(Vec::new()))));
+                }
+                let mut result = Vec::with_capacity(count);
+                for _ in 0..count {
+                    let mut idx =
+                        (crate::builtins::rng::builtin_rand() * keys.len() as f64) as usize;
+                    if idx >= keys.len() {
+                        idx = keys.len() - 1;
+                    }
+                    result.push(Value::str(keys[idx].clone()));
                 }
                 return Some(Ok(Value::array(result)));
             }
@@ -1892,7 +1949,12 @@ pub(crate) fn native_method_1arg(
                 Value::Package(name) => name.resolve(),
                 Value::Str(name) => name.to_string(),
                 Value::Instance { class_name, .. } => class_name.resolve(),
-                other => other.to_string_value(),
+                other => {
+                    // For defined values, extract the type name (e.g., 3.isa(4) checks Int)
+                    // This matches Raku's behavior where .isa on a defined value
+                    // uses the value's type, not its string representation.
+                    crate::value::types::what_type_name(other)
+                }
             };
             Some(Ok(Value::Bool(target.isa_check(&type_name))))
         }
