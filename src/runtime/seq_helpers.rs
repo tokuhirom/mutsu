@@ -793,19 +793,30 @@ impl Interpreter {
         attrs.insert("str".to_string(), Value::str(captures.matched.clone()));
         attrs.insert("from".to_string(), Value::Int(captures.from as i64));
         attrs.insert("to".to_string(), Value::Int(captures.to as i64));
-        let positional: Vec<Value> = captures
-            .positional
-            .iter()
-            .enumerate()
-            .map(|(i, s)| {
-                let (from, to) = captures
-                    .positional_offsets
-                    .get(i)
-                    .copied()
-                    .unwrap_or((0, s.chars().count()));
-                make_capture_match(s, from, to)
-            })
-            .collect();
+        let positional: Vec<Value> = if !captures.positional_slots.is_empty() {
+            captures
+                .positional_slots
+                .iter()
+                .map(|slot| match slot {
+                    Some((s, from, to)) => make_capture_match(s, *from, *to),
+                    None => Value::Nil,
+                })
+                .collect()
+        } else {
+            captures
+                .positional
+                .iter()
+                .enumerate()
+                .map(|(i, s)| {
+                    let (from, to) = captures
+                        .positional_offsets
+                        .get(i)
+                        .copied()
+                        .unwrap_or((0, s.chars().count()));
+                    make_capture_match(s, from, to)
+                })
+                .collect()
+        };
         attrs.insert("list".to_string(), Value::array(positional));
         let mut named = HashMap::new();
         for (k, v) in &captures.named {
