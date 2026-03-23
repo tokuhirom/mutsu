@@ -1149,6 +1149,54 @@ impl Interpreter {
                                 Some('t') => literal.push('\t'),
                                 Some('r') => literal.push('\r'),
                                 Some('0') => literal.push('\0'),
+                                Some('c') | Some('C') => {
+                                    // \c[NAME] or \c[NAME1, NAME2] inside double-quoted regex string
+                                    if chars.peek() == Some(&'[') {
+                                        chars.next(); // skip '['
+                                        let mut name = String::new();
+                                        while let Some(&ch) = chars.peek() {
+                                            if ch == ']' {
+                                                chars.next();
+                                                break;
+                                            }
+                                            name.push(ch);
+                                            chars.next();
+                                        }
+                                        let parts: Vec<&str> =
+                                            name.split(',').map(|s| s.trim()).collect();
+                                        for part in &parts {
+                                            if let Some(resolved_char) =
+                                                crate::token_kind::lookup_unicode_char_by_name(part)
+                                            {
+                                                literal.push(resolved_char);
+                                            }
+                                        }
+                                    } else {
+                                        literal.push('c');
+                                    }
+                                }
+                                Some('x') => {
+                                    // \x[HEX] inside double-quoted regex string
+                                    if chars.peek() == Some(&'[') {
+                                        chars.next(); // skip '['
+                                        let mut hex = String::new();
+                                        while let Some(&ch) = chars.peek() {
+                                            if ch == ']' {
+                                                chars.next();
+                                                break;
+                                            }
+                                            hex.push(ch);
+                                            chars.next();
+                                        }
+                                        if let Ok(cp) = u32::from_str_radix(hex.trim(), 16)
+                                            && let Some(ch) = char::from_u32(cp)
+                                        {
+                                            literal.push(ch);
+                                        }
+                                    } else {
+                                        literal.push('x');
+                                    }
+                                }
                                 Some(other) => literal.push(other),
                                 None => break,
                             },
