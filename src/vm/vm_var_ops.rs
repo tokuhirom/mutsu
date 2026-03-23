@@ -2148,9 +2148,34 @@ impl VM {
             .unwrap_or(Value::Nil);
         let dims = self.resolve_multidim_indices_for_assign(&target_val, &dims)?;
 
+        // Check if the index is bound (read-only)
+        let encoded_idx = dims
+            .iter()
+            .map(|d| d.to_string_value())
+            .collect::<Vec<_>>()
+            .join(";");
+        if self.is_bound_index(&var_name, &encoded_idx) {
+            return Err(RuntimeError::assignment_ro(None));
+        }
+
+        // Check if target is a shaped array - use bounds-checked assignment
+        let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
+        let has_declared_shape = self.interpreter.env().contains_key(&declared_shape_key);
+        let is_shaped = has_declared_shape
+            || self
+                .interpreter
+                .env()
+                .get(&var_name)
+                .is_some_and(crate::runtime::utils::is_shaped_array);
+
         // Get mutable reference to the target variable
         if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
-            Self::multi_dim_assign(container, &dims, value.clone())?;
+            if is_shaped {
+                // For shaped arrays, use bounds-checked assignment
+                Self::assign_array_multidim(container, &dims, value.clone())?;
+            } else {
+                Self::multi_dim_assign(container, &dims, value.clone())?;
+            }
         }
 
         self.stack.push(value);
@@ -2171,12 +2196,29 @@ impl VM {
         }
         dims.reverse();
         let mut target = self.stack.pop().unwrap_or(Value::Nil);
-        Self::multi_dim_assign(&mut target, &dims, value.clone())?;
+        let is_shaped = crate::runtime::utils::is_shaped_array(&target);
+        if is_shaped {
+            Self::assign_array_multidim(&mut target, &dims, value.clone())?;
+        } else {
+            Self::multi_dim_assign(&mut target, &dims, value.clone())?;
+        }
         self.stack.push(value);
         Ok(())
     }
 
-    /// Recursively assign a value into a nested array at the given dimension indices.
+    /// Compute the number of leaf slots for the remaining dimensions.
+    /// Each array dimension contributes its length; scalar dimensions contribute 1.
+    fn remaining_slot_count(dims: &[Value]) -> usize {
+        let mut count = 1usize;
+        for d in dims {
+            if let Value::Array(items, ..) = d {
+                count *= items.len();
+            }
+        }
+        count
+    }
+
+    /// Recursively assign a value into a nested array/hash at the given dimension indices.
     fn multi_dim_assign(
         target: &mut Value,
         dims: &[Value],
@@ -2190,34 +2232,62 @@ impl VM {
         let dim = &dims[0];
         let rest = &dims[1..];
 
-        // For multi-index dimensions (arrays), need to distribute values
+        // For multi-index dimensions (arrays of keys/indices), need to distribute values
         if let Value::Array(indices, ..) = dim {
             if let Value::Array(values, ..) = &value {
-                // Distribute values to indices
+                // Calculate how many leaf slots each index in this dimension needs
+                let chunk_size = Self::remaining_slot_count(rest);
+                // Distribute values to indices in chunks
                 for (i, idx) in indices.iter().enumerate() {
-                    let val = values.get(i).cloned().unwrap_or(Value::Nil);
-                    let ii = Self::index_to_usize(idx).unwrap_or(0);
-                    Self::ensure_array_size(target, ii + 1);
-                    if let Value::Array(items, ..) = target {
-                        let items = std::sync::Arc::make_mut(items);
-                        Self::multi_dim_assign(&mut items[ii], rest, val)?;
-                    }
+                    let chunk_start = i * chunk_size;
+                    let chunk: Vec<Value> = values
+                        .iter()
+                        .skip(chunk_start)
+                        .take(chunk_size)
+                        .cloned()
+                        .collect();
+                    let val = if chunk_size == 1 {
+                        chunk.into_iter().next().unwrap_or(Value::Nil)
+                    } else {
+                        Value::real_array(chunk)
+                    };
+                    Self::multi_dim_assign_single(target, idx, rest, val)?;
                 }
             } else {
                 // Single value assigned to multiple indices
                 for idx in indices.iter() {
-                    let ii = Self::index_to_usize(idx).unwrap_or(0);
-                    Self::ensure_array_size(target, ii + 1);
-                    if let Value::Array(items, ..) = target {
-                        let items = std::sync::Arc::make_mut(items);
-                        Self::multi_dim_assign(&mut items[ii], rest, value.clone())?;
-                    }
+                    Self::multi_dim_assign_single(target, idx, rest, value.clone())?;
                 }
             }
             return Ok(());
         }
 
-        // Scalar index
+        // Scalar index/key
+        Self::multi_dim_assign_single(target, dim, rest, value)
+    }
+
+    /// Assign a value at a single index/key, recursing into remaining dimensions.
+    fn multi_dim_assign_single(
+        target: &mut Value,
+        dim: &Value,
+        rest: &[Value],
+        value: Value,
+    ) -> Result<(), RuntimeError> {
+        // Check if the dimension is a string key (for hash access)
+        if let Value::Str(key) = dim {
+            // Hash assignment
+            Self::ensure_hash(target);
+            if let Value::Hash(map, ..) = target {
+                let map = std::sync::Arc::make_mut(map);
+                let entry = map
+                    .entry(key.as_str().to_string())
+                    .or_insert_with(|| Value::Package(crate::symbol::Symbol::intern("Any")));
+                Self::multi_dim_assign(entry, rest, value)?;
+            }
+            return Ok(());
+        }
+
+        // Numeric index (for array access)
         let Some(i) = Self::index_to_usize(dim) else {
             return Err(RuntimeError::new("Invalid index for multi-dim assignment"));
         };
@@ -2232,6 +2302,17 @@ impl VM {
         Ok(())
     }
 
+    /// Ensure the target is a hash, converting from Nil/Any if necessary.
+    fn ensure_hash(target: &mut Value) {
+        match target {
+            Value::Hash(..) => {}
+            Value::Nil | Value::Package(..) => {
+                *target = Value::Hash(std::sync::Arc::new(std::collections::HashMap::new()));
+            }
+            _ => {}
+        }
+    }
+
     /// Resolve WhateverCode indices for multidim assignment.
     fn resolve_multidim_indices_for_assign(
         &mut self,
@@ -2241,7 +2322,28 @@ impl VM {
         let mut resolved = Vec::with_capacity(indices.len());
         let mut current = target.clone();
         for idx in indices {
-            if let Value::Sub(..) = idx {
+            if matches!(idx, Value::Whatever) {
+                // * means "all existing indices" - expand to 0..len
+                let len = match &current {
+                    Value::Array(items, ..) => items.len(),
+                    Value::Hash(..) => {
+                        // For hashes, * means all existing keys
+                        if let Value::Hash(map, ..) = &current {
+                            let keys: Vec<Value> =
+                                map.keys().map(|k| Value::str(k.to_string())).collect();
+                            let result = Value::real_array(keys);
+                            resolved.push(result);
+                            continue;
+                        }
+                        0
+                    }
+                    _ => 0,
+                };
+                let all_indices: Vec<Value> = (0..len as i64).map(Value::Int).collect();
+                let result = Value::real_array(all_indices);
+                // Don't advance current - Whatever applies to all elements
+                resolved.push(result);
+            } else if let Value::Sub(..) = idx {
                 let len = match &current {
                     Value::Array(items, ..) => Value::Int(items.len() as i64),
                     _ => Value::Int(0),
@@ -2252,6 +2354,27 @@ impl VM {
                 current =
                     Self::index_array_multidim(&current, std::slice::from_ref(&result), false)
                         .unwrap_or(Value::Nil);
+                resolved.push(result);
+            } else if let Value::Array(items, ..) = idx {
+                // Resolve any Sub/WhateverCode elements within the array
+                let len = match &current {
+                    Value::Array(arr, ..) => Value::Int(arr.len() as i64),
+                    _ => Value::Int(0),
+                };
+                let mut resolved_items = Vec::with_capacity(items.len());
+                for item in items.iter() {
+                    if let Value::Sub(..) = item {
+                        let result = self.interpreter.call_sub_value(
+                            item.clone(),
+                            vec![len.clone()],
+                            false,
+                        )?;
+                        resolved_items.push(result);
+                    } else {
+                        resolved_items.push(item.clone());
+                    }
+                }
+                let result = Value::real_array(resolved_items);
                 resolved.push(result);
             } else {
                 current = Self::index_array_multidim(&current, std::slice::from_ref(idx), false)

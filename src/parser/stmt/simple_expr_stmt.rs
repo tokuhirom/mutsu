@@ -575,9 +575,9 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             exception: None,
         })?;
         if let Expr::MultiDimIndex { target, dimensions } = expr {
-            let stmt = Stmt::Expr(Expr::IndexAssign {
+            let stmt = Stmt::Expr(Expr::MultiDimIndexAssign {
                 target,
-                index: Box::new(Expr::ArrayLiteral(dimensions)),
+                dimensions,
                 value: Box::new(value),
             });
             return parse_statement_modifier(rest, stmt);
@@ -649,6 +649,8 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 return parse_statement_modifier(rest, stmt);
             }
             Expr::MultiDimIndex { target, dimensions } => {
+                // For bind (:=), use IndexAssign with flattened dimensions
+                // because bind semantics are handled by the IndexAssign VM path
                 let stmt = Stmt::Expr(Expr::IndexAssign {
                     target,
                     index: Box::new(Expr::ArrayLiteral(dimensions)),

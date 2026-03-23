@@ -29,6 +29,14 @@ fn multidim_index(target: &Value, indices: &[Value]) -> Value {
         }
         return Value::array(out);
     }
+    // Hash multi-dim indexing: %h{key1;key2;...}
+    if let Value::Hash(map, ..) = target {
+        let key = head.to_string_value();
+        return match map.get(&key) {
+            Some(val) => multidim_index(val, &indices[1..]),
+            None => Value::Nil,
+        };
+    }
     let Value::Array(items, ..) = target else {
         return Value::Nil;
     };
