@@ -1618,7 +1618,7 @@ fn builtin_times() -> Result<Value, RuntimeError> {
     #[cfg(not(unix))]
     {
         Ok(Value::Array(
-            vec![Value::Num(0.0), Value::Num(0.0)],
+            vec![Value::Num(0.0), Value::Num(0.0)].into(),
             ArrayKind::List,
         ))
     }
