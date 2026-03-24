@@ -160,15 +160,29 @@ if [ ! -f "$HISTORY" ]; then
   printf "date\tcommit\tfiles\tpass\tfail\terror\tpanic\ttimeout\tsubtests_pass\tsubtests_total\n" > "$HISTORY"
 fi
 
-printf "%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n" \
+NEW_ROW=$(printf "%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d" \
   "$DATE" "$COMMIT" "$TOTAL" "$PASS" "$FAIL" "$ERROR" "$PANICKED" "$TIMEDOUT" \
-  "$PASSED_SUBTESTS" "$TOTAL_SUBTESTS" >> "$HISTORY"
+  "$PASSED_SUBTESTS" "$TOTAL_SUBTESTS")
+LAST_ROW=$(tail -n 1 "$HISTORY")
+LAST_METRICS=$(printf "%s\n" "$LAST_ROW" | cut -f 3-10)
+NEW_METRICS=$(printf "%s\n" "$NEW_ROW" | cut -f 3-10)
 
-echo ""
-echo "Appended to $HISTORY"
+if [ -n "$LAST_ROW" ] && [ "$LAST_ROW" != "$(head -n 1 "$HISTORY")" ] && [ "$LAST_METRICS" = "$NEW_METRICS" ]; then
+  echo ""
+  echo "No roast history changes since the previous entry; skipping history update."
+  HISTORY_UPDATED=false
+else
+  printf "%s\n" "$NEW_ROW" >> "$HISTORY"
+  HISTORY_UPDATED=true
+fi
 
-python3 scripts/plot_roast_history.py "$HISTORY" "$HISTORY_GRAPH"
-echo "Generated $HISTORY_GRAPH"
+if [ "$HISTORY_UPDATED" = true ]; then
+  echo ""
+  echo "Appended to $HISTORY"
+
+  python3 scripts/plot_roast_history.py "$HISTORY" "$HISTORY_GRAPH"
+  echo "Generated $HISTORY_GRAPH"
+fi
 
 # Auto-commit only when --commit flag is passed.
 if [ "$COMMIT_RESULTS" = true ]; then
