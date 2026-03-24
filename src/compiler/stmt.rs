@@ -1424,6 +1424,16 @@ impl Compiler {
                     self.code.emit(OpCode::Die);
                     return;
                 }
+                // Compile-time check: assignment to native-typed read-only
+                // params (e.g. `sub foo(int $x) { $x = 42 }`) is an error.
+                if let Some(err_val) =
+                    Self::check_native_readonly_param_assignment(param_defs, body)
+                {
+                    let idx = self.code.add_constant(err_val);
+                    self.code.emit(OpCode::LoadConst(idx));
+                    self.code.emit(OpCode::Die);
+                    return;
+                }
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RegisterSub(idx));
                 if name_expr.is_some() {

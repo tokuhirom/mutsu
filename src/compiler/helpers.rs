@@ -475,6 +475,111 @@ impl Compiler {
         None
     }
 
+    /// Check for assignment to native-typed read-only parameters inside a
+    /// sub/method/block body. Returns an X::Assignment::RO::Comp error value
+    /// if such an assignment is found.
+    pub(crate) fn check_native_readonly_param_assignment(
+        param_defs: &[crate::ast::ParamDef],
+        body: &[Stmt],
+    ) -> Option<Value> {
+        // Build set of native-typed param names that are NOT `is rw` or `is copy`
+        let readonly_native_params: std::collections::HashSet<&str> = param_defs
+            .iter()
+            .filter(|pd| {
+                let is_native = pd.type_constraint.as_deref().is_some_and(|c| {
+                    matches!(
+                        c,
+                        "int"
+                            | "int8"
+                            | "int16"
+                            | "int32"
+                            | "int64"
+                            | "uint"
+                            | "uint8"
+                            | "uint16"
+                            | "uint32"
+                            | "uint64"
+                            | "num"
+                            | "num32"
+                            | "num64"
+                            | "str"
+                    )
+                });
+                let has_rw_or_copy = pd
+                    .traits
+                    .iter()
+                    .any(|t| t == "rw" || t == "copy" || t == "raw");
+                is_native && !has_rw_or_copy
+            })
+            .map(|pd| pd.name.as_str())
+            .collect();
+        if readonly_native_params.is_empty() {
+            return None;
+        }
+        fn scan_stmts(
+            stmts: &[Stmt],
+            readonly: &std::collections::HashSet<&str>,
+        ) -> Option<String> {
+            for stmt in stmts {
+                if let Some(name) = scan_stmt(stmt, readonly) {
+                    return Some(name);
+                }
+            }
+            None
+        }
+        fn scan_stmt(stmt: &Stmt, readonly: &std::collections::HashSet<&str>) -> Option<String> {
+            match stmt {
+                Stmt::Assign { name, .. } => {
+                    if readonly.contains(name.as_str()) {
+                        return Some(format!("${}", name));
+                    }
+                }
+                Stmt::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
+                    if let Some(n) = scan_stmts(then_branch, readonly) {
+                        return Some(n);
+                    }
+                    if let Some(n) = scan_stmts(else_branch, readonly) {
+                        return Some(n);
+                    }
+                }
+                Stmt::For { body, .. }
+                | Stmt::While { body, .. }
+                | Stmt::Loop { body, .. }
+                | Stmt::Block(body)
+                | Stmt::SyntheticBlock(body)
+                | Stmt::Default(body)
+                | Stmt::Catch(body)
+                | Stmt::Control(body) => {
+                    if let Some(n) = scan_stmts(body, readonly) {
+                        return Some(n);
+                    }
+                }
+                Stmt::Given { body, .. } | Stmt::When { body, .. } => {
+                    if let Some(n) = scan_stmts(body, readonly) {
+                        return Some(n);
+                    }
+                }
+                _ => {}
+            }
+            None
+        }
+        if let Some(var_name) = scan_stmts(body, &readonly_native_params) {
+            let msg = format!("Cannot assign to readonly variable {}", var_name);
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("variable".to_string(), Value::str(var_name));
+            attrs.insert("message".to_string(), Value::str(msg.clone()));
+            return Some(Value::make_instance(
+                crate::symbol::Symbol::intern("X::Assignment::RO::Comp"),
+                attrs,
+            ));
+        }
+        None
+    }
+
     /// Recursively allocate local variable slots for sub_signature parameters
     /// (array/hash unpacking in function signatures like `sub f([$a, *@b]) { ... }`).
     fn alloc_sub_signature_locals(compiler: &mut Compiler, sub_params: &[crate::ast::ParamDef]) {

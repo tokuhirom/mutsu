@@ -2570,20 +2570,21 @@ impl VM {
         }
 
         // Bind method parameters
-        match self
-            .interpreter
-            .bind_function_args_values(&bind_param_defs, &bind_params, &args)
-        {
-            Ok(_) => {}
-            Err(e) => {
-                self.interpreter.restore_var_bindings(saved_var_bindings);
-                self.interpreter.pop_method_class();
-                self.stack.truncate(saved_stack_depth);
-                let frame = self.pop_call_frame();
-                *self.interpreter.env_mut() = frame.saved_env;
-                return Err(e);
-            }
-        }
+        let rw_bindings =
+            match self
+                .interpreter
+                .bind_function_args_values(&bind_param_defs, &bind_params, &args)
+            {
+                Ok(bindings) => bindings,
+                Err(e) => {
+                    self.interpreter.restore_var_bindings(saved_var_bindings);
+                    self.interpreter.pop_method_class();
+                    self.stack.truncate(saved_stack_depth);
+                    let frame = self.pop_call_frame();
+                    *self.interpreter.env_mut() = frame.saved_env;
+                    return Err(e);
+                }
+            };
 
         // Initialize locals from env
         self.locals = vec![Value::Nil; cc.locals.len()];
@@ -2736,11 +2737,37 @@ impl VM {
                 method_local_keys.insert(local_name.clone());
             }
         }
-        let merged_env = merge_method_env(
+        // Collect `is rw` param writeback values before the env merge
+        // filters out method-local keys (params). The param value may exist
+        // under its bare name or a package-qualified name (e.g. "C::x")
+        // because the compiled method body qualifies variables with the class
+        // package.
+        let rw_writeback: Vec<(String, Value)> = rw_bindings
+            .iter()
+            .filter_map(|(param_name, source_name)| {
+                self.interpreter
+                    .env()
+                    .get(param_name)
+                    .cloned()
+                    .or_else(|| {
+                        let qualified = format!("{}::{}", owner_class, param_name);
+                        self.interpreter.env().get(&qualified).cloned()
+                    })
+                    .map(|val| (source_name.clone(), val))
+            })
+            .collect();
+
+        let mut merged_env = merge_method_env(
             &self.call_frames.last().unwrap().saved_env,
             self.interpreter.env(),
             &method_local_keys,
         );
+
+        // Apply `is rw` writebacks to the merged env so changes propagate
+        // back to the caller's variables.
+        for (source_name, val) in &rw_writeback {
+            merged_env.insert(source_name.clone(), val.clone());
+        }
 
         // Merge var_bindings: keep any new bindings set during method execution
         // (e.g. from $CALLER:: rebinding), then restore original bindings for
