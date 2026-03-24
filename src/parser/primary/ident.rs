@@ -548,6 +548,24 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    // times — returns ($user, $system) CPU times
+    // Only treated as a 0-arg call when followed by parens or used standalone
+    // (not when followed by => which creates a pair)
+    if input.starts_with("times")
+        && !input[5..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
+    {
+        let after = input[5..].trim_start();
+        // Don't treat as a call if followed by => (fat arrow creates a Pair)
+        if !after.starts_with("=>") {
+            return Ok((
+                &input[5..],
+                Expr::Call {
+                    name: Symbol::intern("times"),
+                    args: vec![],
+                },
+            ));
+        }
+    }
     // INIT/CHECK/END as expression prefix phasers
     for (kw, kw_len, phaser_kind) in [
         ("INIT", 4, crate::ast::PhaserKind::Init),
@@ -748,6 +766,9 @@ pub(super) fn is_listop(name: &str) -> bool {
             | "uniname"
             | "unival"
             | "univals"
+            | "localtime"
+            | "gmtime"
+            | "times"
     ) || is_expr_listop(name)
 }
 
@@ -782,6 +803,9 @@ pub(super) fn is_expr_listop(name: &str) -> bool {
             | "set"
             | "bag"
             | "mix"
+            | "localtime"
+            | "gmtime"
+            | "times"
     ) || crate::parser::stmt::simple::is_imported_function(name)
 }
 
