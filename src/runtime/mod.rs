@@ -529,6 +529,9 @@ enum RegexAtom {
     Named(String),
     Any,
     CharClass(CharClass),
+    /// `<.ws>` — Raku's word-boundary-aware whitespace rule:
+    /// requires `\s+` between word characters, `\s*` otherwise.
+    WsRule,
     Newline,
     NotNewline,
     Group(RegexPattern),
@@ -600,6 +603,8 @@ enum RegexQuant {
     ZeroOrMore,
     OneOrMore,
     ZeroOrOne,
+    /// `** min..max` — repeat exactly min to max times (max=None means unbounded)
+    Repeat(usize, Option<usize>),
 }
 
 #[derive(Clone)]

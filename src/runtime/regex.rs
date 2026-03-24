@@ -2067,6 +2067,37 @@ impl Interpreter {
                         stack.push((idx + 1, p));
                     }
                 }
+                RegexQuant::Repeat(min, max) => {
+                    // Match atom between min and max times
+                    let mut positions = Vec::new();
+                    let mut current = pos;
+                    let mut count = 0usize;
+                    while max.is_none_or(|m| count < m) {
+                        match self.regex_match_atom_in_pkg(
+                            &token.atom,
+                            chars,
+                            current,
+                            pkg,
+                            pattern.ignore_case,
+                        ) {
+                            Some(next) if next != current => {
+                                count += 1;
+                                current = next;
+                                if count >= min {
+                                    positions.push(current);
+                                }
+                            }
+                            _ => break,
+                        }
+                    }
+                    if count < min {
+                        continue; // didn't match minimum times
+                    }
+                    // Push all valid positions (from min to actual count)
+                    for p in positions {
+                        stack.push((idx + 1, p));
+                    }
+                }
             }
         }
         None
@@ -2389,6 +2420,60 @@ impl Interpreter {
                             for (p, c) in positions {
                                 stack.push((idx + 1, p, c));
                             }
+                        }
+                    }
+                }
+                RegexQuant::Repeat(min, max) => {
+                    let base_len = caps.positional.len();
+                    let stride = count_capture_groups(&token.atom);
+                    let mut positions = Vec::new();
+                    if min == 0 {
+                        positions.push((pos, caps.clone()));
+                    }
+                    let mut current = pos;
+                    let mut current_caps = caps.clone();
+                    let mut count = 0usize;
+                    while max.is_none_or(|m| count < m) {
+                        match self.regex_match_atom_with_capture_in_pkg(
+                            &token.atom,
+                            chars,
+                            current,
+                            &current_caps,
+                            pkg,
+                            pattern.ignore_case,
+                        ) {
+                            Some((next, new_caps)) if next != current => {
+                                count += 1;
+                                let new_caps = apply_named_capture(token, current, next, new_caps);
+                                current_caps = new_caps.clone();
+                                current = next;
+                                if count >= min {
+                                    positions.push((current, current_caps.clone()));
+                                }
+                            }
+                            _ => break,
+                        }
+                    }
+                    if count < min {
+                        continue;
+                    }
+                    if token.ratchet
+                        && let Some(last) = positions.last().cloned()
+                    {
+                        positions = vec![last];
+                    }
+                    if token.frugal {
+                        positions.reverse();
+                    }
+                    if stride > 0 {
+                        for (p, c) in positions {
+                            let mut c = c;
+                            fold_quantified_captures(&mut c, base_len, stride);
+                            stack.push((idx + 1, p, c));
+                        }
+                    } else {
+                        for (p, c) in positions {
+                            stack.push((idx + 1, p, c));
                         }
                     }
                 }
@@ -2748,6 +2833,37 @@ impl Interpreter {
                         stack.push((idx + 1, p));
                     }
                 }
+                RegexQuant::Repeat(min, max) => {
+                    let mut current = pos;
+                    let mut count = 0usize;
+                    let mut positions = Vec::new();
+                    if min == 0 {
+                        positions.push(pos);
+                    }
+                    while max.is_none_or(|m| count < m) {
+                        match self.regex_match_atom_in_pkg(
+                            &token.atom,
+                            chars,
+                            current,
+                            pkg,
+                            pattern.ignore_case,
+                        ) {
+                            Some(next) if next != current => {
+                                count += 1;
+                                current = next;
+                                if count >= min {
+                                    positions.push(current);
+                                }
+                            }
+                            _ => break,
+                        }
+                    }
+                    if count >= min {
+                        for p in positions {
+                            stack.push((idx + 1, p));
+                        }
+                    }
+                }
             }
         }
         false
@@ -2846,6 +2962,21 @@ impl Interpreter {
                     return Some(pos);
                 }
                 return None;
+            }
+            RegexAtom::WsRule => {
+                // Raku's <.ws> rule: match \s+ between word characters, \s* otherwise.
+                let before_is_word = pos > 0 && is_word_char(chars[pos - 1]);
+                let mut end = pos;
+                while end < chars.len() && chars[end].is_whitespace() {
+                    end += 1;
+                }
+                let after_is_word = end < chars.len() && is_word_char(chars[end]);
+                if before_is_word && after_is_word {
+                    // Between word characters: require at least one space
+                    return if end > pos { Some(end) } else { None };
+                }
+                // Otherwise: match zero or more spaces
+                return Some(end);
             }
             RegexAtom::CodeAssertion { .. } => {
                 // In non-capture mode, code assertions always succeed
@@ -3092,7 +3223,8 @@ impl Interpreter {
             | RegexAtom::RightWordBoundary
             | RegexAtom::StartOfLine
             | RegexAtom::TildeMarker
-            | RegexAtom::EndOfLine => unreachable!(),
+            | RegexAtom::EndOfLine
+            | RegexAtom::WsRule => unreachable!(),
         };
         if matched {
             match atom {
@@ -3195,7 +3327,8 @@ impl Interpreter {
             | RegexAtom::LeftWordBoundary
             | RegexAtom::RightWordBoundary
             | RegexAtom::StartOfLine
-            | RegexAtom::EndOfLine => {
+            | RegexAtom::EndOfLine
+            | RegexAtom::WsRule => {
                 return self
                     .regex_match_atom_in_pkg(atom, chars, pos, pkg, ignore_case)
                     .map(|next| (next, current_caps.clone()));
