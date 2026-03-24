@@ -262,6 +262,9 @@ pub(crate) enum OpCode {
         name_idx: u32,
         regular_arity: u32,
         arg_sources_idx: Option<u32>,
+        /// Position of the slip argument among all compiled args (0-based).
+        /// When None, slip is compiled last (legacy behavior).
+        slip_pos: Option<u32>,
     },
     /// Method call: pop `arity` args + target, call method, push result.
     CallMethod {
@@ -311,6 +314,8 @@ pub(crate) enum OpCode {
         name_idx: u32,
         regular_arity: u32,
         arg_sources_idx: Option<u32>,
+        /// Position of the slip argument among all compiled args (0-based).
+        slip_pos: Option<u32>,
     },
     BlockScope {
         pre_end: u32,

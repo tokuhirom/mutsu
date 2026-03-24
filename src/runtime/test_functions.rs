@@ -909,7 +909,14 @@ impl Interpreter {
             Value::Sub(data) => {
                 self.push_caller_env();
                 let saved_topic = self.env.get("$_").cloned();
-                let result = self.eval_block_value(&data.body).is_err();
+                let result = self.eval_block_value(&data.body);
+                let died = match &result {
+                    Err(_) => true,
+                    Ok(val) => {
+                        // A Failure value in sink context should throw
+                        Self::is_failure_value(val)
+                    }
+                };
                 match saved_topic {
                     Some(v) => {
                         self.env.insert("$_".to_string(), v);
@@ -919,7 +926,7 @@ impl Interpreter {
                     }
                 }
                 self.pop_caller_env();
-                result
+                died
             }
             _ => false,
         };
@@ -1438,6 +1445,7 @@ impl Interpreter {
         // Save $_ so the block evaluation doesn't leak Failure values
         // into the caller's topic variable
         let saved_topic = self.env.get("_").cloned();
+        let saved_dollar_topic = self.env.get("$_").cloned();
         let result = match &code_val {
             Value::Sub(data) => self.eval_block_value(&data.body),
             Value::Str(code) => {
@@ -1484,6 +1492,11 @@ impl Interpreter {
             self.env.insert("_".to_string(), topic);
         } else {
             self.env.remove("_");
+        }
+        if let Some(topic) = saved_dollar_topic {
+            self.env.insert("$_".to_string(), topic);
+        } else {
+            self.env.remove("$_");
         }
 
         let is_failure_like = |value: &Value| {
@@ -2363,6 +2376,10 @@ impl Interpreter {
         let run_result = self.call_sub_value(block, vec![], true);
         let mut merged_env = saved_env.clone();
         for (k, v) in &self.env {
+            if k == "_" || k == "$_" {
+                // Do not propagate topic changes from subtest to caller
+                continue;
+            }
             if saved_env.contains_key(k) || k.starts_with("__mutsu_var_meta::") {
                 merged_env.insert(k.clone(), v.clone());
             }

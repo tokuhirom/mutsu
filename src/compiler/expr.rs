@@ -422,6 +422,7 @@ impl Compiler {
                         name_idx,
                         regular_arity: 0,
                         arg_sources_idx: None,
+                        slip_pos: None,
                     });
                     return;
                 }
@@ -1120,29 +1121,23 @@ impl Compiler {
                         )
                     });
                     if has_slip {
-                        // Compile regular args first, then the slip arg
+                        // Compile all args in source order, tracking the slip position
                         let mut regular_count = 0u32;
-                        for arg in args {
-                            if let Expr::Unary {
-                                op: TokenKind::Pipe,
-                                ..
-                            } = arg
-                            {
-                                // skip slip args in first pass
-                            } else {
-                                self.compile_call_arg(arg);
-                                regular_count += 1;
-                            }
-                        }
-                        // Compile the slip arg (only the inner expr)
+                        let mut slip_pos: Option<u32> = None;
+                        let mut stack_idx = 0u32;
                         for arg in args {
                             if let Expr::Unary {
                                 op: TokenKind::Pipe,
                                 expr,
                             } = arg
                             {
+                                slip_pos = Some(stack_idx);
                                 self.compile_expr(expr);
-                                break; // only one slip supported
+                                stack_idx += 1;
+                            } else {
+                                self.compile_call_arg(arg);
+                                regular_count += 1;
+                                stack_idx += 1;
                             }
                         }
                         let name_idx = self.code.add_constant(Value::str(name.resolve()));
@@ -1150,6 +1145,7 @@ impl Compiler {
                             name_idx,
                             regular_arity: regular_count,
                             arg_sources_idx: None,
+                            slip_pos,
                         });
                     } else {
                         let arity = args.len() as u32;

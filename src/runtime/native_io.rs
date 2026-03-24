@@ -788,14 +788,60 @@ impl Interpreter {
                 Ok(Value::array(entries))
             }
             "spurt" => {
-                let content = args
+                let content_value = args
                     .first()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                fs::write(&path_buf, &content).map_err(|err| {
-                    RuntimeError::new(format!("Failed to spurt '{}': {}", p, err))
-                })?;
-                Ok(Value::Bool(true))
+                    .cloned()
+                    .unwrap_or(Value::Str(String::new().into()));
+                let mut append = false;
+                let mut createonly = false;
+                for arg in args.iter().skip(1) {
+                    if let Value::Pair(key, val) = arg {
+                        match key.as_str() {
+                            "append" => append = val.truthy(),
+                            "createonly" => createonly = val.truthy(),
+                            _ => {}
+                        }
+                    }
+                }
+                if createonly && path_buf.exists() {
+                    return Ok(io_exception_failure(
+                        "X::IO::Spurt",
+                        format!("Failed to spurt '{}': file already exists", p),
+                    ));
+                }
+                let is_buf = crate::vm::VM::is_buf_value(&content_value);
+                let write_result = if is_buf {
+                    let bytes = crate::vm::VM::extract_buf_bytes(&content_value);
+                    if append {
+                        use std::io::Write;
+                        fs::OpenOptions::new()
+                            .append(true)
+                            .create(true)
+                            .open(&path_buf)
+                            .and_then(|mut file| file.write_all(&bytes))
+                    } else {
+                        fs::write(&path_buf, &bytes)
+                    }
+                } else {
+                    let content = content_value.to_string_value();
+                    if append {
+                        use std::io::Write;
+                        fs::OpenOptions::new()
+                            .append(true)
+                            .create(true)
+                            .open(&path_buf)
+                            .and_then(|mut file| file.write_all(content.as_bytes()))
+                    } else {
+                        fs::write(&path_buf, &content)
+                    }
+                };
+                match write_result {
+                    Ok(()) => Ok(Value::Bool(true)),
+                    Err(err) => Ok(io_exception_failure(
+                        "X::IO::Spurt",
+                        format!("Failed to spurt '{}': {}", p, err),
+                    )),
+                }
             }
             "unlink" => match fs::remove_file(&path_buf) {
                 Ok(()) => Ok(Value::Bool(true)),

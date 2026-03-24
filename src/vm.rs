@@ -1624,12 +1624,14 @@ impl VM {
                 name_idx,
                 regular_arity,
                 arg_sources_idx,
+                slip_pos,
             } => {
                 self.exec_call_func_slip_op(
                     code,
                     *name_idx,
                     *regular_arity,
                     *arg_sources_idx,
+                    *slip_pos,
                     compiled_fns,
                 )?;
                 *ip += 1;
@@ -1708,6 +1710,7 @@ impl VM {
                 name_idx,
                 regular_arity,
                 arg_sources_idx,
+                slip_pos,
             } => {
                 self.exec_exec_call_slip_op(
                     code,
@@ -1715,6 +1718,7 @@ impl VM {
                     *name_idx,
                     *regular_arity,
                     *arg_sources_idx,
+                    *slip_pos,
                 )?;
                 *ip += 1;
             }

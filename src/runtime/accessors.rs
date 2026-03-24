@@ -294,7 +294,7 @@ impl Interpreter {
     }
 
     /// Check if a value is a Failure instance
-    fn is_failure_value(value: &Value) -> bool {
+    pub(crate) fn is_failure_value(value: &Value) -> bool {
         matches!(value, Value::Instance { class_name, .. } if class_name == "Failure")
     }
 
