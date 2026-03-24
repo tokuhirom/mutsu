@@ -550,6 +550,7 @@ impl Interpreter {
                             .is_some_and(|item| matches!(item, ClassItem::Space))
                 }
                 RegexAtom::Named(name) => named_lookup_is_ws(name),
+                RegexAtom::WsRule => true,
                 _ => false,
             }
         }
@@ -775,15 +776,14 @@ impl Interpreter {
                             lookahead.peek().is_some_and(|ch| *ch == '$')
                                 && lookahead.clone().skip(1).all(|ch| ch.is_whitespace())
                         };
+                        // Use WsRule atom which implements <.ws> semantics:
+                        // requires \s+ between word characters, \s* otherwise.
                         tokens.push(RegexToken {
-                            atom: RegexAtom::CharClass(CharClass {
-                                negated: false,
-                                items: vec![ClassItem::Space],
-                            }),
+                            atom: RegexAtom::WsRule,
                             quant: if next_is_anchor_end {
                                 RegexQuant::ZeroOrMore
                             } else {
-                                RegexQuant::OneOrMore
+                                RegexQuant::One
                             },
                             named_capture: None,
                             ratchet,
@@ -1614,7 +1614,11 @@ impl Interpreter {
                                 if ignore_mark {
                                     scoped.push_str(":m ");
                                 }
-                                scoped.push_str(alt.trim_end());
+                                if sigspace {
+                                    scoped.push_str(&alt);
+                                } else {
+                                    scoped.push_str(alt.trim_end());
+                                }
                                 self.parse_regex(&scoped)
                             } else {
                                 self.parse_regex(&alt)
@@ -1654,7 +1658,11 @@ impl Interpreter {
                             if ignore_mark {
                                 scoped.push_str(":m ");
                             }
-                            scoped.push_str(group_pattern.trim_end());
+                            if sigspace {
+                                scoped.push_str(&group_pattern);
+                            } else {
+                                scoped.push_str(group_pattern.trim_end());
+                            }
                             self.parse_regex(&scoped)
                         } else {
                             self.parse_regex(&group_pattern)
@@ -1705,7 +1713,13 @@ impl Interpreter {
                                 if ignore_mark {
                                     scoped.push_str(":m ");
                                 }
-                                scoped.push_str(alt.trim_end());
+                                // In sigspace mode, preserve trailing whitespace so it
+                                // becomes \s* — needed for quantified groups.
+                                if sigspace {
+                                    scoped.push_str(&alt);
+                                } else {
+                                    scoped.push_str(alt.trim_end());
+                                }
                                 self.parse_regex(&scoped)
                             } else {
                                 self.parse_regex(&alt)
@@ -1731,7 +1745,11 @@ impl Interpreter {
                             if ignore_mark {
                                 scoped.push_str(":m ");
                             }
-                            scoped.push_str(group_pattern.trim_end());
+                            if sigspace {
+                                scoped.push_str(&group_pattern);
+                            } else {
+                                scoped.push_str(group_pattern.trim_end());
+                            }
                             self.parse_regex(&scoped)
                         } else {
                             self.parse_regex(&group_pattern)
@@ -1771,11 +1789,63 @@ impl Interpreter {
                 other => RegexAtom::Literal(other),
             };
             let mut quant = RegexQuant::One;
+            // In Raku regex, whitespace between an atom and its quantifier is
+            // insignificant. Peek past whitespace to find quantifier characters.
+            {
+                let mut lookahead = chars.clone();
+                while lookahead.peek().is_some_and(|ch| ch.is_whitespace()) {
+                    lookahead.next();
+                }
+                if lookahead
+                    .peek()
+                    .is_some_and(|ch| *ch == '*' || *ch == '+' || *ch == '?')
+                {
+                    // Consume the whitespace before the quantifier
+                    while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+                        chars.next();
+                    }
+                }
+            }
             if let Some(q) = chars.peek().copied() {
                 quant = match q {
                     '*' => {
                         chars.next();
-                        RegexQuant::ZeroOrMore
+                        // Skip whitespace between `*` and potential second `*`
+                        while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+                            chars.next();
+                        }
+                        if chars.peek() == Some(&'*') {
+                            // `**` quantifier: parse count or range
+                            chars.next();
+                            // Skip whitespace after **
+                            while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+                                chars.next();
+                            }
+                            // Parse the count/range: N, N..M, N..*
+                            let mut count_str = String::new();
+                            while chars
+                                .peek()
+                                .is_some_and(|ch| ch.is_ascii_digit() || *ch == '.' || *ch == '*')
+                            {
+                                count_str.push(chars.next().unwrap());
+                            }
+                            let (min, max) =
+                                if let Some((min_str, max_str)) = count_str.split_once("..") {
+                                    let min = min_str.parse::<usize>().unwrap_or(0);
+                                    let max = if max_str == "*" {
+                                        None
+                                    } else {
+                                        max_str.parse::<usize>().ok()
+                                    };
+                                    (min, max)
+                                } else {
+                                    let exact = count_str.parse::<usize>().unwrap_or(1);
+                                    (exact, Some(exact))
+                                };
+                            RegexQuant::Repeat(min, max)
+                        } else {
+                            RegexQuant::ZeroOrMore
+                        }
                     }
                     '+' => {
                         chars.next();

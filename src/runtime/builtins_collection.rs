@@ -1012,7 +1012,7 @@ impl Interpreter {
         })
     }
 
-    pub(super) fn builtin_join(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_join(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let sep = args
             .first()
             .map(|v| v.to_string_value())
@@ -1024,6 +1024,18 @@ impl Interpreter {
                 // Itemized array: treat as single item, stringify
                 return Ok(Value::str(args[1].to_string_value()));
             }
+            let joined = items
+                .iter()
+                .map(|v| v.to_str_context())
+                .collect::<Vec<_>>()
+                .join(&sep);
+            return Ok(Value::str(joined));
+        }
+        // Force LazyList before joining
+        if args.len() == 2
+            && let Some(Value::LazyList(list)) = args.get(1)
+        {
+            let items = self.force_lazy_list(list)?;
             let joined = items
                 .iter()
                 .map(|v| v.to_str_context())
@@ -1059,6 +1071,12 @@ impl Interpreter {
                     }
                     Value::Seq(items) | Value::Slip(items) => {
                         for item in items.as_ref() {
+                            parts.push(item.to_str_context());
+                        }
+                    }
+                    Value::LazyList(list) => {
+                        let items = self.force_lazy_list(list)?;
+                        for item in items.iter() {
                             parts.push(item.to_str_context());
                         }
                     }

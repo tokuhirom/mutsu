@@ -367,32 +367,38 @@ fn match_caps(attributes: &HashMap<String, Value>) -> Value {
     let mut named_positions: Vec<(i64, i64)> = Vec::new();
     if let Some(Value::Hash(named, ..)) = attributes.get("named") {
         for (_key, val) in named.iter() {
-            named_positions.push((match_value_from(val), match_value_to(val)));
-        }
-    }
-
-    // Collect positional captures, skipping those shadowed by named captures
-    if let Some(Value::Array(items, ..)) = attributes.get("list") {
-        for (i, val) in items.iter().enumerate() {
-            let from = match_value_from(val);
-            let to = match_value_to(val);
-            let shadowed = named_positions
-                .iter()
-                .any(|(nf, nt)| *nf == from && *nt == to);
-            if !shadowed {
-                pairs.push((
-                    from,
-                    Value::ValuePair(Box::new(Value::Int(i as i64)), Box::new(val.clone())),
-                ));
+            for item in expand_capture_items(val) {
+                named_positions.push((match_value_from(item), match_value_to(item)));
             }
         }
     }
 
-    // Collect named captures
+    // Collect positional captures, expanding quantified arrays
+    if let Some(Value::Array(items, ..)) = attributes.get("list") {
+        for (i, val) in items.iter().enumerate() {
+            for item in expand_capture_items(val) {
+                let from = match_value_from(item);
+                let to = match_value_to(item);
+                let shadowed = named_positions
+                    .iter()
+                    .any(|(nf, nt)| *nf == from && *nt == to);
+                if !shadowed {
+                    pairs.push((
+                        from,
+                        Value::ValuePair(Box::new(Value::Int(i as i64)), Box::new(item.clone())),
+                    ));
+                }
+            }
+        }
+    }
+
+    // Collect named captures, expanding quantified arrays
     if let Some(Value::Hash(named, ..)) = attributes.get("named") {
         for (key, val) in named.iter() {
-            let from = match_value_from(val);
-            pairs.push((from, Value::Pair(key.clone(), Box::new(val.clone()))));
+            for item in expand_capture_items(val) {
+                let from = match_value_from(item);
+                pairs.push((from, Value::Pair(key.clone(), Box::new(item.clone()))));
+            }
         }
     }
 
@@ -402,13 +408,26 @@ fn match_caps(attributes: &HashMap<String, Value>) -> Value {
     Value::array(pairs.into_iter().map(|(_, pair)| pair).collect())
 }
 
+/// Expand a capture value: if it's an Array of Matches (from quantified captures),
+/// return each element; otherwise return the single value.
+fn expand_capture_items(val: &Value) -> Vec<&Value> {
+    match val {
+        Value::Array(items, _) if items.iter().all(|v| matches!(v, Value::Instance { .. })) => {
+            items.iter().collect()
+        }
+        _ => vec![val],
+    }
+}
+
 /// Like `.caps` but also includes non-captured text between captures as `~ => text` pairs.
 fn match_chunks(attributes: &HashMap<String, Value>) -> Value {
     // Collect named capture positions to filter out shadowed positional captures
     let mut named_positions: Vec<(i64, i64)> = Vec::new();
     if let Some(Value::Hash(named, ..)) = attributes.get("named") {
         for (_key, val) in named.iter() {
-            named_positions.push((match_value_from(val), match_value_to(val)));
+            for item in expand_capture_items(val) {
+                named_positions.push((match_value_from(item), match_value_to(item)));
+            }
         }
     }
 
@@ -417,26 +436,30 @@ fn match_chunks(attributes: &HashMap<String, Value>) -> Value {
 
     if let Some(Value::Array(items, ..)) = attributes.get("list") {
         for (i, val) in items.iter().enumerate() {
-            let from = match_value_from(val);
-            let to = match_value_to(val);
-            let shadowed = named_positions
-                .iter()
-                .any(|(nf, nt)| *nf == from && *nt == to);
-            if !shadowed {
-                captures.push((
-                    from,
-                    to,
-                    Value::ValuePair(Box::new(Value::Int(i as i64)), Box::new(val.clone())),
-                ));
+            for item in expand_capture_items(val) {
+                let from = match_value_from(item);
+                let to = match_value_to(item);
+                let shadowed = named_positions
+                    .iter()
+                    .any(|(nf, nt)| *nf == from && *nt == to);
+                if !shadowed {
+                    captures.push((
+                        from,
+                        to,
+                        Value::ValuePair(Box::new(Value::Int(i as i64)), Box::new(item.clone())),
+                    ));
+                }
             }
         }
     }
 
     if let Some(Value::Hash(named, ..)) = attributes.get("named") {
         for (key, val) in named.iter() {
-            let from = match_value_from(val);
-            let to = match_value_to(val);
-            captures.push((from, to, Value::Pair(key.clone(), Box::new(val.clone()))));
+            for item in expand_capture_items(val) {
+                let from = match_value_from(item);
+                let to = match_value_to(item);
+                captures.push((from, to, Value::Pair(key.clone(), Box::new(item.clone()))));
+            }
         }
     }
 

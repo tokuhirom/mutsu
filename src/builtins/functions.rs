@@ -924,6 +924,18 @@ fn native_function_2arg(
                         .join(&sep);
                     Some(Ok(Value::str(joined)))
                 }
+                Value::Seq(items) | Value::Slip(items) => {
+                    let joined = items
+                        .iter()
+                        .map(|v| v.to_str_context())
+                        .collect::<Vec<_>>()
+                        .join(&sep);
+                    Some(Ok(Value::str(joined)))
+                }
+                Value::LazyList(_) => {
+                    // Fall through to runtime to force the lazy list
+                    None
+                }
                 _ => {
                     // Treat as single-element list (includes itemized arrays)
                     Some(Ok(Value::str(arg2.to_str_context())))
