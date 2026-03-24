@@ -633,6 +633,8 @@ pub(crate) enum Stmt {
         /// and as the restore value when Nil is assigned to the attribute.
         /// Distinct from `default` which may be an explicit `= expr` initializer.
         is_default: Option<Expr>,
+        /// `is Type` trait — container type for `@`/`%` attributes (e.g. `is Buf`, `is BagHash`)
+        is_type: Option<String>,
     },
     MethodDecl {
         name: Symbol,

@@ -573,6 +573,9 @@ impl Interpreter {
         let prev_hidden_defer = self.hidden_defer_parents.get(name).cloned();
         let prev_composed_roles = self.class_composed_roles.get(name).cloned();
         let prev_role_param_bindings = self.class_role_param_bindings.get(name).cloned();
+        // Clear `is Type` trait entries for this class (they'll be re-populated from the body).
+        self.class_attribute_is_types
+            .retain(|(cn, _), _| cn != name);
 
         let restore_previous_state = |this: &mut Self| {
             if let Some(class_def) = prev_class.clone() {
@@ -1238,6 +1241,7 @@ impl Interpreter {
                     is_our,
                     is_my,
                     is_default,
+                    is_type,
                 } => {
                     let attr_name_str = attr_name.resolve();
 
@@ -1311,6 +1315,10 @@ impl Interpreter {
                         class_def
                             .attribute_smileys
                             .insert(attr_name_str.clone(), ts.clone());
+                    }
+                    if let Some(it) = is_type {
+                        self.class_attribute_is_types
+                            .insert((name.to_string(), attr_name_str.clone()), it.clone());
                     }
                     let attr_var_name = if *is_public {
                         format!(".{}", attr_name_str)
@@ -1765,6 +1773,7 @@ impl Interpreter {
                     is_our: _,
                     is_my: _,
                     is_default: _,
+                    is_type: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     let attr_var_name = if *is_public {
@@ -1943,6 +1952,7 @@ impl Interpreter {
                     is_our: _,
                     is_my: _,
                     is_default: _,
+                    is_type: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     // Check if this attribute already exists from a composed role

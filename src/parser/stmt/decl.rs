@@ -1399,6 +1399,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             is_our,
             is_my: !is_our && !is_state,
             is_default: None,
+            is_type: None,
         };
         if apply_modifier {
             return parse_statement_modifier(after_name, stmt);
@@ -1467,6 +1468,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     let mut has_export_trait = false;
     let mut export_tags: Vec<String> = Vec::new();
     let mut custom_traits: Vec<(String, Option<Expr>)> = Vec::new();
+    let mut first_type_trait: Option<String> = None; // track first `is Type` for conflict detection
     let mut rest = {
         let mut r = rest;
         while let Some(after_is) = keyword("is", r) {
@@ -1537,6 +1539,34 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 .chars()
                 .next()
                 .is_some_and(|c| c.is_ascii_uppercase());
+            // Detect conflicting `is Type` traits: `my @a is Int is Str`
+            if is_uppercase_start {
+                if let Some(ref outer) = first_type_trait {
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert(
+                        "outer".to_string(),
+                        crate::value::Value::Package(crate::symbol::Symbol::intern(outer)),
+                    );
+                    attrs.insert(
+                        "inner".to_string(),
+                        crate::value::Value::Package(crate::symbol::Symbol::intern(&trait_name)),
+                    );
+                    let msg = format!(
+                        "{} not allowed here; variable list already declared with type {}",
+                        trait_name, outer
+                    );
+                    attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
+                    let ex = crate::value::Value::make_instance(
+                        crate::symbol::Symbol::intern("X::Syntax::Variable::ConflictingTypes"),
+                        attrs,
+                    );
+                    return Err(PError::fatal_with_exception(
+                        format!("X::Syntax::Variable::ConflictingTypes: {}", msg),
+                        Box::new(ex),
+                    ));
+                }
+                first_type_trait = Some(trait_name.clone());
+            }
             let include_in_traits = !is_builtin
                 || trait_name == "default"
                 || is_buf_trait
@@ -2501,6 +2531,7 @@ fn has_decl_list(input: &str) -> PResult<'_, Stmt> {
             is_our: false,
             is_my: false,
             is_default: None,
+            is_type: None,
         });
         let (r, _) = ws(rest)?;
         rest = r;
@@ -2617,6 +2648,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let mut is_readonly = false;
     let mut is_required: Option<Option<String>> = None;
     let mut is_default_trait: Option<Expr> = None;
+    let mut is_type: Option<String> = None;
     while let Some(r) = keyword("is", rest) {
         let (r, _) = ws1(r)?;
         let (r, trait_name) = ident(r)?;
@@ -2679,6 +2711,14 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                 }
             }
             is_required = Some(None);
+        } else if trait_name
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_uppercase())
+        {
+            // Uppercase-starting trait name: `is Buf`, `is BagHash`, etc.
+            // This is a container type trait for `@`/`%` attributes.
+            is_type = Some(trait_name.to_string());
         }
         let (r, _) = ws(r)?;
         rest = r;
@@ -2919,6 +2959,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             is_our: false,
             is_my: false,
             is_default: is_default_trait,
+            is_type,
         },
     ))
 }
