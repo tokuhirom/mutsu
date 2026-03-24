@@ -69,6 +69,8 @@ pub(crate) struct VM {
     bind_context: bool,
     /// When true, the next SetLocal skips @/% container coercion (for `constant @x`).
     constant_context: bool,
+    // TODO: local slot aliases for `:=` binding - needs careful implementation
+    // to avoid S12-class/mro-6e.t regression
 }
 
 impl VM {

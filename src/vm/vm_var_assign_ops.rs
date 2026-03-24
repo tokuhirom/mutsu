@@ -1851,6 +1851,10 @@ impl VM {
         }
         if let Some(source_name) = bind_source {
             let resolved_source = self.resolve_sigilless_alias_source_name(&source_name);
+            // TODO: compile to bytecode - implement local slot aliasing for `:=` binding
+            // so that `my $y := $x; my $x = 3; say $y` correctly prints 3.
+            // The write propagation approach needs careful handling to avoid
+            // breaking S12-class/mro-6e.t's role concretization tests.
             self.interpreter
                 .env_mut()
                 .insert(alias_key.clone(), Value::str(resolved_source));

@@ -608,10 +608,21 @@ impl Interpreter {
             }
         };
 
-        // TODO: Detect X::Redeclaration when a class redefines a role in the same scope.
-        // Currently disabled because the role registry is global (not lexically scoped),
-        // so `my role B { ... }` in one block leaks and causes false positives when
-        // `class B` is defined in a different scope (e.g., EVAL).
+        // Detect X::Redeclaration when a class redefines a role in the same scope.
+        // Only check user-declared roles (not pre-registered builtins like Iterator).
+        if self.user_declared_roles.contains(name) {
+            // Only report redeclaration for non-stub class bodies
+            let body_non_stub: Vec<_> = body
+                .iter()
+                .filter(|s| !matches!(s, Stmt::SetLine(_)))
+                .collect();
+            let class_is_stub = body_non_stub.len() == 1
+                && matches!(body_non_stub[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
+                    if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn");
+            if !class_is_stub {
+                return Err(RuntimeError::redeclaration("symbol", name));
+            }
+        }
 
         // Detect stub body: `class Foo { ... }` — body is a stub operator call
         // Filter SetLine annotations which don't affect the stub nature.
@@ -2241,6 +2252,7 @@ impl Interpreter {
             .is_none_or(|existing| existing.is_stub_role || type_params.is_empty())
         {
             self.roles.insert(name.to_string(), role_def);
+            self.user_declared_roles.insert(name.to_string());
         }
         if !type_params.is_empty() && !self.role_type_params.contains_key(name) {
             self.role_type_params
