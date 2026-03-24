@@ -67,6 +67,7 @@ impl VM {
                 empty_sig: false,
                 is_bare_block: true,
                 compiled_code,
+                deprecated_message: None,
             }));
             self.stack.push(val);
             Ok(())
@@ -113,6 +114,7 @@ impl VM {
                 empty_sig: params.is_empty() && param_defs.is_empty(),
                 is_bare_block: false,
                 compiled_code,
+                deprecated_message: None,
             }));
             self.stack.push(val);
             Ok(())
@@ -159,6 +161,7 @@ impl VM {
                 empty_sig: params.is_empty() && param_defs.is_empty(),
                 is_bare_block: false,
                 compiled_code,
+                deprecated_message: None,
             }));
             self.stack.push(val);
             Ok(())
@@ -192,6 +195,7 @@ impl VM {
                 empty_sig: false,
                 is_bare_block: true,
                 compiled_code,
+                deprecated_message: None,
             }));
             self.stack.push(val);
             Ok(())

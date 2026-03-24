@@ -61,9 +61,13 @@ impl Interpreter {
     }
 
     pub(super) fn is_stub_routine_body(body: &[Stmt]) -> bool {
-        body.len() == 1
+        let filtered: Vec<_> = body
+            .iter()
+            .filter(|s| !matches!(s, Stmt::SetLine(_)))
+            .collect();
+        filtered.len() == 1
             && matches!(
-                &body[0],
+                filtered[0],
                 Stmt::Expr(Expr::Call { name, .. })
                     if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
             )

@@ -2495,6 +2495,11 @@ impl VM {
             OpCode::LetBlock { body_end } => {
                 self.exec_let_block_op(code, *body_end, ip, compiled_fns)?;
             }
+            OpCode::SetSourceLine(line) => {
+                self.interpreter
+                    .env_insert("?LINE".to_string(), Value::Int(*line));
+                *ip += 1;
+            }
         }
         Ok(())
     }

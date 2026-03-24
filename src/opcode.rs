@@ -772,6 +772,9 @@ pub(crate) enum OpCode {
     LetBlock {
         body_end: u32,
     },
+
+    /// Set the current source line number (for deprecation tracking, error messages, etc.).
+    SetSourceLine(i64),
 }
 
 /// A compiled chunk of bytecode.

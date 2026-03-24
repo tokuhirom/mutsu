@@ -251,6 +251,16 @@ impl Interpreter {
         {
             return Err(err);
         }
+        // Deprecation.report — return the accumulated deprecation report
+        if method == "report"
+            && matches!(&target, Value::Package(name) if name.resolve() == "Deprecation")
+        {
+            return Ok(match super::deprecation::take_report() {
+                Some(report) => Value::str(report),
+                None => Value::Nil,
+            });
+        }
+
         if Self::should_autothread_method(method)
             && let Value::Junction { kind, values } = &target
         {

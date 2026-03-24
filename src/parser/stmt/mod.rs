@@ -269,7 +269,7 @@ fn block(input: &str) -> PResult<'_, Vec<Stmt>> {
 }
 
 pub(super) fn block_inner(input: &str) -> PResult<'_, Vec<Stmt>> {
-    let (input, stmts) = stmt_list_with_mode(input, false)?;
+    let (input, stmts) = stmt_list_with_mode(input, false, false)?;
     let (input, _) = ws(input)?;
     let (input, _) = parse_char(input, '}')?;
     Ok((input, stmts))
@@ -277,7 +277,7 @@ pub(super) fn block_inner(input: &str) -> PResult<'_, Vec<Stmt>> {
 
 /// Public accessor for stmt_list (used by primary.rs for block expressions).
 pub(in crate::parser) fn stmt_list_pub(input: &str) -> PResult<'_, Vec<Stmt>> {
-    stmt_list_with_mode(input, false)
+    stmt_list_with_mode(input, false, false)
 }
 
 /// Public accessor for ident (used by primary.rs for hash literal detection).
@@ -483,10 +483,14 @@ fn skip_to_next_statement(input: &str) -> Option<&str> {
 
 /// Parse a list of statements (inside a block or at program level).
 fn stmt_list(input: &str) -> PResult<'_, Vec<Stmt>> {
-    stmt_list_with_mode(input, true)
+    stmt_list_with_mode(input, true, false)
 }
 
-fn stmt_list_with_mode(input: &str, allow_mainline_capture: bool) -> PResult<'_, Vec<Stmt>> {
+fn stmt_list_with_mode(
+    input: &str,
+    allow_mainline_capture: bool,
+    emit_setline: bool,
+) -> PResult<'_, Vec<Stmt>> {
     let mut stmts = Vec::new();
     let mut rest = input;
     let mut saw_compunit_declarator = false;
@@ -512,7 +516,7 @@ fn stmt_list_with_mode(input: &str, allow_mainline_capture: bool) -> PResult<'_,
                     Some(r.len()),
                 ));
             }
-            let (tail_rest, tail_stmts) = stmt_list_with_mode(after_decl, false)?;
+            let (tail_rest, tail_stmts) = stmt_list_with_mode(after_decl, false, emit_setline)?;
             if let Stmt::SubDecl { body, .. } = &mut main_sub {
                 *body = tail_stmts;
             }
@@ -532,6 +536,9 @@ fn stmt_list_with_mode(input: &str, allow_mainline_capture: bool) -> PResult<'_,
                 Some(r.len()),
             ));
         }
+        // Emit source line info for deprecation tracking and error reporting.
+        let line = crate::parser::primary::current_line_number(r);
+        let line_valid = crate::parser::primary::is_within_original_source(r);
         match statement(r) {
             Ok((r, stmt)) => {
                 if matches!(
@@ -539,6 +546,9 @@ fn stmt_list_with_mode(input: &str, allow_mainline_capture: bool) -> PResult<'_,
                     Stmt::Package { .. } | Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. }
                 ) {
                     saw_compunit_declarator = true;
+                }
+                if emit_setline && line_valid {
+                    stmts.push(Stmt::SetLine(line));
                 }
                 stmts.push(stmt);
                 rest = r;

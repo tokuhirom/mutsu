@@ -1657,6 +1657,9 @@ impl Compiler {
                 self.compile_expr(&assign_expr);
                 self.code.emit(OpCode::Pop);
             }
+            Stmt::SetLine(line) => {
+                self.code.emit(OpCode::SetSourceLine(*line));
+            }
         }
     }
 

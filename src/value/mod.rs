@@ -227,6 +227,8 @@ pub struct SubData {
     pub(crate) is_bare_block: bool,
     /// Pre-compiled bytecode for this closure (if compiled).
     pub(crate) compiled_code: Option<Arc<CompiledCode>>,
+    /// `is DEPRECATED` message: None = not deprecated, Some(msg) = deprecated.
+    pub(crate) deprecated_message: Option<String>,
 }
 
 fn gcd(mut a: i64, mut b: i64) -> i64 {
@@ -1251,6 +1253,7 @@ impl Value {
             empty_sig: false,
             is_bare_block: false,
             compiled_code: None,
+            deprecated_message: None,
         }))
     }
 
@@ -1281,6 +1284,7 @@ impl Value {
             empty_sig: false,
             is_bare_block: false,
             compiled_code: None,
+            deprecated_message: None,
         }))
     }
 

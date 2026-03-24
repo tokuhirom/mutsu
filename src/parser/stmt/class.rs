@@ -693,6 +693,12 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
                 let (r2, _) = ws(r2)?;
                 r = r2;
                 continue;
+            } else if parent == "DEPRECATED" {
+                // `is DEPRECATED` on a class — skip optional parenthesized arg
+                let r2 = skip_balanced_parens(r2);
+                let (r2, _) = ws(r2)?;
+                r = r2;
+                continue;
             } else if parent.starts_with(|c: char| c.is_ascii_uppercase())
                 || parent.starts_with("::")
             {

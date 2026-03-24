@@ -125,6 +125,7 @@ fn make_delegation_method(attr_var_name: &str, target_method: &str) -> MethodDef
         compiled_code: None,
         delegation: Some((attr_var_name.to_string(), target_method.to_string())),
         is_default: false,
+        deprecated_message: None,
     }
 }
 
@@ -249,6 +250,7 @@ fn substitute_type_params_in_method(
         compiled_code: method.compiled_code.clone(),
         delegation: method.delegation.clone(),
         is_default: method.is_default,
+        deprecated_message: method.deprecated_message.clone(),
     }
 }
 
@@ -612,8 +614,13 @@ impl Interpreter {
         // `class B` is defined in a different scope (e.g., EVAL).
 
         // Detect stub body: `class Foo { ... }` — body is a stub operator call
-        let is_stub_body = body.len() == 1
-            && matches!(&body[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
+        // Filter SetLine annotations which don't affect the stub nature.
+        let body_no_setline: Vec<_> = body
+            .iter()
+            .filter(|s| !matches!(s, Stmt::SetLine(_)))
+            .collect();
+        let is_stub_body = body_no_setline.len() == 1
+            && matches!(body_no_setline[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
                 if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn");
 
         // If this is a stub registration but the class already exists and is
@@ -1340,6 +1347,7 @@ impl Interpreter {
                     is_my,
                     return_type,
                     is_default_candidate,
+                    deprecated_message,
                 } => {
                     self.validate_private_access_in_stmts(name, method_body)?;
                     Self::validate_attr_declared_in_class(&class_own_attrs, method_body)?;
@@ -1369,6 +1377,7 @@ impl Interpreter {
                         compiled_code: None,
                         delegation: None,
                         is_default: *is_default_candidate,
+                        deprecated_message: deprecated_message.clone(),
                     };
                     if *multi {
                         class_def
@@ -1462,6 +1471,7 @@ impl Interpreter {
                             empty_sig: false,
                             return_type: None,
                             is_default: *is_default_candidate,
+                            deprecated_message: None,
                         };
                         self.functions
                             .insert(Symbol::intern(&qualified_name), func_def);
@@ -1731,6 +1741,7 @@ impl Interpreter {
                         compiled_code: None,
                         delegation: None,
                         is_default: *is_default_candidate,
+                        deprecated_message: None,
                     };
                     if let Some(class_def) = self.classes.get_mut(name) {
                         if *multi {
@@ -2136,6 +2147,7 @@ impl Interpreter {
                     is_my,
                     return_type,
                     is_default_candidate,
+                    deprecated_message: _,
                 } => {
                     if *multi
                         && (param_defs.iter().any(|pd| {
@@ -2171,6 +2183,7 @@ impl Interpreter {
                         compiled_code: None,
                         delegation: None,
                         is_default: *is_default_candidate,
+                        deprecated_message: None,
                     };
                     if *multi {
                         role_def
@@ -2186,6 +2199,9 @@ impl Interpreter {
                     if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn" =>
                 {
                     role_def.is_stub_role = true;
+                }
+                Stmt::SetLine(_) => {
+                    // Skip source line annotations
                 }
                 _ => {
                     if is_parametric {

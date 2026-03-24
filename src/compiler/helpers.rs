@@ -2245,8 +2245,12 @@ impl Compiler {
 
     /// Check if a class body is a stub (contains only `...`, `!!!`, or `???`).
     pub(super) fn is_stub_class_body(body: &[Stmt]) -> bool {
-        body.len() == 1
-            && matches!(&body[0], Stmt::Expr(Expr::Call { name, .. })
+        let filtered: Vec<_> = body
+            .iter()
+            .filter(|s| !matches!(s, Stmt::SetLine(_)))
+            .collect();
+        filtered.len() == 1
+            && matches!(filtered[0], Stmt::Expr(Expr::Call { name, .. })
                 if name.resolve() == "__mutsu_stub_die" || name.resolve() == "__mutsu_stub_warn")
     }
 

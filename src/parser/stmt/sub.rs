@@ -1042,6 +1042,9 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 is_raw = true;
             } else if trait_name == "looser" || trait_name == "tighter" || trait_name == "equiv" {
                 associativity = Some(trait_name.to_string());
+            } else if trait_name == "DEPRECATED" {
+                // Will capture parenthesized arg below
+                custom_traits.push("DEPRECATED".to_string());
             } else if trait_name != "assoc"
                 && trait_name != "equiv"
                 && trait_name != "tighter"
@@ -1069,7 +1072,25 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
             if r.starts_with('(') {
                 let before_parens = r;
                 r = skip_balanced_parens(r);
-                if (trait_name == "tighter" || trait_name == "looser" || trait_name == "equiv")
+                if trait_name == "DEPRECATED" {
+                    // Extract the deprecation message from parenthesized form
+                    let paren_content = &before_parens[1..before_parens.len() - r.len() - 1];
+                    let msg = paren_content.trim();
+                    // Strip surrounding quotes from the message
+                    let msg = if (msg.starts_with('"') && msg.ends_with('"'))
+                        || (msg.starts_with('\'') && msg.ends_with('\''))
+                    {
+                        &msg[1..msg.len() - 1]
+                    } else {
+                        msg
+                    };
+                    // Replace the plain "DEPRECATED" with "DEPRECATED:msg"
+                    if let Some(pos) = custom_traits.iter().position(|t| t == "DEPRECATED") {
+                        custom_traits[pos] = format!("DEPRECATED:{}", msg);
+                    }
+                } else if (trait_name == "tighter"
+                    || trait_name == "looser"
+                    || trait_name == "equiv")
                     && precedence_trait.is_none()
                 {
                     // Extract the reference operator from parenthesized form

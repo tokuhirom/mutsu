@@ -57,6 +57,7 @@ impl Interpreter {
                 empty_sig: false,
                 is_bare_block: false,
                 compiled_code: None,
+                deprecated_message: None,
             };
             // Store the routine name so call_sub_value can dispatch
             sub_data.env.insert(

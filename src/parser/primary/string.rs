@@ -701,8 +701,28 @@ fn parse_to_heredoc(input: &str, interpolate: bool) -> PResult<'_, Expr> {
             return Ok((after_terminator, expr));
         }
         // We cannot return a disjoint slice pair, so concatenate.
+        // Compute the line number at the declaration point (rest_of_line's line)
+        // and the line after the terminator for correct $?LINE / SetLine tracking.
+        let decl_line = super::current_line_number(rest_of_line);
+        // Count newlines in the heredoc body up to and including the terminator line
+        // to find the line number after the terminator.
+        let heredoc_body_lines = heredoc_start[..terminator_end.expect("terminator end")]
+            .matches('\n')
+            .count() as i64;
+        // +1 for the line after declaration, +heredoc_body_lines for newlines in body,
+        // +1 for the terminator line itself (the newline after it was consumed by strip_prefix)
+        let after_term_line = decl_line + 1 + heredoc_body_lines + 1;
         let combined = format!("{}\n{}", rest_of_line, after_terminator);
         let leaked: &'static str = Box::leak(combined.into_boxed_str());
+        // Register the leaked region with a line-jump mapping:
+        // rest_of_line portion maps to decl_line,
+        // after the \n, the rest maps to after_term_line.
+        super::register_leaked_region_with_jump(
+            leaked,
+            rest_of_line.len() + 1, // offset of the \n separator + 1
+            decl_line,
+            after_term_line,
+        );
         return Ok((leaked, expr));
     }
     Err(PError::expected("heredoc terminator"))
@@ -975,8 +995,19 @@ fn parse_to_heredoc_with_flags<'a>(
         if rest_of_line.trim().is_empty() {
             return Ok((after_terminator, expr));
         }
+        let decl_line = super::current_line_number(rest_of_line);
+        let heredoc_body_lines = heredoc_start[..terminator_end.expect("terminator end")]
+            .matches('\n')
+            .count() as i64;
+        let after_term_line = decl_line + 1 + heredoc_body_lines + 1;
         let combined = format!("{}\n{}", rest_of_line, after_terminator);
         let leaked: &'static str = Box::leak(combined.into_boxed_str());
+        super::register_leaked_region_with_jump(
+            leaked,
+            rest_of_line.len() + 1,
+            decl_line,
+            after_term_line,
+        );
         return Ok((leaked, expr));
     }
     Err(PError::expected("heredoc terminator"))

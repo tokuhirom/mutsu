@@ -506,7 +506,7 @@ impl Interpreter {
     }
 
     fn rw_method_attribute_target(body: &[Stmt]) -> Option<String> {
-        let first = body.first()?;
+        let first = body.iter().find(|s| !matches!(s, Stmt::SetLine(_)))?;
         let extract_attr = |expr: &Expr| -> Option<String> {
             match expr {
                 Expr::Var(name) if name.starts_with('!') && name.len() > 1 => {
