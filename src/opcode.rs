@@ -102,6 +102,7 @@ pub(crate) enum OpCode {
     // -- Three-way comparison --
     Spaceship,
     Cmp,
+    Coll,
     Leg,
 
     // -- Identity/value equality --

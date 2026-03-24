@@ -1221,36 +1221,89 @@ impl Interpreter {
         Ok(result)
     }
 
-    pub(super) fn dispatch_collate(&mut self, target: Value) -> Result<Value, RuntimeError> {
-        fn case_profile(s: &str) -> Vec<u8> {
-            s.chars()
-                .map(|ch| {
-                    if ch.is_lowercase() {
-                        0
-                    } else if ch.is_uppercase() {
-                        1
-                    } else {
-                        2
-                    }
-                })
-                .collect()
-        }
+    /// Dispatch methods on Collation instances (set, primary, secondary, tertiary, quaternary).
+    pub(super) fn dispatch_collation_method(
+        &mut self,
+        target: Value,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let Value::Instance {
+            class_name,
+            attributes,
+            id,
+        } = &target
+        else {
+            return Err(RuntimeError::new(
+                "Collation method called on non-Collation value",
+            ));
+        };
+        debug_assert!(class_name == "Collation");
 
-        fn collate_sorted(values: Vec<Value>) -> Vec<Value> {
-            let mut keyed: Vec<(String, Vec<u8>, String, Value)> = values
-                .into_iter()
-                .map(|value| {
-                    let s = value.to_string_value();
-                    (s.to_lowercase(), case_profile(&s), s.clone(), value)
-                })
-                .collect();
-            keyed.sort_by(|a, b| {
-                a.0.cmp(&b.0)
-                    .then_with(|| a.1.cmp(&b.1))
-                    .then_with(|| a.2.cmp(&b.2))
-            });
-            keyed.into_iter().map(|(_, _, _, value)| value).collect()
+        match method {
+            "primary" | "secondary" | "tertiary" | "quaternary" if args.is_empty() => {
+                Ok(attributes.get(method).cloned().unwrap_or(Value::Int(1)))
+            }
+            "set" => {
+                // .set accepts named arguments: primary, secondary, tertiary, quaternary
+                // Each can be -1, 0, 1, or Bool (False=0, True=1)
+                let mut new_attrs = (**attributes).clone();
+
+                for arg in args {
+                    if let Value::Pair(key, val) = arg {
+                        let int_val = match val.as_ref() {
+                            Value::Bool(b) => {
+                                if *b {
+                                    1
+                                } else {
+                                    0
+                                }
+                            }
+                            Value::Int(n) => *n,
+                            other => crate::runtime::utils::to_int(other),
+                        };
+                        match key.as_str() {
+                            "primary" | "secondary" | "tertiary" | "quaternary" => {
+                                new_attrs.insert(key.clone(), Value::Int(int_val));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+                let result = Value::make_instance_with_id(*class_name, new_attrs, *id);
+                // Also update the target in-place (Collation.set mutates and returns self)
+                Ok(result)
+            }
+            "gist" => {
+                let settings = crate::builtins::collation::CollationSettings::from_value(&target);
+                let level = settings.collation_level();
+                Ok(Value::str(format!(
+                    "collation-level => {}, Country => International, Language => None, primary => {}, secondary => {}, tertiary => {}, quaternary => {}",
+                    level,
+                    settings.primary,
+                    settings.secondary,
+                    settings.tertiary,
+                    settings.quaternary
+                )))
+            }
+            _ => Err(RuntimeError::new(format!(
+                "Unknown Collation method '{}'",
+                method
+            ))),
         }
+    }
+
+    pub(super) fn dispatch_collate(&mut self, target: Value) -> Result<Value, RuntimeError> {
+        use crate::builtins::collation::{CollationSettings, collate_sort};
+
+        // Get $*COLLATION settings
+        let settings = self
+            .get_dynamic_var("*COLLATION")
+            .ok()
+            .or_else(|| self.env.get("$*COLLATION").cloned())
+            .map(|v| CollationSettings::from_value(&v))
+            .unwrap_or_default();
 
         match target {
             Value::Package(class_name) if class_name == "Supply" => {
@@ -1265,16 +1318,20 @@ impl Interpreter {
                     Some(Value::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),
                 };
+                let sorted = collate_sort(values, &settings);
                 let mut attrs = HashMap::new();
-                attrs.insert("values".to_string(), Value::array(collate_sorted(values)));
+                attrs.insert("values".to_string(), Value::array(sorted));
                 attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 attrs.insert("live".to_string(), Value::Bool(false));
                 Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
             }
-            Value::Array(items, ..) => Ok(Value::Seq(Arc::new(collate_sorted(items.to_vec())))),
+            Value::Array(items, ..) => Ok(Value::Seq(Arc::new(collate_sort(
+                items.to_vec(),
+                &settings,
+            )))),
             other => {
                 let values = Self::value_to_list(&other);
-                Ok(Value::Seq(Arc::new(collate_sorted(values))))
+                Ok(Value::Seq(Arc::new(collate_sort(values, &settings))))
             }
         }
     }

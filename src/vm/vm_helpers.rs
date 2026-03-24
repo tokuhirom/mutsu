@@ -603,6 +603,7 @@ impl VM {
                 | "ComplexStr"
                 | "Allomorph"
                 | "Attribute"
+                | "Collation"
                 | "Cursor"
                 | "X"
         ) || {
@@ -634,6 +635,23 @@ impl VM {
             return false;
         }
         interp.has_class(base) || Self::is_builtin_type(base)
+    }
+
+    /// Get the current $*COLLATION settings, falling back to defaults.
+    pub(super) fn get_collation_settings(&self) -> crate::builtins::collation::CollationSettings {
+        // Check local env first (variable stored as "*COLLATION")
+        if let Some(val) = self.get_env_with_main_alias("*COLLATION") {
+            return crate::builtins::collation::CollationSettings::from_value(&val);
+        }
+        // Try dynamic lookup through caller stack
+        if let Ok(val) = self.interpreter.get_dynamic_var("*COLLATION") {
+            return crate::builtins::collation::CollationSettings::from_value(&val);
+        }
+        // Also check with $* prefix
+        if let Some(val) = self.interpreter.env().get("$*COLLATION") {
+            return crate::builtins::collation::CollationSettings::from_value(val);
+        }
+        crate::builtins::collation::CollationSettings::default()
     }
 
     pub(super) fn label_matches(error_label: &Option<String>, loop_label: &Option<String>) -> bool {

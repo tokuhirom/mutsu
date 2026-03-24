@@ -642,6 +642,18 @@ impl VM {
         self.stack.push(runtime::make_order(ord));
     }
 
+    pub(super) fn exec_coll_op(&mut self) {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let left_s = left.to_string_value();
+        let right_s = right.to_string_value();
+
+        // Get $*COLLATION settings
+        let settings = self.get_collation_settings();
+        let result = crate::builtins::collation::coll_compare(&left_s, &right_s, &settings);
+        self.stack.push(result);
+    }
+
     pub(super) fn exec_leg_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();

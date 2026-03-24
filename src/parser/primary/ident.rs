@@ -800,6 +800,7 @@ fn is_infix_word_op(name: &str) -> bool {
             | "le"
             | "ge"
             | "cmp"
+            | "coll"
             | "leg"
             | "and"
             | "or"

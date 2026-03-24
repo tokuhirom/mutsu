@@ -1390,6 +1390,16 @@ impl Interpreter {
             return Ok(Value::Package(Symbol::intern(&type_name)));
         }
 
+        // Collation.set — mutates the Collation instance in the variable
+        if method == "set"
+            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Collation")
+        {
+            let result = self.dispatch_collation_method(target, method, &args)?;
+            // Update the variable in the environment to reflect the mutation
+            self.env.insert(target_var.to_string(), result.clone());
+            return Ok(result);
+        }
+
         if let Value::Instance {
             class_name,
             attributes,
