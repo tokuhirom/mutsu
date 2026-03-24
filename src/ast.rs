@@ -65,6 +65,9 @@ pub(crate) struct FunctionDef {
     pub(crate) return_type: Option<String>,
     /// `is default` trait — this candidate is preferred when multi dispatch ties.
     pub(crate) is_default: bool,
+    /// `is DEPRECATED` trait message: None = not deprecated, Some(msg) = deprecated.
+    /// Empty string means "something else", non-empty is the custom replacement text.
+    pub(crate) deprecated_message: Option<String>,
 }
 
 pub(crate) fn function_body_fingerprint(
@@ -648,6 +651,8 @@ pub(crate) enum Stmt {
         return_type: Option<String>,
         /// `is default` trait for multi dispatch tie-breaking.
         is_default_candidate: bool,
+        /// `is DEPRECATED` message (None = not deprecated)
+        deprecated_message: Option<String>,
     },
     RoleDecl {
         name: Symbol,
@@ -699,6 +704,8 @@ pub(crate) enum Stmt {
         method_args: Vec<Expr>,
         value: Expr,
     },
+    /// Set the current source line number (for deprecation tracking, etc.).
+    SetLine(i64),
     Expr(Expr),
 }
 

@@ -2,6 +2,54 @@ use super::*;
 use crate::ast::FunctionDef;
 
 impl Interpreter {
+    /// Check if a function has the `is DEPRECATED` trait and record a deprecation event.
+    pub(crate) fn check_deprecation_for_def(&self, def: &FunctionDef) {
+        if let Some(ref msg) = def.deprecated_message {
+            let file = self
+                .env
+                .get("*PROGRAM-NAME")
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            let line = self
+                .env
+                .get("?LINE")
+                .and_then(|v| match v {
+                    Value::Int(i) => Some(*i),
+                    _ => None,
+                })
+                .unwrap_or(0);
+            let kind = if def.is_method { "Method" } else { "Sub" };
+            let pkg = def.package.resolve();
+            super::deprecation::record_deprecation(
+                kind,
+                &def.name.resolve(),
+                &pkg,
+                msg,
+                &file,
+                line,
+            );
+        }
+    }
+
+    /// Check deprecation for a method call using name, package, and message.
+    #[allow(dead_code)]
+    pub(crate) fn check_deprecation_for_method(&self, name: &str, package: &str, message: &str) {
+        let file = self
+            .env
+            .get("*PROGRAM-NAME")
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let line = self
+            .env
+            .get("?LINE")
+            .and_then(|v| match v {
+                Value::Int(i) => Some(*i),
+                _ => None,
+            })
+            .unwrap_or(0);
+        super::deprecation::record_deprecation("Method", name, package, message, &file, line);
+    }
+
     pub(crate) fn routine_writeback_excluded_names(
         def: &FunctionDef,
     ) -> std::collections::HashSet<String> {
@@ -53,6 +101,7 @@ impl Interpreter {
         def: &FunctionDef,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        self.check_deprecation_for_def(def);
         let (args, callsite_line) = self.sanitize_call_args(args);
         self.test_pending_callsite_line = callsite_line;
         if def.empty_sig && !args.is_empty() {
@@ -217,6 +266,7 @@ impl Interpreter {
                 }
                 let def_opt = self.resolve_function_with_alias(name, &args);
                 if let Some(def) = def_opt {
+                    self.check_deprecation_for_def(&def);
                     if def.empty_sig && !args.is_empty() {
                         return Err(Self::reject_args_for_empty_sig(&args));
                     }

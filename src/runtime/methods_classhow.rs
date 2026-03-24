@@ -421,6 +421,7 @@ impl Interpreter {
                     compiled_code: sub_data.compiled_code.clone(),
                     delegation: None,
                     is_default: false,
+                    deprecated_message: None,
                 };
                 if let Some(class_def) = self.classes.get_mut(&class_name) {
                     class_def.methods.insert(method_name, vec![def]);
@@ -461,6 +462,7 @@ impl Interpreter {
                     compiled_code: None,
                     delegation: None,
                     is_default: false,
+                    deprecated_message: None,
                 };
                 if let Some(class_def) = self.classes.get_mut(&class_name) {
                     class_def.methods.entry(method_name).or_default().push(def);
@@ -1736,6 +1738,7 @@ impl Interpreter {
                     empty_sig: false,
                     is_bare_block: false,
                     compiled_code: None,
+                    deprecated_message: None,
                 };
                 meta.insert(
                     "build".to_string(),

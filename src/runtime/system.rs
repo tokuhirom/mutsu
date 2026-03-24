@@ -56,8 +56,12 @@ impl Interpreter {
                 Stmt::ClassDecl { name, body, .. } => (name.resolve(), body),
                 _ => continue,
             };
-            let is_stub = body.len() == 1
-                && matches!(&body[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
+            let body_no_sl: Vec<_> = body
+                .iter()
+                .filter(|s| !matches!(s, Stmt::SetLine(_)))
+                .collect();
+            let is_stub = body_no_sl.len() == 1
+                && matches!(body_no_sl[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
                     if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn");
             match seen_classes.get(&name) {
                 None => {

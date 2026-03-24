@@ -1489,6 +1489,13 @@ fn method_decl_body_with_my(
             is_my,
             return_type,
             is_default_candidate: traits.custom_traits.contains(&"default".to_string()),
+            deprecated_message: traits.custom_traits.iter().find_map(|t| {
+                if t == "DEPRECATED" {
+                    Some(String::new())
+                } else {
+                    t.strip_prefix("DEPRECATED:").map(|msg| msg.to_string())
+                }
+            }),
         },
     ))
 }

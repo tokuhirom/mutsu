@@ -1,6 +1,16 @@
 use super::*;
 use crate::symbol::Symbol;
 
+/// Format a function body for comparison, stripping SetLine annotations.
+/// Used to allow identical sub redeclarations that differ only in source line.
+fn body_debug_without_setline(body: &[Stmt]) -> String {
+    let filtered: Vec<_> = body
+        .iter()
+        .filter(|s| !matches!(s, Stmt::SetLine(_)))
+        .collect();
+    format!("{:?}", filtered)
+}
+
 /// Increment a string by one character (Raku's string increment for enums).
 /// "x" -> "y", "z" -> "aa", "Z" -> "AA", etc.
 fn string_increment(s: &str) -> String {
@@ -146,6 +156,13 @@ impl Interpreter {
             (param_defs.to_vec(), false)
         };
         self.validate_static_default_typechecks(&effective_param_defs)?;
+        let deprecated_message = custom_traits.iter().find_map(|t| {
+            if t == "DEPRECATED" {
+                Some(String::new())
+            } else {
+                t.strip_prefix("DEPRECATED:").map(|msg| msg.to_string())
+            }
+        });
         let new_def = FunctionDef {
             package: Symbol::intern(&self.current_package),
             name: Symbol::intern(name),
@@ -159,6 +176,7 @@ impl Interpreter {
             empty_sig,
             return_type: return_type.cloned(),
             is_default: custom_traits.iter().any(|t| t == "default"),
+            deprecated_message,
         };
         let single_key = format!("{}::{}", self.current_package, name);
         let multi_prefix = format!("{}::{}/", self.current_package, name);
@@ -188,7 +206,8 @@ impl Interpreter {
                 && existing.name == new_def.name
                 && existing.params == new_def.params
                 && format!("{:?}", existing.param_defs) == format!("{:?}", new_def.param_defs)
-                && format!("{:?}", existing.body) == format!("{:?}", new_def.body);
+                && body_debug_without_setline(&existing.body)
+                    == body_debug_without_setline(&new_def.body);
             if same {
                 let callable_key =
                     format!("__mutsu_callable_id::{}::{}", self.current_package, name);
@@ -399,6 +418,7 @@ impl Interpreter {
             empty_sig: false,
             return_type: None,
             is_default: false,
+            deprecated_message: None,
         };
         self.insert_token_def(name, def, multi);
     }
@@ -440,6 +460,7 @@ impl Interpreter {
                 empty_sig: false,
                 return_type: None,
                 is_default: false,
+                deprecated_message: None,
             },
         );
         Ok(())
@@ -535,6 +556,7 @@ impl Interpreter {
             empty_sig,
             return_type: return_type.cloned(),
             is_default: false,
+            deprecated_message: None,
         };
         let single_key = format!("GLOBAL::{}", name);
         let single_key_sym = Symbol::intern(&single_key);
@@ -555,7 +577,8 @@ impl Interpreter {
                 && existing.name == def.name
                 && existing.params == def.params
                 && format!("{:?}", existing.param_defs) == format!("{:?}", def.param_defs)
-                && format!("{:?}", existing.body) == format!("{:?}", def.body);
+                && body_debug_without_setline(&existing.body)
+                    == body_debug_without_setline(&def.body);
             if same {
                 return Ok(());
             }
@@ -681,6 +704,7 @@ impl Interpreter {
                 empty_sig: false,
                 return_type: None,
                 is_default: false,
+                deprecated_message: None,
             },
         );
         Ok(())

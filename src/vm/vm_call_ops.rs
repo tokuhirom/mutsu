@@ -469,6 +469,19 @@ impl VM {
             return Ok(());
         }
 
+        // Deprecation.report — return the accumulated deprecation report
+        if method == "report"
+            && matches!(&target, Value::Package(name) if name.resolve() == "Deprecation")
+        {
+            let result = match crate::runtime::deprecation::take_report() {
+                Some(report) => Value::str(report),
+                None => Value::Nil,
+            };
+            self.stack.push(result);
+            self.env_dirty = true;
+            return Ok(());
+        }
+
         // Fast path for Lock::Async.protect — execute block inline in current VM
         if method == "protect"
             && args.len() == 1
@@ -2556,9 +2569,11 @@ impl VM {
                 self.interpreter.push_samewith_context(name, None);
                 // Use the function's defining package so that lookups inside the
                 // function body resolve against the correct namespace.
-                let pkg = self
-                    .interpreter
-                    .resolve_function_with_types(name, &args)
+                let resolved_def = self.interpreter.resolve_function_with_types(name, &args);
+                if let Some(ref def) = resolved_def {
+                    self.interpreter.check_deprecation_for_def(def);
+                }
+                let pkg = resolved_def
                     .map(|def| def.package.resolve())
                     .unwrap_or_else(|| self.interpreter.current_package().to_string());
                 let cf_auto_fetch = !cf.is_raw;

@@ -604,6 +604,7 @@ impl VM {
                 | "Allomorph"
                 | "Attribute"
                 | "Cursor"
+                | "Deprecation"
                 | "X"
         ) || {
             // Handle parameterized types like Buf[uint8], Array[Int], etc.
@@ -1989,6 +1990,7 @@ impl VM {
             empty_sig: data.empty_sig,
             is_bare_block: data.is_bare_block,
             compiled_code: data.compiled_code.clone(),
+            deprecated_message: data.deprecated_message.clone(),
         });
         self.interpreter.env_mut().insert(
             "&?BLOCK".to_string(),

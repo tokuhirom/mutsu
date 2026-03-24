@@ -21,9 +21,13 @@ impl Interpreter {
     const LAZY_GATHER_TAKE_LIMIT_SIGNAL: &str = "__mutsu_lazy_gather_take_limit_reached__";
 
     fn is_stub_method_body(body: &[Stmt]) -> bool {
-        body.len() == 1
+        let filtered: Vec<_> = body
+            .iter()
+            .filter(|s| !matches!(s, Stmt::SetLine(_)))
+            .collect();
+        filtered.len() == 1
             && matches!(
-                &body[0],
+                filtered[0],
                 Stmt::Expr(Expr::Call { name, .. })
                     if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
             )
@@ -956,6 +960,7 @@ impl Interpreter {
                 empty_sig: data.empty_sig,
                 is_bare_block: data.is_bare_block,
                 compiled_code: data.compiled_code.clone(),
+                deprecated_message: data.deprecated_message.clone(),
             });
             new_env.insert(
                 "&?BLOCK".to_string(),

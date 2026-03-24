@@ -107,6 +107,7 @@ mod builtins_system;
 mod call_helpers;
 mod calls;
 mod class;
+pub(crate) mod deprecation;
 mod dispatch;
 mod handle;
 mod io;
@@ -289,6 +290,8 @@ pub(crate) struct MethodDef {
     pub(crate) delegation: Option<(String, String)>,
     /// `is default` trait — this candidate is preferred when multi dispatch ties.
     pub(crate) is_default: bool,
+    /// `is DEPRECATED` message: None = not deprecated.
+    pub(crate) deprecated_message: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -2428,6 +2431,7 @@ impl Interpreter {
                         compiled_code: None,
                         delegation: None,
                         is_default: false,
+                        deprecated_message: None,
                     };
                     let mut methods = HashMap::new();
                     for name in ["id", "need", "load", "loaded"] {
@@ -4413,6 +4417,7 @@ mod tests {
             empty_sig: false,
             is_bare_block: false,
             compiled_code: Some(Arc::new(compiled)),
+            deprecated_message: None,
         });
 
         let mut interp = Interpreter::new();
