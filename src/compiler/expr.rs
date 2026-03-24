@@ -745,6 +745,50 @@ impl Compiler {
                     let name_idx = self.code.add_constant(Value::str(var_name.clone()));
                     self.code.emit(OpCode::AssignExpr(name_idx));
                     return;
+                } else if name == "__mutsu_assign_method_lvalue"
+                    && args.len() >= 4
+                    && let Expr::Index {
+                        target: index_target,
+                        index: index_key,
+                    } = &args[0]
+                    && let Some(var_name) = Self::postfix_index_name(index_target)
+                {
+                    let tmp_target_name = format!(
+                        "__mutsu_tmp_assign_method_target_{}",
+                        self.code.constants.len()
+                    );
+                    let tmp_result_name = format!(
+                        "__mutsu_tmp_assign_method_result_{}",
+                        self.code.constants.len()
+                    );
+                    let tmp_target_idx =
+                        self.code.add_constant(Value::str(tmp_target_name.clone()));
+                    let tmp_result_idx =
+                        self.code.add_constant(Value::str(tmp_result_name.clone()));
+                    let call_name_idx = self.code.add_constant(Value::str(name.resolve()));
+                    let var_name_idx = self.code.add_constant(Value::str(var_name));
+
+                    self.compile_expr(&args[0]);
+                    self.code.emit(OpCode::SetGlobal(tmp_target_idx));
+
+                    self.code.emit(OpCode::GetGlobal(tmp_target_idx));
+                    self.compile_expr(&args[1]);
+                    self.compile_expr(&args[2]);
+                    self.compile_expr(&args[3]);
+                    self.code.emit(OpCode::LoadConst(tmp_target_idx));
+                    self.code.emit(OpCode::CallFunc {
+                        name_idx: call_name_idx,
+                        arity: 5,
+                        arg_sources_idx: None,
+                    });
+                    self.code.emit(OpCode::SetGlobal(tmp_result_idx));
+
+                    self.code.emit(OpCode::GetGlobal(tmp_target_idx));
+                    self.compile_expr(index_key);
+                    self.code.emit(OpCode::IndexAssignExprNamed(var_name_idx));
+                    self.code.emit(OpCode::Pop);
+                    self.code.emit(OpCode::GetGlobal(tmp_result_idx));
+                    return;
                 } else if name == "atomic-fetch"
                     && args.len() == 1
                     && let Expr::Var(var_name) = &args[0]

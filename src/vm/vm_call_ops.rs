@@ -250,7 +250,12 @@ impl VM {
             Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
         }
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
-        let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {
+        let arg_sources = if arg_sources.as_ref().is_some_and(|sources| {
+            sources.len() != args.len()
+                && !(args.is_empty()
+                    && sources.len() == 1
+                    && sources.first().is_some_and(|name| name.is_some()))
+        }) {
             None
         } else {
             arg_sources
@@ -2509,50 +2514,62 @@ impl VM {
         if let Some(callable) = call_me_override {
             let result = self.try_compiled_method_or_interpret(callable, "CALL-ME", args);
             self.interpreter.maybe_fetch_rw_proxy(result?, true)
-        } else if !self.interpreter.has_proto(name)
-            && let Some(cf) = self.find_compiled_function(compiled_fns, name, &args)
-        {
+        } else {
             self.interpreter
                 .set_pending_call_arg_sources(arg_sources.clone());
-            let pushed_dispatch = self.interpreter.push_multi_dispatch_frame(name, &args);
-            self.interpreter.push_samewith_context(name, None);
-            // Use the function's defining package so that lookups inside the
-            // function body resolve against the correct namespace.
-            let pkg = self
-                .interpreter
-                .resolve_function_with_types(name, &args)
-                .map(|def| def.package.resolve())
-                .unwrap_or_else(|| self.interpreter.current_package().to_string());
-            let cf_auto_fetch = !cf.is_raw;
-            let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, name);
+            let compiled = if !self.interpreter.has_proto(name) {
+                self.find_compiled_function(compiled_fns, name, &args)
+            } else {
+                None
+            };
             self.interpreter.set_pending_call_arg_sources(None);
-            self.interpreter.pop_samewith_context();
-            if pushed_dispatch {
-                self.interpreter.pop_multi_dispatch();
+            if let Some(cf) = compiled {
+                self.interpreter
+                    .set_pending_call_arg_sources(arg_sources.clone());
+                let pushed_dispatch = self.interpreter.push_multi_dispatch_frame(name, &args);
+                self.interpreter.push_samewith_context(name, None);
+                // Use the function's defining package so that lookups inside the
+                // function body resolve against the correct namespace.
+                let pkg = self
+                    .interpreter
+                    .resolve_function_with_types(name, &args)
+                    .map(|def| def.package.resolve())
+                    .unwrap_or_else(|| self.interpreter.current_package().to_string());
+                let cf_auto_fetch = !cf.is_raw;
+                let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, name);
+                self.interpreter.set_pending_call_arg_sources(None);
+                self.interpreter.pop_samewith_context();
+                if pushed_dispatch {
+                    self.interpreter.pop_multi_dispatch();
+                }
+                self.interpreter
+                    .maybe_fetch_rw_proxy(result?, cf_auto_fetch)
+            } else if self.interpreter.has_multi_candidates(name)
+                && !self.interpreter.has_proto(name)
+            {
+                // User-defined multi candidates take priority over builtins.
+                // Call call_function_fallback directly to bypass the builtin match
+                // in call_function, which would shadow user-defined multi subs.
+                self.interpreter.set_pending_call_arg_sources(arg_sources);
+                let result = self.interpreter.call_function_fallback(name, &args);
+                self.interpreter.set_pending_call_arg_sources(None);
+                self.interpreter.maybe_fetch_rw_proxy(result?, true)
+            } else if let Some(native_result) =
+                self.try_native_function(Symbol::intern(name), &args)
+            {
+                native_result
+            } else {
+                // Sync VM locals to env before spawning threads so closures capture them
+                if name == "start" {
+                    self.sync_env_from_locals(code);
+                }
+                self.interpreter.set_pending_call_arg_sources(arg_sources);
+                let result = self.interpreter.call_function(name, args);
+                self.interpreter.set_pending_call_arg_sources(None);
+                // substr-rw returns a Proxy that must be preserved (not auto-FETCHed)
+                let auto_fetch = name != "substr-rw";
+                self.interpreter.maybe_fetch_rw_proxy(result?, auto_fetch)
             }
-            self.interpreter
-                .maybe_fetch_rw_proxy(result?, cf_auto_fetch)
-        } else if self.interpreter.has_multi_candidates(name) && !self.interpreter.has_proto(name) {
-            // User-defined multi candidates take priority over builtins.
-            // Call call_function_fallback directly to bypass the builtin match
-            // in call_function, which would shadow user-defined multi subs.
-            self.interpreter.set_pending_call_arg_sources(arg_sources);
-            let result = self.interpreter.call_function_fallback(name, &args);
-            self.interpreter.set_pending_call_arg_sources(None);
-            self.interpreter.maybe_fetch_rw_proxy(result?, true)
-        } else if let Some(native_result) = self.try_native_function(Symbol::intern(name), &args) {
-            native_result
-        } else {
-            // Sync VM locals to env before spawning threads so closures capture them
-            if name == "start" {
-                self.sync_env_from_locals(code);
-            }
-            self.interpreter.set_pending_call_arg_sources(arg_sources);
-            let result = self.interpreter.call_function(name, args);
-            self.interpreter.set_pending_call_arg_sources(None);
-            // substr-rw returns a Proxy that must be preserved (not auto-FETCHed)
-            let auto_fetch = name != "substr-rw";
-            self.interpreter.maybe_fetch_rw_proxy(result?, auto_fetch)
         }
     }
 

@@ -22,6 +22,7 @@ use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 use super::sub::parse_type_constraint_expr;
+use super::sub_param::parse_of_type_constraint_chain;
 use super::{
     class::{module_decl, package_decl, proto_decl, role_decl},
     ident, keyword, parse_assign_expr_or_comma, parse_statement_modifier, qualified_ident,
@@ -32,6 +33,21 @@ use super::super::parse_result::take_while_opt;
 use super::{
     class_decl_body, method_decl_body, method_decl_body_my, parse_comma_or_expr, sub_decl_body,
 };
+
+fn parse_decl_type_constraint(input: &str) -> Option<(&str, String)> {
+    let (mut rest, mut type_name) = parse_type_constraint_expr(input)?;
+    loop {
+        let (after_ws, _) = ws(rest).ok()?;
+        let Some(after_of) = keyword("of", after_ws) else {
+            break;
+        };
+        let (after_of, _) = ws1(after_of).ok()?;
+        let (after_inner, inner_type) = parse_decl_type_constraint(after_of)?;
+        type_name = format!("{}[{}]", type_name, inner_type);
+        rest = after_inner;
+    }
+    Some((rest, type_name))
+}
 
 /// Wrap a statement with a LEAVE phaser for `will leave { ... }`.
 /// The phaser body sets `$_` to the variable and executes the block.
@@ -1152,12 +1168,12 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     };
 
     // Optional type constraint: my Int $x or my Str(Match) $x (coercion type)
-    let (rest, mut type_constraint) = if type_constraint.is_some() {
+    let (mut rest, mut type_constraint) = if type_constraint.is_some() {
         (rest, type_constraint)
     } else {
         // Try to parse a type name followed by a sigil or \ or `constant`
         let saved = rest;
-        if let Some((r, tc)) = parse_type_constraint_expr(rest) {
+        if let Some((r, tc)) = parse_decl_type_constraint(rest) {
             let (r2, _) = ws(r)?;
             if r2.starts_with('$')
                 || r2.starts_with('@')
@@ -1171,7 +1187,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             } else {
                 // Check for multiple prefix type constraints (e.g. `my Int Str $x`)
                 // where the second type name is followed by a sigil
-                if let Some((r3, _second_tc)) = parse_type_constraint_expr(r2) {
+                if let Some((r3, _second_tc)) = parse_decl_type_constraint(r2) {
                     let (r4, _) = ws(r3).unwrap_or((r3, ()));
                     if r4.starts_with('$')
                         || r4.starts_with('@')
@@ -1192,6 +1208,13 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             (saved, None)
         }
     };
+
+    if let Some(tc) = type_constraint.take() {
+        let (r, tc) =
+            parse_of_type_constraint_chain(rest, tc).ok_or_else(|| PError::expected("type"))?;
+        type_constraint = Some(tc);
+        rest = r;
+    }
 
     // Check for invalid type smileys (e.g. Int:foo)
     // Only check the last `:X` that is NOT part of `::` (namespace separator).
@@ -2052,7 +2075,7 @@ pub(super) fn parse_destructuring_decl(
 
         // Try to parse a type constraint before the variable (e.g. `Foo $d`)
         let mut per_var_type_constraint = None;
-        if let Some((after_tc, tc)) = parse_type_constraint_expr(r) {
+        if let Some((after_tc, tc)) = parse_decl_type_constraint(r) {
             let (after_tc_ws, _) = ws(after_tc)?;
             // Only treat as type if followed by a sigil or sigilless backslash
             if after_tc_ws.starts_with('$')
@@ -2508,7 +2531,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // Optional type constraint.
     let (rest, mut type_constraint, type_smiley) = {
         let saved = rest;
-        if let Some((r, tc)) = parse_type_constraint_expr(rest) {
+        if let Some((r, tc)) = parse_decl_type_constraint(rest) {
             let (r2, _) = ws(r)?;
             if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
                 // Extract smiley suffix and strip it for the type_constraint name

@@ -212,6 +212,7 @@ impl Interpreter {
         method_name: &str,
         arg_values: &[Value],
     ) -> Option<(String, MethodDef)> {
+        let role_bindings = self.class_role_param_bindings.get(class_name).cloned();
         let mro = self.class_mro(class_name);
         // Collect all matching multi candidates across the MRO, then pick the
         // most specific one by type hierarchy distance.
@@ -240,7 +241,15 @@ impl Interpreter {
                     if def.is_my && is_ancestor {
                         continue;
                     }
-                    if self.method_args_match(arg_values, &def.param_defs) {
+                    let saved_env = self.env.clone();
+                    if let Some(bindings) = &role_bindings {
+                        for (name, value) in bindings {
+                            self.env.insert(name.clone(), value.clone());
+                        }
+                    }
+                    let args_match = self.method_args_match(arg_values, &def.param_defs);
+                    self.env = saved_env;
+                    if args_match {
                         if !any_multi {
                             // Non-multi: return the first match immediately
                             return Some((cn.clone(), def));

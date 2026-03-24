@@ -1,6 +1,6 @@
 use Test;
 
-plan 4;
+plan 8;
 
 # Type parameter used as type constraint in role body variable declaration
 {
@@ -30,4 +30,16 @@ plan 4;
         $outer++;
     }
     is $outer, 0, "parameterized role body stmts are deferred until composition";
+}
+
+{
+    my role R1[::T] { }
+    lives-ok { my R1 of Int $x = R1[Int].new }, "typed variable declaration accepts prefix 'of'";
+    dies-ok { my R1 of Int $x = R1[Str].new }, "typed variable declaration enforces prefix 'of'";
+}
+
+{
+    my role R2[::T] { }
+    lives-ok { my R2 of R2 of Int $x = R2[R2[Int]].new }, "nested parameterized role constraint accepts matching role instance";
+    throws-like { EVAL 'role ABCD[EFGH] { }' }, X::Parameter::InvalidType, "undefined bare type in role parameter list dies";
 }

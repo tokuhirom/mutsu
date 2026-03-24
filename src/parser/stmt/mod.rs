@@ -815,6 +815,21 @@ mod tests {
     }
 
     #[test]
+    fn parse_my_var_decl_with_of_type_constraint() {
+        let (rest, stmts) = program("my R1 of Int $x = 1;").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(
+            &stmts[0],
+            Stmt::VarDecl {
+                name,
+                type_constraint: Some(tc),
+                ..
+            } if name == "x" && tc == "R1[Int]"
+        ));
+    }
+
+    #[test]
     fn parse_my_subset_decl_as_single_statement() {
         let (rest, stmts) = program("my subset S-Int of Int;").unwrap();
         assert_eq!(rest, "");

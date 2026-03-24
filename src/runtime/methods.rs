@@ -1064,7 +1064,7 @@ impl Interpreter {
             };
             let mut role_has_method = false;
             for role_name in role_names {
-                let Some(role) = self.roles.get(&role_name).cloned() else {
+                let Some(role) = self.role_def_for_mixin_role(mixins, &role_name) else {
                     continue;
                 };
                 let Some(overloads) = role.methods.get(lookup_name).cloned() else {
@@ -1229,8 +1229,12 @@ impl Interpreter {
                     let instance = self.dispatch_new(target.clone(), Vec::new())?;
                     return self.call_method_with_values(instance, method, args);
                 }
-            } else if let Value::ParametricRole { base_name, .. } = &target
-                && let Some(role) = self.roles.get(&base_name.resolve())
+            } else if let Value::ParametricRole {
+                base_name,
+                type_args,
+            } = &target
+                && let Some((role, _)) =
+                    self.resolve_parametric_role_runtime(&base_name.resolve(), type_args)
             {
                 let is_public_attr_accessor = args.is_empty()
                     && role

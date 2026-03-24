@@ -83,19 +83,19 @@ impl Interpreter {
         role_args: &[Value],
         target_base: &str,
     ) -> Option<Vec<Value>> {
-        let candidate_param_names = self.role_candidates.get(role_name).and_then(|candidates| {
+        let candidate = self.role_candidates.get(role_name).and_then(|candidates| {
             candidates
                 .iter()
                 .find(|c| c.type_params.len() == role_args.len())
-                .map(|c| c.type_params.clone())
+                .cloned()
         })?;
+        let candidate_param_names = candidate.type_params;
         let param_map: HashMap<String, Value> = candidate_param_names
             .into_iter()
             .zip(role_args.iter().cloned())
             .collect();
-        let parents = self.role_parents.get(role_name)?;
-        for parent in parents {
-            let resolved_parent = if let Some(v) = param_map.get(parent) {
+        for parent in candidate.parents {
+            let resolved_parent = if let Some(v) = param_map.get(&parent) {
                 match v {
                     Value::Package(name) => name.resolve(),
                     other => other
@@ -2660,7 +2660,7 @@ impl Interpreter {
 
     /// Check if `lhs` type arg is a subtype of `rhs` type arg for parametric role subtyping.
     /// E.g., Package("C2") subtypes Package("C1") if C2 isa C1.
-    fn parametric_arg_subtypes(&self, lhs: &Value, rhs: &Value) -> bool {
+    pub(super) fn parametric_arg_subtypes(&self, lhs: &Value, rhs: &Value) -> bool {
         match (lhs, rhs) {
             // Both are packages (type objects): check class hierarchy
             (Value::Package(l_name), Value::Package(r_name)) => {
