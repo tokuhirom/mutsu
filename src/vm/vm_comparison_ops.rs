@@ -709,6 +709,13 @@ impl VM {
         self.interpreter
             .env_mut()
             .insert("_".to_string(), left.clone());
+        // Sync env->locals first so that any values modified by interpreter
+        // calls (e.g. EVAL modifying $GLOBAL:: variables) are picked up
+        // before we overwrite env with local values for regex interpolation.
+        if self.env_dirty {
+            self.sync_locals_from_env(code);
+            self.env_dirty = false;
+        }
         self.sync_regex_interpolation_env_from_locals(code);
         let saved_in_smartmatch_rhs = self.in_smartmatch_rhs;
         self.in_smartmatch_rhs = true;
