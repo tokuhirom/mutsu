@@ -1732,6 +1732,7 @@ impl Interpreter {
                     assumed_named: HashMap::new(),
                     id: crate::value::next_instance_id(),
                     empty_sig: false,
+                    is_bare_block: false,
                     compiled_code: None,
                 };
                 meta.insert(

@@ -55,6 +55,7 @@ impl Interpreter {
                 assumed_named: std::collections::HashMap::new(),
                 id: crate::value::next_instance_id(),
                 empty_sig: false,
+                is_bare_block: false,
                 compiled_code: None,
             };
             // Store the routine name so call_sub_value can dispatch

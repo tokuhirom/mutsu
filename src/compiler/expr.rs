@@ -2582,6 +2582,46 @@ impl Compiler {
                     self.code.emit(OpCode::Die);
                     return;
                 }
+                // Placeholders cannot appear in blocks/subs with explicit signatures
+                // (i.e., not from placeholder lifting — explicit params don't start with '^')
+                {
+                    let is_placeholder_param = |p: &str| {
+                        let name = p
+                            .strip_prefix('&')
+                            .or_else(|| p.strip_prefix('@'))
+                            .or_else(|| p.strip_prefix('%'))
+                            .unwrap_or(p);
+                        name.starts_with('^') || name.starts_with(':')
+                    };
+                    let has_explicit_sig =
+                        params.is_empty() || params.iter().all(|p| !is_placeholder_param(p));
+                    let body_placeholders = crate::ast::collect_placeholders(body);
+                    if has_explicit_sig && !body_placeholders.is_empty() {
+                        let ph_name = &body_placeholders[0];
+                        let display = if let Some(stripped) = ph_name.strip_prefix('^') {
+                            format!("$^{}", stripped)
+                        } else {
+                            format!("${}", ph_name)
+                        };
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert(
+                            "message".to_string(),
+                            Value::str(format!(
+                                "Placeholder variable '{}' cannot override existing signature",
+                                display
+                            )),
+                        );
+                        attrs.insert("placeholder".to_string(), Value::str(display));
+                        let err = Value::make_instance(
+                            crate::symbol::Symbol::intern("X::Signature::Placeholder"),
+                            attrs,
+                        );
+                        let idx = self.code.add_constant(err);
+                        self.code.emit(OpCode::LoadConst(idx));
+                        self.code.emit(OpCode::Die);
+                        return;
+                    }
+                }
                 let compiled = self.compile_routine_closure_body(params, param_defs, body);
                 let cc_idx = self.code.add_closure_code(compiled);
                 let idx = self.code.add_stmt(Stmt::SubDecl {

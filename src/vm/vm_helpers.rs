@@ -1965,6 +1965,7 @@ impl VM {
             assumed_named: data.assumed_named.clone(),
             id: data.id,
             empty_sig: data.empty_sig,
+            is_bare_block: data.is_bare_block,
             compiled_code: data.compiled_code.clone(),
         });
         self.interpreter.env_mut().insert(
