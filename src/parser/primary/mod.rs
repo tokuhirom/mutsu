@@ -1,5 +1,5 @@
 mod container;
-mod ident;
+pub(in crate::parser) mod ident;
 pub(in crate::parser) mod misc;
 mod number;
 pub(in crate::parser) mod quote_adverbs;

@@ -232,6 +232,7 @@ roast/S04-phasers/check.t
 roast/S04-phasers/end.t
 roast/S04-phasers/exit-in-check.t
 roast/S04-phasers/first.t
+roast/S04-phasers/in-loop.t
 roast/S04-phasers/interpolate.t
 roast/S04-phasers/keep-undo.t
 roast/S04-phasers/multiple.t
