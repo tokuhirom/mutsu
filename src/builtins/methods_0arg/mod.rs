@@ -986,46 +986,69 @@ fn format_temporal_num(f: f64) -> String {
     }
 }
 
+/// Render array contents for `.raku`, extracted from `raku_value` so that
+/// cycle detection can happen before entering the rendering loop.
+fn raku_value_array(items: &[Value], kind: ArrayKind, v: &Value) -> String {
+    // Shaped arrays: Array.new(:shape(d1, d2), [row1], [row2])
+    if kind == crate::value::ArrayKind::Shaped
+        && let Some(shape) = crate::runtime::utils::shaped_array_shape(v)
+        && shape.len() > 1
+    {
+        let shape_str = shape
+            .iter()
+            .map(|d| d.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let rows = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
+        return format!("Array.new(:shape({}), {})", shape_str, rows);
+    }
+    let snapshot = |k: ArrayKind| {
+        let inner = items
+            .iter()
+            .filter(|item| !is_self_array_ref_marker(item))
+            .map(raku_value)
+            .collect::<Vec<_>>()
+            .join(", ");
+        raku_array_wrap(&inner, k)
+    };
+    let rendered: Vec<_> = items
+        .iter()
+        .map(|item| {
+            if is_self_array_ref_marker(item) {
+                snapshot(kind)
+            } else {
+                raku_value(item)
+            }
+        })
+        .collect();
+    let count = rendered.len();
+    let inner = rendered.join(", ");
+    raku_array_wrap_counted(&inner, kind, count)
+}
+
 pub fn raku_value(v: &Value) -> String {
+    // Cycle detection for recursive data structures: track Arc pointers
+    // that we're currently rendering. If we encounter the same pointer
+    // again, emit a placeholder instead of recursing infinitely.
+    thread_local! {
+        static SEEN_PTRS: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
     match v {
         Value::Array(items, kind) => {
-            // Shaped arrays: Array.new(:shape(d1, d2), [row1], [row2])
-            // Only for multi-dim shaped arrays (shape.len() > 1) to avoid
-            // rendering sub-arrays as Array.new(:shape(n), ...)
-            if *kind == crate::value::ArrayKind::Shaped
-                && let Some(shape) = crate::runtime::utils::shaped_array_shape(v)
-                && shape.len() > 1
-            {
-                let shape_str = shape
-                    .iter()
-                    .map(|d| d.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let rows = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
-                return format!("Array.new(:shape({}), {})", shape_str, rows);
+            let ptr = Arc::as_ptr(items) as usize;
+            let is_cycle = SEEN_PTRS.with(|seen| seen.borrow().contains(&ptr));
+            if is_cycle {
+                return raku_array_wrap("...", *kind);
             }
-            let snapshot = |k: ArrayKind| {
-                let inner = items
-                    .iter()
-                    .filter(|item| !is_self_array_ref_marker(item))
-                    .map(raku_value)
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                raku_array_wrap(&inner, k)
-            };
-            let rendered: Vec<_> = items
-                .iter()
-                .map(|item| {
-                    if is_self_array_ref_marker(item) {
-                        snapshot(*kind)
-                    } else {
-                        raku_value(item)
-                    }
-                })
-                .collect();
-            let count = rendered.len();
-            let inner = rendered.join(", ");
-            raku_array_wrap_counted(&inner, *kind, count)
+            SEEN_PTRS.with(|seen| seen.borrow_mut().push(ptr));
+            let result = raku_value_array(items, *kind, v);
+            SEEN_PTRS.with(|seen| {
+                let mut s = seen.borrow_mut();
+                if let Some(pos) = s.iter().rposition(|p| *p == ptr) {
+                    s.remove(pos);
+                }
+            });
+            result
         }
         Value::Seq(items) => {
             let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
@@ -1175,6 +1198,16 @@ pub fn raku_value(v: &Value) -> String {
             format!("{} => {}", key_repr, raku_value(value))
         }
         Value::Hash(map) => {
+            // Cycle detection for recursive hash structures
+            thread_local! {
+                static SEEN_HASH_PTRS: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
+            }
+            let ptr = Arc::as_ptr(map) as usize;
+            let is_cycle = SEEN_HASH_PTRS.with(|seen| seen.borrow().contains(&ptr));
+            if is_cycle {
+                return "{...}".to_string();
+            }
+            SEEN_HASH_PTRS.with(|seen| seen.borrow_mut().push(ptr));
             let mut sorted_keys: Vec<&String> = map.keys().collect();
             sorted_keys.sort();
             let parts: Vec<String> = sorted_keys
@@ -1195,6 +1228,12 @@ pub fn raku_value(v: &Value) -> String {
                     }
                 })
                 .collect();
+            SEEN_HASH_PTRS.with(|seen| {
+                let mut s = seen.borrow_mut();
+                if let Some(pos) = s.iter().rposition(|p| *p == ptr) {
+                    s.remove(pos);
+                }
+            });
             format!("{{{}}}", parts.join(", "))
         }
         Value::Nil => "Nil".to_string(),

@@ -1045,7 +1045,28 @@ impl VM {
                                 &val,
                                 Value::Hash(source_hash) if Arc::ptr_eq(hash, source_hash)
                             );
-                            let h = Arc::make_mut(hash);
+                            // Use in-place mutation instead of Arc::make_mut when the
+                            // hash is shared (strong_count > 1) AND the variable is a
+                            // scalar ($) container.  This preserves Raku's object
+                            // identity semantics: when a hash is stored in an array
+                            // slot via `$arr[i] = $hash`, mutations through the original
+                            // variable must be visible through the array.
+                            // For %-sigiled variables (e.g. `%h is copy`), we always
+                            // use Arc::make_mut to get copy-on-write behavior.
+                            // SAFETY: mutsu is single-threaded, so exclusive access is
+                            // guaranteed even though the Arc is shared.
+                            // For %-sigiled hash variables (e.g. `%h is copy`),
+                            // always use COW.  For scalar ($) variables holding
+                            // hashes, use in-place mutation to preserve identity.
+                            // %-sigiled vars have names like "%h", scalar vars
+                            // have names without a sigil prefix (e.g. "bar").
+                            let use_inplace =
+                                Arc::strong_count(hash) > 1 && !var_name.starts_with('%');
+                            let h: &mut std::collections::HashMap<String, Value> = if use_inplace {
+                                unsafe { &mut *(Arc::as_ptr(hash) as *mut _) }
+                            } else {
+                                Arc::make_mut(hash)
+                            };
                             if bind_mode && let Some(Some(source_name)) = bind_sources.first() {
                                 pending_source_update = Some((source_name.clone(), val.clone()));
                                 h.insert(

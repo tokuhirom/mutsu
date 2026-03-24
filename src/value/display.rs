@@ -385,19 +385,60 @@ impl Value {
                     end.to_string_value()
                 )
             }
-            Value::Array(items, ..) => items
-                .iter()
-                .map(|v| v.to_str_context())
-                .collect::<Vec<_>>()
-                .join(" "),
+            Value::Array(items, ..) => {
+                // Cycle detection for recursive array structures
+                thread_local! {
+                    static SEEN_ARR_PTRS: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
+                }
+                let ptr = std::sync::Arc::as_ptr(items) as usize;
+                let is_cycle = SEEN_ARR_PTRS.with(|seen| {
+                    let s = seen.borrow();
+                    s.contains(&ptr)
+                });
+                if is_cycle {
+                    return "[...]".to_string();
+                }
+                SEEN_ARR_PTRS.with(|seen| seen.borrow_mut().push(ptr));
+                let result = items
+                    .iter()
+                    .map(|v| v.to_str_context())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                SEEN_ARR_PTRS.with(|seen| {
+                    let mut s = seen.borrow_mut();
+                    if let Some(pos) = s.iter().rposition(|p| *p == ptr) {
+                        s.remove(pos);
+                    }
+                });
+                result
+            }
             Value::LazyList(_) => "LazyList".to_string(),
             Value::Uni { text, .. } => text.clone(),
             Value::Hash(items) => {
+                // Cycle detection for recursive hash structures
+                thread_local! {
+                    static SEEN_HASH_PTRS: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
+                }
+                let ptr = std::sync::Arc::as_ptr(items) as usize;
+                let is_cycle = SEEN_HASH_PTRS.with(|seen| {
+                    let s = seen.borrow();
+                    s.contains(&ptr)
+                });
+                if is_cycle {
+                    return "{...}".to_string();
+                }
+                SEEN_HASH_PTRS.with(|seen| seen.borrow_mut().push(ptr));
                 let mut pairs: Vec<_> = items
                     .iter()
                     .map(|(k, v)| format!("{}\t{}", k, v.to_string_value()))
                     .collect();
                 pairs.sort();
+                SEEN_HASH_PTRS.with(|seen| {
+                    let mut s = seen.borrow_mut();
+                    if let Some(pos) = s.iter().rposition(|p| *p == ptr) {
+                        s.remove(pos);
+                    }
+                });
                 pairs.join("\n")
             }
             Value::Rat(n, d) => {
