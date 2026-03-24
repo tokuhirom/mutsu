@@ -33,6 +33,12 @@ impl Interpreter {
                 return self.dispatch_new(materialized, args);
             }
         }
+        // Collation.new — create a Collation instance with default settings
+        if let Value::Package(name) = &target
+            && name == "Collation"
+        {
+            return Ok(Self::make_collation_instance(1, 1, 1, 1));
+        }
         // Calling .new() on an instance delegates to the class constructor
         if let Value::Instance { class_name, .. } = &target {
             return self.dispatch_new(Value::Package(*class_name), args);
@@ -2747,5 +2753,20 @@ impl Interpreter {
         } else {
             Ok(date)
         }
+    }
+
+    /// Create a Collation instance with the given level settings.
+    pub(super) fn make_collation_instance(
+        primary: i64,
+        secondary: i64,
+        tertiary: i64,
+        quaternary: i64,
+    ) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("primary".to_string(), Value::Int(primary));
+        attrs.insert("secondary".to_string(), Value::Int(secondary));
+        attrs.insert("tertiary".to_string(), Value::Int(tertiary));
+        attrs.insert("quaternary".to_string(), Value::Int(quaternary));
+        Value::make_instance(Symbol::intern("Collation"), attrs)
     }
 }

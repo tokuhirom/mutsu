@@ -1649,6 +1649,7 @@ fn is_reserved_infix_word(name: &str) -> bool {
             | "min"
             | "max"
             | "cmp"
+            | "coll"
             | "leg"
             | "eq"
             | "ne"
@@ -2236,6 +2237,8 @@ fn parse_comparison_op(r: &str) -> Option<(ComparisonOp, usize)> {
         Some((ComparisonOp::Leg, 3))
     } else if r.starts_with("cmp") && !is_ident_char(r.as_bytes().get(3).copied()) {
         Some((ComparisonOp::Cmp, 3))
+    } else if r.starts_with("coll") && !is_ident_char(r.as_bytes().get(4).copied()) {
+        Some((ComparisonOp::Coll, 4))
     } else if r.starts_with("eqv") && !is_ident_char(r.as_bytes().get(3).copied()) {
         Some((ComparisonOp::Eqv, 3))
     } else if r.starts_with("before") && !is_ident_char(r.as_bytes().get(6).copied()) {

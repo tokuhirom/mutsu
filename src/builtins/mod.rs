@@ -1,6 +1,7 @@
 #![allow(clippy::result_large_err)]
 
 pub(crate) mod arith;
+pub(crate) mod collation;
 mod functions;
 pub(crate) mod methods_0arg;
 mod methods_narg;

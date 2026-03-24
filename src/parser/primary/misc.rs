@@ -31,9 +31,9 @@ fn skip_pointy_return_type(mut r: &str) -> PResult<'_, Option<String>> {
 const REDUCTION_OPS: &[&str] = &[
     "+", "-", "*", "/", "%", "~", "||", "&&", "//", "%%", "**", "^^", "+&", "+|", "+^", "+<", "+>",
     "~&", "~|", "~^", "~<", "~>", "?&", "?|", "?^", "==", "!=", "<", ">", "<=", ">=", "<=>", "===",
-    "=:=", "!=:=", "=>", "=", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg", "cmp", "~~", "min",
-    "max", "gcd", "lcm", "and", "or", "not", "andthen", "orelse", "xor", ",", "after", "before",
-    "X", "Z", "x", "xx", "&", "|", "^", "o", "∘", "⊍", "div", "mod", "minmax",
+    "=:=", "!=:=", "=>", "=", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg", "cmp", "coll",
+    "~~", "min", "max", "gcd", "lcm", "and", "or", "not", "andthen", "orelse", "xor", ",", "after",
+    "before", "X", "Z", "x", "xx", "&", "|", "^", "o", "∘", "⊍", "div", "mod", "minmax",
 ];
 
 /// Find the matching `]` for a `[` at position 0, respecting nesting.

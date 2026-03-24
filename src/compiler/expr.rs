@@ -2904,6 +2904,7 @@ impl Compiler {
             // Three-way comparison
             TokenKind::LtEqGt => Some(OpCode::Spaceship),
             TokenKind::Ident(name) if name == "cmp" => Some(OpCode::Cmp),
+            TokenKind::Ident(name) if name == "coll" => Some(OpCode::Coll),
             TokenKind::Ident(name) if name == "leg" => Some(OpCode::Leg),
             // Identity/value equality
             TokenKind::EqEqEq => Some(OpCode::StrictEq),

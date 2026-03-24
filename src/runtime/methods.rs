@@ -2699,6 +2699,11 @@ impl Interpreter {
                     return self.dispatch_supply_transform(target, method, &args);
                 }
             }
+            // Collation instance methods
+            "set" | "primary" | "secondary" | "tertiary" | "quaternary" | "gist" if matches!(&target, Value::Instance { class_name, .. } if class_name == "Collation") =>
+            {
+                return self.dispatch_collation_method(target, method, &args);
+            }
             "collate" if args.is_empty() => {
                 return self.dispatch_collate(target);
             }
