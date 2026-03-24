@@ -856,8 +856,26 @@ impl Interpreter {
                 is_regex: false,
             };
         }
-        // Look up as a function reference (including multi subs)
-        let def = self.resolve_function(lookup_name);
+        // Look up as a function reference (including multi subs).
+        // When pseudo-packages are present (e.g. OUR::, GLOBAL::), also check
+        // our_scoped_functions for subs defined in EVAL that don't leak into
+        // the regular functions map.
+        let def = self.resolve_function(lookup_name).or_else(|| {
+            if has_packages {
+                let fq = format!("{}::{}", self.current_package, lookup_name);
+                self.our_scoped_functions
+                    .get(&Symbol::intern(&fq))
+                    .cloned()
+                    .or_else(|| {
+                        let global_fq = format!("GLOBAL::{}", lookup_name);
+                        self.our_scoped_functions
+                            .get(&Symbol::intern(&global_fq))
+                            .cloned()
+                    })
+            } else {
+                None
+            }
+        });
         let is_multi = if def.is_none() {
             // Check if there are multi-dispatch variants (stored with arity/type suffixes)
             let prefix_local = format!("{}::{}/", self.current_package, lookup_name);
@@ -933,7 +951,7 @@ impl Interpreter {
 
     /// Strip pseudo-package prefixes (SETTING::, OUTER::, CALLER::, CORE::, etc.)
     /// from a qualified name and return the final bare function name.
-    fn strip_pseudo_packages(name: &str) -> &str {
+    pub(crate) fn strip_pseudo_packages(name: &str) -> &str {
         let pseudo = [
             "SETTING", "CALLER", "OUTER", "CORE", "GLOBAL", "MY", "OUR", "DYNAMIC", "UNIT",
         ];
@@ -1526,6 +1544,14 @@ impl Interpreter {
     }
 
     pub(crate) fn restore_routine_registry(&mut self, snapshot: RoutineRegistrySnapshot) {
+        self.restore_routine_registry_impl(snapshot, false);
+    }
+
+    pub(crate) fn restore_routine_registry_eval(&mut self, snapshot: RoutineRegistrySnapshot) {
+        self.restore_routine_registry_impl(snapshot, true);
+    }
+
+    fn restore_routine_registry_impl(&mut self, snapshot: RoutineRegistrySnapshot, is_eval: bool) {
         let (functions, proto_functions, token_defs, proto_subs, proto_tokens) = snapshot;
         // Collect our-scoped functions that were newly added during this block
         // (not present in the snapshot) that need to persist after scope restoration.
@@ -1543,9 +1569,13 @@ impl Interpreter {
         self.token_defs = token_defs;
         self.proto_subs = proto_subs;
         self.proto_tokens = proto_tokens;
-        // Re-apply only newly added our-scoped functions so they survive block scope exit
-        for (key, def) in new_our {
-            self.functions.insert(key, def);
+        // Re-apply only newly added our-scoped functions so they survive block scope exit.
+        // In EVAL context, our-scoped functions should NOT leak into the outer lexical
+        // scope — they remain accessible only via OUR:: pseudo-package resolution.
+        if !is_eval {
+            for (key, def) in new_our {
+                self.functions.insert(key, def);
+            }
         }
     }
 

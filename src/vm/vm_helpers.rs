@@ -98,6 +98,31 @@ impl VM {
         None
     }
 
+    /// Strip pseudo-package qualifiers (GLOBAL::, OUR::, MY::) from a
+    /// sigiled variable name, returning the bare variable name.
+    /// e.g. "$GLOBAL::x" → Some("x"), "$OUR::x" → Some("x")
+    fn pseudo_package_unqualified_name(name: &str) -> Option<String> {
+        let pseudo = ["GLOBAL", "OUR", "MY"];
+        for sigil in ["$", "@", "%", "&"] {
+            if let Some(rest) = name.strip_prefix(sigil) {
+                for pkg in &pseudo {
+                    let prefix = format!("{pkg}::");
+                    if let Some(bare) = rest.strip_prefix(&prefix) {
+                        return Some(format!("{sigil}{bare}"));
+                    }
+                }
+            }
+        }
+        // Also handle unsigiled forms (e.g. "GLOBAL::x")
+        for pkg in &pseudo {
+            let prefix = format!("{pkg}::");
+            if let Some(bare) = name.strip_prefix(&prefix) {
+                return Some(bare.to_string());
+            }
+        }
+        None
+    }
+
     fn main_qualified_name(name: &str) -> Option<String> {
         for sigil in ["$", "@", "%", "&"] {
             if let Some(rest) = name.strip_prefix(sigil)
@@ -161,6 +186,11 @@ impl VM {
         if let Some(qualified) = Self::main_qualified_name(name) {
             return self.interpreter.env().get(&qualified).cloned();
         }
+        // Strip GLOBAL::, OUR::, MY:: pseudo-package qualifiers to find
+        // the variable under its bare name in the environment.
+        if let Some(bare) = Self::pseudo_package_unqualified_name(name) {
+            return self.interpreter.env().get(&bare).cloned();
+        }
         // Placeholder block parameters are stored as "^name". Allow lexical
         // access by the de-careted name inside the same block.
         if !name.starts_with('^') {
@@ -210,6 +240,12 @@ impl VM {
             && self.interpreter.env().contains_key(&qualified)
         {
             self.interpreter.env_mut().insert(qualified, value);
+            return;
+        }
+        // Write through GLOBAL::, OUR::, MY:: pseudo-package qualifiers to the
+        // bare variable name in the environment.
+        if let Some(bare) = Self::pseudo_package_unqualified_name(name) {
+            self.interpreter.env_mut().insert(bare, value);
         }
     }
 

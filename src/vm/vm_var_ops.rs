@@ -862,7 +862,18 @@ impl VM {
                     sym, pkg,
                 )));
             }
-            Value::Package(Symbol::intern(name))
+            // Strip pseudo-package prefixes (OUR::, GLOBAL::, MY::, etc.)
+            // and resolve to the bare type name if it exists.
+            let bare = Interpreter::strip_pseudo_packages(name);
+            if bare != name
+                && (self.interpreter.has_type(bare)
+                    || Self::is_builtin_type(bare)
+                    || Self::is_type_with_smiley(bare, &self.interpreter))
+            {
+                Value::Package(Symbol::intern(Self::resolve_type_alias(bare)))
+            } else {
+                Value::Package(Symbol::intern(name))
+            }
         } else if name.chars().count() == 1 {
             // Single unicode character — check for vulgar fractions etc.
             let ch = name.chars().next().unwrap();
