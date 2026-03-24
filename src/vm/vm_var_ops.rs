@@ -1464,12 +1464,52 @@ impl VM {
                     }
                 }
             }
+            // WhateverCode index on Range: (1..8)[*-1]
+            (ref range, Value::Sub(ref data)) if range.is_range() => {
+                let len = crate::runtime::Interpreter::range_elems_f64(range) as i64;
+                let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
+                let mut sub_env = data.env.clone();
+                sub_env.insert(param.to_string(), Value::Int(len));
+                let saved_env = std::mem::take(self.interpreter.env_mut());
+                *self.interpreter.env_mut() = sub_env;
+                let idx = self
+                    .interpreter
+                    .eval_block_value(&data.body)
+                    .unwrap_or(Value::Nil);
+                *self.interpreter.env_mut() = saved_env;
+                let i = match &idx {
+                    Value::Int(i) => Some(*i),
+                    Value::Num(n) => Some(*n as i64),
+                    _ => None,
+                };
+                match i {
+                    Some(i) if i >= 0 => {
+                        if let Some((start, end, _excl_start, excl_end)) = range_params(range) {
+                            let actual_end = if excl_end { end - 1 } else { end };
+                            let val = start + i;
+                            if val > actual_end {
+                                Value::Nil
+                            } else {
+                                Value::Int(val)
+                            }
+                        } else {
+                            let items = crate::runtime::utils::value_to_list(range);
+                            items.get(i as usize).cloned().unwrap_or(Value::Nil)
+                        }
+                    }
+                    Some(i) if i < 0 => Self::make_out_of_range_failure(i),
+                    _ => Value::Nil,
+                }
+            }
             (ref range, Value::RangeExcl(a, b)) if range.is_range() => {
                 if let Some((start, end, _excl_start, excl_end)) = range_params(range) {
                     let actual_end = if excl_end { end - 1 } else { end };
                     let mut result = Vec::new();
                     for i in a..b {
-                        let val = start + i;
+                        let val = match start.checked_add(i) {
+                            Some(v) => v,
+                            None => break,
+                        };
                         if val > actual_end {
                             break;
                         }

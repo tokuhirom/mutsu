@@ -20,7 +20,7 @@ mod vm_helpers;
 mod vm_misc_ops;
 mod vm_register_ops;
 mod vm_set_ops;
-mod vm_smart_match;
+pub(crate) mod vm_smart_match;
 mod vm_string_regex_ops;
 mod vm_var_assign_ops;
 mod vm_var_ops;

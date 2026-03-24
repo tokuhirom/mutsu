@@ -231,6 +231,149 @@ fn make_fat_rat(num: i64, den: i64) -> Value {
     }
 }
 
+/// Scale a Range by a numeric factor. Returns Some(range) if `range_val` is a Range
+/// and `factor` is numeric, None otherwise.
+fn range_scale(range_val: &Value, factor: &Value) -> Option<Value> {
+    let n = match factor {
+        Value::Int(i) => Some(*i as f64),
+        Value::Num(f) => Some(*f),
+        Value::Rat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+        _ => None,
+    }?;
+    let (start, end, excl_start, excl_end) = match range_val {
+        Value::Range(a, b) => (Value::Int(*a), Value::Int(*b), false, false),
+        Value::RangeExcl(a, b) => (Value::Int(*a), Value::Int(*b), false, true),
+        Value::RangeExclStart(a, b) => (Value::Int(*a), Value::Int(*b), true, false),
+        Value::RangeExclBoth(a, b) => (Value::Int(*a), Value::Int(*b), true, true),
+        Value::GenericRange {
+            start,
+            end,
+            excl_start,
+            excl_end,
+        } => (
+            start.as_ref().clone(),
+            end.as_ref().clone(),
+            *excl_start,
+            *excl_end,
+        ),
+        _ => return None,
+    };
+    let scale_val = |v: Value| -> Value {
+        match v {
+            Value::Int(i) => {
+                let result = i as f64 * n;
+                if result == result.floor() && result.abs() < i64::MAX as f64 {
+                    Value::Int(result as i64)
+                } else {
+                    Value::Num(result)
+                }
+            }
+            Value::Num(f) => Value::Num(f * n),
+            Value::Rat(rn, rd) if rd != 0 => Value::Num(rn as f64 / rd as f64 * n),
+            other => Value::Num(other.to_f64() * n),
+        }
+    };
+    let new_start = scale_val(start);
+    let new_end = scale_val(end);
+    Some(Value::GenericRange {
+        start: Arc::new(new_start),
+        end: Arc::new(new_end),
+        excl_start,
+        excl_end,
+    })
+}
+
+/// Divide a Range by a numeric factor. Returns Some(range) if the left is a Range.
+fn range_divide(range_val: &Value, divisor: &Value) -> Option<Value> {
+    // Get divisor as rational (num, den) for exact division
+    let (div_n, div_d): (i64, i64) = match divisor {
+        Value::Int(i) if *i != 0 => (*i, 1),
+        Value::Rat(n, d) if *d != 0 && *n != 0 => (*n, *d),
+        Value::Num(f) if *f != 0.0 => return range_divide_float(range_val, *f),
+        _ => return None,
+    };
+    let (start, end, excl_start, excl_end) = match range_val {
+        Value::Range(a, b) => (Value::Int(*a), Value::Int(*b), false, false),
+        Value::RangeExcl(a, b) => (Value::Int(*a), Value::Int(*b), false, true),
+        Value::RangeExclStart(a, b) => (Value::Int(*a), Value::Int(*b), true, false),
+        Value::RangeExclBoth(a, b) => (Value::Int(*a), Value::Int(*b), true, true),
+        Value::GenericRange {
+            start,
+            end,
+            excl_start,
+            excl_end,
+        } => (
+            start.as_ref().clone(),
+            end.as_ref().clone(),
+            *excl_start,
+            *excl_end,
+        ),
+        _ => return None,
+    };
+    // Dividing by (div_n/div_d) = multiplying by (div_d/div_n)
+    // Use make_rat for proper normalization, but preserve Rat type (don't collapse to Int)
+    let div_val = |v: Value| -> Value {
+        let num = match &v {
+            Value::Int(i) => *i,
+            Value::Rat(n, d) => {
+                // (n/d) / (div_n/div_d) = (n*div_d) / (d*div_n)
+                let result = make_rat(n * div_d, d * div_n);
+                // Ensure result stays Rat even if whole number
+                if let Value::Int(i) = result {
+                    return Value::Rat(i, 1);
+                }
+                return result;
+            }
+            _ => return Value::Num(v.to_f64() * div_d as f64 / div_n as f64),
+        };
+        let result = make_rat(num * div_d, div_n);
+        // Ensure result stays Rat even if whole number
+        if let Value::Int(i) = result {
+            return Value::Rat(i, 1);
+        }
+        result
+    };
+    let new_start = div_val(start);
+    let new_end = div_val(end);
+    Some(Value::GenericRange {
+        start: Arc::new(new_start),
+        end: Arc::new(new_end),
+        excl_start,
+        excl_end,
+    })
+}
+
+/// Divide a Range by a float factor.
+fn range_divide_float(range_val: &Value, n: f64) -> Option<Value> {
+    let (start, end, excl_start, excl_end) = match range_val {
+        Value::Range(a, b) => (Value::Int(*a), Value::Int(*b), false, false),
+        Value::RangeExcl(a, b) => (Value::Int(*a), Value::Int(*b), false, true),
+        Value::RangeExclStart(a, b) => (Value::Int(*a), Value::Int(*b), true, false),
+        Value::RangeExclBoth(a, b) => (Value::Int(*a), Value::Int(*b), true, true),
+        Value::GenericRange {
+            start,
+            end,
+            excl_start,
+            excl_end,
+        } => (
+            start.as_ref().clone(),
+            end.as_ref().clone(),
+            *excl_start,
+            *excl_end,
+        ),
+        _ => return None,
+    };
+    let div_val = |v: Value| -> Value { Value::Num(v.to_f64() / n) };
+    let new_start = div_val(start);
+    let new_end = div_val(end);
+    Some(Value::GenericRange {
+        start: Arc::new(new_start),
+        end: Arc::new(new_end),
+        excl_start,
+        excl_end,
+    })
+}
+
 // ── Arithmetic operators ─────────────────────────────────────────────
 pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError> {
     // Range + Int: shift both bounds
@@ -546,6 +689,10 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
 }
 
 pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
+    // Range * Numeric: scale both bounds, preserving exclusivity
+    if let Some(range) = range_scale(&left, &right).or_else(|| range_scale(&right, &left)) {
+        return range;
+    }
     let (l, r) = runtime::coerce_numeric(left, right);
     if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
         let (ar, ai) = runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
@@ -617,6 +764,10 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
 }
 
 pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError> {
+    // Range / Numeric: scale both bounds down
+    if let Some(range) = range_divide(&left, &right) {
+        return Ok(range);
+    }
     let (l, r) = runtime::coerce_numeric(left, right);
     if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
         let (ar, ai) = runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
