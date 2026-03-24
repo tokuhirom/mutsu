@@ -588,15 +588,15 @@ impl Compiler {
             Self::compile_pre_phasers(&mut sub_compiler, body);
             sub_compiler.code.patch_block_pre_end(idx);
             let mut body_main: Vec<Stmt> = Vec::new();
+            // Collect all ENTER phaser bodies for potential value production
+            let mut enter_bodies: Vec<Vec<Stmt>> = Vec::new();
             for stmt in body.iter() {
                 match stmt {
                     Stmt::Phaser {
                         kind: PhaserKind::Enter,
-                        body,
+                        body: enter_body,
                     } => {
-                        for inner in body {
-                            sub_compiler.compile_stmt(inner);
-                        }
+                        enter_bodies.push(enter_body.clone());
                     }
                     Stmt::Phaser {
                         kind:
@@ -610,27 +610,63 @@ impl Compiler {
                     _ => body_main.push(stmt.clone()),
                 }
             }
-            sub_compiler.code.patch_block_enter_end(idx);
-            Self::compile_routine_body_stmts(&mut sub_compiler, &body_main, sink_last_expr);
-            sub_compiler.code.patch_block_body_end(idx);
-            sub_compiler.code.patch_block_keep_start(idx);
-            for stmt in body.iter().rev() {
-                if let Stmt::Phaser { kind, body } = stmt
-                    && matches!(kind, PhaserKind::Leave | PhaserKind::Keep)
-                {
-                    for inner in body {
+            // Compile ENTER phaser bodies. If body_main is empty and
+            // this is a value-producing context (not sink), compile
+            // the last ENTER body to leave its value on the stack.
+            let enter_is_return = body_main.is_empty() && !sink_last_expr;
+            for (i, enter_body) in enter_bodies.iter().enumerate() {
+                let is_last_enter = i == enter_bodies.len() - 1;
+                if is_last_enter && enter_is_return {
+                    sub_compiler.compile_block_inline(enter_body);
+                } else {
+                    for inner in enter_body {
                         sub_compiler.compile_stmt(inner);
                     }
                 }
             }
-            sub_compiler.code.patch_block_undo_start(idx);
-            for stmt in body.iter().rev() {
-                if let Stmt::Phaser { kind, body } = stmt
-                    && matches!(kind, PhaserKind::Leave | PhaserKind::Undo)
-                {
-                    for inner in body {
-                        sub_compiler.compile_stmt(inner);
+            sub_compiler.code.patch_block_enter_end(idx);
+            Self::compile_routine_body_stmts(&mut sub_compiler, &body_main, sink_last_expr);
+            sub_compiler.code.patch_block_body_end(idx);
+            sub_compiler.code.patch_block_keep_start(idx);
+            {
+                let mut prev_guard: Option<usize> = None;
+                for stmt in body.iter().rev() {
+                    if let Stmt::Phaser { kind, body } = stmt
+                        && matches!(kind, PhaserKind::Leave | PhaserKind::Keep)
+                    {
+                        if let Some(pg) = prev_guard {
+                            sub_compiler.code.patch_leave_guard_next(pg);
+                        }
+                        let guard_idx = sub_compiler.code.emit(OpCode::LeaveGuard { next: 0 });
+                        for inner in body {
+                            sub_compiler.compile_stmt(inner);
+                        }
+                        prev_guard = Some(guard_idx);
                     }
+                }
+                if let Some(pg) = prev_guard {
+                    sub_compiler.code.patch_leave_guard_next(pg);
+                }
+            }
+            sub_compiler.code.patch_block_undo_start(idx);
+            {
+                let mut prev_guard: Option<usize> = None;
+                for stmt in body.iter().rev() {
+                    if let Stmt::Phaser { kind, body } = stmt
+                        && matches!(kind, PhaserKind::Leave | PhaserKind::Undo)
+                    {
+                        if let Some(pg) = prev_guard {
+                            sub_compiler.code.patch_leave_guard_next(pg);
+                        }
+                        let guard_idx = sub_compiler.code.emit(OpCode::LeaveGuard { next: 0 });
+                        for inner in body {
+                            sub_compiler.compile_stmt(inner);
+                        }
+                        prev_guard = Some(guard_idx);
+                    }
+                }
+                if let Some(pg) = prev_guard {
+                    sub_compiler.code.patch_leave_guard_next(pg);
                 }
             }
             // POST phasers (reverse order, after LEAVE)
@@ -732,6 +768,15 @@ impl Compiler {
                         } else {
                             sub_compiler.emit_nil_value();
                         }
+                        continue;
+                    }
+                    // ENTER phaser as last statement: compile body inline
+                    // so the value is left on stack as implicit return
+                    Stmt::Phaser {
+                        kind: crate::ast::PhaserKind::Enter,
+                        body: ph_body,
+                    } => {
+                        sub_compiler.compile_block_inline(ph_body);
                         continue;
                     }
                     Stmt::Call { name, args } => {
@@ -870,29 +915,51 @@ impl Compiler {
             }
             sub_compiler.code.patch_block_body_end(idx);
             sub_compiler.code.patch_block_keep_start(idx);
-            for s in body.iter().rev() {
-                if let Stmt::Phaser {
-                    kind,
-                    body: ph_body,
-                } = s
-                    && matches!(kind, PhaserKind::Leave | PhaserKind::Keep)
-                {
-                    for inner in ph_body {
-                        sub_compiler.compile_stmt(inner);
+            {
+                let mut prev_guard: Option<usize> = None;
+                for s in body.iter().rev() {
+                    if let Stmt::Phaser {
+                        kind,
+                        body: ph_body,
+                    } = s
+                        && matches!(kind, PhaserKind::Leave | PhaserKind::Keep)
+                    {
+                        if let Some(pg) = prev_guard {
+                            sub_compiler.code.patch_leave_guard_next(pg);
+                        }
+                        let guard_idx = sub_compiler.code.emit(OpCode::LeaveGuard { next: 0 });
+                        for inner in ph_body {
+                            sub_compiler.compile_stmt(inner);
+                        }
+                        prev_guard = Some(guard_idx);
                     }
+                }
+                if let Some(pg) = prev_guard {
+                    sub_compiler.code.patch_leave_guard_next(pg);
                 }
             }
             sub_compiler.code.patch_block_undo_start(idx);
-            for s in body.iter().rev() {
-                if let Stmt::Phaser {
-                    kind,
-                    body: ph_body,
-                } = s
-                    && matches!(kind, PhaserKind::Leave | PhaserKind::Undo)
-                {
-                    for inner in ph_body {
-                        sub_compiler.compile_stmt(inner);
+            {
+                let mut prev_guard: Option<usize> = None;
+                for s in body.iter().rev() {
+                    if let Stmt::Phaser {
+                        kind,
+                        body: ph_body,
+                    } = s
+                        && matches!(kind, PhaserKind::Leave | PhaserKind::Undo)
+                    {
+                        if let Some(pg) = prev_guard {
+                            sub_compiler.code.patch_leave_guard_next(pg);
+                        }
+                        let guard_idx = sub_compiler.code.emit(OpCode::LeaveGuard { next: 0 });
+                        for inner in ph_body {
+                            sub_compiler.compile_stmt(inner);
+                        }
+                        prev_guard = Some(guard_idx);
                     }
+                }
+                if let Some(pg) = prev_guard {
+                    sub_compiler.code.patch_leave_guard_next(pg);
                 }
             }
             sub_compiler.code.patch_block_post_start(idx);
@@ -1426,30 +1493,52 @@ impl Compiler {
             self.code.patch_block_body_end(idx);
             // KEEP phasers
             self.code.patch_block_keep_start(idx);
-            for s in body.iter().rev() {
-                if let Stmt::Phaser {
-                    kind,
-                    body: ph_body,
-                } = s
-                    && matches!(kind, PhaserKind::Leave | PhaserKind::Keep)
-                {
-                    for inner in ph_body {
-                        self.compile_stmt(inner);
+            {
+                let mut prev_guard: Option<usize> = None;
+                for s in body.iter().rev() {
+                    if let Stmt::Phaser {
+                        kind,
+                        body: ph_body,
+                    } = s
+                        && matches!(kind, PhaserKind::Leave | PhaserKind::Keep)
+                    {
+                        if let Some(pg) = prev_guard {
+                            self.code.patch_leave_guard_next(pg);
+                        }
+                        let guard_idx = self.code.emit(OpCode::LeaveGuard { next: 0 });
+                        for inner in ph_body {
+                            self.compile_stmt(inner);
+                        }
+                        prev_guard = Some(guard_idx);
                     }
+                }
+                if let Some(pg) = prev_guard {
+                    self.code.patch_leave_guard_next(pg);
                 }
             }
             // UNDO phasers
             self.code.patch_block_undo_start(idx);
-            for s in body.iter().rev() {
-                if let Stmt::Phaser {
-                    kind,
-                    body: ph_body,
-                } = s
-                    && matches!(kind, PhaserKind::Leave | PhaserKind::Undo)
-                {
-                    for inner in ph_body {
-                        self.compile_stmt(inner);
+            {
+                let mut prev_guard: Option<usize> = None;
+                for s in body.iter().rev() {
+                    if let Stmt::Phaser {
+                        kind,
+                        body: ph_body,
+                    } = s
+                        && matches!(kind, PhaserKind::Leave | PhaserKind::Undo)
+                    {
+                        if let Some(pg) = prev_guard {
+                            self.code.patch_leave_guard_next(pg);
+                        }
+                        let guard_idx = self.code.emit(OpCode::LeaveGuard { next: 0 });
+                        for inner in ph_body {
+                            self.compile_stmt(inner);
+                        }
+                        prev_guard = Some(guard_idx);
                     }
+                }
+                if let Some(pg) = prev_guard {
+                    self.code.patch_leave_guard_next(pg);
                 }
             }
             // POST phasers
@@ -1839,13 +1928,24 @@ impl Compiler {
         stmt: &Stmt,
         current_loop_label: Option<&str>,
         next_ph: &[Stmt],
+        leave_ph: &[Stmt],
         in_nested_loop: bool,
     ) -> Stmt {
         match stmt {
             Stmt::Next(label)
                 if Self::next_targets_current_loop(label, current_loop_label, in_nested_loop) =>
             {
-                let mut wrapped = next_ph.to_vec();
+                let mut wrapped = Vec::new();
+                wrapped.extend(leave_ph.iter().cloned());
+                wrapped.extend(next_ph.iter().cloned());
+                wrapped.push(stmt.clone());
+                Stmt::SyntheticBlock(wrapped)
+            }
+            Stmt::Last(label)
+                if Self::next_targets_current_loop(label, current_loop_label, in_nested_loop)
+                    && !leave_ph.is_empty() =>
+            {
+                let mut wrapped = leave_ph.to_vec();
                 wrapped.push(stmt.clone());
                 Stmt::SyntheticBlock(wrapped)
             }
@@ -1860,12 +1960,14 @@ impl Compiler {
                     then_branch,
                     current_loop_label,
                     next_ph,
+                    leave_ph,
                     in_nested_loop,
                 ),
                 else_branch: Self::rewrite_next_targets_in_stmts(
                     else_branch,
                     current_loop_label,
                     next_ph,
+                    leave_ph,
                     in_nested_loop,
                 ),
                 binding_var: binding_var.clone(),
@@ -1874,6 +1976,7 @@ impl Compiler {
                 body,
                 current_loop_label,
                 next_ph,
+                leave_ph,
                 in_nested_loop,
             )),
             Stmt::SyntheticBlock(body) => {
@@ -1881,6 +1984,7 @@ impl Compiler {
                     body,
                     current_loop_label,
                     next_ph,
+                    leave_ph,
                     in_nested_loop,
                 ))
             }
@@ -1890,12 +1994,19 @@ impl Compiler {
                     stmt,
                     current_loop_label,
                     next_ph,
+                    leave_ph,
                     in_nested_loop,
                 )),
             },
             Stmt::While { cond, body, label } => Stmt::While {
                 cond: cond.clone(),
-                body: Self::rewrite_next_targets_in_stmts(body, current_loop_label, next_ph, true),
+                body: Self::rewrite_next_targets_in_stmts(
+                    body,
+                    current_loop_label,
+                    next_ph,
+                    leave_ph,
+                    true,
+                ),
                 label: label.clone(),
             },
             Stmt::For {
@@ -1912,7 +2023,13 @@ impl Compiler {
                 param: param.clone(),
                 param_def: param_def.clone(),
                 params: params.clone(),
-                body: Self::rewrite_next_targets_in_stmts(body, current_loop_label, next_ph, true),
+                body: Self::rewrite_next_targets_in_stmts(
+                    body,
+                    current_loop_label,
+                    next_ph,
+                    leave_ph,
+                    true,
+                ),
                 label: label.clone(),
                 mode: *mode,
                 rw_block: *rw_block,
@@ -1928,7 +2045,13 @@ impl Compiler {
                 init: init.clone(),
                 cond: cond.clone(),
                 step: step.clone(),
-                body: Self::rewrite_next_targets_in_stmts(body, current_loop_label, next_ph, true),
+                body: Self::rewrite_next_targets_in_stmts(
+                    body,
+                    current_loop_label,
+                    next_ph,
+                    leave_ph,
+                    true,
+                ),
                 repeat: *repeat,
                 label: label.clone(),
             },
@@ -1940,6 +2063,7 @@ impl Compiler {
         stmts: &[Stmt],
         current_loop_label: Option<&str>,
         next_ph: &[Stmt],
+        leave_ph: &[Stmt],
         in_nested_loop: bool,
     ) -> Vec<Stmt> {
         stmts
@@ -1949,6 +2073,7 @@ impl Compiler {
                     stmt,
                     current_loop_label,
                     next_ph,
+                    leave_ph,
                     in_nested_loop,
                 )
             })
@@ -2046,10 +2171,18 @@ impl Compiler {
         });
         // NEXT phasers run in LIFO (reverse declaration) order per Raku spec
         next_ph.reverse();
-        let body_main = if next_ph.is_empty() {
+        // LEAVE phasers run in LIFO (reverse declaration) order per Raku spec
+        let leave_ph_reversed: Vec<Stmt> = leave_ph.iter().rev().cloned().collect();
+        let body_main = if next_ph.is_empty() && leave_ph_reversed.is_empty() {
             body_main
         } else {
-            Self::rewrite_next_targets_in_stmts(&body_main, label, &next_ph, false)
+            Self::rewrite_next_targets_in_stmts(
+                &body_main,
+                label,
+                &next_ph,
+                &leave_ph_reversed,
+                false,
+            )
         };
 
         // FIRST runs before ENTER on the first iteration (per Raku spec)
