@@ -3750,7 +3750,54 @@ impl Interpreter {
                         && (pd.name != "__type_only__" || self.is_resolvable_type(constraint))
                     {
                         let type_error_kind = "X::TypeCheck::Binding::Parameter";
-                        if let Some(captured_name) = constraint.strip_prefix("::") {
+                        // For &-sigil parameters, the type constraint specifies the
+                        // callable's return type, not the type of the value itself.
+                        // e.g. `Callable &x` means Callable[Callable], `Int &x` means Callable[Int].
+                        if pd.name.starts_with('&') {
+                            // First, the value must be Callable
+                            if !self.type_matches_value("Callable", &value) {
+                                let mut err = RuntimeError::new(format!(
+                                    "{}: Type check failed in binding to parameter '{}'; expected Callable[{}] but got {} ({})",
+                                    type_error_kind,
+                                    pd.name,
+                                    constraint,
+                                    super::value_type_name(&value),
+                                    super::utils::gist_value(&value)
+                                ));
+                                let mut ex_attrs = std::collections::HashMap::new();
+                                ex_attrs
+                                    .insert("message".to_string(), Value::str(err.message.clone()));
+                                let exception = Value::make_instance(
+                                    Symbol::intern("X::TypeCheck::Binding::Parameter"),
+                                    ex_attrs,
+                                );
+                                err.exception = Some(Box::new(exception));
+                                return Err(err);
+                            }
+                            // Then check the callable's return type matches the constraint
+                            let return_type = self.callable_return_type(&value);
+                            let return_ok =
+                                return_type.as_deref().is_some_and(|rt| rt == constraint);
+                            if !return_ok {
+                                let mut err = RuntimeError::new(format!(
+                                    "{}: Type check failed in binding to parameter '{}'; expected Callable[{}] but got {} ({})",
+                                    type_error_kind,
+                                    pd.name,
+                                    constraint,
+                                    super::value_type_name(&value),
+                                    super::utils::gist_value(&value)
+                                ));
+                                let mut ex_attrs = std::collections::HashMap::new();
+                                ex_attrs
+                                    .insert("message".to_string(), Value::str(err.message.clone()));
+                                let exception = Value::make_instance(
+                                    Symbol::intern("X::TypeCheck::Binding::Parameter"),
+                                    ex_attrs,
+                                );
+                                err.exception = Some(Box::new(exception));
+                                return Err(err);
+                            }
+                        } else if let Some(captured_name) = constraint.strip_prefix("::") {
                             self.bind_type_capture(captured_name, &value);
                         } else if let Some((target, source)) = parse_coercion_type(constraint) {
                             // Coercion type: check source type if specified, then coerce
@@ -3901,6 +3948,30 @@ impl Interpreter {
                         let type_error_kind = "X::TypeCheck::Binding::Parameter";
                         let mut err = RuntimeError::new(format!(
                             "{}: Type check failed in binding to parameter '{}'; expected Associative but got {} ({})",
+                            type_error_kind,
+                            pd.name,
+                            super::value_type_name(&value),
+                            super::utils::gist_value(&value)
+                        ));
+                        let mut ex_attrs = std::collections::HashMap::new();
+                        ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                        let exception = Value::make_instance(
+                            Symbol::intern("X::TypeCheck::Binding::Parameter"),
+                            ex_attrs,
+                        );
+                        err.exception = Some(Box::new(exception));
+                        return Err(err);
+                    }
+                    // Implicit Callable constraint: untyped &-sigiled parameters
+                    // require the argument to be Callable (Sub, Block, etc.).
+                    if pd.type_constraint.is_none()
+                        && pd.name.starts_with('&')
+                        && !pd.slurpy
+                        && !self.type_matches_value("Callable", &value)
+                    {
+                        let type_error_kind = "X::TypeCheck::Binding::Parameter";
+                        let mut err = RuntimeError::new(format!(
+                            "{}: Type check failed in binding to parameter '{}'; expected Callable but got {} ({})",
                             type_error_kind,
                             pd.name,
                             super::value_type_name(&value),
