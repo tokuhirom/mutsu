@@ -3194,9 +3194,18 @@ impl Interpreter {
                 };
                 frame.remaining.remove(0);
                 let call_args = override_args.unwrap_or_else(|| frame.args.clone());
+                // Use the current `self` from the environment instead of the stale
+                // frame invocant.  The method body may have mutated attributes
+                // (e.g. `$.tracker ~= "bar,"`) before calling callsame/callwith,
+                // so the frame's snapshot is outdated.
+                let current_invocant = self
+                    .env
+                    .get("self")
+                    .cloned()
+                    .unwrap_or_else(|| frame.invocant.clone());
                 (
                     frame.receiver_class.clone(),
-                    frame.invocant.clone(),
+                    current_invocant,
                     call_args,
                     owner_class,
                     method_def,
@@ -3257,11 +3266,21 @@ impl Interpreter {
         }
         // Try multi dispatch stack
         if let Some((_name, candidates, orig_args)) = self.multi_dispatch_stack.last().cloned() {
-            let Some(next_def) = candidates.first().cloned() else {
+            let call_args = override_args.unwrap_or(orig_args);
+            // Find the first candidate whose signature matches the (possibly new) args.
+            let mut matched_idx = None;
+            for (i, cand) in candidates.iter().enumerate() {
+                if self.args_match_param_types(&call_args, &cand.param_defs) {
+                    matched_idx = Some(i);
+                    break;
+                }
+            }
+            let Some(idx) = matched_idx else {
+                // No candidate matches — return Nil (nowhere to defer to)
                 return Ok(Value::Nil);
             };
-            let remaining = candidates[1..].to_vec();
-            let call_args = override_args.unwrap_or(orig_args);
+            let next_def = candidates[idx].clone();
+            let remaining = candidates[idx + 1..].to_vec();
             let stack_len = self.multi_dispatch_stack.len();
             self.multi_dispatch_stack[stack_len - 1] = (_name, remaining, call_args.clone());
             let result = self.call_function_def(&next_def, &call_args)?;
@@ -3298,11 +3317,34 @@ impl Interpreter {
                 return Ok(result);
             }
         }
+        // If we're inside a method or routine but there's simply no next candidate,
+        // return Nil (this is the Raku behavior for callsame/callwith at the end of
+        // the MRO or with no multi candidates).
+        if !self.samewith_context_stack.is_empty() || !self.routine_stack.is_empty() {
+            if tail_call {
+                return Err(RuntimeError {
+                    return_value: Some(Value::Nil),
+                    ..RuntimeError::new("")
+                });
+            }
+            return Ok(Value::Nil);
+        }
         // Not in any dispatch context
         Err(Self::no_dispatcher_error(func_name))
     }
 
     fn builtin_nextcallee(&mut self) -> Result<Value, RuntimeError> {
+        // Check wrap dispatch stack first (wrapper chains)
+        if let Some(frame) = self.wrap_dispatch_stack.last_mut() {
+            if let Some(next) = frame.remaining.first().cloned() {
+                frame.remaining.remove(0);
+                return Ok(next);
+            }
+            return Ok(Value::Nil);
+        }
+        // Check method dispatch stack
+        // (not yet implemented for methods — return Nil)
+        // Check multi dispatch stack
         let Some((_name, candidates, _orig_args)) = self.multi_dispatch_stack.last().cloned()
         else {
             return Ok(Value::Nil);

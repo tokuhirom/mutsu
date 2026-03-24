@@ -766,6 +766,35 @@ impl Interpreter {
         all_matches
     }
 
+    /// Collect ALL multi dispatch candidates for a function name, regardless of
+    /// arity or type matching.  Used to build the full candidate list for
+    /// callwith(), which may re-dispatch with different arguments.
+    pub(crate) fn resolve_all_multi_candidates(&self, name: &str) -> Vec<FunctionDef> {
+        let mut all = Vec::new();
+        let prefixes = [
+            format!("{}::{}/", self.current_package, name),
+            format!("GLOBAL::{}/", name),
+        ];
+        let mut seen_fps = Vec::new();
+        for prefix in &prefixes {
+            let candidates: Vec<FunctionDef> = self
+                .functions
+                .iter()
+                .filter(|(k, _)| k.resolve().starts_with(prefix.as_str()))
+                .map(|(_, def)| def.clone())
+                .collect();
+            for def in candidates {
+                let fp =
+                    crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+                if !seen_fps.contains(&fp) {
+                    seen_fps.push(fp);
+                    all.push(def);
+                }
+            }
+        }
+        all
+    }
+
     pub(super) fn eval_token_call_values(
         &mut self,
         name: &str,

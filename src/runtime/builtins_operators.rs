@@ -216,8 +216,10 @@ impl Interpreter {
             return self.call_sub_value(sub_val, args.to_vec(), false);
         }
         if let Some(def) = self.resolve_function_with_alias(name, args) {
-            // Collect remaining candidates for callsame/nextcallee
-            let all_candidates = self.resolve_all_matching_candidates(name, args);
+            // Collect remaining candidates for callsame/nextcallee/callwith.
+            // Use all multi candidates (not just matching ones) because callwith()
+            // can re-dispatch with different arguments.
+            let all_candidates = self.resolve_all_multi_candidates(name);
             let def_fp =
                 crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
             let remaining: Vec<FunctionDef> = all_candidates

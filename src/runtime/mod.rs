@@ -795,6 +795,9 @@ pub struct Interpreter {
     /// Maps function name to the Sub value that was wrapped. Used to get the right sub_id
     /// when dispatching named function calls through the wrap chain.
     wrap_name_to_sub: HashMap<String, Value>,
+    /// Maps function name to the callable_id at the time wrap was first called.
+    /// Used to detect sub redefinition (e.g. `sub foo` in a new block).
+    wrap_callable_ids: HashMap<String, Option<i64>>,
     /// Counter for generating unique wrap handle IDs.
     wrap_handle_counter: u64,
     /// Stack of wrap dispatch frames for callsame/callwith inside wrappers.
@@ -2500,6 +2503,7 @@ impl Interpreter {
             wrap_chains: HashMap::new(),
             wrap_sub_names: HashMap::new(),
             wrap_name_to_sub: HashMap::new(),
+            wrap_callable_ids: HashMap::new(),
             wrap_handle_counter: 0,
             wrap_dispatch_stack: Vec::new(),
             suppressed_names: HashSet::new(),
@@ -3851,6 +3855,7 @@ impl Interpreter {
             wrap_chains: self.wrap_chains.clone(),
             wrap_sub_names: self.wrap_sub_names.clone(),
             wrap_name_to_sub: self.wrap_name_to_sub.clone(),
+            wrap_callable_ids: self.wrap_callable_ids.clone(),
             wrap_handle_counter: self.wrap_handle_counter,
             wrap_dispatch_stack: Vec::new(),
             suppressed_names: self.suppressed_names.clone(),

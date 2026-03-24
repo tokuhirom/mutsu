@@ -670,17 +670,25 @@ impl Interpreter {
     /// Push a multi dispatch frame for callsame/nextsame/callwith/nextwith support.
     /// Returns true if a frame was pushed (i.e. there are remaining candidates).
     pub(crate) fn push_multi_dispatch_frame(&mut self, name: &str, args: &[Value]) -> bool {
-        let all_candidates = self.resolve_all_matching_candidates(name, args);
-        if all_candidates.len() <= 1 {
+        // Collect matching candidates (used to identify the current winner)
+        let matching_candidates = self.resolve_all_matching_candidates(name, args);
+        // Also collect ALL multi candidates regardless of arg matching.
+        // This is needed because callwith() can re-dispatch with different args,
+        // so candidates that don't match the original args may match the new ones.
+        let all_candidates = self.resolve_all_multi_candidates(name);
+        if matching_candidates.is_empty() && all_candidates.len() <= 1 {
             return false;
         }
-        // The first candidate is the one currently being called; remaining are the rest.
-        let def = &all_candidates[0];
-        let def_fp = crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+        // The first matching candidate is the one currently being called;
+        // remaining are all OTHER candidates (matching or not).
+        let current_fp = matching_candidates.first().map(|def| {
+            crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body)
+        });
         let remaining: Vec<super::FunctionDef> = all_candidates
             .into_iter()
             .filter(|c| {
-                crate::ast::function_body_fingerprint(&c.params, &c.param_defs, &c.body) != def_fp
+                let fp = crate::ast::function_body_fingerprint(&c.params, &c.param_defs, &c.body);
+                Some(fp) != current_fp
             })
             .collect();
         let pushed = !remaining.is_empty();
