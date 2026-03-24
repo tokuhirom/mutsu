@@ -482,6 +482,17 @@ pub(crate) fn native_method_1arg(
         }
     }
     match method {
+        // ACCEPTS for Range: value ~~ Range containment, Range ~~ Range subset
+        "ACCEPTS" if target.is_range() => {
+            let result = if arg.is_range() {
+                // Range ~~ Range: subset check — delegate to pure_smart_match
+                crate::vm::vm_smart_match::pure_smart_match(arg, target).unwrap_or(false)
+            } else {
+                // Value ~~ Range: containment check
+                runtime::Interpreter::value_in_range(arg, target)
+            };
+            Some(Ok(Value::Bool(result)))
+        }
         "Str" => {
             // Int.Str(:superscript) and Int.Str(:subscript)
             if let Value::Pair(key, val) = arg

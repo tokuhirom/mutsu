@@ -2718,7 +2718,17 @@ impl Interpreter {
             Value::RangeExcl(a, b) => (*a as f64, *b as f64),
             Value::RangeExclStart(a, b) => (*a as f64, *b as f64),
             Value::RangeExclBoth(a, b) => (*a as f64, *b as f64),
-            Value::GenericRange { start, end, .. } => (start.to_f64(), end.to_f64()),
+            Value::GenericRange { start, end, .. } => {
+                let s = match start.as_ref() {
+                    Value::Whatever | Value::HyperWhatever => f64::NEG_INFINITY,
+                    v => v.to_f64(),
+                };
+                let e = match end.as_ref() {
+                    Value::Whatever | Value::HyperWhatever => f64::INFINITY,
+                    v => v.to_f64(),
+                };
+                (s, e)
+            }
             _ => (0.0, 0.0),
         }
     }
@@ -2735,7 +2745,17 @@ impl Interpreter {
                 end,
                 excl_start,
                 excl_end,
-            } => (start.to_f64(), end.to_f64(), *excl_start, *excl_end),
+            } => {
+                let s = match start.as_ref() {
+                    Value::Whatever | Value::HyperWhatever => f64::NEG_INFINITY,
+                    v => v.to_f64(),
+                };
+                let e = match end.as_ref() {
+                    Value::Whatever | Value::HyperWhatever => f64::INFINITY,
+                    v => v.to_f64(),
+                };
+                (s, e, *excl_start, *excl_end)
+            }
             _ => (0.0, 0.0, false, false),
         }
     }

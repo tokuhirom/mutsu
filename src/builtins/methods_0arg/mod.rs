@@ -909,11 +909,15 @@ fn range_gist_string(value: &Value) -> String {
             )
         }
         Value::RangeExcl(a, b) => {
-            format!(
-                "{}..^{}",
-                range_endpoint_display(*a),
-                range_endpoint_display(*b)
-            )
+            if *a == 0 {
+                format!("^{}", range_endpoint_display(*b))
+            } else {
+                format!(
+                    "{}..^{}",
+                    range_endpoint_display(*a),
+                    range_endpoint_display(*b)
+                )
+            }
         }
         Value::RangeExclStart(a, b) => {
             format!(
@@ -937,14 +941,51 @@ fn range_gist_string(value: &Value) -> String {
         } => {
             let start_sep = if *excl_start { "^.." } else { ".." };
             let end_sep = if *excl_end { "^" } else { "" };
-            let start_str = match start.as_ref() {
-                Value::Whatever | Value::HyperWhatever => "-Inf".to_string(),
-                _ => start.to_string_value(),
+            let endpoint_str = |v: &Value, is_end: bool| -> String {
+                match v {
+                    Value::Whatever | Value::HyperWhatever => {
+                        if is_end {
+                            "Inf".to_string()
+                        } else {
+                            "-Inf".to_string()
+                        }
+                    }
+                    // For Rat endpoints, use .raku representation to preserve "5.0" form
+                    Value::Rat(n, d) => {
+                        if *d == 0 {
+                            if *n == 0 {
+                                "NaN".to_string()
+                            } else if *n > 0 {
+                                "Inf".to_string()
+                            } else {
+                                "-Inf".to_string()
+                            }
+                        } else {
+                            let val = *n as f64 / *d as f64;
+                            if val.fract() == 0.0 {
+                                format!("{:.1}", val)
+                            } else {
+                                format!("{}", val)
+                            }
+                        }
+                    }
+                    _ => v.to_string_value(),
+                }
             };
-            let end_str = match end.as_ref() {
-                Value::Whatever | Value::HyperWhatever => "Inf".to_string(),
-                _ => end.to_string_value(),
-            };
+            let start_str = endpoint_str(start.as_ref(), false);
+            let end_str = endpoint_str(end.as_ref(), true);
+            // Special case: 0..^N displays as ^N
+            if !*excl_start && *excl_end {
+                let is_zero = match start.as_ref() {
+                    Value::Int(0) => true,
+                    Value::Num(f) if *f == 0.0 => true,
+                    Value::Rat(0, _) => true,
+                    _ => false,
+                };
+                if is_zero {
+                    return format!("^{}", end_str);
+                }
+            }
             format!("{}{}{}{}", start_str, start_sep, end_sep, end_str)
         }
         _ => value.to_string_value(),
@@ -1769,6 +1810,18 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             excl_end: false,
         }));
     }
+    // Int.Range → -Inf^..^Inf (unbounded integer range)
+    if let Value::Package(name) = target
+        && name.resolve() == "Int"
+        && method == "Range"
+    {
+        return Some(Ok(Value::GenericRange {
+            start: Arc::new(Value::Num(f64::NEG_INFINITY)),
+            end: Arc::new(Value::Num(f64::INFINITY)),
+            excl_start: true,
+            excl_end: true,
+        }));
+    }
     // Native int type .Range method
     if let Value::Package(name) = target
         && crate::runtime::native_types::is_native_int_type(&name.resolve())
@@ -1804,7 +1857,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             Value::RangeExcl(start, end) => {
                 return Some(Ok(Value::array(vec![
-                    Value::Int(*start + 1),
+                    Value::Int(*start),
                     Value::Int(*end - 1),
                 ])));
             }
@@ -2720,40 +2773,60 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Value::Num(n) => *n,
                 Value::Rat(n, d) => *n as f64 / *d as f64,
                 Value::Range(start, end) => {
-                    let span = (*end - *start + 1).max(1) as f64;
-                    return Some(Ok(Value::Int(
-                        *start + (builtin_rand() * span).floor() as i64,
-                    )));
+                    let from = *start as f64;
+                    let to = *end as f64;
+                    let v = from + builtin_rand() * (to - from);
+                    return Some(Ok(Value::Num(v)));
                 }
                 Value::RangeExcl(start, end) => {
-                    if *start >= *end {
+                    let from = *start as f64;
+                    let to = *end as f64;
+                    if from >= to {
                         return Some(Ok(Value::Nil));
                     }
-                    let span = (*end - *start).max(1) as f64;
-                    return Some(Ok(Value::Int(
-                        *start + (builtin_rand() * span).floor() as i64,
-                    )));
+                    let v = from + builtin_rand() * (to - from);
+                    // Ensure we don't generate the excluded endpoint
+                    let v = if v >= to {
+                        f64::from_bits(to.to_bits().saturating_sub(1))
+                    } else {
+                        v
+                    };
+                    return Some(Ok(Value::Num(v)));
                 }
                 Value::RangeExclStart(start, end) => {
-                    if *start >= *end {
+                    let from = *start as f64;
+                    let to = *end as f64;
+                    if from >= to {
                         return Some(Ok(Value::Nil));
                     }
-                    let from = *start + 1;
-                    let span = (*end - from + 1).max(1) as f64;
-                    return Some(Ok(Value::Int(
-                        from + (builtin_rand() * span).floor() as i64,
-                    )));
+                    let v = from + builtin_rand() * (to - from);
+                    // Ensure we don't generate the excluded endpoint
+                    let v = if v <= from {
+                        f64::from_bits(from.to_bits().saturating_add(1))
+                    } else {
+                        v
+                    };
+                    return Some(Ok(Value::Num(v)));
                 }
                 Value::RangeExclBoth(start, end) => {
-                    let from = *start + 1;
-                    let to = *end - 1;
-                    if from > to {
+                    let from = *start as f64;
+                    let to = *end as f64;
+                    if from >= to {
                         return Some(Ok(Value::Nil));
                     }
-                    let span = (to - from + 1).max(1) as f64;
-                    return Some(Ok(Value::Int(
-                        from + (builtin_rand() * span).floor() as i64,
-                    )));
+                    let v = from + builtin_rand() * (to - from);
+                    // Ensure we don't generate either excluded endpoint
+                    let v = if v <= from {
+                        f64::from_bits(from.to_bits().saturating_add(1))
+                    } else {
+                        v
+                    };
+                    let v = if v >= to {
+                        f64::from_bits(to.to_bits().saturating_sub(1))
+                    } else {
+                        v
+                    };
+                    return Some(Ok(Value::Num(v)));
                 }
                 Value::GenericRange {
                     start,
@@ -2761,11 +2834,30 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     excl_start,
                     excl_end,
                 } => {
+                    let make_rand_failure = || -> Value {
+                        let mut ex_attrs = std::collections::HashMap::new();
+                        ex_attrs.insert(
+                            "message".to_string(),
+                            Value::str(
+                                "Cannot get a random value from a non-numeric Range".to_string(),
+                            ),
+                        );
+                        let ex = Value::make_instance(
+                            crate::symbol::Symbol::intern("X::AdHoc"),
+                            ex_attrs,
+                        );
+                        let mut failure_attrs = std::collections::HashMap::new();
+                        failure_attrs.insert("exception".to_string(), ex);
+                        Value::make_instance(
+                            crate::symbol::Symbol::intern("Failure"),
+                            failure_attrs,
+                        )
+                    };
                     let Some(mut from) = runtime::to_float_value(start) else {
-                        return Some(Ok(Value::Nil));
+                        return Some(Ok(make_rand_failure()));
                     };
                     let Some(mut to) = runtime::to_float_value(end) else {
-                        return Some(Ok(Value::Nil));
+                        return Some(Ok(make_rand_failure()));
                     };
                     if *excl_start {
                         from = f64::from_bits(from.to_bits().saturating_add(1));
@@ -4308,6 +4400,142 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::RangeExclStart(..) => Some(Ok(Value::Bool(false))),
             Value::RangeExclBoth(..) => Some(Ok(Value::Bool(true))),
             Value::GenericRange { excl_end, .. } => Some(Ok(Value::Bool(*excl_end))),
+            _ => None,
+        },
+        "bounds" => match target {
+            Value::Range(a, b) => Some(Ok(Value::array(vec![
+                if *a == i64::MIN {
+                    Value::Num(f64::NEG_INFINITY)
+                } else {
+                    Value::Int(*a)
+                },
+                if *b == i64::MAX {
+                    Value::Num(f64::INFINITY)
+                } else {
+                    Value::Int(*b)
+                },
+            ]))),
+            Value::RangeExcl(a, b) => Some(Ok(Value::array(vec![
+                if *a == i64::MIN {
+                    Value::Num(f64::NEG_INFINITY)
+                } else {
+                    Value::Int(*a)
+                },
+                if *b == i64::MAX {
+                    Value::Num(f64::INFINITY)
+                } else {
+                    Value::Int(*b)
+                },
+            ]))),
+            Value::RangeExclStart(a, b) => Some(Ok(Value::array(vec![
+                if *a == i64::MIN {
+                    Value::Num(f64::NEG_INFINITY)
+                } else {
+                    Value::Int(*a)
+                },
+                if *b == i64::MAX {
+                    Value::Num(f64::INFINITY)
+                } else {
+                    Value::Int(*b)
+                },
+            ]))),
+            Value::RangeExclBoth(a, b) => Some(Ok(Value::array(vec![
+                if *a == i64::MIN {
+                    Value::Num(f64::NEG_INFINITY)
+                } else {
+                    Value::Int(*a)
+                },
+                if *b == i64::MAX {
+                    Value::Num(f64::INFINITY)
+                } else {
+                    Value::Int(*b)
+                },
+            ]))),
+            Value::GenericRange { start, end, .. } => {
+                let s = match start.as_ref() {
+                    Value::Whatever | Value::HyperWhatever => Value::Num(f64::NEG_INFINITY),
+                    v => v.clone(),
+                };
+                let e = match end.as_ref() {
+                    Value::Whatever | Value::HyperWhatever => Value::Num(f64::INFINITY),
+                    v => v.clone(),
+                };
+                Some(Ok(Value::array(vec![s, e])))
+            }
+            _ => None,
+        },
+        "is-int" => match target {
+            Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..) => Some(Ok(Value::Bool(true))),
+            Value::GenericRange { start, end, .. } => {
+                let s_int = matches!(
+                    start.as_ref(),
+                    Value::Int(_) | Value::Bool(_) | Value::Whatever | Value::HyperWhatever
+                );
+                let e_int = matches!(
+                    end.as_ref(),
+                    Value::Int(_) | Value::Bool(_) | Value::Whatever | Value::HyperWhatever
+                );
+                Some(Ok(Value::Bool(s_int && e_int)))
+            }
+            _ => None,
+        },
+        "minmax" => match target {
+            Value::Range(a, b) => Some(Ok(Value::array(vec![Value::Int(*a), Value::Int(*b)]))),
+            Value::RangeExcl(a, b) => {
+                // For ..^ on integers, max is b-1
+                Some(Ok(Value::array(vec![Value::Int(*a), Value::Int(*b - 1)])))
+            }
+            Value::RangeExclStart(a, b) => {
+                Some(Ok(Value::array(vec![Value::Int(*a + 1), Value::Int(*b)])))
+            }
+            Value::RangeExclBoth(a, b) => Some(Ok(Value::array(vec![
+                Value::Int(*a + 1),
+                Value::Int(*b - 1),
+            ]))),
+            Value::GenericRange {
+                start,
+                end,
+                excl_start,
+                excl_end,
+            } => {
+                // Check for Inf/NaN endpoints with exclusions - should die
+                let s_is_special = matches!(start.as_ref(), Value::Num(f) if f.is_infinite() || f.is_nan())
+                    || matches!(start.as_ref(), Value::Whatever | Value::HyperWhatever);
+                let e_is_special = matches!(end.as_ref(), Value::Num(f) if f.is_infinite() || f.is_nan())
+                    || matches!(end.as_ref(), Value::Whatever | Value::HyperWhatever);
+                if (*excl_start && s_is_special) || (*excl_end && e_is_special) {
+                    return Some(Err(RuntimeError::new(
+                        "Cannot determine minmax with excluded infinite endpoints",
+                    )));
+                }
+                let min_val = if *excl_start {
+                    match start.as_ref() {
+                        Value::Int(i) => Value::Int(*i + 1),
+                        _ => start.as_ref().clone(),
+                    }
+                } else {
+                    match start.as_ref() {
+                        Value::Whatever | Value::HyperWhatever => Value::Num(f64::NEG_INFINITY),
+                        _ => start.as_ref().clone(),
+                    }
+                };
+                let max_val = if *excl_end {
+                    match end.as_ref() {
+                        Value::Int(i) => Value::Int(*i - 1),
+                        _ => end.as_ref().clone(),
+                    }
+                } else {
+                    match end.as_ref() {
+                        Value::Whatever | Value::HyperWhatever => Value::Num(f64::INFINITY),
+                        _ => end.as_ref().clone(),
+                    }
+                };
+                Some(Ok(Value::array(vec![min_val, max_val])))
+            }
+            Value::Array(..) | Value::Hash(_) => None,
             _ => None,
         },
         "infinite" => match target {
