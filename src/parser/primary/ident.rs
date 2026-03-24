@@ -668,7 +668,7 @@ fn starts_with_term_keyword(input: &str) -> bool {
 }
 
 /// Check if a name is a Raku keyword (not a function call).
-pub(super) fn is_keyword(name: &str) -> bool {
+pub(in crate::parser) fn is_keyword(name: &str) -> bool {
     matches!(
         name,
         "if" | "unless"

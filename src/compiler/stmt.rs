@@ -1330,6 +1330,46 @@ impl Compiler {
                 let idx = self.code.add_stmt(end_stmt);
                 self.code.emit(OpCode::PhaserEnd(idx));
             }
+            Stmt::Phaser {
+                kind: PhaserKind::Pre,
+                body,
+            } => {
+                // PRE phaser inline: compile body, check truthiness
+                for (i, inner) in body.iter().enumerate() {
+                    if i == body.len() - 1 {
+                        match inner {
+                            Stmt::Expr(expr) => self.compile_expr(expr),
+                            _ => {
+                                self.compile_stmt(inner);
+                                self.compile_expr(&Expr::Literal(Value::Bool(true)));
+                            }
+                        }
+                    } else {
+                        self.compile_stmt(inner);
+                    }
+                }
+                self.code.emit(OpCode::CheckPhaser { is_pre: true });
+            }
+            Stmt::Phaser {
+                kind: PhaserKind::Post,
+                body,
+            } => {
+                // POST phaser inline: compile body, check truthiness
+                for (i, inner) in body.iter().enumerate() {
+                    if i == body.len() - 1 {
+                        match inner {
+                            Stmt::Expr(expr) => self.compile_expr(expr),
+                            _ => {
+                                self.compile_stmt(inner);
+                                self.compile_expr(&Expr::Literal(Value::Bool(true)));
+                            }
+                        }
+                    } else {
+                        self.compile_stmt(inner);
+                    }
+                }
+                self.code.emit(OpCode::CheckPhaser { is_pre: false });
+            }
             Stmt::Phaser { .. } => {}
 
             // --- SubDecl: delegate to interpreter AND compile body ---

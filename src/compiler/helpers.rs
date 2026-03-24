@@ -268,7 +268,7 @@ impl Compiler {
     pub(super) fn has_phasers(stmts: &[Stmt]) -> bool {
         stmts
             .iter()
-            .any(|s| matches!(s, Stmt::Phaser { kind, .. } if matches!(kind, PhaserKind::Enter | PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo | PhaserKind::First | PhaserKind::Next | PhaserKind::Last)))
+            .any(|s| matches!(s, Stmt::Phaser { kind, .. } if matches!(kind, PhaserKind::Enter | PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo | PhaserKind::First | PhaserKind::Next | PhaserKind::Last | PhaserKind::Pre | PhaserKind::Post)))
     }
 
     /// Check if a block body contains placeholder variables ($^a, $^b, etc.)
@@ -1971,6 +1971,8 @@ impl Compiler {
         let mut first_ph = Vec::new();
         let mut next_ph = Vec::new();
         let mut last_ph = Vec::new();
+        let mut pre_ph = Vec::new();
+        let mut post_ph = Vec::new();
         let mut body_main = Vec::new();
         for stmt in body {
             if let Stmt::Phaser { kind, body } = stmt {
@@ -1982,6 +1984,8 @@ impl Compiler {
                     PhaserKind::First => first_ph.push(Stmt::Block(body.clone())),
                     PhaserKind::Next => next_ph.push(Stmt::Block(body.clone())),
                     PhaserKind::Last => last_ph.push(Stmt::Block(body.clone())),
+                    PhaserKind::Pre => pre_ph.push(stmt.clone()),
+                    PhaserKind::Post => post_ph.push(stmt.clone()),
                     _ => body_main.push(stmt.clone()),
                 }
             } else {
@@ -1995,6 +1999,18 @@ impl Compiler {
             None
         } else {
             Some(self.next_tmp_name("__mutsu_loop_result_"))
+        };
+        // Save $_ from each iteration so LAST phasers can see it
+        let last_topic_var = if last_ph.is_empty() {
+            None
+        } else {
+            Some(self.next_tmp_name("__mutsu_loop_last_topic_"))
+        };
+        // Capture block return value for POST phasers (POST sees $_ as block result)
+        let post_topic_var = if post_ph.is_empty() {
+            None
+        } else {
+            Some(self.next_tmp_name("__mutsu_loop_post_topic_"))
         };
 
         let mut pre = vec![
@@ -2037,6 +2053,34 @@ impl Compiler {
                 where_constraint: None,
             });
         }
+        if let Some(last_topic_var) = last_topic_var.clone() {
+            pre.push(Stmt::VarDecl {
+                name: last_topic_var,
+                expr: Expr::Literal(Value::Nil),
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+                where_constraint: None,
+            });
+        }
+        if let Some(post_topic_var) = post_topic_var.clone() {
+            pre.push(Stmt::VarDecl {
+                name: post_topic_var,
+                expr: Expr::Literal(Value::Nil),
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+                where_constraint: None,
+            });
+        }
 
         let mut loop_body = Vec::new();
         loop_body.push(Stmt::Assign {
@@ -2044,6 +2088,15 @@ impl Compiler {
             expr: Expr::Literal(Value::Bool(true)),
             op: AssignOp::Assign,
         });
+        // Save $_ at the start of each iteration so LAST phasers can see it
+        // even when `last` exits the loop early (before the end of the body)
+        if let Some(last_topic_var) = last_topic_var.clone() {
+            loop_body.push(Stmt::Assign {
+                name: last_topic_var,
+                expr: Expr::Var("_".to_string()),
+                op: AssignOp::Assign,
+            });
+        }
         // NEXT phasers run in LIFO (reverse declaration) order per Raku spec
         next_ph.reverse();
         let body_main = if next_ph.is_empty() {
@@ -2068,19 +2121,24 @@ impl Compiler {
             });
         }
         loop_body.extend(enter_ph);
-        if let Some(result_var) = result_var.clone() {
+        // PRE phasers run after ENTER, in forward source order
+        loop_body.extend(pre_ph);
+        // When we have both result_var (KEEP/UNDO) and post_topic_var (POST),
+        // we need to capture the body's last expression into both.
+        let capture_var = result_var.clone().or(post_topic_var.clone());
+        if let Some(cap_var) = capture_var.clone() {
             if let Some((last, prefix)) = body_main.split_last() {
                 loop_body.extend(prefix.iter().cloned());
                 match last {
                     Stmt::Expr(expr) => loop_body.push(Stmt::Assign {
-                        name: result_var.clone(),
+                        name: cap_var.clone(),
                         expr: expr.clone(),
                         op: AssignOp::Assign,
                     }),
                     other => {
                         loop_body.push(other.clone());
                         loop_body.push(Stmt::Assign {
-                            name: result_var.clone(),
+                            name: cap_var.clone(),
                             expr: Expr::Literal(Value::Nil),
                             op: AssignOp::Assign,
                         });
@@ -2088,13 +2146,41 @@ impl Compiler {
                 }
             } else {
                 loop_body.push(Stmt::Assign {
-                    name: result_var.clone(),
+                    name: cap_var.clone(),
                     expr: Expr::Literal(Value::Nil),
                     op: AssignOp::Assign,
                 });
             }
+            // If we have both result_var and post_topic_var, sync them
+            if result_var.is_some() && post_topic_var.is_some() {
+                let rv = result_var.clone().unwrap();
+                let pv = post_topic_var.clone().unwrap();
+                if rv != pv {
+                    loop_body.push(Stmt::Assign {
+                        name: pv,
+                        expr: Expr::Var(rv),
+                        op: AssignOp::Assign,
+                    });
+                }
+            }
         } else {
             loop_body.extend(body_main);
+        }
+        // POST phasers run after the body, in reverse source order
+        // POST sees the block's return value as $_
+        if !post_ph.is_empty() {
+            let post_topic = post_topic_var
+                .clone()
+                .map(Expr::Var)
+                .unwrap_or(Expr::Literal(Value::Nil));
+            let mut post_body = Vec::new();
+            for s in post_ph.iter().rev() {
+                post_body.push(s.clone());
+            }
+            loop_body.push(Stmt::Given {
+                topic: post_topic,
+                body: post_body,
+            });
         }
         // next_ph was already reversed above for LIFO order
         loop_body.extend(next_ph);
@@ -2114,6 +2200,19 @@ impl Compiler {
 
         let post = if last_ph.is_empty() {
             Vec::new()
+        } else if let Some(last_topic_var) = last_topic_var {
+            // Wrap LAST phasers in `given $last_topic` so $_ is restored
+            // from the last loop iteration
+            let given_stmt = Stmt::Given {
+                topic: Expr::Var(last_topic_var),
+                body: last_ph,
+            };
+            vec![Stmt::If {
+                cond: Expr::Var(ran_var),
+                then_branch: vec![given_stmt],
+                else_branch: Vec::new(),
+                binding_var: None,
+            }]
         } else {
             vec![Stmt::If {
                 cond: Expr::Var(ran_var),
