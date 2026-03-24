@@ -2371,6 +2371,7 @@ impl Compiler {
                     name,
                     expr,
                     is_state,
+                    is_our,
                     is_dynamic: ast_is_dynamic,
                     ..
                 } => {
@@ -2420,9 +2421,38 @@ impl Compiler {
                         }
                         self.code.patch_jump(jump_end);
                     } else {
-                        self.compile_expr(expr);
-                        self.code.emit(OpCode::Dup);
-                        self.emit_set_named_var(name);
+                        // For `our` redeclarations with no initializer (expr is Nil),
+                        // load the existing package variable value instead of Nil.
+                        let is_our_redecl_nil =
+                            *is_our && matches!(expr, Expr::Literal(Value::Nil));
+                        if is_our_redecl_nil {
+                            let qualified = self.qualify_variable_name(name);
+                            let idx = self.code.add_constant(Value::str(qualified));
+                            self.code.emit(OpCode::GetOurVar(idx));
+                        } else {
+                            self.compile_expr(expr);
+                        }
+                        if *is_our {
+                            // For `our` declarations in expression context, we need to:
+                            // 1. Keep a copy as return value
+                            // 2. Set the local variable
+                            // 3. Set the global/package variable
+                            self.code.emit(OpCode::Dup); // for return value
+                            self.code.emit(OpCode::Dup); // for SetGlobal
+                            self.emit_set_named_var(name);
+                            let qualified = self.qualify_variable_name(name);
+                            let slot_opt = self.local_map.get(name).copied();
+                            if let Some(slot) = slot_opt {
+                                self.code
+                                    .our_locals
+                                    .push((slot as usize, qualified.clone()));
+                            }
+                            let idx = self.code.add_constant(Value::str(qualified));
+                            self.code.emit(OpCode::SetGlobal(idx));
+                        } else {
+                            self.code.emit(OpCode::Dup);
+                            self.emit_set_named_var(name);
+                        }
                     }
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::SetVarDynamic {

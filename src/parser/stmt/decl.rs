@@ -1346,7 +1346,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
 
     // Destructuring: my ($a, $b) = expr  or  my Int:D ($x = 5)
     if rest.starts_with('(') {
-        return parse_destructuring_decl(rest, is_state, type_constraint);
+        return parse_destructuring_decl(rest, is_state, is_our, type_constraint);
     }
 
     // Parse variable
@@ -2105,6 +2105,7 @@ struct DestructureVar {
 pub(super) fn parse_destructuring_decl(
     input: &str,
     is_state: bool,
+    is_our: bool,
     type_constraint: Option<String>,
 ) -> PResult<'_, Stmt> {
     let (rest, _) = parse_char(input, '(')?;
@@ -2366,7 +2367,7 @@ pub(super) fn parse_destructuring_decl(
                     },
                     type_constraint: type_constraint.clone(),
                     is_state,
-                    is_our: false,
+                    is_our,
                     is_dynamic: false,
                     is_export: false,
                     export_tags: Vec::new(),
@@ -2435,7 +2436,7 @@ pub(super) fn parse_destructuring_decl(
                 expr,
                 type_constraint: effective_tc,
                 is_state,
-                is_our: false,
+                is_our,
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),

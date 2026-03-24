@@ -1839,6 +1839,10 @@ impl VM {
             }
         }
         *self.interpreter.env_mut() = restored_env;
+        // Note: `our`-scoped variables persist in our_vars and are accessible
+        // via package-qualified names (e.g., $Pkg::var) after block exit.
+        // The lexical alias is block-scoped and restored through normal
+        // env propagation (existing keys in saved_env get updated).
         self.interpreter.pop_lexical_class_scope();
         self.interpreter.pop_block_scope_depth();
         self.interpreter.pop_once_scope();
