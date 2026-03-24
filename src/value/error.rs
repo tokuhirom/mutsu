@@ -426,6 +426,19 @@ impl RuntimeError {
         Self::typed("X::Redeclaration", attrs)
     }
 
+    /// X::Redeclaration for routine - includes "multi" suggestion in message
+    pub(crate) fn redeclaration_routine(name: &str) -> Self {
+        let msg = format!(
+            "Redeclaration of routine '{}'. Did you mean to declare a multi-sub?",
+            name
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("what".to_string(), Value::str("routine".to_string()));
+        attrs.insert("symbol".to_string(), Value::str(name.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::Redeclaration", attrs)
+    }
+
     /// X::Method::NotFound - No such method
     #[allow(dead_code)]
     pub(crate) fn method_not_found(method: &str, typename: &str) -> Self {

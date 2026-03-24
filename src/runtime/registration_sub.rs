@@ -195,10 +195,7 @@ impl Interpreter {
                 && !allow_lexical_shadow
                 && !is_method_value_decl
             {
-                return Err(RuntimeError::new(format!(
-                    "X::Redeclaration: '{}' already declared as code variable",
-                    name
-                )));
+                return Err(RuntimeError::redeclaration_routine(name));
             }
         }
         if let Some(existing) = self.functions.get(&single_key_sym) {
@@ -237,25 +234,16 @@ impl Interpreter {
             .is_some_and(|existing| Self::is_stub_routine_body(&existing.body));
         if multi {
             if has_single && !has_proto && !allow_redeclare && !allow_lexical_shadow {
-                return Err(RuntimeError::new(format!(
-                    "X::Redeclaration: '{}' already declared as non-multi",
-                    name
-                )));
+                return Err(RuntimeError::redeclaration_routine(name));
             }
         } else if !allow_redeclare {
             // Defining a plain sub when multi candidates exist (without proto) is always
             // an error, even in inner scopes, because it creates an ambiguous dispatch.
             if has_multi && !has_proto {
-                return Err(RuntimeError::new(format!(
-                    "X::Redeclaration: '{}' already declared",
-                    name
-                )));
+                return Err(RuntimeError::redeclaration_routine(name));
             }
             if !allow_lexical_shadow && has_single && !existing_is_stub {
-                return Err(RuntimeError::new(format!(
-                    "X::Redeclaration: '{}' already declared",
-                    name
-                )));
+                return Err(RuntimeError::redeclaration_routine(name));
             }
         }
         let def = new_def;
@@ -432,16 +420,10 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let key = format!("{}::{}", self.current_package, name);
         if self.functions.contains_key(&Symbol::intern(&key)) {
-            return Err(RuntimeError::new(format!(
-                "X::Redeclaration: '{}' already declared",
-                name
-            )));
+            return Err(RuntimeError::redeclaration_routine(name));
         }
         if self.proto_subs.contains(&key) {
-            return Err(RuntimeError::new(format!(
-                "X::Redeclaration: '{}' already declared as proto",
-                name
-            )));
+            return Err(RuntimeError::redeclaration_routine(name));
         }
         self.proto_subs.insert(key);
         let fq = format!("{}::{}", self.current_package, name);
@@ -596,10 +578,7 @@ impl Interpreter {
             .is_some_and(|existing| Self::is_stub_routine_body(&existing.body));
         if multi {
             if has_single && !has_proto && !supersede {
-                return Err(RuntimeError::new(format!(
-                    "X::Redeclaration: '{}' already declared as non-multi",
-                    name
-                )));
+                return Err(RuntimeError::redeclaration_routine(name));
             }
             let arity = param_defs
                 .iter()
@@ -641,16 +620,10 @@ impl Interpreter {
             }
         } else {
             if has_multi && !has_proto && !supersede {
-                return Err(RuntimeError::new(format!(
-                    "X::Redeclaration: '{}' already declared",
-                    name
-                )));
+                return Err(RuntimeError::redeclaration_routine(name));
             }
             if has_single && !supersede && !existing_is_stub {
-                return Err(RuntimeError::new(format!(
-                    "X::Redeclaration: '{}' already declared",
-                    name
-                )));
+                return Err(RuntimeError::redeclaration_routine(name));
             }
             let fq = format!("GLOBAL::{}", name);
             self.functions.insert(Symbol::intern(&fq), def);
@@ -673,20 +646,14 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let key = format!("GLOBAL::{}", name);
         if self.functions.contains_key(&Symbol::intern(&key)) {
-            return Err(RuntimeError::new(format!(
-                "X::Redeclaration: '{}' already declared",
-                name
-            )));
+            return Err(RuntimeError::redeclaration_routine(name));
         }
         if self.proto_subs.contains(&key) {
             if self.current_package == "GLOBAL" {
                 // `is export` on a GLOBAL proto hits both local/global registration paths.
                 return Ok(());
             }
-            return Err(RuntimeError::new(format!(
-                "X::Redeclaration: '{}' already declared as proto",
-                name
-            )));
+            return Err(RuntimeError::redeclaration_routine(name));
         }
         self.proto_subs.insert(key.clone());
         self.proto_functions.insert(

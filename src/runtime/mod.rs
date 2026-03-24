@@ -691,6 +691,9 @@ pub struct Interpreter {
     class_composed_roles: HashMap<String, Vec<String>>, // class -> roles composed via `does`
     class_enum_roles: HashMap<String, Vec<String>>,     // class -> enums composed via `does`
     roles: HashMap<String, RoleDef>,
+    /// Roles explicitly declared via user code (not pre-registered builtins).
+    /// Used to detect X::Redeclaration for role->class name conflicts.
+    user_declared_roles: HashSet<String>,
     role_candidates: HashMap<String, Vec<RoleCandidateDef>>,
     role_parents: HashMap<String, Vec<String>>,
     role_hides: HashMap<String, Vec<String>>,
@@ -2472,6 +2475,7 @@ impl Interpreter {
                 }
                 roles
             },
+            user_declared_roles: HashSet::new(),
             role_candidates: HashMap::new(),
             role_parents: HashMap::new(),
             role_hides: HashMap::new(),
@@ -3828,6 +3832,7 @@ impl Interpreter {
             class_composed_roles: self.class_composed_roles.clone(),
             class_enum_roles: self.class_enum_roles.clone(),
             roles: self.roles.clone(),
+            user_declared_roles: self.user_declared_roles.clone(),
             role_candidates: self.role_candidates.clone(),
             role_parents: self.role_parents.clone(),
             role_hides: self.role_hides.clone(),
