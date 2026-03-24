@@ -1198,7 +1198,30 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     // Capture the original sigil before var_name strips it
     let original_sigil = rest.as_bytes().first().copied().unwrap_or(b'$');
     let param_sigil = rest.as_bytes().first().copied();
-    let (rest, name) = var_name(rest)?;
+    // Handle $.x / @.x / %.x (public accessor twigil) in parameter context.
+    // The '.' twigil is only valid in signatures, not in general expressions,
+    // so we handle it here rather than in var_name.
+    let (rest, name) =
+        if (rest.starts_with("$.") || rest.starts_with("@.") || rest.starts_with("%."))
+            && rest.len() > 2
+            && rest.as_bytes()[2].is_ascii_alphabetic()
+        {
+            let sigil_prefix = if rest.starts_with('$') {
+                ""
+            } else if rest.starts_with('@') {
+                "@"
+            } else {
+                "%"
+            };
+            let after_dot = &rest[2..]; // skip sigil + "."
+            let end = after_dot
+                .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                .unwrap_or(after_dot.len());
+            let ident = &after_dot[..end];
+            (&after_dot[end..], format!("{}.{}", sigil_prefix, ident))
+        } else {
+            var_name(rest)?
+        };
 
     // Shape constraint for array parameters: @a[3], @a[4,4], @a[*], @a[$n]
     let mut shape_constraints = None;
@@ -1463,6 +1486,24 @@ fn method_decl_body_with_my(
         let (r, _) = ws(r)?;
         let (r, (pd, rt)) = parse_param_list_with_return(r)?;
         validate_signature_params(&pd)?;
+        // In BUILD/TWEAK submethods, reject $.x (public accessor twigil) parameters
+        // as X::Syntax::VirtualCall — the object is not fully constructed yet.
+        if name == "BUILD" || name == "TWEAK" {
+            for p in &pd {
+                if p.name.starts_with('.') {
+                    let call = format!("$.{}", &p.name[1..]);
+                    let msg = format!(
+                        "X::Syntax::VirtualCall: Virtual method call {} may not be used on partially constructed object",
+                        call
+                    );
+                    let mut attrs = HashMap::new();
+                    attrs.insert("message".to_string(), Value::str(msg.clone()));
+                    attrs.insert("call".to_string(), Value::str(call));
+                    let ex = Value::make_instance(Symbol::intern("X::Syntax::VirtualCall"), attrs);
+                    return Err(PError::fatal_with_exception(msg, Box::new(ex)));
+                }
+            }
+        }
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
         let names: Vec<String> = pd.iter().map(|p| p.name.clone()).collect();

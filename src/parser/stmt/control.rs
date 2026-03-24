@@ -1907,15 +1907,27 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     // Check for optional pointy block: -> $param { ... } or -> \param { ... }
     let (rest, param_name) = if let Some(r) = rest.strip_prefix("->") {
         let (r, _) = ws(r)?;
-        // Parse parameter like $proc
+        // Parse parameter like $proc or $!attr or $.attr
         if let Some(r_after_sigil) = r.strip_prefix('$') {
-            let end = r_after_sigil
+            // Handle twigils: $!attr (private attribute) or $.attr (public accessor)
+            let (r_after_twigil, twigil) =
+                if r_after_sigil.starts_with('!') || r_after_sigil.starts_with('.') {
+                    (&r_after_sigil[1..], &r_after_sigil[..1])
+                } else {
+                    (r_after_sigil, "")
+                };
+            let end = r_after_twigil
                 .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
-                .unwrap_or(r_after_sigil.len());
-            let name = &r_after_sigil[..end];
-            let r = &r_after_sigil[end..];
+                .unwrap_or(r_after_twigil.len());
+            let bare_name = &r_after_twigil[..end];
+            let name = if twigil.is_empty() {
+                bare_name.to_string()
+            } else {
+                format!("{}{}", twigil, bare_name)
+            };
+            let r = &r_after_twigil[end..];
             let (r, _) = ws(r)?;
-            (r, Some(name.to_string()))
+            (r, Some(name))
         } else if let Some(r_after_backslash) = r.strip_prefix('\\') {
             // Sigilless parameter like \c
             let end = r_after_backslash
@@ -1938,18 +1950,30 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     let mut with_body = vec![topicalize(&cond_expr)];
     // If a named parameter was given (-> $param), also assign it
     if let Some(ref pname) = param_name {
-        with_body.push(Stmt::VarDecl {
-            name: pname.clone(),
-            expr: cond_expr.clone(),
-            type_constraint: None,
-            is_state: false,
-            is_our: false,
-            is_dynamic: false,
-            is_export: false,
-            export_tags: Vec::new(),
-            custom_traits: Vec::new(),
-            where_constraint: None,
-        });
+        if pname.starts_with('!') || pname.starts_with('.') {
+            // Attributive parameter: bind the value to self's attribute.
+            // $!foo → set attribute "foo" on self.
+            let attr_name = &pname[1..];
+            // Emit: $!attr = cond_expr (attribute assignment)
+            with_body.push(Stmt::Assign {
+                name: format!("!{}", attr_name),
+                expr: cond_expr.clone(),
+                op: crate::ast::AssignOp::Assign,
+            });
+        } else {
+            with_body.push(Stmt::VarDecl {
+                name: pname.clone(),
+                expr: cond_expr.clone(),
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+                where_constraint: None,
+            });
+        }
     }
     with_body.extend(body);
 
