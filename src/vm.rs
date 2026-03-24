@@ -871,6 +871,24 @@ impl VM {
                 self.exec_decont_op();
                 *ip += 1;
             }
+            OpCode::Itemize => {
+                // Wrap Array/List/Hash values in their itemized (Scalar-container)
+                // variant so they are treated as single items in list context.
+                // For Hash, wrap in an ItemArray since Hash has no itemized variant.
+                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let itemized = match val {
+                    Value::Array(items, kind) if !kind.is_itemized() => {
+                        Value::Array(items, kind.itemize())
+                    }
+                    Value::Hash(_) => Value::Array(
+                        std::sync::Arc::new(vec![val]),
+                        crate::value::ArrayKind::ItemArray,
+                    ),
+                    other => other,
+                };
+                self.stack.push(itemized);
+                *ip += 1;
+            }
             OpCode::FlattenSlurpy => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
                 let mut items = Vec::new();

@@ -683,6 +683,12 @@ impl Compiler {
             Expr::ArrayLiteral(elems) => {
                 for elem in elems {
                     self.compile_expr(elem);
+                    // `$` scalar variables provide item context: their values
+                    // are not flattened when used in a list.  Sigilless vars
+                    // (BareWord) and `@`/`%` vars do NOT get itemized.
+                    if Self::expr_is_scalar_var(elem) {
+                        self.code.emit(OpCode::Itemize);
+                    }
                 }
                 self.code.emit(OpCode::MakeArray(elems.len() as u32));
             }
@@ -2995,6 +3001,13 @@ impl Compiler {
     /// We intentionally do **not** mark `Expr::Var` here because a
     /// bare variable may be a `:=` binding that shares identity with
     /// its target.
+    /// True when the expression is a `$`-sigiled scalar variable access.
+    /// `Expr::Var` represents `$` variables (the sigil is stripped).
+    /// Sigilless variables appear as `Expr::BareWord` instead.
+    fn expr_is_scalar_var(expr: &Expr) -> bool {
+        matches!(expr, Expr::Var(_))
+    }
+
     fn expr_is_fresh_container(expr: &Expr) -> bool {
         match expr {
             // Indexing into an array/hash element produces a value that

@@ -3167,6 +3167,12 @@ impl Interpreter {
                         .unwrap_or_default();
                     let items = if crate::runtime::utils::is_shaped_array(&target) {
                         crate::runtime::utils::shaped_array_leaves(&target)
+                    } else if let Some(inner) = target.as_list_items() {
+                        // Use inner elements directly — itemized arrays
+                        // ($[...] / $(...)) still expose their elements to
+                        // .join, unlike list-assignment context where they
+                        // are treated as a single item.
+                        inner.to_vec()
                     } else {
                         Self::value_to_list(&target)
                     };

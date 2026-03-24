@@ -1107,7 +1107,14 @@ pub(crate) fn native_method_1arg(
                 let rendered = runtime::format_sprintf_args(&fmt, &[k, v]);
                 Some(Ok(Value::str(rendered)))
             } else if fmt_joinable_target(target) {
-                let rendered = runtime::value_to_list(target)
+                // Use as_list_items() to bypass itemization — methods like
+                // .fmt still iterate over inner elements of $[...] / $(...).
+                let items: Vec<Value> = if let Some(inner) = target.as_list_items() {
+                    inner.to_vec()
+                } else {
+                    runtime::value_to_list(target)
+                };
+                let rendered = items
                     .into_iter()
                     .map(|item| fmt_single_or_pair(&fmt, &item))
                     .collect::<Vec<_>>()
@@ -2382,7 +2389,12 @@ pub(crate) fn native_method_2arg(
                     .join(&sep);
                 Some(Ok(Value::str(rendered)))
             } else if fmt_joinable_target(target) {
-                let rendered = runtime::value_to_list(target)
+                let items: Vec<Value> = if let Some(inner) = target.as_list_items() {
+                    inner.to_vec()
+                } else {
+                    runtime::value_to_list(target)
+                };
+                let rendered = items
                     .into_iter()
                     .map(|item| fmt_single_or_pair(&fmt_str, &item))
                     .collect::<Vec<_>>()
