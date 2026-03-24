@@ -47,6 +47,18 @@ fn make_param(name: String) -> ParamDef {
     }
 }
 
+fn parse_param_default_expr(input: &str) -> PResult<'_, Expr> {
+    if let Ok((rest, expr)) = expression(input) {
+        return Ok((rest, expr));
+    }
+    if let Some(after_my) = input.strip_prefix("my ")
+        && let Ok((rest, expr)) = expression(after_my)
+    {
+        return Ok((rest, expr));
+    }
+    Err(PError::expected("parameter default expression"))
+}
+
 pub(super) fn is_anonymous_sigil_param(param: &ParamDef) -> bool {
     matches!(
         param.name.as_str(),
@@ -145,17 +157,7 @@ pub(super) fn parse_type_constraint_expr(input: &str) -> Option<(&str, String)> 
         rest = &rest[end + 1..];
     }
 
-    // Handle "of" keyword: `Array of Callable` → `Array[Callable]`
-    {
-        let (r_ws, _) = ws(rest).ok()?;
-        if let Some(after_of) = keyword("of", r_ws) {
-            let (after_of, _) = ws(after_of).ok()?;
-            if let Some((r_elem, elem_type)) = parse_type_constraint_expr(after_of) {
-                type_name = format!("{}[{}]", type_name, elem_type);
-                rest = r_elem;
-            }
-        }
-    }
+    let (rest, type_name) = parse_of_type_constraint_chain(rest, type_name)?;
 
     let (r2, _) = ws(rest).ok()?;
     if let Some(after_open) = r2.strip_prefix('(') {
@@ -171,6 +173,27 @@ pub(super) fn parse_type_constraint_expr(input: &str) -> Option<(&str, String)> 
                 return Some((r3, format!("{}({})", type_name, source_type)));
             }
         }
+    }
+    Some((rest, type_name))
+}
+
+pub(super) fn parse_of_type_constraint_chain(
+    input: &str,
+    base_type: String,
+) -> Option<(&str, String)> {
+    let mut rest = input;
+    let mut type_name = base_type;
+    loop {
+        let (r_ws, _) = ws(rest).ok()?;
+        let Some(after_of) = keyword("of", r_ws) else {
+            break;
+        };
+        let (after_of, _) = ws(after_of).ok()?;
+        let Some((r_elem, elem_type)) = parse_type_constraint_expr(after_of) else {
+            break;
+        };
+        type_name = format!("{}[{}]", type_name, elem_type);
+        rest = r_elem;
     }
     Some((rest, type_name))
 }
@@ -567,6 +590,17 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         type_constraint = Some(format!("::{}", capture_name));
         let (r, _) = ws(r)?;
         rest = r;
+        if rest.starts_with('=') && !rest.starts_with("==") {
+            let r = &rest[1..];
+            let (r, _) = ws(r)?;
+            let (r, default) = parse_param_default_expr(r)?;
+            let mut p = make_param(format!("__type_capture__{}", capture_name));
+            p.type_constraint = type_constraint;
+            p.named = named;
+            p.slurpy = slurpy;
+            p.default = Some(default);
+            return Ok((r, p));
+        }
         if rest.starts_with(')')
             || rest.starts_with(']')
             || rest.starts_with(',')
@@ -781,6 +815,13 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         }
     }
 
+    if let Some(tc) = type_constraint.take() {
+        let (r, tc) =
+            parse_of_type_constraint_chain(rest, tc).ok_or_else(|| PError::expected("type"))?;
+        type_constraint = Some(tc);
+        rest = r;
+    }
+
     // Typed capture parameter, e.g. `Capture |cap`
     if type_constraint.is_some() && rest.starts_with('|') {
         let (r, mut p) = parse_single_param(rest)?;
@@ -873,7 +914,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         let (r, default) = if r.starts_with('=') && !r.starts_with("==") {
             let r = &r[1..];
             let (r, _) = ws(r)?;
-            let (r, expr) = expression(r)?;
+            let (r, expr) = parse_param_default_expr(r)?;
             (r, Some(expr))
         } else {
             (r, None)

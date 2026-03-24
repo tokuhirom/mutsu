@@ -180,6 +180,17 @@ impl Interpreter {
 
     pub(super) fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
         let routine_snapshot = self.snapshot_routine_registry();
+        let roles_snapshot = self.roles.clone();
+        let role_candidates_snapshot = self.role_candidates.clone();
+        let role_type_params_snapshot = self.role_type_params.clone();
+        let role_parents_snapshot = self.role_parents.clone();
+        let role_hides_snapshot = self.role_hides.clone();
+        let classes_snapshot = self.classes.clone();
+        let hidden_classes_snapshot = self.hidden_classes.clone();
+        let hidden_defer_parents_snapshot = self.hidden_defer_parents.clone();
+        let class_composed_roles_snapshot = self.class_composed_roles.clone();
+        let class_role_param_bindings_snapshot = self.class_role_param_bindings.clone();
+        let env_snapshot = self.env.clone();
         let saved_topic = self.env.get("_").cloned();
         let trimmed = code.trim();
         if trimmed == "<>" || trimmed == "<STDIN>" {
@@ -257,6 +268,60 @@ impl Interpreter {
             self.env.remove("=pod");
         }
         self.restore_routine_registry(routine_snapshot);
+        let current_roles = self.roles.clone();
+        let current_role_candidates = self.role_candidates.clone();
+        let current_role_type_params = self.role_type_params.clone();
+        let current_role_parents = self.role_parents.clone();
+        let current_role_hides = self.role_hides.clone();
+        let current_classes = self.classes.clone();
+        let current_hidden_classes = self.hidden_classes.clone();
+        let current_hidden_defer_parents = self.hidden_defer_parents.clone();
+        let current_class_composed_roles = self.class_composed_roles.clone();
+        let current_class_role_param_bindings = self.class_role_param_bindings.clone();
+        let current_env = self.env.clone();
+        let current_type_keys: std::collections::HashSet<String> = self
+            .roles
+            .keys()
+            .chain(self.classes.keys())
+            .cloned()
+            .collect();
+        let snapshot_type_keys: std::collections::HashSet<String> = roles_snapshot
+            .keys()
+            .chain(classes_snapshot.keys())
+            .cloned()
+            .collect();
+        self.roles = roles_snapshot;
+        self.role_candidates = role_candidates_snapshot;
+        self.role_type_params = role_type_params_snapshot;
+        self.role_parents = role_parents_snapshot;
+        self.role_hides = role_hides_snapshot;
+        self.classes = classes_snapshot;
+        self.hidden_classes = hidden_classes_snapshot;
+        self.hidden_defer_parents = hidden_defer_parents_snapshot;
+        self.class_composed_roles = class_composed_roles_snapshot;
+        self.class_role_param_bindings = class_role_param_bindings_snapshot;
+        self.roles.extend(current_roles);
+        self.role_candidates.extend(current_role_candidates);
+        self.role_type_params.extend(current_role_type_params);
+        self.role_parents.extend(current_role_parents);
+        self.role_hides.extend(current_role_hides);
+        self.classes.extend(current_classes);
+        self.hidden_classes.extend(current_hidden_classes);
+        self.hidden_defer_parents
+            .extend(current_hidden_defer_parents);
+        self.class_composed_roles
+            .extend(current_class_composed_roles);
+        self.class_role_param_bindings
+            .extend(current_class_role_param_bindings);
+        for key in current_type_keys.union(&snapshot_type_keys) {
+            if let Some(value) = current_env.get(key).cloned() {
+                self.env.insert(key.clone(), value);
+            } else if let Some(value) = env_snapshot.get(key).cloned() {
+                self.env.insert(key.clone(), value);
+            } else {
+                self.env.remove(key);
+            }
+        }
         // Restore $_ so EVAL does not clobber the caller's topic variable
         if let Some(topic) = saved_topic {
             self.env.insert("_".to_string(), topic);

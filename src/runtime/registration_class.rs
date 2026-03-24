@@ -4,6 +4,43 @@ use crate::symbol::Symbol;
 
 type ResolvedRoleCandidate = (RoleDef, Vec<String>, Vec<Value>);
 
+fn type_value_name(value: &Value) -> String {
+    match value {
+        Value::Package(name) => name.resolve(),
+        Value::ParametricRole {
+            base_name,
+            type_args,
+        } => format!(
+            "{}[{}]",
+            base_name.resolve(),
+            type_args
+                .iter()
+                .map(type_value_name)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        other => other
+            .to_string_value()
+            .trim_start_matches('(')
+            .trim_end_matches(')')
+            .to_string(),
+    }
+}
+
+fn builtin_role_def() -> RoleDef {
+    RoleDef {
+        attributes: Vec::new(),
+        methods: HashMap::new(),
+        is_stub_role: false,
+        is_hidden: false,
+        captured_env: None,
+        wildcard_handles: Vec::new(),
+        role_id: 0,
+        attribute_conflicts: Vec::new(),
+        deferred_body_stmts: Vec::new(),
+    }
+}
+
 /// Intermediate representation for resolved handle specs.
 enum ResolvedHandle {
     /// Forward `exposed` method to `target` method on the object in `attr_var`.
@@ -331,6 +368,11 @@ impl Interpreter {
     fn eval_role_arg_values(&mut self, arg_exprs: &[String]) -> Result<Vec<Value>, RuntimeError> {
         let mut values = Vec::with_capacity(arg_exprs.len());
         for expr in arg_exprs {
+            if expr.trim_start().starts_with("::") {
+                return Err(RuntimeError::new(
+                    "X::Syntax::Malformed: cannot use ::T in role application".to_string(),
+                ));
+            }
             if should_treat_role_arg_as_type_expr(expr) {
                 values.push(Value::Package(Symbol::intern(expr.trim())));
                 continue;
@@ -410,14 +452,31 @@ impl Interpreter {
         &mut self,
         parent: &str,
     ) -> Result<Option<ResolvedRoleCandidate>, RuntimeError> {
+        let parent = self.resolve_declared_type_name(parent);
+        if let Some(bracket_start) = parent.find('[') {
+            let args_str = &parent[bracket_start + 1..parent.len() - 1];
+            let arg_exprs = parse_role_type_args(args_str);
+            if arg_exprs
+                .iter()
+                .any(|expr| expr.trim_start().starts_with("::"))
+            {
+                return Err(RuntimeError::new(
+                    "X::Syntax::Malformed: cannot use ::T in role application".to_string(),
+                ));
+            }
+        }
+
         let base_role_name = if let Some(bracket) = parent.find('[') {
             &parent[..bracket]
         } else {
-            parent
+            &parent
         };
         let Some(candidates) = self.role_candidates.get(base_role_name).cloned() else {
             if let Some(role) = self.roles.get(base_role_name).cloned() {
                 return Ok(Some((role, Vec::new(), Vec::new())));
+            }
+            if matches!(base_role_name, "Positional" | "Associative" | "Callable") {
+                return Ok(Some((builtin_role_def(), Vec::new(), Vec::new())));
             }
             return Ok(None);
         };
@@ -475,6 +534,22 @@ impl Interpreter {
         matches.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)));
         let selected = matches.remove(0).0;
         Ok(Some((selected.role_def, selected.type_params, arg_values)))
+    }
+
+    fn resolve_declared_type_name(&self, name: &str) -> String {
+        let (base, suffix) = if let Some(bracket) = name.find('[') {
+            (&name[..bracket], &name[bracket..])
+        } else {
+            (name, "")
+        };
+        let lookup = base.strip_prefix("::").unwrap_or(base);
+        if let Value::Package(pkg) = self.resolve_indirect_type_name(lookup) {
+            return format!("{}{}", pkg.resolve(), suffix);
+        }
+        if let Some(Value::Package(pkg)) = self.env.get(lookup) {
+            return format!("{}{}", pkg.resolve(), suffix);
+        }
+        name.to_string()
     }
 
     pub(crate) fn register_class_decl(
@@ -608,11 +683,12 @@ impl Interpreter {
             "Stash",
         ];
         for parent in parents {
+            let resolved_parent_name = self.resolve_declared_type_name(parent);
             // Strip type arguments for validation (e.g., "R[Str:D(Numeric)]" -> "R")
-            let base_parent = if let Some(bracket) = parent.find('[') {
-                &parent[..bracket]
+            let base_parent = if let Some(bracket) = resolved_parent_name.find('[') {
+                &resolved_parent_name[..bracket]
             } else {
-                parent.as_str()
+                resolved_parent_name.as_str()
             };
             // Strip leading `::` for comparison (e.g., `is ::F` refers to `F`)
             let resolved_parent = base_parent.strip_prefix("::").unwrap_or(base_parent);
@@ -632,12 +708,12 @@ impl Interpreter {
                 if does_parents.contains(parent) {
                     return Err(RuntimeError::new(format!(
                         "X::InvalidType: Invalid typename '{}'",
-                        parent
+                        resolved_parent_name
                     )));
                 }
                 return Err(RuntimeError::new(format!(
                     "X::Inheritance::UnknownParent: class '{}' specifies unknown parent class '{}'",
-                    name, parent
+                    name, resolved_parent_name
                 )));
             }
             // Check that `does` targets are actually roles, not classes
@@ -703,12 +779,13 @@ impl Interpreter {
         let mut hidden_punned_role_bases: HashSet<String> = HashSet::new();
         let mut class_role_param_bindings: HashMap<String, Value> = HashMap::new();
         for parent in parents {
-            let base_role_name = parent
+            let resolved_parent_name = self.resolve_declared_type_name(parent);
+            let base_role_name = resolved_parent_name
                 .split_once('[')
                 .map(|(b, _)| b)
-                .unwrap_or(parent.as_str());
+                .unwrap_or(resolved_parent_name.as_str());
             if let Some((role, role_param_names, role_arg_values)) =
-                self.resolve_role_candidate(parent)?
+                self.resolve_role_candidate(&resolved_parent_name)?
             {
                 if role.is_stub_role {
                     return Err(RuntimeError::typed_msg(
@@ -726,27 +803,17 @@ impl Interpreter {
                 // Check if this role was specified via `is` (punning) vs `does` (composition)
                 let is_punned = !does_parents.contains(parent);
                 if is_punned {
-                    punned_roles.push(parent.clone());
+                    punned_roles.push(resolved_parent_name.clone());
                     if role.is_hidden {
                         hidden_punned_role_bases.insert(base_role_name.to_string());
                     }
                 }
-                composed_roles_list.push(parent.clone());
+                composed_roles_list.push(resolved_parent_name.clone());
                 // Collect type parameter substitutions for method type constraints.
                 let type_subs: Vec<(String, String)> = role_param_names
                     .iter()
                     .zip(role_arg_values.iter())
-                    .map(|(p, v)| {
-                        let value_name = match v {
-                            Value::Package(name) => name.resolve(),
-                            other => other
-                                .to_string_value()
-                                .trim_start_matches('(')
-                                .trim_end_matches(')')
-                                .to_string(),
-                        };
-                        (p.clone(), value_name)
-                    })
+                    .map(|(p, v)| (p.clone(), type_value_name(v)))
                     .collect();
                 for (p, v) in role_param_names.iter().zip(role_arg_values.iter()) {
                     class_role_param_bindings.insert(p.clone(), v.clone());
@@ -829,14 +896,7 @@ impl Interpreter {
                 if let Some(parent_specs) = self.role_parents.get(base_role_name).cloned() {
                     for parent_spec in parent_specs {
                         let resolved_parent = if let Some(v) = role_param_values.get(&parent_spec) {
-                            match v {
-                                Value::Package(name) => name.resolve(),
-                                other => other
-                                    .to_string_value()
-                                    .trim_start_matches('(')
-                                    .trim_end_matches(')')
-                                    .to_string(),
-                            }
+                            type_value_name(v)
                         } else if let Some((pbase, _)) = parent_spec.split_once('[') {
                             let p_args_str = &parent_spec[pbase.len() + 1..parent_spec.len() - 1];
                             let p_args = parse_role_type_args(p_args_str)
@@ -1399,7 +1459,13 @@ impl Interpreter {
                     if !self.roles.contains_key(&role_name_str)
                         && matches!(
                             role_name_str.as_str(),
-                            "Real" | "Numeric" | "Cool" | "Any" | "Mu"
+                            "Real"
+                                | "Numeric"
+                                | "Cool"
+                                | "Any"
+                                | "Mu"
+                                | "Positional"
+                                | "Associative"
                         )
                     {
                         if !class_def.parents.iter().any(|p| p == &role_name_str) {
@@ -1795,6 +1861,25 @@ impl Interpreter {
             }
         }
 
+        for param_def in type_param_defs {
+            if param_def.name == "__type_only__"
+                && let Some(type_name) = param_def.type_constraint.as_deref()
+                && !type_name.starts_with("::")
+                && !self.is_resolvable_type(type_name)
+            {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("type".to_string(), Value::str(type_name.to_string()));
+                attrs.insert(
+                    "message".to_string(),
+                    Value::str(format!(
+                        "Invalid type '{}' used in role parameter list",
+                        type_name
+                    )),
+                );
+                return Err(RuntimeError::typed("X::Parameter::InvalidType", attrs));
+            }
+        }
+
         // Clean up stale punned class entry for this role name.
         self.classes.remove(name);
         self.hidden_classes.remove(name);
@@ -1926,7 +2011,16 @@ impl Interpreter {
                         .unwrap_or(role_name_str.as_str());
                     if type_params.iter().any(|tp| tp == base_role_name)
                         || (!self.roles.contains_key(base_role_name)
-                            && matches!(base_role_name, "Real" | "Numeric" | "Cool" | "Any" | "Mu"))
+                            && matches!(
+                                base_role_name,
+                                "Real"
+                                    | "Numeric"
+                                    | "Cool"
+                                    | "Any"
+                                    | "Mu"
+                                    | "Positional"
+                                    | "Associative"
+                            ))
                     {
                         self.role_parents
                             .entry(name.to_string())

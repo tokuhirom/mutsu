@@ -748,6 +748,149 @@ pub(crate) fn value_is_defined(value: &Value) -> bool {
 }
 
 impl Interpreter {
+    pub(crate) fn role_def_for_mixin_role(
+        &self,
+        mixins: &std::collections::HashMap<String, Value>,
+        role_name: &str,
+    ) -> Option<RoleDef> {
+        let role_id = mixins
+            .get(&format!("__mutsu_role_id__{role_name}"))
+            .and_then(|value| match value {
+                Value::Int(id) if *id > 0 => Some(*id as u64),
+                _ => None,
+            });
+        if let Some(role_id) = role_id
+            && let Some(candidate) = self.role_candidates.get(role_name).and_then(|candidates| {
+                candidates
+                    .iter()
+                    .find(|candidate| candidate.role_def.role_id == role_id)
+            })
+        {
+            return Some(candidate.role_def.clone());
+        }
+        self.roles.get(role_name).cloned()
+    }
+
+    pub(crate) fn resolve_parametric_role_runtime(
+        &mut self,
+        base_name: &str,
+        type_args: &[Value],
+    ) -> Option<(RoleDef, Vec<String>)> {
+        let mut selected_role = self.roles.get(base_name).cloned();
+        let mut selected_param_names = self
+            .role_type_params
+            .get(base_name)
+            .cloned()
+            .unwrap_or_default();
+        if let Some(candidates) = self.role_candidates.get(base_name).cloned() {
+            let mut matching: Vec<(super::RoleCandidateDef, i32, usize)> = candidates
+                .into_iter()
+                .enumerate()
+                .filter_map(|(idx, candidate)| {
+                    let candidate_param_names = candidate
+                        .type_param_defs
+                        .iter()
+                        .map(|pd| pd.name.clone())
+                        .collect::<Vec<_>>();
+                    let positional_params = candidate
+                        .type_param_defs
+                        .iter()
+                        .filter(|pd| !pd.named)
+                        .collect::<Vec<_>>();
+                    let has_positional_slurpy = positional_params
+                        .iter()
+                        .any(|pd| pd.slurpy && !pd.name.starts_with('%'));
+                    let required = positional_params
+                        .iter()
+                        .filter(|pd| !pd.slurpy && pd.default.is_none() && !pd.optional_marker)
+                        .count();
+                    let arity_ok = if candidate.type_param_defs.is_empty() {
+                        type_args.is_empty()
+                    } else {
+                        type_args.len() >= required
+                            && (has_positional_slurpy || type_args.len() <= positional_params.len())
+                    };
+                    let ok = if arity_ok {
+                        let saved_env = self.env.clone();
+                        let ok = self
+                            .bind_function_args_values(
+                                &candidate.type_param_defs,
+                                &candidate_param_names,
+                                type_args,
+                            )
+                            .is_ok();
+                        self.env = saved_env;
+                        ok
+                    } else {
+                        false
+                    };
+                    if ok {
+                        let score = candidate
+                            .type_param_defs
+                            .iter()
+                            .filter(|pd| !pd.named)
+                            .map(|pd| {
+                                let mut s = if let Some(tc) = pd.type_constraint.as_deref() {
+                                    if tc.starts_with("::") || tc == "Any" || tc == "Mu" {
+                                        1
+                                    } else {
+                                        5
+                                    }
+                                } else {
+                                    0
+                                };
+                                if pd.where_constraint.is_some() {
+                                    s += 20;
+                                }
+                                if pd.literal_value.is_some() {
+                                    s += 30;
+                                }
+                                s
+                            })
+                            .sum();
+                        Some((candidate, score, idx))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            matching.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)));
+            if let Some((candidate, _, _)) = matching.into_iter().next() {
+                selected_param_names = candidate.type_params.clone();
+                selected_role = Some(candidate.role_def.clone());
+            }
+        }
+        selected_role.map(|role| (role, selected_param_names))
+    }
+
+    pub(crate) fn delegated_role_attr_key_from_mixins(
+        &self,
+        mixins: &std::collections::HashMap<String, Value>,
+        method_name: &str,
+    ) -> Option<String> {
+        for role_name in mixins
+            .keys()
+            .filter_map(|key| key.strip_prefix("__mutsu_role__"))
+        {
+            let Some(role) = self.role_def_for_mixin_role(mixins, role_name) else {
+                continue;
+            };
+            let Some(method_defs) = role.methods.get(method_name) else {
+                continue;
+            };
+            for method_def in method_defs {
+                let Some((attr_var_name, target_method)) = &method_def.delegation else {
+                    continue;
+                };
+                if target_method == method_name {
+                    let attr_name = attr_var_name.trim_start_matches(['.', '!']);
+                    return Some(format!("__mutsu_attr__{attr_name}"));
+                }
+            }
+        }
+        None
+    }
+
     fn resolve_sigilless_alias_source_name(&self, source_name: &str) -> String {
         let mut resolved = source_name.to_string();
         let mut seen = std::collections::HashSet::new();
@@ -880,6 +1023,7 @@ impl Interpreter {
     pub(crate) fn captured_type_object(value: &Value) -> Value {
         match value {
             Value::Package(name) => Value::Package(*name),
+            Value::ParametricRole { .. } => value.clone(),
             Value::Instance { class_name, .. } => Value::Package(*class_name),
             Value::Nil => Value::Package(Symbol::intern("Any")),
             _ => Value::Package(Symbol::intern(super::value_type_name(value))),
@@ -973,7 +1117,9 @@ impl Interpreter {
         pd: &ParamDef,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        let value = self.materialize_default_parametric_role(value)?;
         if let Some(constraint) = &pd.type_constraint
+            && !constraint.starts_with("::")
             && !self.type_matches_value(constraint, &value)
         {
             return Err(RuntimeError::new(format!(
@@ -984,6 +1130,60 @@ impl Interpreter {
             )));
         }
         Ok(value)
+    }
+
+    pub(super) fn materialize_default_parametric_role(
+        &mut self,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        let Value::Package(role_name) = &value else {
+            return Ok(value);
+        };
+        let role_name = role_name.resolve();
+        let Some(candidates) = self.role_candidates.get(&role_name).cloned() else {
+            return Ok(value);
+        };
+        let Some(candidate) = candidates.into_iter().find(|candidate| {
+            !candidate.type_param_defs.is_empty()
+                && candidate
+                    .type_param_defs
+                    .iter()
+                    .all(|pd| pd.default.is_some() || pd.optional_marker)
+        }) else {
+            return Ok(value);
+        };
+        let param_names = candidate
+            .type_param_defs
+            .iter()
+            .map(|pd| pd.name.clone())
+            .collect::<Vec<_>>();
+        let saved_env = self.env.clone();
+        if let Err(err) =
+            self.bind_function_args_values(&candidate.type_param_defs, &param_names, &[])
+        {
+            self.env = saved_env;
+            return Err(err);
+        }
+        let type_args = candidate
+            .type_param_defs
+            .iter()
+            .filter_map(|pd| {
+                if let Some(captured) = pd
+                    .type_constraint
+                    .as_deref()
+                    .and_then(|constraint| constraint.strip_prefix("::"))
+                {
+                    self.env.get(captured).cloned()
+                } else {
+                    self.env.get(&pd.name).cloned()
+                }
+            })
+            .collect::<Vec<_>>();
+        self.env = saved_env;
+        Ok(Value::ParametricRole {
+            base_name: Symbol::intern(&role_name),
+            type_args,
+        })
     }
 
     fn parse_generic_constraint(constraint: &str) -> Option<(&str, &str)> {
@@ -1577,7 +1777,12 @@ impl Interpreter {
         role_args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let role = self.roles.get(role_name).cloned();
-        if role.is_none() && !matches!(role_name, "Real" | "Numeric" | "Cool" | "Any" | "Mu") {
+        if role.is_none()
+            && !matches!(
+                role_name,
+                "Real" | "Numeric" | "Cool" | "Any" | "Mu" | "Positional" | "Associative"
+            )
+        {
             return Err(RuntimeError::new(format!("Unknown role: {}", role_name)));
         }
 
@@ -1727,17 +1932,187 @@ impl Interpreter {
         false
     }
 
+    fn type_arg_value_from_name(&self, name: &str) -> Value {
+        let trimmed = name.trim().trim_start_matches('(').trim_end_matches(')');
+        if let Some((base, args)) = Self::parse_parametric_type_name(trimmed)
+            && self.is_role(&base)
+        {
+            return Value::ParametricRole {
+                base_name: Symbol::intern(&base),
+                type_args: args
+                    .iter()
+                    .map(|arg| self.type_arg_value_from_name(arg))
+                    .collect(),
+            };
+        }
+        Value::Package(Symbol::intern(trimmed))
+    }
+
+    fn normalize_type_capture_value(&self, value: Value) -> Value {
+        match value {
+            Value::Str(name) if self.is_resolvable_type(&name) => {
+                self.type_arg_value_from_name(&name)
+            }
+            other => other,
+        }
+    }
+
+    fn resolved_type_capture_name(&self, constraint: &str) -> String {
+        if self.has_type_capture_binding(constraint)
+            && let Some(value) = self.env.get(constraint)
+        {
+            return match value {
+                Value::Package(name) => name.resolve(),
+                Value::ParametricRole {
+                    base_name,
+                    type_args,
+                } => format!(
+                    "{}[{}]",
+                    base_name.resolve(),
+                    type_args
+                        .iter()
+                        .map(|arg| match arg {
+                            Value::Package(name) => name.resolve(),
+                            other => other.to_string_value(),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(",")
+                ),
+                other => other.to_string_value(),
+            };
+        }
+        constraint.to_string()
+    }
+
+    fn typed_container_param_expected(&self, name: &str, constraint: &str) -> Option<String> {
+        let constraint = self.resolved_type_capture_name(constraint);
+        if name.starts_with('@') {
+            Some(format!("Positional[{constraint}]"))
+        } else if name.starts_with('%') {
+            Some(format!("Associative[{constraint}]"))
+        } else {
+            None
+        }
+    }
+
+    fn typed_container_param_matches(
+        &mut self,
+        name: &str,
+        constraint: &str,
+        value: &Value,
+        source_constraint: Option<&str>,
+    ) -> bool {
+        let resolved_constraint = self.resolved_type_capture_name(constraint);
+        if let Some(metadata) = self.container_type_metadata(value)
+            && !metadata.value_type.is_empty()
+        {
+            let container_kind_matches = if name.starts_with('@') {
+                matches!(value, Value::Array(..) | Value::Slip(..))
+            } else if name.starts_with('%') {
+                matches!(value, Value::Hash(..) | Value::Array(..))
+            } else {
+                false
+            };
+            if container_kind_matches {
+                return self.type_matches_value(
+                    &resolved_constraint,
+                    &Value::Package(Symbol::intern(&metadata.value_type)),
+                );
+            }
+        }
+
+        if name.starts_with('@') {
+            return match value {
+                Value::Array(items, ..) => {
+                    if items.is_empty() {
+                        return source_constraint.is_some_and(|source| {
+                            self.type_matches_value(
+                                &resolved_constraint,
+                                &Value::Package(Symbol::intern(source)),
+                            )
+                        });
+                    }
+                    !items.is_empty()
+                        && items
+                            .iter()
+                            .all(|item| self.type_matches_value(&resolved_constraint, item))
+                }
+                Value::Slip(items) => {
+                    if items.is_empty() {
+                        return source_constraint.is_some_and(|source| {
+                            self.type_matches_value(
+                                &resolved_constraint,
+                                &Value::Package(Symbol::intern(source)),
+                            )
+                        });
+                    }
+                    !items.is_empty()
+                        && items
+                            .iter()
+                            .all(|item| self.type_matches_value(&resolved_constraint, item))
+                }
+                _ => false,
+            };
+        }
+
+        if name.starts_with('%') {
+            return match value {
+                Value::Hash(map) => {
+                    if map.is_empty() {
+                        return source_constraint.is_some_and(|source| {
+                            self.type_matches_value(
+                                &resolved_constraint,
+                                &Value::Package(Symbol::intern(source)),
+                            )
+                        });
+                    }
+                    !map.is_empty()
+                        && map
+                            .values()
+                            .all(|item| self.type_matches_value(&resolved_constraint, item))
+                }
+                Value::Array(items, ..) => {
+                    if items.is_empty() {
+                        return source_constraint.is_some_and(|source| {
+                            self.type_matches_value(
+                                &resolved_constraint,
+                                &Value::Package(Symbol::intern(source)),
+                            )
+                        });
+                    }
+                    !items.is_empty()
+                        && items.iter().all(|item| {
+                            if let Value::Pair(_, value) = item {
+                                self.type_matches_value(&resolved_constraint, value)
+                            } else {
+                                false
+                            }
+                        })
+                }
+                _ => false,
+            };
+        }
+
+        false
+    }
+
     /// Resolve a potentially qualified role name to its registered key.
     /// If `name` is in `self.roles`, returns it as-is. Otherwise, if `name`
     /// contains `::`, tries the short name (after the last `::`).
-    fn resolve_role_key<'a>(&self, name: &'a str) -> Option<&'a str> {
+    fn resolve_role_key(&self, name: &str) -> Option<String> {
         if self.roles.contains_key(name) {
-            return Some(name);
+            return Some(name.to_string());
+        }
+        if let Some(Value::Package(pkg)) = self.env.get(name) {
+            let resolved = pkg.resolve();
+            if self.roles.contains_key(&resolved) {
+                return Some(resolved);
+            }
         }
         if let Some(short) = name.rsplit("::").next()
             && self.roles.contains_key(short)
         {
-            return Some(short);
+            return Some(short.to_string());
         }
         None
     }
@@ -1962,17 +2337,73 @@ impl Interpreter {
             };
             return ok;
         }
+        if let Some((constraint_base, constraint_args)) =
+            Self::parse_parametric_type_name(constraint)
+            && self.is_role(&constraint_base)
+            && let Value::Mixin(_, mixins) = value
+        {
+            let key = format!(
+                "__mutsu_role_typeargs__{}",
+                Symbol::intern(&constraint_base)
+            );
+            if value.does_check(&constraint_base)
+                && let Some(Value::Array(actual_args, ..)) = mixins.get(&key)
+            {
+                let expected_args = constraint_args
+                    .iter()
+                    .map(|arg| self.type_arg_value_from_name(arg))
+                    .collect::<Vec<_>>();
+                if actual_args.len() == expected_args.len()
+                    && actual_args
+                        .iter()
+                        .zip(expected_args.iter())
+                        .all(|(actual, expected)| self.parametric_arg_subtypes(actual, expected))
+                {
+                    return true;
+                }
+            }
+        }
         if let Value::ParametricRole {
             base_name,
             type_args,
         } = value
-            && (base_name.resolve() == constraint
-                || self.role_is_subtype(&base_name.resolve(), constraint)
-                || self
-                    .role_parent_args_for(&base_name.resolve(), type_args, constraint)
-                    .is_some())
         {
-            return true;
+            if let Some((constraint_base, constraint_args)) =
+                Self::parse_parametric_type_name(constraint)
+            {
+                let actual_args = if base_name.resolve() == constraint_base {
+                    Some(type_args.clone())
+                } else {
+                    self.role_parent_args_for(&base_name.resolve(), type_args, &constraint_base)
+                };
+                if let Some(actual_args) = actual_args {
+                    let expected_args = constraint_args
+                        .iter()
+                        .map(|arg| self.type_arg_value_from_name(arg))
+                        .collect::<Vec<_>>();
+                    if actual_args.len() == expected_args.len()
+                        && actual_args
+                            .iter()
+                            .zip(expected_args.iter())
+                            .all(|(actual, expected)| {
+                                self.parametric_arg_subtypes(actual, expected)
+                            })
+                    {
+                        return true;
+                    }
+                }
+            }
+            let constraint_base = Self::parse_parametric_type_name(constraint)
+                .map(|(base, _)| base)
+                .unwrap_or_else(|| Self::optional_type_object_name(constraint));
+            if base_name.resolve() == constraint_base
+                || self.role_is_subtype(&base_name.resolve(), &constraint_base)
+                || self
+                    .role_parent_args_for(&base_name.resolve(), type_args, &constraint_base)
+                    .is_some()
+            {
+                return true;
+            }
         }
         // Role constraints should accept composed role instances/mixins.
         // Use resolve_role_key to handle qualified names (e.g. GH2613::R1 → R1).
@@ -1985,6 +2416,34 @@ impl Interpreter {
         if let Value::Package(package_name) = value {
             if Self::type_matches(constraint, &package_name.resolve()) {
                 return true;
+            }
+            if let Some((actual_base, actual_args)) =
+                Self::parse_parametric_type_name(&package_name.resolve())
+                && let Some((constraint_base, constraint_args)) =
+                    Self::parse_parametric_type_name(constraint)
+            {
+                let actual_args = actual_args
+                    .iter()
+                    .map(|arg| self.type_arg_value_from_name(arg))
+                    .collect::<Vec<_>>();
+                if let Some(parent_args) =
+                    self.role_parent_args_for(&actual_base, &actual_args, &constraint_base)
+                {
+                    let expected_args = constraint_args
+                        .iter()
+                        .map(|arg| self.type_arg_value_from_name(arg))
+                        .collect::<Vec<_>>();
+                    if parent_args.len() == expected_args.len()
+                        && parent_args
+                            .iter()
+                            .zip(expected_args.iter())
+                            .all(|(actual, expected)| {
+                                self.parametric_arg_subtypes(actual, expected)
+                            })
+                    {
+                        return true;
+                    }
+                }
             }
             if let Some(subset_base) = self
                 .subsets
@@ -2162,6 +2621,40 @@ impl Interpreter {
         }
         // Mixin allomorphic types: check both inner type and mixin type keys
         if let Value::Mixin(inner, mixins) = value {
+            if let Some((constraint_base, constraint_args)) =
+                Self::parse_parametric_type_name(constraint)
+            {
+                let expected_args = constraint_args
+                    .iter()
+                    .map(|arg| self.type_arg_value_from_name(arg))
+                    .collect::<Vec<_>>();
+                for (key, mixin_value) in mixins.iter() {
+                    let Some(actual_base) = key.strip_prefix("__mutsu_role_typeargs__") else {
+                        continue;
+                    };
+                    let Value::Array(actual_args, ..) = mixin_value else {
+                        continue;
+                    };
+                    let comparable_actual_args = if actual_base == constraint_base {
+                        actual_args.as_ref().clone()
+                    } else if let Some(parent_args) =
+                        self.role_parent_args_for(actual_base, actual_args, &constraint_base)
+                    {
+                        parent_args
+                    } else if self.role_is_subtype(actual_base, &constraint_base) {
+                        actual_args.as_ref().clone()
+                    } else {
+                        continue;
+                    };
+                    if comparable_actual_args.len() == expected_args.len()
+                        && comparable_actual_args.iter().zip(expected_args.iter()).all(
+                            |(actual, expected)| self.parametric_arg_subtypes(actual, expected),
+                        )
+                    {
+                        return true;
+                    }
+                }
+            }
             // Check allomorphic type names first (IntStr, NumStr, RatStr, ComplexStr, Allomorph)
             if value.isa_check(constraint) {
                 return true;
@@ -2213,7 +2706,11 @@ impl Interpreter {
                     continue;
                 }
                 positional_max_count += 1;
-                if pd.default.is_none() && !pd.optional_marker {
+                if pd.default.is_none()
+                    && !pd.optional_marker
+                    && !pd.name.starts_with('@')
+                    && !pd.name.starts_with('%')
+                {
                     required_positional_count += 1;
                 }
             }
@@ -2227,7 +2724,7 @@ impl Interpreter {
             for pd in positional_params {
                 let is_capture_param = pd.name == "_capture" || (pd.slurpy && pd.sigilless);
                 let is_subsig_capture = pd.name == "__subsig__" && pd.sub_signature.is_some();
-                let arg_for_checks: Option<Value> = if pd.slurpy || is_capture_param {
+                let mut arg_for_checks: Option<Value> = if pd.slurpy || is_capture_param {
                     if is_capture_param {
                         // |c capture params preserve both positional and named parts.
                         let mut positional = Vec::new();
@@ -2274,6 +2771,8 @@ impl Interpreter {
                         }
                         Some(Value::real_array(items))
                     }
+                } else if pd.name.starts_with('@') || pd.name.starts_with('%') {
+                    args.get(i).cloned().map(unwrap_varref_value)
                 } else if is_subsig_capture {
                     let remaining = args.get(i..).unwrap_or(&[]);
                     Some(sub_signature_target_from_remaining_args(
@@ -2286,6 +2785,21 @@ impl Interpreter {
                 } else {
                     args.get(i).cloned().map(unwrap_varref_value)
                 };
+                if arg_for_checks.is_none()
+                    && !pd.required
+                    && !pd.name.is_empty()
+                    && !is_capture_param
+                    && !is_subsig_capture
+                {
+                    let missing = Self::missing_optional_param_value(pd);
+                    if let Some(constraint) = &pd.type_constraint
+                        && (pd.name.starts_with('@') || pd.name.starts_with('%'))
+                    {
+                        let info = Self::parse_container_constraint(&pd.name, constraint);
+                        self.register_container_type_metadata(&missing, info);
+                    }
+                    arg_for_checks = Some(missing);
+                }
                 // For multi-dispatch: `is rw` params require a writable variable argument
                 if pd.traits.iter().any(|t| t == "rw") {
                     let raw_arg = args.get(i);
@@ -2317,6 +2831,29 @@ impl Interpreter {
                 if let Some(constraint) = &pd.type_constraint
                     && let Some(arg) = arg_for_checks.as_ref()
                 {
+                    let source_constraint = args
+                        .get(i)
+                        .and_then(varref_from_value)
+                        .and_then(|(source_name, _)| {
+                            self.var_type_constraint(&source_name).or_else(|| {
+                                self.var_type_constraint(
+                                    source_name.trim_start_matches(['$', '@', '%', '&']),
+                                )
+                            })
+                        })
+                        .or_else(|| {
+                            self.pending_call_arg_sources
+                                .as_ref()
+                                .and_then(|sources| sources.get(i))
+                                .and_then(|name| name.as_ref())
+                                .and_then(|name| {
+                                    self.var_type_constraint(name).or_else(|| {
+                                        self.var_type_constraint(
+                                            name.trim_start_matches(['$', '@', '%', '&']),
+                                        )
+                                    })
+                                })
+                        });
                     if let Some(captured_name) = constraint.strip_prefix("::") {
                         self.bind_type_capture(captured_name, arg);
                     } else if pd.name == "__type_only__" {
@@ -2328,34 +2865,16 @@ impl Interpreter {
                         } else if !self.type_matches_value(constraint, arg) {
                             return false;
                         }
-                    } else if pd.name.starts_with('@') {
-                        let ok = match arg {
-                            Value::Array(items, ..) => {
-                                items.iter().all(|v| self.type_matches_value(constraint, v))
-                            }
-                            Value::Slip(items) => {
-                                items.iter().all(|v| self.type_matches_value(constraint, v))
-                            }
-                            _ => false,
-                        };
-                        if !ok {
-                            return false;
-                        }
-                    } else if pd.name.starts_with('%') {
-                        let ok = match arg {
-                            Value::Hash(map) => {
-                                map.values().all(|v| self.type_matches_value(constraint, v))
-                            }
-                            Value::Array(items, ..) => items.iter().all(|item| {
-                                if let Value::Pair(_, v) = item {
-                                    self.type_matches_value(constraint, v)
-                                } else {
-                                    false
-                                }
-                            }),
-                            _ => false,
-                        };
-                        if !ok {
+                    } else if pd.name.starts_with('@') || pd.name.starts_with('%') {
+                        if !self.typed_container_param_matches(
+                            &pd.name,
+                            constraint,
+                            arg,
+                            source_constraint.as_deref(),
+                        ) && self
+                            .typed_container_param_expected(&pd.name, constraint)
+                            .is_some()
+                        {
                             return false;
                         }
                     } else if constraint == "Num"
@@ -3071,6 +3590,15 @@ impl Interpreter {
                 if !found && let Some(default_expr) = &pd.default {
                     let value = self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?;
                     let value = self.checked_default_param_value(pd, value)?;
+                    let value = if pd
+                        .type_constraint
+                        .as_deref()
+                        .is_some_and(|constraint| constraint.starts_with("::"))
+                    {
+                        self.normalize_type_capture_value(value)
+                    } else {
+                        value
+                    };
                     if let Some((sig_params, sig_ret)) = &pd.code_signature
                         && !code_signature_matches_value(self, sig_params, sig_ret, &value)
                     {
@@ -3088,7 +3616,17 @@ impl Interpreter {
                         err.exception = Some(Box::new(exception));
                         return Err(err);
                     }
-                    if !pd.name.is_empty() {
+                    if let Some(captured_name) = pd
+                        .type_constraint
+                        .as_deref()
+                        .and_then(|constraint| constraint.strip_prefix("::"))
+                    {
+                        self.bind_type_capture(captured_name, &value);
+                        if !pd.name.is_empty() {
+                            self.bind_param_value(&pd.name, value.clone());
+                            self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
+                        }
+                    } else if !pd.name.is_empty() {
                         self.bind_param_value(&pd.name, value.clone());
                         self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
                     }
@@ -3154,9 +3692,29 @@ impl Interpreter {
                     }
                     let raw_arg = args[positional_idx].clone();
                     let source_type_constraint = varref_from_value(&raw_arg)
-                        .and_then(|(source_name, _)| self.var_type_constraint(&source_name));
-                    let bound_type_constraint =
-                        source_type_constraint.or_else(|| pd.type_constraint.clone());
+                        .and_then(|(source_name, _)| {
+                            self.var_type_constraint(&source_name).or_else(|| {
+                                self.var_type_constraint(
+                                    source_name.trim_start_matches(['$', '@', '%', '&']),
+                                )
+                            })
+                        })
+                        .or_else(|| {
+                            arg_sources
+                                .as_ref()
+                                .and_then(|names| names.get(positional_idx))
+                                .and_then(|name| name.as_ref())
+                                .and_then(|name| {
+                                    self.var_type_constraint(name).or_else(|| {
+                                        self.var_type_constraint(
+                                            name.trim_start_matches(['$', '@', '%', '&']),
+                                        )
+                                    })
+                                })
+                        });
+                    let bound_type_constraint = source_type_constraint
+                        .clone()
+                        .or_else(|| pd.type_constraint.clone());
                     let mut value = unwrap_varref_value(raw_arg.clone());
                     if pd.sigilless {
                         let alias_key = sigilless_alias_key(&pd.name);
@@ -3220,46 +3778,23 @@ impl Interpreter {
                             if !self.type_matches_value(target, &value) {
                                 return Err(coerce_impossible_error(constraint, &original));
                             }
-                        } else if pd.name.starts_with('@') {
-                            let ok = match &value {
-                                Value::Array(items, ..) => {
-                                    items.iter().all(|v| self.type_matches_value(constraint, v))
-                                }
-                                Value::Slip(items) => {
-                                    items.iter().all(|v| self.type_matches_value(constraint, v))
-                                }
-                                _ => false,
-                            };
-                            if !ok {
+                        } else if pd.name.starts_with('@') || pd.name.starts_with('%') {
+                            let expected = self
+                                .typed_container_param_expected(&pd.name, constraint)
+                                .unwrap_or_else(|| constraint.to_string());
+                            if !self.typed_container_param_matches(
+                                &pd.name,
+                                constraint,
+                                &value,
+                                source_type_constraint.as_deref(),
+                            ) {
                                 return Err(RuntimeError::new(format!(
-                                    "{}: Type check failed for {}: expected {}, got {}",
+                                    "{}: Type check failed in binding to parameter '{}'; expected {} but got {} ({})",
                                     type_error_kind,
                                     pd.name,
-                                    constraint,
-                                    super::value_type_name(&value)
-                                )));
-                            }
-                        } else if pd.name.starts_with('%') {
-                            let ok = match &value {
-                                Value::Hash(map) => {
-                                    map.values().all(|v| self.type_matches_value(constraint, v))
-                                }
-                                Value::Array(items, ..) => items.iter().all(|item| {
-                                    if let Value::Pair(_, v) = item {
-                                        self.type_matches_value(constraint, v)
-                                    } else {
-                                        false
-                                    }
-                                }),
-                                _ => false,
-                            };
-                            if !ok {
-                                return Err(RuntimeError::new(format!(
-                                    "{}: Type check failed for {}: expected {}, got {}",
-                                    type_error_kind,
-                                    pd.name,
-                                    constraint,
-                                    super::value_type_name(&value)
+                                    expected,
+                                    super::value_type_name(&value),
+                                    super::utils::gist_value(&value)
                                 )));
                             }
                         } else if constraint == "Num"
@@ -3486,7 +4021,13 @@ impl Interpreter {
                 } else if let Some(default_expr) = &pd.default {
                     let value = self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?;
                     let value = self.checked_default_param_value(pd, value)?;
-                    if !pd.name.is_empty() {
+                    if let Some(captured_name) = pd
+                        .type_constraint
+                        .as_deref()
+                        .and_then(|constraint| constraint.strip_prefix("::"))
+                    {
+                        self.bind_type_capture(captured_name, &value);
+                    } else if !pd.name.is_empty() {
                         self.bind_param_value(&pd.name, value);
                         self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
                     }

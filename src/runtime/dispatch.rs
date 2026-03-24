@@ -283,6 +283,25 @@ impl Interpreter {
                     // Unwrap VarRef Capture wrappers and check the source
                     // variable's declared type constraint for native type dispatch.
                     let (arg, var_type) = self.unwrap_varref_for_dispatch(&args[i]);
+                    if (pd.name.starts_with('@') || pd.name.starts_with('%'))
+                        && let Some(info) = self.container_type_metadata(&arg)
+                        && !info.value_type.is_empty()
+                    {
+                        total += self.type_hierarchy_distance(
+                            base,
+                            &Value::Package(Symbol::intern(&info.value_type)),
+                        );
+                        continue;
+                    }
+                    if (pd.name.starts_with('@') || pd.name.starts_with('%'))
+                        && let Some(var_type) = var_type.as_deref()
+                    {
+                        total += self.type_hierarchy_distance(
+                            base,
+                            &Value::Package(Symbol::intern(var_type)),
+                        );
+                        continue;
+                    }
                     total +=
                         self.type_hierarchy_distance_with_var_type(base, &arg, var_type.as_deref());
                 }
@@ -336,6 +355,24 @@ impl Interpreter {
                 }
             }
             // Check composed roles
+            if let Some(roles) = self.class_composed_roles.get(cn.as_str())
+                && roles.iter().any(|r| r == base)
+            {
+                return 1;
+            }
+        }
+        if let Value::Package(name) = value {
+            let cn = name.resolve();
+            if base == cn.as_str() {
+                return 0;
+            }
+            if let Some(class_def) = self.classes.get(cn.as_str()) {
+                for (i, ancestor) in class_def.mro.iter().enumerate() {
+                    if ancestor == base {
+                        return i;
+                    }
+                }
+            }
             if let Some(roles) = self.class_composed_roles.get(cn.as_str())
                 && roles.iter().any(|r| r == base)
             {

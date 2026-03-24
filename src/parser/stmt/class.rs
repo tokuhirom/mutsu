@@ -1,3 +1,4 @@
+use super::super::expr::expression;
 use super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::parse_result::{PError, PResult, opt_char, parse_char, take_while1};
 use super::super::primary::regex::scan_to_delim;
@@ -9,8 +10,25 @@ use crate::value::Value;
 
 use super::{block, ident, keyword, qualified_ident};
 
-use super::sub::{parse_indirect_decl_name, parse_sub_name};
+use super::sub::{parse_indirect_decl_name, parse_single_param, parse_sub_name};
 use super::{parse_param_list, parse_sub_traits};
+
+fn role_type_param_constraint_is_known(type_name: &str) -> bool {
+    let stripped = type_name
+        .strip_suffix(":D")
+        .or_else(|| type_name.strip_suffix(":U"))
+        .or_else(|| type_name.strip_suffix(":_"))
+        .unwrap_or(type_name);
+    let base = stripped
+        .split_once('[')
+        .map(|(head, _)| head)
+        .unwrap_or(stripped)
+        .split_once('(')
+        .map(|(head, _)| head)
+        .unwrap_or(stripped);
+    crate::runtime::utils::is_known_type_constraint(base)
+        || super::simple::is_user_declared_type(base)
+}
 
 fn parse_declarator_traits(input: &str) -> PResult<'_, Vec<(String, Value)>> {
     let mut traits = Vec::new();
@@ -62,6 +80,48 @@ fn parse_optional_bracket_suffix(input: &str) -> PResult<'_, String> {
     }
     let end = end.ok_or_else(|| PError::expected("closing ']'"))?;
     Ok((&input[end..], input[..end].to_string()))
+}
+
+fn split_role_param_parts(input: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0usize;
+    let mut paren = 0u32;
+    let mut bracket = 0u32;
+    let mut brace = 0u32;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for (idx, ch) in input.char_indices() {
+        if let Some(q) = quote {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' && q == '"' {
+                escaped = true;
+                continue;
+            }
+            if ch == q {
+                quote = None;
+            }
+            continue;
+        }
+        match ch {
+            '\'' | '"' => quote = Some(ch),
+            '(' => paren += 1,
+            ')' => paren = paren.saturating_sub(1),
+            '[' => bracket += 1,
+            ']' => bracket = bracket.saturating_sub(1),
+            '{' => brace += 1,
+            '}' => brace = brace.saturating_sub(1),
+            ',' if paren == 0 && bracket == 0 && brace == 0 => {
+                parts.push(input[start..idx].trim());
+                start = idx + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    parts.push(input[start..].trim());
+    parts
 }
 
 fn meta_setter_stmt(type_name: &str, key: &str, value: Value) -> Stmt {
@@ -792,7 +852,11 @@ fn parse_optional_role_type_params(input: &str) -> PResult<'_, (Vec<String>, Vec
         return Err(PError::expected("']'"));
     }
     let content = &r[1..end];
-    for part in content.split(',') {
+    let normalized_content = content
+        .replace("= my role {", "= role {")
+        .replace("= my class {", "= class {")
+        .replace("= my grammar {", "= grammar {");
+    for part in normalized_content.split(',') {
         let trimmed = part.trim();
         if let Some(stripped) = trimmed.strip_prefix("::")
             && let Ok((rest_after_ident, _)) = ident(stripped)
@@ -801,9 +865,27 @@ fn parse_optional_role_type_params(input: &str) -> PResult<'_, (Vec<String>, Vec
             return Err(PError::fatal("X::Syntax::Malformed".to_string()));
         }
     }
-    if let Ok((after_params, param_defs)) = parse_param_list(&r[1..])
+    if normalized_content == content
+        && let Ok((after_params, param_defs)) = parse_param_list(&r[1..])
         && let Ok((rest, _)) = parse_char(after_params, ']')
     {
+        for pd in &param_defs {
+            if pd.name == "__type_only__"
+                && let Some(tc) = pd.type_constraint.as_deref()
+                && !tc.starts_with("::")
+                && !role_type_param_constraint_is_known(tc)
+            {
+                let msg = format!(
+                    "X::Parameter::InvalidType: Invalid type '{}' in role parameter list",
+                    tc
+                );
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("type".to_string(), Value::str(tc.to_string()));
+                attrs.insert("message".to_string(), Value::str(msg.clone()));
+                let ex = Value::make_instance(Symbol::intern("X::Parameter::InvalidType"), attrs);
+                return Err(PError::fatal_with_exception(msg, Box::new(ex)));
+            }
+        }
         let params = param_defs
             .iter()
             .map(|pd| {
@@ -822,45 +904,121 @@ fn parse_optional_role_type_params(input: &str) -> PResult<'_, (Vec<String>, Vec
         return Ok((rest, (params, param_defs)));
     }
 
-    // Fallback: keep permissive parsing for edge signatures that parse_param_list
-    // does not yet support in role parameter lists.
+    // Fallback: parse each top-level parameter item independently so defaults
+    // like `::T = 42` or `::T = my role { ... }` still preserve ParamDef data.
     let mut params = Vec::new();
-    for part in content.split(',') {
-        let trimmed = part.trim();
-        if let Some(stripped) = trimmed.strip_prefix("::") {
-            let name_part = stripped.trim();
-            if let Ok((_, name)) = ident(name_part) {
-                params.push(name);
-            }
+    let mut param_defs = Vec::new();
+    for part in split_role_param_parts(&normalized_content) {
+        if part.is_empty() {
             continue;
         }
-        if let Some(stripped) = trimmed
-            .strip_prefix('$')
-            .or_else(|| trimmed.strip_prefix('@'))
-            .or_else(|| trimmed.strip_prefix('%'))
-            .or_else(|| trimmed.strip_prefix('&'))
-        {
-            if let Ok((_, name)) = ident(stripped.trim()) {
-                params.push(name);
-            }
-            continue;
-        }
-        if let Some(pos) = trimmed.find("::") {
-            let after = &trimmed[pos + 2..];
-            if let Ok((_, name)) = ident(after.trim()) {
-                params.push(name);
+        if let Some((constraint_part, capture_part)) = part.split_once("::") {
+            let constraint = constraint_part.trim();
+            let capture_part = capture_part.trim();
+            if !constraint.is_empty()
+                && role_type_param_constraint_is_known(constraint)
+                && let Ok((rest_after_name, name)) = ident(capture_part)
+            {
+                let rest_after_name = rest_after_name.trim_start();
+                let default = if let Some(rhs) = rest_after_name.strip_prefix('=') {
+                    let rhs = rhs.trim_start();
+                    if let Ok((rest_after_expr, default_expr)) = expression(rhs) {
+                        if rest_after_expr.trim().is_empty() {
+                            Some(default_expr)
+                        } else {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+                } else if rest_after_name.is_empty() {
+                    None
+                } else {
+                    continue;
+                };
+                params.push(name.clone());
+                param_defs.push(ParamDef {
+                    name,
+                    default,
+                    multi_invocant: true,
+                    required: false,
+                    named: false,
+                    slurpy: false,
+                    double_slurpy: false,
+                    sigilless: false,
+                    type_constraint: Some(constraint.to_string()),
+                    literal_value: None,
+                    sub_signature: None,
+                    where_constraint: None,
+                    traits: Vec::new(),
+                    optional_marker: false,
+                    outer_sub_signature: None,
+                    code_signature: None,
+                    is_invocant: false,
+                    shape_constraints: None,
+                });
                 continue;
             }
         }
-        if let Some(pos) = trimmed.find('$') {
-            let after = &trimmed[pos + 1..];
-            if let Ok((_, name)) = ident(after.trim()) {
+        if let Some(after_capture) = part.strip_prefix("::")
+            && let Ok((rest_after_name, name)) = ident(after_capture)
+        {
+            let rest_after_name = rest_after_name.trim_start();
+            if let Some(rhs) = rest_after_name.strip_prefix('=') {
+                let rhs = rhs.trim_start();
+                if let Ok((rest_after_expr, default_expr)) = expression(rhs)
+                    && rest_after_expr.trim().is_empty()
+                {
+                    params.push(name.clone());
+                    param_defs.push(ParamDef {
+                        name: format!("__type_capture__{}", name),
+                        default: Some(default_expr),
+                        multi_invocant: true,
+                        required: false,
+                        named: false,
+                        slurpy: false,
+                        double_slurpy: false,
+                        sigilless: false,
+                        type_constraint: Some(format!("::{}", name)),
+                        literal_value: None,
+                        sub_signature: None,
+                        where_constraint: None,
+                        traits: Vec::new(),
+                        optional_marker: false,
+                        outer_sub_signature: None,
+                        code_signature: None,
+                        is_invocant: false,
+                        shape_constraints: None,
+                    });
+                    continue;
+                }
+            }
+        }
+        if let Ok((rest, pd)) = parse_single_param(part)
+            && rest.trim().is_empty()
+        {
+            let name = if let Some(captured) = pd
+                .type_constraint
+                .as_deref()
+                .and_then(|t| t.strip_prefix("::"))
+            {
+                captured.to_string()
+            } else {
+                pd.name.trim_start_matches(['$', '@', '%', '&']).to_string()
+            };
+            params.push(name);
+            param_defs.push(pd);
+            continue;
+        }
+        if let Some(stripped) = part.strip_prefix("::") {
+            let name_part = stripped.trim();
+            if let Ok((_, name)) = ident(name_part) {
                 params.push(name);
             }
         }
     }
     let (rest, _) = ws(&r[end + 1..])?;
-    Ok((rest, (params, Vec::new())))
+    Ok((rest, (params, param_defs)))
 }
 
 /// Skip optional role args like `[Str:D(Numeric)]` in a `does` clause.
@@ -895,6 +1053,8 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
     let (mut rest, (type_params, type_param_defs)) = parse_optional_role_type_params(rest)?;
     let mut parent_roles: Vec<String> = Vec::new();
     let mut is_hidden_role = false;
+    let mut is_export = false;
+    let mut export_tags: Vec<String> = Vec::new();
 
     // Optional parent/trait clauses in any order.
     loop {
@@ -921,10 +1081,14 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
             let (r, _) = ws(r)?;
             if trait_name == "hidden" {
                 is_hidden_role = true;
+            } else if trait_name == "export" {
+                is_export = true;
+                if !export_tags.iter().any(|t| t == "DEFAULT") {
+                    export_tags.push("DEFAULT".to_string());
+                }
             } else if !matches!(
                 trait_name.as_str(),
                 "rw" | "ok"
-                    | "export"
                     | "required"
                     | "readonly"
                     | "repr"
@@ -986,6 +1150,8 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
             name: Symbol::intern(&name),
             type_params,
             type_param_defs,
+            is_export,
+            export_tags,
             body,
             language_version: super::simple::current_language_version(),
         },

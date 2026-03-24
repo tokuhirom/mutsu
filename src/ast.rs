@@ -649,6 +649,8 @@ pub(crate) enum Stmt {
         name: Symbol,
         type_params: Vec<String>,
         type_param_defs: Vec<ParamDef>,
+        is_export: bool,
+        export_tags: Vec<String>,
         body: Vec<Stmt>,
         /// Language version active when this role was declared (e.g., "6.c", "6.d", "6.e")
         language_version: String,

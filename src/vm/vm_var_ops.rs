@@ -726,7 +726,9 @@ impl VM {
                 Value::str(name.to_string())
             }
         } else if let Some(v) = self.interpreter.env().get(name) {
-            if matches!(v, Value::Enum { .. } | Value::Nil) {
+            if matches!(v, Value::Enum { .. } | Value::Nil)
+                || matches!(v, Value::Package(pkg) if pkg.resolve() != name)
+            {
                 v.clone()
             } else if self.interpreter.has_type(name) || Self::is_builtin_type(name) {
                 Value::Package(Symbol::intern(Self::resolve_type_alias(name)))
@@ -1259,10 +1261,140 @@ impl VM {
             (instance @ Value::Instance { .. }, Value::Array(keys, ..)) => {
                 let mut results = Vec::with_capacity(keys.len());
                 for k in keys.iter().cloned() {
-                    results.push(
-                        self.try_compiled_method_or_interpret(instance.clone(), "AT-KEY", vec![k])
+                    let value = match k {
+                        Value::Int(_)
+                        | Value::Num(_)
+                        | Value::Range(_, _)
+                        | Value::RangeExcl(_, _)
+                        | Value::Whatever
+                        | Value::Sub(_)
+                        | Value::WeakSub(_) => self
+                            .try_compiled_method_or_interpret(
+                                instance.clone(),
+                                "AT-POS",
+                                vec![k.clone()],
+                            )
+                            .or_else(|_| {
+                                self.try_compiled_method_or_interpret(
+                                    instance.clone(),
+                                    "AT-KEY",
+                                    vec![k],
+                                )
+                            })
                             .unwrap_or(Value::Nil),
-                    );
+                        _ => self
+                            .try_compiled_method_or_interpret(instance.clone(), "AT-KEY", vec![k])
+                            .unwrap_or(Value::Nil),
+                    };
+                    results.push(value);
+                }
+                Value::array(results)
+            }
+            (instance @ Value::Mixin(..), Value::Str(key)) => {
+                let default = self.typed_container_default(&instance);
+                let result = self
+                    .try_compiled_method_or_interpret(
+                        instance,
+                        "AT-KEY",
+                        vec![Value::Str(key.clone())],
+                    )
+                    .unwrap_or(Value::Nil);
+                if matches!(result, Value::Nil) {
+                    default
+                } else {
+                    result
+                }
+            }
+            (instance @ Value::Mixin(..), Value::Int(i)) => {
+                if let Value::Mixin(_, mixins) = &instance
+                    && let Some(attr_key) = self.delegated_mixin_attr_key(mixins, "AT-POS")
+                    && let Some(attr_value) = mixins.get(&attr_key).cloned()
+                {
+                    self.stack.push(attr_value);
+                    self.stack.push(Value::Int(i));
+                    self.exec_index_op()?;
+                    let result = self.stack.pop().unwrap_or(Value::Nil);
+                    if !matches!(result, Value::Nil) {
+                        result
+                    } else {
+                        self.typed_container_default(&instance)
+                    }
+                } else {
+                    let default = self.typed_container_default(&instance);
+                    let fallback = instance.clone();
+                    let result = self
+                        .try_compiled_method_or_interpret(instance, "AT-POS", vec![Value::Int(i)])
+                        .or_else(|_| {
+                            self.try_compiled_method_or_interpret(
+                                fallback,
+                                "AT-KEY",
+                                vec![Value::Int(i)],
+                            )
+                        })
+                        .unwrap_or(Value::Nil);
+                    if matches!(result, Value::Nil) {
+                        default
+                    } else {
+                        result
+                    }
+                }
+            }
+            (instance @ Value::Mixin(..), Value::Array(keys, ..)) => {
+                let mut results = Vec::with_capacity(keys.len());
+                let delegated_attr: Option<Value> = if let Value::Mixin(_, mixins) = &instance {
+                    self.delegated_mixin_attr_key(mixins, "AT-POS")
+                        .and_then(|attr_key| mixins.get(&attr_key).cloned())
+                } else {
+                    None
+                };
+                for k in keys.iter().cloned() {
+                    let value = match (&delegated_attr, &k) {
+                        (
+                            Some(attr_value),
+                            Value::Int(_)
+                            | Value::Num(_)
+                            | Value::Range(_, _)
+                            | Value::RangeExcl(_, _)
+                            | Value::Whatever
+                            | Value::Sub(_)
+                            | Value::WeakSub(_),
+                        ) => {
+                            self.stack.push(attr_value.clone());
+                            self.stack.push(k.clone());
+                            self.exec_index_op()?;
+                            self.stack.pop().unwrap_or(Value::Nil)
+                        }
+                        _ => match k {
+                            Value::Int(_)
+                            | Value::Num(_)
+                            | Value::Range(_, _)
+                            | Value::RangeExcl(_, _)
+                            | Value::Whatever
+                            | Value::Sub(_)
+                            | Value::WeakSub(_) => self
+                                .try_compiled_method_or_interpret(
+                                    instance.clone(),
+                                    "AT-POS",
+                                    vec![k.clone()],
+                                )
+                                .or_else(|_| {
+                                    self.try_compiled_method_or_interpret(
+                                        instance.clone(),
+                                        "AT-KEY",
+                                        vec![k],
+                                    )
+                                })
+                                .unwrap_or(Value::Nil),
+                            _ => self
+                                .try_compiled_method_or_interpret(
+                                    instance.clone(),
+                                    "AT-KEY",
+                                    vec![k],
+                                )
+                                .unwrap_or(Value::Nil),
+                        },
+                    };
+                    results.push(value);
                 }
                 Value::array(results)
             }

@@ -1611,6 +1611,8 @@ pub(super) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
             name: Symbol::intern(&name),
             type_params: Vec::new(),
             type_param_defs: Vec::new(),
+            is_export: false,
+            export_tags: Vec::new(),
             body,
             language_version: crate::parser::current_language_version(),
         })),

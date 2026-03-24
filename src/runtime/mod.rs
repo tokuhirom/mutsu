@@ -3036,6 +3036,9 @@ impl Interpreter {
                 (format!("{module}::{name}"), name.clone())
             };
             if let Some(value) = self.env.get(&source).cloned() {
+                if !target.contains("::") {
+                    self.unsuppress_name(&target);
+                }
                 self.env.insert(target, value);
             }
         }

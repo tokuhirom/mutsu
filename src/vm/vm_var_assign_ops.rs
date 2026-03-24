@@ -4,6 +4,78 @@ use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
 
 impl VM {
+    pub(super) fn delegated_mixin_attr_key(
+        &self,
+        mixins: &std::collections::HashMap<String, Value>,
+        method_name: &str,
+    ) -> Option<String> {
+        self.interpreter
+            .delegated_role_attr_key_from_mixins(mixins, method_name)
+    }
+
+    fn assign_mixin_container_slot(
+        attr_value: &mut Value,
+        idx: &Value,
+        val: &Value,
+        range_slice: &Option<(Vec<usize>, Vec<Value>)>,
+    ) -> bool {
+        match attr_value {
+            Value::Array(items, kind) if !matches!(idx, Value::Str(_)) => {
+                let mut updated = (**items).clone();
+                if let Some((slice_indices, vals)) = range_slice {
+                    if let Some(max_idx) = slice_indices.last().copied()
+                        && max_idx >= updated.len()
+                    {
+                        updated.resize(max_idx + 1, Value::Package(Symbol::intern("Any")));
+                    }
+                    for (offset, i) in slice_indices.iter().enumerate() {
+                        updated[*i] = vals.get(offset).cloned().unwrap_or(Value::Nil);
+                    }
+                } else if let Some(i) = Self::index_to_usize(idx) {
+                    if i >= updated.len() {
+                        updated.resize(i + 1, Value::Package(Symbol::intern("Any")));
+                    }
+                    updated[i] = val.clone();
+                } else {
+                    return false;
+                }
+                *attr_value = Value::Array(Arc::new(updated), *kind);
+                true
+            }
+            Value::Hash(hash) if matches!(idx, Value::Str(_)) => {
+                let mut updated = (**hash).clone();
+                updated.insert(idx.to_string_value(), val.clone());
+                *attr_value = Value::Hash(Arc::new(updated));
+                true
+            }
+            Value::Nil if !matches!(idx, Value::Str(_)) => {
+                let mut updated = Vec::new();
+                if let Some((slice_indices, vals)) = range_slice {
+                    if let Some(max_idx) = slice_indices.last().copied() {
+                        updated.resize(max_idx + 1, Value::Package(Symbol::intern("Any")));
+                    }
+                    for (offset, i) in slice_indices.iter().enumerate() {
+                        updated[*i] = vals.get(offset).cloned().unwrap_or(Value::Nil);
+                    }
+                } else if let Some(i) = Self::index_to_usize(idx) {
+                    updated.resize(i + 1, Value::Package(Symbol::intern("Any")));
+                    updated[i] = val.clone();
+                } else {
+                    return false;
+                }
+                *attr_value = Value::real_array(updated);
+                true
+            }
+            Value::Nil if matches!(idx, Value::Str(_)) => {
+                let mut updated = std::collections::HashMap::new();
+                updated.insert(idx.to_string_value(), val.clone());
+                *attr_value = Value::Hash(Arc::new(updated));
+                true
+            }
+            _ => false,
+        }
+    }
+
     fn varref_target(value: &Value) -> Option<(String, Option<usize>)> {
         if let Value::Capture { positional, named } = value
             && positional.is_empty()
@@ -1035,6 +1107,47 @@ impl VM {
                 } else {
                     None
                 };
+                if let Some(current) = self.interpreter.env().get(&var_name).cloned()
+                    && let Value::Mixin(inner, mixins) = current
+                {
+                    let mut updated_mixins = (*mixins).clone();
+                    let mut assigned_object_slot = false;
+                    let delegated_attr_key = if matches!(&idx, Value::Str(_)) {
+                        self.delegated_mixin_attr_key(&updated_mixins, "ASSIGN-KEY")
+                    } else {
+                        self.delegated_mixin_attr_key(&updated_mixins, "ASSIGN-POS")
+                    };
+                    if let Some(attr_key) = delegated_attr_key
+                        && let Some(attr_value) = updated_mixins.get_mut(&attr_key)
+                    {
+                        assigned_object_slot =
+                            Self::assign_mixin_container_slot(attr_value, &idx, &val, &range_slice);
+                    }
+                    if !assigned_object_slot {
+                        for (key, attr_value) in updated_mixins.iter_mut() {
+                            if !key.starts_with("__mutsu_attr__") {
+                                continue;
+                            }
+                            if Self::assign_mixin_container_slot(
+                                attr_value,
+                                &idx,
+                                &val,
+                                &range_slice,
+                            ) {
+                                assigned_object_slot = true;
+                                break;
+                            }
+                        }
+                    }
+                    if assigned_object_slot {
+                        self.interpreter.env_mut().insert(
+                            var_name.clone(),
+                            Value::Mixin(inner, Arc::new(updated_mixins)),
+                        );
+                        self.stack.push(val);
+                        return Ok(());
+                    }
+                }
                 let mut range_initialized_marks: Vec<String> = Vec::new();
                 let mut pending_source_update: Option<(String, Value)> = None;
                 let mut pending_varref_update: Option<(String, Option<usize>, Value)> = None;

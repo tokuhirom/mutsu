@@ -27,6 +27,12 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        if let Value::Package(_) = &target {
+            let materialized = self.materialize_default_parametric_role(target.clone())?;
+            if materialized != target {
+                return self.dispatch_new(materialized, args);
+            }
+        }
         // Calling .new() on an instance delegates to the class constructor
         if let Value::Instance { class_name, .. } = &target {
             return self.dispatch_new(Value::Package(*class_name), args);
@@ -80,6 +86,7 @@ impl Interpreter {
         } = &target
         {
             let base_name_str = base_name.resolve();
+            self.ensure_role_punned_to_class(&base_name_str);
             let mut selected_role = self.roles.get(&base_name_str).cloned();
             let mut selected_param_names = self
                 .role_type_params
@@ -166,6 +173,7 @@ impl Interpreter {
                 }
             }
             if let Some(role) = selected_role {
+                let role_id = role.role_id;
                 let mut named_args: HashMap<String, Value> = HashMap::new();
                 let mut positional_args: Vec<Value> = Vec::new();
                 for arg in &args {
@@ -182,6 +190,12 @@ impl Interpreter {
                     format!("__mutsu_role_typeargs__{}", base_name),
                     Value::array(type_args.clone()),
                 );
+                if role_id != 0 {
+                    mixins.insert(
+                        format!("__mutsu_role_id__{}", base_name),
+                        Value::Int(role_id as i64),
+                    );
+                }
                 for (param_name, type_arg) in selected_param_names.iter().zip(type_args.iter()) {
                     mixins.insert(
                         format!("__mutsu_role_param__{}", param_name),

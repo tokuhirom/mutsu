@@ -810,10 +810,11 @@ impl VM {
             // Only suppress when the parent package is itself a class, not a module.
             // Also register the short name in the lexical env so it is available
             // within the enclosing class body and its methods.
-            if qualified_name != resolved_name
-                && !resolved_name.contains("::")
-                && self.interpreter.has_type(&current_package)
-            {
+            let parent_is_class = qualified_name
+                .rsplit_once("::")
+                .map(|(parent, _)| self.interpreter.has_class(parent))
+                .unwrap_or(false);
+            if qualified_name != resolved_name && !resolved_name.contains("::") && parent_is_class {
                 self.interpreter.suppress_name(&resolved_name);
                 // Register the short name in the lexical env so it resolves
                 // within the enclosing class scope (e.g. `Frog` inside `Forest`).
@@ -878,21 +879,58 @@ impl VM {
             name,
             type_params,
             type_param_defs,
+            is_export,
+            export_tags,
             body,
             language_version,
         } = stmt
         {
             let name_str = name.resolve();
-            self.interpreter
-                .register_role_decl(&name_str, type_params, type_param_defs, body)?;
+            let current_package = self.interpreter.current_package().to_string();
+            let qualified_name = if let Some(stripped) = name_str.strip_prefix("GLOBAL::") {
+                stripped.to_string()
+            } else if name_str.contains("::")
+                || current_package == "GLOBAL"
+                || name_str == current_package
+            {
+                name_str.clone()
+            } else {
+                format!("{current_package}::{name_str}")
+            };
+            // If the short name was suppressed by an earlier lexical type with
+            // the same name, re-enable it before registering the new role.
+            self.interpreter.unsuppress_name(&name_str);
+            self.interpreter.register_role_decl(
+                &qualified_name,
+                type_params,
+                type_param_defs,
+                body,
+            )?;
+            if *is_export && !self.interpreter.suppress_exports {
+                self.interpreter.register_exported_var(
+                    current_package.clone(),
+                    name_str.clone(),
+                    export_tags.clone(),
+                );
+            }
             // Store language revision metadata from the version captured at parse time
             self.interpreter
-                .store_language_revision_from_version(&name_str, language_version);
+                .store_language_revision_from_version(&qualified_name, language_version);
             // Compile role method bodies to bytecode
-            self.interpreter.compile_role_methods(&name_str);
-            self.interpreter
-                .env_mut()
-                .insert("_".to_string(), Value::Package(Symbol::intern(&name_str)));
+            self.interpreter.compile_role_methods(&qualified_name);
+            self.interpreter.env_mut().insert(
+                "_".to_string(),
+                Value::Package(Symbol::intern(&qualified_name)),
+            );
+            self.interpreter.env_mut().insert(
+                qualified_name.clone(),
+                Value::Package(Symbol::intern(&qualified_name)),
+            );
+            if qualified_name != name_str && !name_str.contains("::") {
+                self.interpreter
+                    .env_mut()
+                    .insert(name_str, Value::Package(Symbol::intern(&qualified_name)));
+            }
             self.env_dirty = true;
             Ok(())
         } else {
