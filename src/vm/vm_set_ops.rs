@@ -747,16 +747,7 @@ impl VM {
     pub(super) fn exec_set_sym_diff_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = match (left, right) {
-            (Value::Set(a), Value::Set(b)) => {
-                Value::set(a.symmetric_difference(&b).cloned().collect())
-            }
-            (l, r) => {
-                let a = runtime::coerce_to_set(&l);
-                let b = runtime::coerce_to_set(&r);
-                Value::set(a.symmetric_difference(&b).cloned().collect())
-            }
-        };
+        let result = runtime::set_sym_diff_values(&left, &right);
         self.stack.push(result);
     }
 

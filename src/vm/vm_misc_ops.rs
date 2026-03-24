@@ -1326,6 +1326,12 @@ impl VM {
                 }
             }
         }
+        // Multi-arg symmetric difference is NOT a left-fold.
+        // For each key, the result weight = max_weight - second_max_weight.
+        if matches!(base_op.as_str(), "(^)" | "⊖") && list.len() > 2 {
+            self.stack.push(runtime::set_sym_diff_multi(&list));
+            return Ok(());
+        }
         if list.is_empty() {
             self.stack.push(runtime::reduction_identity(&base_op));
         } else {
