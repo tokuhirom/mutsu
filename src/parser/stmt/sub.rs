@@ -717,6 +717,7 @@ pub(super) fn sub_decl_body(
         let (r, (pd, rt)) = parse_param_list_with_return(r)?;
         validate_signature_params(&pd)?;
         reject_invocant_in_sub(&pd)?;
+        reject_attr_params_in_sub(&pd)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
         let names: Vec<String> = pd.iter().map(|p| p.name.clone()).collect();
@@ -1236,6 +1237,26 @@ fn parse_export_trait_tags(input: &str) -> PResult<'_, Vec<String>> {
 }
 
 /// Reject invocant markers (':') in non-method signatures (sub, pointy block).
+/// Reject attribute twigil parameters ($!x, $.x, @!a, @.a, %!h, %.h) in sub signatures.
+/// These require `self`, which subs don't have.
+fn reject_attr_params_in_sub(params: &[ParamDef]) -> Result<(), PError> {
+    for p in params {
+        if p.name.starts_with('!') || p.name.starts_with('.') {
+            let variable = format!("${}", &p.name);
+            let msg = format!(
+                "X::Syntax::NoSelf: Variable {} used where no 'self' is available",
+                variable
+            );
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), Value::str(msg.clone()));
+            attrs.insert("variable".to_string(), Value::str(variable));
+            let ex = Value::make_instance(Symbol::intern("X::Syntax::NoSelf"), attrs);
+            return Err(PError::fatal_with_exception(msg, Box::new(ex)));
+        }
+    }
+    Ok(())
+}
+
 fn reject_invocant_in_sub(params: &[ParamDef]) -> Result<(), PError> {
     if params
         .iter()
