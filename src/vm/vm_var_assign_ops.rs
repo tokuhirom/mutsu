@@ -1538,33 +1538,6 @@ impl VM {
                 return Ok(());
             }
         }
-        // Check sigilless alias (e.g. `my $y := $x` creates alias y -> x)
-        {
-            let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-            if let Some(Value::Str(alias_target)) = self.interpreter.env().get(&alias_key).cloned()
-            {
-                let target_name = alias_target.to_string();
-                // Try to find the aliased variable in local slots first
-                let mut found = false;
-                for (i, local_name) in code.locals.iter().enumerate() {
-                    if *local_name == target_name {
-                        let val = self.locals[i].clone();
-                        self.stack.push(val);
-                        found = true;
-                        break;
-                    }
-                }
-                if !found {
-                    // Fall back to env lookup
-                    if let Some(val) = self.interpreter.env().get(&target_name).cloned() {
-                        self.stack.push(val);
-                    } else {
-                        self.stack.push(Value::Nil);
-                    }
-                }
-                return Ok(());
-            }
-        }
         let atomic_name = name.strip_prefix('$').unwrap_or(&name);
         let atomic_name_key = format!("__mutsu_atomic_name::{atomic_name}");
         let is_atomic_int = self.interpreter.var_type_constraint(&name).as_deref()
@@ -1866,6 +1839,10 @@ impl VM {
         }
         if let Some(source_name) = bind_source {
             let resolved_source = self.resolve_sigilless_alias_source_name(&source_name);
+            // TODO: compile to bytecode - implement local slot aliasing for `:=` binding
+            // so that `my $y := $x; my $x = 3; say $y` correctly prints 3.
+            // The write propagation approach needs careful handling to avoid
+            // breaking S12-class/mro-6e.t's role concretization tests.
             self.interpreter
                 .env_mut()
                 .insert(alias_key.clone(), Value::str(resolved_source));
