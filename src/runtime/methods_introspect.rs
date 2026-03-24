@@ -158,6 +158,7 @@ impl Interpreter {
                 }
                 "Scalar"
             }
+            Value::LazyIoLines { .. } => "Seq",
         };
         let visible_type_name = if crate::value::is_internal_anon_type_name(type_name) {
             ""

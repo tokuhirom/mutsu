@@ -409,6 +409,15 @@ impl VM {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethod target".to_string())
         })?;
+        // Force LazyIoLines into an eager array when calling methods on it,
+        // unless the method preserves laziness (e.g., .kv).
+        let target = if matches!(&target, Value::LazyIoLines { .. })
+            && !matches!(method.as_str(), "kv" | "iterator" | "lazy")
+        {
+            self.force_if_lazy_io_lines(target)?
+        } else {
+            target
+        };
         // .return method: triggers a return from the enclosing sub with the invocant
         // as the return value. Does NOT auto-thread over junctions.
         if method == "return" && args.is_empty() {
@@ -1199,6 +1208,15 @@ impl VM {
             .stack
             .pop()
             .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamic target"))?;
+        // Force lazy IO lines for non-lazy-preserving methods
+        let method_name_str = name_val.to_string_value();
+        let target = if matches!(&target, Value::LazyIoLines { .. })
+            && !matches!(method_name_str.as_str(), "kv" | "iterator" | "lazy")
+        {
+            self.force_if_lazy_io_lines(target)?
+        } else {
+            target
+        };
         let call_result = if matches!(
             &name_val,
             Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
@@ -1303,6 +1321,14 @@ impl VM {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethodMut target".to_string())
         })?;
+        // Force lazy IO lines for non-lazy-preserving methods
+        let target = if matches!(&target, Value::LazyIoLines { .. })
+            && !matches!(method.as_str(), "kv" | "iterator" | "lazy")
+        {
+            self.force_if_lazy_io_lines(target)?
+        } else {
+            target
+        };
         // Detect calls on undeclared type names: when a BareWord resolved to a Str
         // (because the name wasn't a known type/class), and .new() is called on it,
         // this means the user tried to instantiate a nonexistent class.

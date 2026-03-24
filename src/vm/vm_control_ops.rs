@@ -200,6 +200,25 @@ impl VM {
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let iterable = self.stack.pop().unwrap();
+
+        // Handle lazy IO lines: iterate by pulling one line at a time
+        // so that $fh.tell reflects the current read position.
+        if let Value::LazyIoLines { ref handle, kv } = iterable {
+            let body_start = *ip + 1;
+            let loop_end = spec.body_end as usize;
+            self.exec_for_loop_lazy_io_lines(
+                code,
+                spec,
+                handle,
+                kv,
+                body_start,
+                loop_end,
+                compiled_fns,
+            )?;
+            *ip = loop_end;
+            return Ok(());
+        }
+
         let items = if let Value::LazyList(ref ll) = iterable {
             self.force_lazy_list_vm(ll)?
         } else {
@@ -550,6 +569,195 @@ impl VM {
                     coll[idx] = v;
                 }
             }
+            self.stack.push(Value::array(coll));
+        }
+        Ok(())
+    }
+
+    /// Iterate lazily over IO lines from a file handle.
+    /// Reads one line at a time so that $fh.tell reflects the current position.
+    #[allow(clippy::too_many_arguments)]
+    fn exec_for_loop_lazy_io_lines(
+        &mut self,
+        code: &CompiledCode,
+        spec: &ForLoopSpec,
+        handle: &Value,
+        kv: bool,
+        body_start: usize,
+        loop_end: usize,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
+        let param_name = spec
+            .param_idx
+            .map(|idx| match &code.constants[idx as usize] {
+                Value::Str(s) => s.to_string(),
+                _ => unreachable!("ForLoop param must be a string constant"),
+            });
+
+        let arity = spec.arity.max(1) as usize;
+        let _writes_back_topic =
+            spec.param_idx.is_none() && spec.param_local.is_none() && spec.arity <= 1;
+        let saved_topic = spec
+            .restore_topic
+            .then(|| self.interpreter.env().get("_").cloned())
+            .flatten();
+        let saved_topic_source = self.topic_source_var.take();
+        let mut collected = if spec.collect { Some(Vec::new()) } else { None };
+        let stack_base = if spec.collect {
+            Some(self.stack.len())
+        } else {
+            None
+        };
+
+        self.env_dirty = true;
+        let mut line_index: i64 = 0;
+
+        'for_loop: loop {
+            // Read the next line from the handle
+            let line = self.interpreter.read_line_from_handle_value(handle)?;
+            let Some(line_str) = line else {
+                break 'for_loop; // EOF
+            };
+            let line_val = Value::str(line_str);
+
+            // Build the item for this iteration
+            let item = if kv {
+                // .kv mode: produce [index, value] pairs.
+                // With arity 2, chunk into pairs for `-> \k, \v`.
+                if arity >= 2 {
+                    // The for-loop expects individual items that get chunked.
+                    // We produce two items per line: index and value.
+                    // Run the body once with the pair as an array.
+                    let pair = Value::array(vec![Value::Int(line_index), line_val]);
+                    line_index += 1;
+                    pair
+                } else {
+                    // arity 1: interleave index and value as separate iterations
+                    // This is unusual for .kv in a for loop but handle it.
+                    // We'd need to run the body twice per line, once for index
+                    // and once for value. For now, produce a flat pair.
+                    let pair = Value::array(vec![Value::Int(line_index), line_val]);
+                    line_index += 1;
+                    pair
+                }
+            } else {
+                line_index += 1;
+                line_val
+            };
+
+            // Set up parameters
+            if param_name.is_none() {
+                self.interpreter
+                    .env_mut()
+                    .insert("_".to_string(), item.clone());
+            }
+            if let Some(ref name) = param_name {
+                self.interpreter
+                    .env_mut()
+                    .insert(name.clone(), item.clone());
+                if let Some(bare) = name.strip_prefix("&^") {
+                    self.interpreter
+                        .env_mut()
+                        .insert(format!("&{}", bare), item.clone());
+                } else if let Some(bare) = name.strip_prefix('^') {
+                    self.interpreter
+                        .env_mut()
+                        .insert(bare.to_string(), item.clone());
+                }
+            }
+            if let Some(slot) = spec.param_local {
+                self.locals[slot as usize] = item.clone();
+            }
+            if !spec.is_rw
+                && let Some(ref name) = param_name
+            {
+                self.interpreter.mark_readonly(name);
+            }
+
+            'body_redo: loop {
+                match self.run_range(code, body_start, loop_end, compiled_fns) {
+                    Ok(()) => {
+                        if !code.state_locals.is_empty() {
+                            self.sync_state_locals_in_range(code, body_start, loop_end);
+                        }
+                        if let Some(ref mut coll) = collected {
+                            let base = stack_base.unwrap();
+                            if self.stack.len() > base {
+                                let val = self.stack.pop().unwrap();
+                                Self::collect_loop_value(coll, val);
+                            }
+                            self.stack.truncate(base);
+                        }
+                        break 'body_redo;
+                    }
+                    Err(e) if e.is_succeed => {
+                        break 'body_redo;
+                    }
+                    Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
+                        if param_name.is_none() {
+                            self.interpreter
+                                .env_mut()
+                                .insert("_".to_string(), item.clone());
+                        }
+                        if let Some(ref name) = param_name {
+                            self.interpreter
+                                .env_mut()
+                                .insert(name.clone(), item.clone());
+                        }
+                        if let Some(slot) = spec.param_local {
+                            self.locals[slot as usize] = item.clone();
+                        }
+                        continue 'body_redo;
+                    }
+                    Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
+                        break 'for_loop;
+                    }
+                    Err(e) if e.is_next && Self::label_matches(&e.label, &spec.label) => {
+                        break 'body_redo;
+                    }
+                    Err(e) => {
+                        if !spec.is_rw
+                            && let Some(ref name) = param_name
+                        {
+                            self.interpreter.readonly_vars_mut().remove(name);
+                        }
+                        if spec.restore_topic {
+                            match saved_topic.clone() {
+                                Some(v) => {
+                                    self.interpreter.env_mut().insert("_".to_string(), v);
+                                }
+                                None => {
+                                    self.interpreter.env_mut().remove("_");
+                                }
+                            }
+                        }
+                        return Err(e);
+                    }
+                }
+            }
+            if self.interpreter.is_halted() {
+                break;
+            }
+        }
+
+        // Cleanup
+        if !spec.is_rw
+            && let Some(ref name) = param_name
+        {
+            self.interpreter.readonly_vars_mut().remove(name);
+        }
+        self.topic_source_var = saved_topic_source;
+        if spec.restore_topic {
+            match saved_topic {
+                Some(v) => {
+                    self.interpreter.env_mut().insert("_".to_string(), v);
+                }
+                None => {
+                    self.interpreter.env_mut().remove("_");
+                }
+            }
+        }
+        if let Some(coll) = collected {
             self.stack.push(Value::array(coll));
         }
         Ok(())

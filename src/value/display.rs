@@ -413,6 +413,7 @@ impl Value {
                 result
             }
             Value::LazyList(_) => "LazyList".to_string(),
+            Value::LazyIoLines { .. } => "(...)".to_string(),
             Value::Uni { text, .. } => text.clone(),
             Value::Hash(items) => {
                 // Cycle detection for recursive hash structures

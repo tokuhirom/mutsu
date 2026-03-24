@@ -333,6 +333,7 @@ impl Value {
                     true
                 }
             }
+            Value::LazyIoLines { .. } => true,
         }
     }
 
@@ -439,6 +440,7 @@ impl Value {
                 }
                 "Scalar" // unforced lazy thunk
             }
+            Value::LazyIoLines { .. } => "Seq",
         };
         if my_type == type_name {
             return true;

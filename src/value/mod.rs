@@ -512,6 +512,12 @@ pub enum Value {
     /// A lazy thunk: wraps a Sub that is evaluated on first access and cached.
     /// Used by `lazy { ... }` statement prefix.
     LazyThunk(Arc<LazyThunkData>),
+    /// Lazy IO lines iterator. Reads lines from a file handle on demand.
+    /// When `kv` is true, produces index-value pairs (for `.kv`).
+    LazyIoLines {
+        handle: Box<Value>,
+        kv: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

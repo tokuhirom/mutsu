@@ -322,7 +322,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn read_line_from_handle_value(
+    pub(crate) fn read_line_from_handle_value(
         &mut self,
         handle_value: &Value,
     ) -> Result<Option<String>, RuntimeError> {

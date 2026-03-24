@@ -592,6 +592,7 @@ roast/S15-unicode-information/unival.t
 roast/S16-filehandles/chmod.t
 roast/S16-filehandles/filetest.t
 roast/S16-filehandles/io.t
+roast/S16-filehandles/io_in_for_loops.t
 roast/S16-filehandles/io_in_while_loops.t
 roast/S16-filehandles/misc.t
 roast/S16-filehandles/mkdir_rmdir.t
