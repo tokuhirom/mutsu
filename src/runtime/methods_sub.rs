@@ -464,17 +464,71 @@ impl Interpreter {
             };
             self.wrap_handle_counter += 1;
             let handle_id = self.wrap_handle_counter;
-            // Look up original sub_id by name if already wrapped, since &foo creates fresh Sub
+            // Look up original sub_id by name if already wrapped, since &foo creates fresh Sub.
+            // However, if the sub has been redefined (e.g. a new `sub foo` in a different
+            // block), the old wrap chain should be cleared.  We detect redefinition by
+            // checking the __mutsu_callable_id for this function name in the env: if it
+            // differs from what was stored at first-wrap time, the sub was redefined.
             let func_name = data.name.resolve();
+            let current_callable_id = if !func_name.is_empty() {
+                let key = format!(
+                    "__mutsu_callable_id::{}::{}",
+                    self.current_package, func_name
+                );
+                self.env
+                    .get(&key)
+                    .and_then(|v| {
+                        if let Value::Int(n) = v {
+                            Some(*n)
+                        } else {
+                            None
+                        }
+                    })
+                    .or_else(|| {
+                        let key = format!("__mutsu_callable_id::GLOBAL::{}", func_name);
+                        self.env.get(&key).and_then(|v| {
+                            if let Value::Int(n) = v {
+                                Some(*n)
+                            } else {
+                                None
+                            }
+                        })
+                    })
+            } else {
+                None
+            };
             let sub_id = if !func_name.is_empty() {
-                self.wrap_sub_names
-                    .iter()
-                    .find(|(_, n)| **n == func_name)
-                    .map(|(id, _)| *id)
-                    .unwrap_or(data.id)
+                if let Some((&old_id, _)) =
+                    self.wrap_sub_names.iter().find(|(_, n)| **n == func_name)
+                {
+                    // Check if the callable_id matches what was stored at wrap time.
+                    // If different, the sub was redefined.
+                    let stored_callable_id =
+                        self.wrap_callable_ids.get(&func_name).copied().flatten();
+                    let same_sub = match (stored_callable_id, current_callable_id) {
+                        (Some(stored), Some(current)) => stored == current,
+                        _ => true, // If we can't tell, assume same
+                    };
+                    if same_sub {
+                        old_id
+                    } else {
+                        // Sub was redefined — clear old wrap chain and mappings
+                        self.wrap_chains.remove(&old_id);
+                        self.wrap_sub_names.remove(&old_id);
+                        self.wrap_name_to_sub.remove(&func_name);
+                        data.id
+                    }
+                } else {
+                    data.id
+                }
             } else {
                 data.id
             };
+            // Store the callable_id for this wrap chain
+            if !func_name.is_empty() {
+                self.wrap_callable_ids
+                    .insert(func_name.clone(), current_callable_id);
+            }
             self.wrap_chains
                 .entry(sub_id)
                 .or_default()
