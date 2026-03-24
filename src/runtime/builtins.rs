@@ -3317,10 +3317,10 @@ impl Interpreter {
                 return Ok(result);
             }
         }
-        // If we're inside a method or routine but there's simply no next candidate,
+        // If we're inside a method but there's simply no next candidate in the MRO,
         // return Nil (this is the Raku behavior for callsame/callwith at the end of
-        // the MRO or with no multi candidates).
-        if !self.samewith_context_stack.is_empty() || !self.routine_stack.is_empty() {
+        // the MRO).  Plain subs without multi dispatch should still throw.
+        if !self.method_class_stack.is_empty() {
             if tail_call {
                 return Err(RuntimeError {
                     return_value: Some(Value::Nil),
