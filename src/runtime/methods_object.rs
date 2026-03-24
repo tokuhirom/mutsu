@@ -2015,44 +2015,72 @@ impl Interpreter {
                     } else {
                         match sigil {
                             '@' => {
-                                let arr = Value::real_array(Vec::new());
-                                // Register element type constraint for typed array attributes
-                                if let Some(tc) = self
-                                    .classes
-                                    .get(class_key)
-                                    .and_then(|cd| cd.attribute_types.get(&attr_name))
-                                    .cloned()
-                                {
-                                    self.register_container_type_metadata(
-                                        &arr,
-                                        super::ContainerTypeInfo {
-                                            value_type: tc,
-                                            key_type: None,
-                                            declared_type: None,
-                                        },
-                                    );
+                                // Check for `is Type` trait (e.g. `has @.a is Buf`)
+                                let is_type = self
+                                    .class_attribute_is_types
+                                    .get(&(class_key.to_string(), attr_name.clone()))
+                                    .cloned();
+                                if let Some(type_name) = is_type {
+                                    let type_obj =
+                                        Value::Package(crate::symbol::Symbol::intern(&type_name));
+                                    match self.call_method_with_values(type_obj, "new", vec![]) {
+                                        Ok(v) => v,
+                                        Err(_) => Value::real_array(Vec::new()),
+                                    }
+                                } else {
+                                    let arr = Value::real_array(Vec::new());
+                                    // Register element type constraint for typed array attributes
+                                    if let Some(tc) = self
+                                        .classes
+                                        .get(class_key)
+                                        .and_then(|cd| cd.attribute_types.get(&attr_name))
+                                        .cloned()
+                                    {
+                                        self.register_container_type_metadata(
+                                            &arr,
+                                            super::ContainerTypeInfo {
+                                                value_type: tc,
+                                                key_type: None,
+                                                declared_type: None,
+                                            },
+                                        );
+                                    }
+                                    arr
                                 }
-                                arr
                             }
                             '%' => {
-                                let h = Value::hash(HashMap::new());
-                                // Register value type constraint for typed hash attributes
-                                if let Some(tc) = self
-                                    .classes
-                                    .get(class_key)
-                                    .and_then(|cd| cd.attribute_types.get(&attr_name))
-                                    .cloned()
-                                {
-                                    self.register_container_type_metadata(
-                                        &h,
-                                        super::ContainerTypeInfo {
-                                            value_type: tc,
-                                            key_type: None,
-                                            declared_type: None,
-                                        },
-                                    );
+                                // Check for `is Type` trait (e.g. `has %.h is BagHash`)
+                                let is_type = self
+                                    .class_attribute_is_types
+                                    .get(&(class_key.to_string(), attr_name.clone()))
+                                    .cloned();
+                                if let Some(type_name) = is_type {
+                                    let type_obj =
+                                        Value::Package(crate::symbol::Symbol::intern(&type_name));
+                                    match self.call_method_with_values(type_obj, "new", vec![]) {
+                                        Ok(v) => v,
+                                        Err(_) => Value::hash(HashMap::new()),
+                                    }
+                                } else {
+                                    let h = Value::hash(HashMap::new());
+                                    // Register value type constraint for typed hash attributes
+                                    if let Some(tc) = self
+                                        .classes
+                                        .get(class_key)
+                                        .and_then(|cd| cd.attribute_types.get(&attr_name))
+                                        .cloned()
+                                    {
+                                        self.register_container_type_metadata(
+                                            &h,
+                                            super::ContainerTypeInfo {
+                                                value_type: tc,
+                                                key_type: None,
+                                                declared_type: None,
+                                            },
+                                        );
+                                    }
+                                    h
                                 }
-                                h
                             }
                             _ => Value::Nil,
                         }
@@ -2266,10 +2294,26 @@ impl Interpreter {
                                 Err(_) => Value::Nil,
                             }
                         } else {
-                            match sigil {
-                                '@' => Value::real_array(Vec::new()),
-                                '%' => Value::hash(HashMap::new()),
-                                _ => Value::Nil,
+                            // Check for `is Type` trait on this attribute
+                            let is_type_val = self
+                                .class_attribute_is_types
+                                .get(&(declaring_class.clone(), attr_name.clone()))
+                                .cloned();
+                            if let Some(type_name) = is_type_val {
+                                let type_obj =
+                                    Value::Package(crate::symbol::Symbol::intern(&type_name));
+                                self.call_method_with_values(type_obj, "new", vec![])
+                                    .unwrap_or_else(|_| match sigil {
+                                        '@' => Value::real_array(Vec::new()),
+                                        '%' => Value::hash(HashMap::new()),
+                                        _ => Value::Nil,
+                                    })
+                            } else {
+                                match sigil {
+                                    '@' => Value::real_array(Vec::new()),
+                                    '%' => Value::hash(HashMap::new()),
+                                    _ => Value::Nil,
+                                }
                             }
                         };
                         attrs.insert(qualified_key, val);

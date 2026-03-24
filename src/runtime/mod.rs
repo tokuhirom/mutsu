@@ -697,6 +697,9 @@ pub struct Interpreter {
     /// Evaluated `is default(...)` values for class attributes.
     /// Maps (class_name, attr_name) to the default value that should be restored when Nil is assigned.
     class_attribute_defaults: HashMap<(String, String), Value>,
+    /// `is Type` traits on `@`/`%` class attributes (e.g. `has @.a is Buf`, `has %.h is BagHash`).
+    /// Maps (class_name, attr_name) to the type name.
+    class_attribute_is_types: HashMap<(String, String), String>,
     subsets: HashMap<String, SubsetDef>,
     proto_subs: HashSet<String>,
     proto_tokens: HashSet<String>,
@@ -2457,6 +2460,7 @@ impl Interpreter {
             class_role_param_bindings: HashMap::new(),
             attribute_build_overrides: HashMap::new(),
             class_attribute_defaults: HashMap::new(),
+            class_attribute_is_types: HashMap::new(),
             subsets: HashMap::new(),
             proto_subs: HashSet::new(),
             proto_tokens: HashSet::new(),
@@ -3812,6 +3816,7 @@ impl Interpreter {
             class_role_param_bindings: self.class_role_param_bindings.clone(),
             attribute_build_overrides: self.attribute_build_overrides.clone(),
             class_attribute_defaults: self.class_attribute_defaults.clone(),
+            class_attribute_is_types: self.class_attribute_is_types.clone(),
             subsets: self.subsets.clone(),
             proto_subs: self.proto_subs.clone(),
             proto_tokens: self.proto_tokens.clone(),

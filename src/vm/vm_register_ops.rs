@@ -644,6 +644,27 @@ impl VM {
             return Ok(());
         }
 
+        // Handle `is BagHash`, `is SetHash`, `is MixHash`, `is Bag`, `is Set`, `is Mix`
+        // on hash variables: replace the variable with an instance of the appropriate type.
+        if name.starts_with('%') {
+            let is_hash_like_trait = matches!(
+                trait_name.as_str(),
+                "BagHash" | "SetHash" | "MixHash" | "Bag" | "Set" | "Mix"
+            );
+            if is_hash_like_trait {
+                if has_arg {
+                    self.stack.pop(); // discard unused trait argument
+                }
+                let name_str = name.to_string();
+                let type_obj = Value::Package(crate::symbol::Symbol::intern(&trait_name));
+                let instance = self.try_compiled_method_or_interpret(type_obj, "new", vec![])?;
+                self.locals_set_by_name(code, &name_str, instance.clone());
+                self.set_env_with_main_alias(&name_str, instance);
+                self.env_dirty = true;
+                return Ok(());
+            }
+        }
+
         // For array/hash variables with a class trait that inherits from Array[X] or Hash[V,K],
         // propagate the element type constraint so .of works correctly.
         if name.starts_with('@') || name.starts_with('%') {
