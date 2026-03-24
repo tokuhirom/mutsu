@@ -326,6 +326,13 @@ pub(crate) enum OpCode {
     CheckPhaser {
         is_pre: bool,
     },
+    /// Marks the start of an individual LEAVE phaser body within the
+    /// KEEP/UNDO queue. `next` points to the start of the next LEAVE
+    /// phaser (or the end of the queue). Used by the VM to continue
+    /// running remaining LEAVE phasers when one throws an exception.
+    LeaveGuard {
+        next: u32,
+    },
     DoBlockExpr {
         body_end: u32,
         label: Option<String>,
@@ -901,6 +908,14 @@ impl CompiledCode {
         match &mut self.ops[idx] {
             OpCode::BlockScope { post_start, .. } => *post_start = target,
             _ => panic!("patch_block_post_start on non-BlockScope opcode"),
+        }
+    }
+
+    pub(crate) fn patch_leave_guard_next(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::LeaveGuard { next, .. } => *next = target,
+            _ => panic!("patch_leave_guard_next on non-LeaveGuard opcode"),
         }
     }
 

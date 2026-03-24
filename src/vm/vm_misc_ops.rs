@@ -1701,13 +1701,18 @@ impl VM {
         // Run PRE phasers first (before ENTER)
         self.run_range(code, pre_start, enter_start, compiled_fns)?;
 
-        self.run_range(code, enter_start, body_start, compiled_fns)?;
+        let enter_result = self.run_range(code, enter_start, body_start, compiled_fns);
         self.interpreter.push_once_scope(once_scope);
         self.interpreter.push_block_scope_depth();
         self.interpreter.push_lexical_class_scope();
         let stack_base = self.stack.len();
         let topic_before = self.last_topic_value.clone();
-        let mut body_result = self.run_range(code, body_start, queue_start, compiled_fns);
+        // If ENTER died, skip the body but still run LEAVE phasers
+        let mut body_result = if let Err(e) = enter_result {
+            Err(e)
+        } else {
+            self.run_range(code, body_start, queue_start, compiled_fns)
+        };
         let body_value = if self.stack.len() > stack_base {
             self.stack.last().cloned()
         } else if self.last_topic_value != topic_before {
@@ -1716,10 +1721,34 @@ impl VM {
             None
         };
         let ran_undo = !Self::should_run_success_queue(&body_result, body_value);
+
+        // Set $! before LEAVE/UNDO phasers run so they can see the exception
+        if let Err(ref e) = body_result
+            && Self::is_exceptional_block_exit(e)
+        {
+            let err_val = if let Some(ex) = e.exception.as_ref() {
+                *ex.clone()
+            } else {
+                let mut exc_attrs = std::collections::HashMap::new();
+                exc_attrs.insert("message".to_string(), Value::str(e.message.clone()));
+                Value::make_instance(crate::symbol::Symbol::intern("Exception"), exc_attrs)
+            };
+            self.ensure_env_synced(code);
+            self.interpreter
+                .env_mut()
+                .insert("!".to_string(), err_val.clone());
+            for (i, name) in code.locals.iter().enumerate() {
+                if name == "!" {
+                    self.locals[i] = err_val;
+                    break;
+                }
+            }
+        }
+
         let queue_res = if !ran_undo {
-            self.run_range(code, keep_start, undo_start, compiled_fns)
+            self.run_leave_queue_guarded(code, keep_start, undo_start, compiled_fns)
         } else {
-            self.run_range(code, undo_start, post_start, compiled_fns)
+            self.run_leave_queue_guarded(code, undo_start, post_start, compiled_fns)
         };
 
         // When UNDO phasers ran in response to a fail(), mark the error so the

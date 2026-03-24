@@ -214,23 +214,45 @@ impl Compiler {
                     }
                     self.code.patch_block_body_end(idx);
                     self.code.patch_block_keep_start(idx);
-                    for s in stmts.iter().rev() {
-                        if let Stmt::Phaser { kind, body } = s
-                            && matches!(kind, PhaserKind::Leave | PhaserKind::Keep)
-                        {
-                            for inner in body {
-                                self.compile_stmt(inner);
+                    {
+                        let mut prev_guard: Option<usize> = None;
+                        for s in stmts.iter().rev() {
+                            if let Stmt::Phaser { kind, body } = s
+                                && matches!(kind, PhaserKind::Leave | PhaserKind::Keep)
+                            {
+                                if let Some(pg) = prev_guard {
+                                    self.code.patch_leave_guard_next(pg);
+                                }
+                                let guard_idx = self.code.emit(OpCode::LeaveGuard { next: 0 });
+                                for inner in body {
+                                    self.compile_stmt(inner);
+                                }
+                                prev_guard = Some(guard_idx);
                             }
+                        }
+                        if let Some(pg) = prev_guard {
+                            self.code.patch_leave_guard_next(pg);
                         }
                     }
                     self.code.patch_block_undo_start(idx);
-                    for s in stmts.iter().rev() {
-                        if let Stmt::Phaser { kind, body } = s
-                            && matches!(kind, PhaserKind::Leave | PhaserKind::Undo)
-                        {
-                            for inner in body {
-                                self.compile_stmt(inner);
+                    {
+                        let mut prev_guard: Option<usize> = None;
+                        for s in stmts.iter().rev() {
+                            if let Stmt::Phaser { kind, body } = s
+                                && matches!(kind, PhaserKind::Leave | PhaserKind::Undo)
+                            {
+                                if let Some(pg) = prev_guard {
+                                    self.code.patch_leave_guard_next(pg);
+                                }
+                                let guard_idx = self.code.emit(OpCode::LeaveGuard { next: 0 });
+                                for inner in body {
+                                    self.compile_stmt(inner);
+                                }
+                                prev_guard = Some(guard_idx);
                             }
+                        }
+                        if let Some(pg) = prev_guard {
+                            self.code.patch_leave_guard_next(pg);
                         }
                     }
                     // POST phasers (reverse order, after LEAVE)

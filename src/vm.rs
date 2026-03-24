@@ -445,6 +445,75 @@ impl VM {
         Ok(())
     }
 
+    /// Run LEAVE/KEEP/UNDO phaser queue with per-phaser error guarding.
+    /// Each individual LEAVE phaser (delimited by `LeaveGuard` opcodes) is
+    /// run independently. If one throws, the error is collected and execution
+    /// continues with the next phaser. Collected exceptions are returned as
+    /// an `X::PhaserExceptions` error at the end.
+    fn run_leave_queue_guarded(
+        &mut self,
+        code: &CompiledCode,
+        start: usize,
+        end: usize,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
+        if start >= end {
+            return Ok(());
+        }
+        // Check if there are any LeaveGuard markers in this range
+        let has_guards = (start..end).any(|i| matches!(code.ops[i], OpCode::LeaveGuard { .. }));
+        if !has_guards {
+            return self.run_range(code, start, end, compiled_fns);
+        }
+
+        let mut collected_errors: Vec<RuntimeError> = Vec::new();
+        let mut ip = start;
+        while ip < end {
+            match &code.ops[ip] {
+                OpCode::LeaveGuard { next } => {
+                    let guard_next = *next as usize;
+                    // Run this phaser's body (from ip+1 to guard_next)
+                    let result = self.run_range(code, ip + 1, guard_next, compiled_fns);
+                    if let Err(e) = result {
+                        collected_errors.push(e);
+                    }
+                    ip = guard_next;
+                }
+                _ => {
+                    // Non-guarded code before the first guard; run normally
+                    self.exec_one(code, &mut ip, compiled_fns)?;
+                }
+            }
+        }
+
+        if collected_errors.is_empty() {
+            Ok(())
+        } else if collected_errors.len() == 1 {
+            Err(collected_errors.into_iter().next().unwrap())
+        } else {
+            // Create X::PhaserExceptions with all collected exceptions
+            let exceptions: Vec<Value> = collected_errors
+                .iter()
+                .map(|e| {
+                    if let Some(ex) = e.exception.as_ref() {
+                        *ex.clone()
+                    } else {
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("message".to_string(), Value::str(e.message.clone()));
+                        Value::make_instance(crate::symbol::Symbol::intern("Exception"), attrs)
+                    }
+                })
+                .collect();
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("exceptions".to_string(), Value::array(exceptions));
+            let exception =
+                Value::make_instance(crate::symbol::Symbol::intern("X::PhaserExceptions"), attrs);
+            let mut err = RuntimeError::new("Multiple exceptions in LEAVE phasers".to_string());
+            err.exception = Some(Box::new(exception));
+            Err(err)
+        }
+    }
+
     fn find_label_target(&self, code: &CompiledCode, label: &str) -> Option<usize> {
         code.ops.iter().enumerate().find_map(|(i, op)| match op {
             OpCode::Label(name_idx) => {
@@ -2277,6 +2346,11 @@ impl VM {
             }
             OpCode::CheckPhaser { is_pre } => {
                 self.exec_check_phaser_op(*is_pre)?;
+                *ip += 1;
+            }
+            OpCode::LeaveGuard { .. } => {
+                // No-op marker; the guarded queue runner uses the `next` field
+                // to find the next LEAVE phaser boundary on error.
                 *ip += 1;
             }
             OpCode::DoBlockExpr {
