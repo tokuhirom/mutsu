@@ -159,9 +159,6 @@ impl VM {
 
     /// Try to dispatch a binary operation to a user-defined infix operator.
     /// Returns Some(result) if a user-defined candidate matched, None otherwise.
-    // TODO: Try compiled function dispatch before falling back to interpreter.
-    // Currently blocked because this is called from closures that don't have
-    // access to `compiled_fns`.
     pub(super) fn try_user_infix(
         &mut self,
         op_name: &str,
@@ -170,7 +167,8 @@ impl VM {
     ) -> Result<Option<Value>, RuntimeError> {
         let args = vec![left.clone(), right.clone()];
         if let Some(def) = self.interpreter.resolve_function_with_types(op_name, &args) {
-            let result = self.interpreter.call_function_def(&def, &args)?;
+            let empty_fns = HashMap::new();
+            let result = self.compile_and_call_function_def(&def, args, &empty_fns)?;
             return Ok(Some(result));
         }
         Ok(None)

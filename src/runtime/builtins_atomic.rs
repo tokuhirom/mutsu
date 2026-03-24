@@ -132,7 +132,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn builtin_atomic_fetch_var(
+    pub(crate) fn builtin_atomic_fetch_var(
         &mut self,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {

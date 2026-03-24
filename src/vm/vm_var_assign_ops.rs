@@ -1557,10 +1557,9 @@ impl VM {
             || self.interpreter.var_type_constraint(atomic_name).as_deref() == Some("atomicint")
             || self.interpreter.get_shared_var(&atomic_name_key).is_some();
         if is_atomic_int {
-            let fetched = self.interpreter.call_function(
-                "__mutsu_atomic_fetch_var",
-                vec![Value::str(atomic_name.to_string())],
-            )?;
+            let fetched = self
+                .interpreter
+                .builtin_atomic_fetch_var(&[Value::str(atomic_name.to_string())])?;
             self.locals[idx] = fetched.clone();
             self.stack.push(fetched);
             return Ok(());

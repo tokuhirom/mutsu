@@ -1521,8 +1521,8 @@ impl VM {
         crate::builtins::native_function(name_sym, args)
     }
 
-    /// Try compiled function dispatch first, then native, then interpreter fallback.
-    /// Returns the result of whichever path succeeds.
+    /// Try compiled function dispatch first, then native, then on-the-fly compile,
+    /// then interpreter fallback. Returns the result of whichever path succeeds.
     pub(super) fn call_function_compiled_first(
         &mut self,
         name: &str,
@@ -1538,10 +1538,113 @@ impl VM {
         {
             return native_result;
         }
+        // Try resolving the function definition and compiling on-the-fly.
+        // Skip functions that need special interpreter handling.
+        if !self.is_interpreter_handled_function(name)
+            && let Some(def) = self.interpreter.resolve_function_with_types(name, &args)
+        {
+            return self.compile_and_call_function_def(&def, args, compiled_fns);
+        }
         self.interpreter.call_function(name, args)
     }
 
+    /// Compile a FunctionDef on-the-fly to bytecode and execute via the VM.
+    /// This avoids the interpreter's tree-walking execution path.
+    pub(super) fn compile_and_call_function_def(
+        &mut self,
+        def: &crate::ast::FunctionDef,
+        args: Vec<Value>,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<Value, RuntimeError> {
+        self.interpreter.check_deprecation_for_def(def);
+        let name = def.name.resolve();
+        let pkg = def.package.resolve();
+
+        let fingerprint =
+            crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+
+        // Use cached compilation if available, otherwise compile on-the-fly.
+        // Caching is essential to preserve state variable identity across calls.
+        let cf = if let Some(cached) = self.otf_compile_cache.get(&fingerprint) {
+            cached.clone()
+        } else {
+            let cc = {
+                let mut compiler = crate::compiler::Compiler::new();
+                if !pkg.is_empty() && pkg != "GLOBAL" {
+                    compiler.set_current_package(pkg.to_string());
+                }
+                compiler.compile_routine_closure_body(&def.params, &def.param_defs, &def.body)
+            };
+            let cf = CompiledFunction {
+                code: cc,
+                params: def.params.clone(),
+                param_defs: def.param_defs.clone(),
+                return_type: def.return_type.clone(),
+                fingerprint,
+                empty_sig: def.empty_sig,
+                is_rw: def.is_rw,
+                is_raw: def.is_raw,
+            };
+            self.otf_compile_cache.insert(fingerprint, cf.clone());
+            cf
+        };
+
+        // Set up samewith and multi-dispatch context that call_compiled_function_named
+        // expects the caller to manage (mirrors exec_call_fn_op).
+        self.interpreter.push_samewith_context(&name, None);
+        let pushed_dispatch = self.interpreter.push_multi_dispatch_frame(&name, &args);
+
+        let result = self.call_compiled_function_named(&cf, args, compiled_fns, &pkg, &name);
+
+        self.interpreter.pop_samewith_context();
+        if pushed_dispatch {
+            self.interpreter.pop_multi_dispatch();
+        }
+
+        result
+    }
+
+    /// Check if a function name is handled by the interpreter's Rust code
+    /// rather than by compiling its AST body. This includes test functions
+    /// (implemented in runtime/test_functions.rs), internal `__mutsu_*` functions,
+    /// and pseudo-package qualified names that need special resolution.
+    pub(super) fn is_interpreter_handled_function(&self, name: &str) -> bool {
+        // Test functions are implemented as Rust methods, not via AST
+        if self.interpreter.test_mode_active()
+            && crate::runtime::Interpreter::is_test_function_name(name)
+        {
+            return true;
+        }
+        // Internal functions are dispatched by the interpreter's call_function match
+        if name.starts_with("__mutsu_") {
+            return true;
+        }
+        // Pseudo-package qualified names need interpreter's special resolution
+        // (SETTING::, OUTER::, CALLER::, etc.)
+        if name.contains("SETTING::")
+            || name.contains("OUTER::")
+            || name.contains("CALLER::")
+            || name.contains("DYNAMIC::")
+        {
+            return true;
+        }
+        false
+    }
+
     pub(super) fn find_compiled_function<'a>(
+        &mut self,
+        compiled_fns: &'a HashMap<String, CompiledFunction>,
+        name: &str,
+        args: &[Value],
+    ) -> Option<&'a CompiledFunction> {
+        // Pseudo-package names need interpreter's special resolution
+        if self.is_interpreter_handled_function(name) {
+            return None;
+        }
+        self.find_compiled_function_inner(compiled_fns, name, args)
+    }
+
+    fn find_compiled_function_inner<'a>(
         &mut self,
         compiled_fns: &'a HashMap<String, CompiledFunction>,
         name: &str,
@@ -2989,6 +3092,9 @@ impl VM {
         }
 
         // Routine: resolve to function name and dispatch
+        // Keep using interpreter.call_function here because Routine values may
+        // reference builtin functions (e.g. &SETTING::not resolves to Routine{name:"not"})
+        // and call_function correctly prioritizes builtins over user-defined functions.
         if let Value::Routine { package, name, .. } = &target {
             let pkg = package.resolve();
             let name_str = name.resolve();

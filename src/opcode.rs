@@ -794,7 +794,7 @@ pub(crate) enum OpCode {
 }
 
 /// A compiled chunk of bytecode.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct CompiledCode {
     pub(crate) ops: Vec<OpCode>,
     pub(crate) constants: Vec<Value>,
@@ -1042,7 +1042,7 @@ impl CompiledCode {
 }
 
 /// A compiled function body (SubDecl compiled to bytecode).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct CompiledFunction {
     pub(crate) code: CompiledCode,
     pub(crate) params: Vec<String>,
