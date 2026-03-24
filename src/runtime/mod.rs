@@ -287,6 +287,8 @@ pub(crate) struct MethodDef {
     /// When set, the method forwards the call (with all args) to the named method
     /// on the object stored in the given attribute.
     pub(crate) delegation: Option<(String, String)>,
+    /// `is default` trait — this candidate is preferred when multi dispatch ties.
+    pub(crate) is_default: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -2420,6 +2422,7 @@ impl Interpreter {
                         return_type: None,
                         compiled_code: None,
                         delegation: None,
+                        is_default: false,
                     };
                     let mut methods = HashMap::new();
                     for name in ["id", "need", "load", "loaded"] {

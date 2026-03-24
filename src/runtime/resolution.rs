@@ -285,6 +285,24 @@ impl Interpreter {
                 best_idx = i;
             }
         }
+        // `is default` trait tie-breaking: among candidates with the same
+        // best distance, prefer the one marked `is default`.
+        let tied: Vec<usize> = all_matches
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, def))| {
+                self.method_candidate_type_distance(arg_values, def) == best_dist
+            })
+            .map(|(i, _)| i)
+            .collect();
+        if tied.len() > 1 {
+            for &i in &tied {
+                if all_matches[i].1.is_default {
+                    best_idx = i;
+                    break;
+                }
+            }
+        }
         let _ = submethod_blocks; // used for control flow above
         Some(all_matches.remove(best_idx))
     }

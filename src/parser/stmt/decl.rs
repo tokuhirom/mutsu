@@ -1588,6 +1588,34 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         type_constraint = Some(tc);
         rest = r;
     }
+    // Parse `is` traits that come after `of` (e.g. `my $a of Int is default("foo")`)
+    {
+        let mut r = rest;
+        while let Some(after_is) = keyword("is", r) {
+            let (r2, _) = ws1(after_is)?;
+            let (r2, trait_name) = ident(r2)?;
+            let is_builtin = is_supported_variable_trait(&trait_name);
+            let include_in_traits = !is_builtin || trait_name == "default";
+            let (r2, _) = ws(r2)?;
+            if let Some(r3) = r2.strip_prefix('(') {
+                let (r3, _) = ws(r3)?;
+                let (r3, trait_arg) = expression(r3)?;
+                let (r3, _) = ws(r3)?;
+                let (r3, _) = parse_char(r3, ')')?;
+                let (r3, _) = ws(r3)?;
+                if include_in_traits {
+                    custom_traits.push((trait_name.clone(), Some(trait_arg)));
+                }
+                r = r3;
+            } else {
+                if include_in_traits {
+                    custom_traits.push((trait_name.clone(), None));
+                }
+                r = r2;
+            }
+        }
+        rest = r;
+    }
     if is_hash {
         type_constraint = match (type_constraint, hash_key_constraint.take()) {
             (Some(value_tc), Some(key_tc)) => Some(format!("{}{{{}}}", value_tc, key_tc)),

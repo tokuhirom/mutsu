@@ -63,6 +63,8 @@ pub(crate) struct FunctionDef {
     pub(crate) empty_sig: bool,
     /// Return type annotation (e.g., "Str", "Str(Numeric:D)", "Foo:D()")
     pub(crate) return_type: Option<String>,
+    /// `is default` trait — this candidate is preferred when multi dispatch ties.
+    pub(crate) is_default: bool,
 }
 
 pub(crate) fn function_body_fingerprint(
@@ -644,6 +646,8 @@ pub(crate) enum Stmt {
         is_our: bool,
         is_my: bool,
         return_type: Option<String>,
+        /// `is default` trait for multi dispatch tie-breaking.
+        is_default_candidate: bool,
     },
     RoleDecl {
         name: Symbol,
