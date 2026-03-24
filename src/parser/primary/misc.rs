@@ -1110,7 +1110,16 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
     // Zero-param pointed block: -> { body }
     if r.starts_with('{') {
         let (r, body) = parse_block_body(r)?;
-        return Ok((r, Expr::AnonSub { body, is_rw: false }));
+        return Ok((
+            r,
+            Expr::AnonSubParams {
+                params: Vec::new(),
+                param_defs: Vec::new(),
+                return_type: None,
+                body,
+                is_rw: false,
+            },
+        ));
     }
     // Zero-param with explicit return spec: -> --> 42 { body }
     if r.starts_with("-->") {
