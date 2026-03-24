@@ -19,6 +19,9 @@ pub(crate) enum OpCode {
     SetGlobal(u32),
     /// Like SetGlobal but skips @/% coercion (used for `constant @x` / `constant %x`).
     SetGlobalRaw(u32),
+    /// Load the value of an `our`-scoped variable from the persistent our_vars store.
+    /// Falls back to Nil if not found. Used for `our` redeclarations without initializer.
+    GetOurVar(u32),
     /// Coerce top-of-stack value to a List (ArrayKind::List).
     /// Used for `constant @x = ...` where the @-sigil should produce a List, not an Array.
     CoerceToList,
@@ -793,6 +796,9 @@ pub(crate) struct CompiledCode {
     pub(crate) simple_locals: Vec<bool>,
     /// Maps local slot indices to persistent state keys for `state` variables.
     pub(crate) state_locals: Vec<(usize, String)>,
+    /// Maps local slot indices to qualified package names for `our` variables.
+    /// Used by BlockScope restoration to sync local slots from their global values.
+    pub(crate) our_locals: Vec<(usize, String)>,
     /// Pre-compiled closure bodies embedded in this code chunk.
     pub(crate) closure_compiled_codes: Vec<Arc<CompiledCode>>,
 }
@@ -806,6 +812,7 @@ impl CompiledCode {
             locals: Vec::new(),
             simple_locals: Vec::new(),
             state_locals: Vec::new(),
+            our_locals: Vec::new(),
             closure_compiled_codes: Vec::new(),
         }
     }

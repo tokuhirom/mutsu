@@ -558,6 +558,10 @@ impl Interpreter {
         self.wrap_name_to_sub.get(name).cloned()
     }
 
+    pub(crate) fn get_our_var(&self, key: &str) -> Option<&Value> {
+        self.our_vars.get(key)
+    }
+
     pub(crate) fn set_our_var(&mut self, key: String, value: Value) {
         self.our_vars.insert(key, value);
     }

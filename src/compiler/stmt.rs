@@ -445,7 +445,16 @@ impl Compiler {
                 } else {
                     None
                 };
-                if self.bind_vardecl && !name.starts_with('@') && !name.starts_with('%') {
+                // For `our` redeclarations with no initializer (expr is Nil),
+                // load the existing package variable value instead of
+                // resetting to Nil. This makes `our $x = 3; ... our $x`
+                // preserve the value 3 in the redeclaration.
+                let is_our_redecl_nil = *is_our && matches!(expr, Expr::Literal(Value::Nil));
+                if is_our_redecl_nil {
+                    let qualified = self.qualify_variable_name(name);
+                    let idx = self.code.add_constant(Value::str(qualified));
+                    self.code.emit(OpCode::GetOurVar(idx));
+                } else if self.bind_vardecl && !name.starts_with('@') && !name.starts_with('%') {
                     // `:=` binding for scalar VarDecl: use compile_call_arg
                     // so WrapVarRef is emitted and the VM can set up aliases.
                     self.bind_vardecl = false;
@@ -515,6 +524,11 @@ impl Compiler {
                     self.code.emit(OpCode::SetLocal(slot));
                     if *is_our {
                         let qualified = self.qualify_variable_name(name);
+                        // Track this slot as `our`-scoped so BlockScope restoration
+                        // can sync the local from its global after block exit.
+                        self.code
+                            .our_locals
+                            .push((slot as usize, qualified.clone()));
                         let idx = self.code.add_constant(Value::str(qualified));
                         // Constants should not have their values coerced by the
                         // @/% container rules: `constant @x` stores a List,

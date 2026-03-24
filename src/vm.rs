@@ -518,13 +518,29 @@ impl VM {
                     *ip += 1;
                     return Ok(());
                 }
-                let val = self.get_env_with_main_alias(name).unwrap_or_else(|| {
-                    if name.starts_with('^') {
-                        Value::Bool(true)
-                    } else {
-                        Value::Nil
-                    }
-                });
+                let val = self
+                    .get_env_with_main_alias(name)
+                    .or_else(|| {
+                        // Fall back to the persistent our_vars store for `our`-scoped
+                        // variables accessed via package-qualified names (e.g., $Pkg::var).
+                        // Bare variable names should NOT fall back to our_vars — the
+                        // lexical alias for `our` variables is block-scoped.
+                        if name.contains("::") {
+                            self.interpreter
+                                .get_our_var(name)
+                                .cloned()
+                                .or_else(|| self.our_var_pseudo_unqualified(name))
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_else(|| {
+                        if name.starts_with('^') {
+                            Value::Bool(true)
+                        } else {
+                            Value::Nil
+                        }
+                    });
                 // When the value is Nil and the variable has a type constraint,
                 // return the type object (consistent with GetLocal behavior).
                 let val = if matches!(val, Value::Nil) {
@@ -585,6 +601,17 @@ impl VM {
             }
             OpCode::GetPseudoStash(name_idx) => {
                 self.exec_get_pseudo_stash_op(code, *name_idx);
+                *ip += 1;
+            }
+            OpCode::GetOurVar(name_idx) => {
+                let name = Self::const_str(code, *name_idx);
+                let val = self
+                    .interpreter
+                    .get_our_var(name)
+                    .cloned()
+                    .or_else(|| self.get_env_with_main_alias(name))
+                    .unwrap_or(Value::Nil);
+                self.stack.push(val);
                 *ip += 1;
             }
             OpCode::SetGlobalRaw(name_idx) | OpCode::SetGlobal(name_idx) => {
