@@ -2494,18 +2494,32 @@ impl Interpreter {
                     "host" => host = value.to_string_value(),
                     "localhost" => localhost = value.to_string_value(),
                     "port" => {
-                        port = match value.as_ref() {
-                            Value::Int(i) => *i as u16,
-                            Value::Num(f) => *f as u16,
-                            other => other.to_string_value().parse::<u16>().unwrap_or(0),
+                        let raw = match value.as_ref() {
+                            Value::Int(i) => *i,
+                            Value::Num(f) => *f as i64,
+                            other => other.to_string_value().parse::<i64>().unwrap_or(0),
+                        };
+                        if !(0..=65535).contains(&raw) {
+                            return Err(RuntimeError::new(format!(
+                                "Failed to create socket: invalid port {}",
+                                raw
+                            )));
                         }
+                        port = raw as u16;
                     }
                     "localport" => {
-                        localport = match value.as_ref() {
-                            Value::Int(i) => *i as u16,
-                            Value::Num(f) => *f as u16,
-                            other => other.to_string_value().parse::<u16>().unwrap_or(0),
+                        let raw = match value.as_ref() {
+                            Value::Int(i) => *i,
+                            Value::Num(f) => *f as i64,
+                            other => other.to_string_value().parse::<i64>().unwrap_or(0),
+                        };
+                        if !(0..=65535).contains(&raw) {
+                            return Err(RuntimeError::new(format!(
+                                "Failed to create socket: invalid port {}",
+                                raw
+                            )));
                         }
+                        localport = raw as u16;
                     }
                     "listen" => listen = value.as_ref().truthy(),
                     "family" => {
