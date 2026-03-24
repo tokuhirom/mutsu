@@ -598,13 +598,42 @@ pub(crate) fn coerce_to_str(value: &Value) -> String {
 }
 
 pub(crate) fn gist_value(value: &Value) -> String {
+    // Cycle detection for recursive data structures (shared hash/array Arcs).
+    thread_local! {
+        static SEEN_PTRS: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+    fn check_and_push(ptrs: &std::cell::RefCell<Vec<usize>>, ptr: usize) -> bool {
+        let mut s = ptrs.borrow_mut();
+        if s.contains(&ptr) {
+            return true; // cycle detected
+        }
+        s.push(ptr);
+        false
+    }
+    fn pop_ptr(ptrs: &std::cell::RefCell<Vec<usize>>, ptr: usize) {
+        let mut s = ptrs.borrow_mut();
+        if let Some(pos) = s.iter().rposition(|p| *p == ptr) {
+            s.remove(pos);
+        }
+    }
     match value {
         Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _) => {
             // Rat.gist is identical to Rat.Str in Raku
             value.to_string_value()
         }
         Value::Array(items, kind) => {
+            let ptr = std::sync::Arc::as_ptr(items) as usize;
+            let is_cycle = SEEN_PTRS.with(|seen| check_and_push(seen, ptr));
+            if is_cycle {
+                return match kind {
+                    crate::value::ArrayKind::Array | crate::value::ArrayKind::Shaped => {
+                        "[...]".to_string()
+                    }
+                    _ => "(...)".to_string(),
+                };
+            }
             let inner = items.iter().map(gist_value).collect::<Vec<_>>().join(" ");
+            SEEN_PTRS.with(|seen| pop_ptr(seen, ptr));
             match kind {
                 crate::value::ArrayKind::Array | crate::value::ArrayKind::Shaped => {
                     format!("[{}]", inner)
@@ -615,12 +644,18 @@ pub(crate) fn gist_value(value: &Value) -> String {
             }
         }
         Value::Hash(items) => {
+            let ptr = std::sync::Arc::as_ptr(items) as usize;
+            let is_cycle = SEEN_PTRS.with(|seen| check_and_push(seen, ptr));
+            if is_cycle {
+                return "{...}".to_string();
+            }
             let mut sorted_keys: Vec<&String> = items.keys().collect();
             sorted_keys.sort();
             let parts: Vec<String> = sorted_keys
                 .iter()
                 .map(|k| format!("{} => {}", k, gist_value(&items[*k])))
                 .collect();
+            SEEN_PTRS.with(|seen| pop_ptr(seen, ptr));
             format!("{{{}}}", parts.join(", "))
         }
         Value::Pair(k, v) => format!("{} => {}", k, gist_value(v)),
