@@ -338,6 +338,7 @@ roast/S05-modifier/samemark.t
 roast/S05-modifier/sigspace.t
 roast/S05-substitution/67222.t
 roast/S05-substitution/match.t
+roast/S05-syntactic-categories/new-symbols.t
 roast/S05-transliteration/79778.t
 roast/S05-transliteration/trans-TR-operator.t
 roast/S05-transliteration/trans.t
