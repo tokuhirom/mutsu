@@ -1060,14 +1060,13 @@ impl VM {
                             // hashes, use in-place mutation to preserve identity.
                             // %-sigiled vars have names like "%h", scalar vars
                             // have names without a sigil prefix (e.g. "bar").
-                            let use_inplace = Arc::strong_count(hash) > 1
-                                && !var_name.starts_with('%');
-                            let h: &mut std::collections::HashMap<String, Value> =
-                                if use_inplace {
-                                    unsafe { &mut *(Arc::as_ptr(hash) as *mut _) }
-                                } else {
-                                    Arc::make_mut(hash)
-                                };
+                            let use_inplace =
+                                Arc::strong_count(hash) > 1 && !var_name.starts_with('%');
+                            let h: &mut std::collections::HashMap<String, Value> = if use_inplace {
+                                unsafe { &mut *(Arc::as_ptr(hash) as *mut _) }
+                            } else {
+                                Arc::make_mut(hash)
+                            };
                             if bind_mode && let Some(Some(source_name)) = bind_sources.first() {
                                 pending_source_update = Some((source_name.clone(), val.clone()));
                                 h.insert(
