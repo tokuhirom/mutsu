@@ -420,6 +420,7 @@ impl Interpreter {
                     return_type: None,
                     compiled_code: sub_data.compiled_code.clone(),
                     delegation: None,
+                    is_default: false,
                 };
                 if let Some(class_def) = self.classes.get_mut(&class_name) {
                     class_def.methods.insert(method_name, vec![def]);
@@ -459,6 +460,7 @@ impl Interpreter {
                     return_type: None,
                     compiled_code: None,
                     delegation: None,
+                    is_default: false,
                 };
                 if let Some(class_def) = self.classes.get_mut(&class_name) {
                     class_def.methods.entry(method_name).or_default().push(def);

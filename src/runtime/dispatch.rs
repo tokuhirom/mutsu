@@ -201,6 +201,13 @@ impl Interpreter {
                 shape == best_shape_sorted
             })
         {
+            // `is default` trait tie-breaking: if exactly one tied candidate
+            // has `is_default`, prefer it over the others.
+            let default_candidates: Vec<&FunctionDef> =
+                tied.iter().filter(|def| def.is_default).collect();
+            if default_candidates.len() == 1 {
+                return Some(default_candidates[0].clone());
+            }
             self.pending_dispatch_error =
                 Some(self.ambiguous_multi_dispatch_error(name, args, &tied));
             return None;

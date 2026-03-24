@@ -158,6 +158,7 @@ impl Interpreter {
             is_method: false,
             empty_sig,
             return_type: return_type.cloned(),
+            is_default: custom_traits.iter().any(|t| t == "default"),
         };
         let single_key = format!("{}::{}", self.current_package, name);
         let multi_prefix = format!("{}::{}/", self.current_package, name);
@@ -397,6 +398,7 @@ impl Interpreter {
             is_method: false,
             empty_sig: false,
             return_type: None,
+            is_default: false,
         };
         self.insert_token_def(name, def, multi);
     }
@@ -437,6 +439,7 @@ impl Interpreter {
                 is_method: false,
                 empty_sig: false,
                 return_type: None,
+                is_default: false,
             },
         );
         Ok(())
@@ -531,6 +534,7 @@ impl Interpreter {
             is_method: false,
             empty_sig,
             return_type: return_type.cloned(),
+            is_default: false,
         };
         let single_key = format!("GLOBAL::{}", name);
         let single_key_sym = Symbol::intern(&single_key);
@@ -676,6 +680,7 @@ impl Interpreter {
                 is_method: false,
                 empty_sig: false,
                 return_type: None,
+                is_default: false,
             },
         );
         Ok(())

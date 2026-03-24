@@ -1488,6 +1488,7 @@ fn method_decl_body_with_my(
             is_our,
             is_my,
             return_type,
+            is_default_candidate: traits.custom_traits.contains(&"default".to_string()),
         },
     ))
 }

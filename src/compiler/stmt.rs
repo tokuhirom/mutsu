@@ -43,6 +43,42 @@ impl Compiler {
         }
     }
 
+    /// Check if a default value expression statically mismatches a type constraint.
+    /// Returns `Some(value_repr)` if a mismatch is detected, `None` otherwise.
+    fn check_default_type_mismatch(type_constraint: &str, expr: &Expr) -> Option<String> {
+        let value_type = match expr {
+            Expr::Literal(Value::Str(s)) => {
+                if type_constraint != "Str" && type_constraint != "Cool" && type_constraint != "Any"
+                {
+                    return Some(s.to_string());
+                }
+                return None;
+            }
+            Expr::Literal(Value::Int(_)) => "Int",
+            Expr::Literal(Value::Num(_)) => "Num",
+            Expr::Literal(Value::Bool(_)) => "Bool",
+            Expr::Literal(Value::Nil) => return None, // Nil is always valid
+            _ => return None,                         // non-literal, can't check statically
+        };
+        // Check type hierarchy: Int matches Numeric, Cool, Any, etc.
+        let mro: &[&str] = match value_type {
+            "Bool" => &["Bool", "Int", "Numeric", "Real", "Cool", "Any", "Mu"],
+            "Int" => &["Int", "Numeric", "Real", "Cool", "Any", "Mu"],
+            "Num" => &["Num", "Numeric", "Real", "Cool", "Any", "Mu"],
+            "Rat" => &["Rat", "Numeric", "Real", "Cool", "Any", "Mu"],
+            "Str" => &["Str", "Stringy", "Cool", "Any", "Mu"],
+            _ => &[],
+        };
+        if mro.contains(&type_constraint) {
+            None
+        } else {
+            Some(match expr {
+                Expr::Literal(v) => v.to_string_value(),
+                _ => "?".to_string(),
+            })
+        }
+    }
+
     fn compile_assignment_rhs_for_target(&mut self, name: &str, expr: &Expr) {
         self.compile_expr(expr);
         if !name.starts_with('@')
@@ -503,6 +539,29 @@ impl Compiler {
                     // Skip internal markers (not real traits)
                     if trait_name.starts_with("__") {
                         continue;
+                    }
+                    // `is default(expr)` with a type constraint: check that the
+                    // default value is compatible with the type at compile time.
+                    if trait_name == "default"
+                        && let Some(tc) = type_constraint
+                        && let Some(arg_expr) = trait_arg
+                        && let Some(type_mismatch) = Self::check_default_type_mismatch(tc, arg_expr)
+                    {
+                        let err_msg = format!(
+                            "X::Parameter::Default::TypeCheck: Default value '{}' will never bind to a parameter of type {}",
+                            type_mismatch, tc
+                        );
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("message".to_string(), Value::str(err_msg));
+                        attrs.insert("expected".to_string(), Value::Package(Symbol::intern(tc)));
+                        let err = Value::make_instance(
+                            Symbol::intern("X::Parameter::Default::TypeCheck"),
+                            attrs,
+                        );
+                        let idx = self.code.add_constant(err);
+                        self.code.emit(OpCode::LoadConst(idx));
+                        self.code.emit(OpCode::Die);
+                        return;
                     }
                     if let Some(arg) = trait_arg {
                         self.compile_expr(arg);

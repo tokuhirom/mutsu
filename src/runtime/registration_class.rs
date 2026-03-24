@@ -124,6 +124,7 @@ fn make_delegation_method(attr_var_name: &str, target_method: &str) -> MethodDef
         return_type: None,
         compiled_code: None,
         delegation: Some((attr_var_name.to_string(), target_method.to_string())),
+        is_default: false,
     }
 }
 
@@ -247,6 +248,7 @@ fn substitute_type_params_in_method(
         return_type: method.return_type.clone(),
         compiled_code: method.compiled_code.clone(),
         delegation: method.delegation.clone(),
+        is_default: method.is_default,
     }
 }
 
@@ -1329,6 +1331,7 @@ impl Interpreter {
                     is_our,
                     is_my,
                     return_type,
+                    is_default_candidate,
                 } => {
                     self.validate_private_access_in_stmts(name, method_body)?;
                     Self::validate_attr_declared_in_class(&class_own_attrs, method_body)?;
@@ -1357,6 +1360,7 @@ impl Interpreter {
                         return_type: return_type.clone(),
                         compiled_code: None,
                         delegation: None,
+                        is_default: *is_default_candidate,
                     };
                     if *multi {
                         class_def
@@ -1449,6 +1453,7 @@ impl Interpreter {
                             is_method: true,
                             empty_sig: false,
                             return_type: None,
+                            is_default: *is_default_candidate,
                         };
                         self.functions
                             .insert(Symbol::intern(&qualified_name), func_def);
@@ -1690,6 +1695,7 @@ impl Interpreter {
                     is_private,
                     is_my,
                     return_type,
+                    is_default_candidate,
                     ..
                 } => {
                     let resolved_method_name = if let Some(expr) = name_expr {
@@ -1716,6 +1722,7 @@ impl Interpreter {
                         return_type: return_type.clone(),
                         compiled_code: None,
                         delegation: None,
+                        is_default: *is_default_candidate,
                     };
                     if let Some(class_def) = self.classes.get_mut(name) {
                         if *multi {
@@ -2118,6 +2125,7 @@ impl Interpreter {
                     is_our: _,
                     is_my,
                     return_type,
+                    is_default_candidate,
                 } => {
                     if *multi
                         && (param_defs.iter().any(|pd| {
@@ -2152,6 +2160,7 @@ impl Interpreter {
                         return_type: return_type.clone(),
                         compiled_code: None,
                         delegation: None,
+                        is_default: *is_default_candidate,
                     };
                     if *multi {
                         role_def
