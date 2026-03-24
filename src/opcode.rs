@@ -48,6 +48,10 @@ pub(crate) enum OpCode {
     StrBitNeg,  // ~^ prefix: string/buffer bitwise negation
     MakeSlip,   // | prefix: convert array/list to Slip for flattening
     Decont,     // decontainerize: Array(_, true) → Array(_, false) for slurpy flattening
+    /// Itemize (containerize) an Array/List value so it behaves as a single
+    /// item in list context. Emitted when `$` variable values are used inside
+    /// `ArrayLiteral` or assigned to `@`/`%` targets.
+    Itemize,
     /// Recursively flatten a list value into a real Array (like *@ slurpy).
     /// Used to populate @_ in bare if blocks.
     FlattenSlurpy,

@@ -386,6 +386,8 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
         Value::Array(items, ..) => {
             // Flatten nested Hashes into pairs before building the hash.
             // This handles `%h = %h1, %h2` where each hash should be merged.
+            // Itemized arrays ($[...]) are NOT flattened — they are treated
+            // as opaque items, matching Raku's Scalar-container semantics.
             let mut flat: Vec<Value> = Vec::with_capacity(items.len());
             for item in items.iter() {
                 if let Value::Hash(h) = item {
@@ -554,7 +556,11 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
 
     match value {
         Value::Array(items, kind) => {
-            if kind == ArrayKind::Shaped {
+            if kind.is_itemized() {
+                // Itemized arrays (from `$` scalar containers) are treated as
+                // a single item when assigned to an `@` variable.
+                Value::real_array(vec![Value::Array(items, kind)])
+            } else if kind == ArrayKind::Shaped {
                 Value::Array(items, kind)
             } else if let Some(shape) = metadata_shape_for_items(&items) {
                 let value = Value::Array(items, ArrayKind::Shaped);
@@ -635,12 +641,15 @@ pub(crate) fn gist_value(value: &Value) -> String {
             let inner = items.iter().map(gist_value).collect::<Vec<_>>().join(" ");
             SEEN_PTRS.with(|seen| pop_ptr(seen, ptr));
             match kind {
-                crate::value::ArrayKind::Array | crate::value::ArrayKind::Shaped => {
+                crate::value::ArrayKind::Array
+                | crate::value::ArrayKind::Shaped
+                | crate::value::ArrayKind::ItemArray => {
+                    // .gist does NOT show the `$` prefix — only .raku does.
                     format!("[{}]", inner)
                 }
-                crate::value::ArrayKind::List => format!("({})", inner),
-                crate::value::ArrayKind::ItemArray => format!("$[{}]", inner),
-                crate::value::ArrayKind::ItemList => format!("$({})", inner),
+                crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList => {
+                    format!("({})", inner)
+                }
             }
         }
         Value::Hash(items) => {

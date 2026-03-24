@@ -88,6 +88,12 @@ impl Compiler {
         {
             self.code.emit(OpCode::ScalarizeRegexMatchResult);
         }
+        // When assigning a `$` scalar variable to an `@` target, itemize
+        // the value so it is treated as a single item (not flattened).
+        // Sigilless variables (BareWord) are not itemized.
+        if name.starts_with('@') && matches!(expr, Expr::Var(_)) {
+            self.code.emit(OpCode::Itemize);
+        }
     }
 
     fn compile_condition_expr(&mut self, cond: &Expr) {

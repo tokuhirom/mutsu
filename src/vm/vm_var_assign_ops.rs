@@ -178,7 +178,19 @@ impl VM {
         {
             return Ok(runtime::utils::coerce_value_to_quanthash(&value));
         }
-        let hash_val = runtime::coerce_to_hash(value);
+        // For Array/Seq/Slip values, use `build_hash_from_items` which
+        // raises "Odd number of elements" when appropriate. Hash values from
+        // scalar containers (`$h`) are NOT pre-flattened, so they appear as
+        // opaque items (triggering the odd-number check when expected).
+        let hash_val = match value {
+            Value::Array(ref items, ..) => {
+                runtime::utils::build_hash_from_items(items.iter().cloned().collect())?
+            }
+            Value::Seq(ref items) | Value::Slip(ref items) => {
+                runtime::utils::build_hash_from_items(items.iter().cloned().collect())?
+            }
+            _ => runtime::coerce_to_hash(value),
+        };
         // Resolve hash sentinel entries (bound variable refs) when assigning
         // to a new hash variable. Assignment creates new containers.
         if let Value::Hash(ref items) = hash_val
