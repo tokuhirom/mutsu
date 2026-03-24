@@ -1599,6 +1599,11 @@ impl VM {
                         let items = self.force_lazy_list_vm(&list)?;
                         Value::Array(std::sync::Arc::new(items), crate::value::ArrayKind::List)
                     }
+                    Value::LazyIoLines { .. } => {
+                        let forced = self.force_if_lazy_io_lines(raw_popped)?;
+                        let items = runtime::value_to_list(&forced);
+                        Value::Array(std::sync::Arc::new(items), crate::value::ArrayKind::List)
+                    }
                     other => Value::Array(
                         std::sync::Arc::new(vec![other]),
                         crate::value::ArrayKind::List,
@@ -1608,6 +1613,10 @@ impl VM {
                 // `:=` binding preserves the container type (e.g. List stays List).
                 match raw_popped {
                     Value::LazyList(list) => Value::real_array(self.force_lazy_list_vm(&list)?),
+                    Value::LazyIoLines { .. } => {
+                        let forced = self.force_if_lazy_io_lines(raw_popped)?;
+                        Value::real_array(runtime::value_to_list(&forced))
+                    }
                     other => other,
                 }
             } else {
@@ -1617,6 +1626,10 @@ impl VM {
                             Some(Value::Bool(true)) => Value::LazyList(list),
                             _ => Value::real_array(self.force_lazy_list_vm(&list)?),
                         }
+                    }
+                    Value::LazyIoLines { .. } => {
+                        let forced = self.force_if_lazy_io_lines(raw_popped)?;
+                        runtime::coerce_to_array(forced)
                     }
                     other => runtime::coerce_to_array(other),
                 }

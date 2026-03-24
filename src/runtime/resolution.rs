@@ -659,6 +659,16 @@ impl Interpreter {
         self.force_lazy_list(list)
     }
 
+    /// Force a `LazyIoLines` value into an eager array by reading all remaining
+    /// lines from the file handle.
+    pub(crate) fn force_lazy_io_lines(&mut self, handle: &Value) -> Result<Value, RuntimeError> {
+        let mut lines = Vec::new();
+        while let Some(line) = self.read_line_from_handle_value(handle)? {
+            lines.push(Value::str(line));
+        }
+        Ok(Value::array(lines))
+    }
+
     pub(super) fn split_block_phasers(&self, stmts: &[Stmt]) -> SplitPhasers {
         let mut pre_ph = Vec::new();
         let mut enter_ph = Vec::new();

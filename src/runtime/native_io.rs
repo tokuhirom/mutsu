@@ -1682,16 +1682,27 @@ impl Interpreter {
                     Value::Rat(n, d) if *d == 0 && *n > 0 => None,
                     _ => None,
                 });
-                let mut lines = Vec::new();
-                while let Some(line) = self.read_line_from_handle_value(&target_val)? {
-                    lines.push(Value::str(line));
-                    if let Some(n) = limit
-                        && lines.len() >= n
-                    {
-                        break;
+                if limit.is_some() {
+                    // Bounded: read eagerly
+                    let mut lines = Vec::new();
+                    while let Some(line) = self.read_line_from_handle_value(&target_val)? {
+                        lines.push(Value::str(line));
+                        if let Some(n) = limit
+                            && lines.len() >= n
+                        {
+                            break;
+                        }
                     }
+                    Ok(Value::array(lines))
+                } else {
+                    // No limit: return a lazy IO lines iterator so that
+                    // consumers (e.g. for-loop) can read on demand and
+                    // $fh.tell reflects the current position.
+                    Ok(Value::LazyIoLines {
+                        handle: Box::new(target_val.clone()),
+                        kv: false,
+                    })
                 }
-                Ok(Value::array(lines))
             }
             "words" => {
                 let mut words = Vec::new();

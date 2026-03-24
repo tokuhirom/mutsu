@@ -39,6 +39,15 @@ impl VM {
         let raw: Vec<Value> = self.stack.drain(start..).collect();
         let mut elems = Vec::with_capacity(raw.len());
         for val in raw {
+            // Force lazy IO lines into eager arrays
+            let val = if matches!(&val, Value::LazyIoLines { .. }) {
+                match self.force_if_lazy_io_lines(val) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                }
+            } else {
+                val
+            };
             match val {
                 Value::Slip(items) => elems.extend(items.iter().cloned()),
                 Value::Array(items, kind) if kind.is_itemized() => {
