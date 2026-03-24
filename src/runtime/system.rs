@@ -271,7 +271,7 @@ impl Interpreter {
         } else {
             self.env.remove("=pod");
         }
-        self.restore_routine_registry(routine_snapshot);
+        self.restore_routine_registry_eval(routine_snapshot);
         let current_roles = self.roles.clone();
         let current_role_candidates = self.role_candidates.clone();
         let current_role_type_params = self.role_type_params.clone();

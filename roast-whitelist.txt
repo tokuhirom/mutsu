@@ -86,6 +86,7 @@ roast/S02-names/dynamic-scope.t
 roast/S02-names/identifier.t
 roast/S02-names/indirect.t
 roast/S02-names/name.t
+roast/S02-names/our.t
 roast/S02-names/strict.t
 roast/S02-one-pass-parsing/less-than.t
 roast/S02-one-pass-parsing/misc.t
