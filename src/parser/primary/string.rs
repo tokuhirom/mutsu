@@ -1384,9 +1384,25 @@ fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, &str) {
     let mut expr = target;
     let mut rest = input;
     // Collect chain of .method parts; only commit if chain ends with parens
-    let mut chain: Vec<(String, bool)> = Vec::new(); // (method_name, is_quoted)
+    // Each entry is (method_name, is_quoted, modifier) where modifier is
+    // the meta-method prefix character (^, ?, !) if present.
+    let mut chain: Vec<(String, bool, Option<char>)> = Vec::new();
     let mut chain_rest = rest;
     while let Some(after_dot) = chain_rest.strip_prefix('.') {
+        if after_dot.is_empty() {
+            break;
+        }
+        // Check for meta-method prefix: .^name() .?method() .!method()
+        let (method_prefix, after_prefix) = if let Some(stripped) = after_dot.strip_prefix('^') {
+            (Some('^'), stripped)
+        } else if let Some(stripped) = after_dot.strip_prefix('?') {
+            (Some('?'), stripped)
+        } else if let Some(stripped) = after_dot.strip_prefix('!') {
+            (Some('!'), stripped)
+        } else {
+            (None, after_dot)
+        };
+        let after_dot = after_prefix;
         if after_dot.is_empty() {
             break;
         }
@@ -1435,7 +1451,7 @@ fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, &str) {
                     .unwrap_or(after_dot.len());
                 (&after_dot[..end], &after_dot[end..], false)
             };
-        chain.push((method_name.to_string(), is_quoted));
+        chain.push((method_name.to_string(), is_quoted, method_prefix));
         // Check if followed by (...) — parse args
         if after_name.starts_with('(') {
             // Find matching closing paren
@@ -1456,7 +1472,7 @@ fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, &str) {
                 let args_str = &after_name[1..pe];
                 let after_parens = &after_name[pe + 1..];
                 // Build the full chain
-                for (i, (name, quoted)) in chain.iter().enumerate() {
+                for (i, (name, quoted, modifier)) in chain.iter().enumerate() {
                     let args = if i == chain.len() - 1 {
                         // Last method gets the args
                         if args_str.trim().is_empty() {
@@ -1478,7 +1494,7 @@ fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, &str) {
                         target: Box::new(expr),
                         name: Symbol::intern(name),
                         args,
-                        modifier: None,
+                        modifier: *modifier,
                         quoted: *quoted,
                     };
                 }
