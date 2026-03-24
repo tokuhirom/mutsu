@@ -4395,6 +4395,7 @@ mod tests {
             assumed_named: std::collections::HashMap::new(),
             id: 1,
             empty_sig: false,
+            is_bare_block: false,
             compiled_code: Some(Arc::new(compiled)),
         });
 

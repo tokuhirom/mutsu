@@ -222,6 +222,9 @@ pub struct SubData {
     pub id: u64,
     /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
     pub(crate) empty_sig: bool,
+    /// When true, this sub is a bare block `{ ... }` (not a pointy block or named sub).
+    /// Bare blocks have an implicit `$_` parameter with default from outer scope.
+    pub(crate) is_bare_block: bool,
     /// Pre-compiled bytecode for this closure (if compiled).
     pub(crate) compiled_code: Option<Arc<CompiledCode>>,
 }
@@ -1240,6 +1243,7 @@ impl Value {
             assumed_named: HashMap::new(),
             id: next_instance_id(),
             empty_sig: false,
+            is_bare_block: false,
             compiled_code: None,
         }))
     }
@@ -1269,6 +1273,7 @@ impl Value {
             assumed_named: HashMap::new(),
             id,
             empty_sig: false,
+            is_bare_block: false,
             compiled_code: None,
         }))
     }

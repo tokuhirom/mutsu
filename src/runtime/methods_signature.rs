@@ -604,6 +604,29 @@ impl Interpreter {
                     } else {
                         let (use_positional, use_named) = Self::auto_signature_uses(&data.body);
                         let mut defs = Vec::new();
+                        // Bare blocks have an implicit $_ parameter with default from outer scope
+                        if data.is_bare_block && !use_positional {
+                            defs.push(ParamDef {
+                                name: "$_".to_string(),
+                                default: Some(Expr::Var("$_".to_string())),
+                                multi_invocant: true,
+                                required: false,
+                                named: false,
+                                slurpy: false,
+                                double_slurpy: false,
+                                sigilless: false,
+                                type_constraint: None,
+                                literal_value: None,
+                                sub_signature: None,
+                                where_constraint: None,
+                                traits: Vec::new(),
+                                optional_marker: true,
+                                outer_sub_signature: None,
+                                code_signature: None,
+                                is_invocant: false,
+                                shape_constraints: None,
+                            });
+                        }
                         if use_positional {
                             defs.push(ParamDef {
                                 name: "@_".to_string(),

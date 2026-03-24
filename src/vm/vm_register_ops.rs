@@ -65,6 +65,7 @@ impl VM {
                 assumed_named: std::collections::HashMap::new(),
                 id: crate::value::next_instance_id(),
                 empty_sig: false,
+                is_bare_block: true,
                 compiled_code,
             }));
             self.stack.push(val);
@@ -109,7 +110,8 @@ impl VM {
                 assumed_positional: Vec::new(),
                 assumed_named: std::collections::HashMap::new(),
                 id: crate::value::next_instance_id(),
-                empty_sig: false,
+                empty_sig: params.is_empty() && param_defs.is_empty(),
+                is_bare_block: false,
                 compiled_code,
             }));
             self.stack.push(val);
@@ -154,7 +156,8 @@ impl VM {
                 assumed_positional: Vec::new(),
                 assumed_named: std::collections::HashMap::new(),
                 id: crate::value::next_instance_id(),
-                empty_sig: false,
+                empty_sig: params.is_empty() && param_defs.is_empty(),
+                is_bare_block: false,
                 compiled_code,
             }));
             self.stack.push(val);
@@ -187,6 +190,7 @@ impl VM {
                 assumed_named: std::collections::HashMap::new(),
                 id: crate::value::next_instance_id(),
                 empty_sig: false,
+                is_bare_block: true,
                 compiled_code,
             }));
             self.stack.push(val);

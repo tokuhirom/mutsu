@@ -2274,24 +2274,16 @@ fn parse_anon_sub_rest(
     let (r, _) = ws(r)?;
     let (r, traits) = super::super::stmt::parse_sub_traits_pub(r)?;
     let (r, body) = parse_block_body(r)?;
-    if params.is_empty() {
-        let mut expr = make_anon_sub(body);
-        if traits.is_rw {
-            expr = set_anon_sub_rw(expr, true);
-        }
-        Ok((r, expr))
-    } else {
-        Ok((
-            r,
-            Expr::AnonSubParams {
-                params,
-                param_defs,
-                return_type,
-                body,
-                is_rw: traits.is_rw,
-            },
-        ))
-    }
+    Ok((
+        r,
+        Expr::AnonSubParams {
+            params,
+            param_defs,
+            return_type,
+            body,
+            is_rw: traits.is_rw,
+        },
+    ))
 }
 
 fn set_anon_sub_rw(expr: Expr, is_rw: bool) -> Expr {
