@@ -745,6 +745,36 @@ impl Compiler {
                     let name_idx = self.code.add_constant(Value::str(var_name.clone()));
                     self.code.emit(OpCode::AssignExpr(name_idx));
                     return;
+                } else if name == "__mutsu_assign_callable_lvalue"
+                    && args.len() == 3
+                    && let Expr::ArrayLiteral(targets) = &args[0]
+                    && targets.iter().all(|t| matches!(t, Expr::Var(_)))
+                {
+                    // ($a, $b, ...) = expr — list assignment to existing variables
+                    // 1. Compile the RHS and flatten to a list
+                    self.compile_expr(&args[2]);
+                    // Store RHS in a temp variable for indexing
+                    let tmp_name = format!(
+                        "__mutsu_destructure_assign_tmp_{}",
+                        self.code.constants.len()
+                    );
+                    let tmp_idx = self.code.add_constant(Value::str(tmp_name));
+                    self.code.emit(OpCode::Dup);
+                    self.code.emit(OpCode::SetGlobal(tmp_idx));
+                    // For each target variable, index into the RHS and assign
+                    for (i, target) in targets.iter().enumerate() {
+                        if let Expr::Var(var_name) = target {
+                            self.code.emit(OpCode::GetGlobal(tmp_idx));
+                            let idx = self.code.add_constant(Value::Int(i as i64));
+                            self.code.emit(OpCode::LoadConst(idx));
+                            self.code.emit(OpCode::Index);
+                            let name_idx = self.code.add_constant(Value::str(var_name.clone()));
+                            self.code.emit(OpCode::AssignExpr(name_idx));
+                        }
+                    }
+                    // Leave the RHS list on the stack as the result
+                    self.code.emit(OpCode::GetGlobal(tmp_idx));
+                    return;
                 } else if name == "__mutsu_assign_method_lvalue"
                     && args.len() >= 4
                     && let Expr::Index {

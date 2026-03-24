@@ -548,6 +548,18 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    // times — returns ($user, $system) CPU times (term, 0-arg)
+    if input.starts_with("times")
+        && !input[5..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
+    {
+        return Ok((
+            &input[5..],
+            Expr::Call {
+                name: Symbol::intern("times"),
+                args: vec![],
+            },
+        ));
+    }
     // INIT/CHECK/END as expression prefix phasers
     for (kw, kw_len, phaser_kind) in [
         ("INIT", 4, crate::ast::PhaserKind::Init),
@@ -748,6 +760,9 @@ pub(super) fn is_listop(name: &str) -> bool {
             | "uniname"
             | "unival"
             | "univals"
+            | "localtime"
+            | "gmtime"
+            | "times"
     ) || is_expr_listop(name)
 }
 
@@ -782,6 +797,9 @@ pub(super) fn is_expr_listop(name: &str) -> bool {
             | "set"
             | "bag"
             | "mix"
+            | "localtime"
+            | "gmtime"
+            | "times"
     ) || crate::parser::stmt::simple::is_imported_function(name)
 }
 
