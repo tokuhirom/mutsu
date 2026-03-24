@@ -841,6 +841,11 @@ impl Interpreter {
         } else {
             args
         };
+        // Multi-arg symmetric difference is NOT a left-fold.
+        // For each key, the result weight = max_weight - second_max_weight.
+        if matches!(op, "(^)" | "⊖") && args.len() > 2 {
+            return Ok(crate::runtime::utils::set_sym_diff_multi(&args));
+        }
         let mut acc = args[0].clone();
         for rhs in &args[1..] {
             let pair_args = vec![acc.clone(), rhs.clone()];

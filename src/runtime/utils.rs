@@ -2213,13 +2213,121 @@ fn coerce_to_mix(val: &Value) -> HashMap<String, f64> {
 }
 
 /// Standalone set symmetric difference: left (^) right
+/// Implements Raku type promotion: Mix > Bag > Set
+///
+/// For Bags: the result multiplicity for each key is |a_count - b_count|
+/// (entries with zero are dropped).
+/// For Mixes: the result weight for each key is |a_weight - b_weight|
+/// (entries with zero are dropped).
 pub(crate) fn set_sym_diff_values(left: &Value, right: &Value) -> Value {
-    match (left, right) {
-        (Value::Set(a), Value::Set(b)) => Value::set(a.symmetric_difference(b).cloned().collect()),
+    let level = set_type_level(left).max(set_type_level(right));
+    match level {
+        2 => {
+            // Mix-level symmetric difference: |a - b| for each key
+            let a = to_mix_map(left);
+            let b = to_mix_map(right);
+            let mut result = HashMap::new();
+            let mut all_keys: HashSet<String> = a.keys().cloned().collect();
+            all_keys.extend(b.keys().cloned());
+            for k in all_keys {
+                let av = a.get(&k).copied().unwrap_or(0.0);
+                let bv = b.get(&k).copied().unwrap_or(0.0);
+                let diff = (av - bv).abs();
+                if diff != 0.0 {
+                    result.insert(k, diff);
+                }
+            }
+            Value::mix(result)
+        }
+        1 => {
+            // Bag-level symmetric difference: |a - b| for each key
+            let a = to_bag_map(left);
+            let b = to_bag_map(right);
+            let mut result = HashMap::new();
+            let mut all_keys: HashSet<String> = a.keys().cloned().collect();
+            all_keys.extend(b.keys().cloned());
+            for k in all_keys {
+                let av = a.get(&k).copied().unwrap_or(0);
+                let bv = b.get(&k).copied().unwrap_or(0);
+                let diff = (av - bv).unsigned_abs() as i64;
+                if diff > 0 {
+                    result.insert(k, diff);
+                }
+            }
+            Value::bag(result)
+        }
         _ => {
+            // Set-level symmetric difference
             let a = coerce_to_set(left);
             let b = coerce_to_set(right);
             Value::set(a.symmetric_difference(&b).cloned().collect())
+        }
+    }
+}
+
+/// Multi-arg symmetric difference: for each key, result = max_weight - second_max_weight.
+/// This is NOT a left-fold; it operates on all inputs simultaneously.
+pub(crate) fn set_sym_diff_multi(args: &[Value]) -> Value {
+    let level = args.iter().map(set_type_level).max().unwrap_or(0);
+    match level {
+        2 => {
+            // Mix-level: collect all weight vectors per key, then max - second_max
+            let maps: Vec<HashMap<String, f64>> = args.iter().map(to_mix_map).collect();
+            let mut all_keys: HashSet<String> = HashSet::new();
+            for m in &maps {
+                all_keys.extend(m.keys().cloned());
+            }
+            let mut result = HashMap::new();
+            for k in all_keys {
+                let mut weights: Vec<f64> = maps
+                    .iter()
+                    .map(|m| m.get(&k).copied().unwrap_or(0.0))
+                    .collect();
+                weights.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+                let diff = weights[0] - weights.get(1).copied().unwrap_or(0.0);
+                if diff != 0.0 {
+                    result.insert(k, diff);
+                }
+            }
+            Value::mix(result)
+        }
+        1 => {
+            // Bag-level: collect all count vectors per key, then max - second_max
+            let maps: Vec<HashMap<String, i64>> = args.iter().map(to_bag_map).collect();
+            let mut all_keys: HashSet<String> = HashSet::new();
+            for m in &maps {
+                all_keys.extend(m.keys().cloned());
+            }
+            let mut result = HashMap::new();
+            for k in all_keys {
+                let mut counts: Vec<i64> = maps
+                    .iter()
+                    .map(|m| m.get(&k).copied().unwrap_or(0))
+                    .collect();
+                counts.sort_by(|a, b| b.cmp(a));
+                let diff = counts[0] - counts.get(1).copied().unwrap_or(0);
+                if diff > 0 {
+                    result.insert(k, diff);
+                }
+            }
+            Value::bag(result)
+        }
+        _ => {
+            // Set-level: element is in result iff it appears in exactly 1 input
+            let sets: Vec<HashSet<String>> = args.iter().map(coerce_to_set).collect();
+            let mut counts: HashMap<String, usize> = HashMap::new();
+            for s in &sets {
+                for k in s {
+                    *counts.entry(k.clone()).or_insert(0) += 1;
+                }
+            }
+            Value::set(
+                counts
+                    .into_iter()
+                    .filter(|(_, count)| *count == 1)
+                    .map(|(k, _)| k)
+                    .collect(),
+            )
         }
     }
 }
