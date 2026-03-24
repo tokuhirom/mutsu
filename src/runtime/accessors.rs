@@ -768,6 +768,38 @@ impl Interpreter {
         }
     }
 
+    /// Check all methods in a class for assignment to native-typed read-only
+    /// parameters. Returns the first error found, or None.
+    pub(crate) fn check_class_native_readonly_param_errors(
+        &self,
+        class_name: &str,
+    ) -> Option<crate::value::RuntimeError> {
+        let class_def = self.classes.get(class_name)?;
+        for overloads in class_def.methods.values() {
+            for def in overloads {
+                if let Some(err_val) =
+                    crate::compiler::Compiler::check_native_readonly_param_assignment(
+                        &def.param_defs,
+                        &def.body,
+                    )
+                {
+                    let msg = if let Value::Instance { attributes, .. } = &err_val {
+                        attributes
+                            .get("message")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_else(|| "Cannot assign to readonly variable".to_string())
+                    } else {
+                        "Cannot assign to readonly variable".to_string()
+                    };
+                    let mut err = crate::value::RuntimeError::new(msg);
+                    err.exception = Some(Box::new(err_val));
+                    return Some(err);
+                }
+            }
+        }
+        None
+    }
+
     /// Compile method bodies for a given class using the bytecode compiler.
     pub(crate) fn compile_class_methods(&mut self, class_name: &str) {
         if let Some(class_def) = self.classes.get_mut(class_name) {

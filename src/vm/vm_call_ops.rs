@@ -405,8 +405,13 @@ impl VM {
         arity: u32,
         modifier_idx: Option<u32>,
         quoted: bool,
+        arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         self.ensure_env_synced(code);
+        // Set pending arg sources for `is rw` dispatch matching
+        let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
+        self.interpreter
+            .set_pending_call_arg_sources(arg_sources.clone());
         let method_raw = Self::const_str(code, name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
         let method = Self::rewrite_method_name(&method_raw, modifier.as_deref());
@@ -1321,6 +1326,7 @@ impl VM {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_call_method_mut_op(
         &mut self,
         code: &CompiledCode,
@@ -1329,8 +1335,13 @@ impl VM {
         target_name_idx: u32,
         modifier_idx: Option<u32>,
         quoted: bool,
+        arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         self.ensure_env_synced(code);
+        // Set pending arg sources for `is rw` dispatch matching
+        let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
+        self.interpreter
+            .set_pending_call_arg_sources(arg_sources.clone());
         let method_raw = Self::const_str(code, name_idx).to_string();
         let target_name = Self::const_str(code, target_name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());

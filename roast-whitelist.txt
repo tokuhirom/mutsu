@@ -403,6 +403,7 @@ roast/S06-traits/is-readonly.t
 roast/S06-traits/is-rw.t
 roast/S06-traits/misc.t
 roast/S06-traits/native-is-copy.t
+roast/S06-traits/native-is-rw.t
 roast/S06-traits/precedence.t
 roast/S06-traits/slurpy-is-rw.t
 roast/S07-hyperrace/for.t

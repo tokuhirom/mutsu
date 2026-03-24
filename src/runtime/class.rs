@@ -828,16 +828,17 @@ impl Interpreter {
         // Method signatures must support full parameter binding semantics
         // (coercions, slurpy params, defaults, and named args) for both
         // type-object and instance invocations.
-        match self.bind_function_args_values(&bind_param_defs, &bind_params, &args) {
-            Ok(_) => {}
-            Err(e) => {
-                self.method_class_stack.pop();
-                self.env = saved_env;
-                self.var_bindings = saved_var_bindings;
-                self.restore_readonly_vars(saved_readonly);
-                return Err(e);
-            }
-        }
+        let rw_bindings =
+            match self.bind_function_args_values(&bind_param_defs, &bind_params, &args) {
+                Ok(bindings) => bindings,
+                Err(e) => {
+                    self.method_class_stack.pop();
+                    self.env = saved_env;
+                    self.var_bindings = saved_var_bindings;
+                    self.restore_readonly_vars(saved_readonly);
+                    return Err(e);
+                }
+            };
         for p in &bind_params {
             self.var_bindings.remove(p);
         }
@@ -925,6 +926,21 @@ impl Interpreter {
                 || k.starts_with("__mutsu_method_value::")
             {
                 merged_env.insert(k.clone(), v.clone());
+            }
+        }
+        // Apply `is rw` parameter writebacks so that changes to `is rw`
+        // params inside the method body propagate back to the caller's
+        // variables.
+        // The method body is compiled with the class as current_package,
+        // so sigilless params like "x" are stored as "C::x" at runtime.
+        // Check both the bare param name and the package-qualified name.
+        for (param_name, source_name) in &rw_bindings {
+            let updated = self.env.get(param_name).cloned().or_else(|| {
+                let qualified = format!("{}::{}", owner_class, param_name);
+                self.env.get(&qualified).cloned()
+            });
+            if let Some(val) = updated {
+                merged_env.insert(source_name.clone(), val);
             }
         }
         self.method_class_stack.pop();

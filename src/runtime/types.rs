@@ -2800,13 +2800,21 @@ impl Interpreter {
                     }
                     arg_for_checks = Some(missing);
                 }
-                // For multi-dispatch: `is rw` params require a writable variable argument
+                // For multi-dispatch: `is rw` params require a writable variable argument.
+                // Check VarRef wrapping (function calls) and pending arg sources
+                // (which may be set for method calls via arg_sources_idx).
                 if pd.traits.iter().any(|t| t == "rw") {
                     let raw_arg = args.get(i);
                     let is_varref = raw_arg
                         .map(|a| varref_from_value(a).is_some())
                         .unwrap_or(false);
-                    if !is_varref {
+                    let has_arg_source = self
+                        .pending_call_arg_sources
+                        .as_ref()
+                        .and_then(|sources| sources.get(i))
+                        .and_then(|name| name.as_ref())
+                        .is_some();
+                    if !is_varref && !has_arg_source {
                         return false;
                     }
                 }
@@ -3692,7 +3700,10 @@ impl Interpreter {
                             .as_ref()
                             .and_then(|names| names.get(positional_idx))
                             .and_then(|name| name.as_ref())
-                            .cloned();
+                            .cloned()
+                            .or_else(|| {
+                                varref_from_value(&args[positional_idx]).map(|(name, _)| name)
+                            });
                         if let Some(source_name) = source_name {
                             rw_bindings.push((pd.name.clone(), source_name));
                         } else if is_rw {

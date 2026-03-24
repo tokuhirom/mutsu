@@ -1231,6 +1231,7 @@ impl Compiler {
                 };
                 self.compile_expr(target);
                 let arity = args.len() as u32;
+                let arg_sources_idx = self.add_arg_sources_constant(args);
                 for arg in args {
                     self.compile_method_arg(arg);
                 }
@@ -1245,6 +1246,7 @@ impl Compiler {
                         arity,
                         modifier_idx,
                         quoted: *quoted,
+                        arg_sources_idx,
                     });
                 } else {
                     let target_name_idx = self.code.add_constant(Value::str(target_name));
@@ -1254,6 +1256,7 @@ impl Compiler {
                         target_name_idx,
                         modifier_idx,
                         quoted: *quoted,
+                        arg_sources_idx,
                     });
                 }
             }
@@ -1307,6 +1310,7 @@ impl Compiler {
                             target_name_idx: tmp_target_idx,
                             modifier_idx,
                             quoted: *quoted,
+                            arg_sources_idx: None,
                         });
                         self.code.emit(OpCode::SetGlobal(tmp_result_idx));
                         self.code.emit(OpCode::GetGlobal(tmp_target_idx));
@@ -1329,6 +1333,7 @@ impl Compiler {
                             arity,
                             modifier_idx,
                             quoted: *quoted,
+                            arg_sources_idx: None,
                         });
                         // 4. Emit writeback: write the modified value back to the
                         //    container at the same index.
@@ -1397,6 +1402,7 @@ impl Compiler {
                 }
                 self.compile_expr(target);
                 let arity = args.len() as u32;
+                let arg_sources_idx = self.add_arg_sources_constant(args);
                 for arg in args {
                     self.compile_method_arg(arg);
                 }
@@ -1408,6 +1414,7 @@ impl Compiler {
                     arity,
                     modifier_idx,
                     quoted: *quoted,
+                    arg_sources_idx,
                 });
             }
             // Dynamic method call: target."$name"(args)
@@ -2552,6 +2559,7 @@ impl Compiler {
                         arity: 0,
                         modifier_idx: None,
                         quoted: false,
+                        arg_sources_idx: None,
                     });
                     return;
                 }
@@ -2568,6 +2576,7 @@ impl Compiler {
                             arity: 0,
                             modifier_idx: None,
                             quoted: false,
+                            arg_sources_idx: None,
                         });
                     } else {
                         // %(k1 => v1, k2 => v2, ...) — hash construction from pairs
@@ -2697,6 +2706,15 @@ impl Compiler {
                         self.code.emit(OpCode::Die);
                         return;
                     }
+                }
+                // Compile-time check: assignment to native-typed read-only params
+                if let Some(err_val) =
+                    Self::check_native_readonly_param_assignment(param_defs, body)
+                {
+                    let idx = self.code.add_constant(err_val);
+                    self.code.emit(OpCode::LoadConst(idx));
+                    self.code.emit(OpCode::Die);
+                    return;
                 }
                 let compiled = self.compile_routine_closure_body(params, param_defs, body);
                 let cc_idx = self.code.add_closure_code(compiled);

@@ -274,6 +274,8 @@ pub(crate) enum OpCode {
         /// When true, the method name was quoted (e.g. `."DEFINITE"()`),
         /// bypassing pseudo-method macros.
         quoted: bool,
+        /// Optional arg sources for `is rw` parameter writeback support.
+        arg_sources_idx: Option<u32>,
     },
     /// Method call with writeback: target is a variable that may be mutated.
     CallMethodMut {
@@ -284,6 +286,8 @@ pub(crate) enum OpCode {
         /// When true, the method name was quoted (e.g. `."DEFINITE"()`),
         /// bypassing pseudo-method macros.
         quoted: bool,
+        /// Optional arg sources for `is rw` parameter writeback support.
+        arg_sources_idx: Option<u32>,
     },
     /// Dynamic method call: method name is evaluated at runtime.
     /// Stack layout: [target, name_str, arg0, arg1, ...]

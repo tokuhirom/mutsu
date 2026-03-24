@@ -817,6 +817,14 @@ impl VM {
                 },
                 body,
             )?;
+            // Check for assignment to native read-only params before
+            // compiling (X::Assignment::RO::Comp).
+            if let Some(err) = self
+                .interpreter
+                .check_class_native_readonly_param_errors(&qualified_name)
+            {
+                return Err(err);
+            }
             // Compile method bodies to bytecode for the fast path
             self.interpreter.compile_class_methods(&qualified_name);
             // Register CUnion repr if present
