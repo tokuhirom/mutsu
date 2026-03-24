@@ -340,6 +340,7 @@ impl VM {
         name_idx: u32,
         regular_arity: u32,
         _arg_sources_idx: Option<u32>,
+        slip_pos: Option<u32>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         self.ensure_env_synced(code);
@@ -348,11 +349,26 @@ impl VM {
         if self.stack.len() < total {
             return Err(RuntimeError::new("VM stack underflow in CallFuncSlip"));
         }
-        // Pop slip value (top of stack), then regular args
-        let slip_val = self.stack.pop().unwrap();
-        let regular_start = self.stack.len() - regular_arity as usize;
-        let mut args: Vec<Value> = self.stack.drain(regular_start..).collect();
-        Self::append_slip_value(&mut args, slip_val);
+        // When slip_pos is known, args are in source order on the stack.
+        // Pop all values, expand the slip at its position.
+        let stack_start = self.stack.len() - total;
+        let raw_args: Vec<Value> = self.stack.drain(stack_start..).collect();
+        let mut args: Vec<Value> = Vec::new();
+        if let Some(pos) = slip_pos {
+            let pos = pos as usize;
+            for (i, val) in raw_args.into_iter().enumerate() {
+                if i == pos {
+                    Self::append_slip_value(&mut args, val);
+                } else {
+                    args.push(val);
+                }
+            }
+        } else {
+            // Legacy behavior: slip is last on stack (compiled last)
+            let slip_val = raw_args.last().cloned().unwrap_or(Value::Nil);
+            args.extend(raw_args.into_iter().take(regular_arity as usize));
+            Self::append_slip_value(&mut args, slip_val);
+        }
         let args = self.normalize_call_args_for_target(&name, args);
         let (args, callsite_line) = self.interpreter.sanitize_call_args(&args);
         self.interpreter.set_pending_callsite_line(callsite_line);
@@ -2382,6 +2398,7 @@ impl VM {
         name_idx: u32,
         regular_arity: u32,
         _arg_sources_idx: Option<u32>,
+        slip_pos: Option<u32>,
     ) -> Result<(), RuntimeError> {
         self.ensure_env_synced(code);
         let name = Self::const_str(code, name_idx).to_string();
@@ -2389,11 +2406,25 @@ impl VM {
         if self.stack.len() < total {
             return Err(RuntimeError::new("VM stack underflow in ExecCallSlip"));
         }
-        // Pop slip value (top of stack), then regular args
-        let slip_val = self.stack.pop().unwrap();
-        let regular_start = self.stack.len() - regular_arity as usize;
-        let mut args: Vec<Value> = self.stack.drain(regular_start..).collect();
-        Self::append_slip_value(&mut args, slip_val);
+        // Pop all values from the stack in source order
+        let stack_start = self.stack.len() - total;
+        let raw_args: Vec<Value> = self.stack.drain(stack_start..).collect();
+        let mut args: Vec<Value> = Vec::new();
+        if let Some(pos) = slip_pos {
+            let pos = pos as usize;
+            for (i, val) in raw_args.into_iter().enumerate() {
+                if i == pos {
+                    Self::append_slip_value(&mut args, val);
+                } else {
+                    args.push(val);
+                }
+            }
+        } else {
+            // Legacy: slip is last on stack
+            let slip_val = raw_args.last().cloned().unwrap_or(Value::Nil);
+            args.extend(raw_args.into_iter().take(regular_arity as usize));
+            Self::append_slip_value(&mut args, slip_val);
+        }
         // Try compiled function dispatch first
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
             let pkg = self.interpreter.current_package().to_string();

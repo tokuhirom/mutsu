@@ -3340,14 +3340,30 @@ impl Interpreter {
                 let is_hash_slurpy = pd.name.starts_with('%');
                 if pd.sigilless {
                     // |c — capture parameter: preserve positional and named parts.
+                    // Collect remaining positional args from positional_idx onwards,
+                    // and also collect any Pair (named) args from the ENTIRE arg list
+                    // that were not consumed by explicit named parameters.
                     let mut positional = Vec::new();
                     let mut named = std::collections::HashMap::new();
+                    // First, collect remaining args from positional_idx
                     for arg in args[positional_idx..].iter().cloned() {
                         let arg = unwrap_varref_value(arg);
                         if let Value::Pair(key, val) = arg {
-                            named.insert(key, *val);
+                            if !explicit_named_keys.contains(&key) {
+                                named.insert(key, *val);
+                            }
                         } else {
                             positional.push(arg);
+                        }
+                    }
+                    // Also collect Pair args that were skipped before positional_idx
+                    // (e.g., named args that appeared between positional args)
+                    for arg in args[..positional_idx].iter().cloned() {
+                        let arg = unwrap_varref_value(arg);
+                        if let Value::Pair(key, val) = arg
+                            && !explicit_named_keys.contains(&key)
+                        {
+                            named.insert(key, *val);
                         }
                     }
                     let capture_value = Value::Capture { positional, named };

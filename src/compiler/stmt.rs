@@ -976,13 +976,21 @@ impl Compiler {
                     .iter()
                     .any(|arg| matches!(arg, CallArg::Slip(_)));
                 if has_slip {
-                    // Compile non-slip args first, then slip arg
+                    // Compile all args in source order, tracking the slip position
                     let mut regular_count = 0u32;
+                    let mut slip_pos: Option<u32> = None;
+                    let mut stack_idx = 0u32;
                     for arg in &rewritten_args {
                         match arg {
+                            CallArg::Slip(expr) => {
+                                slip_pos = Some(stack_idx);
+                                self.compile_expr(expr);
+                                stack_idx += 1;
+                            }
                             CallArg::Positional(expr) => {
                                 self.compile_call_arg(expr);
                                 regular_count += 1;
+                                stack_idx += 1;
                             }
                             CallArg::Named {
                                 name: n,
@@ -992,6 +1000,7 @@ impl Compiler {
                                 self.compile_expr(expr);
                                 self.code.emit(OpCode::MakePair);
                                 regular_count += 1;
+                                stack_idx += 1;
                             }
                             CallArg::Named {
                                 name: n,
@@ -1001,14 +1010,9 @@ impl Compiler {
                                 self.compile_expr(&Expr::Literal(Value::Bool(true)));
                                 self.code.emit(OpCode::MakePair);
                                 regular_count += 1;
+                                stack_idx += 1;
                             }
-                            CallArg::Slip(_) | CallArg::Invocant(_) => {} // handled below
-                        }
-                    }
-                    // Compile the slip expression (last one wins if multiple)
-                    for arg in &rewritten_args {
-                        if let CallArg::Slip(expr) = arg {
-                            self.compile_expr(expr);
+                            CallArg::Invocant(_) => {}
                         }
                     }
                     let name_idx = self.code.add_constant(Value::str(name.resolve()));
@@ -1016,6 +1020,7 @@ impl Compiler {
                         name_idx,
                         regular_arity: regular_count,
                         arg_sources_idx: None,
+                        slip_pos,
                     });
                     return;
                 }

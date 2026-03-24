@@ -3593,6 +3593,20 @@ impl Interpreter {
                 | "parse-names"
                 | "symlink"
                 | "link"
+                | "spurt"
+                | "slurp"
+                | "open"
+                | "close"
+                | "unlink"
+                | "mkdir"
+                | "rmdir"
+                | "rename"
+                | "copy"
+                | "move"
+                | "chmod"
+                | "lines"
+                | "get"
+                | "prompt"
         )
     }
 
