@@ -126,6 +126,8 @@ impl VM {
 
         self.push_call_frame();
         let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
+        let saved_state_scope = self.state_scope_id;
+        self.state_scope_id = Some(data.id);
 
         self.interpreter.inject_pending_callsite_line();
 
@@ -238,9 +240,12 @@ impl VM {
                 self.locals[i] = val.clone();
             }
         }
-        // Load persisted state variable values
+        // Load persisted state variable values using scoped keys
+        // (state_scope_id is set to data.id above, so scoped_state_key
+        // will generate closure-instance-specific keys automatically).
         for (slot, key) in &cc.state_locals {
-            if let Some(val) = self.interpreter.get_state_var(key) {
+            let scoped_key = self.scoped_state_key(key);
+            if let Some(val) = self.interpreter.get_state_var(&scoped_key) {
                 self.locals[*slot] = val.clone();
             }
         }
@@ -318,7 +323,7 @@ impl VM {
 
         self.stack.truncate(saved_stack_depth);
 
-        // Sync state variables back
+        // Sync state variables back using scoped keys
         for (slot, key) in &cc.state_locals {
             let local_name = &cc.locals[*slot];
             let val = self
@@ -327,8 +332,12 @@ impl VM {
                 .get(local_name)
                 .cloned()
                 .unwrap_or_else(|| self.locals[*slot].clone());
-            self.interpreter.set_state_var(key.clone(), val);
+            let scoped_key = self.scoped_state_key(key);
+            self.interpreter.set_state_var(scoped_key, val);
         }
+
+        // Restore the previous state scope
+        self.state_scope_id = saved_state_scope;
 
         self.interpreter.pop_routine();
         self.interpreter.pop_block();

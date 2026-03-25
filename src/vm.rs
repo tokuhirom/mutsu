@@ -93,6 +93,10 @@ pub(crate) struct VM {
     /// Cache for on-the-fly compiled functions, keyed by fingerprint.
     /// Prevents re-compilation which would break state variables.
     otf_compile_cache: HashMap<u64, CompiledFunction>,
+    /// Current closure instance ID for state variable scoping.
+    /// When Some, state var keys are suffixed with `#c{id}` to give each
+    /// closure clone its own state. Pushed/popped around closure calls.
+    state_scope_id: Option<u64>,
 }
 
 impl VM {
@@ -231,6 +235,7 @@ impl VM {
             bind_context: false,
             constant_context: false,
             otf_compile_cache: HashMap::new(),
+            state_scope_id: None,
         }
     }
 
@@ -351,6 +356,15 @@ impl VM {
         self.sync_state_locals(code);
         self.interpreter.pop_once_scope();
         Ok(())
+    }
+
+    /// Resolve a state variable key, applying the current closure scope if set.
+    fn scoped_state_key(&self, key: &str) -> String {
+        if let Some(id) = self.state_scope_id {
+            format!("{key}#c{id}")
+        } else {
+            key.to_string()
+        }
     }
 
     fn load_state_locals(&mut self, code: &CompiledCode) {
@@ -2370,8 +2384,9 @@ impl VM {
                 *ip += 1;
             }
             OpCode::StateVarInitGuard(key_idx, jump_to) => {
-                let key = Self::const_str(code, *key_idx);
-                if self.interpreter.get_state_var(key).is_some() {
+                let base_key = Self::const_str(code, *key_idx);
+                let scoped_key = self.scoped_state_key(base_key);
+                if self.interpreter.get_state_var(&scoped_key).is_some() {
                     // State already initialized: push a placeholder value on the
                     // stack (StateVarInit will discard it and use the stored value)
                     // and skip the RHS initializer.
