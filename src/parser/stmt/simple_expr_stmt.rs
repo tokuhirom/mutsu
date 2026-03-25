@@ -200,41 +200,64 @@ fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stmt> {
         return None;
     };
     let mut saw_whatever = false;
-    let mut lvalues: Vec<Expr> = Vec::new();
-    for item in items {
+    let mut lvalues: Vec<(usize, Expr)> = Vec::new();
+    for (i, item) in items.iter().enumerate() {
         if matches!(item, Expr::Whatever) {
             saw_whatever = true;
             continue;
         }
-        lvalues.push(item);
+        lvalues.push((i, item.clone()));
     }
     if !saw_whatever || lvalues.len() != 1 {
         return None;
     }
-    let target = lvalues.into_iter().next()?;
+    let (pos, target) = lvalues.into_iter().next()?;
+    // Extract the element at position `pos` from the RHS list for scalar targets
+    let extracted_rhs = Expr::Index {
+        target: Box::new(rhs.clone()),
+        index: Box::new(Expr::Literal(Value::Int(pos as i64))),
+    };
     Some(match target {
         Expr::Var(name) => Stmt::Assign {
             name,
-            expr: rhs,
+            expr: extracted_rhs,
             op: AssignOp::Assign,
         },
-        Expr::ArrayVar(name) => Stmt::Assign {
-            name: format!("@{}", name),
-            expr: Expr::Call {
-                name: Symbol::intern("__mutsu_star_lvalue_rhs"),
-                args: vec![Expr::Literal(Value::str(format!("@{}", name))), rhs],
-            },
-            op: AssignOp::Assign,
-        },
+        Expr::ArrayVar(name) => {
+            // For array targets, pass the full RHS — __mutsu_star_lvalue_rhs
+            // handles truncation based on bound array length.
+            // If the * is trailing (array comes first), the array gets the full RHS.
+            // If the * is leading (array comes last), we need to skip leading elements.
+            let array_rhs = if pos > 0 {
+                // Skip the first `pos` elements for the array target
+                Expr::MethodCall {
+                    target: Box::new(rhs),
+                    name: Symbol::intern("skip"),
+                    args: vec![Expr::Literal(Value::Int(pos as i64))],
+                    modifier: None,
+                    quoted: false,
+                }
+            } else {
+                rhs
+            };
+            Stmt::Assign {
+                name: format!("@{}", name),
+                expr: Expr::Call {
+                    name: Symbol::intern("__mutsu_star_lvalue_rhs"),
+                    args: vec![Expr::Literal(Value::str(format!("@{}", name))), array_rhs],
+                },
+                op: AssignOp::Assign,
+            }
+        }
         Expr::HashVar(name) => Stmt::Assign {
             name: format!("%{}", name),
-            expr: rhs,
+            expr: extracted_rhs,
             op: AssignOp::Assign,
         },
         Expr::Index { target, index } => Stmt::Expr(Expr::IndexAssign {
             target,
             index,
-            value: Box::new(rhs),
+            value: Box::new(extracted_rhs),
         }),
         _ => return None,
     })

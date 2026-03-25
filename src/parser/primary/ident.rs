@@ -772,6 +772,7 @@ pub(super) fn is_listop(name: &str) -> bool {
             | "localtime"
             | "gmtime"
             | "times"
+            | "undefine"
     ) || is_expr_listop(name)
 }
 

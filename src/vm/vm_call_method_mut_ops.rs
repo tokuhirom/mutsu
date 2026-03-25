@@ -400,7 +400,7 @@ impl VM {
             && (matches!(&target, Value::Nil)
                 || matches!(
                     &target,
-                    Value::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu")
+                    Value::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu" | "Array")
                 )) {
             let empty_array = Value::real_array(vec![]);
             self.interpreter
