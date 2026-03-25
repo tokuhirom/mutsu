@@ -27,6 +27,10 @@ per_file_timeout() {
       # This test intentionally uses multiple sleep 1 calls and needs >10s.
       echo 40
       ;;
+    roast/S17-promise/allof.t)
+      # This test uses sleep 2*$_ with $_ up to 9, parallel start blocks take ~18s.
+      echo 30
+      ;;
     *)
       echo "$TIMEOUT"
       ;;
