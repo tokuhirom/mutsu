@@ -490,14 +490,14 @@ fn parse_bracket_indices_inner(input: &str) -> PResult<'_, ParsedBracketIndex> {
 }
 
 /// Result of parsing a quoted method name.
-enum QuotedMethodName {
+pub(crate) enum QuotedMethodName {
     /// Static method name (single-quoted or double-quoted without interpolation)
     Static(String),
     /// Dynamic method name (double-quoted with interpolation)
     Dynamic(Expr),
 }
 
-fn parse_quoted_method_name(input: &str) -> Option<(&str, QuotedMethodName)> {
+pub(crate) fn parse_quoted_method_name(input: &str) -> Option<(&str, QuotedMethodName)> {
     if input.starts_with('\'') {
         // Single-quoted: no interpolation
         let start = 1;
@@ -700,6 +700,162 @@ fn atomic_var_name(expr: &Expr) -> Option<String> {
         Expr::Var(name) => Some(name.clone()),
         _ => None,
     }
+}
+
+/// Wrap a `.=` method call result in the appropriate assignment expression.
+/// For simple variables, generates `AssignExpr { name, expr }`.
+/// For index expressions, generates an `IndexAssign` wrapped in a `DoBlock`.
+/// For non-lvalue targets, returns the method call as-is.
+fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) -> Expr) -> Expr {
+    match &target {
+        Expr::Var(name) => Expr::AssignExpr {
+            name: name.clone(),
+            expr: Box::new(method_call_fn(target)),
+        },
+        Expr::ArrayVar(name) => Expr::AssignExpr {
+            name: format!("@{}", name),
+            expr: Box::new(method_call_fn(target)),
+        },
+        Expr::HashVar(name) => Expr::AssignExpr {
+            name: format!("%{}", name),
+            expr: Box::new(method_call_fn(target)),
+        },
+        Expr::Index {
+            target: idx_target,
+            index,
+        } => {
+            use std::sync::atomic::Ordering;
+            let tmp_idx = format!(
+                "__mutsu_idx_{}",
+                super::super::stmt::simple::TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
+            );
+            let tmp_idx_expr = Expr::Var(tmp_idx.clone());
+            let lhs_expr = Expr::Index {
+                target: idx_target.clone(),
+                index: Box::new(tmp_idx_expr.clone()),
+            };
+            let assigned_value = method_call_fn(lhs_expr);
+            Expr::DoBlock {
+                body: vec![
+                    Stmt::VarDecl {
+                        name: tmp_idx.clone(),
+                        expr: *index.clone(),
+                        type_constraint: None,
+                        is_state: false,
+                        is_our: false,
+                        is_dynamic: false,
+                        is_export: false,
+                        export_tags: Vec::new(),
+                        custom_traits: Vec::new(),
+                        where_constraint: None,
+                    },
+                    Stmt::Expr(Expr::IndexAssign {
+                        target: idx_target.clone(),
+                        index: Box::new(tmp_idx_expr),
+                        value: Box::new(assigned_value),
+                    }),
+                ],
+                label: None,
+            }
+        }
+        _ => method_call_fn(target),
+    }
+}
+
+/// Parse `.=` mutating method call after the `=` has been identified.
+/// `input` starts after the `=` character. `expr` is the target expression.
+/// Kept as a separate function to avoid bloating the postfix loop's stack frame.
+#[inline(never)]
+fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Expr> {
+    let (r, _) = ws(input)?;
+    // Parse quoted method name
+    if let Some((r_after, qname)) = parse_quoted_method_name(r) {
+        let (r_after, _) = ws(r_after)?;
+        let (r_final, args) = if r_after.starts_with('(') {
+            let (r2, _) = parse_char(r_after, '(')?;
+            let (r2, _) = ws(r2)?;
+            let (r2, a) = parse_call_arg_list(r2)?;
+            let (r2, _) = ws(r2)?;
+            let (r2, _) = parse_char(r2, ')')?;
+            (r2, a)
+        } else {
+            (r_after, vec![])
+        };
+        let result = match qname {
+            QuotedMethodName::Static(mname) => {
+                let mname_sym = Symbol::intern(&mname);
+                wrap_dot_assign(expr, |target| Expr::MethodCall {
+                    target: Box::new(target),
+                    name: mname_sym,
+                    args: args.clone(),
+                    modifier: None,
+                    quoted: true,
+                })
+            }
+            QuotedMethodName::Dynamic(name_expr) => {
+                wrap_dot_assign(expr, |target| Expr::DynamicMethodCall {
+                    target: Box::new(target),
+                    name_expr: Box::new(name_expr.clone()),
+                    args: args.clone(),
+                })
+            }
+        };
+        return Ok((r_final, result));
+    }
+    // Parse regular method name
+    let (r, method_name) = take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+    let (r, _) = ws(r)?;
+    let (r_final, args) = if r.starts_with('(') {
+        let (r2, _) = parse_char(r, '(')?;
+        let (r2, _) = ws(r2)?;
+        let (r2, a) = parse_call_arg_list(r2)?;
+        let (r2, _) = ws(r2)?;
+        let (r2, _) = parse_char(r2, ')')?;
+        (r2, a)
+    } else if r.starts_with(':') && !r.starts_with("::") {
+        // Colon-arg syntax: .=method: arg
+        let r2 = &r[1..];
+        let (r2, _) = ws(r2)?;
+        let (r2, first_arg) = expression(r2)?;
+        let mut args = vec![first_arg];
+        let mut r_inner = r2;
+        loop {
+            let (r3, _) = ws(r_inner)?;
+            if r3.starts_with(':')
+                && !r3.starts_with("::")
+                && let Ok((r4, arg)) = crate::parser::primary::misc::colonpair_expr(r3)
+            {
+                args.push(arg);
+                r_inner = r4;
+                continue;
+            }
+            if !r3.starts_with(',') {
+                r_inner = r3;
+                break;
+            }
+            let r3 = &r3[1..];
+            let (r3, _) = ws(r3)?;
+            if r3.starts_with(';') || r3.starts_with('}') || r3.is_empty() {
+                r_inner = r3;
+                break;
+            }
+            let (r3, next) = expression(r3)?;
+            args.push(next);
+            r_inner = r3;
+        }
+        (r_inner, args)
+    } else {
+        (r, vec![])
+    };
+    let method_sym = Symbol::intern(method_name);
+    let result = wrap_dot_assign(expr, |target| Expr::MethodCall {
+        target: Box::new(target),
+        name: method_sym,
+        args: args.clone(),
+        modifier: None,
+        quoted: false,
+    });
+    Ok((r_final, result))
 }
 
 pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
@@ -1121,10 +1277,22 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             let r = &rest[1..];
             // Consume unspace after dot: `.\ method` or `.\ (args)`
             let r = consume_unspace(r);
-            // `.=` is handled by statement-level assignment parsing, not postfix
-            // method-call parsing. Stop postfix parsing and let the caller consume it.
-            if r.starts_with('=') {
+            // `.=` mutating method call in expression context
+            // For BareWord targets (type objects like `Foo .= new`), defer to
+            // statement-level handler which correctly handles read-only type objects.
+            if r.starts_with('=') && !r.starts_with("==") && matches!(expr, Expr::BareWord(_)) {
                 break;
+            }
+            if r.starts_with('=') && !r.starts_with("==") {
+                if let Ok((r_final, new_expr)) = parse_dot_assign(&r[1..], expr) {
+                    expr = new_expr;
+                    rest = r_final;
+                    continue;
+                }
+                // parse_dot_assign consumed expr, so we cannot break normally.
+                // This path should be unreachable in practice since .= is always
+                // followed by a valid method name if the parser got here.
+                return Err(PError::expected("method name after '.='"));
             }
             // Allow `.>>...` / `.»...` chains by deferring to the dedicated hyper
             // postfix parser below.

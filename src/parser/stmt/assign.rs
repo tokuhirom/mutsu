@@ -1,6 +1,8 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use super::super::expr::{expression, expression_no_sequence};
+use super::super::expr::{
+    QuotedMethodName, expression, expression_no_sequence, parse_quoted_method_name,
+};
 use super::super::helpers::ws;
 use super::super::parse_result::{
     PError, PResult, merge_expected_messages, parse_char, take_while1,
@@ -1433,7 +1435,49 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
     // .= mutating method call: $var .= method(args) => $var = $var.method(args)
     if let Some(stripped) = r2.strip_prefix(".=") {
         let (r, _) = ws(stripped)?;
-        // Parse method name
+        let name = format!("{}{}", prefix, var);
+        let method_target = match sigil {
+            b'@' => Expr::ArrayVar(var.to_string()),
+            b'%' => Expr::HashVar(var.to_string()),
+            _ => Expr::Var(var.to_string()),
+        };
+        // Check for quoted method name: .="method"() or .='method'()
+        if let Some((r_after_quote, qname)) = parse_quoted_method_name(r) {
+            // Quoted method names require parenthesized arguments
+            let (r_after_quote, _) = ws(r_after_quote)?;
+            let (rest, args) = if r_after_quote.starts_with('(') {
+                let (r2, _) = parse_char(r_after_quote, '(')?;
+                let (r2, _) = ws(r2)?;
+                let (r2, a) = parse_call_arg_list(r2)?;
+                let (r2, _) = ws(r2)?;
+                let (r2, _) = parse_char(r2, ')')?;
+                (r2, a)
+            } else {
+                (r_after_quote, vec![])
+            };
+            let method_expr = match qname {
+                QuotedMethodName::Static(mname) => Expr::MethodCall {
+                    target: Box::new(method_target),
+                    name: Symbol::intern(&mname),
+                    args,
+                    modifier: None,
+                    quoted: true,
+                },
+                QuotedMethodName::Dynamic(name_expr) => Expr::DynamicMethodCall {
+                    target: Box::new(method_target),
+                    name_expr: Box::new(name_expr),
+                    args,
+                },
+            };
+            return Ok((
+                rest,
+                Expr::AssignExpr {
+                    name,
+                    expr: Box::new(method_expr),
+                },
+            ));
+        }
+        // Parse regular method name
         let (r, method_name) =
             take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
         let (r, _) = ws(r)?;
@@ -1498,12 +1542,6 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             (r_inner, args)
         } else {
             (r, vec![])
-        };
-        let name = format!("{}{}", prefix, var);
-        let method_target = match sigil {
-            b'@' => Expr::ArrayVar(var.to_string()),
-            b'%' => Expr::HashVar(var.to_string()),
-            _ => Expr::Var(var.to_string()),
         };
         return Ok((
             rest,
@@ -2030,6 +2068,47 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     // Mutating method call: $x.=method or $x .= method(args)
     if let Some(stripped) = rest.strip_prefix(".=") {
         let (stripped, _) = ws(stripped)?;
+        let var_expr = if sigil == b'@' {
+            Expr::ArrayVar(var.clone())
+        } else if sigil == b'%' {
+            Expr::HashVar(var.clone())
+        } else {
+            Expr::Var(var.clone())
+        };
+        // Check for quoted method name: .="method"() or .='method'()
+        if let Some((r_after_quote, qname)) = parse_quoted_method_name(stripped) {
+            let (r_after_quote, _) = ws(r_after_quote)?;
+            let (r_final, args) = if r_after_quote.starts_with('(') {
+                let (r2, _) = parse_char(r_after_quote, '(')?;
+                let (r2, _) = ws(r2)?;
+                let (r2, a) = parse_call_arg_list(r2)?;
+                let (r2, _) = ws(r2)?;
+                let (r2, _) = parse_char(r2, ')')?;
+                (r2, a)
+            } else {
+                (r_after_quote, vec![])
+            };
+            let method_expr = match qname {
+                QuotedMethodName::Static(mname) => Expr::MethodCall {
+                    target: Box::new(var_expr),
+                    name: Symbol::intern(&mname),
+                    args,
+                    modifier: None,
+                    quoted: true,
+                },
+                QuotedMethodName::Dynamic(name_expr) => Expr::DynamicMethodCall {
+                    target: Box::new(var_expr),
+                    name_expr: Box::new(name_expr),
+                    args,
+                },
+            };
+            let stmt = Stmt::Assign {
+                name,
+                expr: method_expr,
+                op: AssignOp::Assign,
+            };
+            return parse_statement_modifier(r_final, stmt);
+        }
         let (r, method_name) = take_while1(stripped, |c: char| {
             c.is_alphanumeric() || c == '_' || c == '-'
         })
@@ -2085,13 +2164,6 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             (r_inner, args)
         } else {
             (r, Vec::new())
-        };
-        let var_expr = if sigil == b'@' {
-            Expr::ArrayVar(var.clone())
-        } else if sigil == b'%' {
-            Expr::HashVar(var.clone())
-        } else {
-            Expr::Var(var.clone())
         };
         let expr = Expr::MethodCall {
             target: Box::new(var_expr),

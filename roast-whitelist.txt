@@ -231,6 +231,7 @@ roast/S04-exceptions/fail-6e.t
 roast/S04-phasers/ascending-order.t
 roast/S04-phasers/begin.t
 roast/S04-phasers/check.t
+roast/S04-phasers/descending-order.t
 roast/S04-phasers/end.t
 roast/S04-phasers/exit-in-check.t
 roast/S04-phasers/first.t

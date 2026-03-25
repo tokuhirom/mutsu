@@ -266,6 +266,7 @@ fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stmt> {
 /// Parse an expression statement (fallback).
 pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     // Topic mutating method call: .=method(args)
+    // This assigns the result back to $_, equivalent to $_ = $_.method(args)
     if let Some(stripped) = input.strip_prefix(".=") {
         let (rest, _) = ws(stripped)?;
         let (rest, method_name) =
@@ -281,13 +282,17 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         } else {
             (rest, Vec::new())
         };
-        let stmt = Stmt::Expr(Expr::MethodCall {
-            target: Box::new(Expr::Var("_".to_string())),
-            name: Symbol::intern(&method_name),
-            args,
-            modifier: None,
-            quoted: false,
-        });
+        let stmt = Stmt::Assign {
+            name: "_".to_string(),
+            expr: Expr::MethodCall {
+                target: Box::new(Expr::Var("_".to_string())),
+                name: Symbol::intern(&method_name),
+                args,
+                modifier: None,
+                quoted: false,
+            },
+            op: AssignOp::Assign,
+        };
         return parse_statement_modifier(rest, stmt);
     }
 
