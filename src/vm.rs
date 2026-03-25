@@ -23,6 +23,11 @@ mod vm_set_ops;
 pub(crate) mod vm_smart_match;
 mod vm_string_regex_ops;
 mod vm_var_assign_ops;
+mod vm_var_delete_ops;
+mod vm_var_exists_ops;
+mod vm_var_get_ops;
+mod vm_var_index_ops;
+mod vm_var_multidim_ops;
 mod vm_var_ops;
 
 fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
