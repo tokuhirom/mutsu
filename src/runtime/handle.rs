@@ -339,6 +339,14 @@ impl Interpreter {
             })
             .unwrap_or_default();
 
+        // Pre-extract $*IN's line separators for use when ArgFiles falls back to stdin
+        let stdin_seps: Option<(Vec<Vec<u8>>, bool)> =
+            self.get_dynamic_handle("$*IN").and_then(|in_handle| {
+                let id = Self::handle_id_from_value(&in_handle)?;
+                let in_state = self.handles.get(&id)?;
+                Some((in_state.line_separators.clone(), in_state.line_chomp))
+            });
+
         let state = self.handle_state_mut(handle_value)?;
         if state.closed {
             return Err(RuntimeError::io_closed("handle operation"));
@@ -361,9 +369,11 @@ impl Interpreter {
                 let seps = state.line_separators.clone();
                 let chomp = state.line_chomp;
                 if argfiles_list.is_empty() {
-                    // No file args — read from stdin
+                    // No file args — read from stdin, using $*IN's nl-in if available
+                    let (effective_seps, effective_chomp) =
+                        stdin_seps.clone().unwrap_or((seps.clone(), chomp));
                     let mut stdin = std::io::stdin().lock();
-                    Self::read_record_with_separators(&mut stdin, &seps, chomp)
+                    Self::read_record_with_separators(&mut stdin, &effective_seps, effective_chomp)
                 } else {
                     // Read from files listed in @*ARGS sequentially
                     loop {

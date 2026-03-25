@@ -1726,6 +1726,10 @@ impl Interpreter {
                     Value::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
                     Value::Num(f) if *f >= 0.0 => Some(*f as usize),
                     Value::Rat(n, d) if *d == 0 && *n > 0 => None,
+                    Value::Rat(n, d) if *d != 0 => {
+                        Some(((*n as f64 / *d as f64) as i64).max(0) as usize)
+                    }
+                    Value::Complex(re, im) if *im == 0.0 && *re >= 0.0 => Some(*re as usize),
                     _ => None,
                 });
                 if limit.is_some() {
