@@ -1975,6 +1975,7 @@ impl VM {
                 rw_param_names,
                 kv_mode,
                 source_var_names,
+                autothread_junctions,
             } => {
                 let spec = vm_control_ops::ForLoopSpec {
                     param_idx: *param_idx,
@@ -1990,6 +1991,7 @@ impl VM {
                     rw_param_names: rw_param_names.clone(),
                     kv_mode: *kv_mode,
                     source_var_names: source_var_names.clone(),
+                    autothread_junctions: *autothread_junctions,
                 };
                 self.exec_for_loop_op(code, &spec, ip, compiled_fns)?;
             }

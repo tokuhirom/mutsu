@@ -54,12 +54,40 @@ pub(super) fn dispatch(
             {
                 target.mark_failure_handled();
             }
-            Some(Some(Ok(Value::Bool(match target {
-                Value::Nil | Value::Package(_) => false,
-                Value::Slip(items) if items.is_empty() => false,
-                Value::Instance { class_name, .. } if class_name == "Failure" => false,
-                _ => true,
-            }))))
+            // For junctions, autothread .defined over eigenstates and collapse
+            if let Value::Junction { kind, values } = target {
+                fn value_defined(v: &Value) -> bool {
+                    match v {
+                        Value::Nil | Value::Package(_) => false,
+                        Value::Slip(items) if items.is_empty() => false,
+                        Value::Instance { class_name, .. } if class_name == "Failure" => false,
+                        Value::Junction { kind, values } => {
+                            let results: Vec<bool> = values.iter().map(value_defined).collect();
+                            collapse_junction(kind, &results)
+                        }
+                        _ => true,
+                    }
+                }
+                fn collapse_junction(kind: &crate::value::JunctionKind, results: &[bool]) -> bool {
+                    use crate::value::JunctionKind;
+                    match kind {
+                        JunctionKind::Any => results.iter().any(|&b| b),
+                        JunctionKind::All => results.iter().all(|&b| b),
+                        JunctionKind::One => results.iter().filter(|&&b| b).count() == 1,
+                        JunctionKind::None => results.iter().all(|&b| !b),
+                    }
+                }
+                let results: Vec<bool> = values.iter().map(value_defined).collect();
+                let collapsed = collapse_junction(kind, &results);
+                Some(Some(Ok(Value::Bool(collapsed))))
+            } else {
+                Some(Some(Ok(Value::Bool(match target {
+                    Value::Nil | Value::Package(_) => false,
+                    Value::Slip(items) if items.is_empty() => false,
+                    Value::Instance { class_name, .. } if class_name == "Failure" => false,
+                    _ => true,
+                }))))
+            }
         }
         "DEFINITE" => Some(Some(Ok(Value::Bool(match target {
             Value::Nil | Value::Package(_) | Value::CustomType { .. } => false,

@@ -610,12 +610,26 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 }
             })
         }
-        "defined" => Some(Ok(Value::Bool(match arg {
-            Value::Nil | Value::Package(_) => false,
-            Value::Slip(items) if items.is_empty() => false,
-            Value::Instance { class_name, .. } if class_name == "Failure" => false,
-            _ => true,
-        }))),
+        "defined" => {
+            // For junctions, autothread .defined and collapse to Bool
+            if let Value::Junction { .. } = arg {
+                if let Some(Ok(result)) = crate::builtins::methods_0arg::native_method_0arg(
+                    arg,
+                    crate::symbol::Symbol::intern("defined"),
+                ) {
+                    Some(Ok(result))
+                } else {
+                    Some(Ok(Value::Bool(true)))
+                }
+            } else {
+                Some(Ok(Value::Bool(match arg {
+                    Value::Nil | Value::Package(_) => false,
+                    Value::Slip(items) if items.is_empty() => false,
+                    Value::Instance { class_name, .. } if class_name == "Failure" => false,
+                    _ => true,
+                })))
+            }
+        }
         "elems" => match arg {
             Value::Array(items, ..) => Some(Ok(Value::Int(items.len() as i64))),
             Value::Hash(items) => Some(Ok(Value::Int(items.len() as i64))),
