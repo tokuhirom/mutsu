@@ -246,6 +246,25 @@ impl VM {
             return Ok(());
         }
 
+        // Fast path for push/unshift on shared @-arrays.
+        // Bypasses the full method dispatch chain (try_native_method →
+        // call_method_mut_with_values → push_to_shared_var) for the common case
+        // of pushing simple values to a shared array inside a tight loop
+        // (e.g. Lock::Async.protect { push @target, $i }).
+        if matches!(method.as_str(), "push" | "unshift")
+            && !args.is_empty()
+            && target_name.starts_with('@')
+            && matches!(&target, Value::Array(..))
+            && self.interpreter.shared_vars_active
+        {
+            let result = self
+                .interpreter
+                .push_to_shared_var(&target_name, args, &target);
+            self.stack.push(result);
+            self.env_dirty = true;
+            return Ok(());
+        }
+
         let mut skip_native = quoted
             && matches!(
                 method.as_str(),
