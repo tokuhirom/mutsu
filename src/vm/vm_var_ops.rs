@@ -803,9 +803,21 @@ impl VM {
             || Interpreter::is_implicit_zero_arg_builtin(name)
             || self.interpreter.has_multi_function(name)
         {
-            let result = self.call_function_compiled_first(name, Vec::new(), compiled_fns)?;
-            self.env_dirty = true;
-            result
+            if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
+                let pkg = self.interpreter.current_package().to_string();
+                let result =
+                    self.call_compiled_function_named(cf, Vec::new(), compiled_fns, &pkg, name)?;
+                self.env_dirty = true;
+                result
+            } else if let Some(native_result) =
+                self.try_native_function(crate::symbol::Symbol::intern(name), &[])
+            {
+                native_result?
+            } else {
+                let result = self.interpreter.call_function(name, Vec::new())?;
+                self.env_dirty = true;
+                result
+            }
         } else if name == "callsame"
             || name == "nextsame"
             || name == "callwith"
