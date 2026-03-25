@@ -1032,9 +1032,11 @@ impl VM {
         let body_start = *ip + 1;
 
         // React callbacks run through the interpreter path and capture from env.
-        // Flush VM locals first so captured vars (e.g., @received in loop scopes)
-        // are visible/mutable from whenever callbacks.
-        self.ensure_env_synced(code);
+        // First, pull any pending env updates into locals (e.g., instance attribute
+        // mutations from overwrite_instance_bindings_by_identity after bind-stdin).
+        // Then flush all locals to env so captured vars are visible/mutable from
+        // whenever callbacks.
+        self.ensure_locals_synced(code);
         self.sync_env_from_locals(code);
 
         // Enter react mode: whenever blocks will register subscriptions
