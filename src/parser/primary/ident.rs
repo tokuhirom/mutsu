@@ -768,6 +768,7 @@ pub(super) fn is_listop(name: &str) -> bool {
             | "uniname"
             | "unival"
             | "univals"
+            | "lines"
             | "localtime"
             | "gmtime"
             | "times"
@@ -2031,6 +2032,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && !r.starts_with(']')
         && !r.starts_with(',')
         && !rest.starts_with('.')
+        && !rest.starts_with('[')
         && !(ws_consumed_unspace && r.starts_with('.') && !r.starts_with(".."))
         && !is_unspace_before_postfix(r)
     {
