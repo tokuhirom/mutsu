@@ -39,9 +39,17 @@ fn is_angle_key_char(c: char) -> bool {
 /// instead of trying to numify the closure itself.
 fn compose_prefix_into_whatevercode(op: TokenKind, expr: Expr) -> Expr {
     match expr {
-        Expr::Lambda { param, mut body } => {
+        Expr::Lambda {
+            param,
+            mut body,
+            is_whatever_code,
+        } => {
             wrap_last_stmt_with_unary(&mut body, op.clone());
-            Expr::Lambda { param, body }
+            Expr::Lambda {
+                param,
+                body,
+                is_whatever_code,
+            }
         }
         Expr::AnonSubParams {
             params,
@@ -49,6 +57,7 @@ fn compose_prefix_into_whatevercode(op: TokenKind, expr: Expr) -> Expr {
             return_type,
             mut body,
             is_rw,
+            is_whatever_code,
         } => {
             wrap_last_stmt_with_unary(&mut body, op.clone());
             Expr::AnonSubParams {
@@ -57,6 +66,7 @@ fn compose_prefix_into_whatevercode(op: TokenKind, expr: Expr) -> Expr {
                 return_type,
                 body,
                 is_rw,
+                is_whatever_code,
             }
         }
         other => Expr::Unary {

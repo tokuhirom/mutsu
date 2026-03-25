@@ -107,6 +107,7 @@ impl Compiler {
                     return_type: None,
                     body: vec![Stmt::Expr(reevaluated_lhs)],
                     is_rw: false,
+                    is_whatever_code: false,
                 };
                 self.compile_expr(&thunk);
             } else {

@@ -175,6 +175,7 @@ fn lower_if_clause_binding(
             return_type: None,
             body: then_branch,
             is_rw: false,
+            is_whatever_code: false,
         }),
         args,
     };
@@ -224,6 +225,7 @@ fn lower_else_binding(source_binding: &str, else_clause: ElseClause) -> Vec<Stmt
             return_type: None,
             body: else_clause.body,
             is_rw: false,
+            is_whatever_code: false,
         }),
         args: vec![Expr::Unary {
             op: TokenKind::Pipe,

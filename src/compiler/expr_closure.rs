@@ -26,7 +26,8 @@ impl Compiler {
                 supersede: false,
                 custom_traits: Vec::new(),
             });
-            self.code.emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx)));
+            self.code
+                .emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx), false));
         } else {
             let placeholders = crate::ast::collect_placeholders(body);
             // Immediate block calls (`{ ... }(...)`) are parsed as AnonSub.
@@ -52,6 +53,7 @@ impl Compiler {
         return_type: &Option<String>,
         body: &[Stmt],
         is_rw: bool,
+        is_whatever_code: bool,
     ) {
         // Validate for placeholder conflicts
         if let Some(err_val) = self.check_placeholder_conflicts(params, body, None) {
@@ -126,11 +128,20 @@ impl Compiler {
             supersede: false,
             custom_traits: Vec::new(),
         });
-        self.code.emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx)));
+        self.code.emit(OpCode::MakeAnonSubParams(
+            idx,
+            Some(cc_idx),
+            is_whatever_code,
+        ));
     }
 
     /// Compile Lambda expression.
-    pub(super) fn compile_expr_lambda(&mut self, param: &str, body: &[Stmt]) {
+    pub(super) fn compile_expr_lambda(
+        &mut self,
+        param: &str,
+        body: &[Stmt],
+        is_whatever_code: bool,
+    ) {
         let params: Vec<String> = if param.is_empty() {
             Vec::new()
         } else {
@@ -156,7 +167,8 @@ impl Compiler {
             supersede: false,
             custom_traits: Vec::new(),
         });
-        self.code.emit(OpCode::MakeLambda(idx, Some(cc_idx)));
+        self.code
+            .emit(OpCode::MakeLambda(idx, Some(cc_idx), is_whatever_code));
     }
 
     /// Compile IndexAssign expression.

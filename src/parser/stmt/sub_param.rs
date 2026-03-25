@@ -289,7 +289,7 @@ fn expr_contains_whatever(expr: &Expr) -> bool {
         | Expr::Reduction { expr: inner, .. }
         | Expr::IndirectTypeLookup(inner)
         | Expr::SymbolicDeref { expr: inner, .. } => expr_contains_whatever(inner),
-        Expr::Lambda { param, body } => param == "_" || stmts_contain_whatever(body),
+        Expr::Lambda { param, body, .. } => param == "_" || stmts_contain_whatever(body),
         Expr::AnonSubParams { params, body, .. } => {
             params.iter().any(|p| p.starts_with("__wc_")) || stmts_contain_whatever(body)
         }

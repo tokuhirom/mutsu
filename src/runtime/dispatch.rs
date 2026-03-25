@@ -1488,9 +1488,14 @@ impl Interpreter {
                 target: Box::new(Self::rewrite_proto_dispatch_expr(target)),
                 args: args.to_vec(),
             },
-            Expr::Lambda { param, body } => Expr::Lambda {
+            Expr::Lambda {
+                param,
+                body,
+                is_whatever_code,
+            } => Expr::Lambda {
                 param: param.clone(),
                 body: Self::rewrite_proto_dispatch_stmts(body),
+                is_whatever_code: *is_whatever_code,
             },
             Expr::AnonSub { body, is_rw } => Expr::AnonSub {
                 body: Self::rewrite_proto_dispatch_stmts(body),
@@ -1502,12 +1507,14 @@ impl Interpreter {
                 return_type,
                 body,
                 is_rw,
+                is_whatever_code,
             } => Expr::AnonSubParams {
                 params: params.clone(),
                 param_defs: param_defs.clone(),
                 return_type: return_type.clone(),
                 body: Self::rewrite_proto_dispatch_stmts(body),
                 is_rw: *is_rw,
+                is_whatever_code: *is_whatever_code,
             },
             other => other.clone(),
         }

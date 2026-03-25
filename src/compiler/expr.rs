@@ -337,11 +337,23 @@ impl Compiler {
                 return_type,
                 body,
                 is_rw,
+                is_whatever_code,
             } => {
-                self.compile_expr_anon_sub_params(params, param_defs, return_type, body, *is_rw);
+                self.compile_expr_anon_sub_params(
+                    params,
+                    param_defs,
+                    return_type,
+                    body,
+                    *is_rw,
+                    *is_whatever_code,
+                );
             }
-            Expr::Lambda { param, body } => {
-                self.compile_expr_lambda(param, body);
+            Expr::Lambda {
+                param,
+                body,
+                is_whatever_code,
+            } => {
+                self.compile_expr_lambda(param, body, *is_whatever_code);
             }
             Expr::IndexAssign {
                 target,
