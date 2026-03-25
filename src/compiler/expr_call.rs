@@ -168,6 +168,17 @@ impl Compiler {
                 self.code.emit(OpCode::LoadNil);
                 let name_idx = self.code.add_constant(Value::str(vname));
                 self.code.emit(OpCode::AssignExpr(name_idx));
+            } else if matches!(&args[0], Expr::Index { target, .. } if matches!(**target, Expr::HashVar(_) | Expr::ArrayVar(_) | Expr::Var(_)))
+            {
+                // undefine %hash<key> or undefine @arr[idx] -> target[index] = Nil
+                if let Expr::Index { target, index } = &args[0] {
+                    let assign_expr = Expr::IndexAssign {
+                        target: target.clone(),
+                        index: index.clone(),
+                        value: Box::new(Expr::Literal(Value::Nil)),
+                    };
+                    self.compile_expr(&assign_expr);
+                }
             } else {
                 self.code.emit(OpCode::LoadNil);
             }
