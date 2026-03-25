@@ -12,8 +12,14 @@ use crate::value::{ArrayKind, EnumValue, JunctionKind, LazyList, RuntimeError, V
 use num_traits::{Signed, Zero};
 
 mod vm_arith_ops;
+mod vm_call_autothread;
 mod vm_call_dispatch;
-mod vm_call_ops;
+mod vm_call_exec_ops;
+mod vm_call_func_ops;
+mod vm_call_helpers;
+mod vm_call_method_compiled;
+mod vm_call_method_mut_ops;
+mod vm_call_method_ops;
 mod vm_closure_dispatch;
 mod vm_comparison_ops;
 mod vm_control_ops;
@@ -21,6 +27,7 @@ mod vm_data_ops;
 mod vm_dispatch_helpers;
 mod vm_env_helpers;
 mod vm_helpers;
+mod vm_hyper_method_ops;
 mod vm_method_dispatch;
 mod vm_misc_ops;
 mod vm_native_dispatch;
