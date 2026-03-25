@@ -516,10 +516,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         rest = &rest[1..];
     }
     // Sigilless single-argument rule slurpy: +foo
-    if rest.starts_with('+')
-        && rest.len() > 1
-        && rest.as_bytes()[1].is_ascii_alphabetic()
-    {
+    if rest.starts_with('+') && rest.len() > 1 && rest.as_bytes()[1].is_ascii_alphabetic() {
         let r = &rest[1..];
         if let Ok((r, name)) = ident(r) {
             let (r, _) = ws(r)?;
