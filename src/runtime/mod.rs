@@ -3812,7 +3812,23 @@ impl Interpreter {
             stderr_output: String::new(),
             warn_output: String::new(),
             warn_suppression_depth: 0,
-            test_state: None,
+            test_state: {
+                // Share the test counter with the parent so TAP numbering
+                // stays consistent across threads (e.g. pass/flunk inside
+                // Promise.start).
+                if let Some(ref mut parent_state) = self.test_state {
+                    let shared = parent_state.ensure_shared_ran();
+                    Some(TestState {
+                        planned: None,
+                        ran: parent_state.ran,
+                        shared_ran: Some(shared),
+                        failed: 0,
+                        force_todo: parent_state.force_todo.clone(),
+                    })
+                } else {
+                    None
+                }
+            },
             subtest_depth: 0,
             halted: false,
             exit_code: 0,
@@ -4208,6 +4224,9 @@ impl Interpreter {
 struct TestState {
     planned: Option<usize>,
     ran: usize,
+    /// Shared atomic counter for test numbering across threads.
+    /// When set, `ran` is derived from this counter instead of the local field.
+    shared_ran: Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
     failed: usize,
     force_todo: Vec<TodoRange>,
 }
@@ -4224,8 +4243,33 @@ impl TestState {
         Self {
             planned: None,
             ran: 0,
+            shared_ran: None,
             failed: 0,
             force_todo: Vec::new(),
+        }
+    }
+
+    /// Increment and return the next test number.
+    /// Uses the shared atomic counter if available, otherwise the local field.
+    fn next_ran(&mut self) -> usize {
+        if let Some(ref counter) = self.shared_ran {
+            let n = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            self.ran = n;
+            n
+        } else {
+            self.ran += 1;
+            self.ran
+        }
+    }
+
+    /// Get an Arc to the shared counter, creating one if needed.
+    fn ensure_shared_ran(&mut self) -> std::sync::Arc<std::sync::atomic::AtomicUsize> {
+        if let Some(ref counter) = self.shared_ran {
+            counter.clone()
+        } else {
+            let counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(self.ran));
+            self.shared_ran = Some(counter.clone());
+            counter
         }
     }
 }

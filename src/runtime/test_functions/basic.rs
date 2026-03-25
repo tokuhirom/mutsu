@@ -199,7 +199,7 @@ impl Interpreter {
         let mut lines = Vec::with_capacity(count);
         let state = self.test_state.get_or_insert_with(TestState::new);
         for _ in 0..count {
-            state.ran += 1;
+            state.next_ran();
             if escaped_desc.is_empty() {
                 lines.push(format!("ok {} - # SKIP {}\n", state.ran, desc));
             } else {
@@ -220,7 +220,7 @@ impl Interpreter {
             let state = self.test_state.get_or_insert_with(TestState::new);
             if let Some(planned) = state.planned {
                 while state.ran < planned {
-                    state.ran += 1;
+                    state.next_ran();
                     if escaped_desc.is_empty() {
                         lines.push(format!("ok {} - # SKIP\n", state.ran));
                     } else {

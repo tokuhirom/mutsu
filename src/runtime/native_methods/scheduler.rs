@@ -6,6 +6,17 @@ use super::state::*;
 use super::state_lock::*;
 use super::state_scheduler::*;
 
+/// Parameters for a scheduled cue operation.
+struct CueParams {
+    callback: Value,
+    delay: f64,
+    every: Option<f64>,
+    times: Option<usize>,
+    cancel_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    catch_cb: Option<Value>,
+    stop_cb: Option<Value>,
+}
+
 impl Interpreter {
     fn cancellation_instance() -> Value {
         let mut attrs = HashMap::new();
@@ -38,6 +49,72 @@ impl Interpreter {
             }
         };
         Ok(Some(count.max(0) as usize))
+    }
+
+    /// Compute the delay in seconds from `:in` and `:at` named args.
+    /// `:in` is a relative delay in seconds, `:at` is an absolute time (Instant).
+    /// Returns the delay in seconds (clamped to >= 0 for negative results).
+    fn scheduler_delay(args: &[Value]) -> Result<f64, RuntimeError> {
+        if let Some(in_val) = Self::named_value(args, "in") {
+            let v = in_val.to_f64();
+            if v.is_nan() {
+                return Err(Self::cue_nan_error());
+            }
+            return Ok(v);
+        }
+        if let Some(at_val) = Self::named_value(args, "at") {
+            let at_f64 = at_val.to_f64();
+            if at_f64.is_nan() {
+                return Err(Self::cue_nan_error());
+            }
+            if at_f64.is_infinite() {
+                return Ok(at_f64); // propagate Inf/-Inf
+            }
+            // :at is an absolute TAI time; compute delay = at - now
+            let now_posix = crate::value::current_time_secs_f64();
+            let now_tai = crate::builtins::methods_0arg::temporal::posix_to_instant(now_posix);
+            let delay = at_f64 - now_tai;
+            return Ok(if delay < 0.0 { 0.0 } else { delay });
+        }
+        Ok(0.0)
+    }
+
+    /// Check if `:every` value is NaN and return error if so.
+    fn scheduler_every(args: &[Value]) -> Result<Option<f64>, RuntimeError> {
+        let Some(val) = Self::named_value(args, "every") else {
+            return Ok(None);
+        };
+        let v = val.to_f64();
+        if v.is_nan() {
+            return Err(Self::cue_nan_error());
+        }
+        Ok(Some(v))
+    }
+
+    fn cue_nan_error() -> RuntimeError {
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "message".to_string(),
+            Value::str_from("Cannot pass NaN as a number of seconds"),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::Scheduler::CueInNaNSeconds"), attrs);
+        RuntimeError {
+            exception: Some(Box::new(ex)),
+            ..RuntimeError::new("Cannot pass NaN as a number of seconds")
+        }
+    }
+
+    /// Helper: sleep for the given delay, handling Inf (don't run) and -Inf/negative (immediate).
+    /// Returns true if we should proceed with execution, false if we should skip (Inf delay).
+    fn scheduler_sleep(delay: f64) -> bool {
+        if delay == f64::INFINITY {
+            return false; // never run
+        }
+        if delay == f64::NEG_INFINITY || delay <= 0.0 {
+            return true; // run immediately
+        }
+        std::thread::sleep(std::time::Duration::from_secs_f64(delay));
+        true
     }
 
     pub(in crate::runtime) fn native_tap(
@@ -99,12 +176,20 @@ impl Interpreter {
         match method {
             "cue" => {
                 let callback = args.first().cloned().unwrap_or(Value::Nil);
-                let times = Self::scheduler_times_arg(&args)?.unwrap_or(1);
-                let delay = Self::named_value(&args, "in")
-                    .or_else(|| Self::named_value(&args, "at"))
-                    .map(|v| v.to_f64())
-                    .unwrap_or(0.0);
-                let every = Self::named_value(&args, "every").map(|v| v.to_f64());
+                let times_explicit = Self::scheduler_times_arg(&args)?;
+                let delay = Self::scheduler_delay(&args)?;
+                let every = Self::scheduler_every(&args)?;
+                let catch_cb = Self::named_value(&args, "catch");
+                let stop_cb = Self::named_value(&args, "stop");
+
+                // When :every is set without :times, repeat indefinitely
+                // When :every is not set, default :times to 1
+                let times: Option<usize> = match (every.is_some(), times_explicit) {
+                    (_, Some(t)) => Some(t),
+                    (true, None) => None, // infinite repeats
+                    (false, None) => Some(1),
+                };
+
                 let cancellation = Self::cancellation_instance();
                 let cancellation_id = match &cancellation {
                     Value::Instance { attributes, .. } => {
@@ -116,81 +201,23 @@ impl Interpreter {
                     _ => 0,
                 };
                 let cancel_flag = cancellation_state(cancellation_id);
+
+                let params = CueParams {
+                    callback,
+                    delay,
+                    every,
+                    times,
+                    cancel_flag,
+                    catch_cb,
+                    stop_cb,
+                };
+
                 if is_current_thread {
-                    // CurrentThreadScheduler: run synchronously on the calling thread
-                    if delay > 0.0 {
-                        std::thread::sleep(std::time::Duration::from_secs_f64(delay));
-                    }
-                    if let Some(interval) = every {
-                        let mut count = 0;
-                        loop {
-                            if cancel_flag
-                                .as_ref()
-                                .is_some_and(|flag| flag.load(Ordering::Relaxed))
-                            {
-                                break;
-                            }
-                            self.call_sub_value(callback.clone(), Vec::new(), true)?;
-                            count += 1;
-                            if count >= times {
-                                break;
-                            }
-                            std::thread::sleep(std::time::Duration::from_secs_f64(interval));
-                        }
-                    } else {
-                        for _ in 0..times {
-                            if cancel_flag
-                                .as_ref()
-                                .is_some_and(|flag| flag.load(Ordering::Relaxed))
-                            {
-                                break;
-                            }
-                            self.call_sub_value(callback.clone(), Vec::new(), true)?;
-                        }
-                    }
+                    self.scheduler_run_sync(params)?;
                 } else {
-                    // ThreadPoolScheduler: run asynchronously in a spawned thread,
-                    // like Raku's ThreadPoolScheduler.cue does.
                     let mut thread_interp = self.clone_for_thread();
                     std::thread::spawn(move || {
-                        if delay > 0.0 {
-                            std::thread::sleep(std::time::Duration::from_secs_f64(delay));
-                        }
-                        if let Some(interval) = every {
-                            let mut count = 0;
-                            loop {
-                                if cancel_flag
-                                    .as_ref()
-                                    .is_some_and(|flag| flag.load(Ordering::Relaxed))
-                                {
-                                    break;
-                                }
-                                let _ = thread_interp.call_sub_value(
-                                    callback.clone(),
-                                    Vec::new(),
-                                    true,
-                                );
-                                count += 1;
-                                if count >= times {
-                                    break;
-                                }
-                                std::thread::sleep(std::time::Duration::from_secs_f64(interval));
-                            }
-                        } else {
-                            for _ in 0..times {
-                                if cancel_flag
-                                    .as_ref()
-                                    .is_some_and(|flag| flag.load(Ordering::Relaxed))
-                                {
-                                    break;
-                                }
-                                let _ = thread_interp.call_sub_value(
-                                    callback.clone(),
-                                    Vec::new(),
-                                    true,
-                                );
-                            }
-                        }
+                        thread_interp.scheduler_run_async(params);
                     });
                 }
                 Ok(cancellation)
@@ -199,6 +226,151 @@ impl Interpreter {
                 "No native method '{}' on Scheduler",
                 method
             ))),
+        }
+    }
+
+    /// Check if the stop callback returns true.
+    /// Reads captured variable values from shared_vars so the callback sees
+    /// updates from other threads (e.g. parent setting `$stop = True`).
+    fn scheduler_check_stop(&mut self, stop_cb: &Option<Value>) -> bool {
+        if let Some(stop) = stop_cb {
+            // Sync all shared vars so the callback closure sees updated values
+            self.full_sync_shared_vars_to_env();
+            if let Ok(result) = self.call_sub_value(stop.clone(), Vec::new(), true) {
+                return result.truthy();
+            }
+        }
+        false
+    }
+
+    /// Sync ALL shared vars to env, not just dirty ones.
+    /// Needed for scheduler callbacks where the parent thread may have updated
+    /// variables that the dirty tracking didn't capture.
+    fn full_sync_shared_vars_to_env(&mut self) {
+        let updates: Vec<(String, Value)> = {
+            let sv = self.shared_vars.read().unwrap();
+            sv.iter()
+                .filter(|(k, _)| {
+                    !k.starts_with("__mutsu_") && !k.starts_with('&') && k.as_str() != "_"
+                })
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
+        };
+        for (key, val) in updates {
+            self.env.insert(key, val);
+        }
+    }
+
+    /// Check if cancelled
+    fn scheduler_is_cancelled(
+        cancel_flag: &Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    ) -> bool {
+        cancel_flag
+            .as_ref()
+            .is_some_and(|flag| flag.load(Ordering::Relaxed))
+    }
+
+    /// Run a callback, catching errors if a catch callback is provided.
+    /// Returns Ok(true) on success, Ok(false) on caught error.
+    fn scheduler_call_with_catch(
+        &mut self,
+        callback: &Value,
+        catch_cb: &Option<Value>,
+    ) -> Result<bool, RuntimeError> {
+        let result = self.call_sub_value(callback.clone(), Vec::new(), true);
+        match result {
+            Ok(_) => Ok(true),
+            Err(e) => {
+                if let Some(catch) = catch_cb {
+                    let exception = e
+                        .exception
+                        .map(|boxed| *boxed)
+                        .unwrap_or_else(|| Value::str(e.message));
+                    let _ = self.call_sub_value(catch.clone(), vec![exception], true);
+                }
+                Ok(false)
+            }
+        }
+    }
+
+    /// Run the repeating loop for :every, used by both sync and async paths.
+    /// Returns Ok(()) for sync, errors propagated only in sync mode.
+    fn scheduler_run_every_loop(
+        &mut self,
+        p: &CueParams,
+        propagate_errors: bool,
+    ) -> Result<(), RuntimeError> {
+        let interval = p.every.unwrap_or(0.0);
+        let mut count = 0;
+        loop {
+            if Self::scheduler_is_cancelled(&p.cancel_flag) {
+                break;
+            }
+            if self.scheduler_check_stop(&p.stop_cb) {
+                break;
+            }
+            if propagate_errors {
+                self.scheduler_call_with_catch(&p.callback, &p.catch_cb)?;
+            } else {
+                let _ = self.scheduler_call_with_catch(&p.callback, &p.catch_cb);
+            }
+            count += 1;
+            if p.times.is_some_and(|max| count >= max) {
+                break;
+            }
+            if interval == f64::INFINITY {
+                break;
+            } else if interval > 0.0 && interval.is_finite() {
+                std::thread::sleep(std::time::Duration::from_secs_f64(interval));
+            }
+        }
+        Ok(())
+    }
+
+    /// Synchronous scheduler execution (CurrentThreadScheduler)
+    fn scheduler_run_sync(&mut self, p: CueParams) -> Result<(), RuntimeError> {
+        if !Self::scheduler_sleep(p.delay) {
+            // Inf delay: for :every(Inf), run once then stop
+            if p.every.is_some() {
+                self.scheduler_call_with_catch(&p.callback, &p.catch_cb)?;
+            }
+            return Ok(());
+        }
+
+        if p.every.is_some() {
+            self.scheduler_run_every_loop(&p, true)?;
+        } else {
+            let count = p.times.unwrap_or(1);
+            for _ in 0..count {
+                if Self::scheduler_is_cancelled(&p.cancel_flag) {
+                    break;
+                }
+                self.scheduler_call_with_catch(&p.callback, &p.catch_cb)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Async scheduler execution (ThreadPoolScheduler) - runs in spawned thread
+    fn scheduler_run_async(&mut self, p: CueParams) {
+        if !Self::scheduler_sleep(p.delay) {
+            // Inf delay: for :every(Inf), run once then stop
+            if p.every.is_some() {
+                let _ = self.scheduler_call_with_catch(&p.callback, &p.catch_cb);
+            }
+            return;
+        }
+
+        if p.every.is_some() {
+            let _ = self.scheduler_run_every_loop(&p, false);
+        } else {
+            let count = p.times.unwrap_or(1);
+            for _ in 0..count {
+                if Self::scheduler_is_cancelled(&p.cancel_flag) {
+                    break;
+                }
+                let _ = self.scheduler_call_with_catch(&p.callback, &p.catch_cb);
+            }
         }
     }
 

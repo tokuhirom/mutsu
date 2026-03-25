@@ -46,7 +46,7 @@ impl Interpreter {
         let mut line = String::new();
         let (record_failure, effective_todo) = {
             let state = self.test_state.get_or_insert_with(TestState::new);
-            state.ran += 1;
+            state.next_ran();
             let forced_reason = state
                 .force_todo
                 .iter()
