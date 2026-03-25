@@ -1660,12 +1660,12 @@ impl VM {
 
     pub(super) fn exec_state_var_init_op(&mut self, code: &CompiledCode, slot: u32, key_idx: u32) {
         let init_val = self.stack.pop().unwrap_or(Value::Nil);
-        let key = Self::const_str(code, key_idx);
-        let val = if let Some(stored) = self.interpreter.get_state_var(key) {
+        let base_key = Self::const_str(code, key_idx);
+        let scoped_key = self.scoped_state_key(base_key);
+        let val = if let Some(stored) = self.interpreter.get_state_var(&scoped_key) {
             stored.clone()
         } else {
-            self.interpreter
-                .set_state_var(key.to_string(), init_val.clone());
+            self.interpreter.set_state_var(scoped_key, init_val.clone());
             init_val
         };
         let slot_idx = slot as usize;
