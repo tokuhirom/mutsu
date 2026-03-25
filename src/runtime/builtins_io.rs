@@ -942,6 +942,16 @@ impl Interpreter {
                 Value::Rat(n, d) if *d == 0 && *n > 0 => None,
                 _ => None,
             });
+            if limit.is_none() {
+                // No limit: return a lazy IO lines iterator so that
+                // consumers (e.g. for-loop) can read on demand.
+                // This allows `last` in `-ne` mode to exit without
+                // waiting for stdin EOF.
+                return Ok(Value::LazyIoLines {
+                    handle: Box::new(handle),
+                    kv: false,
+                });
+            }
             let mut lines = Vec::new();
             while let Some(line) = self.read_line_from_handle_value(&handle)? {
                 lines.push(Value::str(line));
