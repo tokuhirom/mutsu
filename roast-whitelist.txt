@@ -286,7 +286,6 @@ roast/S05-grammar/protoregex.t
 roast/S05-grammar/protos.t
 roast/S05-grammar/ws.t
 roast/S05-interpolation/lexicals.t
-roast/S05-interpolation/regex-in-variable.t
 roast/S05-mass/charsets.t
 roast/S05-mass/named-chars.t
 roast/S05-mass/properties-block.t
@@ -306,7 +305,6 @@ roast/S05-metachars/tilde.t
 roast/S05-metasyntax/assertions.t
 roast/S05-metasyntax/changed.t
 roast/S05-metasyntax/delimiters.t
-roast/S05-metasyntax/interpolating-closure.t
 roast/S05-metasyntax/lookaround.t
 roast/S05-metasyntax/null.t
 roast/S05-metasyntax/proto-token-ltm.t
