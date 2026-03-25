@@ -803,7 +803,7 @@ pub struct Interpreter {
     shared_vars: Arc<RwLock<HashMap<String, Value>>>,
     /// True when this interpreter participates in cross-thread variable sharing.
     /// Set by `clone_for_thread` on both parent and child.
-    shared_vars_active: bool,
+    pub(crate) shared_vars_active: bool,
     /// Keys in shared_vars that were explicitly updated (not just initialized by
     /// `clone_for_thread`). `sync_shared_vars_to_env` only syncs these keys so
     /// that function parameters aren't overwritten with stale values.
@@ -3968,24 +3968,7 @@ impl Interpreter {
             // shared pushes in-place instead of degenerating into O(n²) COW.
             self.env.remove(key);
             let mut sv = self.shared_vars.write().unwrap();
-            if let Some(shared_value) = sv.remove(key) {
-                if let Value::Array(mut arc_items, kind) = shared_value {
-                    let items = Arc::make_mut(&mut arc_items);
-                    items.extend(values.clone());
-                    let normalized_kind = if kind == ArrayKind::List {
-                        ArrayKind::Array
-                    } else {
-                        kind
-                    };
-                    let result = Value::Array(Arc::clone(&arc_items), normalized_kind);
-                    sv.insert(key.to_string(), Value::Array(arc_items, normalized_kind));
-                    self.mark_shared_var_dirty(key);
-                    drop(sv);
-                    self.env.insert(key.to_string(), result.clone());
-                    return result;
-                }
-                sv.insert(key.to_string(), shared_value);
-            }
+            // Try in-place mutation via get_mut first (avoids remove+insert overhead)
             if let Some(Value::Array(arc_items, kind)) = sv.get_mut(key) {
                 let items = Arc::make_mut(arc_items);
                 items.extend(values);
@@ -3993,10 +3976,28 @@ impl Interpreter {
                     *kind = ArrayKind::Array;
                 }
                 let result = Value::Array(Arc::clone(arc_items), *kind);
-                self.mark_shared_var_dirty(key);
                 drop(sv);
+                self.mark_shared_var_dirty(key);
                 self.env.insert(key.to_string(), result.clone());
                 return result;
+            }
+            // Fallback: the value might exist but not be an Array yet
+            if let Some(shared_value) = sv.remove(key) {
+                if let Value::Array(mut arc_items, kind) = shared_value {
+                    let items = Arc::make_mut(&mut arc_items);
+                    items.extend(values);
+                    let normalized_kind = if kind == ArrayKind::List {
+                        ArrayKind::Array
+                    } else {
+                        kind
+                    };
+                    let result = Value::Array(Arc::clone(&arc_items), normalized_kind);
+                    sv.insert(key.to_string(), Value::Array(arc_items, normalized_kind));
+                    drop(sv);
+                    self.mark_shared_var_dirty(key);
+                    return result;
+                }
+                sv.insert(key.to_string(), shared_value);
             }
         }
         // Fallback for non-shared arrays: use Arc::make_mut for COW

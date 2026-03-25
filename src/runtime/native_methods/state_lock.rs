@@ -105,7 +105,11 @@ pub(crate) fn release_lock(
             } else {
                 state.recursion = 0;
                 state.owner = None;
+                // Drop the MutexGuard before notifying to reduce contention:
+                // waiters wake up and can immediately try to acquire the mutex.
+                drop(state);
                 runtime.lock_cv.notify_one();
+                return Ok(());
             }
             Ok(())
         }
