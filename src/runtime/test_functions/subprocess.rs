@@ -85,7 +85,8 @@ impl Interpreter {
         //  std::process::exit on die)
         let code_needs_subprocess = program.contains("Supply.interval")
             || program.contains("Supply.interval:")
-            || (expected_err.is_some() && Self::program_mentions_qx(&program));
+            || (expected_err.is_some() && Self::program_mentions_qx(&program))
+            || (program.contains("start") && program.contains("exit"));
         let needs_subprocess = has_unsupported_compiler_args
             || (program.is_empty() && run_args.is_some())
             || code_needs_subprocess;
@@ -107,6 +108,7 @@ impl Interpreter {
             self.is_run_subprocess(&program, &run_args, &compiler_args)
         } else {
             let mut nested = Interpreter::new();
+            nested.nested_mode = true;
             if let Some(Value::Int(pid)) = self.env.get("*PID") {
                 nested.set_pid(pid.saturating_add(1));
             }

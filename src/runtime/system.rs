@@ -17,6 +17,21 @@ impl Interpreter {
                     return Err(RuntimeError::undeclared_symbols("Undeclared name"));
                 }
                 self.check_unresolved_stubs()?;
+                // When the last statement is an assignment, the VM pops the
+                // value from the stack, so eval_block_value returns Nil/Any.
+                // In Raku, EVAL returns the value of the last expression,
+                // which for assignments is the assigned value.
+                let value = if matches!(value, Value::Nil)
+                    || matches!(&value, Value::Package(name) if name == "Any")
+                {
+                    if let Some(Stmt::Assign { name, .. }) = stmts.last() {
+                        self.env.get(name).cloned().unwrap_or(value)
+                    } else {
+                        value
+                    }
+                } else {
+                    value
+                };
                 Ok(value)
             }
             Err(parse_err) => {
