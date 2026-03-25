@@ -178,6 +178,54 @@ fn parse_comma_chained_decls<'a>(input: &'a str, first: Stmt) -> PResult<'a, Stm
     Ok((rest, Stmt::SyntheticBlock(stmts)))
 }
 
+/// Consume trailing comma-separated sink expressions after a scalar declaration.
+/// In Raku, `my $c = 1, 2, 3;` is valid: `$c` gets `1`, and `2, 3` are in sink context.
+fn consume_scalar_decl_trailing_comma<'a>(input: &'a str, first: Stmt) -> PResult<'a, Stmt> {
+    let (r, _) = ws(input)?;
+    if !r.starts_with(',') || r.starts_with(",,") {
+        return Ok((input, first));
+    }
+    // Don't consume if followed by another declaration — that's handled by parse_comma_chained_decls
+    let after_comma = &r[1..];
+    let (after_ws, _) = ws(after_comma)?;
+    if keyword("my", after_ws).is_some()
+        || keyword("our", after_ws).is_some()
+        || keyword("state", after_ws).is_some()
+    {
+        return Ok((input, first));
+    }
+    // Consume trailing sink expressions
+    let mut stmts = match first {
+        Stmt::SyntheticBlock(v) => v,
+        other => vec![other],
+    };
+    let mut r_inner = after_ws;
+    if r_inner.starts_with(';') || r_inner.is_empty() || r_inner.starts_with('}') {
+        // Trailing comma only, no expressions
+        return Ok((r_inner, Stmt::SyntheticBlock(stmts)));
+    }
+    let (r2, sink_expr) = expression(r_inner)?;
+    stmts.push(Stmt::Expr(sink_expr));
+    r_inner = r2;
+    loop {
+        let (r2, _) = ws(r_inner)?;
+        if !r2.starts_with(',') || r2.starts_with(",,") {
+            r_inner = r2;
+            break;
+        }
+        let r2 = &r2[1..];
+        let (r2, _) = ws(r2)?;
+        if r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') {
+            r_inner = r2;
+            break;
+        }
+        let (r2, sink_expr) = expression(r2)?;
+        stmts.push(Stmt::Expr(sink_expr));
+        r_inner = r2;
+    }
+    Ok((r_inner, Stmt::SyntheticBlock(stmts)))
+}
+
 fn is_decl_trailing_or_chain_op(op: &TokenKind) -> bool {
     matches!(op, TokenKind::OrWord | TokenKind::OrElse)
 }

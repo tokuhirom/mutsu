@@ -1318,6 +1318,11 @@ pub(super) fn module_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, traits) = parse_declarator_traits(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
+    // Record exported subs from inline module so `import` can register them at parse time.
+    let exported = extract_exported_sub_names(&body);
+    if !exported.is_empty() {
+        super::simple::register_inline_module_exports(&name, exported);
+    }
     let mut stmts = Vec::new();
     for (trait_name, trait_value) in traits {
         if trait_name == "ver" || trait_name == "auth" {
@@ -1334,6 +1339,25 @@ pub(super) fn module_decl(input: &str) -> PResult<'_, Stmt> {
     }
     stmts.push(package_stmt);
     Ok((rest, Stmt::SyntheticBlock(stmts)))
+}
+
+/// Extract names of exported sub declarations from a statement list.
+fn extract_exported_sub_names(stmts: &[Stmt]) -> Vec<String> {
+    let mut names = Vec::new();
+    for stmt in stmts {
+        match stmt {
+            Stmt::SubDecl {
+                name, is_export, ..
+            } if *is_export => {
+                names.push(name.to_string());
+            }
+            Stmt::SyntheticBlock(inner) => {
+                names.extend(extract_exported_sub_names(inner));
+            }
+            _ => {}
+        }
+    }
+    names
 }
 
 /// Parse `unit module` or `unit class` statement.

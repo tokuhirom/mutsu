@@ -66,6 +66,11 @@ thread_local! {
     /// `use attributes :D/:U/:_` pragma — tracks the smiley to apply to unsmileyed attribute types.
     /// Empty string means no pragma active.
     static ATTRIBUTES_PRAGMA: RefCell<String> = const { RefCell::new(String::new()) };
+    /// Inline module exports: module name → list of exported sub names.
+    /// Populated when parsing `module Foo { sub bar() is export { ... } }` blocks.
+    /// Used by `import` to register exported operators at parse time.
+    static INLINE_MODULE_EXPORTS: RefCell<HashMap<String, Vec<String>>> =
+        RefCell::new(HashMap::new());
 }
 
 pub(super) static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -992,6 +997,39 @@ pub(in crate::parser) fn register_module_exports(module: &str) {
             current.imported_functions.insert(name.clone());
         }
     });
+}
+
+/// Record exported subs from an inline `module Name { ... }` block.
+/// Called after parsing the module body, passing the module name and its exported sub names.
+pub(in crate::parser) fn register_inline_module_exports(module: &str, exports: Vec<String>) {
+    if exports.is_empty() {
+        return;
+    }
+    INLINE_MODULE_EXPORTS.with(|m| {
+        m.borrow_mut().insert(module.to_string(), exports);
+    });
+}
+
+/// Import exported subs from a previously-parsed inline module into the current scope.
+/// Returns true if the inline module was found and its exports were registered.
+pub(in crate::parser) fn import_inline_module_exports(module: &str) {
+    let exports = INLINE_MODULE_EXPORTS.with(|m| m.borrow().get(module).cloned());
+    if let Some(exports) = exports {
+        for name in &exports {
+            register_user_sub(name);
+            register_user_callable_term_symbol(name);
+        }
+        // Also register imported functions
+        SCOPES.with(|s| {
+            let mut scopes = s.borrow_mut();
+            let current = scopes
+                .last_mut()
+                .expect("scope stack should never be empty");
+            for name in &exports {
+                current.imported_functions.insert(name.clone());
+            }
+        });
+    }
 }
 
 /// Find a module file and extract its exported function names.
