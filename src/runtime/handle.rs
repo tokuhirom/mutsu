@@ -373,6 +373,17 @@ impl Interpreter {
                         // Open the next file if we don't have a reader
                         if state.argfiles_reader.is_none() {
                             let path = &argfiles_list[state.argfiles_index];
+                            if path == "-" {
+                                // `-` means read from stdin
+                                let mut stdin = std::io::stdin().lock();
+                                match Self::read_record_with_separators(&mut stdin, &seps, chomp)? {
+                                    Some(line) => return Ok(Some(line)),
+                                    None => {
+                                        state.argfiles_index += 1;
+                                        continue;
+                                    }
+                                }
+                            }
                             let file = std::fs::File::open(path).map_err(|e| {
                                 RuntimeError::new(format!("Failed to open file '{}': {}", path, e))
                             })?;

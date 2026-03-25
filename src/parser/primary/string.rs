@@ -1840,8 +1840,10 @@ pub(super) fn try_interpolate_var<'a>(
                 consumed = true;
             }
             let (expr, remainder) = parse_postcircumfix_index(remainder, expr);
+            // Try method call interpolation: "@arr.method()" or "@arr.join(' ')"
+            let (expr, remainder) = try_parse_interp_method_call(remainder, expr);
             if !consumed && remainder.len() == after_name.len() {
-                // @array without postcircumfix ([], [n], <key>) is literal
+                // @array without postcircumfix ([], [n], <key>) or .method() is literal
                 return None;
             }
             if !current.is_empty() {
