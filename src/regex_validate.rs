@@ -495,7 +495,9 @@ fn validate_backslash_sequence(esc: char) -> Result<(), RuntimeError> {
     // Known valid backslash sequences in Raku regex
     match esc {
         'd' | 'D' | 'w' | 'W' | 's' | 'S' | 'n' | 'N' | 't' | 'T' | 'r' | 'R' | 'x' | 'o' | 'c'
-        | 'C' | 'X' | 'v' | 'V' | 'h' | 'H' | 'e' | 'E' | 'b' | 'B' | '0' => Ok(()),
+        | 'C' | 'X' | 'O' | 'v' | 'V' | 'h' | 'H' | 'e' | 'E' | 'b' | 'B' | 'f' | 'F' | '0' => {
+            Ok(())
+        }
         // Obsolete Perl 5 backslash sequences
         'A' => Err(RuntimeError::obsolete(
             "\\A as beginning-of-string matcher",

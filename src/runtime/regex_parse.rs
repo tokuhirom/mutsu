@@ -964,8 +964,13 @@ impl Interpreter {
                         }),
                         'r' => RegexAtom::Literal('\r'),
                         'R' => RegexAtom::Newline, // \R matches any newline sequence
+                        'f' => RegexAtom::Literal('\u{000C}'), // form feed
+                        'F' => RegexAtom::CharClass(CharClass {
+                            negated: true,
+                            items: vec![ClassItem::Char('\u{000C}')],
+                        }),
                         'x' => {
-                            // \x[HEX] hex escape in regex
+                            // \x[HEX] or \xHH hex escape in regex
                             if chars.peek() == Some(&'[') {
                                 chars.next(); // skip '['
                                 let mut hex = String::new();
@@ -984,12 +989,25 @@ impl Interpreter {
                                 } else {
                                     continue;
                                 }
+                            } else if chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
+                                // \x followed by hex digits without brackets
+                                let mut hex = String::new();
+                                while chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
+                                    hex.push(chars.next().unwrap());
+                                }
+                                if let Some(c) =
+                                    u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+                                {
+                                    RegexAtom::Literal(c)
+                                } else {
+                                    continue;
+                                }
                             } else {
                                 RegexAtom::Literal('x')
                             }
                         }
                         'o' => {
-                            // \o[OCT] octal escape in regex
+                            // \o[OCT] or \o### octal escape in regex
                             if chars.peek() == Some(&'[') {
                                 chars.next(); // skip '['
                                 let mut oct = String::new();
@@ -1008,8 +1026,63 @@ impl Interpreter {
                                 } else {
                                     continue;
                                 }
+                            } else if chars.peek().is_some_and(|c| ('0'..='7').contains(c)) {
+                                // \o followed by octal digits without brackets
+                                let mut oct = String::new();
+                                while chars.peek().is_some_and(|c| ('0'..='7').contains(c)) {
+                                    oct.push(chars.next().unwrap());
+                                }
+                                if let Some(c) =
+                                    u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
+                                {
+                                    RegexAtom::Literal(c)
+                                } else {
+                                    continue;
+                                }
                             } else {
                                 RegexAtom::Literal('o')
+                            }
+                        }
+                        'O' => {
+                            // \O[OCT] or \O### matches any char NOT the given octal char
+                            if chars.peek() == Some(&'[') {
+                                chars.next(); // skip '['
+                                let mut oct = String::new();
+                                while let Some(&ch) = chars.peek() {
+                                    if ch == ']' {
+                                        chars.next();
+                                        break;
+                                    }
+                                    oct.push(ch);
+                                    chars.next();
+                                }
+                                if let Some(c) =
+                                    u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
+                                {
+                                    RegexAtom::CharClass(CharClass {
+                                        negated: true,
+                                        items: vec![ClassItem::Char(c)],
+                                    })
+                                } else {
+                                    continue;
+                                }
+                            } else if chars.peek().is_some_and(|c| ('0'..='7').contains(c)) {
+                                let mut oct = String::new();
+                                while chars.peek().is_some_and(|c| ('0'..='7').contains(c)) {
+                                    oct.push(chars.next().unwrap());
+                                }
+                                if let Some(c) =
+                                    u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
+                                {
+                                    RegexAtom::CharClass(CharClass {
+                                        negated: true,
+                                        items: vec![ClassItem::Char(c)],
+                                    })
+                                } else {
+                                    continue;
+                                }
+                            } else {
+                                RegexAtom::Literal('O')
                             }
                         }
                         'c' => {
@@ -1081,7 +1154,7 @@ impl Interpreter {
                             }
                         }
                         'X' => {
-                            // \X[HEX] matches any char that is NOT the given hex char
+                            // \X[HEX] or \XHH matches any char that is NOT the given hex char
                             if chars.peek() == Some(&'[') {
                                 chars.next();
                                 let mut hex = String::new();
@@ -1092,6 +1165,21 @@ impl Interpreter {
                                     }
                                     hex.push(ch);
                                     chars.next();
+                                }
+                                if let Some(c) =
+                                    u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+                                {
+                                    RegexAtom::CharClass(CharClass {
+                                        negated: true,
+                                        items: vec![ClassItem::Char(c)],
+                                    })
+                                } else {
+                                    continue;
+                                }
+                            } else if chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
+                                let mut hex = String::new();
+                                while chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
+                                    hex.push(chars.next().unwrap());
                                 }
                                 if let Some(c) =
                                     u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
@@ -1148,6 +1236,7 @@ impl Interpreter {
                                 Some('n') => literal.push('\n'),
                                 Some('t') => literal.push('\t'),
                                 Some('r') => literal.push('\r'),
+                                Some('f') => literal.push('\u{000C}'),
                                 Some('0') => literal.push('\0'),
                                 Some('c') | Some('C') => {
                                     // \c[NAME] or \c[NAME1, NAME2] inside double-quoted regex string
@@ -2455,6 +2544,11 @@ impl Interpreter {
                     }
                     'r' => {
                         items.push(ClassItem::Char('\r'));
+                        all_negated_escapes = false;
+                        has_items = true;
+                    }
+                    'f' => {
+                        items.push(ClassItem::Char('\u{000C}'));
                         all_negated_escapes = false;
                         has_items = true;
                     }

@@ -24,14 +24,48 @@ impl Interpreter {
             current_package: self.current_package.clone(),
             ..Default::default()
         };
-        match interp.eval_block_value(&stmts) {
-            Ok(val) => match val {
-                Value::Regex(pat) => Some(pat.to_string()),
-                other => Some(Self::regex_escape_literal(&other.to_string_value())),
-            },
-            Err(e) => e
-                .return_value
-                .map(|val| Self::regex_escape_literal(&val.to_string_value())),
+        let val = match interp.eval_block_value(&stmts) {
+            Ok(v) => v,
+            Err(e) => e.return_value?,
+        };
+        match val {
+            Value::Regex(pat) => Some(pat.to_string()),
+            Value::RegexWithAdverbs { pattern, .. } => Some(pattern.to_string()),
+            Value::Routine {
+                is_regex: true,
+                name,
+                package,
+            } => {
+                let full_name = if package.resolve().is_empty() {
+                    name.resolve()
+                } else {
+                    format!("{}::{}", package, name)
+                };
+                Some(format!("<{}>", full_name))
+            }
+            Value::Array(ref elems, ..) | Value::Seq(ref elems) => {
+                // Array/List -> alternation of escaped literals
+                let alts: Vec<String> = elems
+                    .iter()
+                    .map(|v| match v {
+                        Value::Regex(pat) => pat.to_string(),
+                        Value::RegexWithAdverbs { pattern, .. } => pattern.to_string(),
+                        other => {
+                            let s = other.to_string_value();
+                            // Quote as regex literal using single quotes
+                            format!("'{}'", s.replace('\\', "\\\\").replace('\'', "\\'"))
+                        }
+                    })
+                    .collect();
+                if alts.is_empty() {
+                    return None;
+                }
+                Some(format!("[ {} ]", alts.join(" | ")))
+            }
+            other => {
+                let s = other.to_string_value();
+                Some(s)
+            }
         }
     }
 
