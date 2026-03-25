@@ -12,16 +12,23 @@ use crate::value::{ArrayKind, EnumValue, JunctionKind, LazyList, RuntimeError, V
 use num_traits::{Signed, Zero};
 
 mod vm_arith_ops;
+mod vm_call_dispatch;
 mod vm_call_ops;
+mod vm_closure_dispatch;
 mod vm_comparison_ops;
 mod vm_control_ops;
 mod vm_data_ops;
+mod vm_dispatch_helpers;
+mod vm_env_helpers;
 mod vm_helpers;
+mod vm_method_dispatch;
 mod vm_misc_ops;
+mod vm_native_dispatch;
 mod vm_register_ops;
 mod vm_set_ops;
 pub(crate) mod vm_smart_match;
 mod vm_string_regex_ops;
+mod vm_value_helpers;
 mod vm_var_assign_ops;
 mod vm_var_delete_ops;
 mod vm_var_exists_ops;
