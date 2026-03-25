@@ -2105,7 +2105,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && !rest.starts_with('.')
         && !(ws_consumed_unspace && r.starts_with('.') && !r.starts_with(".."))
         && !is_stmt_modifier_ahead(r)
-        && !is_unspace_before_postfix(r)
+        && !(std::ptr::eq(rest, r) && is_unspace_before_postfix(r))
     {
         let is_user_sub = crate::parser::stmt::simple::is_user_declared_sub(&name);
         let is_user_prefix_sub = crate::parser::stmt::simple::is_user_declared_prefix_sub(&name);
@@ -2151,6 +2151,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || next == '„'
             || next == '｢'
             || next == '('
+            || (next == '\\' && r.starts_with("\\("))
             || next.is_ascii_digit()
             || starts_with_term_keyword(r)
             || hyphen_forward_call
