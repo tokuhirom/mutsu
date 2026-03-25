@@ -504,8 +504,8 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     // Slurpy: *@arr or *%hash or *$scalar or *[...] (slurpy unpack)
     let mut slurpy_sigil = None;
     let mut double_slurpy = false;
-    // Unary plus marker on parameters (e.g. +@a). Keep parsing semantics
-    // aligned with regular sigiled params for now.
+    // Single-argument rule slurpy marker (+@a, +%h, +$x, +&f, or sigilless +foo).
+    // Treat as regular slurpy for now.
     if rest.starts_with('+')
         && rest.len() > 1
         && (rest.as_bytes()[1] == b'@'
@@ -514,6 +514,41 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             || rest.as_bytes()[1] == b'&')
     {
         rest = &rest[1..];
+    }
+    // Sigilless single-argument rule slurpy: +foo
+    if rest.starts_with('+') && rest.len() > 1 && rest.as_bytes()[1].is_ascii_alphabetic() {
+        let r = &rest[1..];
+        if let Ok((r, name)) = ident(r) {
+            let (r, _) = ws(r)?;
+            // Handle traits (is copy, is rw, etc.)
+            let mut param_traits = Vec::new();
+            let (mut r, _) = ws(r)?;
+            while let Some(rt) = keyword("is", r) {
+                let (rt, _) = ws1(rt)?;
+                let (rt, trait_name) = ident(rt)?;
+                validate_param_trait(&trait_name, &param_traits, rt)?;
+                param_traits.push(trait_name);
+                let (rt, _) = ws(rt)?;
+                r = rt;
+            }
+            // Default value
+            let (r, default) = if r.starts_with('=') && !r.starts_with("==") {
+                let r = &r[1..];
+                let (r, _) = ws(r)?;
+                let (r, expr) = parse_param_default_expr(r)?;
+                (r, Some(expr))
+            } else {
+                (r, None)
+            };
+            let mut p = make_param(name);
+            p.slurpy = true;
+            p.sigilless = true;
+            p.named = named;
+            p.default = default;
+            p.type_constraint = type_constraint;
+            p.traits = param_traits;
+            return Ok((r, p));
+        }
     }
     if rest.starts_with('*')
         && rest.len() > 1
