@@ -591,9 +591,28 @@ impl Interpreter {
         // Reorder phasers: BEGIN (forward), CHECK (reverse), INIT (forward)
         // are moved before the main body within each block scope.
         let mut body_main = body_main;
+        // Re-insert ENTER phasers into body_main so they are compiled and
+        // executed by the VM instead of the legacy interpreter.  Running them
+        // through the interpreter would use a separate variable scope, causing
+        // ENTER body assignments to not be visible to the rest of the mainline.
+        if !enter_ph.is_empty() {
+            let enter_stmts: Vec<Stmt> = enter_ph
+                .into_iter()
+                .map(|s| {
+                    if let Stmt::Block(body) = s {
+                        Stmt::Phaser {
+                            kind: crate::ast::PhaserKind::Enter,
+                            body,
+                        }
+                    } else {
+                        s
+                    }
+                })
+                .collect();
+            body_main.splice(0..0, enter_stmts);
+        }
         crate::runtime::phasers::reorder_phasers(&mut body_main);
         self.preregister_top_level_subs(&body_main)?;
-        self.run_block_raw(&enter_ph)?;
         let mut compiler = crate::compiler::Compiler::new();
         compiler.set_current_package(self.current_package.clone());
         let (code, compiled_fns) = compiler.compile(&body_main);

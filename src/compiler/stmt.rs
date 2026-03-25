@@ -1352,9 +1352,13 @@ impl Compiler {
             // and run in the correct order. If one remains (e.g. inside a sub body),
             // compile it inline as a fallback.
             Stmt::Phaser {
-                kind: PhaserKind::Begin | PhaserKind::Check | PhaserKind::Init,
+                kind: PhaserKind::Begin | PhaserKind::Check | PhaserKind::Init | PhaserKind::Enter,
                 body,
             } => {
+                // BEGIN/CHECK/INIT are extracted and run at compile time.
+                // ENTER at top-level scope compiles inline (in sub/method/closure
+                // bodies it is handled by BlockScope and filtered out before
+                // reaching this match arm).
                 for s in body {
                     self.compile_stmt(s);
                 }
