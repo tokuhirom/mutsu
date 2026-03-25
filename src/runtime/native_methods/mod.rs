@@ -370,9 +370,8 @@ impl Interpreter {
             "Supply" => self.native_supply(attributes, method, args),
             "Supplier" | "Supplier::Preserving" => self.native_supplier(attributes, method, args),
             "Tap" => self.native_tap(attributes, method),
-            "ThreadPoolScheduler" | "CurrentThreadScheduler" => {
-                self.native_scheduler(attributes, method, args)
-            }
+            "ThreadPoolScheduler" => self.native_scheduler(attributes, method, args, false),
+            "CurrentThreadScheduler" => self.native_scheduler(attributes, method, args, true),
             "FakeScheduler" => self.native_fake_scheduler(attributes, method, args),
             "Cancellation" => self.native_cancellation(attributes, method),
             "Encoding::Builtin" => Ok(Self::native_encoding_builtin(attributes, method, &args)),

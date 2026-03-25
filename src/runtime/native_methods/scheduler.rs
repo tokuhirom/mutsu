@@ -94,11 +94,17 @@ impl Interpreter {
         _attributes: &HashMap<String, Value>,
         method: &str,
         args: Vec<Value>,
+        is_current_thread: bool,
     ) -> Result<Value, RuntimeError> {
         match method {
             "cue" => {
                 let callback = args.first().cloned().unwrap_or(Value::Nil);
                 let times = Self::scheduler_times_arg(&args)?.unwrap_or(1);
+                let delay = Self::named_value(&args, "in")
+                    .or_else(|| Self::named_value(&args, "at"))
+                    .map(|v| v.to_f64())
+                    .unwrap_or(0.0);
+                let every = Self::named_value(&args, "every").map(|v| v.to_f64());
                 let cancellation = Self::cancellation_instance();
                 let cancellation_id = match &cancellation {
                     Value::Instance { attributes, .. } => {
@@ -110,14 +116,82 @@ impl Interpreter {
                     _ => 0,
                 };
                 let cancel_flag = cancellation_state(cancellation_id);
-                for _ in 0..times {
-                    if cancel_flag
-                        .as_ref()
-                        .is_some_and(|flag| flag.load(Ordering::Relaxed))
-                    {
-                        break;
+                if is_current_thread {
+                    // CurrentThreadScheduler: run synchronously on the calling thread
+                    if delay > 0.0 {
+                        std::thread::sleep(std::time::Duration::from_secs_f64(delay));
                     }
-                    self.call_sub_value(callback.clone(), Vec::new(), true)?;
+                    if let Some(interval) = every {
+                        let mut count = 0;
+                        loop {
+                            if cancel_flag
+                                .as_ref()
+                                .is_some_and(|flag| flag.load(Ordering::Relaxed))
+                            {
+                                break;
+                            }
+                            self.call_sub_value(callback.clone(), Vec::new(), true)?;
+                            count += 1;
+                            if count >= times {
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_secs_f64(interval));
+                        }
+                    } else {
+                        for _ in 0..times {
+                            if cancel_flag
+                                .as_ref()
+                                .is_some_and(|flag| flag.load(Ordering::Relaxed))
+                            {
+                                break;
+                            }
+                            self.call_sub_value(callback.clone(), Vec::new(), true)?;
+                        }
+                    }
+                } else {
+                    // ThreadPoolScheduler: run asynchronously in a spawned thread,
+                    // like Raku's ThreadPoolScheduler.cue does.
+                    let mut thread_interp = self.clone_for_thread();
+                    std::thread::spawn(move || {
+                        if delay > 0.0 {
+                            std::thread::sleep(std::time::Duration::from_secs_f64(delay));
+                        }
+                        if let Some(interval) = every {
+                            let mut count = 0;
+                            loop {
+                                if cancel_flag
+                                    .as_ref()
+                                    .is_some_and(|flag| flag.load(Ordering::Relaxed))
+                                {
+                                    break;
+                                }
+                                let _ = thread_interp.call_sub_value(
+                                    callback.clone(),
+                                    Vec::new(),
+                                    true,
+                                );
+                                count += 1;
+                                if count >= times {
+                                    break;
+                                }
+                                std::thread::sleep(std::time::Duration::from_secs_f64(interval));
+                            }
+                        } else {
+                            for _ in 0..times {
+                                if cancel_flag
+                                    .as_ref()
+                                    .is_some_and(|flag| flag.load(Ordering::Relaxed))
+                                {
+                                    break;
+                                }
+                                let _ = thread_interp.call_sub_value(
+                                    callback.clone(),
+                                    Vec::new(),
+                                    true,
+                                );
+                            }
+                        }
+                    });
                 }
                 Ok(cancellation)
             }
