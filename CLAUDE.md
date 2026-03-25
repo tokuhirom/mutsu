@@ -276,6 +276,21 @@ Before writing any code, always investigate the test in this order:
 4. **Run with `mutsu`**: `timeout 30 target/debug/mutsu <roast-test-path>`
 5. Compare outputs to identify what mutsu is doing wrong, then fix the interpreter.
 
+## Worktree cleanup
+
+When using `isolation: "worktree"` agents, stale worktrees accumulate under `.claude/worktrees/` and can consume hundreds of GB. **Clean up worktrees at least once per hour** during long sessions:
+
+```bash
+# Remove all agent worktrees except currently active ones
+cd .claude/worktrees/
+for d in agent-*; do
+  git -C <repo-root> worktree remove --force ".claude/worktrees/$d" 2>/dev/null
+done
+git worktree prune
+```
+
+Before cleanup, check which agents are still running and exclude their worktrees. After cleanup, verify disk usage with `du -sh .claude/worktrees/`.
+
 ## AI fleet operations
 
 Roast test fixing is automated via a fleet of sandboxed AI agents. The parent AI (or human) launches workers and a supervisor, then monitors their progress.
