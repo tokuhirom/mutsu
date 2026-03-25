@@ -663,6 +663,10 @@ pub struct Interpreter {
     subtest_depth: usize,
     halted: bool,
     exit_code: i64,
+    /// When true, `exit` sets the `halted` flag instead of calling
+    /// `std::process::exit()`.  Used by in-process `is_run` so that
+    /// the nested interpreter does not kill the parent process.
+    pub(crate) nested_mode: bool,
     /// When true, output is flushed to real stdout immediately (for Proc::Async children).
     immediate_stdout: bool,
     /// Tracks whether any output was emitted (useful when immediate_stdout
@@ -2347,6 +2351,7 @@ impl Interpreter {
             subtest_depth: 0,
             halted: false,
             exit_code: 0,
+            nested_mode: false,
             immediate_stdout: false,
             output_emitted: false,
             bailed_out: false,
@@ -3811,6 +3816,7 @@ impl Interpreter {
             subtest_depth: 0,
             halted: false,
             exit_code: 0,
+            nested_mode: self.nested_mode,
             immediate_stdout: false,
             output_emitted: false,
             bailed_out: false,

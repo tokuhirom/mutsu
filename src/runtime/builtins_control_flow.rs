@@ -236,6 +236,16 @@ impl Interpreter {
         };
         self.halted = true;
         self.exit_code = code;
+        // When exit is called from a spawned thread (e.g. `start { exit }`),
+        // setting halted only affects the thread's interpreter — the main
+        // thread would keep running. In that case, terminate the whole
+        // process immediately (matching Raku behavior).
+        if !self.nested_mode && std::thread::current().name() != Some("main") {
+            use std::io::Write;
+            let _ = std::io::stdout().flush();
+            let _ = std::io::stderr().flush();
+            std::process::exit(code as i32);
+        }
         Ok(Value::Nil)
     }
 
