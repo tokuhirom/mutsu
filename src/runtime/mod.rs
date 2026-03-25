@@ -4513,6 +4513,8 @@ mod tests {
             is_bare_block: false,
             compiled_code: Some(Arc::new(compiled)),
             deprecated_message: None,
+            source_line: None,
+            source_file: None,
         });
 
         let mut interp = Interpreter::new();

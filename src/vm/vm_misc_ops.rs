@@ -1399,7 +1399,14 @@ impl VM {
     }
 
     pub(super) fn exec_routine_magic_op(&mut self) -> Result<(), RuntimeError> {
-        if let Some((package, name)) = self.interpreter.routine_stack_top() {
+        // Skip pointy-block entries in the routine stack so that &?ROUTINE
+        // inside a pointy block sees the enclosing routine (sub/method).
+        let routine_stack = self.interpreter.routine_stack();
+        let entry = routine_stack
+            .iter()
+            .rev()
+            .find(|(_, name)| name != "<pointy-block>");
+        if let Some((package, name)) = entry {
             self.stack.push(Value::Routine {
                 package: Symbol::intern(package),
                 name: Symbol::intern(name),

@@ -2111,17 +2111,11 @@ impl VM {
                 return Err(RuntimeError::return_signal(val));
             }
             OpCode::ReturnFromNonRoutine => {
-                let _val = self.stack.pop().unwrap_or(Value::Nil);
-                let mut attrs = HashMap::new();
-                attrs.insert(
-                    "message".to_string(),
-                    Value::str_from("Attempt to return outside of any Routine"),
-                );
-                attrs.insert("out-of-dynamic-scope".to_string(), Value::Bool(false));
-                let exc = Value::make_instance(Symbol::intern("X::ControlFlow::Return"), attrs);
-                let mut err = RuntimeError::new("Attempt to return outside of any Routine");
-                err.exception = Some(Box::new(exc));
-                return Err(err);
+                let val = self.stack.pop().unwrap_or(Value::Nil);
+                // In a non-routine closure (pointy block, bare block),
+                // `return` propagates as a CX::Return signal up to the
+                // enclosing routine boundary.
+                return Err(RuntimeError::return_signal(val));
             }
 
             // -- Environment variable access --

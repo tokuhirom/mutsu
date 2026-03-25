@@ -3,6 +3,22 @@ use crate::compiler::Compiler;
 use crate::symbol::Symbol;
 
 impl VM {
+    /// Get the current source line number from the interpreter env.
+    fn current_source_line(&self) -> Option<u32> {
+        self.interpreter.env().get("?LINE").and_then(|v| match v {
+            Value::Int(n) => Some(*n as u32),
+            _ => None,
+        })
+    }
+
+    /// Get the current source file from the interpreter env.
+    fn current_source_file(&self) -> Option<String> {
+        self.interpreter.env().get("?FILE").and_then(|v| match v {
+            Value::Str(s) => Some(s.to_string()),
+            _ => None,
+        })
+    }
+
     pub(super) fn exec_make_gather_op(
         &mut self,
         code: &CompiledCode,
@@ -52,6 +68,11 @@ impl VM {
             self.ensure_env_synced(code);
             let params = crate::ast::collect_placeholders(body);
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
+            let cc_source_line = compiled_code
+                .as_ref()
+                .and_then(|cc| cc.source_line)
+                .map(|l| l as u32)
+                .or_else(|| self.current_source_line());
             let val = Value::Sub(std::sync::Arc::new(crate::value::SubData {
                 package: Symbol::intern(self.interpreter.current_package()),
                 name: Symbol::intern(""),
@@ -68,6 +89,8 @@ impl VM {
                 is_bare_block: true,
                 compiled_code,
                 deprecated_message: None,
+                source_line: cc_source_line,
+                source_file: self.current_source_file(),
             }));
             self.stack.push(val);
             Ok(())
@@ -106,6 +129,11 @@ impl VM {
                 );
             }
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
+            let cc_source_line = compiled_code
+                .as_ref()
+                .and_then(|cc| cc.source_line)
+                .map(|l| l as u32)
+                .or_else(|| self.current_source_line());
             let val = Value::Sub(std::sync::Arc::new(crate::value::SubData {
                 package: Symbol::intern(self.interpreter.current_package()),
                 name: Symbol::intern(""),
@@ -122,6 +150,8 @@ impl VM {
                 is_bare_block: false,
                 compiled_code,
                 deprecated_message: None,
+                source_line: cc_source_line,
+                source_file: self.current_source_file(),
             }));
             self.stack.push(val);
             Ok(())
@@ -160,6 +190,11 @@ impl VM {
                 );
             }
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
+            let cc_source_line = compiled_code
+                .as_ref()
+                .and_then(|cc| cc.source_line)
+                .map(|l| l as u32)
+                .or_else(|| self.current_source_line());
             let val = Value::Sub(std::sync::Arc::new(crate::value::SubData {
                 package: Symbol::intern(self.interpreter.current_package()),
                 name: Symbol::intern(""),
@@ -176,6 +211,8 @@ impl VM {
                 is_bare_block: false,
                 compiled_code,
                 deprecated_message: None,
+                source_line: cc_source_line,
+                source_file: self.current_source_file(),
             }));
             self.stack.push(val);
             Ok(())
@@ -194,6 +231,11 @@ impl VM {
         if let Stmt::Block(body) = stmt {
             self.ensure_env_synced(code);
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
+            let cc_source_line = compiled_code
+                .as_ref()
+                .and_then(|cc| cc.source_line)
+                .map(|l| l as u32)
+                .or_else(|| self.current_source_line());
             let val = Value::Sub(std::sync::Arc::new(crate::value::SubData {
                 package: Symbol::intern(self.interpreter.current_package()),
                 name: Symbol::intern(""),
@@ -210,6 +252,8 @@ impl VM {
                 is_bare_block: true,
                 compiled_code,
                 deprecated_message: None,
+                source_line: cc_source_line,
+                source_file: self.current_source_file(),
             }));
             self.stack.push(val);
             Ok(())

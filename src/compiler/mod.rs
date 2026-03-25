@@ -55,6 +55,8 @@ pub(crate) struct Compiler {
     bind_vardecl: bool,
     /// Variables declared as `constant` (no Scalar container).
     constant_vars: std::collections::HashSet<String>,
+    /// Last source line emitted via SetSourceLine (for tracking block definition lines).
+    last_source_line: Option<i64>,
 }
 
 impl Compiler {
@@ -73,6 +75,7 @@ impl Compiler {
             is_routine: false,
             bind_vardecl: false,
             constant_vars: std::collections::HashSet::new(),
+            last_source_line: None,
         }
     }
 

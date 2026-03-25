@@ -1101,6 +1101,9 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
     if !is_rw_block && !input.starts_with("->") {
         return Err(PError::expected("arrow lambda"));
     }
+    // Capture the definition line of the pointy block (at the `->` position)
+    let arrow_line = super::current_line_number(input);
+    let arrow_is_original = super::is_within_original_source(input);
     let r = if is_rw_block {
         &input[3..]
     } else {
@@ -1109,7 +1112,10 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
     let (r, _) = ws(r)?;
     // Zero-param pointed block: -> { body }
     if r.starts_with('{') {
-        let (r, body) = parse_block_body(r)?;
+        let (r, mut body) = parse_block_body(r)?;
+        if arrow_is_original {
+            body.insert(0, crate::ast::Stmt::SetLine(arrow_line));
+        }
         return Ok((
             r,
             Expr::AnonSubParams {
@@ -1125,7 +1131,10 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
     // Zero-param with explicit return spec: -> --> 42 { body }
     if r.starts_with("-->") {
         let (r, return_type) = skip_pointy_return_type(r)?;
-        let (r, body) = parse_block_body(r)?;
+        let (r, mut body) = parse_block_body(r)?;
+        if arrow_is_original {
+            body.insert(0, crate::ast::Stmt::SetLine(arrow_line));
+        }
         return Ok((
             r,
             Expr::AnonSubParams {
@@ -1146,7 +1155,10 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
         let (r, return_type) = skip_pointy_return_type(r)?;
-        let (r, body) = parse_block_body_with_sigilless(&sub_params, r)?;
+        let (r, mut body) = parse_block_body_with_sigilless(&sub_params, r)?;
+        if arrow_is_original {
+            body.insert(0, crate::ast::Stmt::SetLine(arrow_line));
+        }
         if is_rw_block {
             inject_rw_trait(&mut sub_params);
         }
@@ -1183,7 +1195,10 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
             r = r2;
         }
         let (r, return_type) = skip_pointy_return_type(r)?;
-        let (r, body) = parse_block_body_with_sigilless(&param_defs, r)?;
+        let (r, mut body) = parse_block_body_with_sigilless(&param_defs, r)?;
+        if arrow_is_original {
+            body.insert(0, crate::ast::Stmt::SetLine(arrow_line));
+        }
         if is_rw_block {
             inject_rw_trait(&mut param_defs);
         }
@@ -1206,7 +1221,10 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
             inject_rw_trait(std::slice::from_mut(&mut first));
         }
         let (r, return_type) = skip_pointy_return_type(r)?;
-        let (r, body) = parse_block_body_with_sigilless(std::slice::from_ref(&first), r)?;
+        let (r, mut body) = parse_block_body_with_sigilless(std::slice::from_ref(&first), r)?;
+        if arrow_is_original {
+            body.insert(0, crate::ast::Stmt::SetLine(arrow_line));
+        }
         let simple_single = first.traits.is_empty()
             && first.shape_constraints.is_none()
             && !first.named
@@ -1305,9 +1323,32 @@ pub(super) fn ws_inner(input: &str) -> (&str, ()) {
     }
 }
 
-/// Parse a block body: { stmts }
 pub(in crate::parser) fn parse_block_body(input: &str) -> PResult<'_, Vec<crate::ast::Stmt>> {
     let (r, _) = parse_char(input, '{')?;
+    // Reject {YOU_ARE_HERE} outside of a setting (X::Syntax::Reserved)
+    {
+        let trimmed = r.trim_start();
+        if let Some(after) = trimmed.strip_prefix("YOU_ARE_HERE") {
+            let after_trimmed = after.trim_start();
+            if after_trimmed.starts_with('}') {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert(
+                    "message".to_string(),
+                    crate::value::Value::str(
+                        "The use of {YOU_ARE_HERE} outside of a setting is reserved".to_string(),
+                    ),
+                );
+                let exc = crate::value::Value::make_instance(
+                    crate::symbol::Symbol::intern("X::Syntax::Reserved"),
+                    attrs,
+                );
+                return Err(PError::fatal_with_exception(
+                    "The use of {YOU_ARE_HERE} outside of a setting is reserved".to_string(),
+                    Box::new(exc),
+                ));
+            }
+        }
+    }
     crate::parser::stmt::simple::push_scope();
     let result = (|| -> PResult<'_, Vec<crate::ast::Stmt>> {
         let (r, stmts) = super::super::stmt::stmt_list_pub(r)?;

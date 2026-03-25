@@ -159,6 +159,8 @@ impl VM {
             is_bare_block: data.is_bare_block,
             compiled_code: data.compiled_code.clone(),
             deprecated_message: data.deprecated_message.clone(),
+            source_line: data.source_line,
+            source_file: data.source_file.clone(),
         });
         self.interpreter.env_mut().insert(
             "&?BLOCK".to_string(),
@@ -166,9 +168,16 @@ impl VM {
         );
         self.interpreter.push_block(Value::Sub(block_arc));
 
-        // Push routine info and callable_id for leave/return targeting
-        self.interpreter
-            .push_routine(data.package.resolve(), data.name.resolve());
+        // Push routine info for leave/return/when targeting.
+        // For pointy blocks, we push a special marker name so that
+        // &?ROUTINE can skip it and see the enclosing routine.
+        if cc.is_pointy_block {
+            self.interpreter
+                .push_routine(data.package.resolve(), "<pointy-block>".to_string());
+        } else {
+            self.interpreter
+                .push_routine(data.package.resolve(), data.name.resolve());
+        }
         self.interpreter.env_mut().insert(
             "__mutsu_callable_id".to_string(),
             Value::Int(data.id as i64),
@@ -192,7 +201,9 @@ impl VM {
             {
                 Ok(bindings) => bindings,
                 Err(e) => {
-                    self.interpreter.pop_routine();
+                    if cc.is_routine {
+                        self.interpreter.pop_routine();
+                    }
                     self.interpreter.pop_block();
                     self.interpreter.pop_caller_env();
                     self.stack.truncate(saved_stack_depth);
@@ -283,6 +294,14 @@ impl VM {
                     break;
                 }
                 Err(e) if e.return_value.is_some() => {
+                    // Pointy blocks (`-> { }`) are NOT routine boundaries.
+                    // `return` in a pointy block propagates up to the
+                    // enclosing routine (sub/method).
+                    if cc.is_pointy_block {
+                        self.interpreter.restore_let_saves(let_mark);
+                        result = Err(e);
+                        break;
+                    }
                     let ret_val = e.return_value.unwrap();
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
@@ -339,7 +358,9 @@ impl VM {
         // Restore the previous state scope
         self.state_scope_id = saved_state_scope;
 
-        self.interpreter.pop_routine();
+        if cc.is_routine {
+            self.interpreter.pop_routine();
+        }
         self.interpreter.pop_block();
 
         if self.env_dirty {

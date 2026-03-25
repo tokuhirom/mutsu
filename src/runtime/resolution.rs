@@ -961,6 +961,8 @@ impl Interpreter {
                 is_bare_block: data.is_bare_block,
                 compiled_code: data.compiled_code.clone(),
                 deprecated_message: data.deprecated_message.clone(),
+                source_line: data.source_line,
+                source_file: data.source_file.clone(),
             });
             new_env.insert(
                 "&?BLOCK".to_string(),
