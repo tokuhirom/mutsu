@@ -163,18 +163,18 @@ impl Interpreter {
         let input = Self::positional_value(args, 1)
             .map(|v| v.to_string_value())
             .unwrap_or_default();
-        let run_args: Vec<String> =
-            if let Some(Value::Array(items, ..)) = Self::named_value(args, "args") {
+        let run_args: Vec<String> = match Self::named_value(args, "args") {
+            Some(Value::Array(items, ..)) | Some(Value::Seq(items)) | Some(Value::Slip(items)) => {
                 items.iter().map(|v| v.to_string_value()).collect()
-            } else {
-                Vec::new()
-            };
-        let compiler_args: Vec<String> =
-            if let Some(Value::Array(items, ..)) = Self::named_value(args, "compiler-args") {
+            }
+            _ => Vec::new(),
+        };
+        let compiler_args: Vec<String> = match Self::named_value(args, "compiler-args") {
+            Some(Value::Array(items, ..)) | Some(Value::Seq(items)) | Some(Value::Slip(items)) => {
                 items.iter().map(|v| v.to_string_value()).collect()
-            } else {
-                Vec::new()
-            };
+            }
+            _ => Vec::new(),
+        };
         let (out, err, status) =
             Self::run_test_code_subprocess(&program, &input, &run_args, &compiler_args);
         let mut hash = std::collections::HashMap::new();
