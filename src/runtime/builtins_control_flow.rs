@@ -1,5 +1,26 @@
 use super::*;
 use crate::symbol::Symbol;
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+
+/// Global flag set by `exit()` from any thread.  `sleep()` polls this
+/// so the main thread can wake up when a spawned thread calls `exit`.
+static GLOBAL_EXIT_REQUESTED: AtomicBool = AtomicBool::new(false);
+static GLOBAL_EXIT_CODE: AtomicI64 = AtomicI64::new(0);
+
+/// Set the global exit flag (called by `exit()` from any thread).
+pub(crate) fn set_global_exit_flag(code: i64) {
+    GLOBAL_EXIT_CODE.store(code, Ordering::SeqCst);
+    GLOBAL_EXIT_REQUESTED.store(true, Ordering::SeqCst);
+}
+
+/// Check whether a global exit has been requested and return the exit code.
+pub(crate) fn global_exit_requested() -> Option<i64> {
+    if GLOBAL_EXIT_REQUESTED.load(Ordering::SeqCst) {
+        Some(GLOBAL_EXIT_CODE.load(Ordering::SeqCst))
+    } else {
+        None
+    }
+}
 
 impl Interpreter {
     pub(super) fn runtime_error_from_die_value(
@@ -236,15 +257,12 @@ impl Interpreter {
         };
         self.halted = true;
         self.exit_code = code;
-        // When exit is called from a spawned thread (e.g. `start { exit }`),
-        // setting halted only affects the thread's interpreter — the main
-        // thread would keep running. In that case, terminate the whole
-        // process immediately (matching Raku behavior).
-        if !self.nested_mode && std::thread::current().name() != Some("main") {
-            use std::io::Write;
-            let _ = std::io::stdout().flush();
-            let _ = std::io::stderr().flush();
-            std::process::exit(code as i32);
+        // Signal any sleeping threads that the process should exit.
+        // This is used when exit() is called from a `start` block or
+        // signal handler -- the main thread may be blocked in sleep()
+        // and needs to wake up.
+        if !self.nested_mode {
+            set_global_exit_flag(code);
         }
         Ok(Value::Nil)
     }

@@ -1080,16 +1080,47 @@ impl Interpreter {
         let secs = Self::seconds_from_value(args.first().cloned());
         match secs {
             None | Some(f64::INFINITY) => {
-                // sleep with no args or Inf sleeps indefinitely
+                // sleep with no args or Inf sleeps indefinitely.
+                // Poll for global exit flag so that `start { exit }` can
+                // wake us up.
                 loop {
-                    thread::sleep(Duration::from_secs(3600));
+                    thread::sleep(Duration::from_millis(100));
+                    if let Some(code) = super::builtins_control_flow::global_exit_requested() {
+                        self.halted = true;
+                        self.exit_code = code;
+                        return Ok(Value::Nil);
+                    }
                 }
             }
             Some(s) => {
                 let duration = Self::duration_from_seconds(Some(s));
-                thread::sleep(duration);
+                // For large sleep durations, poll periodically so that
+                // a global exit() from another thread can interrupt us.
+                if duration > Duration::from_secs(10) {
+                    Self::interruptible_sleep(duration);
+                    if let Some(code) = super::builtins_control_flow::global_exit_requested() {
+                        self.halted = true;
+                        self.exit_code = code;
+                        return Ok(Value::Nil);
+                    }
+                } else {
+                    thread::sleep(duration);
+                }
                 self.sync_shared_vars_to_env();
                 Ok(Value::Nil)
+            }
+        }
+    }
+
+    /// Sleep for the given duration, but check for global exit every 100ms.
+    fn interruptible_sleep(total: Duration) {
+        let start = std::time::Instant::now();
+        while start.elapsed() < total {
+            let remaining = total.saturating_sub(start.elapsed());
+            let chunk = remaining.min(Duration::from_millis(100));
+            thread::sleep(chunk);
+            if super::builtins_control_flow::global_exit_requested().is_some() {
+                return;
             }
         }
     }
