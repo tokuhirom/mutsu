@@ -117,9 +117,9 @@ fn should_expand_invert_value(value: &Value) -> bool {
             | Value::Seq(_)
             | Value::Slip(_)
             | Value::Hash(_)
-            | Value::Set(_)
-            | Value::Bag(_)
-            | Value::Mix(_)
+            | Value::Set(_, _)
+            | Value::Bag(_, _)
+            | Value::Mix(_, _)
     ) || value.is_range()
 }
 
@@ -142,7 +142,7 @@ fn invert_value(target: &Value) -> Option<Value> {
                 extend_inverted_pairs(&mut result, Value::str(k.clone()), v);
             }
         }
-        Value::Bag(items) => {
+        Value::Bag(items, _) => {
             for (k, count) in items.iter() {
                 result.push(make_inverted_pair(
                     Value::Int(*count),
@@ -150,12 +150,12 @@ fn invert_value(target: &Value) -> Option<Value> {
                 ));
             }
         }
-        Value::Set(items) => {
+        Value::Set(items, _) => {
             for k in items.iter() {
                 result.push(make_inverted_pair(Value::Bool(true), Value::str(k.clone())));
             }
         }
-        Value::Mix(items) => {
+        Value::Mix(items, _) => {
             for (k, weight) in items.iter() {
                 let (n, d) = f64_to_rat(*weight);
                 let weight_val = if d == 1 {
@@ -283,21 +283,21 @@ pub(crate) fn combinations_range(items: &[Value], min_k: i64, max_k: i64) -> Vec
 pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     match method {
         "hash" => match target {
-            Value::Set(s) => {
+            Value::Set(s, _) => {
                 let mut map = std::collections::HashMap::new();
                 for k in s.iter() {
                     map.insert(k.clone(), Value::Bool(true));
                 }
                 Some(Ok(Value::hash(map)))
             }
-            Value::Bag(b) => {
+            Value::Bag(b, _) => {
                 let mut map = std::collections::HashMap::new();
                 for (k, v) in b.iter() {
                     map.insert(k.clone(), Value::Int(*v));
                 }
                 Some(Ok(Value::hash(map)))
             }
-            Value::Mix(m) => {
+            Value::Mix(m, _) => {
                 let mut map = std::collections::HashMap::new();
                 for (k, v) in m.iter() {
                     map.insert(k.clone(), Value::Num(*v));
@@ -333,13 +333,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 Value::ValuePair(key, _) => Some(Ok(Value::Seq(Arc::new(vec![*key.clone()])))),
                 Value::Nil => Some(Ok(Value::array(Vec::new()))),
-                Value::Set(s) => Some(Ok(Value::array(
+                Value::Set(s, _) => Some(Ok(Value::array(
                     s.iter().map(|k| Value::str(k.clone())).collect(),
                 ))),
-                Value::Bag(b) => Some(Ok(Value::array(
+                Value::Bag(b, _) => Some(Ok(Value::array(
                     b.keys().map(|k| Value::str(k.clone())).collect(),
                 ))),
-                Value::Mix(m) => Some(Ok(Value::array(
+                Value::Mix(m, _) => Some(Ok(Value::array(
                     m.keys().map(|k| Value::str(k.clone())).collect(),
                 ))),
                 Value::Package(_) => None, // let runtime handle (may be enum type)
@@ -365,13 +365,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(Value::Seq(Arc::new(vec![*value.clone()]))))
                 }
                 Value::Nil => Some(Ok(Value::array(Vec::new()))),
-                Value::Set(s) => Some(Ok(Value::array(
+                Value::Set(s, _) => Some(Ok(Value::array(
                     s.iter().map(|_| Value::Bool(true)).collect(),
                 ))),
-                Value::Bag(b) => Some(Ok(Value::array(
+                Value::Bag(b, _) => Some(Ok(Value::array(
                     b.values().map(|v| Value::Int(*v)).collect(),
                 ))),
-                Value::Mix(m) => Some(Ok(Value::array(
+                Value::Mix(m, _) => Some(Ok(Value::array(
                     m.values().map(|v| Value::Num(*v)).collect(),
                 ))),
                 Value::Package(_) => None, // let runtime handle (may be enum type)
@@ -411,7 +411,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(Value::Seq(Arc::new(vec![*key.clone(), *value.clone()]))))
                 }
                 Value::Nil => Some(Ok(Value::array(Vec::new()))),
-                Value::Set(s) => {
+                Value::Set(s, _) => {
                     let mut kv = Vec::new();
                     for k in s.iter() {
                         kv.push(Value::str(k.clone()));
@@ -419,7 +419,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     }
                     Some(Ok(Value::array(kv)))
                 }
-                Value::Bag(b) => {
+                Value::Bag(b, _) => {
                     let mut kv = Vec::new();
                     for (k, v) in b.iter() {
                         kv.push(Value::str(k.clone()));
@@ -427,7 +427,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     }
                     Some(Ok(Value::array(kv)))
                 }
-                Value::Mix(m) => {
+                Value::Mix(m, _) => {
                     let mut kv = Vec::new();
                     for (k, v) in m.iter() {
                         kv.push(Value::str(k.clone()));
@@ -475,17 +475,17 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
                         .collect(),
                 ))),
-                Value::Set(s) => Some(Ok(Value::array(
+                Value::Set(s, _) => Some(Ok(Value::array(
                     s.iter()
                         .map(|k| Value::Pair(k.clone(), Box::new(Value::Bool(true))))
                         .collect(),
                 ))),
-                Value::Bag(b) => Some(Ok(Value::array(
+                Value::Bag(b, _) => Some(Ok(Value::array(
                     b.iter()
                         .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Int(*v))))
                         .collect(),
                 ))),
-                Value::Mix(m) => Some(Ok(Value::array(
+                Value::Mix(m, _) => Some(Ok(Value::array(
                     m.iter()
                         .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Num(*v))))
                         .collect(),
@@ -560,7 +560,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         })
                         .collect(),
                 ))),
-                Value::Bag(items) => Some(Ok(Value::array(
+                Value::Bag(items, _) => Some(Ok(Value::array(
                     items
                         .iter()
                         .map(|(k, v)| {
@@ -571,7 +571,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         })
                         .collect(),
                 ))),
-                Value::Set(items) => Some(Ok(Value::array(
+                Value::Set(items, _) => Some(Ok(Value::array(
                     items
                         .iter()
                         .map(|k| {
@@ -582,7 +582,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         })
                         .collect(),
                 ))),
-                Value::Mix(items) => Some(Ok(Value::array(
+                Value::Mix(items, _) => Some(Ok(Value::array(
                     items
                         .iter()
                         .map(|(k, v)| {
@@ -610,7 +610,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
         }
         "kxxv" => match target {
-            Value::Bag(items) => {
+            Value::Bag(items, _) => {
                 let mut result = Vec::new();
                 for (k, count) in items.iter() {
                     for _ in 0..*count {
@@ -619,7 +619,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 Some(Ok(Value::array(result)))
             }
-            Value::Mix(items) => {
+            Value::Mix(items, _) => {
                 let mut result = Vec::new();
                 for (k, weight) in items.iter() {
                     let count = weight.floor() as i64;
@@ -629,7 +629,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 Some(Ok(Value::array(result)))
             }
-            Value::Set(items) => {
+            Value::Set(items, _) => {
                 // Set is like Bag with all counts = 1
                 Some(Ok(Value::array(
                     items.iter().map(|k| Value::str(k.clone())).collect(),
@@ -652,9 +652,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         },
         "invert" => invert_value(target).map(Ok),
         "total" => match target {
-            Value::Set(s) => Some(Ok(Value::Int(s.len() as i64))),
-            Value::Bag(b) => Some(Ok(Value::Int(b.values().sum::<i64>()))),
-            Value::Mix(m) => {
+            Value::Set(s, _) => Some(Ok(Value::Int(s.len() as i64))),
+            Value::Bag(b, _) => Some(Ok(Value::Int(b.values().sum::<i64>()))),
+            Value::Mix(m, _) => {
                 let (n, d) = f64_to_rat(m.values().sum::<f64>());
                 Some(Ok(crate::value::make_rat(n, d)))
             }

@@ -226,7 +226,7 @@ pub(super) fn dispatch(
                 format_temporal_num(val.to_f64())
             ))))
         }
-        Value::Bag(b) => {
+        Value::Bag(b, _) => {
             let mut keys: Vec<(&String, &i64)> = b.iter().collect();
             keys.sort_by_key(|(k, _)| (*k).clone());
             let inner = keys
@@ -258,7 +258,7 @@ pub(super) fn dispatch(
                 Some(Ok(Value::str(format!("Bag({})", inner))))
             }
         }
-        Value::Set(s) => {
+        Value::Set(s, _) => {
             let mut keys: Vec<&String> = s.iter().collect();
             keys.sort();
             if method == "raku" || method == "perl" {
@@ -283,7 +283,7 @@ pub(super) fn dispatch(
                 Some(Ok(Value::str(format!("Set({})", inner))))
             }
         }
-        Value::Mix(m) => {
+        Value::Mix(m, _) => {
             let mut keys: Vec<(&String, &f64)> = m.iter().collect();
             keys.sort_by_key(|(k, _)| (*k).clone());
             if method == "raku" || method == "perl" {

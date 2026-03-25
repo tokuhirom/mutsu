@@ -398,9 +398,12 @@ pub enum Value {
     FatRat(i64, i64),
     BigRat(NumBigInt, NumBigInt),
     Complex(f64, f64),
-    Set(Arc<HashSet<String>>),
-    Bag(Arc<HashMap<String, i64>>),
-    Mix(Arc<HashMap<String, f64>>),
+    /// Set (immutable) or SetHash (mutable). The bool is `true` for mutable (SetHash).
+    Set(Arc<HashSet<String>>, bool),
+    /// Bag (immutable) or BagHash (mutable). The bool is `true` for mutable (BagHash).
+    Bag(Arc<HashMap<String, i64>>, bool),
+    /// Mix (immutable) or MixHash (mutable). The bool is `true` for mutable (MixHash).
+    Mix(Arc<HashMap<String, f64>>, bool),
     CompUnitDepSpec {
         short_name: Symbol,
     },
@@ -951,9 +954,9 @@ impl PartialEq for Value {
                     && *r == (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
             }
             (Value::FatRat(a1, b1), Value::FatRat(a2, b2)) => a1 == a2 && b1 == b2,
-            (Value::Set(a), Value::Set(b)) => a == b,
-            (Value::Bag(a), Value::Bag(b)) => a == b,
-            (Value::Mix(a), Value::Mix(b)) => a == b,
+            (Value::Set(a, _), Value::Set(b, _)) => a == b,
+            (Value::Bag(a, _), Value::Bag(b, _)) => a == b,
+            (Value::Mix(a, _), Value::Mix(b, _)) => a == b,
             (
                 Value::CompUnitDepSpec { short_name: a },
                 Value::CompUnitDepSpec { short_name: b },
@@ -1209,14 +1212,24 @@ impl Value {
         }
     }
     pub fn set(s: HashSet<String>) -> Self {
-        Value::Set(Arc::new(s))
+        Value::Set(Arc::new(s), false)
+    }
+    pub fn set_hash(s: HashSet<String>) -> Self {
+        Value::Set(Arc::new(s), true)
     }
     pub fn bag(m: HashMap<String, i64>) -> Self {
-        Value::Bag(Arc::new(m))
+        Value::Bag(Arc::new(m), false)
+    }
+    pub fn bag_hash(m: HashMap<String, i64>) -> Self {
+        Value::Bag(Arc::new(m), true)
     }
     pub fn mix(mut m: HashMap<String, f64>) -> Self {
         m.retain(|_, weight| *weight != 0.0);
-        Value::Mix(Arc::new(m))
+        Value::Mix(Arc::new(m), false)
+    }
+    pub fn mix_hash(mut m: HashMap<String, f64>) -> Self {
+        m.retain(|_, weight| *weight != 0.0);
+        Value::Mix(Arc::new(m), true)
     }
     pub fn slip(items: Vec<Value>) -> Self {
         Value::Slip(Arc::new(items))

@@ -337,7 +337,7 @@ impl Interpreter {
         let expected_for_compare = match (&collected_val, &expected_expanded) {
             (Value::Array(collected_items, ..), Value::Array(expected_items, kind))
                 if collected_items.len() == 1
-                    && matches!(collected_items.first(), Some(Value::Bag(_)))
+                    && matches!(collected_items.first(), Some(Value::Bag(_, _)))
                     && expected_items
                         .iter()
                         .all(|item| matches!(item, Value::Pair(_, _) | Value::ValuePair(_, _))) =>

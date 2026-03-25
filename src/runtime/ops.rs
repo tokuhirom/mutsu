@@ -25,17 +25,17 @@ impl Interpreter {
     fn union_insert_set_elem(elems: &mut std::collections::HashSet<String>, value: &Value) {
         let pair_selected = |weight: &Value| weight.truthy() || matches!(weight, Value::Nil);
         match value {
-            Value::Set(items) => {
+            Value::Set(items, _) => {
                 elems.extend(items.iter().cloned());
             }
-            Value::Bag(items) => {
+            Value::Bag(items, _) => {
                 for (k, v) in items.iter() {
                     if *v > 0 {
                         elems.insert(k.clone());
                     }
                 }
             }
-            Value::Mix(items) => {
+            Value::Mix(items, _) => {
                 for (k, v) in items.iter() {
                     if *v != 0.0 {
                         elems.insert(k.clone());
@@ -83,9 +83,9 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Set(s) => Ok((**s).clone()),
-            Value::Bag(b) => Ok(b.keys().cloned().collect()),
-            Value::Mix(m) => Ok(m.keys().cloned().collect()),
+            Value::Set(s, _) => Ok((**s).clone()),
+            Value::Bag(b, _) => Ok(b.keys().cloned().collect()),
+            Value::Mix(m, _) => Ok(m.keys().cloned().collect()),
             Value::Hash(h) => Ok(h
                 .iter()
                 .filter_map(|(k, v)| {
@@ -133,8 +133,8 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Bag(b) => Ok((**b).clone()),
-            Value::Mix(m) => Ok(m
+            Value::Bag(b, _) => Ok((**b).clone()),
+            Value::Mix(m, _) => Ok(m
                 .iter()
                 .filter_map(|(k, w)| {
                     if *w != 0.0 {
@@ -158,8 +158,8 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Mix(m) => Ok((**m).clone()),
-            Value::Bag(b) => Ok(b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect()),
+            Value::Mix(m, _) => Ok((**m).clone()),
+            Value::Bag(b, _) => Ok(b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect()),
             other => {
                 let set = Self::union_set_keys(other)?;
                 Ok(set.into_iter().map(|k| (k, 1.0)).collect())
@@ -173,7 +173,7 @@ impl Interpreter {
         {
             return Err(RuntimeError::new("Exception"));
         }
-        if matches!(left, Value::Mix(_)) || matches!(right, Value::Mix(_)) {
+        if matches!(left, Value::Mix(_, _)) || matches!(right, Value::Mix(_, _)) {
             let mut l = Self::union_mix_weights(left)?;
             let r = Self::union_mix_weights(right)?;
             for (k, v) in r {
@@ -182,7 +182,7 @@ impl Interpreter {
             }
             return Ok(Value::mix(l));
         }
-        if matches!(left, Value::Bag(_)) || matches!(right, Value::Bag(_)) {
+        if matches!(left, Value::Bag(_, _)) || matches!(right, Value::Bag(_, _)) {
             let mut l = Self::union_bag_counts(left)?;
             let r = Self::union_bag_counts(right)?;
             for (k, v) in r {
@@ -214,10 +214,10 @@ impl Interpreter {
     }
 
     fn apply_set_equality(left: &Value, right: &Value) -> Result<bool, RuntimeError> {
-        if matches!(left, Value::Mix(_)) || matches!(right, Value::Mix(_)) {
+        if matches!(left, Value::Mix(_, _)) || matches!(right, Value::Mix(_, _)) {
             return Ok(Self::set_equal_mix_weights(left)? == Self::set_equal_mix_weights(right)?);
         }
-        if matches!(left, Value::Bag(_)) || matches!(right, Value::Bag(_)) {
+        if matches!(left, Value::Bag(_, _)) || matches!(right, Value::Bag(_, _)) {
             return Ok(Self::set_equal_bag_counts(left)? == Self::set_equal_bag_counts(right)?);
         }
         Ok(Self::union_set_keys(left)? == Self::union_set_keys(right)?)
@@ -254,15 +254,15 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Bag(b) => {
+            Value::Bag(b, _) => {
                 let resolved = crate::runtime::utils::resolve_bag_tab_keys(b);
                 Ok(resolved.into_iter().map(|(k, v)| (k, (v, false))).collect())
             }
-            Value::Mix(m) => Ok(m
+            Value::Mix(m, _) => Ok(m
                 .iter()
                 .map(|(k, v)| (k.clone(), (*v as i64, false)))
                 .collect()),
-            Value::Set(s) => Ok(s.iter().map(|k| (k.clone(), (1, false))).collect()),
+            Value::Set(s, _) => Ok(s.iter().map(|k| (k.clone(), (1, false))).collect()),
             Value::Hash(h) => Ok(h
                 .iter()
                 .filter_map(|(k, v)| {
@@ -341,12 +341,12 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Mix(m) => Ok((**m).clone()),
-            Value::Bag(b) => {
+            Value::Mix(m, _) => Ok((**m).clone()),
+            Value::Bag(b, _) => {
                 let resolved = crate::runtime::utils::resolve_bag_tab_keys(b);
                 Ok(resolved.into_iter().map(|(k, v)| (k, v as f64)).collect())
             }
-            Value::Set(s) => Ok(s.iter().map(|k| (k.clone(), 1.0)).collect()),
+            Value::Set(s, _) => Ok(s.iter().map(|k| (k.clone(), 1.0)).collect()),
             Value::Hash(h) => Ok(h
                 .iter()
                 .filter_map(|(k, v)| {
@@ -436,7 +436,7 @@ impl Interpreter {
         {
             return Err(RuntimeError::new("Exception"));
         }
-        if matches!(left, Value::Mix(_)) || matches!(right, Value::Mix(_)) {
+        if matches!(left, Value::Mix(_, _)) || matches!(right, Value::Mix(_, _)) {
             let l = Self::multiply_mix_weights(left)?;
             let r = Self::multiply_mix_weights(right)?;
             let mut result = std::collections::HashMap::new();
@@ -473,8 +473,8 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Bag(b) => Ok((**b).clone()),
-            Value::Mix(m) => Ok(m
+            Value::Bag(b, _) => Ok((**b).clone()),
+            Value::Mix(m, _) => Ok(m
                 .iter()
                 .filter_map(|(k, w)| {
                     if *w != 0.0 {
@@ -484,7 +484,7 @@ impl Interpreter {
                     }
                 })
                 .collect()),
-            Value::Set(s) => Ok(s.iter().map(|k| (k.clone(), 1)).collect()),
+            Value::Set(s, _) => Ok(s.iter().map(|k| (k.clone(), 1)).collect()),
             Value::Hash(map) => {
                 let mut result = std::collections::HashMap::new();
                 for (k, v) in map.iter() {
@@ -541,9 +541,9 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Mix(m) => Ok((**m).clone()),
-            Value::Bag(b) => Ok(b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect()),
-            Value::Set(s) => Ok(s.iter().map(|k| (k.clone(), 1.0)).collect()),
+            Value::Mix(m, _) => Ok((**m).clone()),
+            Value::Bag(b, _) => Ok(b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect()),
+            Value::Set(s, _) => Ok(s.iter().map(|k| (k.clone(), 1.0)).collect()),
             Value::Hash(map) => {
                 let mut result = std::collections::HashMap::new();
                 for (k, v) in map.iter() {
@@ -609,8 +609,8 @@ impl Interpreter {
         // Determine type level: Mix > Bag > Set, minimum is Bag for (+)
         let type_level = |v: &Value| -> u8 {
             match v {
-                Value::Mix(_) => 2,
-                Value::Bag(_) => 1,
+                Value::Mix(_, _) => 2,
+                Value::Bag(_, _) => 1,
                 Value::Package(sym) => match sym.resolve().as_str() {
                     "Mix" | "MixHash" => 2,
                     "Bag" | "BagHash" => 1,
@@ -932,8 +932,8 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let to_bag_counts = |value: &Value| -> Option<std::collections::HashMap<String, i64>> {
             match value {
-                Value::Bag(items) => Some((**items).clone()),
-                Value::Set(items) => Some(items.iter().map(|k| (k.clone(), 1)).collect()),
+                Value::Bag(items, _) => Some((**items).clone()),
+                Value::Set(items, _) => Some(items.iter().map(|k| (k.clone(), 1)).collect()),
                 Value::Hash(items) => Some({
                     let mut counts = std::collections::HashMap::new();
                     for (k, v) in items.iter() {
@@ -1710,15 +1710,15 @@ impl Interpreter {
                 (start..end).map(Value::Int).collect()
             }
             Value::GenericRange { .. } => crate::runtime::utils::value_to_list(val),
-            Value::Set(items) => items
+            Value::Set(items, _) => items
                 .iter()
                 .map(|s| Value::Pair(s.clone(), Box::new(Value::Bool(true))))
                 .collect(),
-            Value::Bag(items) => items
+            Value::Bag(items, _) => items
                 .iter()
                 .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Int(*v))))
                 .collect(),
-            Value::Mix(items) => items
+            Value::Mix(items, _) => items
                 .iter()
                 .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Num(*v))))
                 .collect(),

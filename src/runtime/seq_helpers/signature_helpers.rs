@@ -74,21 +74,21 @@ impl Interpreter {
         match value {
             Value::Capture { positional, named } => Some((positional.clone(), named.clone())),
             Value::Hash(map) => Some((Vec::new(), (**map).clone())),
-            Value::Set(items) => Some((
+            Value::Set(items, _) => Some((
                 Vec::new(),
                 items
                     .iter()
                     .map(|k| (k.clone(), Value::Bool(true)))
                     .collect(),
             )),
-            Value::Bag(items) => Some((
+            Value::Bag(items, _) => Some((
                 Vec::new(),
                 items
                     .iter()
                     .map(|(k, v)| (k.clone(), Value::Int(*v)))
                     .collect(),
             )),
-            Value::Mix(items) => Some((
+            Value::Mix(items, _) => Some((
                 Vec::new(),
                 items
                     .iter()

@@ -94,9 +94,9 @@ impl Value {
             | (Value::Str(_), Value::Str(_))
             | (Value::Bool(_), Value::Bool(_))
             | (Value::BigRat(_, _), Value::BigRat(_, _))
-            | (Value::Set(_), Value::Set(_))
-            | (Value::Bag(_), Value::Bag(_))
-            | (Value::Mix(_), Value::Mix(_))
+            | (Value::Set(_, _), Value::Set(_, _))
+            | (Value::Bag(_, _), Value::Bag(_, _))
+            | (Value::Mix(_, _), Value::Mix(_, _))
             | (Value::Enum { .. }, Value::Enum { .. })
             | (Value::Regex(_), Value::Regex(_))
             | (Value::RegexWithAdverbs { .. }, Value::RegexWithAdverbs { .. })
@@ -251,9 +251,9 @@ impl Value {
             Value::FatRat(n, _) => !n.is_zero(),
             Value::BigRat(n, _) => !n.is_zero(),
             Value::Complex(r, i) => *r != 0.0 || *i != 0.0,
-            Value::Set(s) => !s.is_empty(),
-            Value::Bag(b) => !b.is_empty(),
-            Value::Mix(m) => !m.is_empty(),
+            Value::Set(s, _) => !s.is_empty(),
+            Value::Bag(b, _) => !b.is_empty(),
+            Value::Mix(m, _) => !m.is_empty(),
             Value::Pair(_, _) | Value::ValuePair(_, _) => true,
             Value::Enum { value, .. } => match value {
                 EnumValue::Int(i) => *i != 0,
@@ -357,9 +357,27 @@ impl Value {
             Value::Array(..) | Value::LazyList(_) => "Array",
             Value::Seq(_) => "Seq",
             Value::Hash(_) => "Hash",
-            Value::Set(_) => "Set",
-            Value::Bag(_) => "Bag",
-            Value::Mix(_) => "Mix",
+            Value::Set(_, is_mutable) => {
+                if *is_mutable {
+                    "SetHash"
+                } else {
+                    "Set"
+                }
+            }
+            Value::Bag(_, is_mutable) => {
+                if *is_mutable {
+                    "BagHash"
+                } else {
+                    "Bag"
+                }
+            }
+            Value::Mix(_, is_mutable) => {
+                if *is_mutable {
+                    "MixHash"
+                } else {
+                    "Mix"
+                }
+            }
             Value::Pair(_, _) | Value::ValuePair(_, _) => "Pair",
             Value::Range(_, _)
             | Value::RangeExcl(_, _)
@@ -460,9 +478,9 @@ impl Value {
         match type_name {
             "Any" => true,
             "Mu" => true,
-            "SetHash" => matches!(self, Value::Set(_)),
-            "BagHash" => matches!(self, Value::Bag(_)),
-            "MixHash" => matches!(self, Value::Mix(_)),
+            "SetHash" => matches!(self, Value::Set(_, true)),
+            "BagHash" => matches!(self, Value::Bag(_, true)),
+            "MixHash" => matches!(self, Value::Mix(_, true)),
             "Cool" => matches!(
                 self,
                 Value::Int(_)
@@ -569,9 +587,9 @@ impl Value {
                     Value::Hash(_)
                         | Value::Pair(_, _)
                         | Value::ValuePair(_, _)
-                        | Value::Set(_)
-                        | Value::Bag(_)
-                        | Value::Mix(_)
+                        | Value::Set(_, _)
+                        | Value::Bag(_, _)
+                        | Value::Mix(_, _)
                         | Value::Capture { .. }
                 ) || matches!(
                     self,
@@ -638,9 +656,27 @@ pub(crate) fn what_type_name(val: &Value) -> String {
         Value::Array(..) | Value::LazyList(_) => "Array".to_string(),
         Value::Seq(_) => "Seq".to_string(),
         Value::Hash(_) => "Hash".to_string(),
-        Value::Set(_) => "Set".to_string(),
-        Value::Bag(_) => "Bag".to_string(),
-        Value::Mix(_) => "Mix".to_string(),
+        Value::Set(_, is_mutable) => {
+            if *is_mutable {
+                "SetHash".to_string()
+            } else {
+                "Set".to_string()
+            }
+        }
+        Value::Bag(_, is_mutable) => {
+            if *is_mutable {
+                "BagHash".to_string()
+            } else {
+                "Bag".to_string()
+            }
+        }
+        Value::Mix(_, is_mutable) => {
+            if *is_mutable {
+                "MixHash".to_string()
+            } else {
+                "Mix".to_string()
+            }
+        }
         Value::Pair(_, _) | Value::ValuePair(_, _) => "Pair".to_string(),
         Value::Range(_, _)
         | Value::RangeExcl(_, _)

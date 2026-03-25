@@ -555,31 +555,31 @@ impl VM {
                 failure_attrs.insert("exception".to_string(), ex);
                 Value::make_instance(Symbol::intern("Failure"), failure_attrs)
             }
-            (Value::Set(s), Value::Array(keys, ..)) => Value::array(
+            (Value::Set(s, _), Value::Array(keys, ..)) => Value::array(
                 keys.iter()
                     .map(|k| Value::Bool(s.contains(&k.to_string_value())))
                     .collect(),
             ),
-            (Value::Set(s), Value::Str(key)) => Value::Bool(s.contains(key.as_str())),
-            (Value::Set(s), idx) => Value::Bool(s.contains(&idx.to_string_value())),
-            (Value::Bag(b), Value::Array(keys, ..)) => Value::array(
+            (Value::Set(s, _), Value::Str(key)) => Value::Bool(s.contains(key.as_str())),
+            (Value::Set(s, _), idx) => Value::Bool(s.contains(&idx.to_string_value())),
+            (Value::Bag(b, _), Value::Array(keys, ..)) => Value::array(
                 keys.iter()
                     .map(|k| Value::Int(*b.get(&k.to_string_value()).unwrap_or(&0)))
                     .collect(),
             ),
-            (Value::Bag(b), Value::Str(key)) => Value::Int(*b.get(key.as_str()).unwrap_or(&0)),
-            (Value::Bag(b), idx) => Value::Int(*b.get(&idx.to_string_value()).unwrap_or(&0)),
-            (Value::Mix(m), Value::Array(keys, ..)) => Value::array(
+            (Value::Bag(b, _), Value::Str(key)) => Value::Int(*b.get(key.as_str()).unwrap_or(&0)),
+            (Value::Bag(b, _), idx) => Value::Int(*b.get(&idx.to_string_value()).unwrap_or(&0)),
+            (Value::Mix(m, _), Value::Array(keys, ..)) => Value::array(
                 keys.iter()
                     .map(|k| {
                         Self::mix_weight_as_value(*m.get(&k.to_string_value()).unwrap_or(&0.0))
                     })
                     .collect(),
             ),
-            (Value::Mix(m), Value::Str(key)) => {
+            (Value::Mix(m, _), Value::Str(key)) => {
                 Self::mix_weight_as_value(*m.get(key.as_str()).unwrap_or(&0.0))
             }
-            (Value::Mix(m), idx) => {
+            (Value::Mix(m, _), idx) => {
                 Self::mix_weight_as_value(*m.get(&idx.to_string_value()).unwrap_or(&0.0))
             }
             // Range indexing (supports infinite ranges)

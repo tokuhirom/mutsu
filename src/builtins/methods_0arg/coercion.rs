@@ -403,7 +403,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     .collect();
                 Some(Ok(Value::array(pairs)))
             }
-            Value::Set(_) | Value::Bag(_) | Value::Mix(_) => Some(Ok(Value::array(
+            Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _) => Some(Ok(Value::array(
                 crate::runtime::utils::value_to_list(target),
             ))),
             _ => Some(Ok(Value::array(vec![target.clone()]))),

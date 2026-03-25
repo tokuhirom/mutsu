@@ -110,6 +110,38 @@ pub(super) fn dispatch(
                 Value::FatRat(n, d) => format!("FatRat|{}/{}", n, d),
                 Value::Complex(r, i) => format!("Complex|{}+{}i", r, i),
                 Value::Nil => format!("Nil|U{}", Symbol::intern("Nil").id()),
+                Value::Set(set, _) => {
+                    let mut keys: Vec<&String> = set.iter().collect();
+                    keys.sort();
+                    use std::hash::{Hash, Hasher};
+                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                    for k in &keys {
+                        k.hash(&mut hasher);
+                    }
+                    format!("Set|{:016X}", hasher.finish())
+                }
+                Value::Bag(bag, _) => {
+                    let mut pairs: Vec<(&String, &i64)> = bag.iter().collect();
+                    pairs.sort_by(|a, b| a.0.cmp(b.0));
+                    use std::hash::{Hash, Hasher};
+                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                    for (k, v) in &pairs {
+                        k.hash(&mut hasher);
+                        v.hash(&mut hasher);
+                    }
+                    format!("Bag|{:016X}", hasher.finish())
+                }
+                Value::Mix(mix, _) => {
+                    let mut pairs: Vec<(&String, &f64)> = mix.iter().collect();
+                    pairs.sort_by(|a, b| a.0.cmp(b.0));
+                    use std::hash::{Hash, Hasher};
+                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                    for (k, v) in &pairs {
+                        k.hash(&mut hasher);
+                        v.to_bits().hash(&mut hasher);
+                    }
+                    format!("Mix|{:016X}", hasher.finish())
+                }
                 _ => format!(
                     "{:?}|0x{:p}",
                     runtime::utils::value_type_name(target),

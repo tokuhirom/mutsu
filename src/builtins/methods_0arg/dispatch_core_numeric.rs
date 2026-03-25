@@ -43,9 +43,9 @@ pub(super) fn dispatch(
             }
             let result = match target {
                 Value::Hash(items) => Value::Int(items.len() as i64),
-                Value::Set(items) => Value::Int(items.len() as i64),
-                Value::Bag(items) => Value::Int(items.len() as i64),
-                Value::Mix(items) => Value::Int(items.len() as i64),
+                Value::Set(items, _) => Value::Int(items.len() as i64),
+                Value::Bag(items, _) => Value::Int(items.len() as i64),
+                Value::Mix(items, _) => Value::Int(items.len() as i64),
                 Value::Junction { values, .. } => Value::Int(values.len() as i64),
                 Value::Instance {
                     class_name,

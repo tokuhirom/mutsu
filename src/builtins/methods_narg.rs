@@ -1088,7 +1088,7 @@ pub(crate) fn native_method_1arg(
                     .collect::<Vec<_>>()
                     .join("\n");
                 Some(Ok(Value::str(rendered)))
-            } else if let Value::Bag(items) = target {
+            } else if let Value::Bag(items, _) = target {
                 let rendered = items
                     .iter()
                     .map(|(k, v)| {
@@ -1097,14 +1097,14 @@ pub(crate) fn native_method_1arg(
                     .collect::<Vec<_>>()
                     .join("\n");
                 Some(Ok(Value::str(rendered)))
-            } else if let Value::Set(items) = target {
+            } else if let Value::Set(items, _) = target {
                 let rendered = items
                     .iter()
                     .map(|k| runtime::format_sprintf_args(&fmt, &[Value::str(k.clone())]))
                     .collect::<Vec<_>>()
                     .join("\n");
                 Some(Ok(Value::str(rendered)))
-            } else if let Value::Mix(items) = target {
+            } else if let Value::Mix(items, _) = target {
                 let rendered = items
                     .iter()
                     .map(|(k, v)| {
@@ -1394,13 +1394,13 @@ pub(crate) fn native_method_1arg(
             }
         }
         "pick" => {
-            if matches!(target, Value::Mix(_)) {
+            if matches!(target, Value::Mix(_, _)) {
                 return Some(Err(RuntimeError::new(
                     "Cannot call .pick on a Mix (immutable)",
                 )));
             }
             // For Bag, use weighted picking without expanding to a flat list
-            if let Value::Bag(bag) = target {
+            if let Value::Bag(bag, _) = target {
                 let total_items: i128 = bag.values().map(|c| *c as i128).sum();
                 let count: i128 = match arg {
                     Value::Whatever => total_items,
@@ -1450,7 +1450,7 @@ pub(crate) fn native_method_1arg(
                 return Some(Ok(Value::array(result)));
             }
             // For Set, pick returns keys (strings) without replacement
-            if let Value::Set(set) = target {
+            if let Value::Set(set, _) = target {
                 let mut keys: Vec<String> = set.iter().cloned().collect();
                 let count: usize = match arg {
                     Value::Whatever => keys.len(),
@@ -1586,7 +1586,7 @@ pub(crate) fn native_method_1arg(
             }))
         }
         "pickpairs" => {
-            if let Value::Bag(bag) = target {
+            if let Value::Bag(bag, _) = target {
                 let count = match arg {
                     Value::Whatever => bag.len(),
                     Value::Int(n) => (*n).max(0) as usize,
@@ -1616,8 +1616,9 @@ pub(crate) fn native_method_1arg(
             None
         }
         "grab" | "grabpairs" => match target {
-            Value::Bag(_) => Some(Err(RuntimeError::immutable("Bag", method))),
-            Value::Set(_) => Some(Err(RuntimeError::immutable("Set", method))),
+            Value::Bag(_, _) => Some(Err(RuntimeError::immutable("Bag", method))),
+            Value::Set(_, _) => Some(Err(RuntimeError::immutable("Set", method))),
+            Value::Mix(_, _) => Some(Err(RuntimeError::immutable("Mix", method))),
             _ => None,
         },
         "roll" => {
@@ -1635,7 +1636,7 @@ pub(crate) fn native_method_1arg(
                 }
                 _ => return None,
             };
-            if let Value::Mix(items) = target {
+            if let Value::Mix(items, _) = target {
                 if count.is_none() {
                     let generated = 131_072usize;
                     let mut out = Vec::with_capacity(generated);
@@ -1660,7 +1661,7 @@ pub(crate) fn native_method_1arg(
                 }
                 return Some(Ok(Value::array(result)));
             }
-            if let Value::Bag(items) = target {
+            if let Value::Bag(items, _) = target {
                 if count.is_none() {
                     let generated = 131_072usize;
                     let mut out = Vec::with_capacity(generated);
@@ -1685,7 +1686,7 @@ pub(crate) fn native_method_1arg(
                 }
                 return Some(Ok(Value::array(result)));
             }
-            if let Value::Set(items) = target {
+            if let Value::Set(items, _) = target {
                 let keys: Vec<&String> = items.iter().collect();
                 if keys.is_empty() {
                     return Some(Ok(Value::Seq(Arc::new(Vec::new()))));
@@ -2436,7 +2437,7 @@ pub(crate) fn native_method_2arg(
                     .collect::<Vec<_>>()
                     .join(&sep);
                 Some(Ok(Value::str(rendered)))
-            } else if let Value::Bag(items) = target {
+            } else if let Value::Bag(items, _) = target {
                 let rendered = items
                     .iter()
                     .map(|(k, v)| {
@@ -2448,14 +2449,14 @@ pub(crate) fn native_method_2arg(
                     .collect::<Vec<_>>()
                     .join(&sep);
                 Some(Ok(Value::str(rendered)))
-            } else if let Value::Set(items) = target {
+            } else if let Value::Set(items, _) = target {
                 let rendered = items
                     .iter()
                     .map(|k| runtime::format_sprintf_args(&fmt_str, &[Value::str(k.clone())]))
                     .collect::<Vec<_>>()
                     .join(&sep);
                 Some(Ok(Value::str(rendered)))
-            } else if let Value::Mix(items) = target {
+            } else if let Value::Mix(items, _) = target {
                 let rendered = items
                     .iter()
                     .map(|(k, v)| {

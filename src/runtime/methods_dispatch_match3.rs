@@ -197,7 +197,7 @@ impl Interpreter {
             )));
         }
         // MixHash.grab: select and remove random element(s)
-        if let Value::Mix(ref mix) = target {
+        if let Value::Mix(ref mix, ..) = target {
             let count = if args.is_empty() {
                 1usize
             } else {
@@ -237,7 +237,7 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        let Value::Mix(ref mix) = target else {
+        let Value::Mix(ref mix, ..) = target else {
             return None;
         };
         let count = if args.is_empty() {
