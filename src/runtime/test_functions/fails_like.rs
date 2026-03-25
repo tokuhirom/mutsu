@@ -139,7 +139,7 @@ impl Interpreter {
                 // Skip the second test since the first failed
                 {
                     let state = self.test_state.get_or_insert_with(TestState::new);
-                    state.ran += 1;
+                    state.next_ran();
                 }
                 let ran = self.test_state.as_ref().map(|s| s.ran).unwrap_or(0);
                 self.emit_output(&format!("ok {} - # SKIP {}\n", ran, fail_msg));
@@ -233,7 +233,7 @@ impl Interpreter {
             // Skip remaining tests
             {
                 let state = self.test_state.get_or_insert_with(TestState::new);
-                state.ran += 1;
+                state.next_ran();
             }
             let ran = self.test_state.as_ref().map(|s| s.ran).unwrap_or(0);
             self.emit_output(&format!(
