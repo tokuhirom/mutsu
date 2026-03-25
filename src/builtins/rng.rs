@@ -75,6 +75,11 @@ pub(crate) fn builtin_rand() -> f64 {
     RNG.with(|rng| rng.borrow_mut().next_f64())
 }
 
+/// Return a random u64 with full 64-bit entropy
+pub(crate) fn builtin_rand_u64() -> u64 {
+    RNG.with(|rng| rng.borrow_mut().next_u64())
+}
+
 /// Seed the RNG
 pub(crate) fn builtin_srand(seed: u64) {
     RNG.with(|rng| {

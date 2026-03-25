@@ -57,7 +57,7 @@ impl Interpreter {
             (Some(left), Some(right)) => {
                 if matches!(left, Value::Junction { .. }) || matches!(right, Value::Junction { .. })
                 {
-                    Self::eqv_with_junctions(left, right).truthy()
+                    Self::eq_with_junctions(left, right).truthy()
                 } else if matches!(
                     left,
                     Value::Range(..)

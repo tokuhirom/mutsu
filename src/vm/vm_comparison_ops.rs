@@ -74,6 +74,16 @@ impl VM {
             {
                 Ok(Value::Bool(runtime::big_rat_parts_equal(a, b)))
             } else {
+                // Handle Int/BigInt comparison with exact precision
+                match (&l, &r) {
+                    (Value::BigInt(a), Value::Int(b)) | (Value::Int(b), Value::BigInt(a)) => {
+                        return Ok(Value::Bool(**a == num_bigint::BigInt::from(*b)));
+                    }
+                    (Value::BigInt(a), Value::BigInt(b)) => {
+                        return Ok(Value::Bool(a == b));
+                    }
+                    _ => {}
+                }
                 let needs_float = !std::mem::discriminant(&l).eq(&std::mem::discriminant(&r))
                     || matches!(l, Value::Nil);
                 if needs_float {
@@ -557,6 +567,10 @@ impl VM {
             }
             (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
                 runtime::version_cmp_parts(ap, bp)
+            }
+            // Enum values: compare by their integer value
+            (Value::Enum { value: av, .. }, Value::Enum { value: bv, .. }) => {
+                av.as_i64().cmp(&bv.as_i64())
             }
             _ => left.to_string_value().cmp(&right.to_string_value()),
         }

@@ -252,6 +252,27 @@ impl Interpreter {
         ]))
     }
 
+    /// Perform `eq` (string) comparison that threads through Junctions,
+    /// returning a Value (possibly a Junction of Bools).
+    /// Used by `is` which compares stringified values.
+    pub(crate) fn eq_with_junctions(left: &Value, right: &Value) -> Value {
+        if let Value::Junction { kind, values } = left {
+            let results: Vec<Value> = values
+                .iter()
+                .map(|v| Self::eq_with_junctions(v, right))
+                .collect();
+            return Value::junction(kind.clone(), results);
+        }
+        if let Value::Junction { kind, values } = right {
+            let results: Vec<Value> = values
+                .iter()
+                .map(|v| Self::eq_with_junctions(left, v))
+                .collect();
+            return Value::junction(kind.clone(), results);
+        }
+        Value::Bool(left.to_string_value() == right.to_string_value())
+    }
+
     /// Perform `eqv` comparison that threads through Junctions,
     /// returning a Value (possibly a Junction of Bools).
     pub(crate) fn eqv_with_junctions(left: &Value, right: &Value) -> Value {

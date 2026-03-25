@@ -2686,6 +2686,10 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
                 compare_values(av, bv)
             }
         }
+        // Enum values: compare by their integer value
+        (Value::Enum { value: av, .. }, Value::Enum { value: bv, .. }) => {
+            av.as_i64().cmp(&bv.as_i64()) as i32
+        }
         _ => {
             if let (Some((an, ad)), Some((bn, bd))) = (to_rat_parts(a), to_rat_parts(b)) {
                 let cmp = compare_rat_parts((an, ad), (bn, bd)) as i32;
