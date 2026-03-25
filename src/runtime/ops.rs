@@ -1807,6 +1807,20 @@ impl Interpreter {
                     Ok(Value::Bool(false))
                 }
             }
+            // BigInt vs BigInt
+            (Value::BigInt(a), Value::BigInt(b)) => {
+                let ord = a.cmp(&b) as i32;
+                Ok(Value::Bool(f(ord)))
+            }
+            // BigInt vs Int (and vice versa) — exact comparison
+            (Value::BigInt(a), Value::Int(b)) => {
+                let ord = a.as_ref().cmp(&num_bigint::BigInt::from(b)) as i32;
+                Ok(Value::Bool(f(ord)))
+            }
+            (Value::Int(a), Value::BigInt(b)) => {
+                let ord = num_bigint::BigInt::from(a).cmp(b.as_ref()) as i32;
+                Ok(Value::Bool(f(ord)))
+            }
             (ref left_val, ref right_val) => {
                 // Fallback: convert both to f64 for cross-type comparisons (e.g. Num vs Rat)
                 let a = super::to_float_value(left_val).unwrap_or(0.0);

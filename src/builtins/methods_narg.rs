@@ -1190,6 +1190,48 @@ pub(crate) fn native_method_1arg(
                 buf.reverse();
                 Some(Ok(Value::str(String::from_utf8(buf).unwrap())))
             }
+            Value::BigInt(n) => {
+                let radix = match arg {
+                    Value::Int(r) if (2..=36).contains(r) => *r as u32,
+                    Value::Int(_) => {
+                        return Some(Ok(out_of_range_failure("base requires radix 2..36")));
+                    }
+                    Value::Str(s) => match s.parse::<u32>() {
+                        Ok(r) if (2..=36).contains(&r) => r,
+                        _ => {
+                            return Some(Ok(out_of_range_failure("base requires radix 2..36")));
+                        }
+                    },
+                    _ => {
+                        return Some(Ok(out_of_range_failure("base requires radix 2..36")));
+                    }
+                };
+                use num_traits::{Signed, Zero};
+                let negative = n.is_negative();
+                let mut val = if negative {
+                    -n.as_ref().clone()
+                } else {
+                    n.as_ref().clone()
+                };
+                if val.is_zero() {
+                    return Some(Ok(Value::str_from("0")));
+                }
+                let digits = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+                let radix_big = num_bigint::BigInt::from(radix);
+                let mut buf = Vec::new();
+                while !val.is_zero() {
+                    let rem = &val % &radix_big;
+                    use num_traits::ToPrimitive;
+                    let digit_idx = rem.to_usize().unwrap_or(0);
+                    buf.push(digits[digit_idx]);
+                    val /= &radix_big;
+                }
+                if negative {
+                    buf.push(b'-');
+                }
+                buf.reverse();
+                Some(Ok(Value::str(String::from_utf8(buf).unwrap())))
+            }
             Value::Num(f) => {
                 if f.is_infinite() || f.is_nan() {
                     return Some(Err(RuntimeError::new(format!(
@@ -1429,6 +1471,33 @@ pub(crate) fn native_method_1arg(
                 keys.truncate(pick_count);
                 return Some(Ok(Value::array(keys.into_iter().map(Value::str).collect())));
             }
+            // Fast path for integer ranges — avoid materializing
+            if let Some(result) = range_pick_n_fast(target, arg) {
+                return Some(Ok(result));
+            }
+            // .pick(**) — lazy infinite shuffled cycles
+            if matches!(arg, Value::HyperWhatever) {
+                let pool = runtime::value_to_list(target);
+                if pool.is_empty() {
+                    return Some(Ok(Value::array(Vec::new())));
+                }
+                // Pre-generate several cycles of shuffled picks
+                let num_cycles = 4;
+                let mut cached = Vec::with_capacity(pool.len() * num_cycles);
+                for _ in 0..num_cycles {
+                    let mut cycle = pool.clone();
+                    let len = cycle.len();
+                    for i in (1..len).rev() {
+                        let j = (crate::builtins::rng::builtin_rand() * (i + 1) as f64) as usize
+                            % (i + 1);
+                        cycle.swap(i, j);
+                    }
+                    cached.extend(cycle);
+                }
+                return Some(Ok(Value::LazyList(Arc::new(
+                    crate::value::LazyList::new_cached(cached),
+                ))));
+            }
             let mut items = runtime::value_to_list(target);
             Some(Ok(match arg {
                 Value::Whatever => {
@@ -1653,16 +1722,11 @@ pub(crate) fn native_method_1arg(
             }
             let sample_from_range = |range: &Value| -> Option<Value> {
                 let random_i64 = |lo: i64, hi: i64| -> Value {
+                    use crate::builtins::methods_0arg::dispatch_core_range::range_pick_one_i64_pub;
                     if hi <= lo {
                         return Value::Int(lo);
                     }
-                    let span = (hi as i128 - lo as i128 + 1) as f64;
-                    let mut offset = (crate::builtins::rng::builtin_rand() * span) as i128;
-                    let max_offset = hi as i128 - lo as i128;
-                    if offset > max_offset {
-                        offset = max_offset;
-                    }
-                    Value::Int((lo as i128 + offset) as i64)
+                    range_pick_one_i64_pub(lo, hi)
                 };
                 match range {
                     Value::Range(start, end) => Some(random_i64(*start, *end)),
@@ -1693,6 +1757,10 @@ pub(crate) fn native_method_1arg(
                         excl_start,
                         excl_end,
                     } => {
+                        // Try BigInt-based fast path for integer ranges
+                        if let Some(result) = crate::builtins::methods_0arg::dispatch_core_range::generic_range_pick_one_pub(start, end, *excl_start, *excl_end) {
+                            return Some(result);
+                        }
                         if let (Some(s), Some(e)) =
                             (runtime::to_float_value(start), runtime::to_float_value(end))
                             && s.is_finite()
@@ -2921,5 +2989,108 @@ fn rat_base_repeating(n: i64, d: i64, radix: u32) -> (String, String) {
         let digit = (num / den) as usize;
         frac_digits.push(digit);
         num %= den;
+    }
+}
+
+/// Fast path for `.pick(n)` on integer Range types.
+/// Returns None if target is not an integer range (caller should fall back).
+fn range_pick_n_fast(target: &Value, arg: &Value) -> Option<Value> {
+    use crate::builtins::methods_0arg::dispatch_core_range::{
+        generic_range_pick_n, range_pick_n_i64,
+    };
+
+    // Determine effective inclusive bounds
+    let (start, end, is_generic, generic_start, generic_end, excl_start, excl_end) = match target {
+        Value::Range(a, b) => (*a, *b, false, None, None, false, false),
+        Value::RangeExcl(a, b) => (*a, *b - 1, false, None, None, false, false),
+        Value::RangeExclStart(a, b) => (*a + 1, *b, false, None, None, false, false),
+        Value::RangeExclBoth(a, b) => (*a + 1, *b - 1, false, None, None, false, false),
+        Value::GenericRange {
+            start,
+            end,
+            excl_start,
+            excl_end,
+        } => (
+            0,
+            0,
+            true,
+            Some(start.clone()),
+            Some(end.clone()),
+            *excl_start,
+            *excl_end,
+        ),
+        _ => return None,
+    };
+
+    // Determine count from arg
+    let is_whatever = matches!(arg, Value::Whatever)
+        || matches!(arg, Value::Num(f) if f.is_infinite() && f.is_sign_positive());
+
+    if is_generic {
+        let gs = generic_start.as_ref().unwrap();
+        let ge = generic_end.as_ref().unwrap();
+        // Check if endpoints are integer-like
+        if !matches!(
+            gs.as_ref(),
+            Value::Int(_) | Value::BigInt(_) | Value::Bool(_)
+        ) || !matches!(
+            ge.as_ref(),
+            Value::Int(_) | Value::BigInt(_) | Value::Bool(_)
+        ) {
+            return None;
+        }
+
+        if is_whatever {
+            // pick(*) on a huge range — cannot materialize, return what we can
+            // Actually for GenericRange with BigInt endpoints, pick(*) means return all
+            // elements shuffled. For very large ranges this is impossible, so fall back.
+            return None;
+        }
+
+        let count = match arg {
+            Value::Int(n) => (*n).max(0) as usize,
+            Value::Num(f) => (*f as i64).max(0) as usize,
+            Value::Rat(n, d) if *d != 0 => (*n / *d).max(0) as usize,
+            Value::Str(s) => s.trim().parse::<i64>().unwrap_or(0).max(0) as usize,
+            _ => return None,
+        };
+
+        if count == 0 {
+            return Some(Value::array(Vec::new()));
+        }
+
+        let items = generic_range_pick_n(gs, ge, excl_start, excl_end, count)?;
+        Some(Value::array(items))
+    } else {
+        if end < start {
+            return Some(Value::array(Vec::new()));
+        }
+
+        if is_whatever {
+            // pick(*) — return all elements shuffled
+            // Only feasible for ranges that fit in memory
+            let range_size = (end as i128) - (start as i128) + 1;
+            if range_size > 100_000_000 {
+                // Too large to materialize, fall back
+                return None;
+            }
+            let items = range_pick_n_i64(start, end, range_size as usize);
+            return Some(Value::array(items));
+        }
+
+        let count = match arg {
+            Value::Int(n) => (*n).max(0) as usize,
+            Value::Num(f) => (*f as i64).max(0) as usize,
+            Value::Rat(n, d) if *d != 0 => (*n / *d).max(0) as usize,
+            Value::Str(s) => s.trim().parse::<i64>().unwrap_or(0).max(0) as usize,
+            _ => return None,
+        };
+
+        if count == 0 {
+            return Some(Value::array(Vec::new()));
+        }
+
+        let items = range_pick_n_i64(start, end, count);
+        Some(Value::array(items))
     }
 }

@@ -16,7 +16,7 @@ mod dispatch_core_coerce;
 mod dispatch_core_list;
 mod dispatch_core_math;
 mod dispatch_core_numeric;
-mod dispatch_core_range;
+pub(crate) mod dispatch_core_range;
 mod dispatch_core_repr;
 mod dispatch_core_str;
 mod dispatch_core_unicode;
