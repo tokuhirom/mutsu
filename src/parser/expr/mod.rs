@@ -14,6 +14,7 @@ use crate::value::Value;
 
 use super::helpers::ws;
 pub(in crate::parser) use postfix::postfix_expr_continue;
+pub(in crate::parser) use postfix::{QuotedMethodName, parse_quoted_method_name};
 use precedence::{or_expr, ternary};
 
 thread_local! {

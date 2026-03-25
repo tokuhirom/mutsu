@@ -1176,7 +1176,8 @@ mod tests {
         let (rest, stmts) = program(".=fmt('%03b');").unwrap();
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
-        assert!(matches!(&stmts[0], Stmt::Expr(Expr::MethodCall { .. })));
+        // .=method on topic assigns back to $_
+        assert!(matches!(&stmts[0], Stmt::Assign { name, .. } if name == "_"));
     }
 
     #[test]
@@ -1184,10 +1185,8 @@ mod tests {
         let (rest, stmts) = program("(class { method foo() { self } }.new).=foo;").unwrap();
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
-        assert!(matches!(
-            &stmts[0],
-            Stmt::Expr(Expr::Call { name, .. }) if name == "sink"
-        ));
+        // .= on non-lvalue expression is parsed as a method call in expression context
+        assert!(matches!(&stmts[0], Stmt::Expr(Expr::MethodCall { .. })));
     }
 
     #[test]

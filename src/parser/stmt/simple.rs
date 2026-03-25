@@ -73,7 +73,7 @@ thread_local! {
         RefCell::new(HashMap::new());
 }
 
-pub(super) static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
+pub(in crate::parser) static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 fn flatten_xor_chain_terms<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
     if let Expr::Binary { left, op, right } = expr
