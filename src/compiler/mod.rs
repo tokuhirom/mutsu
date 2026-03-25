@@ -9,6 +9,16 @@ use crate::value::Value;
 
 static STATE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 mod expr;
+mod expr_binary;
+mod expr_block;
+mod expr_call;
+mod expr_closure;
+mod expr_data;
+mod expr_helpers;
+mod expr_method;
+mod expr_ops;
+mod expr_postfix;
+mod expr_unary;
 mod helpers;
 mod stmt;
 
