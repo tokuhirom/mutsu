@@ -28,7 +28,7 @@ pub(super) fn parse_sigilless_decl(
         let decl = Stmt::VarDecl {
             name: name.clone(),
             expr,
-            type_constraint,
+            type_constraint: type_constraint.clone(),
             is_state,
             is_our,
             is_dynamic: false,
@@ -37,7 +37,14 @@ pub(super) fn parse_sigilless_decl(
             custom_traits: Vec::new(),
             where_constraint: None,
         };
-        let stmt = Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigillessReadonly(name)]);
+        // Sigilless variables without type constraint are always readonly.
+        // With a type constraint (e.g. `my Mu \a := $a`), the variable
+        // binds to the container, preserving mutability.
+        let stmt = if type_constraint.is_none() {
+            Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigillessReadonly(name)])
+        } else {
+            decl
+        };
         if apply_modifier {
             return parse_statement_modifier(r, stmt);
         }
@@ -50,7 +57,7 @@ pub(super) fn parse_sigilless_decl(
         let decl = Stmt::VarDecl {
             name: name.clone(),
             expr,
-            type_constraint,
+            type_constraint: type_constraint.clone(),
             is_state,
             is_our,
             is_dynamic: false,
@@ -59,7 +66,11 @@ pub(super) fn parse_sigilless_decl(
             custom_traits: Vec::new(),
             where_constraint: None,
         };
-        let stmt = Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigillessReadonly(name)]);
+        let stmt = if type_constraint.is_none() {
+            Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigillessReadonly(name)])
+        } else {
+            decl
+        };
         if apply_modifier {
             return parse_statement_modifier(r, stmt);
         }
