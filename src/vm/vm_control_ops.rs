@@ -220,6 +220,35 @@ impl VM {
             return Ok(());
         }
 
+        // Fast path for integer range iteration: avoid materializing the entire range.
+        // Applies when the range is simple (arity 1, not threaded, no writeback, no collect).
+        if !spec.threaded && !spec.collect && !spec.do_writeback && spec.arity <= 1 && !spec.kv_mode
+        {
+            let int_range = match &iterable {
+                Value::Range(a, b) => Some((*a, *b, true)), // a..b (inclusive)
+                Value::RangeExcl(a, b) => Some((*a, *b, false)), // a..^b (exclusive end)
+                Value::RangeExclStart(a, b) => Some((*a + 1, *b, true)),
+                Value::RangeExclBoth(a, b) => Some((*a + 1, *b, false)),
+                _ => None,
+            };
+            if let Some((start, end_val, inclusive)) = int_range {
+                let body_start = *ip + 1;
+                let loop_end = spec.body_end as usize;
+                self.exec_for_loop_int_range(
+                    code,
+                    spec,
+                    start,
+                    end_val,
+                    inclusive,
+                    body_start,
+                    loop_end,
+                    compiled_fns,
+                )?;
+                *ip = loop_end;
+                return Ok(());
+            }
+        }
+
         let raw_items = if let Value::LazyList(ref ll) = iterable {
             self.force_lazy_list_vm(ll)?
         } else {
@@ -589,6 +618,165 @@ impl VM {
                 }
             }
             self.stack.push(Value::array(coll));
+        }
+        Ok(())
+    }
+
+    /// Fast path for iterating over integer ranges (e.g., `for ^N`, `for 0..N`).
+    /// Avoids materializing the entire range as a Vec<Value> by using a counter.
+    #[allow(clippy::too_many_arguments)]
+    fn exec_for_loop_int_range(
+        &mut self,
+        code: &CompiledCode,
+        spec: &ForLoopSpec,
+        start: i64,
+        end_val: i64,
+        inclusive: bool,
+        body_start: usize,
+        loop_end: usize,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
+        let param_name = spec
+            .param_idx
+            .map(|idx| match &code.constants[idx as usize] {
+                Value::Str(s) => s.to_string(),
+                _ => unreachable!("ForLoop param must be a string constant"),
+            });
+        let saved_topic = spec
+            .restore_topic
+            .then(|| self.interpreter.env().get("_").cloned())
+            .flatten();
+        let saved_topic_source = self.topic_source_var.take();
+
+        self.env_dirty = true;
+        let end = if inclusive { end_val + 1 } else { end_val };
+        let mut i = start;
+
+        'for_loop: while i < end {
+            let item = Value::Int(i);
+            self.topic_source_var = None;
+
+            if param_name.is_none() {
+                self.interpreter
+                    .env_mut()
+                    .insert("_".to_string(), item.clone());
+            }
+            if let Some(ref name) = param_name {
+                self.interpreter
+                    .env_mut()
+                    .insert(name.clone(), item.clone());
+                if let Some(bare) = name.strip_prefix("&^") {
+                    self.interpreter
+                        .env_mut()
+                        .insert(format!("&{}", bare), item.clone());
+                } else if let Some(bare) = name.strip_prefix('^') {
+                    self.interpreter
+                        .env_mut()
+                        .insert(bare.to_string(), item.clone());
+                }
+            }
+            if let Some(slot) = spec.param_local {
+                self.locals[slot as usize] = item.clone();
+            }
+            if !spec.is_rw
+                && let Some(ref name) = param_name
+            {
+                self.interpreter.mark_readonly(name);
+            }
+            'body_redo: loop {
+                match self.run_range(code, body_start, loop_end, compiled_fns) {
+                    Ok(()) => {
+                        if !code.state_locals.is_empty() {
+                            self.sync_state_locals_in_range(code, body_start, loop_end);
+                        }
+                        self.write_back_to_source_var(
+                            code,
+                            &spec.source_var_names,
+                            &param_name,
+                            (i - start) as usize,
+                        );
+                        break 'body_redo;
+                    }
+                    Err(e) if e.is_succeed => {
+                        break 'body_redo;
+                    }
+                    Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
+                        if param_name.is_none() {
+                            self.interpreter
+                                .env_mut()
+                                .insert("_".to_string(), item.clone());
+                        }
+                        if let Some(ref name) = param_name {
+                            self.interpreter
+                                .env_mut()
+                                .insert(name.clone(), item.clone());
+                        }
+                        if let Some(slot) = spec.param_local {
+                            self.locals[slot as usize] = item.clone();
+                        }
+                        continue 'body_redo;
+                    }
+                    Err(e)
+                        if e.is_leave
+                            && e.leave_callable_id.is_none()
+                            && e.leave_routine.is_none()
+                            && Self::label_matches(&e.label, &spec.label) =>
+                    {
+                        if let Some(v) = e.return_value {
+                            self.interpreter
+                                .env_mut()
+                                .insert("_".to_string(), v.clone());
+                            self.stack.push(v);
+                        }
+                        break 'for_loop;
+                    }
+                    Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
+                        break 'for_loop;
+                    }
+                    Err(e) if e.is_next && Self::label_matches(&e.label, &spec.label) => {
+                        break 'body_redo;
+                    }
+                    Err(e) => {
+                        if !spec.is_rw
+                            && let Some(ref name) = param_name
+                        {
+                            self.interpreter.readonly_vars_mut().remove(name);
+                        }
+                        if spec.restore_topic {
+                            match saved_topic.clone() {
+                                Some(v) => {
+                                    self.interpreter.env_mut().insert("_".to_string(), v);
+                                }
+                                None => {
+                                    self.interpreter.env_mut().remove("_");
+                                }
+                            }
+                        }
+                        return Err(e);
+                    }
+                }
+            }
+            if self.interpreter.is_halted() {
+                break;
+            }
+            i += 1;
+        }
+        // Unmark readonly params after loop completion
+        if !spec.is_rw
+            && let Some(ref name) = param_name
+        {
+            self.interpreter.readonly_vars_mut().remove(name);
+        }
+        self.topic_source_var = saved_topic_source;
+        if spec.restore_topic {
+            match saved_topic {
+                Some(v) => {
+                    self.interpreter.env_mut().insert("_".to_string(), v);
+                }
+                None => {
+                    self.interpreter.env_mut().remove("_");
+                }
+            }
         }
         Ok(())
     }
