@@ -66,6 +66,9 @@ impl VM {
             self.stack.push(target);
             return Ok(());
         }
+        if let Value::LazyIoLines { .. } = target {
+            target = self.force_if_lazy_io_lines(target)?;
+        }
         if let Value::LazyList(ref ll) = target {
             let forced = if matches!(
                 ll.env.get("__mutsu_lazylist_from_gather"),
