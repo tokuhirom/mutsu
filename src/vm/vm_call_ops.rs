@@ -390,7 +390,7 @@ impl VM {
             if name == "start" {
                 self.sync_env_from_locals(code);
             }
-            let result = self.interpreter.call_function(&name, args)?;
+            let result = self.call_function_compiled_first(&name, args, compiled_fns)?;
             let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
             self.stack.push(result);
             self.env_dirty = true;
@@ -1787,7 +1787,7 @@ impl VM {
                 self.sync_env_from_locals(code);
             }
             self.interpreter.set_pending_call_arg_sources(arg_sources);
-            let result = self.interpreter.call_function(&name, args);
+            let result = self.call_function_compiled_first(&name, args, compiled_fns);
             self.interpreter.set_pending_call_arg_sources(None);
             result?
         };
@@ -1847,7 +1847,8 @@ impl VM {
             {
                 let mut call_args = vec![item.clone()];
                 call_args.extend(args.clone());
-                let val = self.interpreter.call_function(&method, call_args)?;
+                let empty_fns = HashMap::new();
+                let val = self.call_function_compiled_first(&method, call_args, &empty_fns)?;
                 results.push(val);
                 continue;
             }

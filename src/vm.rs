@@ -71,6 +71,9 @@ pub(crate) struct VM {
     constant_context: bool,
     // TODO: local slot aliases for `:=` binding - needs careful implementation
     // to avoid S12-class/mro-6e.t regression
+    /// Cache for on-the-fly compiled functions, keyed by fingerprint.
+    /// Prevents re-compilation which would break state variables.
+    otf_compile_cache: HashMap<u64, CompiledFunction>,
 }
 
 impl VM {
@@ -208,6 +211,7 @@ impl VM {
             resume_ip: None,
             bind_context: false,
             constant_context: false,
+            otf_compile_cache: HashMap::new(),
         }
     }
 

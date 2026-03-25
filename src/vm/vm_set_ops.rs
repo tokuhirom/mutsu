@@ -822,7 +822,8 @@ impl VM {
             .interpreter
             .resolve_function_with_types(infix_name, &values)
         {
-            let result = self.interpreter.call_function_def(&def, &values)?;
+            let empty_fns = HashMap::new();
+            let result = self.compile_and_call_function_def(&def, values.clone(), &empty_fns)?;
             self.stack.push(result);
             return Ok(());
         }

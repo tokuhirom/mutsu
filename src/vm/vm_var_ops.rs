@@ -738,25 +738,16 @@ impl VM {
                 && !name.starts_with('%')
                 && matches!(v, Value::Routine { .. } | Value::Sub(_) | Value::WeakSub(_))
             {
-                // Try compiled function dispatch first, then fall back to interpreter.
-                // Note: interpreter.call_function handles pseudo-package resolution
-                // (SETTING::, OUTER::, etc.) which vm_call_on_value does not.
-                if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
-                    let pkg = self.interpreter.current_package().to_string();
-                    let result = self.call_compiled_function_named(
-                        cf,
-                        Vec::new(),
-                        compiled_fns,
-                        &pkg,
-                        name,
-                    )?;
-                    self.env_dirty = true;
-                    result
+                // Pseudo-package names (SETTING::, OUTER::, CALLER::) need interpreter's
+                // special resolution logic, so use call_function directly for those.
+                // For regular qualified names, try compiled dispatch first.
+                let result = if self.is_interpreter_handled_function(name) {
+                    self.interpreter.call_function(name, Vec::new())?
                 } else {
-                    let result = self.interpreter.call_function(name, Vec::new())?;
-                    self.env_dirty = true;
-                    result
-                }
+                    self.call_function_compiled_first(name, Vec::new(), compiled_fns)?
+                };
+                self.env_dirty = true;
+                result
             } else if !name.starts_with('$') && !name.starts_with('@') && !name.starts_with('%') {
                 v.clone()
             } else {
@@ -772,7 +763,7 @@ impl VM {
                 self.env_dirty = true;
                 result
             } else {
-                let result = self.interpreter.call_function_def(&def, &[])?;
+                let result = self.compile_and_call_function_def(&def, Vec::new(), compiled_fns)?;
                 self.env_dirty = true;
                 result
             }
@@ -787,18 +778,14 @@ impl VM {
                 Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
             )
         {
-            let result = self
-                .interpreter
-                .call_sub_value(callable, Vec::new(), false)?;
+            let result = self.vm_call_on_value(callable, Vec::new(), Some(compiled_fns))?;
             self.env_dirty = true;
             result
         } else if let Some(sub_id) = self.interpreter.wrap_sub_id_for_name(name)
             && !self.interpreter.is_wrap_dispatching(sub_id)
             && let Some(sub_val) = self.interpreter.get_wrapped_sub(name)
         {
-            let result = self
-                .interpreter
-                .call_sub_value(sub_val, Vec::new(), false)?;
+            let result = self.vm_call_on_value(sub_val, Vec::new(), Some(compiled_fns))?;
             self.env_dirty = true;
             result
         } else if Interpreter::is_test_function_name(name)

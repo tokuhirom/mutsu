@@ -1124,7 +1124,7 @@ impl VM {
                     .interpreter
                     .resolve_function_with_types(&infix_name, &call_args)
                 {
-                    self.interpreter.call_function_def(&def, &call_args)?
+                    self.compile_and_call_function_def(&def, call_args.clone(), compiled_fns)?
                 } else {
                     self.call_infix_fallback(
                         lookup_name.as_ref(),
