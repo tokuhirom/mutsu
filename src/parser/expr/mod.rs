@@ -323,6 +323,7 @@ fn wrap_composition_operands(expr: Expr) -> Expr {
                         return Expr::Lambda {
                             param: params[0].clone(),
                             body: vec![Stmt::Expr(body_expr)],
+                            is_whatever_code: false,
                         };
                     }
                     return Expr::AnonSubParams {
@@ -331,6 +332,7 @@ fn wrap_composition_operands(expr: Expr) -> Expr {
                         return_type: None,
                         body: vec![Stmt::Expr(body_expr)],
                         is_rw: false,
+                        is_whatever_code: false,
                     };
                 }
                 let left_wrapped = if should_wrap_whatevercode(&left) {
@@ -509,6 +511,21 @@ fn contains_whatever(expr: &Expr) -> bool {
         // Only check target, not index: @a[*-1] should NOT make the whole expr a WhateverCode.
         // The [*-1] subscript handles its own WhateverCode wrapping.
         Expr::Index { target, .. } => contains_whatever(target),
+        // User-defined infix operators: `* quack 5`, `3 quack *`, etc.
+        // Exclude flip-flop operators (ff, fff and variants) since `ff *` means
+        // "stay true forever" and `*` should not trigger WhateverCode wrapping.
+        Expr::InfixFunc {
+            name, left, right, ..
+        } => {
+            let is_flipflop = matches!(
+                name.as_str(),
+                "ff" | "fff" | "^ff" | "ff^" | "^ff^" | "^fff" | "fff^" | "^fff^"
+            );
+            if is_flipflop {
+                return false;
+            }
+            contains_whatever(left) || right.iter().any(contains_whatever)
+        }
         _ => false,
     }
 }
@@ -565,6 +582,10 @@ fn count_whatever(expr: &Expr) -> usize {
         }
         // Only check target, not index (subscript handles its own WhateverCode)
         Expr::Index { target, .. } => count_whatever(target),
+        // User-defined infix operators
+        Expr::InfixFunc { left, right, .. } => {
+            count_whatever(left) + right.iter().map(count_whatever).sum::<usize>()
+        }
         _ => 0,
     }
 }
@@ -621,7 +642,7 @@ fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Expr {
             }
         }
         // Unwrap a nested WhateverCode lambda: reuse its body with renumbered params
-        Expr::Lambda { param, body } if param == "_" => {
+        Expr::Lambda { param, body, .. } if param == "_" => {
             // Single-param WhateverCode: rename $_ to the next numbered param
             let var_name = format!("__wc_{}", counter);
             *counter += 1;
@@ -687,6 +708,20 @@ fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Expr {
         Expr::Index { target, index } => Expr::Index {
             target: Box::new(replace_whatever_numbered(target, counter)),
             index: index.clone(),
+        },
+        Expr::InfixFunc {
+            name,
+            left,
+            right,
+            modifier,
+        } => Expr::InfixFunc {
+            name: name.clone(),
+            left: Box::new(replace_whatever_numbered(left, counter)),
+            right: right
+                .iter()
+                .map(|a| replace_whatever_numbered(a, counter))
+                .collect(),
+            modifier: modifier.clone(),
         },
         _ => expr.clone(),
     }
@@ -761,6 +796,7 @@ pub(in crate::parser) fn wrap_whatevercode(expr: &Expr) -> Expr {
         Expr::Lambda {
             param: "_".to_string(),
             body: vec![Stmt::Expr(body_expr)],
+            is_whatever_code: true,
         }
     } else {
         // Multi-arg: use AnonSubParams with numbered params
@@ -795,6 +831,7 @@ pub(in crate::parser) fn wrap_whatevercode(expr: &Expr) -> Expr {
             return_type: None,
             body: vec![Stmt::Expr(body_expr)],
             is_rw: false,
+            is_whatever_code: true,
         }
     }
 }
@@ -804,7 +841,7 @@ fn replace_whatever_single(expr: &Expr) -> Expr {
     match expr {
         e if is_whatever(e) => Expr::Var("_".to_string()),
         // A nested single-arg WhateverCode: unwrap and reuse body (already uses $_)
-        Expr::Lambda { param, body } if param == "_" => {
+        Expr::Lambda { param, body, .. } if param == "_" => {
             if let Some(Stmt::Expr(e)) = body.first() {
                 e.clone()
             } else {
@@ -844,6 +881,17 @@ fn replace_whatever_single(expr: &Expr) -> Expr {
         Expr::Index { target, index } => Expr::Index {
             target: Box::new(replace_whatever_single(target)),
             index: index.clone(),
+        },
+        Expr::InfixFunc {
+            name,
+            left,
+            right,
+            modifier,
+        } => Expr::InfixFunc {
+            name: name.clone(),
+            left: Box::new(replace_whatever_single(left)),
+            right: right.iter().map(replace_whatever_single).collect(),
+            modifier: modifier.clone(),
         },
         _ => expr.clone(),
     }

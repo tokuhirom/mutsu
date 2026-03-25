@@ -62,6 +62,7 @@ fn supply_method_call(body: Vec<Stmt>) -> Expr {
         args: vec![Expr::Lambda {
             param: EMITTER_NAME.to_string(),
             body: lowered_body,
+            is_whatever_code: false,
         }],
         modifier: None,
         quoted: false,
@@ -1554,6 +1555,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         return_type: None,
                         body: body.clone(),
                         is_rw,
+                        is_whatever_code: false,
                     };
                     return Ok((
                         r2,
@@ -2278,6 +2280,7 @@ fn make_anon_method(body: Vec<Stmt>) -> Expr {
         return_type: None,
         body,
         is_rw: false,
+        is_whatever_code: false,
     }
 }
 
@@ -2311,6 +2314,7 @@ fn parse_anon_sub_rest(
             return_type,
             body,
             is_rw: traits.is_rw,
+            is_whatever_code: false,
         },
     ))
 }
@@ -2323,6 +2327,7 @@ fn set_anon_sub_rw(expr: Expr, is_rw: bool) -> Expr {
             param_defs,
             return_type,
             body,
+            is_whatever_code,
             ..
         } => Expr::AnonSubParams {
             params,
@@ -2330,6 +2335,7 @@ fn set_anon_sub_rw(expr: Expr, is_rw: bool) -> Expr {
             return_type,
             body,
             is_rw,
+            is_whatever_code,
         },
         other => other,
     }

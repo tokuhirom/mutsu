@@ -2485,12 +2485,12 @@ impl VM {
                 self.exec_make_anon_sub_op(code, *idx, *cc_idx)?;
                 *ip += 1;
             }
-            OpCode::MakeAnonSubParams(idx, cc_idx) => {
-                self.exec_make_anon_sub_params_op(code, *idx, *cc_idx)?;
+            OpCode::MakeAnonSubParams(idx, cc_idx, is_wc) => {
+                self.exec_make_anon_sub_params_op(code, *idx, *cc_idx, *is_wc)?;
                 *ip += 1;
             }
-            OpCode::MakeLambda(idx, cc_idx) => {
-                self.exec_make_lambda_op(code, *idx, *cc_idx)?;
+            OpCode::MakeLambda(idx, cc_idx, is_wc) => {
+                self.exec_make_lambda_op(code, *idx, *cc_idx, *is_wc)?;
                 *ip += 1;
             }
             OpCode::IndexAssignGeneric => {

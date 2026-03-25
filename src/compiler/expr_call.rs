@@ -116,7 +116,7 @@ impl Compiler {
             && let Some(var_name) = Self::atomic_target_name(&args[0])
         {
             if args.len() == 2
-                && let Expr::Lambda { param, body } = &args[1]
+                && let Expr::Lambda { param, body, .. } = &args[1]
                 && let [Stmt::Expr(Expr::Binary { left, op, right })] = body.as_slice()
                 && *op == TokenKind::Plus
             {
@@ -315,7 +315,7 @@ impl Compiler {
         else if name == "cas" && args.len() == 2 {
             let var_name = Self::atomic_target_name(&args[0]);
             if let Some(vname) = var_name {
-                if let Expr::Lambda { param, body } = &args[1]
+                if let Expr::Lambda { param, body, .. } = &args[1]
                     && let [Stmt::Expr(Expr::Binary { left, op, right })] = body.as_slice()
                     && *op == TokenKind::Plus
                 {

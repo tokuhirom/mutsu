@@ -1118,6 +1118,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
                 return_type: None,
                 body,
                 is_rw: false,
+                is_whatever_code: false,
             },
         ));
     }
@@ -1133,6 +1134,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
                 return_type,
                 body,
                 is_rw: false,
+                is_whatever_code: false,
             },
         ));
     }
@@ -1157,6 +1159,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
                 return_type,
                 body,
                 is_rw: false,
+                is_whatever_code: false,
             },
         ));
     }
@@ -1193,6 +1196,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
                 return_type,
                 body,
                 is_rw: false,
+                is_whatever_code: false,
             },
         ))
     } else {
@@ -1229,6 +1233,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
                 Expr::Lambda {
                     param: lambda_name,
                     body,
+                    is_whatever_code: false,
                 },
             ))
         } else {
@@ -1240,6 +1245,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
                     return_type,
                     body,
                     is_rw: false,
+                    is_whatever_code: false,
                 },
             ))
         }

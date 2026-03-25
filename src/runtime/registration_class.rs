@@ -2298,6 +2298,7 @@ impl Interpreter {
                         op: crate::token_kind::TokenKind::SmartMatch,
                         right: right.clone(),
                     })],
+                    is_whatever_code: true,
                 };
             }
             pred.clone()

@@ -81,6 +81,7 @@ impl VM {
         code: &CompiledCode,
         idx: u32,
         cc_idx: Option<u32>,
+        is_whatever_code: bool,
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::SubDecl {
@@ -97,6 +98,12 @@ impl VM {
             let mut env = self.interpreter.env().clone();
             if let Some(rt) = return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
+            }
+            if is_whatever_code {
+                env.insert(
+                    "__mutsu_callable_type".to_string(),
+                    Value::str_from("WhateverCode"),
+                );
             }
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             let val = Value::Sub(std::sync::Arc::new(crate::value::SubData {
@@ -128,6 +135,7 @@ impl VM {
         code: &CompiledCode,
         idx: u32,
         cc_idx: Option<u32>,
+        is_whatever_code: bool,
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::SubDecl {
@@ -144,6 +152,12 @@ impl VM {
             let mut env = self.interpreter.env().clone();
             if let Some(rt) = return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
+            }
+            if is_whatever_code {
+                env.insert(
+                    "__mutsu_callable_type".to_string(),
+                    Value::str_from("WhateverCode"),
+                );
             }
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             let val = Value::Sub(std::sync::Arc::new(crate::value::SubData {
