@@ -7,9 +7,9 @@ use super::super::keyword;
 use super::helpers::shaped_array_new_with_data_expr;
 use super::my_decl::MyDeclState;
 use super::{
-    default_decl_expr, method_decl_body, parse_assign_expr_or_comma, parse_colon_method_arg,
-    parse_comma_chained_decls, parse_statement_modifier, rewrite_decl_assignment_or_chain,
-    wrap_with_will_leave,
+    consume_scalar_decl_trailing_comma, default_decl_expr, method_decl_body,
+    parse_assign_expr_or_comma, parse_colon_method_arg, parse_comma_chained_decls,
+    parse_statement_modifier, rewrite_decl_assignment_or_chain, wrap_with_will_leave,
 };
 use crate::ast::{AssignOp, Expr, Stmt};
 use crate::symbol::Symbol;
@@ -186,6 +186,8 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             }
         }
     }
+    // Save flags before `s` is partially moved.
+    let is_scalar = !s.is_array && !s.is_hash;
     // Scalar declarations stop at comma; array/hash consume the full comma list.
     let (rest, expr) = if s.is_array || s.is_hash {
         parse_assign_expr_or_comma(rest)?
@@ -213,6 +215,12 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     if let Some(stmt) = rewrite_decl_assignment_or_chain(expr.clone(), base_stmt) {
         let stmt = wrap_with_will_leave(stmt, &var_name_for_leave, s.will_leave_body.clone());
         let (rest, stmt) = parse_comma_chained_decls(rest, stmt)?;
+        // For scalar declarations, consume trailing sink expressions (e.g. `my $c = 1, 2, 3;`)
+        let (rest, stmt) = if is_scalar {
+            consume_scalar_decl_trailing_comma(rest, stmt)?
+        } else {
+            (rest, stmt)
+        };
         if s.apply_modifier {
             return parse_statement_modifier(rest, stmt);
         }
@@ -232,6 +240,12 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     };
     let stmt = wrap_with_will_leave(stmt, &var_name_for_leave, s.will_leave_body.clone());
     let (rest, stmt) = parse_comma_chained_decls(rest, stmt)?;
+    // For scalar declarations, consume trailing sink expressions (e.g. `my $c = 1, 2, 3;`)
+    let (rest, stmt) = if is_scalar {
+        consume_scalar_decl_trailing_comma(rest, stmt)?
+    } else {
+        (rest, stmt)
+    };
     if s.apply_modifier {
         return parse_statement_modifier(rest, stmt);
     }
