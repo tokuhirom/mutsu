@@ -512,7 +512,7 @@ impl Value {
                 }
             }
             Value::Complex(r, i) => format_complex(*r, *i),
-            Value::Set(s) => {
+            Value::Set(s, _) => {
                 let mut keys: Vec<&String> = s.iter().collect();
                 keys.sort();
                 keys.iter()
@@ -520,7 +520,7 @@ impl Value {
                     .collect::<Vec<_>>()
                     .join(" ")
             }
-            Value::Bag(b) => {
+            Value::Bag(b, _) => {
                 let mut keys: Vec<(&String, &i64)> = b.iter().collect();
                 keys.sort_by_key(|(k, _)| (*k).clone());
                 keys.iter()
@@ -534,7 +534,7 @@ impl Value {
                     .collect::<Vec<_>>()
                     .join(" ")
             }
-            Value::Mix(m) => {
+            Value::Mix(m, _) => {
                 let mut keys: Vec<(&String, &f64)> = m.iter().collect();
                 keys.sort_by_key(|(k, _)| (*k).clone());
                 keys.iter()

@@ -4,7 +4,7 @@ impl Interpreter {
     pub(super) fn dispatch_to_set(&self, target: Value) -> Result<Value, RuntimeError> {
         let mut elems = HashSet::new();
         match target {
-            Value::Set(_) => return Ok(target),
+            Value::Set(_, _) => return Ok(target),
             Value::Array(items, ..) => {
                 for item in items.iter() {
                     match item {
@@ -31,12 +31,12 @@ impl Interpreter {
                     }
                 }
             }
-            Value::Bag(b) => {
+            Value::Bag(b, _) => {
                 for k in b.keys() {
                     elems.insert(k.clone());
                 }
             }
-            Value::Mix(m) => {
+            Value::Mix(m, _) => {
                 for k in m.keys() {
                     elems.insert(k.clone());
                 }
@@ -82,7 +82,7 @@ impl Interpreter {
             }
         };
         match target {
-            Value::Bag(_) => return Ok(target),
+            Value::Bag(_, _) => return Ok(target),
             Value::Array(items, ..) => {
                 for item in items.iter() {
                     match item {
@@ -98,12 +98,12 @@ impl Interpreter {
                     }
                 }
             }
-            Value::Set(s) => {
+            Value::Set(s, _) => {
                 for k in s.iter() {
                     counts.insert(k.clone(), 1);
                 }
             }
-            Value::Mix(m) => {
+            Value::Mix(m, _) => {
                 for (k, v) in m.iter() {
                     counts.insert(k.clone(), *v as i64);
                 }
@@ -176,17 +176,17 @@ impl Interpreter {
                     Self::mix_add_item(weights, sub_item);
                 }
             }
-            Value::Set(s) => {
+            Value::Set(s, _) => {
                 for k in s.iter() {
                     *weights.entry(k.clone()).or_insert(0.0) += 1.0;
                 }
             }
-            Value::Bag(b) => {
+            Value::Bag(b, _) => {
                 for (k, v) in b.iter() {
                     *weights.entry(k.clone()).or_insert(0.0) += *v as f64;
                 }
             }
-            Value::Mix(m) => {
+            Value::Mix(m, _) => {
                 for (k, v) in m.iter() {
                     *weights.entry(k.clone()).or_insert(0.0) += v;
                 }
@@ -200,14 +200,14 @@ impl Interpreter {
     pub(super) fn dispatch_to_mix(&self, target: Value) -> Result<Value, RuntimeError> {
         let mut weights: HashMap<String, f64> = HashMap::new();
         match target {
-            Value::Mix(_) => return Ok(target),
+            Value::Mix(_, _) => return Ok(target),
             Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
                 for item in items.iter() {
                     Self::mix_add_item(&mut weights, item);
                 }
             }
-            ref other @ (Value::Set(_)
-            | Value::Bag(_)
+            ref other @ (Value::Set(_, _)
+            | Value::Bag(_, _)
             | Value::Pair(..)
             | Value::ValuePair(..)
             | Value::Hash(_)) => {
@@ -267,21 +267,21 @@ impl Interpreter {
             Value::Seq(items) | Value::Slip(items) => {
                 Self::items_to_hash(items.as_ref(), check_odd)
             }
-            Value::Set(s) => {
+            Value::Set(s, _) => {
                 let mut map = HashMap::new();
                 for k in s.iter() {
                     map.insert(k.clone(), Value::Bool(true));
                 }
                 Ok(Value::hash(map))
             }
-            Value::Bag(b) => {
+            Value::Bag(b, _) => {
                 let mut map = HashMap::new();
                 for (k, v) in b.iter() {
                     map.insert(k.clone(), Value::Int(*v));
                 }
                 Ok(Value::hash(map))
             }
-            Value::Mix(m) => {
+            Value::Mix(m, _) => {
                 let mut map = HashMap::new();
                 for (k, v) in m.iter() {
                     map.insert(k.clone(), Value::Num(*v));

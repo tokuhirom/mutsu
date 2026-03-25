@@ -3442,7 +3442,7 @@ impl Interpreter {
                 let id = Arc::as_ptr(items) as usize;
                 self.array_type_metadata.insert(id, info);
             }
-            Value::Mix(items) => {
+            Value::Mix(items, _) => {
                 let id = Arc::as_ptr(items) as usize;
                 self.mix_type_metadata.insert(id, info);
             }
@@ -3464,7 +3464,7 @@ impl Interpreter {
                 let id = Arc::as_ptr(items) as usize;
                 self.array_type_metadata.get(&id).cloned()
             }
-            Value::Mix(items) => {
+            Value::Mix(items, _) => {
                 let id = Arc::as_ptr(items) as usize;
                 self.mix_type_metadata.get(&id).cloned()
             }

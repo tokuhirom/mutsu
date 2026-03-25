@@ -103,7 +103,7 @@ impl VM {
             .get(&var_name)
             .and_then(|v| self.interpreter.container_type_metadata(v))
             .and_then(|info| info.declared_type);
-        let target_is_mixhash = declared_type_del.as_deref().is_some_and(|t| t == "MixHash");
+        let _target_is_mixhash = declared_type_del.as_deref().is_some_and(|t| t == "MixHash");
         let _target_is_baghash = declared_type_del.as_deref().is_some_and(|t| t == "BagHash");
         let _target_is_sethash = declared_type_del.as_deref().is_some_and(|t| t == "SetHash");
         // Note: Bag/Set immutability checks for :delete are intentionally
@@ -167,8 +167,18 @@ impl VM {
         // Save idx for unmark step (idx is consumed by delete_from_container)
         let idx_for_unmark = idx.clone();
         let result = if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
-            if matches!(container, Value::Mix(_)) && !target_is_mixhash {
-                return Err(RuntimeError::immutable("Mix", "delete"));
+            // Check immutability for Set/Bag/Mix (immutable variants)
+            match container {
+                Value::Mix(_, is_mutable) if !*is_mutable => {
+                    return Err(RuntimeError::immutable("Mix", "delete"));
+                }
+                Value::Set(_, is_mutable) if !*is_mutable => {
+                    return Err(RuntimeError::immutable("Set", "delete"));
+                }
+                Value::Bag(_, is_mutable) if !*is_mutable => {
+                    return Err(RuntimeError::immutable("Bag", "delete"));
+                }
+                _ => {}
             }
             Self::delete_from_container(container, idx, &hole_type)?
         } else {
@@ -325,7 +335,7 @@ impl VM {
                 }
             }
             Value::Array(..) => Self::delete_from_array(container, idx, hole_type)?,
-            Value::Set(set) => match idx {
+            Value::Set(set, _) => match idx {
                 Value::Array(keys, ..) => {
                     let s = Arc::make_mut(set);
                     let removed = keys
@@ -336,7 +346,7 @@ impl VM {
                 }
                 _ => Value::Bool(Arc::make_mut(set).remove(&idx.to_string_value())),
             },
-            Value::Bag(bag) => match idx {
+            Value::Bag(bag, _) => match idx {
                 Value::Array(keys, ..) => {
                     let b = Arc::make_mut(bag);
                     let removed = keys
@@ -351,7 +361,7 @@ impl VM {
                         .unwrap_or(0),
                 ),
             },
-            Value::Mix(mix) => match idx {
+            Value::Mix(mix, _) => match idx {
                 Value::Array(keys, ..) => {
                     let m = Arc::make_mut(mix);
                     let removed = keys

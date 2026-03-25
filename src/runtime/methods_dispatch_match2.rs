@@ -26,14 +26,44 @@ impl Interpreter {
                 None
             }
             "List" if args.is_empty() => Some(self.dispatch_list_coercion(target)),
-            "Set" | "SetHash" if args.is_empty() => Some(self.dispatch_to_set(target)),
-            "Bag" | "BagHash" if args.is_empty() => Some(self.dispatch_to_bag(target)),
+            "Set" | "SetHash" if args.is_empty() => {
+                let result = match self.dispatch_to_set(target) {
+                    Ok(r) => r,
+                    Err(e) => return Some(Err(e)),
+                };
+                // If SetHash, ensure the mutable flag is set
+                if method == "SetHash"
+                    && let Value::Set(items, _) = result
+                {
+                    return Some(Ok(Value::Set(items, true)));
+                }
+                Some(Ok(result))
+            }
+            "Bag" | "BagHash" if args.is_empty() => {
+                let result = match self.dispatch_to_bag(target) {
+                    Ok(r) => r,
+                    Err(e) => return Some(Err(e)),
+                };
+                // If BagHash, ensure the mutable flag is set
+                if method == "BagHash"
+                    && let Value::Bag(items, _) = result
+                {
+                    return Some(Ok(Value::Bag(items, true)));
+                }
+                Some(Ok(result))
+            }
             "Mix" | "MixHash" if args.is_empty() => {
                 let result = match self.dispatch_to_mix(target) {
                     Ok(r) => r,
                     Err(e) => return Some(Err(e)),
                 };
                 if method == "MixHash" {
+                    // Ensure mutable flag is set for MixHash
+                    let result = if let Value::Mix(items, _) = result {
+                        Value::Mix(items, true)
+                    } else {
+                        result
+                    };
                     self.register_container_type_metadata(
                         &result,
                         ContainerTypeInfo {
@@ -42,6 +72,7 @@ impl Interpreter {
                             declared_type: Some("MixHash".to_string()),
                         },
                     );
+                    return Some(Ok(result));
                 }
                 Some(Ok(result))
             }

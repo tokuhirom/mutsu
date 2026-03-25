@@ -64,8 +64,8 @@ impl Interpreter {
         {
             let type_pkg = match &target {
                 Value::Hash(_) => Some("Hash"),
-                Value::Bag(_) => Some("BagHash"),
-                Value::Mix(_) => Some("MixHash"),
+                Value::Bag(_, _) => Some("BagHash"),
+                Value::Mix(_, _) => Some("MixHash"),
                 _ => None,
             };
             if let Some(type_name) = type_pkg {
@@ -1440,11 +1440,15 @@ impl Interpreter {
                     let mut elems = HashSet::new();
                     for arg in &args {
                         let coerced = self.dispatch_to_set(arg.clone())?;
-                        if let Value::Set(set_items) = coerced {
+                        if let Value::Set(set_items, _) = coerced {
                             elems.extend(set_items.iter().cloned());
                         }
                     }
-                    return Ok(Value::set(elems));
+                    return Ok(if base_class_name == "SetHash" {
+                        Value::set_hash(elems)
+                    } else {
+                        Value::set(elems)
+                    });
                 }
                 "Bag" | "BagHash" => {
                     let mut counts: HashMap<String, i64> = HashMap::new();
@@ -1453,7 +1457,11 @@ impl Interpreter {
                             *counts.entry(item.to_string_value()).or_insert(0) += 1;
                         }
                     }
-                    return Ok(Value::bag(counts));
+                    return Ok(if base_class_name == "BagHash" {
+                        Value::bag_hash(counts)
+                    } else {
+                        Value::bag(counts)
+                    });
                 }
                 "Mix" | "MixHash" => {
                     // MixHash.new treats all positional arguments as elements
@@ -1465,7 +1473,7 @@ impl Interpreter {
                     let mut weights: HashMap<String, f64> = HashMap::new();
                     for arg in &args {
                         // Don't flatten QuantHash types
-                        if matches!(arg, Value::Set(_) | Value::Bag(_) | Value::Mix(_)) {
+                        if matches!(arg, Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)) {
                             *weights.entry(arg.to_string_value()).or_insert(0.0) += 1.0;
                         } else {
                             for item in Self::value_to_list(arg) {
@@ -1473,8 +1481,13 @@ impl Interpreter {
                             }
                         }
                     }
-                    let result = Value::mix(weights);
-                    if class_name.resolve() == "MixHash" {
+                    let is_hash_variant = class_name.resolve() == "MixHash";
+                    let result = if is_hash_variant {
+                        Value::mix_hash(weights)
+                    } else {
+                        Value::mix(weights)
+                    };
+                    if is_hash_variant {
                         self.register_container_type_metadata(
                             &result,
                             ContainerTypeInfo {

@@ -642,7 +642,7 @@ impl Interpreter {
                     Value::Scalar(inner) => inner.as_ref(),
                     other => other,
                 };
-                if matches!(arg0, Value::Mix(_)) {
+                if matches!(arg0, Value::Mix(_, _)) {
                     return self.dispatch_to_mix(arg0.clone());
                 }
                 return self.dispatch_to_bag(arg0.clone());
@@ -810,8 +810,8 @@ impl Interpreter {
         let args = if is_set_op && args.len() > 2 {
             let set_level = |v: &Value| -> u8 {
                 match v {
-                    Value::Mix(_) => 2,
-                    Value::Bag(_) => 1,
+                    Value::Mix(_, _) => 2,
+                    Value::Bag(_, _) => 1,
                     _ => 0,
                 }
             };

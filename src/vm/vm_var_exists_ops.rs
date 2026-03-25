@@ -339,7 +339,7 @@ impl VM {
                     }
                 }
             }
-            if let Value::Set(set) = &target {
+            if let Value::Set(set, _) = &target {
                 let exists_for_key = |key: &Value| set.contains(&key.to_string_value());
                 let result = match &idx {
                     Value::Array(items, ..) => Value::array(
@@ -353,7 +353,7 @@ impl VM {
                 self.stack.push(result);
                 return Ok(());
             }
-            if let Value::Bag(bag) = &target {
+            if let Value::Bag(bag, _) = &target {
                 let exists_for_key = |key: &Value| bag.contains_key(&key.to_string_value());
                 let result = match &idx {
                     Value::Array(items, ..) => Value::array(
@@ -367,7 +367,7 @@ impl VM {
                 self.stack.push(result);
                 return Ok(());
             }
-            if let Value::Mix(mix) = &target {
+            if let Value::Mix(mix, _) = &target {
                 let exists_for_key = |key: &Value| mix.contains_key(&key.to_string_value());
                 let result = match &idx {
                     Value::Array(items, ..) => Value::array(
@@ -441,12 +441,12 @@ impl VM {
                     let exists = match (&target, &idx) {
                         (Value::Hash(map), Value::Str(key)) => map.contains_key(key.as_str()),
                         (Value::Hash(map), _) => map.contains_key(&idx.to_string_value()),
-                        (Value::Set(set), Value::Str(key)) => set.contains(key.as_str()),
-                        (Value::Set(set), other) => set.contains(&other.to_string_value()),
-                        (Value::Bag(bag), Value::Str(key)) => bag.contains_key(key.as_str()),
-                        (Value::Bag(bag), other) => bag.contains_key(&other.to_string_value()),
-                        (Value::Mix(mix), Value::Str(key)) => mix.contains_key(key.as_str()),
-                        (Value::Mix(mix), other) => mix.contains_key(&other.to_string_value()),
+                        (Value::Set(set, _), Value::Str(key)) => set.contains(key.as_str()),
+                        (Value::Set(set, _), other) => set.contains(&other.to_string_value()),
+                        (Value::Bag(bag, _), Value::Str(key)) => bag.contains_key(key.as_str()),
+                        (Value::Bag(bag, _), other) => bag.contains_key(&other.to_string_value()),
+                        (Value::Mix(mix, _), Value::Str(key)) => mix.contains_key(key.as_str()),
+                        (Value::Mix(mix, _), other) => mix.contains_key(&other.to_string_value()),
                         (
                             Value::Instance {
                                 class_name,

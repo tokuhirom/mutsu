@@ -17,9 +17,9 @@ pub(super) fn dispatch(
             }
             Some(match target {
                 Value::Hash(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
-                Value::Set(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
-                Value::Bag(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
-                Value::Mix(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
+                Value::Set(items, _) => Some(Ok(Value::Int(items.len() as i64 - 1))),
+                Value::Bag(items, _) => Some(Ok(Value::Int(items.len() as i64 - 1))),
+                Value::Mix(items, _) => Some(Ok(Value::Int(items.len() as i64 - 1))),
                 Value::Junction { values, .. } => Some(Ok(Value::Int(values.len() as i64 - 1))),
                 Value::Instance {
                     class_name,

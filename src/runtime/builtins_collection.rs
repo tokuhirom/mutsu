@@ -1650,9 +1650,9 @@ impl Interpreter {
                 }
                 None
             }
-            Value::Bag(target_arc) => {
+            Value::Bag(target_arc, _) => {
                 for (name, env_val) in self.env().iter() {
-                    if let Value::Bag(env_arc) = env_val
+                    if let Value::Bag(env_arc, _) = env_val
                         && std::sync::Arc::ptr_eq(target_arc, env_arc)
                     {
                         return Some(name.clone());
@@ -1660,9 +1660,9 @@ impl Interpreter {
                 }
                 None
             }
-            Value::Mix(target_arc) => {
+            Value::Mix(target_arc, _) => {
                 for (name, env_val) in self.env().iter() {
-                    if let Value::Mix(env_arc) = env_val
+                    if let Value::Mix(env_arc, _) = env_val
                         && std::sync::Arc::ptr_eq(target_arc, env_arc)
                     {
                         return Some(name.clone());
@@ -1851,11 +1851,11 @@ impl Interpreter {
             _ => HashMap::new(),
         };
         let mut bag_counts: Option<HashMap<String, i64>> = match into_target.as_ref() {
-            Some(Value::Bag(b)) => Some(b.as_ref().clone()),
+            Some(Value::Bag(b, _)) => Some(b.as_ref().clone()),
             _ => None,
         };
         let mut mix_counts: Option<HashMap<String, f64>> = match into_target.as_ref() {
-            Some(Value::Mix(m)) => Some(m.as_ref().clone()),
+            Some(Value::Mix(m, _)) => Some(m.as_ref().clone()),
             _ => None,
         };
 

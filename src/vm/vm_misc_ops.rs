@@ -1302,8 +1302,8 @@ impl VM {
         {
             let set_level = |v: &Value| -> u8 {
                 match v {
-                    Value::Mix(_) => 2,
-                    Value::Bag(_) => 1,
+                    Value::Mix(_, _) => 2,
+                    Value::Bag(_, _) => 1,
                     _ => 0,
                 }
             };

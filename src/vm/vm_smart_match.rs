@@ -296,7 +296,7 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         }
 
         // Set ~~ Bag: all set elements must exist in Bag with count 1
-        (Value::Set(set), Value::Bag(bag)) => Some(
+        (Value::Set(set, _), Value::Bag(bag, _)) => Some(
             set.len() == bag.len()
                 && set
                     .iter()
@@ -304,13 +304,13 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         ),
 
         // Bag ~~ Set: keys must match (counts are ignored)
-        (Value::Bag(bag), Value::Set(set)) => {
+        (Value::Bag(bag, _), Value::Set(set, _)) => {
             let bag_keys: std::collections::HashSet<&String> = bag.keys().collect();
             Some(bag_keys.len() == set.len() && bag_keys.iter().all(|key| set.contains(*key)))
         }
 
         // Set ~~ Mix: all set elements must exist in Mix with unit weights
-        (Value::Set(set), Value::Mix(mix)) => Some(
+        (Value::Set(set, _), Value::Mix(mix, _)) => Some(
             set.len() == mix.len()
                 && set.iter().all(|key| {
                     mix.get(key)
@@ -319,7 +319,7 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         ),
 
         // Mix ~~ Set: all mix elements must have unit weights and exist in set
-        (Value::Mix(mix), Value::Set(set)) => Some(
+        (Value::Mix(mix, _), Value::Set(set, _)) => Some(
             mix.len() == set.len()
                 && mix
                     .iter()

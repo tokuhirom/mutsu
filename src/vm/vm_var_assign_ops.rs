@@ -169,14 +169,22 @@ impl VM {
             return self.try_compiled_method_or_interpret(value, trait_name, vec![]);
         }
         if self.interpreter.check_readonly_for_modify(name).is_err()
-            && matches!(value, Value::Set(_) | Value::Bag(_) | Value::Mix(_))
+            && matches!(
+                value,
+                Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)
+            )
         {
             return Ok(value);
         }
         if let Some(constraint) = self.interpreter.var_type_constraint(name)
             && constraint.starts_with("SetHash")
         {
-            return Ok(runtime::utils::coerce_value_to_quanthash(&value));
+            let result = runtime::utils::coerce_value_to_quanthash(&value);
+            // SetHash should be mutable
+            if let Value::Set(items, _) = result {
+                return Ok(Value::Set(items, true));
+            }
+            return Ok(result);
         }
         // For Array/Seq/Slip values, use `build_hash_from_items` which
         // raises "Odd number of elements" when appropriate. Hash values from
@@ -751,13 +759,13 @@ impl VM {
             .get(&name)
             .and_then(|v| self.interpreter.container_type_metadata(v))
             .and_then(|info| info.declared_type);
-        let _target_is_mixhash = declared_type_incdec
+        let _target_is_mixhash_incdec = declared_type_incdec
             .as_deref()
             .is_some_and(|t| t == "MixHash");
-        let _target_is_baghash = declared_type_incdec
+        let _target_is_baghash_incdec = declared_type_incdec
             .as_deref()
             .is_some_and(|t| t == "BagHash");
-        let _target_is_sethash = declared_type_incdec
+        let _target_is_sethash_incdec = declared_type_incdec
             .as_deref()
             .is_some_and(|t| t == "SetHash");
         let idx_val = self.stack.pop().unwrap_or(Value::Nil);
@@ -773,21 +781,21 @@ impl VM {
                         Value::Nil
                     }
                 }
-                Value::Mix(mix) => mix.get(&key).map_or(Value::Int(0), |w| {
+                Value::Mix(mix, _) => mix.get(&key).map_or(Value::Int(0), |w| {
                     if (*w - (*w as i64 as f64)).abs() < f64::EPSILON {
                         Value::Int(*w as i64)
                     } else {
                         Value::Num(*w)
                     }
                 }),
-                Value::Set(set) => {
+                Value::Set(set, _) => {
                     if set.contains(&key) {
                         Value::Bool(true)
                     } else {
                         Value::Bool(false)
                     }
                 }
-                Value::Bag(bag) => Value::Int(*bag.get(&key).unwrap_or(&0)),
+                Value::Bag(bag, _) => Value::Int(*bag.get(&key).unwrap_or(&0)),
                 _ => Value::Nil,
             }
         } else {
@@ -817,7 +825,10 @@ impl VM {
                         a[i] = new_val.clone();
                     }
                 }
-                Value::Mix(mix) => {
+                Value::Mix(mix, is_mutable) => {
+                    if !*is_mutable {
+                        return Err(RuntimeError::assignment_ro(Some("Mix")));
+                    }
                     let m = Arc::make_mut(mix);
                     if new_val.truthy() {
                         m.insert(key, Self::mix_assignment_weight(&new_val));
@@ -825,7 +836,10 @@ impl VM {
                         m.remove(&key);
                     }
                 }
-                Value::Set(set) => {
+                Value::Set(set, is_mutable) => {
+                    if !*is_mutable {
+                        return Err(RuntimeError::assignment_ro(Some("Set")));
+                    }
                     let s = Arc::make_mut(set);
                     if new_val.truthy() {
                         s.insert(key);
@@ -833,7 +847,10 @@ impl VM {
                         s.remove(&key);
                     }
                 }
-                Value::Bag(bag) => {
+                Value::Bag(bag, is_mutable) => {
+                    if !*is_mutable {
+                        return Err(RuntimeError::assignment_ro(Some("Bag")));
+                    }
                     let b = Arc::make_mut(bag);
                     let n = match &new_val {
                         Value::Int(i) => *i,
@@ -1282,7 +1299,10 @@ impl VM {
                                 self.mark_bound_index(&var_name, encoded_idx.clone());
                             }
                         }
-                        Value::Set(ref mut set) => {
+                        Value::Set(ref mut set, is_mutable) => {
+                            if !is_mutable {
+                                return Err(RuntimeError::assignment_ro(Some("Set")));
+                            }
                             let s = Arc::make_mut(set);
                             if val.truthy() {
                                 s.insert(key.clone());
@@ -1290,7 +1310,10 @@ impl VM {
                                 s.remove(&key);
                             }
                         }
-                        Value::Bag(ref mut bag) => {
+                        Value::Bag(ref mut bag, is_mutable) => {
+                            if !is_mutable {
+                                return Err(RuntimeError::assignment_ro(Some("Bag")));
+                            }
                             let b = Arc::make_mut(bag);
                             let count = match &val {
                                 Value::Int(i) => *i,
@@ -1310,7 +1333,10 @@ impl VM {
                                 b.insert(key.clone(), count);
                             }
                         }
-                        Value::Mix(ref mut mix) => {
+                        Value::Mix(ref mut mix, is_mutable) => {
+                            if !is_mutable {
+                                return Err(RuntimeError::assignment_ro(Some("Mix")));
+                            }
                             let m = Arc::make_mut(mix);
                             let weight = Self::mix_assignment_weight(&val);
                             if weight == 0.0 {

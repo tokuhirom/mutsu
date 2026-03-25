@@ -139,9 +139,9 @@ impl VM {
     fn set_contains(&mut self, container: &Value, needle: &Value) -> bool {
         let key = needle.to_string_value();
         match container {
-            Value::Set(s) => s.contains(&key),
-            Value::Bag(b) => b.get(&key).is_some_and(|count| *count > 0),
-            Value::Mix(m) => m.get(&key).is_some_and(|weight| *weight != 0.0),
+            Value::Set(s, _) => s.contains(&key),
+            Value::Bag(b, _) => b.get(&key).is_some_and(|count| *count > 0),
+            Value::Mix(m, _) => m.get(&key).is_some_and(|weight| *weight != 0.0),
             Value::Hash(h) => self.hash_contains(h, needle, container),
             v if v.as_list_items().is_some() => v
                 .as_list_items()
@@ -155,9 +155,9 @@ impl VM {
 
     fn quant_hash_weights(value: &Value) -> HashMap<String, f64> {
         match runtime::coerce_value_to_quanthash(value) {
-            Value::Set(items) => items.iter().map(|k| (k.clone(), 1.0)).collect(),
-            Value::Bag(items) => items.iter().map(|(k, v)| (k.clone(), *v as f64)).collect(),
-            Value::Mix(items) => items.iter().map(|(k, v)| (k.clone(), *v)).collect(),
+            Value::Set(items, _) => items.iter().map(|k| (k.clone(), 1.0)).collect(),
+            Value::Bag(items, _) => items.iter().map(|(k, v)| (k.clone(), *v as f64)).collect(),
+            Value::Mix(items, _) => items.iter().map(|(k, v)| (k.clone(), *v)).collect(),
             _ => HashMap::new(),
         }
     }
@@ -219,17 +219,17 @@ impl VM {
     fn union_insert_set_elem(elems: &mut HashSet<String>, value: &Value) {
         let pair_selected = |weight: &Value| weight.truthy() || matches!(weight, Value::Nil);
         match value {
-            Value::Set(items) => {
+            Value::Set(items, _) => {
                 elems.extend(items.iter().cloned());
             }
-            Value::Bag(items) => {
+            Value::Bag(items, _) => {
                 for (k, v) in items.iter() {
                     if *v > 0 {
                         elems.insert(k.clone());
                     }
                 }
             }
-            Value::Mix(items) => {
+            Value::Mix(items, _) => {
                 for (k, v) in items.iter() {
                     if *v != 0.0 {
                         elems.insert(k.clone());
@@ -277,9 +277,9 @@ impl VM {
             return Err(Self::lazy_list_error());
         }
         match value {
-            Value::Set(s) => Ok((**s).clone()),
-            Value::Bag(b) => Ok(b.keys().cloned().collect()),
-            Value::Mix(m) => Ok(m.keys().cloned().collect()),
+            Value::Set(s, _) => Ok((**s).clone()),
+            Value::Bag(b, _) => Ok(b.keys().cloned().collect()),
+            Value::Mix(m, _) => Ok(m.keys().cloned().collect()),
             Value::Hash(h) => Ok(h
                 .iter()
                 .filter_map(|(k, v)| {
@@ -325,8 +325,8 @@ impl VM {
             return Err(Self::lazy_list_error());
         }
         match value {
-            Value::Bag(b) => Ok((**b).clone()),
-            Value::Mix(m) => Ok(m
+            Value::Bag(b, _) => Ok((**b).clone()),
+            Value::Mix(m, _) => Ok(m
                 .iter()
                 .filter_map(|(k, w)| {
                     if *w != 0.0 {
@@ -348,8 +348,8 @@ impl VM {
             return Err(Self::lazy_list_error());
         }
         match value {
-            Value::Mix(m) => Ok((**m).clone()),
-            Value::Bag(b) => Ok(b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect()),
+            Value::Mix(m, _) => Ok((**m).clone()),
+            Value::Bag(b, _) => Ok(b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect()),
             other => {
                 let set = Self::value_to_set_keys(other)?;
                 Ok(set.into_iter().map(|k| (k, 1.0)).collect())
@@ -387,7 +387,7 @@ impl VM {
         }
 
         let result = match (left, right) {
-            (Value::Mix(a), Value::Mix(b)) => {
+            (Value::Mix(a, _), Value::Mix(b, _)) => {
                 let mut result = (*a).clone();
                 for (k, v) in b.iter() {
                     let e = result.entry(k.clone()).or_insert(0.0);
@@ -395,7 +395,7 @@ impl VM {
                 }
                 Value::mix(result)
             }
-            (Value::Bag(a), Value::Bag(b)) => {
+            (Value::Bag(a, _), Value::Bag(b, _)) => {
                 let mut result = (*a).clone();
                 for (k, v) in b.iter() {
                     let e = result.entry(k.clone()).or_insert(0);
@@ -403,14 +403,14 @@ impl VM {
                 }
                 Value::bag(result)
             }
-            (Value::Set(a), Value::Set(b)) => {
+            (Value::Set(a, _), Value::Set(b, _)) => {
                 let mut result = (*a).clone();
                 for elem in b.iter() {
                     result.insert(elem.clone());
                 }
                 Value::set(result)
             }
-            (l, r) if matches!(l, Value::Mix(_)) || matches!(r, Value::Mix(_)) => {
+            (l, r) if matches!(l, Value::Mix(_, _)) || matches!(r, Value::Mix(_, _)) => {
                 let mut left_mix = Self::value_to_mix_weights(&l)?;
                 let right_mix = Self::value_to_mix_weights(&r)?;
                 for (k, v) in right_mix {
@@ -419,7 +419,7 @@ impl VM {
                 }
                 Value::mix(left_mix)
             }
-            (l, r) if matches!(l, Value::Bag(_)) || matches!(r, Value::Bag(_)) => {
+            (l, r) if matches!(l, Value::Bag(_, _)) || matches!(r, Value::Bag(_, _)) => {
                 let mut left_bag = Self::value_to_bag_counts(&l)?;
                 let right_bag = Self::value_to_bag_counts(&r)?;
                 for (k, v) in right_bag {
@@ -445,8 +445,8 @@ impl VM {
     /// 0 = Set/SetHash, 1 = Bag/BagHash, 2 = Mix/MixHash
     fn set_type_level_full(val: &Value) -> u8 {
         match val {
-            Value::Mix(_) => 2,
-            Value::Bag(_) => 1,
+            Value::Mix(_, _) => 2,
+            Value::Bag(_, _) => 1,
             Value::Package(sym) => {
                 let name = sym.resolve();
                 match name.as_str() {
@@ -563,9 +563,9 @@ impl VM {
     /// Coerce a value to a Bag (HashMap<String, i64>)
     fn coerce_to_bag(val: &Value) -> HashMap<String, i64> {
         match val {
-            Value::Bag(b) => (**b).clone(),
-            Value::Set(s) => s.iter().map(|k| (k.clone(), 1)).collect(),
-            Value::Mix(m) => m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect(),
+            Value::Bag(b, _) => (**b).clone(),
+            Value::Set(s, _) => s.iter().map(|k| (k.clone(), 1)).collect(),
+            Value::Mix(m, _) => m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect(),
             Value::Hash(map) => {
                 let mut result = HashMap::new();
                 for (k, v) in map.iter() {
@@ -603,9 +603,9 @@ impl VM {
     /// Coerce a value to a Mix (HashMap<String, f64>)
     fn coerce_to_mix(val: &Value) -> HashMap<String, f64> {
         match val {
-            Value::Mix(m) => (**m).clone(),
-            Value::Bag(b) => b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect(),
-            Value::Set(s) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
+            Value::Mix(m, _) => (**m).clone(),
+            Value::Bag(b, _) => b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect(),
+            Value::Set(s, _) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
             Value::Hash(map) => {
                 let mut result = HashMap::new();
                 for (k, v) in map.iter() {
@@ -644,8 +644,8 @@ impl VM {
     /// 0 = Set, 1 = Bag, 2 = Mix
     fn set_type_level(val: &Value) -> u8 {
         match val {
-            Value::Mix(_) => 2,
-            Value::Bag(_) => 1,
+            Value::Mix(_, _) => 2,
+            Value::Bag(_, _) => 1,
             _ => 0,
         }
     }

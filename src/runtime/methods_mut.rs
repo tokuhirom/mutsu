@@ -1928,9 +1928,9 @@ impl Interpreter {
         }
 
         // MixHash.grabpairs: remove random pairs and return them, mutating the Mix
-        if matches!(&target, Value::Mix(_)) && matches!(method, "grabpairs" | "grab") {
+        if matches!(&target, Value::Mix(_, _)) && matches!(method, "grabpairs" | "grab") {
             let mix = match &target {
-                Value::Mix(m) => (**m).clone(),
+                Value::Mix(m, _) => (**m).clone(),
                 _ => unreachable!(),
             };
             let count = if method == "grabpairs" {
@@ -1981,7 +1981,7 @@ impl Interpreter {
                 }
             }
             // Update the original variable
-            let new_mix = Value::Mix(Arc::new(remaining));
+            let new_mix = Value::Mix(Arc::new(remaining), true);
             self.env.insert(target_var.to_string(), new_mix);
             return Ok(if grabbed.len() == 1 && args.is_empty() {
                 grabbed.into_iter().next().unwrap()

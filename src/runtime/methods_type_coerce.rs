@@ -113,9 +113,9 @@ impl Interpreter {
         // preserving hash flavor for *Hash type objects.
         let source_type = match target {
             Value::Package(name) => Some(name.resolve()),
-            Value::Set(_) => Some("Set".to_string()),
-            Value::Bag(_) => Some("Bag".to_string()),
-            Value::Mix(_) => Some("Mix".to_string()),
+            Value::Set(_, _) => Some("Set".to_string()),
+            Value::Bag(_, _) => Some("Bag".to_string()),
+            Value::Mix(_, _) => Some("Mix".to_string()),
             _ => None,
         };
         if let Some(source_type) = source_type

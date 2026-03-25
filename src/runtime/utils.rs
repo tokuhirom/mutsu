@@ -453,21 +453,21 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             map.insert(k.to_string_value(), *v);
             Value::hash(map)
         }
-        Value::Set(items) => {
+        Value::Set(items, _) => {
             let mut map = HashMap::new();
             for key in items.iter() {
                 map.insert(key.clone(), Value::Bool(true));
             }
             Value::hash(map)
         }
-        Value::Bag(items) => {
+        Value::Bag(items, _) => {
             let mut map = HashMap::new();
             for (key, count) in items.iter() {
                 map.insert(key.clone(), Value::Int(*count));
             }
             Value::hash(map)
         }
-        Value::Mix(items) => {
+        Value::Mix(items, _) => {
             let mut map = HashMap::new();
             for (key, weight) in items.iter() {
                 map.insert(key.clone(), mix_weight_value(*weight));
@@ -1161,9 +1161,27 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::FatRat(_, _) => "FatRat",
         Value::BigRat(_, _) => "Rat",
         Value::Complex(_, _) => "Complex",
-        Value::Set(_) => "Set",
-        Value::Bag(_) => "Bag",
-        Value::Mix(_) => "Mix",
+        Value::Set(_, is_mutable) => {
+            if *is_mutable {
+                "SetHash"
+            } else {
+                "Set"
+            }
+        }
+        Value::Bag(_, is_mutable) => {
+            if *is_mutable {
+                "BagHash"
+            } else {
+                "Bag"
+            }
+        }
+        Value::Mix(_, is_mutable) => {
+            if *is_mutable {
+                "MixHash"
+            } else {
+                "Mix"
+            }
+        }
         Value::Nil => "Any",
         Value::Sub(data) => match data.env.get("__mutsu_callable_type") {
             Some(Value::Str(kind)) if kind.as_str() == "Method" => "Method",
@@ -1561,15 +1579,15 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                 }
             }
         }
-        Value::Set(items) => items
+        Value::Set(items, _) => items
             .iter()
             .map(|s| Value::Pair(s.clone(), Box::new(Value::Bool(true))))
             .collect(),
-        Value::Bag(items) => items
+        Value::Bag(items, _) => items
             .iter()
             .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Int(*v))))
             .collect(),
-        Value::Mix(items) => items
+        Value::Mix(items, _) => items
             .iter()
             .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Num(*v))))
             .collect(),
@@ -1741,9 +1759,9 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
         }
         _ if val.as_list_items().is_some() => Value::Int(val.as_list_items().unwrap().len() as i64),
         Value::Hash(items) => Value::Int(items.len() as i64),
-        Value::Set(items) => Value::Int(items.len() as i64),
-        Value::Bag(items) => Value::Int(items.values().sum()),
-        Value::Mix(items) => {
+        Value::Set(items, _) => Value::Int(items.len() as i64),
+        Value::Bag(items, _) => Value::Int(items.values().sum()),
+        Value::Mix(items, _) => {
             let total: f64 = items.values().copied().fold(0.0, std::ops::Add::add);
             if total == 0.0 && items.is_empty() {
                 Value::Int(0)
@@ -1807,17 +1825,17 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
     fn insert_set_elem(elems: &mut HashSet<String>, value: &Value) {
         let pair_selected = |weight: &Value| weight.truthy() || matches!(weight, Value::Nil);
         match value {
-            Value::Set(items) => {
+            Value::Set(items, _) => {
                 elems.extend(items.iter().cloned());
             }
-            Value::Bag(items) => {
+            Value::Bag(items, _) => {
                 for (k, v) in items.iter() {
                     if *v > 0 {
                         elems.insert(k.clone());
                     }
                 }
             }
-            Value::Mix(items) => {
+            Value::Mix(items, _) => {
                 for (k, v) in items.iter() {
                     if *v != 0.0 {
                         elems.insert(k.clone());
@@ -1862,12 +1880,12 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
 
     match val {
         Value::Scalar(inner) => coerce_to_set(inner),
-        Value::Set(s) => (**s).clone(),
-        Value::Bag(b) => {
+        Value::Set(s, _) => (**s).clone(),
+        Value::Bag(b, _) => {
             let resolved = resolve_bag_tab_keys(b);
             resolved.keys().cloned().collect()
         }
-        Value::Mix(m) => m.keys().cloned().collect(),
+        Value::Mix(m, _) => m.keys().cloned().collect(),
         Value::Hash(items) => items
             .iter()
             .filter_map(|(k, v)| {
@@ -1917,7 +1935,7 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
 pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
     match val {
         Value::Scalar(inner) => coerce_value_to_quanthash(inner),
-        Value::Set(_) | Value::Bag(_) | Value::Mix(_) => val.clone(),
+        Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _) => val.clone(),
         Value::Hash(h) => {
             let mut set = HashSet::new();
             for (k, v) in h.iter() {
@@ -1964,8 +1982,8 @@ pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
 /// Determine the promotion level for set operations: 0=Set, 1=Bag, 2=Mix
 fn set_type_level(v: &Value) -> u8 {
     match v {
-        Value::Mix(_) => 2,
-        Value::Bag(_) => 1,
+        Value::Mix(_, _) => 2,
+        Value::Bag(_, _) => 1,
         _ => 0,
     }
 }
@@ -1973,12 +1991,12 @@ fn set_type_level(v: &Value) -> u8 {
 /// Convert a value to a Mix-level HashMap (key → f64 count)
 fn to_mix_map(v: &Value) -> HashMap<String, f64> {
     match v {
-        Value::Mix(m) => (**m).clone(),
-        Value::Bag(b) => {
+        Value::Mix(m, _) => (**m).clone(),
+        Value::Bag(b, _) => {
             let resolved = resolve_bag_tab_keys(b);
             resolved.into_iter().map(|(k, v)| (k, v as f64)).collect()
         }
-        Value::Set(s) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
+        Value::Set(s, _) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
         Value::Hash(h) => {
             let mut result = HashMap::new();
             for (k, v) in h.iter() {
@@ -2043,8 +2061,8 @@ pub(crate) fn resolve_bag_tab_keys(bag: &HashMap<String, i64>) -> HashMap<String
 /// Convert a value to a Bag-level HashMap (key → i64 count)
 fn to_bag_map(v: &Value) -> HashMap<String, i64> {
     match v {
-        Value::Bag(b) => resolve_bag_tab_keys(b),
-        Value::Set(s) => s.iter().map(|k| (k.clone(), 1i64)).collect(),
+        Value::Bag(b, _) => resolve_bag_tab_keys(b),
+        Value::Set(s, _) => s.iter().map(|k| (k.clone(), 1i64)).collect(),
         Value::Hash(h) => {
             let mut result = HashMap::new();
             for (k, v) in h.iter() {
@@ -2136,8 +2154,8 @@ pub(crate) fn set_intersect_values(left: &Value, right: &Value) -> Value {
     // Determine result type level: 0=Set, 1=Bag, 2=Mix
     let type_level = |v: &Value| -> u8 {
         match v {
-            Value::Mix(_) => 2,
-            Value::Bag(_) => 1,
+            Value::Mix(_, _) => 2,
+            Value::Bag(_, _) => 1,
             _ => 0,
         }
     };
@@ -2176,9 +2194,9 @@ pub(crate) fn set_intersect_values(left: &Value, right: &Value) -> Value {
 /// Coerce a value to a Bag (HashMap<String, i64>)
 fn coerce_to_bag(val: &Value) -> HashMap<String, i64> {
     match val {
-        Value::Bag(b) => resolve_bag_tab_keys(b),
-        Value::Set(s) => s.iter().map(|k| (k.clone(), 1)).collect(),
-        Value::Mix(m) => m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect(),
+        Value::Bag(b, _) => resolve_bag_tab_keys(b),
+        Value::Set(s, _) => s.iter().map(|k| (k.clone(), 1)).collect(),
+        Value::Mix(m, _) => m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect(),
         _ => {
             // Count occurrences for list-like values
             let items = value_to_list(val);
@@ -2194,12 +2212,12 @@ fn coerce_to_bag(val: &Value) -> HashMap<String, i64> {
 /// Coerce a value to a Mix (HashMap<String, f64>)
 fn coerce_to_mix(val: &Value) -> HashMap<String, f64> {
     match val {
-        Value::Mix(m) => (**m).clone(),
-        Value::Bag(b) => {
+        Value::Mix(m, _) => (**m).clone(),
+        Value::Bag(b, _) => {
             let resolved = resolve_bag_tab_keys(b);
             resolved.into_iter().map(|(k, v)| (k, v as f64)).collect()
         }
-        Value::Set(s) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
+        Value::Set(s, _) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
         _ => {
             // Count occurrences for list-like values
             let items = value_to_list(val);

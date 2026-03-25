@@ -209,13 +209,13 @@ impl Interpreter {
         if matches!(target, Value::Array(..)) {
             return Some(Ok(Value::Package(Symbol::intern("Any"))));
         }
-        if matches!(target, Value::Set(_)) {
+        if matches!(target, Value::Set(_, _)) {
             return Some(Ok(Value::Bool(false)));
         }
-        if matches!(target, Value::Bag(_)) {
+        if matches!(target, Value::Bag(_, _)) {
             return Some(Ok(Value::Int(0)));
         }
-        if matches!(target, Value::Mix(_)) {
+        if matches!(target, Value::Mix(_, _)) {
             return Some(Ok(Value::Num(0.0)));
         }
         None

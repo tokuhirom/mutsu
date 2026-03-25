@@ -69,7 +69,7 @@ impl Interpreter {
         };
         Ok(match target {
             Value::Array(items, ..) => to_pairs(&items),
-            Value::Bag(ref bag) => {
+            Value::Bag(ref bag, ..) => {
                 if bag.is_empty() {
                     Value::Seq(Arc::new(Vec::new()))
                 } else {
@@ -95,7 +95,7 @@ impl Interpreter {
                     Value::Seq(Arc::new(out))
                 }
             }
-            Value::Mix(ref mix) => {
+            Value::Mix(ref mix, ..) => {
                 if mix.is_empty() {
                     Value::Seq(Arc::new(Vec::new()))
                 } else {

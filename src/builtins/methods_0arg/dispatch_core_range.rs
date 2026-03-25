@@ -116,11 +116,11 @@ pub(super) fn dispatch(
             }
         }),
         "pick" => Some(match target {
-            Value::Mix(_) => Some(Err(RuntimeError::new(
+            Value::Mix(_, _) => Some(Err(RuntimeError::new(
                 "Cannot call .pick on a Mix (immutable)",
             ))),
-            Value::Bag(items) => Some(Ok(sample_weighted_bag_key(items).unwrap_or(Value::Nil))),
-            Value::Set(items) => {
+            Value::Bag(items, _) => Some(Ok(sample_weighted_bag_key(items).unwrap_or(Value::Nil))),
+            Value::Set(items, _) => {
                 if items.is_empty() {
                     Some(Ok(Value::Nil))
                 } else {
@@ -169,17 +169,17 @@ pub(super) fn dispatch(
             }
         }),
         "roll" => {
-            if let Value::Mix(items) = target {
+            if let Value::Mix(items, _) = target {
                 return Some(Some(Ok(
                     sample_weighted_mix_key(items).unwrap_or(Value::Nil)
                 )));
             }
-            if let Value::Bag(items) = target {
+            if let Value::Bag(items, _) = target {
                 return Some(Some(Ok(
                     sample_weighted_bag_key(items).unwrap_or(Value::Nil)
                 )));
             }
-            if let Value::Set(items) = target {
+            if let Value::Set(items, _) = target {
                 if items.is_empty() {
                     return Some(Some(Ok(Value::Nil)));
                 }
@@ -210,7 +210,7 @@ pub(super) fn dispatch(
             }
         }
         "pickpairs" => Some(match target {
-            Value::Bag(items) => {
+            Value::Bag(items, _) => {
                 if items.is_empty() {
                     Some(Ok(Value::Nil))
                 } else {
@@ -223,7 +223,7 @@ pub(super) fn dispatch(
                     Some(Ok(Value::Pair(key.clone(), Box::new(Value::Int(*count)))))
                 }
             }
-            Value::Set(items) => {
+            Value::Set(items, _) => {
                 if items.is_empty() {
                     Some(Ok(Value::Nil))
                 } else {
@@ -236,7 +236,7 @@ pub(super) fn dispatch(
                     Some(Ok(Value::Pair(key.clone(), Box::new(Value::Bool(true)))))
                 }
             }
-            Value::Mix(items) => {
+            Value::Mix(items, _) => {
                 if items.is_empty() {
                     Some(Ok(Value::Nil))
                 } else {
@@ -252,8 +252,9 @@ pub(super) fn dispatch(
             _ => None,
         }),
         "grab" | "grabpairs" => Some(match target {
-            Value::Bag(_) => Some(Err(RuntimeError::immutable("Bag", method))),
-            Value::Set(_) => Some(Err(RuntimeError::immutable("Set", method))),
+            Value::Bag(_, _) => Some(Err(RuntimeError::immutable("Bag", method))),
+            Value::Set(_, _) => Some(Err(RuntimeError::immutable("Set", method))),
+            Value::Mix(_, _) => Some(Err(RuntimeError::immutable("Mix", method))),
             _ => None,
         }),
         "first" => Some(match target {
@@ -497,13 +498,13 @@ pub(super) fn dispatch(
                     None
                 }
             }
-            Value::Bag(_) => Some(Ok(Value::Package(Symbol::intern("UInt")))),
-            Value::Set(_) => Some(Ok(Value::Package(Symbol::intern("Bool")))),
-            Value::Mix(_) => Some(Ok(Value::Package(Symbol::intern("Real")))),
+            Value::Bag(_, _) => Some(Ok(Value::Package(Symbol::intern("UInt")))),
+            Value::Set(_, _) => Some(Ok(Value::Package(Symbol::intern("Bool")))),
+            Value::Mix(_, _) => Some(Ok(Value::Package(Symbol::intern("Real")))),
             _ => None,
         }),
         "keyof" => Some(match target {
-            Value::Bag(_) | Value::Set(_) | Value::Mix(_) => {
+            Value::Bag(_, _) | Value::Set(_, _) | Value::Mix(_, _) => {
                 Some(Ok(Value::Package(Symbol::intern("Mu"))))
             }
             Value::Hash(_) => None,

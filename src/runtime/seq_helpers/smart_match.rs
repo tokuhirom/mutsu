@@ -778,7 +778,7 @@ impl Interpreter {
                 true
             }
             // Set ~~ Mix: all set elements must exist in the Mix with unit weights.
-            (Value::Set(set), Value::Mix(mix)) => {
+            (Value::Set(set, _), Value::Mix(mix, _)) => {
                 set.len() == mix.len()
                     && set.iter().all(|key| {
                         mix.get(key)
@@ -786,7 +786,7 @@ impl Interpreter {
                     })
             }
             // Mix ~~ Set: all mix elements must have unit weights and exist in the set.
-            (Value::Mix(mix), Value::Set(set)) => {
+            (Value::Mix(mix, _), Value::Set(set, _)) => {
                 mix.len() == set.len()
                     && mix.iter().all(|(key, weight)| {
                         weight.is_finite() && *weight == 1.0 && set.contains(key)
