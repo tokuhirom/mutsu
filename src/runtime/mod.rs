@@ -2859,6 +2859,8 @@ impl Interpreter {
                     | "newline"
                     | "soft"
                     | "fatal"
+                    | "oo"
+                    | "class"
             ) {
             // Track MONKEY-TYPING pragma
             if module == "MONKEY-TYPING" || module == "MONKEY" {

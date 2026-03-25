@@ -1621,7 +1621,9 @@ impl Compiler {
                     || module == "customtrait"
                     || module == "isms"
                     || module == "nqp"
-                    || module == "soft" => {}
+                    || module == "soft"
+                    || module == "oo"
+                    || module == "class" => {}
             Stmt::Use { module, .. } if module == "MONKEY-TYPING" || module == "MONKEY" => {
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
                 self.code.emit(OpCode::UseModule(name_idx));
