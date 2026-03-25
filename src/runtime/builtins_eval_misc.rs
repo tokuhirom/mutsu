@@ -42,47 +42,64 @@ impl Interpreter {
             .first()
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("EVALFILE requires a filename"))?;
-        let content = std::fs::read_to_string(&path)
-            .map_err(|e| RuntimeError::new(format!("Failed to read file '{}': {}", path, e)))?;
-        self.eval_eval_string(&content)
+        let code = fs::read_to_string(&path)
+            .map_err(|err| RuntimeError::new(format!("Failed to read {}: {}", path, err)))?;
+        let saved_file = self.env.get("?FILE").cloned();
+        self.env.insert("?FILE".to_string(), Value::str(path));
+        let result = self.eval_eval_string(&code);
+        if let Some(prev) = saved_file {
+            self.env.insert("?FILE".to_string(), prev);
+        } else {
+            self.env.remove("?FILE");
+        }
+        result
     }
 
     pub(super) fn builtin_eval(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let code = if let Some(first) = args.first() {
-            match first {
-                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
+        // EVAL only accepts strings (and Buf), not blocks
+        if let Some(first_arg) = Self::positional_value(args, 0) {
+            match first_arg {
+                Value::Sub(_) | Value::Routine { .. } | Value::WeakSub(_) => {
                     return Err(RuntimeError::new(
                         "EVAL() requires a string or Buf argument, not a Block",
                     ));
                 }
-                _ => first.to_string_value(),
-            }
-        } else {
-            String::new()
-        };
-        // Check for :lang adverb
-        for arg in args.iter().skip(1) {
-            if let Value::Pair(k, v) = arg
-                && k == "lang"
-            {
-                let lang = v.to_string_value();
-                if lang == "Raku" || lang == "raku" {
-                    // Default language, continue
-                } else {
-                    return Err(RuntimeError::new(format!(
-                        "EVAL with :lang<{}> is not supported",
-                        lang
-                    )));
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if crate::runtime::utils::is_buf_like_class(&class_name.resolve()) => {
+                    // Buf argument: decode as UTF-8
+                    if let Some(Value::Array(items, _)) = attributes.get("bytes") {
+                        let bytes: Vec<u8> = items
+                            .iter()
+                            .map(|v| match v {
+                                Value::Int(n) => *n as u8,
+                                _ => v.to_string_value().parse::<u8>().unwrap_or(0),
+                            })
+                            .collect();
+                        let code = String::from_utf8_lossy(&bytes).to_string();
+                        return self.eval_eval_string(&code);
+                    }
                 }
+                _ => {}
             }
         }
-        // Check for anonymous `$ is rw` trait which Raku rejects at compile time
+        let code = Self::positional_string(args, 0);
         if Self::has_invalid_anonymous_rw_trait(&code) {
             return Err(RuntimeError::new(
                 "X::Trait::Invalid: trait 'rw' is not valid on anonymous parameter",
             ));
         }
-        // Check if EVAL references &?ROUTINE when not inside a routine
+        if let Some(lang) = Self::named_value(args, "lang") {
+            let lang = lang.to_string_value();
+            if !lang.eq_ignore_ascii_case("raku") && !lang.eq_ignore_ascii_case("perl6") {
+                return Err(RuntimeError::new(format!(
+                    "EVAL with :lang<{}> is not supported",
+                    lang
+                )));
+            }
+        }
         if code.contains("&?ROUTINE") && self.routine_stack.is_empty() {
             return Err(RuntimeError::undeclared_symbols("Undeclared name"));
         }
