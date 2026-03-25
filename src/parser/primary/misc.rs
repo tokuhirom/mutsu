@@ -1146,7 +1146,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
         let (r, return_type) = skip_pointy_return_type(r)?;
-        let (r, body) = parse_block_body(r)?;
+        let (r, body) = parse_block_body_with_sigilless(&sub_params, r)?;
         if is_rw_block {
             inject_rw_trait(&mut sub_params);
         }
@@ -1183,7 +1183,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
             r = r2;
         }
         let (r, return_type) = skip_pointy_return_type(r)?;
-        let (r, body) = parse_block_body(r)?;
+        let (r, body) = parse_block_body_with_sigilless(&param_defs, r)?;
         if is_rw_block {
             inject_rw_trait(&mut param_defs);
         }
@@ -1206,7 +1206,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
             inject_rw_trait(std::slice::from_mut(&mut first));
         }
         let (r, return_type) = skip_pointy_return_type(r)?;
-        let (r, body) = parse_block_body(r)?;
+        let (r, body) = parse_block_body_with_sigilless(std::slice::from_ref(&first), r)?;
         let simple_single = first.traits.is_empty()
             && first.shape_constraints.is_none()
             && !first.named
@@ -1309,6 +1309,34 @@ pub(super) fn ws_inner(input: &str) -> (&str, ()) {
 pub(in crate::parser) fn parse_block_body(input: &str) -> PResult<'_, Vec<crate::ast::Stmt>> {
     let (r, _) = parse_char(input, '{')?;
     crate::parser::stmt::simple::push_scope();
+    let result = (|| -> PResult<'_, Vec<crate::ast::Stmt>> {
+        let (r, stmts) = super::super::stmt::stmt_list_pub(r)?;
+        let (r, _) = ws_inner(r);
+        let (r, _) = parse_char(r, '}')?;
+        Ok((r, stmts))
+    })();
+    crate::parser::stmt::simple::pop_scope();
+    result
+}
+
+/// Like `parse_block_body`, but registers any sigilless parameters as term symbols
+/// before parsing the body.  This prevents bare names like `s` or `q` from being
+/// misinterpreted as substitution / quoting operators inside arrow-lambda bodies.
+fn parse_block_body_with_sigilless<'a>(
+    param_defs: &[crate::ast::ParamDef],
+    input: &'a str,
+) -> PResult<'a, Vec<crate::ast::Stmt>> {
+    let has_sigilless = param_defs.iter().any(|p| p.sigilless);
+    if !has_sigilless {
+        return parse_block_body(input);
+    }
+    let (r, _) = parse_char(input, '{')?;
+    crate::parser::stmt::simple::push_scope();
+    for pd in param_defs {
+        if pd.sigilless {
+            crate::parser::stmt::simple::register_user_term_symbol(&pd.name);
+        }
+    }
     let result = (|| -> PResult<'_, Vec<crate::ast::Stmt>> {
         let (r, stmts) = super::super::stmt::stmt_list_pub(r)?;
         let (r, _) = ws_inner(r);
