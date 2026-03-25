@@ -8,6 +8,116 @@ use crate::value::{RuntimeError, Value};
 use super::raku_repr::hash_pick_item;
 use super::{is_infinite_range, sample_weighted_bag_key, sample_weighted_mix_key};
 
+/// Efficiently sample one random element from a Range without enumerating all elements.
+fn sample_one_from_range(target: &Value) -> Option<Value> {
+    let random_i64 = |lo: i64, hi: i64| -> Value {
+        if hi <= lo {
+            return Value::Int(lo);
+        }
+        let span = (hi as i128 - lo as i128 + 1) as f64;
+        let mut offset = (crate::builtins::rng::builtin_rand() * span) as i128;
+        let max_offset = hi as i128 - lo as i128;
+        if offset > max_offset {
+            offset = max_offset;
+        }
+        Value::Int((lo as i128 + offset) as i64)
+    };
+    match target {
+        Value::Range(start, end) => Some(random_i64(*start, *end)),
+        Value::RangeExcl(start, end) => {
+            if *start >= *end {
+                Some(Value::Nil)
+            } else {
+                Some(random_i64(*start, end.saturating_sub(1)))
+            }
+        }
+        Value::RangeExclStart(start, end) => {
+            if *start >= *end {
+                Some(Value::Nil)
+            } else {
+                Some(random_i64(start.saturating_add(1), *end))
+            }
+        }
+        Value::RangeExclBoth(start, end) => {
+            if start.saturating_add(1) >= *end {
+                Some(Value::Nil)
+            } else {
+                Some(random_i64(start.saturating_add(1), end.saturating_sub(1)))
+            }
+        }
+        Value::GenericRange {
+            start,
+            end,
+            excl_start,
+            excl_end,
+        } => {
+            // Handle integer (Int/BigInt) endpoints efficiently
+            if let (Some(s), Some(e)) = (to_bigint_value(start), to_bigint_value(end)) {
+                use num_bigint::BigInt as NumBigInt;
+                use num_traits::{One, Zero};
+                let lo = if *excl_start {
+                    &s + NumBigInt::one()
+                } else {
+                    s
+                };
+                let hi = if *excl_end { &e - NumBigInt::one() } else { e };
+                if lo > hi {
+                    return Some(Value::Nil);
+                }
+                let span = &hi - &lo + NumBigInt::one();
+                let rand_val = crate::builtins::rng::builtin_rand();
+                use num_traits::ToPrimitive;
+                let span_f64 = span.to_f64().unwrap_or(f64::MAX);
+                let offset_f64 = rand_val * span_f64;
+                let offset = if offset_f64 >= span_f64 {
+                    &span - NumBigInt::one()
+                } else if offset_f64 < 0.0 || offset_f64.is_nan() {
+                    NumBigInt::zero()
+                } else {
+                    use num_bigint::ToBigInt;
+                    (offset_f64 as i128)
+                        .to_bigint()
+                        .unwrap_or_else(NumBigInt::zero)
+                };
+                let result = lo + offset;
+                // Return Int if it fits
+                if let Some(i) = result.to_i64() {
+                    return Some(Value::Int(i));
+                }
+                return Some(Value::BigInt(std::sync::Arc::new(result)));
+            }
+            // Float endpoints
+            if let (Some(s), Some(e)) =
+                (runtime::to_float_value(start), runtime::to_float_value(end))
+                && s.is_finite()
+                && e.is_finite()
+            {
+                let lo = if *excl_start { s + 1.0 } else { s };
+                let hi = if *excl_end { e - 1.0 } else { e };
+                if lo > hi {
+                    return Some(Value::Nil);
+                }
+                let span = hi - lo + 1.0;
+                let idx = (crate::builtins::rng::builtin_rand() * span) as i64;
+                let idx = idx.min((span - 1.0) as i64);
+                return Some(Value::Num(lo + idx as f64));
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+/// Convert a Value to BigInt if it's an integer type.
+fn to_bigint_value(v: &Value) -> Option<num_bigint::BigInt> {
+    use num_bigint::ToBigInt;
+    match v {
+        Value::Int(i) => i.to_bigint(),
+        Value::BigInt(b) => Some(b.as_ref().clone()),
+        _ => None,
+    }
+}
+
 pub(super) fn dispatch(
     target: &Value,
     method: &str,
@@ -79,6 +189,10 @@ pub(super) fn dispatch(
                 }
             }
             _ => {
+                // Try efficient range sampling first
+                if let Some(v) = sample_one_from_range(target) {
+                    return Some(Some(Ok(v)));
+                }
                 let items = if crate::runtime::utils::is_shaped_array(target) {
                     crate::runtime::utils::shaped_array_leaves(target)
                 } else {
@@ -117,6 +231,10 @@ pub(super) fn dispatch(
                     idx = keys.len() - 1;
                 }
                 return Some(Some(Ok(Value::str(keys[idx].clone()))));
+            }
+            // Try efficient range sampling first
+            if let Some(v) = sample_one_from_range(target) {
+                return Some(Some(Ok(v)));
             }
             let items = if crate::runtime::utils::is_shaped_array(target) {
                 crate::runtime::utils::shaped_array_leaves(target)
