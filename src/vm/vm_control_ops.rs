@@ -15,6 +15,7 @@ pub(super) struct ForLoopSpec {
     pub(super) rw_param_names: Vec<String>,
     pub(super) kv_mode: bool,
     pub(super) source_var_names: Vec<String>,
+    pub(super) autothread_junctions: bool,
 }
 
 pub(super) struct WhileLoopSpec {
@@ -219,10 +220,28 @@ impl VM {
             return Ok(());
         }
 
-        let items = if let Value::LazyList(ref ll) = iterable {
+        let raw_items = if let Value::LazyList(ref ll) = iterable {
             self.force_lazy_list_vm(ll)?
         } else {
             runtime::value_to_list(&iterable)
+        };
+        // When autothread_junctions is set (parameter typed as Any or more
+        // specific), expand Junction items into their eigenstates so each
+        // eigenstate is iterated separately.
+        let items = if spec.autothread_junctions {
+            let mut expanded = Vec::new();
+            for item in raw_items {
+                if let Value::Junction { values, .. } = &item {
+                    for v in values.iter() {
+                        expanded.push(v.clone());
+                    }
+                } else {
+                    expanded.push(item);
+                }
+            }
+            expanded
+        } else {
+            raw_items
         };
         self.env_dirty = true;
         let body_start = *ip + 1;

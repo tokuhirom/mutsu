@@ -857,6 +857,17 @@ impl Compiler {
                 };
                 let kv_mode = has_rw && Self::for_iterable_is_kv(iterable);
                 let source_var_names = Self::for_iterable_var_names(iterable);
+                // When the block parameter has a type constraint other than Mu
+                // or Junction, junction items should be autothreaded (expanded
+                // into their eigenstates).
+                let autothread_junctions = match param_def.as_ref() {
+                    Some(def) => match def.type_constraint.as_deref() {
+                        None | Some("Mu") | Some("Junction") => false,
+                        Some(_) => true,
+                    },
+                    // No param_def means default (Mu) — no autothreading
+                    None => false,
+                };
                 let loop_idx = self.code.emit(OpCode::ForLoop {
                     param_idx,
                     param_local,
@@ -873,6 +884,7 @@ impl Compiler {
                     rw_param_names,
                     kv_mode,
                     source_var_names,
+                    autothread_junctions,
                 });
                 self.compile_body_with_implicit_try(&loop_body);
                 self.code.patch_loop_end(loop_idx);

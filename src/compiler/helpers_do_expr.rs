@@ -251,6 +251,7 @@ impl Compiler {
             rw_param_names: Vec::new(),
             kv_mode: false,
             source_var_names,
+            autothread_junctions: false,
         });
         self.compile_collected_loop_body(&loop_body);
         self.code.patch_loop_end(loop_idx);

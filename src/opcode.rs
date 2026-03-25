@@ -485,6 +485,9 @@ pub(crate) enum OpCode {
         /// Variable names for per-element writeback when the iterable is a list
         /// of scalar variables (e.g. `for ($a, $b, $c) { $_++ }`).
         source_var_names: Vec<String>,
+        /// When true, Junction items are expanded into their eigenstates
+        /// (parameter type is Any or more specific, not Mu or Junction).
+        autothread_junctions: bool,
     },
     /// C-style loop: [cond opcodes][body opcodes][step opcodes].
     /// Layout after CStyleLoop: cond at [ip+1..cond_end), body at [cond_end..step_start),
