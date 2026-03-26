@@ -1451,10 +1451,24 @@ impl Interpreter {
                     });
                 }
                 "Bag" | "BagHash" => {
+                    // BagHash.new(|c) takes a Capture:
+                    // - Single arg: iterate over it (flatten lists/arrays/hashes,
+                    //   but NOT QuantHash types which are single elements)
+                    // - Multiple args: each arg is a single element (no flattening)
                     let mut counts: HashMap<String, i64> = HashMap::new();
-                    for arg in &args {
-                        for item in Self::value_to_list(arg) {
-                            *counts.entry(item.to_string_value()).or_insert(0) += 1;
+                    if args.len() == 1 {
+                        let arg = &args[0];
+                        // QuantHash types are always single elements
+                        if matches!(arg, Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)) {
+                            *counts.entry(arg.to_string_value()).or_insert(0) += 1;
+                        } else {
+                            for item in Self::value_to_list(arg) {
+                                *counts.entry(item.to_string_value()).or_insert(0) += 1;
+                            }
+                        }
+                    } else {
+                        for arg in &args {
+                            *counts.entry(arg.to_string_value()).or_insert(0) += 1;
                         }
                     }
                     return Ok(if base_class_name == "BagHash" {
