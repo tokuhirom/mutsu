@@ -130,11 +130,11 @@ impl VM {
     }
 
     fn resolve_whatever_index_for_target(&mut self, idx: Value, target: Option<&Value>) -> Value {
-        if let Value::Sub(data) = idx {
-            let len = match target {
-                Some(Value::Array(items, ..)) => items.len() as i64,
-                _ => 0,
-            };
+        let len = match target {
+            Some(Value::Array(items, ..)) => items.len() as i64,
+            _ => 0,
+        };
+        if let Value::Sub(ref data) = idx {
             let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
             let mut sub_env = data.env.clone();
             sub_env.insert(param.to_string(), Value::Int(len));
@@ -146,6 +146,37 @@ impl VM {
                 .unwrap_or(Value::Nil);
             *self.interpreter.env_mut() = saved_env;
             return result;
+        }
+        // Resolve Array of WhateverCode indices: @a[*-3, *-2, *-1]
+        if let Value::Array(ref items, kind) = idx {
+            let mut needs_resolve = false;
+            for item in items.iter() {
+                if matches!(item, Value::Sub(_)) {
+                    needs_resolve = true;
+                    break;
+                }
+            }
+            if needs_resolve {
+                let mut resolved = Vec::with_capacity(items.len());
+                for item in items.iter() {
+                    if let Value::Sub(data) = item {
+                        let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
+                        let mut sub_env = data.env.clone();
+                        sub_env.insert(param.to_string(), Value::Int(len));
+                        let saved_env = std::mem::take(self.interpreter.env_mut());
+                        *self.interpreter.env_mut() = sub_env;
+                        let result = self
+                            .interpreter
+                            .eval_block_value(&data.body)
+                            .unwrap_or(Value::Nil);
+                        *self.interpreter.env_mut() = saved_env;
+                        resolved.push(result);
+                    } else {
+                        resolved.push(item.clone());
+                    }
+                }
+                return Value::Array(Arc::new(resolved), kind);
+            }
         }
         idx
     }
@@ -487,6 +518,57 @@ impl VM {
         Ok(coerced_items)
     }
 
+    /// Resolve a GenericRange with WhateverCode endpoints into a concrete range
+    /// by evaluating the lambda endpoints against the given array length.
+    fn resolve_generic_range_for_assign(&mut self, idx: &Value, array_len: usize) -> Option<Value> {
+        if let Value::GenericRange {
+            start,
+            end,
+            excl_start,
+            excl_end,
+        } = idx
+        {
+            let len = array_len as i64;
+            let resolve_endpoint = |vm: &mut Self, val: &Value| -> i64 {
+                match val {
+                    Value::Int(i) => *i,
+                    Value::Sub(data) => {
+                        let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
+                        let mut sub_env = data.env.clone();
+                        sub_env.insert(param.to_string(), Value::Int(len));
+                        let saved_env = std::mem::take(vm.interpreter.env_mut());
+                        *vm.interpreter.env_mut() = sub_env;
+                        let result = vm
+                            .interpreter
+                            .eval_block_value(&data.body)
+                            .unwrap_or(Value::Nil);
+                        *vm.interpreter.env_mut() = saved_env;
+                        match result {
+                            Value::Int(i) => i,
+                            _ => 0,
+                        }
+                    }
+                    Value::Num(f) => *f as i64,
+                    _ => 0,
+                }
+            };
+            let s = resolve_endpoint(self, start);
+            let e = resolve_endpoint(self, end);
+            let resolved = if *excl_start && *excl_end {
+                Value::RangeExclBoth(s, e)
+            } else if *excl_start {
+                Value::RangeExclStart(s, e)
+            } else if *excl_end {
+                Value::RangeExcl(s, e)
+            } else {
+                Value::Range(s, e)
+            };
+            Some(resolved)
+        } else {
+            None
+        }
+    }
+
     fn slice_indices_from_index(idx: &Value) -> Option<Vec<usize>> {
         match idx {
             Value::Range(a, b) => {
@@ -543,6 +625,21 @@ impl VM {
             }
             _ => None,
         }
+    }
+
+    /// Create an X::OutOfRange RuntimeError for negative index assignment
+    fn make_out_of_range_error(effective_index: i64) -> RuntimeError {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert(
+            "message".to_string(),
+            Value::str_from(&format!(
+                "Effective index out of range. Is: {}, should be in 0..^Inf",
+                effective_index
+            )),
+        );
+        attrs.insert("got".to_string(), Value::Int(effective_index));
+        attrs.insert("range".to_string(), Value::str_from("0..^Inf"));
+        RuntimeError::typed("X::OutOfRange", attrs)
     }
 
     pub(super) fn exec_string_concat_op(&mut self, n: u32) -> Result<(), RuntimeError> {
@@ -1131,11 +1228,27 @@ impl VM {
                         &idx,
                     )));
                 }
-                let range_slice = if let Some(indices) = Self::slice_indices_from_index(&idx) {
-                    Some((indices, self.assignment_rhs_values(&val)?))
+                // Resolve GenericRange with WhateverCode endpoints (e.g. @a[*-4 .. *-1] = ...)
+                let resolved_idx;
+                let idx_for_slice = if let Value::GenericRange { .. } = &idx {
+                    let array_len = if let Some(Value::Array(items, ..)) =
+                        self.interpreter.env().get(&var_name)
+                    {
+                        items.len()
+                    } else {
+                        0
+                    };
+                    resolved_idx = self.resolve_generic_range_for_assign(&idx, array_len);
+                    resolved_idx.as_ref().unwrap_or(&idx)
                 } else {
-                    None
+                    &idx
                 };
+                let range_slice =
+                    if let Some(indices) = Self::slice_indices_from_index(idx_for_slice) {
+                        Some((indices, self.assignment_rhs_values(&val)?))
+                    } else {
+                        None
+                    };
                 if let Some(current) = self.interpreter.env().get(&var_name).cloned()
                     && let Value::Mixin(inner, mixins) = current
                 {
@@ -1291,6 +1404,12 @@ impl VM {
                                         };
                                     }
                                 }
+                            } else if let Value::Int(i) = &idx
+                                && *i < 0
+                            {
+                                // Negative index from WhateverCode resolution
+                                // (e.g. @arr[*-1] = 42 on empty array)
+                                return Err(Self::make_out_of_range_error(*i));
                             } else {
                                 return Err(RuntimeError::new("Index out of bounds"));
                             }
