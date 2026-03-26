@@ -249,43 +249,77 @@ pub fn raku_value(v: &Value) -> String {
             format!("{} => {}", key_repr, raku_value(value))
         }
         Value::Hash(map) => {
-            // Cycle detection for recursive hash structures
+            // Cycle detection for recursive hash structures.
+            // When a self-referencing hash is found, produce Raku-style output:
+            //   ((my %Hash_<ptr>) = {:a(42), :b(%Hash_<ptr>)})
             thread_local! {
-                static SEEN_HASH_PTRS: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
+                static SEEN_HASH_PTRS: std::cell::RefCell<Vec<(usize, String)>> = const { std::cell::RefCell::new(Vec::new()) };
+                static HASH_CYCLE_FOUND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
             }
             let ptr = Arc::as_ptr(map) as usize;
-            let is_cycle = SEEN_HASH_PTRS.with(|seen| seen.borrow().contains(&ptr));
-            if is_cycle {
-                return "{...}".to_string();
+            let var_name = format!("%hash_{}", ptr);
+            let cycle_var = SEEN_HASH_PTRS.with(|seen| {
+                seen.borrow()
+                    .iter()
+                    .find(|(p, _)| *p == ptr)
+                    .map(|(_, name)| name.clone())
+            });
+            if let Some(name) = cycle_var {
+                HASH_CYCLE_FOUND.with(|f| f.set(true));
+                return name;
             }
-            SEEN_HASH_PTRS.with(|seen| seen.borrow_mut().push(ptr));
+            let is_top = SEEN_HASH_PTRS.with(|seen| seen.borrow().is_empty());
+            SEEN_HASH_PTRS.with(|seen| seen.borrow_mut().push((ptr, var_name.clone())));
+            if is_top {
+                HASH_CYCLE_FOUND.with(|f| f.set(false));
+            }
             let mut sorted_keys: Vec<&String> = map.keys().collect();
             sorted_keys.sort();
             let parts: Vec<String> = sorted_keys
                 .iter()
                 .map(|k| {
                     let v = &map[*k];
-                    if let Value::Bool(true) = v {
-                        format!(":{}", k)
-                    } else if let Value::Bool(false) = v {
-                        format!(":!{}", k)
+                    let is_ident = !k.is_empty()
+                        && k.starts_with(|c: char| c.is_alphabetic() || c == '_')
+                        && k.chars()
+                            .all(|c| c.is_alphanumeric() || c == '_' || c == '-');
+                    if is_ident {
+                        if let Value::Bool(true) = v {
+                            format!(":{}", k)
+                        } else if let Value::Bool(false) = v {
+                            format!(":!{}", k)
+                        } else {
+                            let repr = if matches!(v, Value::Nil) {
+                                "Any".to_string()
+                            } else {
+                                raku_value(v)
+                            };
+                            format!(":{}({})", k, repr)
+                        }
                     } else {
+                        // Non-identifier keys: use "key" => value format
                         let repr = if matches!(v, Value::Nil) {
                             "Any".to_string()
                         } else {
                             raku_value(v)
                         };
-                        format!(":{}({})", k, repr)
+                        format!("{} => {}", raku_value(&Value::str(k.to_string())), repr)
                     }
                 })
                 .collect();
+            let had_cycle = HASH_CYCLE_FOUND.with(|f| f.get());
             SEEN_HASH_PTRS.with(|seen| {
                 let mut s = seen.borrow_mut();
-                if let Some(pos) = s.iter().rposition(|p| *p == ptr) {
+                if let Some(pos) = s.iter().rposition(|(p, _)| *p == ptr) {
                     s.remove(pos);
                 }
             });
-            format!("{{{}}}", parts.join(", "))
+            let hash_repr = format!("{{{}}}", parts.join(", "));
+            if is_top && had_cycle {
+                format!("((my {}) = {})", var_name, hash_repr)
+            } else {
+                hash_repr
+            }
         }
         Value::Nil => "Nil".to_string(),
         Value::Package(name) => name.resolve().to_string(),

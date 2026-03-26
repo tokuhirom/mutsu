@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use std::collections::HashMap;
 use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
 
@@ -190,6 +191,55 @@ impl VM {
             "Mix" => Some("Mix"),
             "MixHash" => Some("MixHash"),
             _ => None,
+        }
+    }
+
+    /// After assigning to a hash variable, check if any values in the new hash
+    /// reference the old hash Arc (captured on the RHS before assignment).
+    /// If so, replace them with the new hash's Arc to create a true circular
+    /// reference, matching Raku's container semantics for `%h = :b(%h)`.
+    pub(super) fn fixup_circular_hash_refs(new_val: &mut Value, old_ptr: &Option<usize>) {
+        let Some(old_ptr) = old_ptr else { return };
+        if let Value::Hash(new_arc) = new_val {
+            // Check if any values in the hash reference the old Arc.
+            let has_old_ref = new_arc.values().any(|v| {
+                if let Value::Hash(inner_arc) = v {
+                    Arc::as_ptr(inner_arc) as usize == *old_ptr
+                } else {
+                    false
+                }
+            });
+            if !has_old_ref {
+                return;
+            }
+            // Build a new map where old-hash references are replaced with
+            // a placeholder, then wrap it in an Arc and fix up the placeholder.
+            let mut new_map = HashMap::new();
+            let mut circular_keys = Vec::new();
+            for (k, v) in new_arc.iter() {
+                if let Value::Hash(inner_arc) = v
+                    && Arc::as_ptr(inner_arc) as usize == *old_ptr
+                {
+                    circular_keys.push(k.clone());
+                    // Placeholder - will be replaced below
+                    new_map.insert(k.clone(), Value::Nil);
+                    continue;
+                }
+                new_map.insert(k.clone(), v.clone());
+            }
+            // Create the new Arc with the map
+            let result_arc = Arc::new(new_map);
+            // Now fix up the circular references: set the placeholder values
+            // to point to the result_arc itself.
+            let map = Arc::as_ptr(&result_arc) as *mut HashMap<String, Value>;
+            for key in &circular_keys {
+                // SAFETY: We just created result_arc and hold the only reference,
+                // so no other thread can access it.
+                unsafe {
+                    (*map).insert(key.clone(), Value::Hash(result_arc.clone()));
+                }
+            }
+            *new_arc = result_arc;
         }
     }
 
@@ -1894,6 +1944,16 @@ impl VM {
         }
 
         let name = &code.locals[idx];
+        // Capture the old hash Arc before assignment for circular reference fixup.
+        let old_hash_arc = if name.starts_with('%') {
+            if let Value::Hash(arc) = &self.locals[idx] {
+                Some(Arc::as_ptr(arc) as usize)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let mut val = if name.starts_with('%') {
             if is_constant || is_bind {
                 // `:=` binding or `constant %x` preserves containers — skip coercion.
@@ -2073,6 +2133,15 @@ impl VM {
             return Err(err);
         }
         self.locals[idx] = val.clone();
+        // Circular hash reference fixup: when assigning to a hash variable,
+        // if any values in the new hash reference the old hash (captured on the
+        // RHS before assignment), replace them with the new hash's Arc to create
+        // a true circular reference (matching Raku container semantics).
+        if name.starts_with('%') && !is_bind && !is_constant {
+            Self::fixup_circular_hash_refs(&mut self.locals[idx], &old_hash_arc);
+        }
+        // Use the potentially fixed-up value for env/shared_vars.
+        let val = self.locals[idx].clone();
         // Mark variable as readonly when storing a LazyThunk
         if matches!(val, Value::LazyThunk(..)) {
             self.interpreter.mark_readonly(name);
