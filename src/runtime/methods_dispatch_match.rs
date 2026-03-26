@@ -28,16 +28,9 @@ impl Interpreter {
                 };
                 if let Some(tname) = type_name {
                     let mut attrs = std::collections::HashMap::new();
-                    attrs.insert(
-                        "typename".to_string(),
-                        Value::str_from(tname),
-                    );
-                    attrs.insert(
-                        "method".to_string(),
-                        Value::str_from(method),
-                    );
-                    let exception =
-                        Value::make_instance(Symbol::intern("X::Immutable"), attrs);
+                    attrs.insert("typename".to_string(), Value::str_from(tname));
+                    attrs.insert("method".to_string(), Value::str_from(method));
+                    let exception = Value::make_instance(Symbol::intern("X::Immutable"), attrs);
                     let mut err = RuntimeError::new(&format!(
                         "Cannot call '{}' on an immutable '{}'",
                         method, tname
