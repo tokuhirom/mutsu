@@ -1920,6 +1920,12 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     if let Some((op, len)) = parse_comparison_op(r) {
         let r = &r[len..];
         let (r, _) = ws(r)?;
+        // Track whether the smartmatch RHS is a regex literal.  When it is,
+        // chaining with subsequent comparison operators (eq, ==, …) must be
+        // suppressed because the regex literal terminates the smartmatch RHS
+        // at its closing delimiter, so `X ~~ /pat/ eq Z` should parse as
+        // `(X ~~ /pat/) eq Z` (left-associative), not as a chained comparison.
+        let mut rhs_is_regex_lit = false;
         let (r, mut right) = if matches!(op, ComparisonOp::SmartMatch | ComparisonOp::SmartNotMatch)
         {
             if let Ok((rest, expr)) = crate::parser::primary::regex::regex_lit(r) {
@@ -1943,6 +1949,7 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                         junctive_expr_mode(r, mode)?
                     }
                 } else {
+                    rhs_is_regex_lit = true;
                     (rest, expr)
                 }
             } else if mode == ExprMode::Full {
@@ -1989,6 +1996,12 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             if super::should_wrap_whatevercode(&left) {
                 left = super::wrap_whatevercode(&left);
             }
+        }
+        // When the smartmatch RHS is a regex literal, do not chain with
+        // subsequent comparison operators.  The regex literal terminates the
+        // smartmatch and the following operator applies to the match result.
+        if rhs_is_regex_lit {
+            return Ok((r, make_chain_cmp(left, op.token_kind(), right, false)));
         }
         let mut operands = vec![left, right];
         let mut chain_ops: Vec<(TokenKind, bool)> = vec![(op.token_kind(), false)];
