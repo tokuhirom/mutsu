@@ -135,6 +135,11 @@ impl VM {
             Some(Value::Array(items, ..)) => items.len() as i64,
             _ => 0,
         };
+        // Bare Whatever (*) in array subscript means all indices: 0, 1, ..., len-1
+        if matches!(idx, Value::Whatever) {
+            let indices: Vec<Value> = (0..len).map(Value::Int).collect();
+            return Value::Array(Arc::new(indices), crate::value::ArrayKind::List);
+        }
         if let Value::Sub(ref data) = idx {
             let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
             let mut sub_env = data.env.clone();
@@ -1183,6 +1188,8 @@ impl VM {
                             Self::assign_array_multidim(container, keys.as_ref(), val.clone())?;
                             initialized_marks.push(encoded_idx.clone());
                         }
+                    } else if keys.is_empty() {
+                        // Empty slice assignment (e.g. @n[*] on empty array): no-op
                     } else {
                         // Flat slice assignment: @a[2,3,4,6] = <foo bar foo bar>
                         // Auto-extend the array to accommodate all indices

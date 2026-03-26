@@ -107,6 +107,10 @@ impl VM {
             index
         };
         let result = match (target, index) {
+            // Whatever (*) index on Array: @a[*] returns all elements as a List
+            (Value::Array(items, _is_arr), Value::Whatever) => {
+                Value::Array(items, crate::value::ArrayKind::List)
+            }
             (Value::Array(items, is_arr), Value::Int(i)) => {
                 if i < 0 {
                     // Return a Failure wrapping X::OutOfRange — `//` treats it as

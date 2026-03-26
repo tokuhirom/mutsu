@@ -435,6 +435,7 @@ fn parse_bracket_indices_inner(input: &str) -> PResult<'_, ParsedBracketIndex> {
     let mut current_dim = vec![first];
     let mut dimensions: Vec<Expr> = Vec::new();
     let mut has_semicolons = false;
+    let mut has_trailing_comma = false;
     let mut r = r;
     loop {
         let (r2, _) = ws(r)?;
@@ -443,6 +444,7 @@ fn parse_bracket_indices_inner(input: &str) -> PResult<'_, ParsedBracketIndex> {
             let (r3, _) = ws(r3)?;
             // Handle trailing comma before ']' or ';'
             if r3.starts_with(']') || r3.starts_with(';') {
+                has_trailing_comma = true;
                 r = r3;
                 continue;
             }
@@ -480,7 +482,7 @@ fn parse_bracket_indices_inner(input: &str) -> PResult<'_, ParsedBracketIndex> {
         }
         return Ok((
             r2,
-            ParsedBracketIndex::Single(if current_dim.len() == 1 {
+            ParsedBracketIndex::Single(if current_dim.len() == 1 && !has_trailing_comma {
                 current_dim.remove(0)
             } else {
                 Expr::ArrayLiteral(current_dim)
