@@ -331,6 +331,15 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
     if let Some(r) = keyword("with", rest) {
         let (r, _) = ws1(r)?;
         let (r, cond) = expression(r)?;
+        // Do not consume a full `with EXPR -> $param { ... }` block header
+        // as a statement modifier. This preserves parsing of:
+        //   subtest 'sub' => { ... }
+        //   with make-temp-dir() -> $dir { ... }
+        // as two statements, rather than stmt + postfix modifier + lambda.
+        let (r_ws, _) = ws(r)?;
+        if r_ws.starts_with("->") || r_ws.starts_with('{') {
+            return Ok(None);
+        }
         let mut stmt_for_branch = stmt.clone();
         let mut r_tail = r;
         if let Stmt::Call { name, args } = &stmt_for_branch {
@@ -400,6 +409,11 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
     if let Some(r) = keyword("without", rest) {
         let (r, _) = ws1(r)?;
         let (r, cond) = expression(r)?;
+        // Same as `with` — do not consume a full block header as modifier.
+        let (r_ws, _) = ws(r)?;
+        if r_ws.starts_with("->") || r_ws.starts_with('{') {
+            return Ok(None);
+        }
         let mut stmt_for_branch = stmt.clone();
         let mut r_tail = r;
         if let Stmt::Call { name, args } = &stmt_for_branch {

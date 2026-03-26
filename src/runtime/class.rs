@@ -619,6 +619,10 @@ impl Interpreter {
                 remaining,
             });
         }
+        // Check for `is DEPRECATED` trait on the method
+        if let Some(ref msg) = method_def.deprecated_message {
+            self.check_deprecation_for_method(method_name, &owner_class, msg);
+        }
         let result = self.run_instance_method_resolved(
             receiver_class_name,
             &owner_class,

@@ -822,6 +822,11 @@ impl Interpreter {
             }
         }
         self.run_pending_instance_destroys()?;
+        // Print deprecation report to stderr at program exit
+        if let Some(report) = super::deprecation::take_report() {
+            self.stderr_output.push_str(&report);
+            self.stderr_output.push('\n');
+        }
         if self.bailed_out {
             return Ok(());
         }

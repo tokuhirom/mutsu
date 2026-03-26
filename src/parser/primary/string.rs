@@ -1531,6 +1531,10 @@ fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, &str) {
                 }
                 rest = after_parens;
                 chain.clear();
+                // Continue looking for more chained method calls after parens
+                // e.g., "$var.absolute().raku()" should parse both methods
+                chain_rest = after_parens;
+                continue;
             }
             break;
         }

@@ -3237,10 +3237,8 @@ impl Interpreter {
 
     pub fn flush_stderr_buffer(&mut self) {
         if !self.stderr_output.is_empty() {
-            if !self.immediate_stdout {
-                eprint!("{}", self.stderr_output);
-                let _ = std::io::stderr().flush();
-            }
+            eprint!("{}", self.stderr_output);
+            let _ = std::io::stderr().flush();
             self.stderr_output.clear();
         }
     }

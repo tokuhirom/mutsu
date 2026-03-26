@@ -32,7 +32,6 @@ impl Interpreter {
     }
 
     /// Check deprecation for a method call using name, package, and message.
-    #[allow(dead_code)]
     pub(crate) fn check_deprecation_for_method(&self, name: &str, package: &str, message: &str) {
         let file = self
             .env
