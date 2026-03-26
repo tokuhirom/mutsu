@@ -26,6 +26,10 @@ impl Compiler {
                     self.code.emit(OpCode::LoadConst(idx));
                 }
             },
+            // Grouped (parenthesized) expression — transparent wrapper
+            Expr::Grouped(inner) => {
+                self.compile_expr(inner);
+            }
             // m/regex/ -- compile as $_ ~~ /regex/, matching against $_
             Expr::MatchRegex(v) => {
                 self.compile_match_regex(v);

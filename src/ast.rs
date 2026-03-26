@@ -105,6 +105,12 @@ pub(crate) enum PhaserKind {
 #[allow(clippy::enum_variant_names, dead_code)]
 pub(crate) enum Expr {
     Literal(Value),
+    /// Marks a parenthesized expression so the compiler can distinguish
+    /// `(1|2)|3` (grouped) from `1|2|3` (list-associative chain).
+    /// The compiler treats this as transparent — it simply compiles the
+    /// inner expression — but the chain-flattener stops at Grouped
+    /// boundaries to prevent incorrect junction flattening.
+    Grouped(Box<Expr>),
     Whatever,
     HyperWhatever,
     BareWord(String),
