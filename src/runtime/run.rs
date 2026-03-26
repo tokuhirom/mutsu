@@ -209,6 +209,47 @@ impl Interpreter {
     }
 
     pub(super) fn preprocess_roast_directives(input: &str) -> String {
+        // Pre-scan: collect #?DOES N annotations mapping sub names to test counts.
+        // Pattern: #?DOES N line followed (possibly after blank/comment lines) by
+        // a `sub name(...)` definition.
+        let mut does_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        {
+            let lines: Vec<&str> = input.lines().collect();
+            let mut i = 0;
+            while i < lines.len() {
+                let t = lines[i].trim_start();
+                if let Some(count) = t
+                    .strip_prefix("#?DOES")
+                    .map(str::trim_start)
+                    .and_then(|s| s.split_whitespace().next())
+                    .and_then(|s| s.parse::<usize>().ok())
+                {
+                    // Look ahead for the sub definition
+                    let mut j = i + 1;
+                    while j < lines.len() {
+                        let tj = lines[j].trim_start();
+                        if tj.is_empty() || tj.starts_with('#') {
+                            j += 1;
+                            continue;
+                        }
+                        // Match `sub name(` pattern
+                        if let Some(rest) = tj.strip_prefix("sub ")
+                            && let Some(name_end) =
+                                rest.find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                        {
+                            let name = &rest[..name_end];
+                            if !name.is_empty() {
+                                does_counts.insert(name.to_string(), count);
+                            }
+                        }
+                        break;
+                    }
+                }
+                i += 1;
+            }
+        }
+
         let mut output = String::new();
         let mut pending_todo: Option<(String, usize)> = None; // (reason, remaining_count)
         let mut skip_lines_remaining: usize = 0;
@@ -390,7 +431,25 @@ impl Interpreter {
                         Self::raku_single_quoted_literal(&skip_block_reason)
                     ));
                 } else {
-                    output.push('\n');
+                    // Check if this line calls a function annotated with #?DOES N
+                    let mut emitted_does = false;
+                    for (func_name, count) in &does_counts {
+                        if trimmed.contains(&format!("{func_name}("))
+                            || trimmed.starts_with(&format!("{func_name} "))
+                        {
+                            for _ in 0..*count {
+                                output.push_str(&format!(
+                                    "skip {}, 1;\n",
+                                    Self::raku_single_quoted_literal(&skip_block_reason)
+                                ));
+                            }
+                            emitted_does = true;
+                            break;
+                        }
+                    }
+                    if !emitted_does {
+                        output.push('\n');
+                    }
                 }
                 continue;
             }
