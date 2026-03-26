@@ -253,7 +253,18 @@ impl Interpreter {
         let raw_name = args[0].to_string_value();
         let name = self.canonical_atomic_var_name(&raw_name, args.first());
         self.check_readonly_for_modify(&name)?;
-        let value_key = self.atomic_value_key_for_name(&name);
+        // For instance attributes, use an instance-specific key to avoid
+        // stale data when a new instance reuses the same attribute name.
+        let effective_name = if name.starts_with('!') {
+            if let Some(Value::Instance { id, .. }) = self.env.get("self") {
+                format!("{}::{}", name, id)
+            } else {
+                name.clone()
+            }
+        } else {
+            name.clone()
+        };
+        let value_key = self.atomic_value_key_for_name(&effective_name);
 
         if args.len() == 3 {
             // 3-arg form: cas($var, $expected, $new)
@@ -271,10 +282,16 @@ impl Interpreter {
                 current
             };
             if did_swap {
-                self.env.insert(name.clone(), coerced);
+                self.env.insert(name.clone(), coerced.clone());
                 if let Ok(mut dirty) = self.shared_vars_dirty.write() {
                     dirty.insert(value_key);
-                    dirty.insert(name);
+                    dirty.insert(name.clone());
+                }
+                // If the variable is an instance attribute (!attr_name),
+                // also update the Instance in env and shared_vars so the
+                // main thread can pick up the change after await.
+                if let Some(attr_name) = name.strip_prefix('!') {
+                    self.sync_atomic_attribute_to_instance(attr_name, &coerced);
                 }
             } else {
                 self.env.insert(name.clone(), current.clone());
@@ -386,6 +403,229 @@ impl Interpreter {
                     }
                     return Ok(coerced);
                 }
+            }
+        }
+    }
+
+    /// CAS on an array element: cas(@arr[idx], $expected, $new)
+    /// Args: [array_name_str, index, expected, new_val]
+    /// Uses shared_vars to store the whole array for atomic cross-thread access.
+    /// The array in shared_vars is the single source of truth — reads via
+    /// `GetLocal` pick it up through the `get_shared_var` fallback path.
+    pub(super) fn builtin_cas_array_elem(
+        &mut self,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if args.len() != 4 {
+            return Err(RuntimeError::new(
+                "__mutsu_cas_array_elem requires 4 arguments",
+            ));
+        }
+        let arr_name = args[0].to_string_value();
+        let index = match &args[1] {
+            Value::Int(i) => *i,
+            other => other.to_string_value().parse::<i64>().unwrap_or(0),
+        };
+        let expected = &args[2];
+        let new_val = args[3].clone();
+
+        // Use an internal key to avoid interference with set_shared_var
+        // which would overwrite our atomic array with stale local values.
+        let atomic_key = format!("__mutsu_atomic_arr::{arr_name}");
+
+        // Initialize shared_vars with the array if not yet set
+        {
+            let shared = self.shared_vars.read().unwrap();
+            if !shared.contains_key(&atomic_key) {
+                drop(shared);
+                let arr = self.env.get(&arr_name).cloned().unwrap_or(Value::Array(
+                    std::sync::Arc::new(Vec::new()),
+                    crate::value::ArrayKind::Array,
+                ));
+                let mut shared = self.shared_vars.write().unwrap();
+                if !shared.contains_key(&atomic_key) {
+                    shared.insert(atomic_key.clone(), arr);
+                }
+            }
+        }
+
+        let mut did_swap = false;
+        let current;
+        {
+            let mut shared = self.shared_vars.write().unwrap();
+            let arr = shared.get(&atomic_key).cloned().unwrap_or(Value::Array(
+                std::sync::Arc::new(Vec::new()),
+                crate::value::ArrayKind::Array,
+            ));
+            if let Value::Array(ref elements, kind) = arr {
+                let idx = if index < 0 {
+                    (elements.len() as i64 + index) as usize
+                } else {
+                    index as usize
+                };
+                current = elements.get(idx).cloned().unwrap_or(Value::Int(0));
+                if current == *expected {
+                    let mut new_elements = (**elements).clone();
+                    while new_elements.len() <= idx {
+                        new_elements.push(Value::Int(0));
+                    }
+                    new_elements[idx] = new_val.clone();
+                    shared.insert(
+                        atomic_key.clone(),
+                        Value::Array(std::sync::Arc::new(new_elements), kind),
+                    );
+                    did_swap = true;
+                }
+            } else {
+                current = Value::Int(0);
+            }
+        }
+
+        if did_swap && let Ok(mut dirty) = self.shared_vars_dirty.write() {
+            dirty.insert(arr_name.clone());
+        }
+        // Note: don't update env["@values"] here — it would be overwritten
+        // by ensure_env_synced with stale locals. Instead, GetLocal checks
+        // the atomic shared key directly.
+        Ok(current)
+    }
+
+    /// CAS on a multi-dimensional array element: cas(@arr[d1;d2;...], $expected, $new)
+    /// Args: [array_name_str, dimensions_list, expected, new_val]
+    pub(super) fn builtin_cas_array_multidim(
+        &mut self,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if args.len() != 4 {
+            return Err(RuntimeError::new(
+                "__mutsu_cas_array_multidim requires 4 arguments",
+            ));
+        }
+        let arr_name = args[0].to_string_value();
+        let dims: Vec<i64> = match &args[1] {
+            Value::Array(elems, ..) => elems
+                .iter()
+                .map(|v| match v {
+                    Value::Int(i) => *i,
+                    other => other.to_string_value().parse::<i64>().unwrap_or(0),
+                })
+                .collect(),
+            _ => vec![0],
+        };
+        let expected = &args[2];
+        let new_val = args[3].clone();
+
+        let atomic_key = format!("__mutsu_atomic_arr::{arr_name}");
+
+        // Initialize shared_vars with the array if not yet set
+        {
+            let shared = self.shared_vars.read().unwrap();
+            if !shared.contains_key(&atomic_key) {
+                drop(shared);
+                let arr = self.env.get(&arr_name).cloned().unwrap_or(Value::Array(
+                    std::sync::Arc::new(Vec::new()),
+                    crate::value::ArrayKind::Array,
+                ));
+                let mut shared = self.shared_vars.write().unwrap();
+                if !shared.contains_key(&atomic_key) {
+                    shared.insert(atomic_key.clone(), arr);
+                }
+            }
+        }
+
+        let mut did_swap = false;
+        let current;
+        {
+            let mut shared = self.shared_vars.write().unwrap();
+            let arr = shared.get(&atomic_key).cloned().unwrap_or(Value::Array(
+                std::sync::Arc::new(Vec::new()),
+                crate::value::ArrayKind::Array,
+            ));
+            // Navigate to the element using the dimension indices
+            current = Self::multidim_get(&arr, &dims);
+            if current == *expected {
+                let updated = Self::multidim_set(&arr, &dims, new_val);
+                shared.insert(atomic_key.clone(), updated);
+                did_swap = true;
+            }
+        }
+
+        if did_swap && let Ok(mut dirty) = self.shared_vars_dirty.write() {
+            dirty.insert(arr_name.clone());
+        }
+        Ok(current)
+    }
+
+    /// Get an element from a multi-dimensional array by navigating nested arrays.
+    fn multidim_get(arr: &Value, dims: &[i64]) -> Value {
+        let mut current = arr.clone();
+        for &dim in dims {
+            if let Value::Array(ref elements, ..) = current {
+                let idx = if dim < 0 {
+                    (elements.len() as i64 + dim) as usize
+                } else {
+                    dim as usize
+                };
+                current = elements.get(idx).cloned().unwrap_or(Value::Int(0));
+            } else {
+                return Value::Int(0);
+            }
+        }
+        current
+    }
+
+    /// Set an element in a multi-dimensional array by navigating nested arrays.
+    /// Returns the updated top-level array.
+    fn multidim_set(arr: &Value, dims: &[i64], value: Value) -> Value {
+        if dims.is_empty() {
+            return value;
+        }
+        if let Value::Array(elements, kind) = arr {
+            let idx = if dims[0] < 0 {
+                (elements.len() as i64 + dims[0]) as usize
+            } else {
+                dims[0] as usize
+            };
+            let mut new_elements = (**elements).clone();
+            while new_elements.len() <= idx {
+                new_elements.push(Value::Int(0));
+            }
+            if dims.len() == 1 {
+                new_elements[idx] = value;
+            } else {
+                new_elements[idx] = Self::multidim_set(&new_elements[idx], &dims[1..], value);
+            }
+            Value::Array(std::sync::Arc::new(new_elements), *kind)
+        } else {
+            arr.clone()
+        }
+    }
+
+    /// After CAS updates an attribute variable (`!attr_name`), update the
+    /// corresponding Instance object in env ("self") and store the updated
+    /// Instance in shared_vars so the main thread can pick it up after await.
+    fn sync_atomic_attribute_to_instance(&mut self, attr_name: &str, new_val: &Value) {
+        if let Some(Value::Instance {
+            class_name,
+            attributes,
+            id,
+        }) = self.env.get("self").cloned()
+        {
+            let mut new_attrs = (*attributes).clone();
+            new_attrs.insert(attr_name.to_string(), new_val.clone());
+            let updated_instance = Value::make_instance_with_id(class_name, new_attrs, id);
+            self.env
+                .insert("self".to_string(), updated_instance.clone());
+            self.env
+                .insert("__ANON_STATE__".to_string(), updated_instance.clone());
+            // Store the updated instance in shared_vars keyed by instance id
+            let instance_key = format!("__mutsu_instance::{id}");
+            {
+                let mut shared = self.shared_vars.write().unwrap();
+                shared.insert(instance_key.clone(), updated_instance);
+            }
+            if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                dirty.insert(instance_key);
             }
         }
     }

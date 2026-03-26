@@ -1802,10 +1802,14 @@ impl VM {
         }
         let atomic_name = name.strip_prefix('$').unwrap_or(&name);
         let atomic_name_key = format!("__mutsu_atomic_name::{atomic_name}");
-        let is_atomic_int = self.interpreter.var_type_constraint(&name).as_deref()
-            == Some("atomicint")
-            || self.interpreter.var_type_constraint(atomic_name).as_deref() == Some("atomicint")
-            || self.interpreter.get_shared_var(&atomic_name_key).is_some();
+        // Only use the scalar atomic fast path for scalar ($) variables.
+        // Array (@) variables with `atomicint` constraint are element-wise
+        // atomic and should go through the normal array read path.
+        let is_atomic_int = !name.starts_with('@')
+            && (self.interpreter.var_type_constraint(&name).as_deref() == Some("atomicint")
+                || self.interpreter.var_type_constraint(atomic_name).as_deref()
+                    == Some("atomicint")
+                || self.interpreter.get_shared_var(&atomic_name_key).is_some());
         if is_atomic_int {
             let fetched = self
                 .interpreter
@@ -1813,6 +1817,16 @@ impl VM {
             self.locals[idx] = fetched.clone();
             self.stack.push(fetched);
             return Ok(());
+        }
+        // Atomic array CAS stores the authoritative array under an internal
+        // shared key.  Check it first so reads pick up the latest CAS'd value.
+        if name.starts_with('@') {
+            let atomic_key = format!("__mutsu_atomic_arr::{name}");
+            if let Some(shared_val) = self.interpreter.get_shared_var(&atomic_key) {
+                self.locals[idx] = shared_val.clone();
+                self.stack.push(shared_val);
+                return Ok(());
+            }
         }
         // Shared @/% variables may be mutated by sibling threads while this VM
         // still holds an old local snapshot. Prefer the shared copy so reads

@@ -916,6 +916,11 @@ impl VM {
             OpCode::SetVarType { name_idx, tc_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 let constraint = Self::const_str(code, *tc_idx).to_string();
+                // Clear stale atomic CAS state when an @-variable is
+                // (re-)declared with a type constraint like atomicint.
+                if name.starts_with('@') && constraint == "atomicint" {
+                    self.interpreter.clear_atomic_array_state(&name);
+                }
                 self.interpreter
                     .set_var_type_constraint(&name, Some(constraint.clone()));
                 // For scalar variables, if the current value is Nil, set it to the type object.
