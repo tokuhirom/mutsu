@@ -246,6 +246,81 @@ impl Interpreter {
                     self.regex_match_all_with_captures(&pattern, &text)
                 };
                 let non_overlapping = self.select_non_overlapping_matches(all);
+
+                // Check if the nth argument contains junction operators
+                if let Some((junc_kind, parts)) = Self::parse_nth_junction(raw_nth) {
+                    let mut junc_values = Vec::new();
+                    for part in &parts {
+                        let resolved = match self.resolve_nth_indices(part, non_overlapping.len()) {
+                            Ok(v) => v,
+                            Err(_) => {
+                                junc_values.push(Value::Nil);
+                                continue;
+                            }
+                        };
+                        if resolved.len() == 1 {
+                            let idx = resolved[0];
+                            if idx == 0 || idx > non_overlapping.len() {
+                                junc_values.push(Value::Nil);
+                            } else {
+                                let cap = &non_overlapping[idx - 1];
+                                let match_obj = Value::make_match_object_with_captures(
+                                    cap.matched.clone(),
+                                    cap.from as i64,
+                                    cap.to as i64,
+                                    &cap.positional,
+                                    &cap.named,
+                                );
+                                junc_values.push(match_obj);
+                            }
+                        } else {
+                            junc_values.push(Value::Nil);
+                        }
+                    }
+                    let junction = Value::junction(junc_kind.clone(), junc_values);
+                    self.env.insert("/".to_string(), junction);
+                    // Return value depends on junction kind
+                    return match junc_kind {
+                        JunctionKind::Any => parts.iter().any(|part| {
+                            self.resolve_nth_indices(part, non_overlapping.len())
+                                .ok()
+                                .is_some_and(|v| {
+                                    v.len() == 1 && v[0] > 0 && v[0] <= non_overlapping.len()
+                                })
+                        }),
+                        JunctionKind::All => parts.iter().all(|part| {
+                            self.resolve_nth_indices(part, non_overlapping.len())
+                                .ok()
+                                .is_some_and(|v| {
+                                    v.len() == 1 && v[0] > 0 && v[0] <= non_overlapping.len()
+                                })
+                        }),
+                        JunctionKind::One => {
+                            let count = parts
+                                .iter()
+                                .filter(|part| {
+                                    self.resolve_nth_indices(part, non_overlapping.len())
+                                        .ok()
+                                        .is_some_and(|v| {
+                                            v.len() == 1
+                                                && v[0] > 0
+                                                && v[0] <= non_overlapping.len()
+                                        })
+                                })
+                                .count();
+                            count == 1
+                        }
+                        JunctionKind::None => parts.iter().all(|part| {
+                            !self
+                                .resolve_nth_indices(part, non_overlapping.len())
+                                .ok()
+                                .is_some_and(|v| {
+                                    v.len() == 1 && v[0] > 0 && v[0] <= non_overlapping.len()
+                                })
+                        }),
+                    };
+                }
+
                 let resolved = match self.resolve_nth_indices(raw_nth, non_overlapping.len()) {
                     Ok(v) => v,
                     Err(message) => {
@@ -1436,5 +1511,34 @@ impl Interpreter {
     /// Smartmatch a single element: delegate to full smartmatch.
     fn element_smartmatch(&mut self, lhs_elem: &Value, rhs_elem: &Value) -> bool {
         self.smart_match(lhs_elem, rhs_elem)
+    }
+
+    /// Parse junction operators in :nth argument strings.
+    /// Detects `|` (any), `&` (all), `^` (one) and returns the junction kind
+    /// and the split parts. Only handles single-level junctions with integer parts.
+    fn parse_nth_junction(raw: &str) -> Option<(JunctionKind, Vec<String>)> {
+        let trimmed = raw.trim();
+        // Try each junction operator. `^` must be checked carefully since it
+        // could also be part of `*-N` or a negative number, so we only split on
+        // `^` if all parts look like integers.
+        for (sep, kind) in [
+            ("|", JunctionKind::Any),
+            ("&", JunctionKind::All),
+            ("^", JunctionKind::One),
+        ] {
+            if trimmed.contains(sep) {
+                let parts: Vec<String> = trimmed.split(sep).map(|s| s.trim().to_string()).collect();
+                if parts.len() >= 2 && parts.iter().all(|p| !p.is_empty()) {
+                    // Verify all parts are valid nth tokens (integers, *, *-N)
+                    let all_valid = parts
+                        .iter()
+                        .all(|p| p.parse::<i64>().is_ok() || p == "*" || p.starts_with("*-"));
+                    if all_valid {
+                        return Some((kind, parts));
+                    }
+                }
+            }
+        }
+        None
     }
 }
