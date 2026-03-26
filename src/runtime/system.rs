@@ -12,6 +12,7 @@ impl Interpreter {
         match crate::parser::parse_program_with_operators(src, op_names, op_assoc, imported_names) {
             Ok((stmts, _)) => {
                 self.check_eval_class_redeclarations(&stmts)?;
+                self.check_eval_undeclared_vars(&stmts)?;
                 let value = self.eval_block_value(&stmts)?;
                 if self.eval_result_is_unresolved_bareword(&stmts, &value) {
                     return Err(RuntimeError::undeclared_symbols("Undeclared name"));
@@ -100,6 +101,117 @@ impl Interpreter {
             }
         }
         Ok(())
+    }
+
+    /// Check for undeclared variable references in EVAL'd code.
+    /// Collects declared variable names from VarDecl/Assign nodes and checks
+    /// Var references against them and the outer environment.
+    fn check_eval_undeclared_vars(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        let mut declared: HashSet<String> = HashSet::new();
+        // Collect all declared variable names from top-level statements
+        for stmt in stmts {
+            Self::collect_declared_vars(stmt, &mut declared);
+        }
+        // Check for undeclared Var references
+        for stmt in stmts {
+            if let Some(var_name) = self.find_undeclared_var_in_stmt(stmt, &declared) {
+                let symbol = format!("${}", var_name);
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("name".to_string(), Value::str(symbol.clone()));
+                attrs.insert(
+                    "message".to_string(),
+                    Value::str(format!("Variable '{}' is not declared.", symbol)),
+                );
+                return Err(RuntimeError::typed("X::Undeclared", attrs));
+            }
+        }
+        Ok(())
+    }
+
+    /// Collect declared variable names from a statement.
+    fn collect_declared_vars(stmt: &Stmt, out: &mut HashSet<String>) {
+        match stmt {
+            Stmt::VarDecl { name, .. } => {
+                out.insert(name.clone());
+            }
+            Stmt::Assign { name, .. } => {
+                out.insert(name.clone());
+            }
+            Stmt::For { param, body, .. } => {
+                if let Some(v) = param {
+                    out.insert(v.clone());
+                }
+                for s in body {
+                    Self::collect_declared_vars(s, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Find an undeclared Var reference in a statement.
+    /// Returns the variable name (without sigil) if undeclared, None otherwise.
+    fn find_undeclared_var_in_stmt(
+        &self,
+        stmt: &Stmt,
+        declared: &HashSet<String>,
+    ) -> Option<String> {
+        match stmt {
+            Stmt::Say(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) | Stmt::Put(exprs) => {
+                for expr in exprs {
+                    if let Some(name) = self.find_undeclared_var_in_expr(expr, declared) {
+                        return Some(name);
+                    }
+                }
+                None
+            }
+            Stmt::Expr(expr) => self.find_undeclared_var_in_expr(expr, declared),
+            _ => None,
+        }
+    }
+
+    /// Find an undeclared Var reference in an expression.
+    fn find_undeclared_var_in_expr(
+        &self,
+        expr: &Expr,
+        declared: &HashSet<String>,
+    ) -> Option<String> {
+        match expr {
+            Expr::Var(name) => {
+                // Skip special variables and variables with twigils
+                if name == "_"
+                    || name == "/"
+                    || name == "!"
+                    || name.starts_with('*')
+                    || name.starts_with('?')
+                    || name.starts_with('^')
+                    || name.starts_with('~')
+                    || name.starts_with('.')
+                    || name.starts_with('!')
+                    || name.contains("::")
+                    || name.starts_with("CALLER")
+                    || name.starts_with("DYNAMIC")
+                    || name == "__ANON_STATE__"
+                {
+                    return None;
+                }
+                // Check if declared locally
+                if declared.contains(name) {
+                    return None;
+                }
+                // Check if in the outer environment (with $ prefix)
+                let sigiled = format!("${}", name);
+                if self.env.contains_key(&sigiled) || self.env.contains_key(name) {
+                    return None;
+                }
+                // Check if it's a known function or class name
+                if self.has_function(name) || self.has_class(name) {
+                    return None;
+                }
+                Some(name.clone())
+            }
+            _ => None,
+        }
     }
 
     fn eval_result_is_unresolved_bareword(&self, stmts: &[Stmt], result: &Value) -> bool {
