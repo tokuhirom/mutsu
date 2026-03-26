@@ -22,6 +22,8 @@ pub(crate) struct ReactSubscription {
     pub head_limit: Option<usize>,
     /// Count of emissions so far (used with head_limit)
     pub emit_count: usize,
+    /// Direct Channel source (for `whenever $channel { ... }`)
+    pub channel: Option<crate::value::SharedChannel>,
 }
 
 impl Interpreter {
@@ -207,6 +209,7 @@ impl Interpreter {
                                 line_buffer: String::new(),
                                 head_limit,
                                 emit_count: 0,
+                                channel: None,
                             });
                             continue;
                         }
@@ -234,6 +237,7 @@ impl Interpreter {
                                 line_buffer: String::new(),
                                 head_limit,
                                 emit_count: 0,
+                                channel: None,
                             });
                             continue;
                         }
@@ -280,6 +284,29 @@ impl Interpreter {
                             line_buffer: String::new(),
                             head_limit: None,
                             emit_count: 0,
+                            channel: None,
+                        });
+                    }
+                    // Channel source: poll values directly from the channel
+                    Value::Channel(ch) => {
+                        let last_callbacks = items
+                            .get(2)
+                            .and_then(Self::value_array_items)
+                            .unwrap_or_default();
+                        react_subs.push(ReactSubscription {
+                            receiver: None,
+                            supplier_id: None,
+                            supplier_next_index: 0,
+                            callback,
+                            close_callbacks: Vec::new(),
+                            last_callbacks,
+                            quit_callbacks: Vec::new(),
+                            done: false,
+                            is_lines: false,
+                            line_buffer: String::new(),
+                            head_limit: None,
+                            emit_count: 0,
+                            channel: Some(ch.clone()),
                         });
                     }
                     _ => {}
@@ -300,6 +327,33 @@ impl Interpreter {
                     continue;
                 }
                 all_done = false;
+                // Handle Channel sources: poll values directly
+                if let Some(ref ch) = sub.channel {
+                    match ch.poll_result() {
+                        Ok(Some(value)) => {
+                            match self.call_sub_value(sub.callback.clone(), vec![value], true) {
+                                Err(e) if e.is_react_done => break 'react_loop,
+                                other => {
+                                    other?;
+                                }
+                            }
+                            sub.emit_count += 1;
+                        }
+                        Ok(None) => {
+                            // No value available yet; if channel is closed, mark done
+                            if !ch.can_send() {
+                                for callback in &sub.last_callbacks {
+                                    self.call_sub_value(callback.clone(), Vec::new(), true)?;
+                                }
+                                sub.done = true;
+                            }
+                        }
+                        Err(_err) => {
+                            sub.done = true;
+                        }
+                    }
+                    continue;
+                }
                 if let Some(supplier_id) = sub.supplier_id {
                     let (values, done, quit) = supplier_snapshot(supplier_id);
                     while sub.supplier_next_index < values.len() {
