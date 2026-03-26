@@ -235,8 +235,8 @@ impl Interpreter {
                         }
                         // Match `sub name(` pattern
                         if let Some(rest) = tj.strip_prefix("sub ")
-                            && let Some(name_end) = rest
-                                .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                            && let Some(name_end) =
+                                rest.find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
                         {
                             let name = &rest[..name_end];
                             if !name.is_empty() {
