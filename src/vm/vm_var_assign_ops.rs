@@ -1353,9 +1353,8 @@ impl VM {
                             // modifications propagate to the bound source.
                             // %-sigiled vars have names like "%h", scalar vars
                             // have names without a sigil prefix (e.g. "bar").
-                            let use_inplace =
-                                Arc::strong_count(hash) > 1
-                                    && (!var_name.starts_with('%') || is_bound_hash_var);
+                            let use_inplace = Arc::strong_count(hash) > 1
+                                && (!var_name.starts_with('%') || is_bound_hash_var);
                             let h: &mut std::collections::HashMap<String, Value> = if use_inplace {
                                 unsafe { &mut *(Arc::as_ptr(hash) as *mut _) }
                             } else {
