@@ -1024,8 +1024,14 @@ impl VM {
         let r = right.to_string_value();
         let lb = l.as_bytes();
         let rb = r.as_bytes();
-        let len = lb.len().min(rb.len());
-        let result: Vec<u8> = (0..len).map(|i| lb[i] & rb[i]).collect();
+        let len = lb.len().max(rb.len());
+        let result: Vec<u8> = (0..len)
+            .map(|i| {
+                let a = lb.get(i).copied().unwrap_or(0);
+                let b = rb.get(i).copied().unwrap_or(0);
+                a & b
+            })
+            .collect();
         self.stack
             .push(Value::str(String::from_utf8_lossy(&result).into_owned()));
     }
