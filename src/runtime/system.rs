@@ -178,7 +178,7 @@ impl Interpreter {
     ) -> Option<String> {
         match expr {
             Expr::Var(name) => {
-                // Skip special variables and variables with twigils
+                // Skip special variables, variables with twigils, and capture vars ($0, $1, ...)
                 if name == "_"
                     || name == "/"
                     || name == "!"
@@ -192,6 +192,7 @@ impl Interpreter {
                     || name.starts_with("CALLER")
                     || name.starts_with("DYNAMIC")
                     || name == "__ANON_STATE__"
+                    || name.chars().next().is_some_and(|c| c.is_ascii_digit())
                 {
                     return None;
                 }
