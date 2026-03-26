@@ -136,7 +136,7 @@ impl VM {
                 } else {
                     let default =
                         self.typed_container_default(&Value::Array(items.clone(), is_arr));
-                    Self::resolve_array_entry(&items, is_arr, i as usize, default)
+                    self.resolve_array_entry(&items, is_arr, i as usize, default)
                 }
             }
             (target @ Value::Array(..), Value::Array(indices, ..)) => {
@@ -171,7 +171,7 @@ impl VM {
                                 // Lazy index: stop at array boundary
                                 break;
                             }
-                            out.push(Self::resolve_array_entry(
+                            out.push(self.resolve_array_entry(
                                 items,
                                 *kind,
                                 i,
@@ -203,7 +203,7 @@ impl VM {
                 let default = self.typed_container_default(&Value::Array(items.clone(), kind));
                 let mut slice = Vec::new();
                 for i in start..=end {
-                    slice.push(Self::resolve_array_entry(&items, kind, i, default.clone()));
+                    slice.push(self.resolve_array_entry(&items, kind, i, default.clone()));
                 }
                 if kind.is_real_array() {
                     Value::array(slice)
@@ -228,7 +228,7 @@ impl VM {
                     let default = self.typed_container_default(&Value::Array(items.clone(), kind));
                     let mut slice = Vec::with_capacity(end_excl - start);
                     for i in start..end_excl {
-                        slice.push(Self::resolve_array_entry(&items, kind, i, default.clone()));
+                        slice.push(self.resolve_array_entry(&items, kind, i, default.clone()));
                     }
                     if kind.is_real_array() {
                         Value::array(slice)
@@ -242,18 +242,18 @@ impl VM {
                 if n < 0.0 {
                     default
                 } else {
-                    Self::resolve_array_entry(&items, is_arr, n as usize, default)
+                    self.resolve_array_entry(&items, is_arr, n as usize, default)
                 }
             }
             (Value::Array(items, is_arr), Value::Rat(n, d)) if d != 0 => {
                 let default = self.typed_container_default(&Value::Array(items.clone(), is_arr));
                 let i = (n as f64 / d as f64) as usize;
-                Self::resolve_array_entry(&items, is_arr, i, default)
+                self.resolve_array_entry(&items, is_arr, i, default)
             }
             (Value::Array(items, is_arr), Value::FatRat(n, d)) if d != 0 => {
                 let default = self.typed_container_default(&Value::Array(items.clone(), is_arr));
                 let i = (n as f64 / d as f64) as usize;
-                Self::resolve_array_entry(&items, is_arr, i, default)
+                self.resolve_array_entry(&items, is_arr, i, default)
             }
             (Value::Array(items, is_arr), Value::BigRat(n, d)) if !d.is_zero() => {
                 let default = self.typed_container_default(&Value::Array(items.clone(), is_arr));
@@ -261,7 +261,7 @@ impl VM {
                 if idx < 0.0 {
                     default
                 } else {
-                    Self::resolve_array_entry(&items, is_arr, idx as usize, default)
+                    self.resolve_array_entry(&items, is_arr, idx as usize, default)
                 }
             }
             (Value::Seq(items), Value::Int(i)) => {
@@ -985,7 +985,7 @@ impl VM {
                     } else {
                         let default =
                             self.typed_container_default(&Value::Array(items.clone(), is_arr));
-                        Self::resolve_array_entry(&items, is_arr, i as usize, default)
+                        self.resolve_array_entry(&items, is_arr, i as usize, default)
                     }
                 } else {
                     Self::make_assoc_indexing_failure("Array")
