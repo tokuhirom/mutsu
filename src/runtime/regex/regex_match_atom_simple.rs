@@ -1,5 +1,5 @@
 use super::super::*;
-use super::regex_helpers::{CaseFoldIter, is_word_char, matches_named_builtin};
+use super::regex_helpers::{CaseFoldIter, grapheme_end, is_word_char, matches_named_builtin};
 
 impl Interpreter {
     #[allow(dead_code)]
@@ -346,7 +346,7 @@ impl Interpreter {
                 if c == '\n' || c == '\r' || c == '\u{85}' || c == '\u{2028}' {
                     return None;
                 }
-                return Some(pos + 1);
+                return Some(grapheme_end(chars, pos));
             }
             _ => {}
         }
@@ -474,7 +474,14 @@ impl Interpreter {
                     let spec = Self::parse_named_regex_lookup_spec(name);
                     Some(pos + spec.lookup_name.chars().count())
                 }
-                _ => Some(pos + 1),
+                // Literal matches advance by exactly 1 codepoint — they do
+                // NOT consume trailing combining marks, because the regex may
+                // need to match those marks explicitly (e.g. `abc \x[5B4] def`).
+                RegexAtom::Literal(_) => Some(pos + 1),
+                // Character classes (\d, \w, .), Unicode properties, and
+                // composite classes match a full grapheme: the base codepoint
+                // plus any trailing combining marks.
+                _ => Some(grapheme_end(chars, pos)),
             }
         } else {
             None

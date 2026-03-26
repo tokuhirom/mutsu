@@ -245,6 +245,18 @@ pub(super) fn is_word_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
+/// Advance past a single grapheme cluster starting at `pos` in `chars`.
+/// After matching the base character at `pos`, this skips any trailing
+/// combining marks (Unicode category M) so that a single regex atom
+/// consumes the full grapheme, matching Raku's grapheme-level semantics.
+pub(super) fn grapheme_end(chars: &[char], pos: usize) -> usize {
+    let mut end = pos + 1;
+    while end < chars.len() && is_combining_mark(chars[end]) {
+        end += 1;
+    }
+    end
+}
+
 /// Check if an atom is "simple" — it only advances position without producing
 /// any captures. Used to enable a fast path in ratcheted quantifier loops
 /// that avoids cloning RegexCaptures on every iteration.
