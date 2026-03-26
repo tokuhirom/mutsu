@@ -171,7 +171,21 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
         } else {
             first
         };
-        return Ok((input, normalize_chained_zip_meta(first)));
+        let result = normalize_chained_zip_meta(first);
+        // Wrap in Grouped so the compiler's chain-flattener can
+        // distinguish `(1|2)|3` from `1|2|3` for junction operators.
+        let result = if matches!(
+            &result,
+            Expr::Binary {
+                op: TokenKind::Pipe | TokenKind::Ampersand | TokenKind::Caret,
+                ..
+            }
+        ) {
+            Expr::Grouped(Box::new(result))
+        } else {
+            result
+        };
+        return Ok((input, result));
     }
     // Comma-separated list with sequence operator detection
     // Use expression_no_sequence so that `...` is not consumed as part of an item
