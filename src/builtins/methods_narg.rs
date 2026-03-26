@@ -1399,6 +1399,11 @@ pub(crate) fn native_method_1arg(
                     "Cannot call .pick on a Mix (immutable)",
                 )));
             }
+            // Callable args (e.g. WhateverCode `* / 2`) need interpreter to invoke;
+            // fall through to the runtime.
+            if matches!(arg, Value::Sub(_) | Value::WeakSub(_)) {
+                return None;
+            }
             // For Bag, use weighted picking without expanding to a flat list
             if let Value::Bag(bag, _) = target {
                 let total_items: i128 = bag.values().map(|c| *c as i128).sum();

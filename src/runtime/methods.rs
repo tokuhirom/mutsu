@@ -755,6 +755,50 @@ impl Interpreter {
             return result;
         }
 
+        // .pick/.roll/.grab/.grabpairs/.pickpairs with Callable arg on
+        // Bag/BagHash/Set/SetHash/Mix/MixHash/Array/List/Range:
+        // invoke the callable to get the actual count, then re-dispatch.
+        // NOTE: Supply.grab takes a Callable that transforms values, so exclude Supplies.
+        let is_supply_target = matches!(
+            &target,
+            Value::Instance { class_name, .. } if class_name == "Supply"
+        ) || matches!(&target, Value::Package(name) if name == "Supply");
+        if matches!(method, "pick" | "roll" | "grab" | "grabpairs" | "pickpairs")
+            && args.len() == 1
+            && args[0].as_sub().is_some()
+            && !is_supply_target
+        {
+            let callable = args[0].clone();
+            // For pick/grab, pass total; for pickpairs/grabpairs, pass elems
+            let input = match method {
+                "pickpairs" | "grabpairs" => {
+                    // .elems
+                    let method_sym = crate::symbol::Symbol::intern("elems");
+                    crate::builtins::native_method_0arg(&target, method_sym)
+                        .unwrap_or(Ok(Value::Int(0)))?
+                }
+                _ => {
+                    // .total
+                    let method_sym = crate::symbol::Symbol::intern("total");
+                    crate::builtins::native_method_0arg(&target, method_sym)
+                        .unwrap_or(Ok(Value::Int(0)))?
+                }
+            };
+            let count = self.call_sub_value(callable, vec![input], false)?;
+            // Convert to Int
+            let count_int = match &count {
+                Value::Int(n) => Value::Int(*n),
+                Value::Num(f) => Value::Int(*f as i64),
+                Value::Rat(n, d) if *d != 0 => Value::Int(*n / *d),
+                other => {
+                    let method_sym = crate::symbol::Symbol::intern("Int");
+                    crate::builtins::native_method_0arg(other, method_sym)
+                        .unwrap_or(Ok(count.clone()))?
+                }
+            };
+            return self.call_method_with_values(target, method, vec![count_int]);
+        }
+
         // Comprehensive split handler
         if method == "split"
             && !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply")
