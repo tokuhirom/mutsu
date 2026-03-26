@@ -279,6 +279,7 @@ roast/S04-statements/when.t
 roast/S04-statements/while.t
 roast/S04-statements/with.t
 roast/S05-capture/dot.t
+roast/S05-capture/match-object.t
 roast/S05-capture/named.t
 roast/S05-capture/subrule.t
 roast/S05-grammar/example.t
