@@ -755,11 +755,18 @@ impl Interpreter {
             return result;
         }
 
-        // .pick/.roll/.grab/.grabpairs/.pickpairs with Callable arg:
+        // .pick/.roll/.grab/.grabpairs/.pickpairs with Callable arg on
+        // Bag/BagHash/Set/SetHash/Mix/MixHash/Array/List/Range:
         // invoke the callable to get the actual count, then re-dispatch.
+        // NOTE: Supply.grab takes a Callable that transforms values, so exclude Supplies.
+        let is_supply_target = matches!(
+            &target,
+            Value::Instance { class_name, .. } if class_name == "Supply"
+        ) || matches!(&target, Value::Package(name) if name == "Supply");
         if matches!(method, "pick" | "roll" | "grab" | "grabpairs" | "pickpairs")
             && args.len() == 1
             && args[0].as_sub().is_some()
+            && !is_supply_target
         {
             let callable = args[0].clone();
             // For pick/grab, pass total; for pickpairs/grabpairs, pass elems
