@@ -216,7 +216,9 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         let stmt = wrap_with_will_leave(stmt, &var_name_for_leave, s.will_leave_body.clone());
         let (rest, stmt) = parse_comma_chained_decls(rest, stmt)?;
         // For scalar declarations, consume trailing sink expressions (e.g. `my $c = 1, 2, 3;`)
-        let (rest, stmt) = if is_scalar {
+        // Only in statement context (apply_modifier=true). In expression context (e.g.,
+        // `(my $x=42,1)`) the comma should be left for the enclosing expression to form a list.
+        let (rest, stmt) = if is_scalar && s.apply_modifier {
             consume_scalar_decl_trailing_comma(rest, stmt)?
         } else {
             (rest, stmt)
@@ -241,7 +243,9 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     let stmt = wrap_with_will_leave(stmt, &var_name_for_leave, s.will_leave_body.clone());
     let (rest, stmt) = parse_comma_chained_decls(rest, stmt)?;
     // For scalar declarations, consume trailing sink expressions (e.g. `my $c = 1, 2, 3;`)
-    let (rest, stmt) = if is_scalar {
+    // Only in statement context (apply_modifier=true). In expression context (e.g.,
+    // `(my $x=42,1)`) the comma should be left for the enclosing expression to form a list.
+    let (rest, stmt) = if is_scalar && s.apply_modifier {
         consume_scalar_decl_trailing_comma(rest, stmt)?
     } else {
         (rest, stmt)
