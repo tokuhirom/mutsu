@@ -1488,6 +1488,18 @@ impl Interpreter {
             }
             let mut result = Vec::new();
 
+            // Extract LAST phaser bodies so they can be run after the map loop
+            let mut last_phaser_bodies: Vec<Vec<crate::ast::Stmt>> = Vec::new();
+            for stmt in &data.body {
+                if let crate::ast::Stmt::Phaser {
+                    kind: crate::ast::PhaserKind::Last,
+                    body,
+                } = stmt
+                {
+                    last_phaser_bodies.push(body.clone());
+                }
+            }
+
             // Compile once, reuse VM for every iteration
             let compiler = crate::compiler::Compiler::new();
             let (code, compiled_fns) = compiler.compile(&data.body);
@@ -1604,6 +1616,16 @@ impl Interpreter {
                     }
                 }
                 i += arity;
+            }
+
+            // Run LAST phasers after the map loop completes (natural end or `last`)
+            if !last_phaser_bodies.is_empty() && i > 0 {
+                for phaser_body in &last_phaser_bodies {
+                    let phaser_compiler = crate::compiler::Compiler::new();
+                    let (phaser_code, phaser_fns) = phaser_compiler.compile(phaser_body);
+                    // Ignore errors from LAST phasers (best-effort)
+                    let _ = vm.run_reuse(&phaser_code, &phaser_fns);
+                }
             }
 
             *self = vm.into_interpreter();
