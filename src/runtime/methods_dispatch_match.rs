@@ -106,7 +106,7 @@ impl Interpreter {
             }
             "match" => Some(self.dispatch_match_method(target, &args)),
             "subst" => Some(self.dispatch_subst(target, &args)),
-            "comb" if args.len() == 1 => self.dispatch_comb_1arg(target, &args),
+            "comb" if !args.is_empty() => self.dispatch_comb_with_args(target, &args),
             "IO" if args.is_empty() => {
                 let s = target.to_string_value();
                 if s.contains('\0') {
@@ -129,34 +129,78 @@ impl Interpreter {
         }
     }
 
-    /// Helper for .comb with 1 argument.
-    fn dispatch_comb_1arg(
+    /// Helper for .comb with arguments.
+    /// Handles: .comb($matcher), .comb($matcher, $limit), .comb($matcher, :match)
+    fn dispatch_comb_with_args(
         &mut self,
         target: Value,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        use unicode_segmentation::UnicodeSegmentation;
+
         let text = target.to_string_value();
-        match &args[0] {
-            Value::Int(n) if *n > 0 => {
-                let chunk_size = *n as usize;
-                let chars: Vec<char> = text.chars().collect();
-                let result: Vec<Value> = chars
-                    .chunks(chunk_size)
-                    .map(|chunk| Value::str(chunk.iter().collect()))
-                    .collect();
-                Some(Ok(Value::array(result)))
+
+        // Separate positional args from named :match pair
+        let mut positional: Vec<&Value> = Vec::new();
+        let mut return_match = false;
+        for arg in args {
+            if let Value::Pair(key, val) = arg
+                && key == "match"
+            {
+                return_match = val.truthy();
+                continue;
             }
-            Value::Str(needle) => {
+            positional.push(arg);
+        }
+
+        // Extract limit from second positional arg (default: unlimited)
+        let limit: Option<i64> = if positional.len() >= 2 {
+            Some(positional[1].to_f64() as i64)
+        } else {
+            None
+        };
+
+        // If limit is 0 or negative, return empty
+        if let Some(lim) = limit
+            && lim <= 0
+        {
+            return Some(Ok(Value::array(Vec::new())));
+        }
+
+        let matcher = positional.first().copied();
+
+        // TODO: comb should return Seq per Raku spec, but our Seq type doesn't iterate
+        // properly in map/for/hash-slice contexts yet. Return Array for now to avoid regressions.
+        let make_seq = Value::array;
+
+        match matcher {
+            Some(Value::Int(n)) => {
+                let chunk_size = if *n <= 0 { 1usize } else { *n as usize };
+                let graphemes: Vec<&str> = text.graphemes(true).collect();
+                let result: Vec<Value> = graphemes
+                    .chunks(chunk_size)
+                    .map(|chunk| Value::str(chunk.concat()))
+                    .collect();
+                let result = Self::apply_limit(result, limit);
+                Some(Ok(make_seq(result)))
+            }
+            Some(Value::Str(needle)) => {
                 if needle.is_empty() {
-                    let chars = text
-                        .chars()
-                        .map(|ch| Value::str(ch.to_string()))
-                        .collect::<Vec<_>>();
-                    return Some(Ok(Value::array(chars)));
+                    let chars: Vec<Value> = text
+                        .graphemes(true)
+                        .map(|g| Value::str(g.to_string()))
+                        .collect();
+                    let chars = Self::apply_limit(chars, limit);
+                    return Some(Ok(make_seq(chars)));
                 }
                 let mut result = Vec::new();
                 let mut offset = 0usize;
                 while offset <= text.len() {
+                    if let Some(lim) = limit
+                        && result.len() >= lim as usize
+                    {
+                        break;
+                    }
                     let Some(pos) = text[offset..].find(needle.as_str()) else {
                         break;
                     };
@@ -165,34 +209,82 @@ impl Interpreter {
                     result.push(Value::str(text[start..end].to_string()));
                     offset = end;
                 }
-                Some(Ok(Value::array(result)))
+                Some(Ok(make_seq(result)))
             }
-            Value::Regex(pat) => {
+            Some(Value::Regex(pat)) => {
                 let matches = self.regex_find_all(pat, &text);
-                let chars: Vec<char> = text.chars().collect();
-                let result: Vec<Value> = matches
-                    .iter()
-                    .map(|(start, end)| {
-                        let s: String = chars[*start..*end].iter().collect();
-                        Value::str(s)
-                    })
-                    .collect();
-                Some(Ok(Value::array(result)))
+                if return_match {
+                    let result: Vec<Value> = matches
+                        .iter()
+                        .map(|(start, end)| self.create_match_object(&text, *start, *end, pat))
+                        .collect();
+                    let result = Self::apply_limit(result, limit);
+                    Some(Ok(make_seq(result)))
+                } else {
+                    let chars: Vec<char> = text.chars().collect();
+                    let result: Vec<Value> = matches
+                        .iter()
+                        .map(|(start, end)| {
+                            let s: String = chars[*start..*end].iter().collect();
+                            Value::str(s)
+                        })
+                        .collect();
+                    let result = Self::apply_limit(result, limit);
+                    Some(Ok(make_seq(result)))
+                }
             }
+            Some(Value::Sub(_)) | Some(Value::WeakSub(_)) => Some(Err(RuntimeError::new(
+                "none of these signatures match: comb does not accept a Code argument",
+            ))),
             _ => {
-                let pattern = args[0].to_string_value();
-                let matches = self.regex_find_all(&pattern, &text);
-                let chars: Vec<char> = text.chars().collect();
-                let result: Vec<Value> = matches
-                    .iter()
-                    .map(|(start, end)| {
-                        let s: String = chars[*start..*end].iter().collect();
-                        Value::str(s)
-                    })
-                    .collect();
-                Some(Ok(Value::array(result)))
+                if let Some(m) = matcher {
+                    let pattern = m.to_string_value();
+                    let matches = self.regex_find_all(&pattern, &text);
+                    let chars: Vec<char> = text.chars().collect();
+                    let result: Vec<Value> = matches
+                        .iter()
+                        .map(|(start, end)| {
+                            let s: String = chars[*start..*end].iter().collect();
+                            Value::str(s)
+                        })
+                        .collect();
+                    let result = Self::apply_limit(result, limit);
+                    Some(Ok(make_seq(result)))
+                } else {
+                    None
+                }
             }
         }
+    }
+
+    /// Apply a limit to a result vector.
+    fn apply_limit(result: Vec<Value>, limit: Option<i64>) -> Vec<Value> {
+        if let Some(lim) = limit {
+            if lim <= 0 {
+                Vec::new()
+            } else {
+                result.into_iter().take(lim as usize).collect()
+            }
+        } else {
+            result
+        }
+    }
+
+    /// Create a Match object from regex match positions.
+    fn create_match_object(&self, text: &str, start: usize, end: usize, _pat: &str) -> Value {
+        let chars: Vec<char> = text.chars().collect();
+        let matched: String = chars[start..end].iter().collect();
+        Value::make_match_object_full(
+            matched,
+            start as i64,
+            end as i64,
+            &[],
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+            &[],
+            &[],
+            Some(text),
+        )
     }
 
     /// Dispatch trig methods on Instance values via Numeric/Bridge coercion.

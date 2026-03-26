@@ -600,7 +600,10 @@ impl Value {
                         )
                 )
             }
-            "Iterable" => matches!(self, Value::Array(..) | Value::LazyList(_) | Value::Hash(_)),
+            "Iterable" => matches!(
+                self,
+                Value::Array(..) | Value::LazyList(_) | Value::Hash(_) | Value::Seq(_)
+            ),
             "Pod::Block" => matches!(
                 self,
                 Value::Instance { class_name, .. }
