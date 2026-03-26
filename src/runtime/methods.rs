@@ -1,4 +1,6 @@
-use super::methods_signature::{make_method_not_found_error, make_x_immutable_error};
+use super::methods_signature::{
+    make_method_not_found_error, make_multi_no_match_error, make_x_immutable_error,
+};
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::signature::extract_sig_info;
@@ -223,7 +225,10 @@ impl Interpreter {
                 return Err(make_x_immutable_error(method, typename));
             }
         }
-        // Non-container definite values: mutating methods throw NotFound
+        // Non-container definite values: mutating methods throw errors.
+        // In Raku, push/unshift/append/prepend/splice are defined on Any:U so calling
+        // on a definite non-array value throws X::Multi::NoMatch; pop/shift have no
+        // such proto and throw X::Method::NotFound.
         if matches!(
             method,
             "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
@@ -236,8 +241,11 @@ impl Interpreter {
                 | Value::Rat(..)
                 | Value::Complex(..)
         ) {
-            let type_name = crate::runtime::utils::value_type_name(&target);
-            return Err(make_method_not_found_error(method, type_name, false));
+            if matches!(method, "pop" | "shift") {
+                let type_name = crate::runtime::utils::value_type_name(&target);
+                return Err(make_method_not_found_error(method, type_name, false));
+            }
+            return Err(make_multi_no_match_error(method));
         }
         // Mutating array methods on Value::Array (non-container path)
         if matches!(
