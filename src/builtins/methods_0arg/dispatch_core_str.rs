@@ -167,7 +167,10 @@ pub(super) fn dispatch(
         }
         "comb" => {
             let s = target.to_string_value();
-            let parts: Vec<Value> = s.chars().map(|c| Value::str(c.to_string())).collect();
+            let parts: Vec<Value> = s
+                .graphemes(true)
+                .map(|g| Value::str(g.to_string()))
+                .collect();
             Some(Some(Ok(Value::array(parts))))
         }
         "fmt" => {

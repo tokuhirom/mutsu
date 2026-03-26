@@ -515,6 +515,16 @@ impl Interpreter {
             );
         }
 
+        // comb($matcher, $str) or comb($matcher, $str, $limit)
+        if name == "comb" && args.len() >= 2 {
+            let target = args[1].clone();
+            let mut method_args = vec![args[0].clone()];
+            for arg in &args[2..] {
+                method_args.push(arg.clone());
+            }
+            return self.call_method_with_values(target, "comb", method_args);
+        }
+
         Err(RuntimeError::new(format!(
             "X::Undeclared::Symbols: Unknown function: {}",
             name
