@@ -309,6 +309,19 @@ impl Compiler {
                         sub_compiler.compile_block_inline(ph_body);
                         continue;
                     }
+                    Stmt::Assign { name, .. } => {
+                        sub_compiler.compile_stmt(stmt);
+                        // Assignment as last statement returns the assigned value
+                        if let Some(&slot) = sub_compiler.local_map.get(name) {
+                            sub_compiler.code.emit(OpCode::GetLocal(slot));
+                        } else {
+                            let idx = sub_compiler
+                                .code
+                                .add_constant(Value::str(sub_compiler.qualify_variable_name(name)));
+                            sub_compiler.code.emit(OpCode::GetGlobal(idx));
+                        }
+                        continue;
+                    }
                     Stmt::Call { name, args } => {
                         let positional: Option<Vec<Expr>> = args
                             .iter()
@@ -536,6 +549,19 @@ impl Compiler {
                                 sub_compiler.code.emit(OpCode::GetLocal(slot));
                             } else {
                                 sub_compiler.emit_nil_value();
+                            }
+                            continue;
+                        }
+                        Stmt::Assign { name, .. } => {
+                            sub_compiler.compile_stmt(stmt);
+                            // Assignment as last statement returns the assigned value
+                            if let Some(&slot) = sub_compiler.local_map.get(name) {
+                                sub_compiler.code.emit(OpCode::GetLocal(slot));
+                            } else {
+                                let idx = sub_compiler.code.add_constant(Value::str(
+                                    sub_compiler.qualify_variable_name(name),
+                                ));
+                                sub_compiler.code.emit(OpCode::GetGlobal(idx));
                             }
                             continue;
                         }
