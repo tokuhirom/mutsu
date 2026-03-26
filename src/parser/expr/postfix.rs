@@ -1135,7 +1135,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     // because whitespace-dotty is excluded from the tight variant.
     if input.starts_with('^') && !input.starts_with("^..") {
         // Allow optional whitespace after prefix ^: both `^10` and `^ 10` are valid.
-        let rest = input[1..].trim_start_matches(|c: char| c == ' ' || c == '\t');
+        let rest = input[1..].trim_start_matches([' ', '\t']);
         let parsed_operand =
             super::precedence_meta_ops::power_expr_tight(rest).or_else(|_| prefix_expr(rest));
         if let Ok((rest, expr)) = parsed_operand {
