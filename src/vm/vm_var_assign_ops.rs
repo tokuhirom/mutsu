@@ -1375,6 +1375,11 @@ impl VM {
                 let mut range_initialized_marks: Vec<String> = Vec::new();
                 let mut pending_source_update: Option<(String, Value)> = None;
                 let mut pending_varref_update: Option<(String, Option<usize>, Value)> = None;
+                // Pre-compute whether this %-sigiled variable was bound via `:=`.
+                // Bound hash variables are marked readonly, so we use that as a signal
+                // to allow in-place mutation (preserving shared identity).
+                let is_bound_hash_var = var_name.starts_with('%')
+                    && self.interpreter.readonly_vars().contains(&var_name);
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
                     match *container {
                         Value::Hash(ref mut hash) => {
@@ -1388,17 +1393,18 @@ impl VM {
                             // identity semantics: when a hash is stored in an array
                             // slot via `$arr[i] = $hash`, mutations through the original
                             // variable must be visible through the array.
-                            // For %-sigiled variables (e.g. `%h is copy`), we always
-                            // use Arc::make_mut to get copy-on-write behavior.
                             // SAFETY: mutsu is single-threaded, so exclusive access is
                             // guaranteed even though the Arc is shared.
                             // For %-sigiled hash variables (e.g. `%h is copy`),
-                            // always use COW.  For scalar ($) variables holding
+                            // normally use COW.  For scalar ($) variables holding
                             // hashes, use in-place mutation to preserve identity.
+                            // Exception: when a %-sigiled variable is bound via
+                            // `:=` (marked readonly), use in-place mutation so
+                            // modifications propagate to the bound source.
                             // %-sigiled vars have names like "%h", scalar vars
                             // have names without a sigil prefix (e.g. "bar").
-                            let use_inplace =
-                                Arc::strong_count(hash) > 1 && !var_name.starts_with('%');
+                            let use_inplace = Arc::strong_count(hash) > 1
+                                && (!var_name.starts_with('%') || is_bound_hash_var);
                             let h: &mut std::collections::HashMap<String, Value> = if use_inplace {
                                 unsafe { &mut *(Arc::as_ptr(hash) as *mut _) }
                             } else {
