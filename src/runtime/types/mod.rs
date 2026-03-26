@@ -108,6 +108,11 @@ impl Interpreter {
         self.readonly_vars = saved;
     }
 
+    /// Get read access to readonly_vars set.
+    pub(crate) fn readonly_vars(&self) -> &HashSet<String> {
+        &self.readonly_vars
+    }
+
     /// Get mutable access to readonly_vars set.
     pub(crate) fn readonly_vars_mut(&mut self) -> &mut HashSet<String> {
         &mut self.readonly_vars
