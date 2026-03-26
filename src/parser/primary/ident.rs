@@ -2261,6 +2261,7 @@ fn invocant_param_def() -> crate::ast::ParamDef {
         named: false,
         slurpy: false,
         double_slurpy: false,
+        onearg: false,
         sigilless: false,
         type_constraint: None,
         literal_value: None,

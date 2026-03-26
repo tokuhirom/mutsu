@@ -380,6 +380,7 @@ roast/S06-signature/closure-parameters.t
 roast/S06-signature/code.t
 roast/S06-signature/defaults.t
 roast/S06-signature/definite-return.t
+roast/S06-signature/introspection.t
 roast/S06-signature/mixed-placeholders.t
 roast/S06-signature/multi-invocant.t
 roast/S06-signature/multidimensional.t

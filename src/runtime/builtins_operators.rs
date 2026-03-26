@@ -874,6 +874,15 @@ impl Interpreter {
                 "call_infix_routine fallback reduce/eval: {}",
                 infix_name
             );
+            // Smart match needs the full interpreter for regex dispatch
+            if op == "~~" {
+                acc = Value::Bool(self.smart_match(&acc, rhs));
+                continue;
+            }
+            if op == "!~~" {
+                acc = Value::Bool(!self.smart_match(&acc, rhs));
+                continue;
+            }
             let mut lhs = acc.clone();
             let mut rhs = rhs.clone();
             if self.infix_uses_numeric_bridge(op) {

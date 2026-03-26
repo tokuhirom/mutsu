@@ -28,6 +28,8 @@ pub(crate) struct ParamDef {
     pub(crate) named: bool,
     pub(crate) slurpy: bool,
     pub(crate) double_slurpy: bool,
+    /// True for single-argument rule slurpy (`+@a`, `+%h`, etc.)
+    pub(crate) onearg: bool,
     #[allow(dead_code)]
     pub(crate) sigilless: bool,
     pub(crate) type_constraint: Option<String>,
@@ -1218,6 +1220,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                         where_constraint: None,
                         traits: Vec::new(),
                         double_slurpy: false,
+                        onearg: false,
                         optional_marker: false,
                         outer_sub_signature: None,
                         code_signature: None,

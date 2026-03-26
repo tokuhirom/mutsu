@@ -85,11 +85,31 @@ pub(super) fn is_stmt_modifier_keyword(input: &str) -> bool {
     false
 }
 
+/// Check if an expression ends with a block body (e.g., `try { ... }`,
+/// `do { ... }`, `gather { ... }`). Such expressions should not have
+/// statement modifiers attached across a newline.
+fn expr_ends_with_block(expr: &Expr) -> bool {
+    matches!(expr, Expr::Try { .. } | Expr::Gather(_))
+}
+
 /// Parse statement modifier (postfix if/unless/for/while/until/given/when).
 /// Supports chaining: `expr if cond for list` parses as `for list { expr if cond }`.
 pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
     let (rest, _) = ws(input)?;
+    // Blocks: never attach a statement modifier across a newline.
     if matches!(stmt, Stmt::Block(_)) {
+        let consumed_len = input.len().saturating_sub(rest.len());
+        if input[..consumed_len].contains('\n') {
+            return Ok((input, stmt));
+        }
+    }
+    // Block-valued expressions (`try { ... }`, `do { ... }`, etc.):
+    // a newline after the closing brace should terminate the statement,
+    // preventing the next line's `if`/`for`/etc. from being treated as a
+    // statement modifier.
+    if let Stmt::Expr(ref expr) = stmt
+        && expr_ends_with_block(expr)
+    {
         let consumed_len = input.len().saturating_sub(rest.len());
         if input[..consumed_len].contains('\n') {
             return Ok((input, stmt));

@@ -33,6 +33,7 @@ fn make_param(name: String) -> ParamDef {
         named: false,
         slurpy: false,
         double_slurpy: false,
+        onearg: false,
         sigilless: false,
         type_constraint: None,
         literal_value: None,
@@ -504,6 +505,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     // Slurpy: *@arr or *%hash or *$scalar or *[...] (slurpy unpack)
     let mut slurpy_sigil = None;
     let mut double_slurpy = false;
+    let mut onearg = false;
     // Single-argument rule slurpy marker (+@a, +%h, +$x, +&f, or sigilless +foo).
     // Treat as regular slurpy for now.
     if rest.starts_with('+')
@@ -513,6 +515,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             || rest.as_bytes()[1] == b'$'
             || rest.as_bytes()[1] == b'&')
     {
+        onearg = true;
         rest = &rest[1..];
     }
     // Sigilless single-argument rule slurpy: +foo
@@ -542,6 +545,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             };
             let mut p = make_param(name);
             p.slurpy = true;
+            p.onearg = true;
             p.sigilless = true;
             p.named = named;
             p.default = default;
@@ -958,6 +962,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         p.named = named;
         p.slurpy = slurpy;
         p.double_slurpy = double_slurpy;
+        p.onearg = onearg;
         p.sigilless = true;
         p.default = default;
         p.type_constraint = type_constraint;
@@ -979,6 +984,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         p.named = named;
         p.slurpy = slurpy;
         p.double_slurpy = double_slurpy;
+        p.onearg = onearg;
         p.type_constraint = type_constraint;
         p.required = required;
         p.optional_marker = opt_marker;
@@ -1005,6 +1011,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 p.named = true;
                 p.slurpy = slurpy;
                 p.double_slurpy = double_slurpy;
+                p.onearg = onearg;
                 p.type_constraint = type_constraint;
                 p.sub_signature = Some(sub_params.clone());
                 // Check for a sub-signature after the alias: :x($r) (Str $g, Any $i)
@@ -1096,6 +1103,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             p.named = true;
             p.slurpy = slurpy;
             p.double_slurpy = double_slurpy;
+            p.onearg = onearg;
             p.type_constraint = type_constraint;
             p.sub_signature = Some(sub_params);
             // Handle optional (?) / required (!) suffix after sub-signature
@@ -1157,6 +1165,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             p.named = named;
             p.slurpy = slurpy;
             p.double_slurpy = double_slurpy;
+            p.onearg = onearg;
             p.type_constraint = type_constraint;
             p.optional_marker = true;
             return Ok((after_q, p));
@@ -1179,6 +1188,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         p.named = named;
         p.slurpy = slurpy;
         p.double_slurpy = double_slurpy;
+        p.onearg = onearg;
         p.type_constraint = type_constraint;
         p.code_signature = Some((sig_params, sig_ret));
         p.required = required;
@@ -1224,6 +1234,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         p.named = named;
         p.slurpy = slurpy;
         p.double_slurpy = double_slurpy;
+        p.onearg = onearg;
         p.type_constraint = type_constraint;
         p.required = required;
         p.optional_marker = opt_marker;
@@ -1330,6 +1341,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         p.named = named;
         p.slurpy = slurpy;
         p.double_slurpy = double_slurpy;
+        p.onearg = onearg;
         p.type_constraint = type_constraint;
         p.sub_signature = Some(sub_params);
         p.traits = param_traits;
@@ -1379,6 +1391,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         p.named = named;
         p.slurpy = slurpy;
         p.double_slurpy = double_slurpy;
+        p.onearg = onearg;
         p.type_constraint = type_constraint;
         p.sub_signature = Some(sub_params);
         p.traits = param_traits;
@@ -1458,6 +1471,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     p.named = named;
     p.slurpy = slurpy;
     p.double_slurpy = double_slurpy;
+    p.onearg = onearg;
     p.type_constraint = type_constraint;
     p.where_constraint = where_constraint;
     p.traits = param_traits;

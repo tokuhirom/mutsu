@@ -325,7 +325,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             match target {
                 Value::Hash(map) => {
-                    let keys: Vec<Value> = map.keys().map(|k| Value::str(k.clone())).collect();
+                    let keys: Vec<Value> = map.keys().map(|k| Value::hash_key_decode(k)).collect();
                     Some(Ok(Value::array(keys)))
                 }
                 Value::Pair(key, _) => {
@@ -398,7 +398,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Value::Hash(items) => {
                     let mut kv = Vec::new();
                     for (k, v) in items.iter() {
-                        kv.push(Value::str(k.clone()));
+                        kv.push(Value::hash_key_decode(k));
                         kv.push(v.clone());
                     }
                     Some(Ok(Value::array(kv)))
