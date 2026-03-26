@@ -913,6 +913,25 @@ impl VM {
         } else {
             (raw_val, None)
         };
+        // Capture old hash Arc pointer for circular reference fixup.
+        let old_hash_arc = if name.starts_with('%') {
+            let current = self.get_env_with_main_alias(&name).or_else(|| {
+                code.locals.iter().position(|n| n == &name).and_then(|idx| {
+                    if idx < self.locals.len() {
+                        Some(self.locals[idx].clone())
+                    } else {
+                        None
+                    }
+                })
+            });
+            if let Some(Value::Hash(arc)) = current {
+                Some(Arc::as_ptr(&arc) as usize)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let mut val = if name.starts_with('%') {
             let hash_val = runtime::coerce_to_hash(raw_val);
             // Resolve hash sentinel entries (bound variable refs) when assigning
@@ -969,22 +988,23 @@ impl VM {
             return Err(err);
         }
         // When assigning Nil to a typed variable, reset to the type object
-        let val = if matches!(val, Value::Nil) && !name.starts_with('@') && !name.starts_with('%') {
-            if let Some(constraint) = self.interpreter.var_type_constraint(&name) {
-                if constraint == "Mu" {
-                    val
+        let mut val =
+            if matches!(val, Value::Nil) && !name.starts_with('@') && !name.starts_with('%') {
+                if let Some(constraint) = self.interpreter.var_type_constraint(&name) {
+                    if constraint == "Mu" {
+                        val
+                    } else {
+                        let nominal = self
+                            .interpreter
+                            .nominal_type_object_name_for_constraint(&constraint);
+                        Value::Package(Symbol::intern(&nominal))
+                    }
                 } else {
-                    let nominal = self
-                        .interpreter
-                        .nominal_type_object_name_for_constraint(&constraint);
-                    Value::Package(Symbol::intern(&nominal))
+                    val
                 }
             } else {
                 val
-            }
-        } else {
-            val
-        };
+            };
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
         if matches!(
@@ -1046,6 +1066,27 @@ impl VM {
                     .assign_proxy_lvalue(proxy_val, val.clone())?;
                 self.stack.push(val);
                 return Ok(());
+            }
+        }
+        // Circular hash reference fixup
+        if name.starts_with('%') {
+            Self::fixup_circular_hash_refs(&mut val, &old_hash_arc);
+            // Also update the Dup'd copy on the stack (if any) so that the
+            // expression result also has the circular reference.
+            if let Some(old_ptr) = old_hash_arc
+                && let Some(stack_top) = self.stack.last_mut()
+                && let Value::Hash(stack_arc) = stack_top
+            {
+                let has_old_ref = stack_arc.values().any(|v| {
+                    if let Value::Hash(inner_arc) = v {
+                        Arc::as_ptr(inner_arc) as usize == old_ptr
+                    } else {
+                        false
+                    }
+                });
+                if has_old_ref {
+                    *stack_top = val.clone();
+                }
             }
         }
         self.update_local_if_exists(code, &name, &val);

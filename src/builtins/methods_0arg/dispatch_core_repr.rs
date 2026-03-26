@@ -507,29 +507,9 @@ pub(super) fn dispatch(
         }
         Value::Hash(map) => {
             if method == "raku" || method == "perl" {
-                let mut sorted_keys: Vec<&String> = map.keys().collect();
-                sorted_keys.sort();
-                let parts: Vec<String> = sorted_keys
-                    .iter()
-                    .map(|k| {
-                        let v = &map[*k];
-                        if let Value::Bool(true) = v {
-                            format!(":{}", k)
-                        } else if let Value::Bool(false) = v {
-                            format!(":!{}", k)
-                        } else {
-                            // Hash values are containerized; Nil in a container
-                            // resets to the container default (Any).
-                            let repr = if matches!(v, Value::Nil) {
-                                "Any".to_string()
-                            } else {
-                                raku_value(v)
-                            };
-                            format!(":{}({})", k, repr)
-                        }
-                    })
-                    .collect();
-                Some(Ok(Value::str(format!("{{{}}}", parts.join(", ")))))
+                // Delegate to raku_value which has cycle detection for
+                // self-referencing hashes (e.g. %h<b> = %h).
+                Some(Ok(Value::str(raku_value(target))))
             } else {
                 // gist
                 let mut sorted_keys: Vec<&String> = map.keys().collect();
