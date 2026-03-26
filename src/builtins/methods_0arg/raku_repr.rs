@@ -37,6 +37,25 @@ fn raku_array_wrap(inner: &str, kind: ArrayKind) -> String {
     raku_array_wrap_counted(inner, kind, 2) // count=2 to avoid trailing comma
 }
 
+/// Render a value for `.raku` but strip itemization (Scalar container).
+/// In Raku, `@a.raku` renders itemized elements without the `$` prefix:
+///   my @a = $[1,2,3]; @a.raku  # [[1, 2, 3],]  (not $[1, 2, 3])
+fn raku_value_as_element(v: &Value) -> String {
+    match v {
+        Value::Array(items, kind) => {
+            let decontainerized = match kind {
+                ArrayKind::ItemArray => ArrayKind::Array,
+                ArrayKind::ItemList => ArrayKind::List,
+                other => *other,
+            };
+            // Re-wrap the value with de-itemized kind for rendering
+            let decontainerized_val = Value::Array(items.clone(), decontainerized);
+            raku_value(&decontainerized_val)
+        }
+        _ => raku_value(v),
+    }
+}
+
 /// Render array contents for `.raku`, extracted from `raku_value` so that
 /// cycle detection can happen before entering the rendering loop.
 fn raku_value_array(items: &[Value], kind: ArrayKind, v: &Value) -> String {
@@ -50,14 +69,18 @@ fn raku_value_array(items: &[Value], kind: ArrayKind, v: &Value) -> String {
             .map(|d| d.to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        let rows = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
+        let rows = items
+            .iter()
+            .map(raku_value_as_element)
+            .collect::<Vec<_>>()
+            .join(", ");
         return format!("Array.new(:shape({}), {})", shape_str, rows);
     }
     let snapshot = |k: ArrayKind| {
         let inner = items
             .iter()
             .filter(|item| !is_self_array_ref_marker(item))
-            .map(raku_value)
+            .map(raku_value_as_element)
             .collect::<Vec<_>>()
             .join(", ");
         raku_array_wrap(&inner, k)
@@ -68,7 +91,7 @@ fn raku_value_array(items: &[Value], kind: ArrayKind, v: &Value) -> String {
             if is_self_array_ref_marker(item) {
                 snapshot(kind)
             } else {
-                raku_value(item)
+                raku_value_as_element(item)
             }
         })
         .collect();
