@@ -20,6 +20,31 @@ impl Interpreter {
                 Some(self.builtin_classify(method, &call_args))
             }
             "classify-list" | "categorize-list" => {
+                // Immutable Bag and Mix cannot be classified into
+                let type_name = match &target {
+                    Value::Bag(_, false) => Some("Bag"),
+                    Value::Mix(_, false) => Some("Mix"),
+                    _ => None,
+                };
+                if let Some(tname) = type_name {
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert(
+                        "typename".to_string(),
+                        Value::str_from(tname),
+                    );
+                    attrs.insert(
+                        "method".to_string(),
+                        Value::str_from(method),
+                    );
+                    let exception =
+                        Value::make_instance(Symbol::intern("X::Immutable"), attrs);
+                    let mut err = RuntimeError::new(&format!(
+                        "Cannot call '{}' on an immutable '{}'",
+                        method, tname
+                    ));
+                    err.exception = Some(Box::new(exception));
+                    return Some(Err(err));
+                }
                 let classify_name = if method == "classify-list" {
                     "classify"
                 } else {
