@@ -1134,13 +1134,8 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     // tighter than ^), while `^10 .batch(3)` still parses as `(^10).batch(3)`
     // because whitespace-dotty is excluded from the tight variant.
     if input.starts_with('^') && !input.starts_with("^..") {
-        let after_caret = &input[1..];
         // Allow optional whitespace after prefix ^: both `^10` and `^ 10` are valid.
-        let rest = if let Ok((r, _)) = ws(after_caret) {
-            r
-        } else {
-            after_caret
-        };
+        let rest = input[1..].trim_start_matches(|c: char| c == ' ' || c == '\t');
         let parsed_operand =
             super::precedence_meta_ops::power_expr_tight(rest).or_else(|_| prefix_expr(rest));
         if let Ok((rest, expr)) = parsed_operand {
