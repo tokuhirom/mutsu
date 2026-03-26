@@ -320,6 +320,90 @@ fn reject_no_self_in_subs(body: &[Stmt]) -> Result<(), PError> {
     Ok(())
 }
 
+/// Collect no-twigil attribute names from HasDecl statements in a class body.
+fn collect_no_twigil_attr_names(body: &[Stmt]) -> Vec<String> {
+    let mut names = Vec::new();
+    for stmt in body {
+        if let Stmt::HasDecl {
+            name,
+            is_alias: true,
+            ..
+        } = stmt
+        {
+            names.push(name.to_string());
+        }
+    }
+    names
+}
+
+/// Check if an expression references a variable matching one of the given names.
+fn expr_uses_var_name(expr: &Expr, names: &[String]) -> bool {
+    match expr {
+        Expr::Var(name) => names.iter().any(|n| n == name),
+        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
+            expr_uses_var_name(target, names) || args.iter().any(|a| expr_uses_var_name(a, names))
+        }
+        Expr::Call { args, .. }
+        | Expr::ArrayLiteral(args)
+        | Expr::BracketArray(args, _)
+        | Expr::CaptureLiteral(args)
+        | Expr::StringInterpolation(args) => args.iter().any(|a| expr_uses_var_name(a, names)),
+        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } | Expr::Reduction { expr, .. } => {
+            expr_uses_var_name(expr, names)
+        }
+        Expr::Binary { left, right, .. } => {
+            expr_uses_var_name(left, names) || expr_uses_var_name(right, names)
+        }
+        Expr::InfixFunc { left, right, .. } => {
+            expr_uses_var_name(left, names) || right.iter().any(|a| expr_uses_var_name(a, names))
+        }
+        Expr::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+            ..
+        } => {
+            expr_uses_var_name(cond, names)
+                || expr_uses_var_name(then_expr, names)
+                || expr_uses_var_name(else_expr, names)
+        }
+        Expr::AssignExpr { expr, .. } => expr_uses_var_name(expr, names),
+        _ => false,
+    }
+}
+
+/// Check if a statement at class body level uses a no-twigil attribute variable.
+fn stmt_uses_var_name_at_body_level(stmt: &Stmt, names: &[String]) -> bool {
+    match stmt {
+        // Skip method/sub/token/rule declarations — they have `self`
+        Stmt::MethodDecl { .. }
+        | Stmt::SubDecl { .. }
+        | Stmt::TokenDecl { .. }
+        | Stmt::RuleDecl { .. } => false,
+        // Skip HasDecl — declaring the attr is fine
+        Stmt::HasDecl { .. } => false,
+        Stmt::Expr(expr) | Stmt::Return(expr) | Stmt::Fail(expr) => expr_uses_var_name(expr, names),
+        Stmt::Say(args) | Stmt::Print(args) | Stmt::Note(args) | Stmt::Put(args) => {
+            args.iter().any(|a| expr_uses_var_name(a, names))
+        }
+        _ => false,
+    }
+}
+
+/// Reject no-twigil attribute variable usage at class body level (outside methods).
+fn reject_no_twigil_attr_at_body_level(body: &[Stmt]) -> Result<(), PError> {
+    let names = collect_no_twigil_attr_names(body);
+    if names.is_empty() {
+        return Ok(());
+    }
+    for stmt in body {
+        if stmt_uses_var_name_at_body_level(stmt, &names) {
+            return Err(no_self_error());
+        }
+    }
+    Ok(())
+}
+
 fn consume_raw_braced_body(input: &str) -> PResult<'_, Vec<Stmt>> {
     if !input.starts_with('{') {
         return Err(PError::expected("raw braced body"));
@@ -617,6 +701,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
     }
     let (rest, body) = block(r)?;
     reject_no_self_in_subs(&body)?;
+    reject_no_twigil_attr_at_body_level(&body)?;
     let class_decl = Stmt::ClassDecl {
         name: Symbol::intern(&user_name),
         name_expr: None,
@@ -742,6 +827,7 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
 
     let (rest, mut body) = block(r)?;
     reject_no_self_in_subs(&body)?;
+    reject_no_twigil_attr_at_body_level(&body)?;
     body.retain(|stmt| {
         if stmt_is_also_is_rw(stmt) {
             class_is_rw = true;
