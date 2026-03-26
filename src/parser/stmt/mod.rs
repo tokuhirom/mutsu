@@ -240,6 +240,14 @@ fn var_name(input: &str) -> PResult<'_, String> {
                 format!("{}{}", twigil, name)
             };
             Ok((rest, full))
+        } else if let Ok((after_ident, ident_name)) = ident(r)
+            && after_ident.starts_with("::")
+            && twigil.is_empty()
+        {
+            // Variable with trailing :: (e.g., `$foo::`) — package-stash variable.
+            // In Raku, `my $foo::` declares a variable named `$foo::` (distinct from `$foo`).
+            let rest = &after_ident[2..];
+            Ok((rest, format!("{}::", ident_name)))
         } else if input.starts_with('$') && twigil.is_empty() {
             // Anonymous scalar variable: bare $
             Ok((r, "__ANON_STATE__".to_string()))
