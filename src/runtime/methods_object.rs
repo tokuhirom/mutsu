@@ -1891,6 +1891,18 @@ impl Interpreter {
                             if !msg.contains("no matching candidates") {
                                 return Err(e);
                             }
+                            // Mu.new only accepts named arguments. If the call
+                            // had positional args and no multi candidate matched,
+                            // die like Raku does.
+                            let has_positional = args
+                                .iter()
+                                .any(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)));
+                            if has_positional {
+                                return Err(RuntimeError::new(format!(
+                                    "Default constructor for '{}' only takes named arguments",
+                                    class_name.resolve()
+                                )));
+                            }
                             // Fall through to default constructor below
                         }
                     }

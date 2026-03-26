@@ -1081,35 +1081,10 @@ impl Interpreter {
                     }
                     return Ok(Value::bag(left_counts));
                 }
-                if is_fractional(left) || is_fractional(right) {
-                    Ok(Value::Num(to_num(left) + to_num(right)))
-                } else {
-                    Ok(Value::Int(to_int(left) + to_int(right)))
-                }
+                crate::builtins::arith_add(left.clone(), right.clone())
             }
-            "-" => {
-                if is_fractional(left) || is_fractional(right) {
-                    Ok(Value::Num(to_num(left) - to_num(right)))
-                } else {
-                    Ok(Value::Int(to_int(left) - to_int(right)))
-                }
-            }
-            "*" => {
-                if is_fractional(left) || is_fractional(right) {
-                    Ok(Value::Num(to_num(left) * to_num(right)))
-                } else {
-                    let a = to_int(left);
-                    let b = to_int(right);
-                    match a.checked_mul(b) {
-                        Some(result) => Ok(Value::Int(result)),
-                        None => {
-                            let big_a = num_bigint::BigInt::from(a);
-                            let big_b = num_bigint::BigInt::from(b);
-                            Ok(Value::from_bigint(big_a * big_b))
-                        }
-                    }
-                }
-            }
+            "-" => Ok(crate::builtins::arith_sub(left.clone(), right.clone())),
+            "*" => Ok(crate::builtins::arith_mul(left.clone(), right.clone())),
             "/" => crate::builtins::arith_div(left.clone(), right.clone()),
             "div" => {
                 let divisor = to_int(right);
