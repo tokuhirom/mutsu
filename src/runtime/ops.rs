@@ -821,11 +821,9 @@ impl Interpreter {
                     .as_bytes()
                     .to_vec()
             };
-            let len = if pad_to_max {
-                lb.len().max(rb.len())
-            } else {
-                lb.len().min(rb.len())
-            };
+            // Buf bitwise ops always extend to the longer operand,
+            // padding the shorter one with zeros (even for ~&).
+            let len = lb.len().max(rb.len());
             let mut out = Vec::with_capacity(len);
             for i in 0..len {
                 let a = lb.get(i).copied().unwrap_or(0) as u32;
