@@ -386,14 +386,19 @@ impl VM {
             return Err(err);
         }
         if is_regex {
-            // For regex smartmatch, return the Match object (from $/) or Nil
-            if matched {
-                Ok(self
-                    .interpreter
-                    .env()
-                    .get("/")
-                    .cloned()
-                    .unwrap_or(Value::Nil))
+            // When $/ is a Junction (from :nth with junction argument),
+            // the ~~ operator collapses the result to a Bool.
+            let slash = self
+                .interpreter
+                .env()
+                .get("/")
+                .cloned()
+                .unwrap_or(Value::Nil);
+            if matches!(&slash, Value::Junction { .. }) {
+                Ok(Value::Bool(matched))
+            } else if matched {
+                // For regex smartmatch, return the Match object (from $/) or Nil
+                Ok(slash)
             } else {
                 Ok(Value::Nil)
             }

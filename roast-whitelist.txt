@@ -330,6 +330,7 @@ roast/S05-modifier/Perl_7.t
 roast/S05-modifier/Perl_8.t
 roast/S05-modifier/Perl_9.t
 roast/S05-modifier/continue.t
+roast/S05-modifier/counted-match.t
 roast/S05-modifier/counted.t
 roast/S05-modifier/exhaustive.t
 roast/S05-modifier/global.t
