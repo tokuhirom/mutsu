@@ -147,8 +147,26 @@ impl VM {
                         unreachable!()
                     };
                     let mut out = Vec::with_capacity(indices.len());
+                    let len = items.len() as i64;
                     for idx in indices.iter() {
-                        if let Some(i) = Self::index_to_usize(idx) {
+                        // Resolve WhateverCode indices (e.g. *-1, *-3)
+                        let resolved_idx = if let Value::Sub(data) = idx {
+                            let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
+                            let mut sub_env = data.env.clone();
+                            sub_env.insert(param.to_string(), Value::Int(len));
+                            let saved_env = std::mem::take(self.interpreter.env_mut());
+                            *self.interpreter.env_mut() = sub_env;
+                            let result = self
+                                .interpreter
+                                .eval_block_value(&data.body)
+                                .unwrap_or(Value::Nil);
+                            *self.interpreter.env_mut() = saved_env;
+                            Some(result)
+                        } else {
+                            None
+                        };
+                        let effective_idx = resolved_idx.as_ref().unwrap_or(idx);
+                        if let Some(i) = Self::index_to_usize(effective_idx) {
                             if is_lazy_index && i >= items.len() {
                                 // Lazy index: stop at array boundary
                                 break;
