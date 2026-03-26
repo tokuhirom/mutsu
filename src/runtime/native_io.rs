@@ -259,6 +259,10 @@ impl Interpreter {
                     } else {
                         format!("{}\\{}", p, child_name)
                     }
+                } else if p == "." {
+                    child_name.clone()
+                } else if p.ends_with('/') {
+                    format!("{}{}", p, child_name)
                 } else {
                     Self::stringify_path(&original.join(&child_name))
                 };
