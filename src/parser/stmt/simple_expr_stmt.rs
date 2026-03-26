@@ -1258,7 +1258,14 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     {
         return parse_statement_modifier(rest, *stmt);
     }
-    let stmt = Stmt::Expr(expr);
+    let stmt = Stmt::Expr(expr.clone());
+    // For block-valued expressions (try { ... }, gather { ... }),
+    // pass pre-whitespace rest so parse_statement_modifier can detect
+    // newline separation and avoid treating the next line's `if`/`for`
+    // as a statement modifier.
+    if separated_by_newline && matches!(expr, Expr::Try { .. } | Expr::Gather(_)) {
+        return parse_statement_modifier(rest_before_ws, stmt);
+    }
     parse_statement_modifier(rest, stmt)
 }
 

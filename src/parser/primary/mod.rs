@@ -348,16 +348,16 @@ mod tests {
 
     #[test]
     fn parse_typed_hash_literal_with_non_string_keys() {
+        // Object hash `:{ ... }` is now parsed as a `hash(...)` call
+        // to preserve expression-typed keys (e.g., regex keys).
         let (rest, expr) = primary(":{ :42foo, (True) => False, 42e0 => 1 }").unwrap();
         assert_eq!(rest, "");
         match expr {
-            Expr::Hash(pairs) => {
-                assert_eq!(pairs.len(), 3);
-                assert_eq!(pairs[0].0, "foo");
-                assert_eq!(pairs[1].0, "True");
-                assert_eq!(pairs[2].0, "42");
+            Expr::Call { name, args } => {
+                assert_eq!(name, "hash");
+                assert_eq!(args.len(), 3);
             }
-            _ => panic!("expected hash literal"),
+            _ => panic!("expected hash call, got {:?}", expr),
         }
     }
 

@@ -998,6 +998,7 @@ impl Interpreter {
             named: false,
             slurpy: false,
             double_slurpy: false,
+            onearg: false,
             sigilless: false,
             type_constraint: None,
             literal_value: None,

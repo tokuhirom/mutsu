@@ -13,6 +13,7 @@ pub(crate) struct SigParam {
     pub(crate) named: bool,
     pub(crate) slurpy: bool,
     pub(crate) double_slurpy: bool,
+    pub(crate) onearg: bool,
     pub(crate) is_capture: bool,
     pub(crate) is_invocant: bool,
     pub(crate) sigilless: bool,
@@ -116,6 +117,7 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
         named: p.named,
         slurpy: p.slurpy && !is_capture,
         double_slurpy: p.double_slurpy,
+        onearg: p.onearg,
         is_capture,
         is_invocant: p.is_invocant,
         sigilless: p.sigilless,
@@ -278,9 +280,11 @@ fn sig_param_to_parameter_instance(p: &SigParam) -> Value {
         .collect();
     attrs.insert("named_names".to_string(), Value::array(named_names_val));
 
-    // prefix: ** for double_slurpy, * for slurpy, else ""
+    // prefix: ** for double_slurpy, + for onearg, * for slurpy, else ""
     let prefix = if p.double_slurpy {
         "**"
+    } else if p.onearg {
+        "+"
     } else if p.slurpy {
         "*"
     } else {
@@ -337,6 +341,89 @@ fn sig_param_to_parameter_instance(p: &SigParam) -> Value {
         );
     }
     Value::make_instance(Symbol::intern("Parameter"), attrs)
+}
+
+/// Construct the `.raku` string for a Parameter instance from its attributes.
+pub(crate) fn parameter_to_raku(attrs: &HashMap<String, Value>) -> String {
+    let mut parts = Vec::new();
+
+    // Type constraint
+    let type_name = attrs
+        .get("type")
+        .map(|v| match v {
+            Value::Package(sym) => sym.resolve(),
+            _ => v.to_string_value(),
+        })
+        .unwrap_or_default();
+    if !type_name.is_empty() && type_name != "Any" && type_name != "Mu" {
+        parts.push(type_name);
+    } else if type_name == "Mu" {
+        parts.push("Mu".to_string());
+    }
+
+    // Name with sigil
+    let name = attrs
+        .get("name")
+        .map(Value::to_string_value)
+        .unwrap_or_default();
+    let is_named = attrs.get("named").map(Value::truthy).unwrap_or(false);
+
+    let prefix = attrs
+        .get("prefix")
+        .map(Value::to_string_value)
+        .unwrap_or_default();
+
+    let mut param_str = String::new();
+    if !prefix.is_empty() {
+        param_str.push_str(&prefix);
+    }
+    if is_named && !name.is_empty() {
+        param_str.push(':');
+    }
+    param_str.push_str(&name);
+
+    // Optional/required suffix
+    let suffix = attrs
+        .get("suffix")
+        .map(Value::to_string_value)
+        .unwrap_or_default();
+    if !suffix.is_empty() {
+        param_str.push_str(&suffix);
+    }
+
+    // Traits
+    let is_raw = attrs.get("raw").map(Value::truthy).unwrap_or(false);
+    let is_rw = attrs.get("rw").map(Value::truthy).unwrap_or(false);
+    let is_copy = attrs.get("copy").map(Value::truthy).unwrap_or(false);
+
+    parts.push(param_str);
+
+    if is_raw {
+        parts.push("is raw".to_string());
+    }
+    if is_rw {
+        parts.push("is rw".to_string());
+    }
+    if is_copy {
+        parts.push("is copy".to_string());
+    }
+
+    // Default value
+    if let Some(default_val) = attrs.get("default")
+        && matches!(
+            default_val,
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+        )
+    {
+        if let Some(Value::Str(default_raku)) = attrs.get("default_raku") {
+            parts.push(format!("= {}", default_raku));
+        } else if name == "$_" || name == "$$_" {
+            // Implicit topic parameter in a bare block defaults to OUTER::<$_>
+            parts.push("= OUTER::<$_>".to_string());
+        }
+    }
+
+    parts.join(" ")
 }
 
 /// For named params with aliases (:x($a), :x(:y(:z($a)))),

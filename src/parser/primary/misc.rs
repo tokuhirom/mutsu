@@ -481,9 +481,17 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         }
     }
     // :{ ... }: typed hash literal (Hash[Mu,Any]).
-    // For now we treat it like a regular hash literal.
-    if r.starts_with('{') {
-        return block_or_hash_expr(r);
+    // Unlike bare { ... }, the colon prefix explicitly marks this as a hash,
+    // so we always parse as a hash literal (never as a block).
+    // Object hashes allow non-string keys (e.g., regex keys), so we use
+    // expression-based parsing rather than the simple hash key heuristic.
+    if let Some(after_brace) = r.strip_prefix('{') {
+        let (inner, _) = ws_inner(after_brace);
+        // Empty object hash: :{}
+        if let Some(rest) = inner.strip_prefix('}') {
+            return Ok((rest, Expr::Hash(Vec::new())));
+        }
+        return parse_object_hash_body(inner);
     }
     // :(...): signature literal.
     if let Some(mut r) = r.strip_prefix('(') {
@@ -1840,6 +1848,41 @@ fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
                 }
             }
         }
+
+        let (r, _) = ws_inner(r);
+        if let Some(stripped) = r.strip_prefix(',') {
+            rest = stripped;
+        } else if let Some(stripped) = r.strip_prefix(';') {
+            rest = stripped;
+        } else {
+            rest = r;
+        }
+    }
+}
+
+/// Parse the body of an object hash `:{ ... }`.
+/// Object hashes allow arbitrary expression keys (e.g., regex), so we parse
+/// each entry using full expression parsing and emit a `hash(...)` call with
+/// Pair arguments, preserving expression-typed keys at runtime.
+fn parse_object_hash_body(input: &str) -> PResult<'_, Expr> {
+    let mut args = Vec::new();
+    let mut rest = input;
+    loop {
+        let (r, _) = ws_inner(rest);
+        if let Some(rest) = r.strip_prefix('}') {
+            return Ok((
+                rest,
+                Expr::Call {
+                    name: crate::symbol::Symbol::intern("hash"),
+                    args,
+                },
+            ));
+        }
+
+        // Parse each entry as a full expression (which handles `expr => expr` as
+        // a fat arrow binary). This allows regex keys like `rx/.../ => "..."`.
+        let (r, item) = super::super::expr::expression(r)?;
+        args.push(item);
 
         let (r, _) = ws_inner(r);
         if let Some(stripped) = r.strip_prefix(',') {

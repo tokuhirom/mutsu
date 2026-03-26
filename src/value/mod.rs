@@ -1207,6 +1207,26 @@ impl Value {
         Value::Hash(Arc::new(map))
     }
 
+    /// Encode a Value as a hash key string.
+    /// Regex values are encoded with a special prefix to preserve their identity.
+    pub fn hash_key_encode(val: &Value) -> String {
+        match val {
+            Value::Regex(pattern) => {
+                format!("\0rx:{}", pattern)
+            }
+            other => other.to_string_value(),
+        }
+    }
+
+    /// Decode a hash key string back to a Value.
+    /// Regex-encoded keys (with \0rx: prefix) are restored to Regex values.
+    pub fn hash_key_decode(key: &str) -> Value {
+        if let Some(pattern) = key.strip_prefix("\0rx:") {
+            return Value::regex(pattern.to_string());
+        }
+        Value::str(key.to_string())
+    }
+
     /// Unwrap a Scalar container, returning the inner value.
     /// For non-Scalar values, returns self unchanged.
     pub fn decontainerize(&self) -> &Value {

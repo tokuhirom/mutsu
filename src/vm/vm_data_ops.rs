@@ -92,7 +92,7 @@ impl VM {
         let items: Vec<Value> = self.stack.drain(start..).collect();
         let mut map = HashMap::new();
         for pair in items.chunks(2) {
-            let key = pair[0].to_string_value();
+            let key = Value::hash_key_encode(&pair[0]);
             let val = pair[1].clone();
             map.insert(key, val);
         }

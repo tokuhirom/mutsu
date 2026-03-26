@@ -35,6 +35,7 @@ impl Interpreter {
             named: false,
             slurpy: true,
             double_slurpy: false,
+            onearg: false,
             sigilless: false,
             type_constraint: None,
             literal_value: None,

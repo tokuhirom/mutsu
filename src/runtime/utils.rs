@@ -525,7 +525,7 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
                 map.insert(key, *boxed_val);
             }
             Value::ValuePair(key, boxed_val) => {
-                map.insert(key.to_string_value(), *boxed_val);
+                map.insert(Value::hash_key_encode(&key), *boxed_val);
             }
             other => {
                 let Some(value) = iter.next() else {
@@ -534,7 +534,7 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
                     );
                     return Err(RuntimeError::new(message));
                 };
-                map.insert(other.to_string_value(), value);
+                map.insert(Value::hash_key_encode(&other), value);
             }
         }
     }

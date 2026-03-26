@@ -98,6 +98,13 @@ pub(super) fn dispatch(
             class_name,
             attributes,
             ..
+        } if class_name == "Parameter" && (method == "raku" || method == "perl") => Some(Ok(
+            Value::str(crate::value::signature::parameter_to_raku(attributes)),
+        )),
+        Value::Instance {
+            class_name,
+            attributes,
+            ..
         } if class_name == "Failure" => {
             let msg = attributes
                 .get("exception")
