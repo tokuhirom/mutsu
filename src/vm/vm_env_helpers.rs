@@ -120,6 +120,15 @@ impl VM {
     }
 
     pub(super) fn get_env_with_main_alias(&self, name: &str) -> Option<Value> {
+        // Atomic array CAS stores the authoritative copy under an internal key.
+        // Always check it first so both thread-clone and non-clone reads
+        // observe the latest CAS'd value.
+        if name.starts_with('@') {
+            let atomic_key = format!("__mutsu_atomic_arr::{name}");
+            if let Some(v) = self.interpreter.get_shared_var(&atomic_key) {
+                return Some(v);
+            }
+        }
         // Thread-clone @/% lookups must prefer the shared copy. Child thread
         // env snapshots can lag behind sibling mutations even when Lock::Async
         // serializes the writes through shared_vars.

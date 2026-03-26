@@ -587,6 +587,8 @@ impl Interpreter {
             "__mutsu_atomic_pre_inc_var" => self.builtin_atomic_pre_inc_var(&args),
             "__mutsu_atomic_post_dec_var" => self.builtin_atomic_post_dec_var(&args),
             "__mutsu_cas_var" => self.builtin_cas_var(args),
+            "__mutsu_cas_array_elem" => self.builtin_cas_array_elem(args),
+            "__mutsu_cas_array_multidim" => self.builtin_cas_array_multidim(args),
             "__mutsu_atomic_pre_dec_var" => self.builtin_atomic_pre_dec_var(&args),
             "__mutsu_hyper_prefix" => self.builtin_hyper_prefix(&args),
             "signal" => self.builtin_signal(&args),

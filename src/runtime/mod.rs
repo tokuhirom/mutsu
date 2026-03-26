@@ -4075,12 +4075,33 @@ impl Interpreter {
         self.env.insert(key.to_string(), value.clone());
         if self.shared_vars_active {
             let mut sv = self.shared_vars.write().unwrap();
+            // Skip overwriting @-variables that have an active CAS atomic
+            // copy — the atomic copy is the authoritative source of truth
+            // and must not be clobbered by stale local snapshots.
+            if key.starts_with('@') {
+                let atomic_key = format!("__mutsu_atomic_arr::{key}");
+                if sv.contains_key(&atomic_key) {
+                    return;
+                }
+            }
             if sv.contains_key(key) {
                 sv.insert(key.to_string(), value);
                 // Mark this key as explicitly updated so sync_shared_vars_to_env
                 // knows to propagate it (vs keys only initialized by clone_for_thread).
                 self.mark_shared_var_dirty(key);
             }
+        }
+    }
+
+    /// Clear atomic array CAS state for a variable. Called when the variable
+    /// is genuinely re-declared (e.g., new loop iteration with `my @arr`).
+    pub(crate) fn clear_atomic_array_state(&self, key: &str) {
+        if !key.starts_with('@') {
+            return;
+        }
+        let atomic_key = format!("__mutsu_atomic_arr::{key}");
+        if let Ok(mut sv) = self.shared_vars.write() {
+            sv.remove(&atomic_key);
         }
     }
 
@@ -4118,14 +4139,39 @@ impl Interpreter {
                     continue;
                 }
 
+                // Check for atomic array CAS storage
+                let atomic_arr_key = format!("__mutsu_atomic_arr::{key}");
+                if let Some(val) = sv.get(&atomic_arr_key) {
+                    updates.push((key.clone(), val.clone()));
+                    continue;
+                }
+
                 if let Some(val) = sv.get(key) {
                     updates.push((key.clone(), val.clone()));
                 }
             }
             updates
         };
+        let mut instance_updates: Vec<(u64, Value)> = Vec::new();
         for (key, val) in updates {
-            self.env.insert(key, val);
+            if let Some(id_str) = key.strip_prefix("__mutsu_instance::") {
+                if let Ok(id) = id_str.parse::<u64>() {
+                    instance_updates.push((id, val));
+                }
+            } else {
+                self.env.insert(key, val);
+            }
+        }
+        // Propagate Instance attribute updates from shared_vars into
+        // all matching Instance bindings in the local env.
+        for (target_id, updated_instance) in &instance_updates {
+            for value in self.env.values_mut() {
+                if let Value::Instance { id, .. } = value
+                    && *id == *target_id
+                {
+                    *value = updated_instance.clone();
+                }
+            }
         }
     }
 
