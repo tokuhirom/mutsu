@@ -2206,12 +2206,13 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         }
     }
 
-    let is_terminator = rest.starts_with(';')
-        || rest.starts_with('}')
-        || rest.starts_with(')')
-        || rest.starts_with(']')
-        || is_stmt_modifier_ahead(rest)
-        || rest.trim_start().is_empty();
+    let rest_trimmed = rest.trim_start();
+    let is_terminator = rest_trimmed.starts_with(';')
+        || rest_trimmed.starts_with('}')
+        || rest_trimmed.starts_with(')')
+        || rest_trimmed.starts_with(']')
+        || is_stmt_modifier_ahead(rest_trimmed)
+        || rest_trimmed.is_empty();
 
     // User-declared and imported subs can be called with no args as bare words
     // in statement position (e.g., `make-temp-dir;`).
