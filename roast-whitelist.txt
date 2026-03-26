@@ -360,6 +360,7 @@ roast/S06-multi/lexical-multis.t
 roast/S06-multi/positional-vs-named.t
 roast/S06-multi/proto.t
 roast/S06-multi/redispatch.t
+roast/S06-multi/syntax.t
 roast/S06-multi/value-based.t
 roast/S06-operator-overloading/circumfix.t
 roast/S06-operator-overloading/methods.t

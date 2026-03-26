@@ -401,10 +401,23 @@ impl VM {
         // recursive &?BLOCK calls clobber the outer frame's $n, etc.
         let local_names: std::collections::HashSet<&str> =
             cc.locals.iter().map(|s| s.as_str()).collect();
+        // Build set of parameter names — these are strictly local to the
+        // function call and must never leak back to the caller's env, even
+        // when they share a name with a captured outer variable.
+        let mut param_names: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for p in &data.params {
+            param_names.insert(p.as_str());
+        }
+        for pd in &data.param_defs {
+            if !pd.name.is_empty() {
+                param_names.insert(pd.name.as_str());
+            }
+        }
         for (k, v) in self.interpreter.env().iter() {
             if k != "_"
                 && k != "@_"
                 && !rw_sources.contains(k)
+                && !param_names.contains(k.as_str())
                 && (restored_env.contains_key(k)
                     || captured_names.contains(k.as_str())
                     || k.starts_with("__mutsu_predictive_seq_iter::")
