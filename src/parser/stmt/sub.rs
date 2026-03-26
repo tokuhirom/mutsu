@@ -1066,6 +1066,11 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 } else if trait_name == "tighter" || trait_name == "looser" || trait_name == "equiv"
                 {
                     precedence_trait = Some((trait_name.to_string(), arg));
+                } else if trait_name == "DEPRECATED" {
+                    // `is DEPRECATED<msg>` — set the deprecation message
+                    if let Some(pos) = custom_traits.iter().position(|t| t == "DEPRECATED") {
+                        custom_traits[pos] = format!("DEPRECATED:{}", arg);
+                    }
                 }
                 r = r2;
             }
