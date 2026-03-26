@@ -6,6 +6,7 @@ use std::sync::Arc;
 const SELF_HASH_REF_SENTINEL: &str = "__mutsu_self_hash_ref";
 pub(super) const BOUND_HASH_REF_SENTINEL: &str = "__mutsu_bound_hash_ref";
 const SELF_ARRAY_REF_SENTINEL: &str = "__mutsu_self_array_ref";
+pub(super) const BOUND_ARRAY_REF_SENTINEL: &str = "__mutsu_bound_array_ref";
 
 impl VM {
     pub(super) fn range_end_is_unbounded(end: i64) -> bool {
@@ -143,6 +144,7 @@ impl VM {
     }
 
     pub(super) fn resolve_array_entry(
+        &self,
         items: &Arc<Vec<Value>>,
         kind: ArrayKind,
         idx: usize,
@@ -151,6 +153,14 @@ impl VM {
         match items.get(idx) {
             Some(Value::Pair(name, _)) if name == SELF_ARRAY_REF_SENTINEL => {
                 Value::Array(items.clone(), kind)
+            }
+            Some(Value::Pair(name, source)) if name == BOUND_ARRAY_REF_SENTINEL => {
+                let source_name = source.to_string_value();
+                self.interpreter
+                    .env()
+                    .get(&source_name)
+                    .cloned()
+                    .unwrap_or(Value::Nil)
             }
             // If the element is a hole (Package("Any") from deletion or
             // uninitialized gap) and a non-Nil default is available,
@@ -617,6 +627,17 @@ impl VM {
         let mut map = std::collections::HashMap::new();
         map.insert(encoded, Value::Bool(true));
         self.interpreter.env_mut().insert(key, Value::hash(map));
+    }
+
+    /// Remove deleted indices from the bound-index tracking set.
+    /// This must be called after array element deletion to sever bindings.
+    pub(super) fn unmark_bound_indices(&mut self, var_name: &str, idx: &Value) {
+        let key = format!("__mutsu_bound_index::{}", var_name);
+        let Some(Value::Hash(map)) = self.interpreter.env_mut().get_mut(&key) else {
+            return;
+        };
+        let m = Arc::make_mut(map);
+        Self::unmark_index_entries(m, idx);
     }
 
     /// Remove deleted indices from the initialized-index tracking set.

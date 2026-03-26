@@ -1064,7 +1064,39 @@ impl VM {
             false
         };
         if !bind_mode && self.is_bound_index(&var_name, &encoded_idx) {
-            return Err(RuntimeError::assignment_ro(None));
+            // Check if the bound element still has a BOUND_ARRAY_REF_SENTINEL.
+            // If yes, allow writes (they propagate to the source variable).
+            // If no (sentinel gone due to array reset/delete), the metadata is
+            // stale — clean it up and allow the write.
+            let sentinel_status = if let Some(Value::Array(items, ..)) =
+                self.interpreter.env().get(&var_name)
+                && let Some(i) = Self::index_to_usize(&idx)
+            {
+                match items.get(i) {
+                    Some(Value::Pair(marker, _))
+                        if marker == super::vm_var_ops::BOUND_ARRAY_REF_SENTINEL =>
+                    {
+                        Some(true) // sentinel present
+                    }
+                    Some(_) => Some(false), // index exists but no sentinel
+                    None => None,           // index out of bounds (array was reset/shrunk)
+                }
+            } else {
+                None // array doesn't exist or index not a usize
+            };
+            match sentinel_status {
+                Some(true) => {
+                    // Sentinel present — write will propagate, allow it
+                }
+                Some(false) => {
+                    // No sentinel but bound metadata exists — this is a
+                    // non-bound readonly index, reject the write.
+                    return Err(RuntimeError::assignment_ro(None));
+                }
+                None => {
+                    // Array was reset or index is gone — stale metadata, allow write
+                }
+            }
         }
         if !self.interpreter.env().contains_key(&var_name)
             && let Some(slot) = self.find_local_slot(code, &var_name)
@@ -1386,7 +1418,24 @@ impl VM {
                                     if i >= arr.len() {
                                         arr.resize(i + 1, Value::Package(Symbol::intern("Any")));
                                     }
-                                    if let Some((source_name, source_index)) =
+                                    if bind_mode
+                                        && let Some(Some(source_name)) = bind_sources.first()
+                                    {
+                                        // Store a sentinel so reads follow the
+                                        // source variable (two-way binding).
+                                        arr[i] = Value::Pair(
+                                            super::vm_var_ops::BOUND_ARRAY_REF_SENTINEL.to_string(),
+                                            Box::new(Value::str(source_name.clone())),
+                                        );
+                                    } else if let Some(Value::Pair(marker, source)) = arr.get(i)
+                                        && marker == super::vm_var_ops::BOUND_ARRAY_REF_SENTINEL
+                                    {
+                                        // Writing to a bound element propagates
+                                        // to the source variable.
+                                        let source_name = source.to_string_value();
+                                        pending_varref_update =
+                                            Some((source_name, None, val.clone()));
+                                    } else if let Some((source_name, source_index)) =
                                         Self::varref_target(&arr[i])
                                     {
                                         pending_varref_update =

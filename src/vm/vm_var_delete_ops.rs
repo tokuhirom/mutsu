@@ -187,6 +187,8 @@ impl VM {
         // Remove deleted indices from the initialized-index tracking set
         // so that trim_trailing_array_holes recognizes them as holes.
         self.unmark_initialized_indices(&var_name, &idx_for_unmark);
+        // Remove deleted indices from the bound-index tracking set to sever bindings.
+        self.unmark_bound_indices(&var_name, &idx_for_unmark);
         // Trim trailing holes from arrays after deletion.
         // A "hole" is either Nil (deleted) or an uninitialized Package("Any") slot.
         self.trim_trailing_array_holes(&var_name);
