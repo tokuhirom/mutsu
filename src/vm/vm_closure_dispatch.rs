@@ -201,9 +201,7 @@ impl VM {
             {
                 Ok(bindings) => bindings,
                 Err(e) => {
-                    if cc.is_routine {
-                        self.interpreter.pop_routine();
-                    }
+                    self.interpreter.pop_routine();
                     self.interpreter.pop_block();
                     self.interpreter.pop_caller_env();
                     self.stack.truncate(saved_stack_depth);
@@ -293,6 +291,17 @@ impl VM {
                     result = Err(e);
                     break;
                 }
+                Err(e) if e.is_succeed => {
+                    // `when`/`default` succeed signals are caught at the
+                    // enclosing block boundary (sub, method, or pointy block).
+                    let ret_val = e.return_value.unwrap_or(Value::Nil);
+                    explicit_return = Some(ret_val.clone());
+                    self.stack.truncate(saved_stack_depth);
+                    self.stack.push(ret_val);
+                    self.interpreter.discard_let_saves(let_mark);
+                    result = Ok(());
+                    break;
+                }
                 Err(e) if e.return_value.is_some() => {
                     // Pointy blocks (`-> { }`) are NOT routine boundaries.
                     // `return` in a pointy block propagates up to the
@@ -358,9 +367,7 @@ impl VM {
         // Restore the previous state scope
         self.state_scope_id = saved_state_scope;
 
-        if cc.is_routine {
-            self.interpreter.pop_routine();
-        }
+        self.interpreter.pop_routine();
         self.interpreter.pop_block();
 
         if self.env_dirty {
