@@ -2200,9 +2200,19 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// Parse `react` block.
+/// Supports both `react { ... }` and `react whenever ... { ... }` (shorthand).
 pub(super) fn react_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("react", input).ok_or_else(|| PError::expected("react block"))?;
     let (rest, _) = ws(rest)?;
+    // Try `react whenever ...` shorthand first
+    if let Ok((rest2, whenever)) = whenever_stmt(rest) {
+        return Ok((
+            rest2,
+            Stmt::React {
+                body: vec![whenever],
+            },
+        ));
+    }
     let (rest, body) = block(rest)?;
     Ok((rest, Stmt::React { body }))
 }
