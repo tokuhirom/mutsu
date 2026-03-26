@@ -1773,6 +1773,7 @@ impl Compiler {
                 self.code.emit(OpCode::Pop);
             }
             Stmt::SetLine(line) => {
+                self.last_source_line = Some(*line);
                 self.code.emit(OpCode::SetSourceLine(*line));
             }
         }

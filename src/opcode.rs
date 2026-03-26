@@ -822,6 +822,17 @@ pub(crate) struct CompiledCode {
     pub(crate) our_locals: Vec<(usize, String)>,
     /// Pre-compiled closure bodies embedded in this code chunk.
     pub(crate) closure_compiled_codes: Vec<Arc<CompiledCode>>,
+    /// Whether this compiled code represents a Routine (sub/method) as opposed
+    /// to a Block (bare block / pointy block).  `return` signals are caught
+    /// only at routine boundaries, allowing pointy-block returns to propagate
+    /// up to the enclosing routine.
+    pub(crate) is_routine: bool,
+    /// Source line number (1-based) where this closure/block was defined.
+    pub(crate) source_line: Option<i64>,
+    /// Whether this compiled code represents a pointy block (`-> { }` / `<-> { }`).
+    /// Pointy blocks are NOT routine boundaries — `return` propagates through
+    /// them to the enclosing routine, and `&?ROUTINE` sees the enclosing routine.
+    pub(crate) is_pointy_block: bool,
 }
 
 impl CompiledCode {
@@ -835,6 +846,9 @@ impl CompiledCode {
             state_locals: Vec::new(),
             our_locals: Vec::new(),
             closure_compiled_codes: Vec::new(),
+            is_routine: false,
+            source_line: None,
+            is_pointy_block: false,
         }
     }
 

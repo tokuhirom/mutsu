@@ -283,10 +283,20 @@ impl Interpreter {
         } else {
             // 2-arg form: cas($var, &code)
             let code = args[1].clone();
+            // Skip leading SetLine statements (inserted by pointy block parsing)
+            // to find the effective body for the optimization check.
+            let effective_body: Vec<&Stmt> = if let Value::Sub(sub) = &code {
+                sub.body
+                    .iter()
+                    .filter(|s| !matches!(s, Stmt::SetLine(_)))
+                    .collect()
+            } else {
+                Vec::new()
+            };
             if let Value::Sub(sub) = &code
                 && sub.params.len() == 1
-                && sub.body.len() == 1
-                && let Stmt::Expr(Expr::Binary { left, op, right }) = &sub.body[0]
+                && effective_body.len() == 1
+                && let Stmt::Expr(Expr::Binary { left, op, right }) = effective_body[0]
                 && *op == TokenKind::Plus
             {
                 let param = &sub.params[0];

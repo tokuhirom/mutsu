@@ -108,7 +108,15 @@ impl Compiler {
             self.code.emit(OpCode::Die);
             return;
         }
-        let compiled = self.compile_routine_closure_body(params, param_defs, body);
+        // Check if this is a pointy block (-> { }) vs a named anonymous sub.
+        // Pointy blocks inject a SetLine as the first body statement.
+        let is_pointy = body
+            .first()
+            .is_some_and(|s| matches!(s, crate::ast::Stmt::SetLine(_)));
+        let mut compiled = self.compile_routine_closure_body(params, param_defs, body);
+        if is_pointy {
+            compiled.is_pointy_block = true;
+        }
         let cc_idx = self.code.add_closure_code(compiled);
         let idx = self.code.add_stmt(Stmt::SubDecl {
             name: Symbol::intern(""),

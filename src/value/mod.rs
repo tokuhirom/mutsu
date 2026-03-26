@@ -229,6 +229,10 @@ pub struct SubData {
     pub(crate) compiled_code: Option<Arc<CompiledCode>>,
     /// `is DEPRECATED` message: None = not deprecated, Some(msg) = deprecated.
     pub(crate) deprecated_message: Option<String>,
+    /// Source line number (1-based) where this block/sub was defined.
+    pub(crate) source_line: Option<u32>,
+    /// Source file path where this block/sub was defined.
+    pub(crate) source_file: Option<String>,
 }
 
 fn gcd(mut a: i64, mut b: i64) -> i64 {
@@ -1267,6 +1271,8 @@ impl Value {
             is_bare_block: false,
             compiled_code: None,
             deprecated_message: None,
+            source_line: None,
+            source_file: None,
         }))
     }
 
@@ -1298,6 +1304,8 @@ impl Value {
             is_bare_block: false,
             compiled_code: None,
             deprecated_message: None,
+            source_line: None,
+            source_file: None,
         }))
     }
 

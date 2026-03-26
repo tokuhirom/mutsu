@@ -58,6 +58,8 @@ impl Interpreter {
                 is_bare_block: false,
                 compiled_code: None,
                 deprecated_message: None,
+                source_line: None,
+                source_file: None,
             };
             // Store the routine name so call_sub_value can dispatch
             sub_data.env.insert(
@@ -438,6 +440,19 @@ impl Interpreter {
                 "sub {} {} {{ #`(Sub|{}) ... }}",
                 name, sig_gist, id
             ))));
+        }
+        if method == "line" && args.is_empty() {
+            return Some(Ok(data
+                .source_line
+                .map(|l| Value::Int(l as i64))
+                .unwrap_or(Value::Nil)));
+        }
+        if method == "file" && args.is_empty() {
+            return Some(Ok(data
+                .source_file
+                .as_ref()
+                .map(|f| Value::str(f.clone()))
+                .unwrap_or(Value::Nil)));
         }
         if method == "of" && args.is_empty() {
             let type_name = self

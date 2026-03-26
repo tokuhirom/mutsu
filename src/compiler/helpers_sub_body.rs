@@ -232,6 +232,9 @@ impl Compiler {
             )
         };
 
+        // Named subs are always routines — mark the compiled code so
+        // call_compiled_closure catches CX::Return at the right boundary.
+        sub_compiler.code.is_routine = true;
         let cf = CompiledFunction {
             code: sub_compiler.code,
             params: params.to_vec(),
@@ -358,6 +361,10 @@ impl Compiler {
     ) -> CompiledCode {
         let mut sub_compiler = Compiler::new();
         sub_compiler.is_routine = is_routine;
+        // Propagate last_source_line so closures inside blocks that
+        // lack their own SetLine can still inherit the line from the
+        // enclosing statement.
+        sub_compiler.last_source_line = self.last_source_line;
         // Give closures a unique package name so their state variables don't
         // collide with state variables in the enclosing code that happen to
         // share the same variable name.
@@ -558,6 +565,11 @@ impl Compiler {
         for (k, v) in sub_compiler.compiled_functions {
             self.compiled_functions.insert(k, v);
         }
+        sub_compiler.code.is_routine = is_routine;
+        // Use the sub_compiler's source line if a SetLine was processed
+        // within the body, otherwise fall back to the parent compiler's
+        // last_source_line.
+        sub_compiler.code.source_line = sub_compiler.last_source_line.or(self.last_source_line);
         sub_compiler.code
     }
 }

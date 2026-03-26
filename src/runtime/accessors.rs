@@ -850,7 +850,13 @@ impl Interpreter {
         let has_packages = bare_name != name;
         let lookup_name = bare_name.strip_prefix('*').unwrap_or(bare_name);
         if bare_name == "?ROUTINE" {
-            if let Some((package, routine)) = self.routine_stack.last() {
+            // Skip pointy-block entries to find the enclosing routine
+            let entry = self
+                .routine_stack
+                .iter()
+                .rev()
+                .find(|(_, name)| name != "<pointy-block>");
+            if let Some((package, routine)) = entry {
                 return Value::Routine {
                     package: Symbol::intern(package),
                     name: Symbol::intern(routine),
@@ -1012,6 +1018,10 @@ impl Interpreter {
 
     pub(crate) fn routine_stack_top(&self) -> Option<&(String, String)> {
         self.routine_stack.last()
+    }
+
+    pub(crate) fn routine_stack(&self) -> &[(String, String)] {
+        &self.routine_stack
     }
 
     pub(crate) fn push_routine(&mut self, package: String, name: String) {
