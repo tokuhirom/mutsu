@@ -1371,6 +1371,7 @@ impl Interpreter {
             {
                 // Metamodel::PackageHOW.new_type(name => 'Foo')
                 // Returns a type object (Package) with the given name
+                // and registers an empty class so .new works on it.
                 let name = args
                     .iter()
                     .find_map(|a| {
@@ -1385,6 +1386,11 @@ impl Interpreter {
                         }
                     })
                     .unwrap_or_else(|| "Anon".to_string());
+                // Register an empty class definition so that .new and other
+                // class operations work on this dynamically created type.
+                if !self.classes.contains_key(&name) {
+                    self.classes.insert(name.clone(), Default::default());
+                }
                 Ok(Value::Package(Symbol::intern(&name)))
             }
             // Metamodel::Primitives static methods

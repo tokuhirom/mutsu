@@ -706,6 +706,8 @@ impl Interpreter {
             "Grammar",
             "Proxy",
             "Stash",
+            "Metamodel::ClassHOW",
+            "Perl6::Metamodel::ClassHOW",
         ];
         for parent in parents {
             let resolved_parent_name = self.resolve_declared_type_name(parent);

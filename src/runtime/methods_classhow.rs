@@ -94,6 +94,7 @@ impl Interpreter {
                 | "does"
                 | "lookup"
                 | "find_method"
+                | "add_attribute"
                 | "add_method"
                 | "add_multi_method"
                 | "compose"
@@ -485,6 +486,57 @@ impl Interpreter {
                 let mro = self.class_mro(&class_name);
                 if let Some(class_def) = self.classes.get_mut(&class_name) {
                     class_def.mro = mro;
+                }
+                Ok(Value::Nil)
+            }
+            "add_attribute" if args.len() >= 2 => {
+                // ^add_attribute($type, $attr)
+                // Adds an Attribute object to a dynamically created class
+                let class_name = match &args[0] {
+                    Value::Package(name) => name.resolve(),
+                    Value::Str(name) => name.to_string(),
+                    _ => return Ok(Value::Nil),
+                };
+                if let Value::Instance {
+                    class_name: attr_class,
+                    attributes: attr_attrs,
+                    ..
+                } = &args[1]
+                    && attr_class.resolve() == "Attribute"
+                {
+                    let attr_name_raw = attr_attrs
+                        .get("name")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    // Strip sigil+twigil prefix to get bare name (e.g. "$!inner" -> "inner")
+                    let bare_name = attr_name_raw
+                        .trim_start_matches(|c: char| "$.!@%&".contains(c))
+                        .to_string();
+                    let has_accessor = attr_attrs
+                        .get("has_accessor")
+                        .map(|v| v.truthy())
+                        .unwrap_or(false);
+                    let is_rw = attr_attrs.get("rw").map(|v| v.truthy()).unwrap_or(false);
+                    let type_constraint = attr_attrs.get("type").and_then(|v| match v {
+                        Value::Package(name) => Some(name.resolve()),
+                        _ => None,
+                    });
+                    let sigil = attr_name_raw.chars().next().unwrap_or('$');
+                    // Add the attribute to the class definition
+                    if let Some(class_def) = self.classes.get_mut(&class_name) {
+                        class_def.attributes.push((
+                            bare_name.clone(),
+                            has_accessor, // is_public
+                            None,         // default_expr
+                            is_rw,        // is_rw
+                            None,         // is_required
+                            sigil,        // sigil
+                            None,         // where_constraint
+                        ));
+                        if let Some(tc) = type_constraint {
+                            class_def.attribute_types.insert(bare_name, tc);
+                        }
+                    }
                 }
                 Ok(Value::Nil)
             }
