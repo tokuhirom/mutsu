@@ -212,7 +212,7 @@ fn push_permutations(
     }
 }
 
-fn all_permutations(items: &[Value]) -> Vec<Value> {
+pub(crate) fn all_permutations(items: &[Value]) -> Vec<Value> {
     if items.is_empty() {
         return vec![Value::array(Vec::new())];
     }
@@ -904,6 +904,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     .map(|items| items.to_vec())
                     .unwrap_or_else(|| runtime::value_to_list(target))
             };
+            if items.len() > 20 {
+                return Some(Err(RuntimeError::new(format!(
+                    "Cowardly refusing to permutate more than 20 elements, tried {}",
+                    items.len()
+                ))));
+            }
             Some(Ok(Value::Seq(all_permutations(&items).into())))
         }
         "combinations" => {
