@@ -1956,6 +1956,16 @@ impl Interpreter {
                 other => vec![other],
             })
             .collect();
+        // Pre-scan: collect attribute names declared in this role body.
+        let mut role_own_attrs: HashSet<String> = HashSet::new();
+        for stmt in &flattened_body {
+            if let Stmt::HasDecl {
+                name: attr_name, ..
+            } = stmt
+            {
+                role_own_attrs.insert(attr_name.resolve());
+            }
+        }
         for stmt in flattened_body {
             match stmt {
                 Stmt::HasDecl {
@@ -2160,6 +2170,9 @@ impl Interpreter {
                     is_default_candidate,
                     deprecated_message: _,
                 } => {
+                    // Validate that $!attr references in the method body are declared
+                    // in this role (same check as for class methods).
+                    Self::validate_attr_declared_in_class(&role_own_attrs, method_body)?;
                     if *multi
                         && (param_defs.iter().any(|pd| {
                             pd.type_constraint
@@ -2533,7 +2546,17 @@ impl Interpreter {
             Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
                 Self::validate_attr_in_expr(class_own_attrs, e)?;
             }
-            Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
+            Stmt::VarDecl { expr, .. } => {
+                Self::validate_attr_in_expr(class_own_attrs, expr)?;
+            }
+            Stmt::Assign { name, expr, .. } => {
+                // Check if assigning to an undeclared private attribute ($!attr = ...)
+                if let Some(attr_name) = name.strip_prefix('!')
+                    && !attr_name.is_empty()
+                    && !class_own_attrs.contains(attr_name)
+                {
+                    return Err(Self::undeclared_attr_error(attr_name, "!"));
+                }
                 Self::validate_attr_in_expr(class_own_attrs, expr)?;
             }
             Stmt::Say(exprs) | Stmt::Put(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
@@ -2593,27 +2616,36 @@ impl Interpreter {
         Ok(())
     }
 
+    fn undeclared_attr_error(attr_name: &str, twigil: &str) -> RuntimeError {
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "name".to_string(),
+            Value::str(format!("${}{}", twigil, attr_name)),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::Attribute::Undeclared"), attrs);
+        let mut err = RuntimeError::new(format!(
+            "Attribute ${}{} not declared in class",
+            twigil, attr_name
+        ));
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
     fn validate_attr_in_expr(
         class_own_attrs: &HashSet<String>,
         expr: &Expr,
     ) -> Result<(), RuntimeError> {
         match expr {
             Expr::Var(name) => {
-                if let Some(attr_name) = name.strip_prefix('!') {
-                    // $! by itself is the error variable, not an attribute
-                    if !attr_name.is_empty() && !class_own_attrs.contains(attr_name) {
-                        let mut attrs = HashMap::new();
-                        attrs.insert("name".to_string(), Value::str(format!("$!{}", attr_name)));
-                        let ex =
-                            Value::make_instance(Symbol::intern("X::Attribute::Undeclared"), attrs);
-                        let mut err = RuntimeError::new(format!(
-                            "Attribute $!{} not declared in class",
-                            attr_name
-                        ));
-                        err.exception = Some(Box::new(ex));
-                        return Err(err);
-                    }
+                // $! by itself is the error variable, not an attribute
+                if let Some(attr_name) = name.strip_prefix('!')
+                    && !attr_name.is_empty()
+                    && !class_own_attrs.contains(attr_name)
+                {
+                    return Err(Self::undeclared_attr_error(attr_name, "!"));
                 }
+                // $.attr is compiled as self.attr() — undeclared attributes will
+                // fail at runtime with "No such method", no compile-time check needed.
             }
             Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
                 Self::validate_attr_in_expr(class_own_attrs, target)?;
@@ -2662,7 +2694,16 @@ impl Interpreter {
                 Self::validate_attr_in_expr(class_own_attrs, index)?;
                 Self::validate_attr_in_expr(class_own_attrs, value)?;
             }
-            Expr::AssignExpr { expr, .. } => {
+            Expr::AssignExpr { name, expr, .. } => {
+                // Check if assigning to an undeclared private attribute ($!attr = ...)
+                if let Some(attr_name) = name.strip_prefix('!')
+                    && !attr_name.is_empty()
+                    && !class_own_attrs.contains(attr_name)
+                {
+                    return Err(Self::undeclared_attr_error(attr_name, "!"));
+                }
+                // $.attr assignment is compiled as self.attr = ... — undeclared
+                // attributes will fail at runtime, no compile-time check needed.
                 Self::validate_attr_in_expr(class_own_attrs, expr)?;
             }
             Expr::DoBlock { body, .. }

@@ -302,6 +302,26 @@ impl Compiler {
 
     /// Compile Expr::Var -- variable access with all special cases.
     pub(super) fn compile_expr_var(&mut self, name: &str) {
+        // $.attr (public twigil) — compile as self.attr() method call.
+        // In Raku, $.attr is syntactic sugar for self.attr(), not a variable lookup.
+        if let Some(attr_name) = name.strip_prefix('.')
+            && !attr_name.is_empty()
+        {
+            // Load self
+            let self_name = self.qualify_variable_name("self");
+            let self_idx = self.code.add_constant(Value::str(self_name));
+            self.code.emit(OpCode::GetGlobal(self_idx));
+            // Call method
+            let method_idx = self.code.add_constant(Value::str(attr_name.to_string()));
+            self.code.emit(OpCode::CallMethod {
+                name_idx: method_idx,
+                arity: 0,
+                modifier_idx: None,
+                quoted: false,
+                arg_sources_idx: None,
+            });
+            return;
+        }
         // $CALLER:: / $CALLER::CALLER:: variable access
         if let Some((bare_name, depth)) = Self::parse_caller_prefix(name) {
             let name_idx = self.code.add_constant(Value::str(bare_name));

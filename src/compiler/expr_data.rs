@@ -3,6 +3,27 @@ use super::*;
 impl Compiler {
     /// Compile AssignExpr: assignment as expression.
     pub(super) fn compile_expr_assign(&mut self, name: &str, expr: &Expr) {
+        // $.attr = expr — In Raku, this first resolves self.attr (method call),
+        // then assigns to the resulting lvalue container. If the accessor doesn't
+        // exist, the method call throws. Compile as: first call self.attr() to
+        // check it exists (pop result), then do the normal assignment.
+        if let Some(attr_name) = name.strip_prefix('.')
+            && !attr_name.is_empty()
+        {
+            // Load self and call the accessor method to validate it exists
+            let self_name = self.qualify_variable_name("self");
+            let self_idx = self.code.add_constant(Value::str(self_name));
+            self.code.emit(OpCode::GetGlobal(self_idx));
+            let method_idx = self.code.add_constant(Value::str(attr_name.to_string()));
+            self.code.emit(OpCode::CallMethod {
+                name_idx: method_idx,
+                arity: 0,
+                modifier_idx: None,
+                quoted: false,
+                arg_sources_idx: None,
+            });
+            self.code.emit(OpCode::Pop); // discard the accessor result
+        }
         self.compile_expr(expr);
         if let Some(&slot) = self.local_map.get(name) {
             self.code.emit(OpCode::AssignExprLocal(slot));
