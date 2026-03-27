@@ -10,6 +10,12 @@ impl Compiler {
             self.pop_dynamic_scope_lexical(saved);
             return;
         }
+        // If the block contains CATCH/CONTROL, wrap in implicit try
+        if Self::has_catch_or_control(stmts) {
+            self.compile_try(stmts, &None);
+            self.pop_dynamic_scope_lexical(saved);
+            return;
+        }
         // Hoist sub declarations
         self.hoist_sub_decls(stmts);
         for (i, stmt) in stmts.iter().enumerate() {
