@@ -178,6 +178,37 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 super::methods_0arg::collection::combinations_all(&items).into(),
             )))
         }
+        "permutations" => {
+            // permutations($n) where $n is Int => (0, 1, ..., $n-1).permutations
+            // permutations($iterable) => $iterable.permutations
+            let items = match arg {
+                Value::Int(n) => {
+                    if *n <= 0 {
+                        return Some(Ok(Value::Seq(vec![Value::array(Vec::new())].into())));
+                    }
+                    if *n > 20 {
+                        return Some(Err(RuntimeError::new(format!(
+                            "Cowardly refusing to permutate more than 20 elements, tried {}",
+                            n
+                        ))));
+                    }
+                    let items: Vec<Value> = (0..*n).map(Value::Int).collect();
+                    return Some(Ok(Value::Seq(
+                        super::methods_0arg::collection::all_permutations(&items).into(),
+                    )));
+                }
+                _ => runtime::value_to_list(arg),
+            };
+            if items.len() > 20 {
+                return Some(Err(RuntimeError::new(format!(
+                    "Cowardly refusing to permutate more than 20 elements, tried {}",
+                    items.len()
+                ))));
+            }
+            Some(Ok(Value::Seq(
+                super::methods_0arg::collection::all_permutations(&items).into(),
+            )))
+        }
         "srand" => {
             let seed = match arg {
                 Value::Int(n) => *n as u64,
