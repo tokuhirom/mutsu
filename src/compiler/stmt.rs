@@ -1291,8 +1291,13 @@ impl Compiler {
                     *sigil
                 };
                 let full_name = format!("{}{}{}", sigil_ch, twigil, bare);
+                let message = format!(
+                    "You cannot declare attribute '{}' here; maybe you'd like a class or a role?",
+                    full_name
+                );
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("name".to_string(), Value::str(full_name));
+                attrs.insert("message".to_string(), Value::str(message));
                 let err = Value::make_instance(Symbol::intern("X::Attribute::NoPackage"), attrs);
                 let idx = self.code.add_constant(err);
                 self.code.emit(OpCode::LoadConst(idx));

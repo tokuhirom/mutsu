@@ -453,6 +453,7 @@ roast/S12-attributes/mutators.t
 roast/S12-attributes/native.t
 roast/S12-attributes/recursive.t
 roast/S12-attributes/smiley.t
+roast/S12-attributes/undeclared.t
 roast/S12-class/anonymous.t
 roast/S12-class/attributes-required.t
 roast/S12-class/augment-supersede.t

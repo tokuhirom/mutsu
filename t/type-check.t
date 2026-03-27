@@ -6,6 +6,7 @@ is add1(2), 3, 'type-checked positional param';
 dies-ok { add1("a") }, 'type check fails on Str';
 
 class Holder {
+    has $!x;
     method set(Int $x) { $!x = $x; return $x }
 }
 my $h = Holder.new();
