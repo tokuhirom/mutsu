@@ -434,6 +434,106 @@ fn int_to_subscript(n: i64) -> String {
 
 // ── 1-arg method dispatch ────────────────────────────────────────────
 /// Try to dispatch a 1-argument method call on a Value.
+/// Compute the nth roots of a number. Used by both the `.roots` method and the
+/// `roots()` builtin function. Handles edge cases: n <= 0 returns [NaN],
+/// NaN/Inf inputs with n=1 return the input as Complex.
+pub(crate) fn compute_roots(target: &Value, n_arg: &Value) -> Value {
+    let n_int = match n_arg {
+        Value::Int(i) => *i,
+        Value::Num(f) => *f as i64,
+        Value::Rat(n, d) if *d != 0 => *n / *d,
+        Value::BigInt(bi) => {
+            use num_traits::ToPrimitive;
+            bi.to_i64().unwrap_or(0)
+        }
+        Value::Str(s) => s.parse::<i64>().unwrap_or(0),
+        Value::Bool(b) => {
+            if *b {
+                1
+            } else {
+                0
+            }
+        }
+        _ => runtime::to_int(n_arg),
+    };
+
+    // n <= 0: return [NaN]
+    if n_int <= 0 {
+        return Value::array(vec![Value::Num(f64::NAN)]);
+    }
+
+    let n = n_int as usize;
+
+    // Get the complex parts of the target
+    let (re, im) = match runtime::to_complex_parts(target) {
+        Some(parts) => parts,
+        None => {
+            // If we can't convert, try as float
+            let f = runtime::to_float_value(target).unwrap_or(f64::NAN);
+            (f, 0.0)
+        }
+    };
+
+    // Handle NaN: return [NaN+0i] (Complex NaN)
+    if re.is_nan() || im.is_nan() {
+        let mut roots = Vec::with_capacity(n);
+        for _ in 0..n {
+            roots.push(Value::Complex(f64::NAN, 0.0));
+        }
+        return Value::array(roots);
+    }
+
+    // Handle Inf/-Inf: return [Inf+0i] or [-Inf+0i] etc.
+    if re.is_infinite() || im.is_infinite() {
+        let mut roots = Vec::with_capacity(n);
+        // For n=1, return the value itself as Complex
+        // For n>1, the roots involve Inf which is complex
+        for k in 0..n {
+            if n == 1 {
+                roots.push(Value::Complex(re, im));
+            } else {
+                // Infinity roots: magnitude is Inf, angles vary
+                let theta = im.atan2(re);
+                let angle = (theta + 2.0 * std::f64::consts::PI * k as f64) / n as f64;
+                let rr = f64::INFINITY * angle.cos();
+                let ii = f64::INFINITY * angle.sin();
+                if ii.abs() < 1e-12 {
+                    roots.push(Value::Num(rr));
+                } else {
+                    roots.push(Value::Complex(rr, ii));
+                }
+            }
+        }
+        return Value::array(roots);
+    }
+
+    // Check if target is zero
+    if re == 0.0 && im == 0.0 {
+        let mut roots = Vec::with_capacity(n);
+        for _ in 0..n {
+            roots.push(Value::Complex(0.0, 0.0));
+        }
+        return Value::array(roots);
+    }
+
+    // Normal case: compute nth roots using polar form
+    let r = (re * re + im * im).sqrt();
+    let theta = im.atan2(re);
+    let mag = r.powf(1.0 / n as f64);
+    let mut roots = Vec::with_capacity(n);
+    for k in 0..n {
+        let angle = (theta + 2.0 * std::f64::consts::PI * k as f64) / n as f64;
+        let rr = mag * angle.cos();
+        let ii = mag * angle.sin();
+        if ii.abs() < 1e-12 {
+            roots.push(Value::Num(rr));
+        } else {
+            roots.push(Value::Complex(rr, ii));
+        }
+    }
+    Value::array(roots)
+}
+
 pub(crate) fn native_method_1arg(
     target: &Value,
     method_sym: Symbol,
@@ -1935,26 +2035,11 @@ pub(crate) fn native_method_1arg(
             Some(Ok(Value::Complex(mag * angle.cos(), mag * angle.sin())))
         }
         "roots" => {
-            let n = match arg {
-                Value::Int(i) if *i > 0 => *i as usize,
-                _ => return None,
-            };
-            let (re, im) = runtime::to_complex_parts(target)?;
-            let r = (re * re + im * im).sqrt();
-            let theta = im.atan2(re);
-            let mag = r.powf(1.0 / n as f64);
-            let mut roots = Vec::with_capacity(n);
-            for k in 0..n {
-                let angle = (theta + 2.0 * std::f64::consts::PI * k as f64) / n as f64;
-                let rr = mag * angle.cos();
-                let ii = mag * angle.sin();
-                if ii.abs() < 1e-12 {
-                    roots.push(Value::Num(rr));
-                } else {
-                    roots.push(Value::Complex(rr, ii));
-                }
+            // Instance types need runtime coercion via .Numeric
+            if matches!(target, Value::Instance { .. }) {
+                return None;
             }
-            Some(Ok(Value::array(roots)))
+            Some(Ok(compute_roots(target, arg)))
         }
         "atan2" => {
             // User-defined types need runtime coercion via .Numeric/.Bridge
