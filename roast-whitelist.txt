@@ -895,6 +895,7 @@ roast/S32-str/uc.t
 roast/S32-str/uniparse.t
 roast/S32-str/windows-1251-windows-1252-encode-decode.t
 roast/S32-str/words.t
+roast/S32-temporal/Date.t
 roast/S32-temporal/DateTime.t
 roast/S32-temporal/calendar.t
 roast/S32-temporal/greg-jd-frac-seconds.t

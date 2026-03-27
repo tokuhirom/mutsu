@@ -1546,7 +1546,63 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                 };
                 let (start_num, end_num) = match (start_num, end_num) {
                     (Some(s), Some(e)) => (s, e),
-                    _ => return vec![val.clone()],
+                    _ => {
+                        // Check for Date-like instances with .succ support
+                        let is_date_like = |v: &Value| -> bool {
+                            if let Value::Instance { attributes, .. } = v {
+                                attributes.contains_key("year")
+                                    && attributes.contains_key("month")
+                                    && attributes.contains_key("day")
+                                    && !attributes.contains_key("hour")
+                            } else {
+                                false
+                            }
+                        };
+                        if is_date_like(start.as_ref()) && is_date_like(end.as_ref()) {
+                            use crate::builtins::methods_0arg::temporal::{
+                                civil_to_epoch_days, date_attrs, epoch_days_to_civil,
+                                make_date_with_formatter,
+                            };
+                            let (sy, sm, sd) =
+                                if let Value::Instance { attributes, .. } = start.as_ref() {
+                                    date_attrs(attributes)
+                                } else {
+                                    unreachable!()
+                                };
+                            let (ey, em, ed) =
+                                if let Value::Instance { attributes, .. } = end.as_ref() {
+                                    date_attrs(attributes)
+                                } else {
+                                    unreachable!()
+                                };
+                            let start_days = civil_to_epoch_days(sy, sm, sd);
+                            let end_days = civil_to_epoch_days(ey, em, ed);
+                            let formatter =
+                                if let Value::Instance { attributes, .. } = start.as_ref() {
+                                    attributes.get("formatter").cloned()
+                                } else {
+                                    None
+                                };
+                            let mut result = Vec::new();
+                            let first_day = if *excl_start {
+                                start_days + 1
+                            } else {
+                                start_days
+                            };
+                            let limit = MAX_RANGE_EXPAND as usize;
+                            let mut d = first_day;
+                            while result.len() < limit {
+                                if d > end_days || (*excl_end && d == end_days) {
+                                    break;
+                                }
+                                let (y, m, dd) = epoch_days_to_civil(d);
+                                result.push(make_date_with_formatter(y, m, dd, formatter.clone()));
+                                d += 1;
+                            }
+                            return result;
+                        }
+                        return vec![val.clone()];
+                    }
                 };
                 if start_num.to_f64().is_infinite()
                     || start_num.to_f64().is_nan()
