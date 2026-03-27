@@ -141,6 +141,7 @@ impl Interpreter {
         }
         let content = fs::read_to_string(&path)
             .map_err(|err| RuntimeError::new(format!("Failed to slurp '{}': {}", path, err)))?;
+        let content = super::utils::strip_utf8_bom(content);
         Ok(Value::str(content))
     }
 
