@@ -135,6 +135,19 @@ pub(super) fn dispatch_temporal_method(
                         Some(Ok(temporal::make_datetime(year, month, day, 0, 0, 0.0, 0)))
                     }
                 }
+                "first-date-in-month" if args.is_empty() => {
+                    let formatter = attributes.get("formatter").cloned();
+                    Some(Ok(temporal::make_date_with_formatter(
+                        year, month, 1, formatter,
+                    )))
+                }
+                "last-date-in-month" if args.is_empty() => {
+                    let last_day = temporal::days_in_month(year, month);
+                    let formatter = attributes.get("formatter").cloned();
+                    Some(Ok(temporal::make_date_with_formatter(
+                        year, month, last_day, formatter,
+                    )))
+                }
                 _ => None,
             }
         }

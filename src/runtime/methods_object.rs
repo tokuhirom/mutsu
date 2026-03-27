@@ -330,6 +330,36 @@ impl Interpreter {
                 }
                 return self.dispatch_new(target.clone(), normalized_args);
             }
+            // Date subclass handling: delegate Date-specific constructor logic
+            // then merge custom attributes via the generic constructor.
+            let is_date_subclass = cn_resolved != "Date"
+                && self.class_mro(class_key).iter().any(|name| name == "Date");
+            // Only delegate if the args don't already contain Date attrs
+            // (prevents infinite recursion on second call)
+            let has_date_named_args = args.iter().any(|a| {
+                matches!(a, Value::Pair(k, _) if k == "year" || k == "month" || k == "day" || k == "days")
+            });
+            if is_date_subclass && !has_date_named_args && !self.has_user_method(class_key, "new") {
+                // Build Date first to extract year/month/day/days/formatter
+                let date =
+                    self.dispatch_new(Value::Package(Symbol::intern("Date")), args.clone())?;
+                if let Value::Instance { attributes, .. } = &date {
+                    // Now build the subclass instance with all Date attrs plus any custom named attrs
+                    let mut new_args = Vec::new();
+                    for (k, v) in attributes.iter() {
+                        new_args.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                    }
+                    // Add any non-Date named args from the original call
+                    for arg in &args {
+                        if let Value::Pair(key, _) = arg
+                            && !attributes.contains_key(key.as_str())
+                        {
+                            new_args.push(arg.clone());
+                        }
+                    }
+                    return self.dispatch_new(target.clone(), new_args);
+                }
+            }
             let is_io_path_like = base_class_name == "IO::Path"
                 || self
                     .class_mro(class_key)
@@ -835,6 +865,24 @@ impl Interpreter {
                                 ..
                             } if class_name == "DateTime" => {
                                 let (y, m, d, _, _, _, _) = temporal::datetime_attrs(attributes);
+                                year = y;
+                                month = m;
+                                day = d;
+                            }
+                            Value::Instance {
+                                class_name,
+                                attributes,
+                                ..
+                            } if class_name == "Instant" => {
+                                // Convert Instant to Date via POSIX
+                                let tai = match attributes.get("value") {
+                                    Some(Value::Num(v)) => *v,
+                                    Some(Value::Int(v)) => *v as f64,
+                                    _ => 0.0,
+                                };
+                                let posix = temporal::instant_to_posix(tai);
+                                let epoch_days = (posix / 86400.0).floor() as i64;
+                                let (y, m, d) = temporal::epoch_days_to_civil(epoch_days);
                                 year = y;
                                 month = m;
                                 day = d;

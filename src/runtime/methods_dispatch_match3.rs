@@ -107,36 +107,50 @@ impl Interpreter {
             }
             "now" => self.dispatch_datetime_now(&target, &args),
             "Date" if args.is_empty() => {
-                if let Value::Package(ref class_name) = target
-                    && self
-                        .class_mro(&class_name.resolve())
-                        .iter()
-                        .any(|name| name == "DateTime")
-                {
-                    return Some(Ok(Value::Package(Symbol::intern("Date"))));
+                if let Value::Package(ref class_name) = target {
+                    let cn = class_name.resolve();
+                    let mro = self.class_mro(&cn);
+                    if mro.iter().any(|name| name == "DateTime")
+                        || mro.iter().any(|name| name == "Date")
+                    {
+                        return Some(Ok(Value::Package(Symbol::intern("Date"))));
+                    }
                 }
                 None
             }
             "DateTime" if args.is_empty() => {
-                if let Value::Package(ref class_name) = target
-                    && self
-                        .class_mro(&class_name.resolve())
-                        .iter()
-                        .any(|name| name == "DateTime")
-                {
-                    return Some(Ok(target.clone()));
+                if let Value::Package(ref class_name) = target {
+                    let cn = class_name.resolve();
+                    let mro = self.class_mro(&cn);
+                    if mro.iter().any(|name| name == "DateTime")
+                        || mro.iter().any(|name| name == "Date")
+                    {
+                        return Some(Ok(Value::Package(Symbol::intern("DateTime"))));
+                    }
                 }
                 None
             }
             "today" if args.is_empty() => {
-                if let Value::Package(ref class_name) = target
-                    && class_name == "Date"
-                {
-                    use crate::builtins::methods_0arg::temporal;
-                    let secs = crate::value::current_time_secs_f64() as i64;
-                    let epoch_days = secs.div_euclid(86400);
-                    let (y, m, d) = temporal::epoch_days_to_civil(epoch_days);
-                    return Some(Ok(temporal::make_date(y, m, d)));
+                if let Value::Package(ref class_name) = target {
+                    let cn = class_name.resolve();
+                    let is_date_like =
+                        cn == "Date" || self.class_mro(&cn).iter().any(|name| name == "Date");
+                    if is_date_like {
+                        use crate::builtins::methods_0arg::temporal;
+                        let secs = crate::value::current_time_secs_f64() as i64;
+                        let epoch_days = secs.div_euclid(86400);
+                        let (y, m, d) = temporal::epoch_days_to_civil(epoch_days);
+                        if cn == "Date" {
+                            return Some(Ok(temporal::make_date(y, m, d)));
+                        }
+                        // For Date subclasses, construct via the subclass constructor
+                        let date_args = vec![
+                            Value::Pair("year".to_string(), Box::new(Value::Int(y))),
+                            Value::Pair("month".to_string(), Box::new(Value::Int(m))),
+                            Value::Pair("day".to_string(), Box::new(Value::Int(d))),
+                        ];
+                        return Some(self.dispatch_new(target.clone(), date_args));
+                    }
                 }
                 None
             }

@@ -65,15 +65,18 @@ pub fn date_method_0arg(
             Some(Ok(Value::str(format_date(year, month, day))))
         }
         "Date" => Some(Ok(make_date(year, month, day))),
+        "yyyy-mm-dd" => Some(Ok(Value::str(format_date(year, month, day)))),
         "succ" => {
             let new_days = days + 1;
             let (ny, nm, nd) = epoch_days_to_civil(new_days);
-            Some(Ok(make_date(ny, nm, nd)))
+            let formatter = attributes.get("formatter").cloned();
+            Some(Ok(make_date_with_formatter(ny, nm, nd, formatter)))
         }
         "pred" => {
             let new_days = days - 1;
             let (ny, nm, nd) = epoch_days_to_civil(new_days);
-            Some(Ok(make_date(ny, nm, nd)))
+            let formatter = attributes.get("formatter").cloned();
+            Some(Ok(make_date_with_formatter(ny, nm, nd, formatter)))
         }
         "week-year" => {
             let (wy, _) = iso_week(year, month, day);
