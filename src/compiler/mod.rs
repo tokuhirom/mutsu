@@ -164,6 +164,8 @@ impl Compiler {
             Expr::HashVar(name) => Some(format!("%{}", name)),
             Expr::CodeVar(name) => Some(format!("&{}", name)),
             Expr::BareWord(name) => Some(name.to_string()),
+            // DoStmt wrapping a VarDecl: `my $c = 42` passed as argument
+            Expr::DoStmt(stmt) => Self::extract_varname_from_stmt(stmt),
             // For FatArrow (named args like `:into(%h)`), encode "key=varname"
             // so the VM can write back to the variable after a builtin call.
             Expr::Binary {

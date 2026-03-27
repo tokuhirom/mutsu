@@ -85,6 +85,7 @@ roast/S02-names/caller.t
 roast/S02-names/dynamic-scope.t
 roast/S02-names/identifier.t
 roast/S02-names/indirect.t
+roast/S02-names/is_dynamic.t
 roast/S02-names/name.t
 roast/S02-names/our.t
 roast/S02-names/strict.t
