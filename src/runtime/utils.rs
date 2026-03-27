@@ -10,6 +10,15 @@ use num_traits::{Signed, ToPrimitive, Zero};
 /// Maximum number of elements when expanding an infinite range to a list.
 const MAX_RANGE_EXPAND: i64 = 1_000_000;
 
+/// Strip a leading UTF-8 BOM (U+FEFF) from a string, as Raku does when reading files.
+pub(crate) fn strip_utf8_bom(s: String) -> String {
+    if let Some(stripped) = s.strip_prefix('\u{FEFF}') {
+        stripped.to_string()
+    } else {
+        s
+    }
+}
+
 /// Check if a class name represents a Buf-like type (Buf, Buf[uint8], buf8, etc.)
 pub(crate) fn is_buf_like_class(cn: &str) -> bool {
     matches!(

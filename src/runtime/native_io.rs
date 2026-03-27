@@ -544,6 +544,7 @@ impl Interpreter {
             "lines" => {
                 let content = fs::read_to_string(&path_buf)
                     .map_err(|err| RuntimeError::new(format!("Failed to read '{}': {}", p, err)))?;
+                let content = super::utils::strip_utf8_bom(content);
                 let parts = content
                     .lines()
                     .map(|line| Value::str(line.to_string()))
@@ -553,6 +554,7 @@ impl Interpreter {
             "words" => {
                 let content = fs::read_to_string(&path_buf)
                     .map_err(|err| RuntimeError::new(format!("Failed to read '{}': {}", p, err)))?;
+                let content = super::utils::strip_utf8_bom(content);
                 let parts = content
                     .split_whitespace()
                     .map(|token| Value::str(token.to_string()))
@@ -576,6 +578,7 @@ impl Interpreter {
                 let content = fs::read_to_string(&path_buf).map_err(|err| {
                     RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
                 })?;
+                let content = super::utils::strip_utf8_bom(content);
                 Ok(Value::str(content))
             }
             "open" => {
