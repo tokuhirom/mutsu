@@ -53,6 +53,42 @@ impl Interpreter {
                 ))),
             };
         }
+        if let Some(op) = name
+            .strip_prefix("postfix:<")
+            .and_then(|s| s.strip_suffix('>'))
+        {
+            if let Some(def) = self.resolve_function_with_alias(name, args) {
+                return self.call_function_def(&def, args);
+            }
+            if let Some(err) = self.take_pending_dispatch_error() {
+                return Err(err);
+            }
+            if let Some(callable) = self.env.get(&format!("&{}", name)).cloned() {
+                return self.call_sub_value(callable, args.to_vec(), false);
+            }
+            if !args.is_empty() {
+                let arg = &args[0];
+                match op {
+                    "i" => {
+                        let n = crate::runtime::coerce_to_numeric(arg.clone());
+                        let num_val = match &n {
+                            Value::Int(i) => *i as f64,
+                            Value::Num(f) => *f,
+                            Value::Rat(n, d) => *n as f64 / *d as f64,
+                            _ => {
+                                return Err(RuntimeError::new(
+                                    "Cannot coerce to Numeric for postfix:<i>".to_string(),
+                                ));
+                            }
+                        };
+                        return Ok(Value::Complex(0.0, num_val));
+                    }
+                    _ => {
+                        // Fall through to the generic unknown function error below
+                    }
+                }
+            }
+        }
         if (self.loaded_modules.contains("Test")
             || self.loaded_modules.iter().any(|m| m.starts_with("Test::")))
             && let Some(result) = self.call_test_function(name, args)?
