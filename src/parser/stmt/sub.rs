@@ -877,27 +877,46 @@ pub(super) fn sub_decl_body(
     };
     // Merge return type: `-->` from inside params has priority, then `returns`/`of` traits
     let merged_return_type = return_type.or(traits.return_type);
-    Ok((
-        rest,
-        Stmt::SubDecl {
-            name: Symbol::intern(&name),
-            name_expr,
-            params,
-            param_defs,
-            return_type: merged_return_type,
-            associativity: traits.associativity,
-            signature_alternates,
-            body,
-            multi,
-            is_rw: traits.is_rw,
-            is_raw: traits.is_raw,
-            is_export: traits.is_export,
-            export_tags: traits.export_tags,
-            is_test_assertion: traits.is_test_assertion,
-            supersede,
-            custom_traits: traits.custom_traits,
-        },
-    ))
+    let sub_name_sym = Symbol::intern(&name);
+    let sub_decl = Stmt::SubDecl {
+        name: sub_name_sym,
+        name_expr,
+        params,
+        param_defs,
+        return_type: merged_return_type,
+        associativity: traits.associativity,
+        signature_alternates,
+        body,
+        multi,
+        is_rw: traits.is_rw,
+        is_raw: traits.is_raw,
+        is_export: traits.is_export,
+        export_tags: traits.export_tags,
+        is_test_assertion: traits.is_test_assertion,
+        supersede,
+        custom_traits: traits.custom_traits,
+    };
+    // Check for immediate invocation: `sub foo(...) { ... }(args)`.
+    // Only if `(` follows without a newline (same-line invocation).
+    let has_newline = rest[..rest.len().min(rest.find('(').unwrap_or(rest.len()))].contains('\n');
+    if !has_newline
+        && rest.starts_with('(')
+        && let Ok((r, call_args)) = super::parse_stmt_call_args(rest)
+    {
+        let positional_args: Vec<Expr> = call_args
+            .into_iter()
+            .filter_map(|arg| match arg {
+                crate::ast::CallArg::Positional(e) => Some(e),
+                _ => None,
+            })
+            .collect();
+        let call_expr = Stmt::Expr(Expr::Call {
+            name: sub_name_sym,
+            args: positional_args,
+        });
+        return Ok((r, Stmt::SyntheticBlock(vec![sub_decl, call_expr])));
+    }
+    Ok((rest, sub_decl))
 }
 
 fn consume_raw_sub_body(input: &str) -> PResult<'_, Vec<Stmt>> {
