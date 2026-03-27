@@ -700,6 +700,14 @@ pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
     if super::native_types::is_native_int_type(constraint) {
         return true;
     }
+    // Handle parameterized types like Array[Int], Hash[Str], etc.
+    if let Some(base) = constraint.split('[').next()
+        && constraint.contains('[')
+        && constraint.ends_with(']')
+        && is_known_type_constraint(base)
+    {
+        return true;
+    }
     matches!(
         constraint,
         "Int"

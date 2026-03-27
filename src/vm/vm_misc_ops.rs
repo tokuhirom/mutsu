@@ -70,6 +70,8 @@ fn is_core_raku_type(name: &str) -> bool {
             | "Callable"
             | "Positional"
             | "Associative"
+            | "Array"
+            | "Hash"
             | "Iterable"
             | "Iterator"
             | "Dateish"
@@ -327,10 +329,30 @@ impl VM {
     }
 
     fn array_elements_match_constraint(&mut self, constraint: &str, value: &Value) -> bool {
+        // When the constraint is a parameterized container type (e.g. Array[Int]),
+        // check each element directly against the constraint without recursing into
+        // sub-arrays. For simple constraints (e.g. Int), recurse as usual.
+        let is_container_constraint = constraint.contains('[')
+            && constraint.split_once('[').is_some_and(|(base, _)| {
+                matches!(
+                    base,
+                    "Array" | "Hash" | "List" | "Seq" | "Positional" | "Associative"
+                )
+            });
         match value {
-            Value::Array(items, ..) => items
-                .iter()
-                .all(|item| self.array_elements_match_constraint(constraint, item)),
+            Value::Array(items, ..) => {
+                if is_container_constraint {
+                    // Each element is checked as a whole against the constraint
+                    items
+                        .iter()
+                        .all(|item| self.interpreter.type_matches_value(constraint, item))
+                } else {
+                    // Recurse into sub-arrays for simple element types
+                    items
+                        .iter()
+                        .all(|item| self.array_elements_match_constraint(constraint, item))
+                }
+            }
             Value::Nil => true,
             _ => self.interpreter.type_matches_value(constraint, value),
         }
