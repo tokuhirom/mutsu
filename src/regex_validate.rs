@@ -214,6 +214,8 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                     err.exception = Some(Box::new(ex));
                     return Err(err);
                 }
+                // Validate bracket character classes for Perl 5 range syntax
+                validate_bracket_class_content(ct)?;
             }
             // Grouping — skip balanced content
             '[' => {
@@ -565,4 +567,198 @@ fn make_quantifier_error(quant: char) -> RuntimeError {
     let mut err = RuntimeError::new(msg);
     err.exception = Some(Box::new(ex));
     err
+}
+
+/// Validate bracket character class content for common errors.
+/// Checks for Perl 5 range syntax (a-z instead of a..z), reversed ranges,
+/// and missing `+` or `-` operators between class parts.
+#[allow(clippy::result_large_err)]
+fn validate_bracket_class_content(content: &str) -> Result<(), RuntimeError> {
+    // Extract all bracket class bodies from the content
+    // Content may be: [a-z], +[a..z]-[aeiou], etc.
+    let mut remaining = content;
+    while let Some(start) = remaining.find('[') {
+        let after_bracket = &remaining[start + 1..];
+        // Find the matching ']', handling backslash escapes and nested brackets
+        let mut chars = after_bracket.chars().peekable();
+        let mut body = String::new();
+        let mut consumed = 0usize;
+        let mut found_close = false;
+        while let Some(c) = chars.next() {
+            consumed += c.len_utf8();
+            if c == '\\' {
+                body.push(c);
+                if let Some(esc) = chars.next() {
+                    consumed += esc.len_utf8();
+                    body.push(esc);
+                    // Handle \c[...], \x[...], \o[...] — skip nested brackets
+                    if (esc == 'c' || esc == 'C' || esc == 'x' || esc == 'X' || esc == 'o')
+                        && chars.peek() == Some(&'[')
+                    {
+                        let bracket = chars.next().unwrap();
+                        consumed += bracket.len_utf8();
+                        body.push(bracket);
+                        let mut depth = 1;
+                        for ch in chars.by_ref() {
+                            consumed += ch.len_utf8();
+                            body.push(ch);
+                            if ch == '[' {
+                                depth += 1;
+                            } else if ch == ']' {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if c == ']' {
+                found_close = true;
+                break;
+            } else {
+                body.push(c);
+            }
+        }
+        if found_close {
+            check_bracket_body_for_perl5_range(&body)?;
+        }
+        // Advance past the consumed content (bracket body + closing ']')
+        remaining = &remaining[start + 1 + consumed..];
+    }
+    // Check for missing + or - between parts in combined class expressions.
+    // E.g., <[abc] [def]>, <:Kata :Hira>, <+alpha digit>
+    check_missing_operator(content)?;
+    Ok(())
+}
+
+/// Check for missing `+` or `-` operator between character class parts.
+/// Only applies to combined character class expressions (starting with `+`, `-`, `[`, or `:`).
+#[allow(clippy::result_large_err)]
+fn check_missing_operator(content: &str) -> Result<(), RuntimeError> {
+    let trimmed = content.trim();
+    // Only check content that looks like a character class expression.
+    // Must start with [, +, -, or : followed by an uppercase letter (Unicode property).
+    let is_charclass = trimmed.starts_with('[')
+        || trimmed.starts_with('+')
+        || trimmed.starts_with('-')
+        || (trimmed.starts_with(':') && trimmed.chars().nth(1).is_some_and(|c| c.is_uppercase()));
+    if !is_charclass {
+        return Ok(());
+    }
+    // Simple bracket classes without multiple parts don't need operator checking
+    if trimmed.starts_with('[') && !trimmed.contains("] ") && !trimmed.contains("]+") {
+        return Ok(());
+    }
+    // Tokenize the content into parts to check for missing operators
+    let mut remaining = trimmed;
+    let mut had_part = false;
+    while !remaining.is_empty() {
+        let first = remaining.chars().next().unwrap();
+        if first == '+' || first == '-' {
+            remaining = &remaining[1..];
+            remaining = remaining.trim_start();
+            had_part = false;
+        } else if first == '[' {
+            // Skip over bracket class [...]
+            if had_part {
+                let msg = "Missing + or - in character class expression";
+                return Err(RuntimeError::new(msg));
+            }
+            // Find matching ]
+            remaining = &remaining[1..];
+            let mut chars = remaining.chars();
+            while let Some(c) = chars.next() {
+                if c == '\\' {
+                    chars.next(); // skip escaped
+                } else if c == ']' {
+                    break;
+                }
+            }
+            remaining = chars.as_str().trim_start();
+            had_part = true;
+        } else if first == ':' && remaining.chars().nth(1).is_some_and(|c| c.is_uppercase()) {
+            // Unicode property like :Kata, :Hira
+            if had_part {
+                let msg = "Missing + or - in character class expression";
+                return Err(RuntimeError::new(msg));
+            }
+            let end = remaining
+                .find(|c: char| !c.is_alphanumeric() && c != ':' && c != '-' && c != '_')
+                .unwrap_or(remaining.len());
+            remaining = remaining[end..].trim_start();
+            had_part = true;
+        } else if first.is_alphanumeric() && had_part {
+            // Named class after another part without operator
+            let msg = "Missing + or - in character class expression";
+            return Err(RuntimeError::new(msg));
+        } else if first.is_alphanumeric() {
+            // Named class (e.g., alpha, digit, xdigit)
+            let end = remaining
+                .find(|c: char| !c.is_alphanumeric() && c != '-' && c != '_')
+                .unwrap_or(remaining.len());
+            remaining = remaining[end..].trim_start();
+            had_part = true;
+        } else {
+            break;
+        }
+    }
+    Ok(())
+}
+
+/// Check a bracket class body for Perl 5 range syntax (e.g., a-z instead of a..z).
+#[allow(clippy::result_large_err)]
+fn check_bracket_body_for_perl5_range(body: &str) -> Result<(), RuntimeError> {
+    // Iterate through the body, skipping escape sequences like \c[...], \x[...]
+    let mut chars = body.chars().peekable();
+    let mut prev_was_alnum = false;
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            // Skip the entire escape sequence
+            if let Some(&esc) = chars.peek() {
+                chars.next();
+                if (esc == 'c' || esc == 'C' || esc == 'x' || esc == 'X' || esc == 'o')
+                    && chars.peek() == Some(&'[')
+                {
+                    // Skip over \c[...], \x[...], \o[...] content
+                    chars.next(); // skip '['
+                    let mut depth = 1;
+                    for ch in chars.by_ref() {
+                        if ch == '[' {
+                            depth += 1;
+                        } else if ch == ']' {
+                            depth -= 1;
+                            if depth == 0 {
+                                break;
+                            }
+                        }
+                    }
+                }
+                // After an escape, the resulting char might be alnum but we don't
+                // want to trigger the range check for it
+                prev_was_alnum = false;
+            }
+        } else if c == '-' {
+            // Check if this looks like a Perl 5 range: alnum-alnum
+            if prev_was_alnum {
+                // Check the next char (skip spaces)
+                let mut peek = chars.clone();
+                while peek.peek() == Some(&' ') {
+                    peek.next();
+                }
+                if let Some(&next_ch) = peek.peek()
+                    && next_ch.is_alphanumeric()
+                    && next_ch != '.'
+                {
+                    let msg =
+                        "Unsupported use of - as character range. In Raku please use: .. for range";
+                    return Err(RuntimeError::new(msg));
+                }
+            }
+            prev_was_alnum = false;
+        } else {
+            prev_was_alnum = c.is_alphanumeric();
+        }
+    }
+    Ok(())
 }

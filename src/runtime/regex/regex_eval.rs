@@ -239,14 +239,86 @@ impl Interpreter {
                         break;
                     }
                 }
+                ClassItem::NegDigit => {
+                    if !c.is_ascii_digit() {
+                        matched = true;
+                        break;
+                    }
+                }
                 ClassItem::Word => {
                     if c.is_alphanumeric() || c == '_' {
                         matched = true;
                         break;
                     }
                 }
+                ClassItem::NegWord => {
+                    if !(c.is_alphanumeric() || c == '_') {
+                        matched = true;
+                        break;
+                    }
+                }
                 ClassItem::Space => {
                     if c.is_whitespace() {
+                        matched = true;
+                        break;
+                    }
+                }
+                ClassItem::NegSpace => {
+                    if !c.is_whitespace() {
+                        matched = true;
+                        break;
+                    }
+                }
+                ClassItem::HorizSpace => {
+                    if matches!(
+                        c,
+                        ' ' | '\t' | '\u{00A0}' | '\u{1680}' | '\u{2000}'
+                            ..='\u{200A}' | '\u{202F}' | '\u{205F}' | '\u{3000}'
+                    ) {
+                        matched = true;
+                        break;
+                    }
+                }
+                ClassItem::NegHorizSpace => {
+                    if !matches!(
+                        c,
+                        ' ' | '\t' | '\u{00A0}' | '\u{1680}' | '\u{2000}'
+                            ..='\u{200A}' | '\u{202F}' | '\u{205F}' | '\u{3000}'
+                    ) {
+                        matched = true;
+                        break;
+                    }
+                }
+                ClassItem::VertSpace => {
+                    if matches!(
+                        c,
+                        '\n' | '\r'
+                            | '\u{000B}'
+                            | '\u{000C}'
+                            | '\u{0085}'
+                            | '\u{2028}'
+                            | '\u{2029}'
+                    ) {
+                        matched = true;
+                        break;
+                    }
+                }
+                ClassItem::NegVertSpace => {
+                    if !matches!(
+                        c,
+                        '\n' | '\r'
+                            | '\u{000B}'
+                            | '\u{000C}'
+                            | '\u{0085}'
+                            | '\u{2028}'
+                            | '\u{2029}'
+                    ) {
+                        matched = true;
+                        break;
+                    }
+                }
+                ClassItem::NotNewline => {
+                    if c != '\n' && c != '\r' {
                         matched = true;
                         break;
                     }

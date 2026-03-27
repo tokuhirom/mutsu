@@ -1322,7 +1322,68 @@ impl Interpreter {
                         // Check for lookaround assertions: <?before ...>, <!before ...>,
                         // <?after ...>, <!after ...>
                         let peek_str: String = chars.clone().collect();
-                        if peek_str.starts_with("before ")
+                        if peek_str.starts_with("?[")
+                            || peek_str.starts_with("![")
+                            || peek_str.starts_with("?-[")
+                            || peek_str.starts_with("!-[")
+                        {
+                            // <?[a]> or <![a]> — zero-width character class assertion
+                            let negated = peek_str.starts_with('!');
+                            // Skip '?' or '!'
+                            chars.next();
+                            // Read content between current position and closing '>'
+                            let mut cc_content = String::new();
+                            let mut angle_depth = 1usize;
+                            for ch in chars.by_ref() {
+                                if ch == '<' {
+                                    angle_depth += 1;
+                                    cc_content.push(ch);
+                                } else if ch == '>' {
+                                    angle_depth -= 1;
+                                    if angle_depth == 0 {
+                                        break;
+                                    }
+                                    cc_content.push(ch);
+                                } else {
+                                    cc_content.push(ch);
+                                }
+                            }
+                            // Parse the character class content (e.g., [a], -[a], [\n])
+                            let cc_trimmed = cc_content.trim();
+                            let (cc_negated, cc_inner) =
+                                if let Some(rest) = cc_trimmed.strip_prefix("-[") {
+                                    (true, rest.strip_suffix(']').unwrap_or(rest))
+                                } else if let Some(rest) = cc_trimmed.strip_prefix('[') {
+                                    (false, rest.strip_suffix(']').unwrap_or(rest))
+                                } else {
+                                    (false, cc_trimmed)
+                                };
+                            let class_negated = if negated { !cc_negated } else { cc_negated };
+                            if let Some(class) = self.parse_raku_char_class(cc_inner, class_negated)
+                            {
+                                // Build a lookahead with the char class as the inner pattern
+                                let inner_pattern = RegexPattern {
+                                    tokens: vec![RegexToken {
+                                        atom: RegexAtom::CharClass(class),
+                                        quant: RegexQuant::One,
+                                        named_capture: None,
+                                        ratchet: false,
+                                        frugal: false,
+                                    }],
+                                    anchor_start: false,
+                                    anchor_end: false,
+                                    ignore_case,
+                                    ignore_mark,
+                                };
+                                RegexAtom::Lookaround {
+                                    pattern: inner_pattern,
+                                    negated,
+                                    is_behind: false,
+                                }
+                            } else {
+                                continue;
+                            }
+                        } else if peek_str.starts_with("before ")
                             || peek_str.starts_with("?before ")
                             || peek_str.starts_with("!before ")
                             || peek_str.starts_with("after ")
@@ -1465,28 +1526,15 @@ impl Interpreter {
                                 }
                             } else {
                                 // Check for Raku character class: <[...]>, <-[...]>, <+[...]>
+                                // Also handles composite: <[a..z]-[aeiou]>, <+[a..z]-[aeiou]-[y]>
                                 let trimmed = name.trim();
                                 if (trimmed.starts_with('[')
                                     || trimmed.starts_with("-[")
                                     || trimmed.starts_with("+["))
                                     && trimmed.ends_with(']')
                                 {
-                                    let negated;
-                                    let inner;
-                                    if trimmed.starts_with("-[") {
-                                        negated = true;
-                                        inner = &trimmed[2..trimmed.len() - 1];
-                                    } else if trimmed.starts_with("+[") {
-                                        negated = false;
-                                        inner = &trimmed[2..trimmed.len() - 1];
-                                    } else {
-                                        negated = false;
-                                        inner = &trimmed[1..trimmed.len() - 1];
-                                    }
-                                    // Parse Raku-style character class content
-                                    if let Some(class) = self.parse_raku_char_class(inner, negated)
-                                    {
-                                        RegexAtom::CharClass(class)
+                                    if let Some(atom) = self.parse_bracket_char_class(trimmed) {
+                                        atom
                                     } else {
                                         continue;
                                     }
@@ -2531,53 +2579,41 @@ impl Interpreter {
             }
             if c == '\\' {
                 let esc = chars.next()?;
-                match esc {
-                    'n' => {
-                        items.push(ClassItem::Char('\n'));
-                        all_negated_escapes = false;
-                        has_items = true;
-                    }
-                    't' => {
-                        items.push(ClassItem::Char('\t'));
-                        all_negated_escapes = false;
-                        has_items = true;
-                    }
-                    'r' => {
-                        items.push(ClassItem::Char('\r'));
-                        all_negated_escapes = false;
-                        has_items = true;
-                    }
-                    'f' => {
-                        items.push(ClassItem::Char('\u{000C}'));
-                        all_negated_escapes = false;
-                        has_items = true;
-                    }
-                    'd' => {
-                        items.push(ClassItem::Digit);
-                        all_negated_escapes = false;
-                        has_items = true;
-                    }
-                    'w' => {
-                        items.push(ClassItem::Word);
-                        all_negated_escapes = false;
-                        has_items = true;
-                    }
-                    's' => {
-                        items.push(ClassItem::Space);
-                        all_negated_escapes = false;
-                        has_items = true;
-                    }
+                // Determine what this escape produces: either a ClassItem (for class
+                // escapes like \d, \w) or a simple char (for \n, \t, \[, etc.)
+                enum EscResult {
+                    Char(char),
+                    NegChar(char), // char from \X[HEX] — negated escape
+                    Item(ClassItem),
+                    Multi, // handled inline (e.g. \c[NAME,NAME])
+                }
+                let esc_result = match esc {
+                    'n' => EscResult::Char('\n'),
+                    't' => EscResult::Char('\t'),
+                    'r' => EscResult::Char('\r'),
+                    'f' => EscResult::Char('\u{000C}'),
+                    '0' => EscResult::Char('\0'),
+                    'd' => EscResult::Item(ClassItem::Digit),
+                    'D' => EscResult::Item(ClassItem::NegDigit),
+                    'w' => EscResult::Item(ClassItem::Word),
+                    'W' => EscResult::Item(ClassItem::NegWord),
+                    's' => EscResult::Item(ClassItem::Space),
+                    'S' => EscResult::Item(ClassItem::NegSpace),
+                    'h' => EscResult::Item(ClassItem::HorizSpace),
+                    'H' => EscResult::Item(ClassItem::NegHorizSpace),
+                    'v' => EscResult::Item(ClassItem::VertSpace),
+                    'V' => EscResult::Item(ClassItem::NegVertSpace),
+                    'N' => EscResult::Item(ClassItem::NotNewline),
                     'c' | 'C' => {
-                        // \c[NAME] or \C[NAME] (negated char) inside character class
                         let is_neg = esc == 'C';
                         if chars.peek() == Some(&'[') {
-                            chars.next(); // skip '['
-                            let mut name = String::new();
+                            chars.next();
+                            let mut cname = String::new();
                             let mut bracket_depth = 1;
                             while let Some(&ch) = chars.peek() {
                                 if ch == '[' {
                                     bracket_depth += 1;
-                                    name.push(ch);
+                                    cname.push(ch);
                                     chars.next();
                                 } else if ch == ']' {
                                     bracket_depth -= 1;
@@ -2585,37 +2621,33 @@ impl Interpreter {
                                         chars.next();
                                         break;
                                     }
-                                    name.push(ch);
+                                    cname.push(ch);
                                     chars.next();
                                 } else {
-                                    name.push(ch);
+                                    cname.push(ch);
                                     chars.next();
                                 }
                             }
-                            // Handle comma-separated names: \c[NAME1, NAME2]
-                            for part in name.split(',') {
+                            for part in cname.split(',') {
                                 let part = part.trim();
                                 if let Some(ch) =
                                     crate::token_kind::lookup_unicode_char_by_name(part)
                                 {
                                     items.push(ClassItem::Char(ch));
-                                    has_items = true;
                                 }
                             }
                             if !is_neg {
                                 all_negated_escapes = false;
                             }
+                            EscResult::Multi
                         } else {
-                            items.push(ClassItem::Char(esc));
-                            all_negated_escapes = false;
-                            has_items = true;
+                            EscResult::Char(esc)
                         }
                     }
                     'x' | 'X' => {
-                        // \x[HEX] or \X[HEX] inside character class
                         let is_neg = esc == 'X';
                         if chars.peek() == Some(&'[') {
-                            chars.next(); // skip '['
+                            chars.next();
                             let mut hex = String::new();
                             while let Some(&ch) = chars.peek() {
                                 if ch == ']' {
@@ -2625,25 +2657,46 @@ impl Interpreter {
                                 hex.push(ch);
                                 chars.next();
                             }
-                            if let Some(ch) =
-                                u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
-                            {
-                                items.push(ClassItem::Char(ch));
-                                has_items = true;
+                            let result =
+                                u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32);
+                            if !is_neg {
+                                all_negated_escapes = false;
+                            }
+                            if let Some(ch) = result {
+                                if is_neg {
+                                    EscResult::NegChar(ch)
+                                } else {
+                                    EscResult::Char(ch)
+                                }
+                            } else {
+                                EscResult::Multi // couldn't parse, skip
+                            }
+                        } else if chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
+                            let mut hex = String::new();
+                            while chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
+                                hex.push(chars.next().unwrap());
                             }
                             if !is_neg {
                                 all_negated_escapes = false;
                             }
+                            if let Some(ch) =
+                                u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+                            {
+                                if is_neg {
+                                    EscResult::NegChar(ch)
+                                } else {
+                                    EscResult::Char(ch)
+                                }
+                            } else {
+                                EscResult::Multi
+                            }
                         } else {
-                            items.push(ClassItem::Char(esc));
-                            all_negated_escapes = false;
-                            has_items = true;
+                            EscResult::Char(esc)
                         }
                     }
                     'o' => {
-                        // \o[OCT] inside character class
                         if chars.peek() == Some(&'[') {
-                            chars.next(); // skip '['
+                            chars.next();
                             let mut oct = String::new();
                             while let Some(&ch) = chars.peek() {
                                 if ch == ']' {
@@ -2653,39 +2706,102 @@ impl Interpreter {
                                 oct.push(ch);
                                 chars.next();
                             }
+                            all_negated_escapes = false;
                             if let Some(ch) =
                                 u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
                             {
-                                items.push(ClassItem::Char(ch));
+                                EscResult::Char(ch)
+                            } else {
+                                EscResult::Multi
                             }
                         } else {
-                            items.push(ClassItem::Char('o'));
+                            EscResult::Char('o')
+                        }
+                    }
+                    other => EscResult::Char(other),
+                };
+                match esc_result {
+                    EscResult::Char(ch) => {
+                        // Check for '..' range with this char as start
+                        if Self::peek_dotdot(&chars) {
+                            // Skip spaces before '..'
+                            while chars.peek() == Some(&' ') {
+                                chars.next();
+                            }
+                            chars.next(); // consume first '.'
+                            chars.next(); // consume second '.'
+                            while chars.peek() == Some(&' ') {
+                                chars.next();
+                            }
+                            let end = Self::read_cc_char(&mut chars).unwrap_or(ch);
+                            if end < ch {
+                                PENDING_REGEX_ERROR.with(|e| {
+                                    *e.borrow_mut() = Some(RuntimeError::new(format!(
+                                        "Illegal reversed character range in regex: {}..{}",
+                                        ch, end
+                                    )));
+                                });
+                                return None;
+                            }
+                            items.push(ClassItem::Range(ch, end));
+                        } else {
+                            items.push(ClassItem::Char(ch));
                         }
                         all_negated_escapes = false;
                         has_items = true;
                     }
-                    other => {
-                        items.push(ClassItem::Char(other));
+                    EscResult::NegChar(ch) => {
+                        // From \X[HEX] — the char itself, but the negation is tracked
+                        // via all_negated_escapes (which stays true for \X)
+                        items.push(ClassItem::Char(ch));
+                        // Don't set all_negated_escapes = false — it stays true
+                        has_items = true;
+                    }
+                    EscResult::Item(item) => {
+                        items.push(item);
                         all_negated_escapes = false;
                         has_items = true;
                     }
-                }
-            } else if chars.peek() == Some(&'.') {
-                // Check for '..' range syntax
-                let mut peek_chars = chars.clone();
-                peek_chars.next(); // consume first '.'
-                if peek_chars.peek() == Some(&'.') {
-                    // It's a range: a..z
-                    chars.next(); // consume first '.'
-                    chars.next(); // consume second '.'
-                    if let Some(end) = chars.next() {
-                        items.push(ClassItem::Range(c, end));
+                    EscResult::Multi => {
+                        // Already handled inline
+                        has_items = true;
                     }
-                } else {
-                    items.push(ClassItem::Char(c));
                 }
+            } else if Self::peek_dotdot(&chars) {
+                // Check for '..' range syntax: c..end
+                while chars.peek() == Some(&' ') {
+                    chars.next();
+                } // skip spaces before '..'
+                chars.next(); // consume first '.'
+                chars.next(); // consume second '.'
+                while chars.peek() == Some(&' ') {
+                    chars.next();
+                }
+                let end = Self::read_cc_char(&mut chars).unwrap_or(c);
+                if end < c {
+                    PENDING_REGEX_ERROR.with(|e| {
+                        *e.borrow_mut() = Some(RuntimeError::new(format!(
+                            "Illegal reversed character range in regex: {}..{}",
+                            c, end
+                        )));
+                    });
+                    return None;
+                }
+                items.push(ClassItem::Range(c, end));
                 all_negated_escapes = false;
                 has_items = true;
+            } else if c == '-'
+                && has_items
+                && chars.peek().is_some_and(|&ch| ch != ']' && ch != ' ')
+            {
+                // Bare '-' between characters in a bracket class is a Perl 5 range syntax error
+                PENDING_REGEX_ERROR.with(|e| {
+                    *e.borrow_mut() = Some(RuntimeError::new(
+                        "Unsupported use of - as character range. In Raku please use: .. for range"
+                            .to_string(),
+                    ));
+                });
+                return None;
             } else {
                 items.push(ClassItem::Char(c));
                 all_negated_escapes = false;
@@ -2705,7 +2821,212 @@ impl Interpreter {
         })
     }
 
+    /// Parse bracket character class expressions like `[a..z]-[aeiou]` or `+[a..z]-[aeiou]-[y]`.
+    /// These contain one or more `[...]` parts separated by `+` or `-` operators.
+    /// Returns a simple `CharClass` for single parts, or `CompositeClass` for subtraction/union.
+    fn parse_bracket_char_class(&self, input: &str) -> Option<RegexAtom> {
+        // Split input into parts: each part is (+/-) followed by [content]
+        let mut positive_items: Vec<ClassItem> = Vec::new();
+        let mut negative_items: Vec<ClassItem> = Vec::new();
+        let mut remaining = input.trim();
+
+        // First part may be just [content] (implicitly positive) or +[content] or -[content]
+        let mut first = true;
+        while !remaining.is_empty() {
+            let adding;
+            if remaining.starts_with('+') {
+                adding = true;
+                remaining = &remaining[1..];
+                // Skip whitespace and embedded comments between + and [
+                remaining = Self::skip_charclass_whitespace_and_comments(remaining);
+            } else if remaining.starts_with('-') {
+                adding = false;
+                remaining = &remaining[1..];
+                remaining = Self::skip_charclass_whitespace_and_comments(remaining);
+            } else if first && remaining.starts_with('[') {
+                // Implicit positive for first bare [...]
+                adding = true;
+            } else {
+                break;
+            }
+            first = false;
+
+            if remaining.starts_with('[') {
+                // Find the matching ']', handling backslash escapes
+                remaining = &remaining[1..]; // skip '['
+                let bracket_end = Self::find_bracket_end(remaining);
+                let bracket_content = &remaining[..bracket_end];
+                remaining = if bracket_end < remaining.len() {
+                    &remaining[bracket_end + 1..] // skip ']'
+                } else {
+                    ""
+                };
+                // Skip whitespace after ']'
+                remaining = Self::skip_charclass_whitespace_and_comments(remaining);
+                // Parse the bracket content as a char class
+                if let Some(class) = self.parse_raku_char_class(bracket_content, false) {
+                    // If the class itself is negated (e.g. due to \C/\X escapes),
+                    // swap the positive/negative assignment
+                    let effective_adding = if class.negated { !adding } else { adding };
+                    if effective_adding {
+                        positive_items.extend(class.items);
+                    } else {
+                        negative_items.extend(class.items);
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+
+        if positive_items.is_empty() && negative_items.is_empty() {
+            return None;
+        }
+
+        if negative_items.is_empty() {
+            // Simple character class with no subtraction
+            Some(RegexAtom::CharClass(CharClass {
+                items: positive_items,
+                negated: false,
+            }))
+        } else if positive_items.is_empty() {
+            // Purely negated class: <-[aeiou]> = match anything NOT in [aeiou]
+            Some(RegexAtom::CharClass(CharClass {
+                items: negative_items,
+                negated: true,
+            }))
+        } else {
+            Some(RegexAtom::CompositeClass {
+                positive: positive_items,
+                negative: negative_items,
+            })
+        }
+    }
+
+    /// Find the position of the closing ']' in a bracket character class,
+    /// handling backslash escapes so that `\]` doesn't end the class,
+    /// and `\c[...]`, `\x[...]`, `\C[...]`, `\X[...]`, `\o[...]` nested brackets.
+    fn find_bracket_end(s: &str) -> usize {
+        let mut chars = s.chars().peekable();
+        let mut pos = 0;
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                pos += c.len_utf8();
+                // Skip the escaped character
+                if let Some(esc) = chars.next() {
+                    pos += esc.len_utf8();
+                    // Handle \c[...], \C[...], \x[...], \X[...], \o[...] nested brackets
+                    if matches!(esc, 'c' | 'C' | 'x' | 'X' | 'o') && chars.peek() == Some(&'[') {
+                        let bracket = chars.next().unwrap();
+                        pos += bracket.len_utf8();
+                        let mut depth = 1;
+                        for ch in chars.by_ref() {
+                            pos += ch.len_utf8();
+                            if ch == '[' {
+                                depth += 1;
+                            } else if ch == ']' {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if c == ']' {
+                return pos;
+            } else {
+                pos += c.len_utf8();
+            }
+        }
+        s.len()
+    }
+
+    /// Skip whitespace and embedded comments (#`[...]) in character class expressions.
+    fn skip_charclass_whitespace_and_comments(s: &str) -> &str {
+        let mut remaining = s;
+        loop {
+            let before = remaining;
+            remaining = remaining.trim_start();
+            // Handle embedded comments: #`[...]
+            if remaining.starts_with("#`[") {
+                let mut depth = 0;
+                let mut chars = remaining.chars();
+                let mut count = 0;
+                for ch in chars.by_ref() {
+                    count += ch.len_utf8();
+                    if ch == '[' {
+                        depth += 1;
+                    } else if ch == ']' {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                }
+                remaining = &remaining[count..];
+            }
+            if remaining.len() == before.len() {
+                break;
+            }
+        }
+        remaining
+    }
+
+    /// Check if the next non-space chars in a peekable iterator are `..` (range syntax).
+    fn peek_dotdot(chars: &std::iter::Peekable<std::str::Chars<'_>>) -> bool {
+        let mut peek = chars.clone();
+        // Skip spaces (insignificant in Raku char classes)
+        while peek.peek() == Some(&' ') {
+            peek.next();
+        }
+        peek.next() == Some('.') && peek.peek() == Some(&'.')
+    }
+
+    /// Read a single character from a character class, handling escape sequences.
+    /// Used for reading range endpoints like the `z` in `a..z` or `\]` in `\[..\]`.
+    fn read_cc_char(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Option<char> {
+        let ch = chars.next()?;
+        if ch == '\\' {
+            let esc = chars.next()?;
+            match esc {
+                'n' => Some('\n'),
+                't' => Some('\t'),
+                'r' => Some('\r'),
+                'f' => Some('\u{000C}'),
+                '0' => Some('\0'),
+                'x' => {
+                    if chars.peek() == Some(&'[') {
+                        chars.next();
+                        let mut hex = String::new();
+                        while let Some(&c) = chars.peek() {
+                            if c == ']' {
+                                chars.next();
+                                break;
+                            }
+                            hex.push(c);
+                            chars.next();
+                        }
+                        u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+                    } else if chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
+                        let mut hex = String::new();
+                        while chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
+                            hex.push(chars.next().unwrap());
+                        }
+                        u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+                    } else {
+                        Some(esc)
+                    }
+                }
+                other => Some(other),
+            }
+        } else {
+            Some(ch)
+        }
+    }
+
     /// Parse combined character class like `+ xdigit - lower` or `+ :HexDigit - :Upper`.
+    /// Also handles bracket classes: `+ [a..z] - [aeiou]`.
     fn parse_combined_class(&self, input: &str) -> Option<RegexAtom> {
         let mut positive_items: Vec<ClassItem> = Vec::new();
         let mut negative_items: Vec<ClassItem> = Vec::new();
@@ -2721,21 +3042,43 @@ impl Interpreter {
             } else {
                 break;
             }
-            let class_end = remaining.find(['+', '-']).unwrap_or(remaining.len());
-            let class_name = remaining[..class_end].trim();
-            remaining = remaining[class_end..].trim_start();
-            let item = if let Some(prop) = class_name.strip_prefix(':') {
-                ClassItem::UnicodePropItem {
-                    name: prop.to_string(),
-                    negated: false,
+
+            // Check if this part is a bracket class [...]
+            if remaining.starts_with('[') {
+                remaining = &remaining[1..]; // skip '['
+                let bracket_end = Self::find_bracket_end(remaining);
+                let bracket_content = &remaining[..bracket_end];
+                remaining = if bracket_end < remaining.len() {
+                    &remaining[bracket_end + 1..] // skip ']'
+                } else {
+                    ""
+                };
+                remaining = remaining.trim_start();
+                if let Some(class) = self.parse_raku_char_class(bracket_content, false) {
+                    if adding {
+                        positive_items.extend(class.items);
+                    } else {
+                        negative_items.extend(class.items);
+                    }
                 }
             } else {
-                ClassItem::NamedBuiltin(class_name.to_string())
-            };
-            if adding {
-                positive_items.push(item);
-            } else {
-                negative_items.push(item);
+                // Named class or Unicode property
+                let class_end = Self::find_combined_class_part_end(remaining);
+                let class_name = remaining[..class_end].trim();
+                remaining = remaining[class_end..].trim_start();
+                let item = if let Some(prop) = class_name.strip_prefix(':') {
+                    ClassItem::UnicodePropItem {
+                        name: prop.to_string(),
+                        negated: false,
+                    }
+                } else {
+                    ClassItem::NamedBuiltin(class_name.to_string())
+                };
+                if adding {
+                    positive_items.push(item);
+                } else {
+                    negative_items.push(item);
+                }
             }
         }
         if positive_items.is_empty() {
@@ -2745,6 +3088,32 @@ impl Interpreter {
             positive: positive_items,
             negative: negative_items,
         })
+    }
+
+    /// Find the end of a named class part in a combined class expression.
+    /// Stops at `+`, `-`, or end of string, but handles kebab-case names.
+    fn find_combined_class_part_end(s: &str) -> usize {
+        // Look for + or - that isn't part of a kebab-case name
+        // A kebab-case name uses - between word characters
+        let bytes = s.as_bytes();
+        for i in 0..bytes.len() {
+            if bytes[i] == b'+' {
+                return i;
+            }
+            if bytes[i] == b'-' {
+                // Check if this is a kebab separator (between word chars)
+                let prev_is_word =
+                    i > 0 && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_');
+                let next_is_word = i + 1 < bytes.len()
+                    && (bytes[i + 1].is_ascii_alphanumeric() || bytes[i + 1] == b'_');
+                if prev_is_word && next_is_word {
+                    // It's a kebab separator, continue
+                    continue;
+                }
+                return i;
+            }
+        }
+        s.len()
     }
 
     /// Evaluate a string as Raku source code and return the result value.
