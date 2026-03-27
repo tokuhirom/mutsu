@@ -391,6 +391,89 @@ impl Interpreter {
                     )));
                 }
             }
+            // Check positional type constraints (only for $-sigil params,
+            // not @- or %-sigil where the constraint applies to elements)
+            {
+                let is_placeholder = |v: &Value| {
+                    matches!(v, Value::Whatever)
+                        || matches!(v, Value::Num(f) if f.is_infinite())
+                        || matches!(v, Value::Rat(_, 0))
+                };
+                for (pos_idx, pd) in next
+                    .param_defs
+                    .iter()
+                    .filter(|pd| !pd.named && !pd.slurpy)
+                    .enumerate()
+                {
+                    if pos_idx >= next.assumed_positional.len() {
+                        break;
+                    }
+                    let assumed = &next.assumed_positional[pos_idx];
+                    if is_placeholder(assumed) || matches!(assumed, Value::Nil) {
+                        continue;
+                    }
+                    // Skip type check for @-sigil and %-sigil params where the
+                    // constraint applies to container elements, not the whole value.
+                    if pd.name.starts_with('@') || pd.name.starts_with('%') {
+                        continue;
+                    }
+                    if let Some(constraint) = &pd.type_constraint
+                        && !constraint.starts_with("::")
+                        && !self.type_matches_value(constraint, assumed)
+                    {
+                        // Add $ sigil to the symbol name if it's bare
+                        let symbol = if pd.name.starts_with('$')
+                            || pd.name.starts_with('@')
+                            || pd.name.starts_with('%')
+                        {
+                            pd.name.clone()
+                        } else {
+                            format!("${}", pd.name)
+                        };
+                        return Some(Ok(make_failure(
+                            &next,
+                            Value::Package(Symbol::intern(constraint)),
+                            symbol,
+                        )));
+                    }
+                }
+                // Check too many positionals (skip if there's a slurpy or capture param)
+                let has_slurpy = next.param_defs.iter().any(|pd| {
+                    pd.slurpy
+                        || pd.double_slurpy
+                        || pd.onearg
+                        || pd.sub_signature.is_some()
+                        || pd.outer_sub_signature.is_some()
+                });
+                let positional_param_count = next
+                    .param_defs
+                    .iter()
+                    .filter(|pd| !pd.named && !pd.slurpy)
+                    .count();
+                let non_placeholder_count = next
+                    .assumed_positional
+                    .iter()
+                    .filter(|v| !is_placeholder(v))
+                    .count();
+                if !has_slurpy && non_placeholder_count > positional_param_count {
+                    let mut ex_attrs = std::collections::HashMap::new();
+                    ex_attrs.insert(
+                        "payload".to_string(),
+                        Value::str("Too many positionals passed".to_string()),
+                    );
+                    let exception = Value::make_instance(Symbol::intern("X::AdHoc"), ex_attrs);
+                    let mut failure_attrs = std::collections::HashMap::new();
+                    failure_attrs.insert("exception".to_string(), exception);
+                    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                    let failure = Value::make_instance(Symbol::intern("Failure"), failure_attrs);
+                    let mut mixins = std::collections::HashMap::new();
+                    mixins.insert("Failure".to_string(), failure);
+                    return Some(Ok(Value::mixin(
+                        Value::Sub(std::sync::Arc::new(next)),
+                        mixins,
+                    )));
+                }
+            }
             return Some(Ok(Value::Sub(std::sync::Arc::new(next))));
         }
         if method == "candidates" && args.is_empty() {

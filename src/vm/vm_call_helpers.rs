@@ -10,11 +10,11 @@ impl VM {
                     args.push(Value::Pair(k.clone(), Box::new(v.clone())));
                 }
             }
-            Value::Hash(map) => {
-                for (k, v) in map.iter() {
-                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
-                }
-            }
+            // Hash values inside a Slip are kept as single positional args.
+            // Top-level `|%hash` flattening is handled by MakeSlip, which converts
+            // a bare Hash into pairs before wrapping in a Slip. A Hash that is already
+            // inside a Slip (e.g. from a Capture's positional list) should stay as-is.
+            Value::Hash(_) => args.push(item.clone()),
             Value::Range(..)
             | Value::RangeExcl(..)
             | Value::RangeExclStart(..)

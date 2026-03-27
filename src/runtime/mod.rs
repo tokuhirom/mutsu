@@ -3485,44 +3485,23 @@ impl Interpreter {
     }
 
     fn parse_container_constraint(name: &str, raw: &str) -> ContainerTypeInfo {
-        if name.starts_with('%') {
-            if let Some(inner) = raw.strip_prefix("Hash[").and_then(|s| s.strip_suffix(']')) {
-                let parts: Vec<String> = inner
-                    .split(',')
-                    .map(|p| p.trim())
-                    .filter(|p| !p.is_empty())
-                    .map(ToOwned::to_owned)
-                    .collect();
-                let value_type = parts.first().cloned().unwrap_or_else(|| "Any".to_string());
-                let key_type = parts.get(1).cloned();
-                return ContainerTypeInfo {
-                    value_type,
-                    key_type,
-                    declared_type: Some(raw.to_string()),
-                };
-            }
-            if let Some((value_type, key_part)) = raw.split_once('{')
-                && let Some(key_type) = key_part.strip_suffix('}')
-            {
-                return ContainerTypeInfo {
-                    value_type: value_type.trim().to_string(),
-                    key_type: Some(key_type.trim().to_string()),
-                    declared_type: Some(format!("Hash[{},{}]", value_type.trim(), key_type.trim())),
-                };
-            }
-        }
-        if name.starts_with('@')
-            && let Some(inner) = raw
-                .strip_prefix("Array[")
-                .or_else(|| raw.strip_prefix("List["))
-                .and_then(|s| s.strip_suffix(']'))
+        // Note: For %-sigil variables, Hash[X] means "elements are Hash[X]",
+        // NOT "elements are X". We do NOT unwrap Hash[...] here.
+        // The only special case for % is the `TypeName{KeyType}` syntax
+        // (e.g. `my Int %h{Str}`) which specifies both value and key types.
+        if name.starts_with('%')
+            && let Some((value_type, key_part)) = raw.split_once('{')
+            && let Some(key_type) = key_part.strip_suffix('}')
         {
             return ContainerTypeInfo {
-                value_type: inner.trim().to_string(),
-                key_type: None,
-                declared_type: Some(format!("Array[{}]", inner.trim())),
+                value_type: value_type.trim().to_string(),
+                key_type: Some(key_type.trim().to_string()),
+                declared_type: Some(format!("Hash[{},{}]", value_type.trim(), key_type.trim())),
             };
         }
+        // Note: For @-sigil variables, Array[X] means "elements are Array[X]",
+        // NOT "elements are X". We do NOT unwrap Array[...] here.
+        // `my Int @a` has raw="Int" and `my Array[Int] @a` has raw="Array[Int]".
         ContainerTypeInfo {
             value_type: raw.to_string(),
             key_type: None,

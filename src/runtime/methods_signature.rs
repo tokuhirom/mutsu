@@ -378,12 +378,19 @@ impl Interpreter {
         // Build type capture mappings from assumed positional args
         let mut type_captures: std::collections::HashMap<String, String> =
             std::collections::HashMap::new();
+        // Helper to check if an assumed value is a Whatever placeholder
+        let is_placeholder = |v: &Value| {
+            matches!(v, Value::Whatever)
+                || matches!(v, Value::Num(f) if f.is_infinite())
+                || matches!(v, Value::Rat(_, 0))
+        };
         {
             let mut pos_idx = 0usize;
             for pd in &param_defs {
                 if !pd.named && !pd.slurpy {
                     if pos_idx < assumed_positional.len() {
-                        if let Some(tc) = &pd.type_constraint
+                        if !is_placeholder(&assumed_positional[pos_idx])
+                            && let Some(tc) = &pd.type_constraint
                             && let Some(capture_name) = tc.strip_prefix("::")
                         {
                             let resolved_type = crate::runtime::utils::value_type_name(
@@ -399,14 +406,18 @@ impl Interpreter {
                 }
             }
         }
-        let mut to_consume = assumed_positional.len();
+        // Remove params that have been primed (non-placeholder assumed values).
+        // Whatever (*) placeholders leave the corresponding param in the signature.
+        let mut assumed_iter = assumed_positional.iter();
         param_defs.retain(|pd| {
-            if to_consume > 0 && !pd.named && !pd.slurpy {
-                to_consume -= 1;
-                false
-            } else {
-                true
+            if !pd.named
+                && !pd.slurpy
+                && let Some(assumed) = assumed_iter.next()
+            {
+                // Placeholder (*) means keep this param in the signature
+                return is_placeholder(assumed);
             }
+            true
         });
         // Apply type capture resolution to remaining params
         if !type_captures.is_empty() {
