@@ -21,6 +21,7 @@ impl Interpreter {
                 | "isa"
                 | "lookup"
                 | "find_method"
+                | "add_attribute"
                 | "add_method"
                 | "add_multi_method"
                 | "compose"
