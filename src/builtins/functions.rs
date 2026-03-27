@@ -899,6 +899,10 @@ fn native_function_2arg(
             let x = runtime::to_float_value(arg2).unwrap_or(0.0);
             Some(Ok(Value::Num(y.atan2(x))))
         }
+        "roots" => {
+            // roots($number, $n) — compute nth roots of $number
+            Some(Ok(super::methods_narg::compute_roots(arg1, arg2)))
+        }
         "chop" => {
             // Type objects (Package) should throw
             if let Value::Package(type_name) = arg1 {

@@ -709,6 +709,7 @@ impl Interpreter {
                 | "not"
                 | "truncate"
                 | "atan2"
+                | "roots"
                 | "substr"
                 | "substr-rw"
                 | "words"

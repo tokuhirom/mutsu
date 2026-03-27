@@ -861,6 +861,7 @@ roast/S32-num/polymod.t
 roast/S32-num/power.t
 roast/S32-num/rand.t
 roast/S32-num/real-bridge.t
+roast/S32-num/roots.t
 roast/S32-num/rounders.t
 roast/S32-num/rshift_pos_amount.t
 roast/S32-num/sign.t
