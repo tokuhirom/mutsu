@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use crate::ast::{AssignOp, Expr, ParamDef, Stmt, collect_placeholders};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
+use crate::value::Value;
 
 use super::decl::parse_array_shape_suffix;
 use super::sub;
@@ -1918,44 +1919,13 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, cond_expr) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
 
-    // Check for optional pointy block: -> $param { ... } or -> \param { ... }
-    let (rest, param_name) = if let Some(r) = rest.strip_prefix("->") {
-        let (r, _) = ws(r)?;
-        // Parse parameter like $proc or $!attr or $.attr
-        if let Some(r_after_sigil) = r.strip_prefix('$') {
-            // Handle twigils: $!attr (private attribute) or $.attr (public accessor)
-            let (r_after_twigil, twigil) =
-                if r_after_sigil.starts_with('!') || r_after_sigil.starts_with('.') {
-                    (&r_after_sigil[1..], &r_after_sigil[..1])
-                } else {
-                    (r_after_sigil, "")
-                };
-            let end = r_after_twigil
-                .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
-                .unwrap_or(r_after_twigil.len());
-            let bare_name = &r_after_twigil[..end];
-            let name = if twigil.is_empty() {
-                bare_name.to_string()
-            } else {
-                format!("{}{}", twigil, bare_name)
-            };
-            let r = &r_after_twigil[end..];
-            let (r, _) = ws(r)?;
-            (r, Some(name))
-        } else if let Some(r_after_backslash) = r.strip_prefix('\\') {
-            // Sigilless parameter like \c
-            let end = r_after_backslash
-                .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
-                .unwrap_or(r_after_backslash.len());
-            let name = &r_after_backslash[..end];
-            let r = &r_after_backslash[end..];
-            let (r, _) = ws(r)?;
-            (r, Some(name.to_string()))
-        } else {
-            (rest, None)
-        }
+    // Check for optional pointy block: -> $param { ... }, -> \param { ... },
+    // or -> (SIGNATURE) { ... } (sub-signature destructuring)
+    let (rest, param_name, param_def) = if rest.starts_with("->") || rest.starts_with("<->") {
+        let (r, (param, param_def, _params, _rw_block)) = parse_for_params(rest)?;
+        (r, param, param_def)
     } else {
-        (rest, None)
+        (rest, None, None)
     };
 
     let (rest, body) = block(rest)?;
@@ -1964,7 +1934,90 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     let mut with_body = vec![topicalize(&cond_expr)];
     // If a named parameter was given (-> $param), also assign it
     if let Some(ref pname) = param_name {
-        if pname.starts_with('!') || pname.starts_with('.') {
+        // Check if this is a sub-signature destructuring (e.g. -> ($x) or -> (Int() $x is copy))
+        if let Some(ref pdef) = param_def {
+            if let Some(ref sub_params) = pdef.sub_signature {
+                // Declare the unpack variable holding the condition value
+                with_body.push(Stmt::VarDecl {
+                    name: pname.clone(),
+                    expr: cond_expr.clone(),
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
+                    where_constraint: None,
+                });
+                // Destructure each positional parameter from the unpack variable
+                let mut positional_index = 0usize;
+                for sub in sub_params {
+                    if sub.name.is_empty() {
+                        continue;
+                    }
+                    let extract_expr = if sub.named {
+                        Expr::MethodCall {
+                            target: Box::new(Expr::Var(pname.clone())),
+                            name: Symbol::intern(&sub.name),
+                            args: Vec::new(),
+                            modifier: None,
+                            quoted: false,
+                        }
+                    } else {
+                        let idx_expr = Expr::Index {
+                            target: Box::new(Expr::Var(pname.clone())),
+                            index: Box::new(Expr::Literal(Value::Int(positional_index as i64))),
+                        };
+                        positional_index += 1;
+                        idx_expr
+                    };
+                    // Apply type coercion if present (e.g. Int())
+                    let coerced_expr = if let Some(ref tc) = sub.type_constraint {
+                        // Strip trailing "()" from coercion types like "Int()"
+                        let method_name = tc.strip_suffix("()").unwrap_or(tc);
+                        Expr::MethodCall {
+                            target: Box::new(extract_expr),
+                            name: Symbol::intern(method_name),
+                            args: Vec::new(),
+                            modifier: None,
+                            quoted: false,
+                        }
+                    } else {
+                        extract_expr
+                    };
+                    // `is copy` on a sub-signature parameter is handled
+                    // implicitly: the VarDecl creates a fresh writable variable,
+                    // so no explicit trait is needed.
+                    with_body.push(Stmt::VarDecl {
+                        name: sub.name.clone(),
+                        expr: coerced_expr,
+                        type_constraint: None,
+                        is_state: false,
+                        is_our: false,
+                        is_dynamic: false,
+                        is_export: false,
+                        export_tags: Vec::new(),
+                        custom_traits: Vec::new(),
+                        where_constraint: None,
+                    });
+                }
+            } else {
+                // Simple parameter with possible traits from parse_for_params
+                with_body.push(Stmt::VarDecl {
+                    name: pname.clone(),
+                    expr: cond_expr.clone(),
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
+                    where_constraint: None,
+                });
+            }
+        } else if pname.starts_with('!') || pname.starts_with('.') {
             // Attributive parameter: bind the value to self's attribute.
             // $!foo → set attribute "foo" on self.
             let attr_name = &pname[1..];
