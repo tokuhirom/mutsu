@@ -196,8 +196,12 @@ impl Interpreter {
                 Value::Pair(key, value) if key == "kv" => has_kv = value.truthy(),
                 Value::Pair(key, value) if key == "p" => has_p = value.truthy(),
                 Value::Pair(key, value) if key == "v" => {
-                    // :v is the default behavior, just ignore
-                    let _ = value;
+                    if !value.truthy() {
+                        return Err(RuntimeError::new(
+                            "X::Adverb: Unexpected adverb 'v' passed to grep",
+                        ));
+                    }
+                    // :v is the default behavior, just ignore when truthy
                 }
                 Value::Pair(key, _) => {
                     return Err(RuntimeError::new(format!(
