@@ -977,6 +977,7 @@ impl VM {
             is_export,
             export_tags,
             body,
+            is_rw,
             language_version,
         } = stmt
         {
@@ -1000,6 +1001,7 @@ impl VM {
                 type_params,
                 type_param_defs,
                 body,
+                *is_rw,
             )?;
             if *is_export && !self.interpreter.suppress_exports {
                 self.interpreter.register_exported_var(

@@ -973,18 +973,7 @@ impl Interpreter {
             && let Value::Instance { class_name, .. } = inner.as_ref()
         {
             let mixin_attr_key = format!("__mutsu_attr__{}", method);
-            if mixins.contains_key(&mixin_attr_key) {
-                let mut updated_mixins = (**mixins).clone();
-                updated_mixins.insert(mixin_attr_key, value.clone());
-                if let Some(var_name) = target_var {
-                    self.env.insert(
-                        var_name.to_string(),
-                        Value::Mixin(inner.clone(), std::sync::Arc::new(updated_mixins)),
-                    );
-                }
-                return Ok(value);
-            }
-            // Check if the role attribute is public and rw
+            // Check if the role attribute is public and rw before allowing assignment
             let cn = class_name.resolve();
             let role_attrs = self.collect_role_attributes_for_class(&cn);
             for (attr_name, is_public, _default, is_rw, _, sigil, _) in &role_attrs {
@@ -996,7 +985,14 @@ impl Interpreter {
                         )));
                     }
                     let mut updated_mixins = (**mixins).clone();
-                    updated_mixins.insert(format!("__mutsu_attr__{}", method), value.clone());
+                    updated_mixins.insert(
+                        if mixins.contains_key(&mixin_attr_key) {
+                            mixin_attr_key
+                        } else {
+                            format!("__mutsu_attr__{}", method)
+                        },
+                        value.clone(),
+                    );
                     if let Some(var_name) = target_var {
                         self.env.insert(
                             var_name.to_string(),
@@ -1005,6 +1001,19 @@ impl Interpreter {
                     }
                     return Ok(value);
                 }
+            }
+            // If we have the mixin key but didn't find a matching role attribute,
+            // still allow the update (e.g. for ad-hoc mixins)
+            if mixins.contains_key(&mixin_attr_key) {
+                let mut updated_mixins = (**mixins).clone();
+                updated_mixins.insert(mixin_attr_key, value.clone());
+                if let Some(var_name) = target_var {
+                    self.env.insert(
+                        var_name.to_string(),
+                        Value::Mixin(inner.clone(), std::sync::Arc::new(updated_mixins)),
+                    );
+                }
+                return Ok(value);
             }
         }
 

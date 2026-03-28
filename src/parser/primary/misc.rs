@@ -1706,6 +1706,7 @@ pub(super) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
             is_export: false,
             export_tags: Vec::new(),
             body,
+            is_rw: false,
             language_version: crate::parser::current_language_version(),
         })),
     ))

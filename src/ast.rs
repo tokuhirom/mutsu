@@ -675,6 +675,8 @@ pub(crate) enum Stmt {
         is_export: bool,
         export_tags: Vec<String>,
         body: Vec<Stmt>,
+        /// Whether this role was declared with `is rw` or `also is rw`
+        is_rw: bool,
         /// Language version active when this role was declared (e.g., "6.c", "6.d", "6.e")
         language_version: String,
     },

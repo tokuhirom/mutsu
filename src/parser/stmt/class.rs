@@ -1147,6 +1147,7 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
     let (mut rest, (type_params, type_param_defs)) = parse_optional_role_type_params(rest)?;
     let mut parent_roles: Vec<String> = Vec::new();
     let mut is_hidden_role = false;
+    let mut role_is_rw = false;
     let mut is_export = false;
     let mut export_tags: Vec<String> = Vec::new();
 
@@ -1175,6 +1176,8 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
             let (r, _) = ws(r)?;
             if trait_name == "hidden" {
                 is_hidden_role = true;
+            } else if trait_name == "rw" {
+                role_is_rw = true;
             } else if trait_name == "export" {
                 is_export = true;
                 if !export_tags.iter().any(|t| t == "DEFAULT") {
@@ -1182,8 +1185,7 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
                 }
             } else if !matches!(
                 trait_name.as_str(),
-                "rw" | "ok"
-                    | "required"
+                "ok" | "required"
                     | "readonly"
                     | "repr"
                     | "default"
@@ -1220,6 +1222,15 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
         Ok(ok) => ok,
         Err(_) => consume_raw_braced_body(rest)?,
     };
+    // Handle `also is rw;` in the role body
+    body.retain(|stmt| {
+        if stmt_is_also_is_rw(stmt) {
+            role_is_rw = true;
+            false
+        } else {
+            true
+        }
+    });
     if is_hidden_role {
         body.insert(
             0,
@@ -1247,6 +1258,7 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
             is_export,
             export_tags,
             body,
+            is_rw: role_is_rw,
             language_version: super::simple::current_language_version(),
         },
     ))
