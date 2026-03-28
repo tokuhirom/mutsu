@@ -252,6 +252,10 @@ pub(crate) struct RoleDef {
     pub(crate) methods: HashMap<String, Vec<MethodDef>>,
     pub(crate) is_stub_role: bool,
     pub(crate) is_hidden: bool,
+    /// Whether this role was declared with `is rw` or `also is rw`.
+    /// Used during `register_role_decl` to compute effective is_rw for attributes.
+    #[allow(dead_code)]
+    pub(crate) is_rw: bool,
     /// Captured environment for evaluating attribute defaults in closures.
     pub(crate) captured_env: Option<HashMap<String, Value>>,
     /// Attribute var names (e.g. "!foo") that have `handles *` wildcard delegation.
@@ -2405,6 +2409,7 @@ impl Interpreter {
                         methods: HashMap::new(),
                         is_stub_role: false,
                         is_hidden: false,
+                        is_rw: false,
                         captured_env: None,
                         wildcard_handles: Vec::new(),
                         role_id: 0,
@@ -2419,6 +2424,7 @@ impl Interpreter {
                         methods: HashMap::new(),
                         is_stub_role: false,
                         is_hidden: false,
+                        is_rw: false,
                         captured_env: None,
                         wildcard_handles: Vec::new(),
                         role_id: 0,
@@ -2433,6 +2439,7 @@ impl Interpreter {
                         methods: HashMap::new(),
                         is_stub_role: false,
                         is_hidden: false,
+                        is_rw: false,
                         captured_env: None,
                         wildcard_handles: Vec::new(),
                         role_id: 0,
@@ -2447,6 +2454,7 @@ impl Interpreter {
                         methods: HashMap::new(),
                         is_stub_role: false,
                         is_hidden: false,
+                        is_rw: false,
                         captured_env: None,
                         wildcard_handles: Vec::new(),
                         role_id: 0,
@@ -2487,6 +2495,7 @@ impl Interpreter {
                             methods,
                             is_stub_role: false,
                             is_hidden: false,
+                            is_rw: false,
                             captured_env: None,
                             wildcard_handles: Vec::new(),
                             role_id: 0,

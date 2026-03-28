@@ -33,6 +33,7 @@ fn builtin_role_def() -> RoleDef {
         methods: HashMap::new(),
         is_stub_role: false,
         is_hidden: false,
+        is_rw: false,
         captured_env: None,
         wildcard_handles: Vec::new(),
         role_id: 0,
@@ -1850,6 +1851,7 @@ impl Interpreter {
         type_params: &[String],
         type_param_defs: &[ParamDef],
         body: &[Stmt],
+        role_is_rw: bool,
     ) -> Result<(), RuntimeError> {
         self.clear_private_zeroarg_method_cache();
 
@@ -1945,6 +1947,7 @@ impl Interpreter {
             methods: HashMap::new(),
             is_stub_role: false,
             is_hidden: false,
+            is_rw: role_is_rw,
             captured_env: None,
             wildcard_handles: Vec::new(),
             role_id: super::next_role_id(),
@@ -1967,7 +1970,7 @@ impl Interpreter {
                     default,
                     handles,
                     is_rw,
-                    is_readonly: _,
+                    is_readonly,
                     type_constraint: _,
                     type_smiley: _,
                     is_required,
@@ -2010,11 +2013,14 @@ impl Interpreter {
                             parent_role,
                         ));
                     }
+                    // Apply role-level `is rw`: same logic as class_is_rw
+                    // `is readonly` on individual attributes overrides `is rw` on the role
+                    let effective_is_rw = !*is_readonly && (*is_rw || (role_is_rw && *is_public));
                     role_def.attributes.push((
                         attr_name_str.clone(),
                         *is_public,
                         default.clone(),
-                        *is_rw,
+                        effective_is_rw,
                         is_required.clone(),
                         *sigil,
                         where_constraint.as_ref().map(|wc| wc.as_ref().clone()),
