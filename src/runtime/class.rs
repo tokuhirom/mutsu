@@ -317,6 +317,36 @@ impl Interpreter {
     }
 
     pub(crate) fn is_native_method(&mut self, class_name: &str, method_name: &str) -> bool {
+        // IO::Special has native methods handled by native_io_special
+        if class_name == "IO::Special"
+            && matches!(
+                method_name,
+                "Str"
+                    | "gist"
+                    | "what"
+                    | "IO"
+                    | "e"
+                    | "d"
+                    | "f"
+                    | "l"
+                    | "x"
+                    | "s"
+                    | "r"
+                    | "w"
+                    | "modified"
+                    | "accessed"
+                    | "changed"
+                    | "mode"
+                    | "raku"
+                    | "perl"
+                    | "WHICH"
+                    | "new"
+                    | "Bool"
+                    | "defined"
+            )
+        {
+            return true;
+        }
         // IO::Handle has native methods handled by native_io_handle
         if class_name == "IO::Handle"
             && matches!(

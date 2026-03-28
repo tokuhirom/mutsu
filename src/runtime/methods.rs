@@ -247,6 +247,13 @@ impl Interpreter {
         {
             return self.array_mutate_copy(target, method, args);
         }
+        // IO::Special.new("<STDOUT>")
+        if let Value::Package(name) = &target
+            && name.resolve() == "IO::Special"
+            && method == "new"
+        {
+            return self.native_io_special(&HashMap::new(), "new", args);
+        }
         // IO::Spec::* class methods
         if let Value::Package(name) = &target {
             let cn = name.resolve();

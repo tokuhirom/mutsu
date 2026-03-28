@@ -153,6 +153,7 @@ mod methods_temporal;
 mod methods_trans;
 mod methods_type_coerce;
 mod native_io;
+mod native_io_special;
 pub(crate) mod native_methods;
 mod native_proc_async;
 mod native_supply_methods;

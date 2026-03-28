@@ -287,7 +287,9 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
         ) => {
             let a_name = a_class.resolve();
             let b_name = b_class.resolve();
-            if a_name == b_name && (a_name == "Stash" || a_name == "Supply") {
+            if a_name == b_name
+                && (a_name == "Stash" || a_name == "Supply" || a_name == "IO::Special")
+            {
                 left.eqv(right)
             } else if a_name == b_name && (a_name == "ObjAt" || a_name == "ValueObjAt") {
                 // ObjAt/ValueObjAt instances are === when their WHICH content matches
