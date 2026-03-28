@@ -1508,6 +1508,20 @@ impl Interpreter {
                 Ok(Value::Bool(true))
             }
             "path" | "IO" => {
+                // For standard handles ($*IN, $*OUT, $*ERR), return IO::Special
+                if let Some(id) = Self::handle_id_from_value(&target_val)
+                    && let Some(state) = self.handles.get(&id)
+                {
+                    let special_name = match state.target {
+                        IoHandleTarget::Stdout => Some("STDOUT"),
+                        IoHandleTarget::Stderr => Some("STDERR"),
+                        IoHandleTarget::Stdin => Some("STDIN"),
+                        _ => None,
+                    };
+                    if let Some(name) = special_name {
+                        return Ok(Self::make_io_special_instance(name));
+                    }
+                }
                 if let Some(path_val) = target.get("path") {
                     let io_path = match path_val {
                         Value::Instance { class_name, .. } if class_name == "IO::Path" => {

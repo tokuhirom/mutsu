@@ -311,14 +311,26 @@ impl Compiler {
                 }
             }
         }
+        // When `$_` is one of the multi-param names (e.g. `-> $_, $name`),
+        // binding it first would clobber the source array before other params
+        // can read from it.  Defer the `$_` binding to the end.
+        let mut deferred_topic = None;
         for (i, p) in params.iter().enumerate() {
-            bind_stmts.push(bind_stmt(
+            let stmt = bind_stmt(
                 p.clone(),
                 Expr::Index {
                     target: Box::new(Expr::Var("_".to_string())),
                     index: Box::new(Expr::Literal(Value::Int(i as i64))),
                 },
-            ));
+            );
+            if p == "_" {
+                deferred_topic = Some(stmt);
+            } else {
+                bind_stmts.push(stmt);
+            }
+        }
+        if let Some(stmt) = deferred_topic {
+            bind_stmts.push(stmt);
         }
         bind_stmts
     }
