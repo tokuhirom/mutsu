@@ -835,6 +835,7 @@ roast/S32-list/flat.t
 roast/S32-list/grep-k.t
 roast/S32-list/grep-kv.t
 roast/S32-list/grep-p.t
+roast/S32-list/grep-v.t
 roast/S32-list/grep.t
 roast/S32-list/join.t
 roast/S32-list/map.t

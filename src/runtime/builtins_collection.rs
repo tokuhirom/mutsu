@@ -1398,7 +1398,13 @@ impl Interpreter {
                 Value::Pair(key, value) if key == "k" => has_k = value.truthy(),
                 Value::Pair(key, value) if key == "kv" => has_kv = value.truthy(),
                 Value::Pair(key, value) if key == "p" => has_p = value.truthy(),
-                Value::Pair(key, _) if key == "v" => {} // default
+                Value::Pair(key, value) if key == "v" => {
+                    if !value.truthy() {
+                        return Err(RuntimeError::new(
+                            "X::Adverb: Unexpected adverb 'v' passed to grep",
+                        ));
+                    }
+                }
                 _ => positional_args.push(arg.clone()),
             }
         }
