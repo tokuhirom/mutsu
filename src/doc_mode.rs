@@ -296,6 +296,56 @@ fn decode_named_entities(entity: &str) -> String {
         .collect()
 }
 
+fn validate_pod_blocks(source: &str) -> Result<(), RuntimeError> {
+    let mut stack: Vec<String> = Vec::new();
+
+    for line in source.lines() {
+        let trimmed = line.trim_start();
+        let mut words = trimmed.split_whitespace();
+        let first = words.next();
+        let second = words.next();
+
+        if first == Some("=begin") {
+            let Some(target) = second else {
+                return Err(RuntimeError::new(
+                    "Malformed Pod block: =begin requires a target",
+                ));
+            };
+            stack.push(target.to_string());
+            continue;
+        }
+
+        if first == Some("=end") {
+            let Some(target) = second else {
+                return Err(RuntimeError::new(
+                    "Malformed Pod block: =end requires a target",
+                ));
+            };
+            let Some(open) = stack.pop() else {
+                return Err(RuntimeError::new(format!(
+                    "Malformed Pod block: unexpected =end {}",
+                    target
+                )));
+            };
+            if open != target {
+                return Err(RuntimeError::new(format!(
+                    "Malformed Pod block: expected =end {}, got =end {}",
+                    open, target
+                )));
+            }
+        }
+    }
+
+    if let Some(open) = stack.pop() {
+        return Err(RuntimeError::new(format!(
+            "Malformed Pod block: missing =end {}",
+            open
+        )));
+    }
+
+    Ok(())
+}
+
 #[allow(clippy::result_large_err)]
 fn run_doc_init_blocks(source: &str) -> Result<(String, i64, bool), RuntimeError> {
     let (stmts, _) = parse_dispatch::parse_source(source)?;
@@ -332,6 +382,7 @@ fn run_doc_init_blocks(source: &str) -> Result<(String, i64, bool), RuntimeError
 
 #[allow(clippy::result_large_err)]
 pub fn run_doc_mode(source: &str) -> Result<DocModeResult, RuntimeError> {
+    validate_pod_blocks(source)?;
     let (mut output, status, halted) = run_doc_init_blocks(source)?;
     if !halted {
         output.push_str(&render_doc(source));
@@ -423,5 +474,16 @@ E<alpha;beta>E<alpha;beta;gamma>
 ";
         let output = render_begin_pod_blocks(source);
         assert_eq!(output, "αβαβγ\n");
+    }
+
+    #[test]
+    fn test_run_doc_mode_rejects_malformed_end() {
+        let source = "\
+=begin code
+say 1;
+=end
+";
+        let err = run_doc_mode(source).unwrap_err();
+        assert!(err.message.contains("=end requires a target"));
     }
 }
