@@ -1,5 +1,5 @@
 use Test;
-plan 21;
+plan 23;
 
 # Basic construction and start
 my $p = Proc::Async.new("echo", "hi");
@@ -129,4 +129,34 @@ throws-like {
     ok await($stdout.native-descriptor) > 0, 'stdout(:bin) exposes a native descriptor promise';
     ok await($stderr.native-descriptor) > 0, 'stderr(:bin) exposes a native descriptor promise';
     await $exit;
+}
+
+{
+    my $p15 = Proc::Async.new($*EXECUTABLE, '-e', 'say "plumbed together"');
+    my $p16 = Proc::Async.new($*EXECUTABLE, '-e', '$*IN.get.uc.say');
+    $p16.bind-stdin($p15.stdout);
+    react {
+        my $out = '';
+        whenever $p16.stdout {
+            $out ~= $_;
+        }
+        whenever Promise.allof($p15.start, $p16.start) {
+            is $out.trim, 'PLUMBED TOGETHER', 'stdout taps stay live when registered before Proc::Async.start';
+        }
+    }
+}
+
+{
+    my $p17 = Proc::Async.new($*EXECUTABLE, '-e', 'note "plumbed together err"');
+    my $p18 = Proc::Async.new($*EXECUTABLE, '-e', '$*IN.get.uc.say');
+    $p18.bind-stdin($p17.stderr);
+    react {
+        my $out = '';
+        whenever $p18.stdout {
+            $out ~= $_;
+        }
+        whenever Promise.allof($p17.start, $p18.start) {
+            is $out.trim, 'PLUMBED TOGETHER ERR', 'stderr supplies can feed chained Proc::Async stdin';
+        }
+    }
 }
