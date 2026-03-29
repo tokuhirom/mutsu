@@ -819,6 +819,7 @@ roast/S32-io/tell.t
 roast/S32-list/are.t
 roast/S32-list/batch.t
 roast/S32-list/categorize.t
+roast/S32-list/classify-list.t
 roast/S32-list/combinations.t
 roast/S32-list/create.t
 roast/S32-list/cross.t
