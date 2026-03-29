@@ -239,7 +239,10 @@ impl VM {
             let me = crate::runtime::native_methods::current_thread_id();
             crate::runtime::native_methods::acquire_lock(&lock, me)?;
             let code_val = args.into_iter().next().unwrap_or(Value::Nil);
-            let result = self.exec_protect_block_inline(code, &code_val);
+            let result = match self.try_exec_simple_shared_protect_block(code, &code_val)? {
+                Some(value) => Ok(value),
+                None => self.exec_protect_block_inline(code, &code_val),
+            };
             let _ = crate::runtime::native_methods::release_lock(&lock, me);
             self.stack.push(result?);
             self.env_dirty = true;
