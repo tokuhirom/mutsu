@@ -1,6 +1,6 @@
 use Test;
 
-plan 12;
+plan 14;
 
 # Basic scalar default
 {
@@ -63,4 +63,12 @@ plan 12;
     $x = 1;
     $x = Nil;
     is $x, 99, 'second Nil assignment still reverts to default';
+}
+
+# Typed scalar defaults with smileys
+{
+    my Int:D $x is default(0);
+    is $x, 0, 'Int:D scalar accepts a concrete default value';
+    throws-like { EVAL 'my Int:U $y is default(0);' }, X::Parameter::Default::TypeCheck,
+        'Int:U scalar still rejects a concrete default value';
 }

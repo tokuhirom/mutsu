@@ -440,6 +440,7 @@ impl VM {
         &mut self,
         var_name: &str,
         value: Value,
+        explicit_initializer: bool,
     ) -> Result<Value, RuntimeError> {
         let coercion_target = |constraint: &str| -> Option<String> {
             if let Some(open) = constraint.find('(')
@@ -462,6 +463,7 @@ impl VM {
                 &items,
                 kind,
                 &coercion_target,
+                explicit_initializer,
             )?;
             return Ok(Value::Array(Arc::new(coerced_items), kind));
         }
@@ -499,7 +501,17 @@ impl VM {
                 };
                 let coerced_val = if let Some(constraint) = &value_constraint {
                     if matches!(val, Value::Nil) {
-                        val.clone()
+                        if let Some(default) = self.interpreter.var_default(var_name) {
+                            default.clone()
+                        } else if explicit_initializer
+                            && self.interpreter.is_definite_constraint(constraint)
+                        {
+                            return Err(RuntimeError::new(
+                                runtime::utils::type_check_element_error(var_name, constraint, val),
+                            ));
+                        } else {
+                            val.clone()
+                        }
                     } else {
                         let target_type =
                             coercion_target(constraint).unwrap_or_else(|| constraint.clone());
@@ -535,11 +547,22 @@ impl VM {
         items: &[Value],
         kind: crate::value::ArrayKind,
         coercion_target: &dyn Fn(&str) -> Option<String>,
+        explicit_initializer: bool,
     ) -> Result<Vec<Value>, RuntimeError> {
         let mut coerced_items = Vec::with_capacity(items.len());
         for item in items.iter() {
             if matches!(item, Value::Nil) {
-                coerced_items.push(item.clone());
+                if let Some(default) = self.interpreter.var_default(var_name) {
+                    coerced_items.push(default.clone());
+                } else if explicit_initializer
+                    && self.interpreter.is_definite_constraint(constraint)
+                {
+                    return Err(RuntimeError::new(runtime::utils::type_check_element_error(
+                        var_name, constraint, item,
+                    )));
+                } else {
+                    coerced_items.push(item.clone());
+                }
                 continue;
             }
             // For shaped arrays, sub-arrays are structural — recurse into them
@@ -552,6 +575,7 @@ impl VM {
                     sub_items,
                     *sub_kind,
                     coercion_target,
+                    explicit_initializer,
                 )?;
                 coerced_items.push(Value::Array(Arc::new(sub_coerced), *sub_kind));
                 continue;
@@ -1084,9 +1108,12 @@ impl VM {
             },
             other => (other, false, Vec::new()),
         };
-        // When assigning Nil to a typed container element, use the type object
+        // For typed container elements, explicit `is default(...)` wins over
+        // the nominal type-object fallback when Nil is assigned.
         let val = if matches!(val, Value::Nil) {
-            if let Some(constraint) = self.interpreter.var_type_constraint(&var_name) {
+            if let Some(default) = self.interpreter.var_default(&var_name) {
+                default.clone()
+            } else if let Some(constraint) = self.interpreter.var_type_constraint(&var_name) {
                 let nominal = self
                     .interpreter
                     .nominal_type_object_name_for_constraint(&constraint);
@@ -1649,6 +1676,81 @@ impl VM {
         Ok(())
     }
 
+    pub(super) fn exec_index_assign_pseudo_stash_named_op(
+        &mut self,
+        code: &CompiledCode,
+        stash_name_idx: u32,
+        key_name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        let stash_name = Self::const_str(code, stash_name_idx);
+        if stash_name != "MY::" {
+            return Err(RuntimeError::new(format!(
+                "Unsupported pseudo-stash assignment target {stash_name}"
+            )));
+        }
+
+        let raw_key = Self::const_str(code, key_name_idx);
+        let resolved_name = if let Some(name) = raw_key.strip_prefix('$') {
+            name.to_string()
+        } else {
+            raw_key.to_string()
+        };
+
+        let val = self.stack.pop().unwrap_or(Value::Nil);
+        if let Some(slot) = self.find_local_slot(code, &resolved_name) {
+            self.stack.push(val);
+            self.exec_assign_expr_local_op(code, slot as u32)
+        } else {
+            let mut val = if resolved_name.starts_with('@') {
+                runtime::coerce_to_array(val)
+            } else if resolved_name.starts_with('%') {
+                self.coerce_hash_var_value(&resolved_name, val)?
+            } else {
+                Self::normalize_scalar_assignment_value(val)
+            };
+
+            self.interpreter.check_readonly_for_modify(&resolved_name)?;
+            if let Some(default) = self.interpreter.var_default(&resolved_name)
+                && matches!(val, Value::Nil)
+            {
+                val = default.clone();
+            }
+            if resolved_name.starts_with('@') || resolved_name.starts_with('%') {
+                val = self.coerce_typed_container_assignment(&resolved_name, val, false)?;
+            }
+            if let Some(constraint) = self.interpreter.var_type_constraint(&resolved_name)
+                && !resolved_name.starts_with('@')
+                && !resolved_name.starts_with('%')
+            {
+                if matches!(val, Value::Nil) {
+                    if constraint != "Mu" {
+                        let nominal = self
+                            .interpreter
+                            .nominal_type_object_name_for_constraint(&constraint);
+                        val = Value::Package(Symbol::intern(&nominal));
+                    }
+                } else if !self.interpreter.type_matches_value(&constraint, &val) {
+                    return Err(RuntimeError::new(
+                        runtime::utils::type_check_assignment_error(
+                            &resolved_name,
+                            &constraint,
+                            &val,
+                        ),
+                    ));
+                }
+                if !matches!(val, Value::Nil | Value::Package(_)) {
+                    val = self
+                        .interpreter
+                        .try_coerce_value_for_constraint(&constraint, val)?;
+                }
+            }
+
+            self.set_env_with_main_alias(&resolved_name, val.clone());
+            self.stack.push(val);
+            Ok(())
+        }
+    }
+
     pub(super) fn exec_index_assign_expr_nested_op(
         &mut self,
         code: &CompiledCode,
@@ -1891,8 +1993,10 @@ impl VM {
         let (raw_popped, bind_source) = Self::extract_varref_binding(raw_popped);
         let is_bind = self.bind_context || bind_source.is_some();
         let is_constant = self.constant_context;
+        let has_explicit_initializer = self.explicit_initializer_context;
         self.bind_context = false;
         self.constant_context = false;
+        self.explicit_initializer_context = false;
 
         // Fast path for simple scalar variables — skip all metadata checks
         if code.simple_locals[idx] && bind_source.is_none() && !is_bind {
@@ -1917,6 +2021,11 @@ impl VM {
             if let Some(constraint) = self.interpreter.var_type_constraint_fast(name).cloned() {
                 if matches!(val, Value::Nil) && self.interpreter.is_definite_constraint(&constraint)
                 {
+                    if has_explicit_initializer {
+                        return Err(RuntimeError::new(
+                            runtime::utils::type_check_assignment_error(name, &constraint, &val),
+                        ));
+                    }
                     return Err(RuntimeError::new(format!(
                         "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
                         constraint
@@ -1982,6 +2091,16 @@ impl VM {
             None
         };
         let mut val = if name.starts_with('%') {
+            if has_explicit_initializer
+                && !is_constant
+                && !is_bind
+                && matches!(raw_popped, Value::Nil)
+                && let Some(constraint) = self.interpreter.var_type_constraint(name)
+            {
+                return Err(RuntimeError::new(
+                    runtime::utils::type_check_assignment_error(name, &constraint, &Value::Nil),
+                ));
+            }
             if is_constant || is_bind {
                 // `:=` binding or `constant %x` preserves containers — skip coercion.
                 // `constant %x = :42foo` keeps the Pair; `constant %x = bag(...)` keeps the Bag.
@@ -1990,6 +2109,16 @@ impl VM {
                 self.coerce_hash_var_value(name, raw_popped)?
             }
         } else if name.starts_with('@') {
+            if has_explicit_initializer
+                && !is_constant
+                && !is_bind
+                && matches!(raw_popped, Value::Nil)
+                && let Some(constraint) = self.interpreter.var_type_constraint(name)
+            {
+                return Err(RuntimeError::new(
+                    runtime::utils::type_check_assignment_error(name, &constraint, &Value::Nil),
+                ));
+            }
             let mut assigned = if is_constant {
                 // `constant @x` stores a List, not an Array.
                 // Explicit Arrays ([1,2,3]) are preserved.
@@ -2091,13 +2220,18 @@ impl VM {
         // Skip typed container coercion for `:=` binding — it would create
         // a new Arc and lose container identity (e.g. Map metadata).
         if !is_bind && (name.starts_with('@') || name.starts_with('%')) {
-            val = self.coerce_typed_container_assignment(name, val)?;
+            val = self.coerce_typed_container_assignment(name, val, has_explicit_initializer)?;
         }
         if let Some(constraint) = self.interpreter.var_type_constraint(name)
             && !name.starts_with('%')
             && !name.starts_with('@')
         {
             if matches!(val, Value::Nil) && self.interpreter.is_definite_constraint(&constraint) {
+                if has_explicit_initializer {
+                    return Err(RuntimeError::new(
+                        runtime::utils::type_check_assignment_error(name, &constraint, &val),
+                    ));
+                }
                 return Err(RuntimeError::new(format!(
                     "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
                     constraint
@@ -2409,7 +2543,7 @@ impl VM {
             val = def.clone();
         }
         if name.starts_with('@') || name.starts_with('%') {
-            val = self.coerce_typed_container_assignment(name, val)?;
+            val = self.coerce_typed_container_assignment(name, val, false)?;
         }
         if let Some(constraint) = self.interpreter.var_type_constraint(name)
             && !name.starts_with('%')

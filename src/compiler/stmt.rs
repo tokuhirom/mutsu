@@ -46,9 +46,15 @@ impl Compiler {
     /// Check if a default value expression statically mismatches a type constraint.
     /// Returns `Some(value_repr)` if a mismatch is detected, `None` otherwise.
     fn check_default_type_mismatch(type_constraint: &str, expr: &Expr) -> Option<String> {
+        let effective_constraint = type_constraint
+            .strip_suffix(":D")
+            .or_else(|| type_constraint.strip_suffix(":_"))
+            .unwrap_or(type_constraint);
         let value_type = match expr {
             Expr::Literal(Value::Str(s)) => {
-                if type_constraint != "Str" && type_constraint != "Cool" && type_constraint != "Any"
+                if effective_constraint != "Str"
+                    && effective_constraint != "Cool"
+                    && effective_constraint != "Any"
                 {
                     return Some(s.to_string());
                 }
@@ -69,7 +75,7 @@ impl Compiler {
             "Str" => &["Str", "Stringy", "Cool", "Any", "Mu"],
             _ => &[],
         };
-        if mro.contains(&type_constraint) {
+        if mro.contains(&effective_constraint) {
             None
         } else {
             Some(match expr {
@@ -437,6 +443,16 @@ impl Compiler {
                     dynamic: is_dynamic,
                 });
                 let has_default_trait = custom_traits.iter().any(|(n, _)| n == "default");
+                let has_explicit_initializer =
+                    custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+                let default_trait_expr =
+                    custom_traits.iter().find_map(|(trait_name, trait_arg)| {
+                        if trait_name == "default" {
+                            trait_arg.as_ref()
+                        } else {
+                            None
+                        }
+                    });
                 // Register type constraint early (for assignment checking) unless
                 // `is default` trait is present — in that case defer until after
                 // the trait is applied so the default value can be set first.
@@ -482,7 +498,16 @@ impl Compiler {
                     self.bind_vardecl = false;
                     self.compile_call_arg(expr);
                 } else {
-                    self.compile_assignment_rhs_for_target(name, expr);
+                    let rhs_expr = if has_default_trait
+                        && !name.starts_with('@')
+                        && !name.starts_with('%')
+                        && matches!(expr, Expr::Literal(Value::Nil))
+                    {
+                        default_trait_expr.unwrap_or(expr)
+                    } else {
+                        expr
+                    };
+                    self.compile_assignment_rhs_for_target(name, rhs_expr);
                 }
                 // `constant @x = ...` should store a List, not an Array.
                 // Coerce the value on the stack before storing.
@@ -496,6 +521,7 @@ impl Compiler {
                 if let Some(tc) = type_constraint
                     && !is_hash
                     && !has_default_trait
+                    && !(has_explicit_initializer && matches!(expr, Expr::Literal(Value::Nil)))
                 {
                     let tc_idx = self.code.add_constant(Value::str(tc.clone()));
                     // Build the display name for error messages (e.g. "a" -> "$a")
@@ -542,6 +568,9 @@ impl Compiler {
                     let is_constant = custom_traits.iter().any(|(t, _)| t == "__constant");
                     if is_constant && (name.starts_with('@') || name.starts_with('%')) {
                         self.code.emit(OpCode::MarkConstantContext);
+                    }
+                    if has_explicit_initializer {
+                        self.code.emit(OpCode::MarkExplicitInitializerContext);
                     }
                     self.code.emit(OpCode::SetLocal(slot));
                     if *is_our {
