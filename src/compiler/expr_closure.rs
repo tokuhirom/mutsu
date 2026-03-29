@@ -204,6 +204,21 @@ impl Compiler {
             self.compile_expr(&rewritten);
             return;
         }
+        if let Expr::PseudoStash(stash_name) = target
+            && stash_name == "MY::"
+            && let Expr::Literal(Value::Str(key_name)) = index
+        {
+            self.compile_expr(value);
+            let stash_name_idx = self.code.add_constant(Value::str(stash_name.clone()));
+            let key_name_idx = self
+                .code
+                .add_constant(Value::str(key_name.as_ref().clone()));
+            self.code.emit(OpCode::IndexAssignPseudoStashNamed {
+                stash_name_idx,
+                key_name_idx,
+            });
+            return;
+        }
         if let Some(name) = Self::index_assign_target_name(target) {
             if Self::index_assign_target_requires_eval(target) {
                 self.compile_expr(target);

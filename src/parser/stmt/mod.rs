@@ -848,6 +848,20 @@ mod tests {
     }
 
     #[test]
+    fn parse_my_grouped_decl_with_type_smiley() {
+        let (rest, stmts) = program("my Int:D ($x = 5);").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::SyntheticBlock(_)));
+    }
+
+    #[test]
+    fn parse_my_invalid_type_smiley_reports_specific_exception() {
+        let err = program("my Int:foo $a;").unwrap_err();
+        assert!(err.message().contains("Invalid type smiley"));
+    }
+
+    #[test]
     fn parse_my_subset_decl_as_single_statement() {
         let (rest, stmts) = program("my subset S-Int of Int;").unwrap();
         assert_eq!(rest, "");

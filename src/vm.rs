@@ -88,6 +88,8 @@ pub(crate) struct VM {
     bind_context: bool,
     /// When true, the next SetLocal skips @/% container coercion (for `constant @x`).
     constant_context: bool,
+    /// When true, the next SetLocal came from an explicit initializer (`= expr`).
+    explicit_initializer_context: bool,
     // TODO: local slot aliases for `:=` binding - needs careful implementation
     // to avoid S12-class/mro-6e.t regression
     /// Cache for on-the-fly compiled functions, keyed by fingerprint.
@@ -234,6 +236,7 @@ impl VM {
             resume_ip: None,
             bind_context: false,
             constant_context: false,
+            explicit_initializer_context: false,
             otf_compile_cache: HashMap::new(),
             state_scope_id: None,
         }
@@ -794,7 +797,7 @@ impl VM {
                     && (self.interpreter.var_type_constraint(&name).is_some()
                         || self.interpreter.var_hash_key_constraint(&name).is_some())
                 {
-                    val = self.coerce_typed_container_assignment(&name, val)?;
+                    val = self.coerce_typed_container_assignment(&name, val, false)?;
                 }
                 if let Some(constraint) = self.interpreter.var_type_constraint(&name)
                     && !name.starts_with('%')
@@ -1053,6 +1056,10 @@ impl VM {
             }
             OpCode::MarkConstantContext => {
                 self.constant_context = true;
+                *ip += 1;
+            }
+            OpCode::MarkExplicitInitializerContext => {
+                self.explicit_initializer_context = true;
                 *ip += 1;
             }
 
@@ -1894,6 +1901,13 @@ impl VM {
             }
             OpCode::IndexAssignExprNamed(name_idx) => {
                 self.exec_index_assign_expr_named_op(code, *name_idx)?;
+                *ip += 1;
+            }
+            OpCode::IndexAssignPseudoStashNamed {
+                stash_name_idx,
+                key_name_idx,
+            } => {
+                self.exec_index_assign_pseudo_stash_named_op(code, *stash_name_idx, *key_name_idx)?;
                 *ip += 1;
             }
             OpCode::IndexAssignExprNested(name_idx) => {

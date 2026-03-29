@@ -200,6 +200,13 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         expr
     };
     let var_name_for_leave = s.name.clone();
+    let mut custom_traits = s.custom_traits.clone();
+    if !custom_traits
+        .iter()
+        .any(|(name, _)| name == "__has_initializer")
+    {
+        custom_traits.push(("__has_initializer".to_string(), None));
+    }
     let base_stmt = Stmt::VarDecl {
         name: s.name.clone(),
         expr: expr.clone(),
@@ -209,7 +216,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         is_dynamic: s.has_dynamic_trait,
         is_export: s.has_export_trait,
         export_tags: s.export_tags.clone(),
-        custom_traits: s.custom_traits.clone(),
+        custom_traits,
         where_constraint: s.where_constraint.clone(),
     };
     if let Some(stmt) = rewrite_decl_assignment_or_chain(expr.clone(), base_stmt) {
@@ -228,6 +235,13 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         }
         return Ok((rest, stmt));
     }
+    let mut custom_traits = s.custom_traits.clone();
+    if !custom_traits
+        .iter()
+        .any(|(name, _)| name == "__has_initializer")
+    {
+        custom_traits.push(("__has_initializer".to_string(), None));
+    }
     let stmt = Stmt::VarDecl {
         name: s.name.clone(),
         expr,
@@ -237,7 +251,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         is_dynamic: s.has_dynamic_trait,
         is_export: s.has_export_trait,
         export_tags: s.export_tags.clone(),
-        custom_traits: s.custom_traits.clone(),
+        custom_traits,
         where_constraint: s.where_constraint.clone(),
     };
     let stmt = wrap_with_will_leave(stmt, &var_name_for_leave, s.will_leave_body.clone());

@@ -1,5 +1,7 @@
 use super::*;
-use crate::runtime::native_methods::{SupplyEvent, supplier_snapshot, take_supply_channel};
+use crate::runtime::native_methods::{
+    SupplyEvent, supplier_snapshot, take_promise_combinator_sources, take_supply_channel,
+};
 use crate::symbol::Symbol;
 use std::sync::mpsc;
 use std::time::Duration;
@@ -24,6 +26,7 @@ pub(crate) struct ReactSubscription {
     pub emit_count: usize,
     /// Direct Channel source (for `whenever $channel { ... }`)
     pub channel: Option<crate::value::SharedChannel>,
+    pub promise: Option<crate::value::SharedPromise>,
 }
 
 impl Interpreter {
@@ -210,6 +213,7 @@ impl Interpreter {
                                 head_limit,
                                 emit_count: 0,
                                 channel: None,
+                                promise: None,
                             });
                             continue;
                         }
@@ -238,6 +242,7 @@ impl Interpreter {
                                 head_limit,
                                 emit_count: 0,
                                 channel: None,
+                                promise: None,
                             });
                             continue;
                         }
@@ -285,6 +290,7 @@ impl Interpreter {
                             head_limit: None,
                             emit_count: 0,
                             channel: None,
+                            promise: Some(shared.clone()),
                         });
                     }
                     // Channel source: poll values directly from the channel
@@ -307,6 +313,7 @@ impl Interpreter {
                             head_limit: None,
                             emit_count: 0,
                             channel: Some(ch.clone()),
+                            promise: None,
                         });
                     }
                     _ => {}
@@ -454,6 +461,14 @@ impl Interpreter {
                     sub.done = true;
                     continue;
                 };
+                if let Some(promise) = sub.promise.as_ref()
+                    && let Some(sources) = take_promise_combinator_sources(promise)
+                {
+                    for source in sources {
+                        source.result_blocking();
+                    }
+                    continue;
+                }
                 // Try to receive with a short timeout
                 match receiver.recv_timeout(timeout) {
                     Ok(SupplyEvent::Emit(value)) => {
