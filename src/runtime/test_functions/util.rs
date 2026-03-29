@@ -32,9 +32,9 @@ impl Interpreter {
                 .get("*EXECUTABLE")
                 .map(|v| v.to_string_value())
                 .unwrap_or_else(|| {
-                    std::env::current_exe()
-                        .map(|p| p.to_string_lossy().to_string())
-                        .unwrap_or_else(|_| "target/debug/mutsu".to_string())
+                    Self::resolved_current_executable_path()
+                        .to_string_lossy()
+                        .to_string()
                 });
             (exe, vec!["-e".to_string(), code])
         };
