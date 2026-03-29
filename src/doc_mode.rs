@@ -296,6 +296,7 @@ fn decode_named_entities(entity: &str) -> String {
         .collect()
 }
 
+#[allow(clippy::result_large_err)]
 fn validate_pod_blocks(source: &str) -> Result<(), RuntimeError> {
     let mut stack: Vec<String> = Vec::new();
 
