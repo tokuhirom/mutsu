@@ -28,6 +28,8 @@ pub(crate) enum OpCode {
     /// Mark that the next SetLocal should treat the value as a constant
     /// (skip @/% container coercion). Similar to MarkBindContext.
     MarkConstantContext,
+    /// Mark that the next SetLocal came from an explicit initializer (`= expr`).
+    MarkExplicitInitializerContext,
     SetVarType {
         name_idx: u32,
         tc_idx: u32,
@@ -436,6 +438,10 @@ pub(crate) enum OpCode {
     PostIncrementIndex(u32),
     PostDecrementIndex(u32),
     IndexAssignExprNamed(u32),
+    IndexAssignPseudoStashNamed {
+        stash_name_idx: u32,
+        key_name_idx: u32,
+    },
 
     // -- Assignment as expression --
     AssignExpr(u32),

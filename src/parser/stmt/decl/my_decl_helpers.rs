@@ -1,7 +1,7 @@
 use super::super::super::expr::expression;
 use super::super::super::helpers::ws;
 use super::super::super::parse_result::{PError, PResult, take_while1};
-use super::super::keyword;
+use super::super::{keyword, qualified_ident};
 use super::constant_subset::constant_decl;
 use super::helpers::{parse_sigilless_decl_name, register_term_symbol_from_decl_name};
 use super::{parse_decl_type_constraint, parse_statement_modifier, typed_default_expr};
@@ -129,7 +129,40 @@ pub(super) fn parse_optional_type_constraint(rest: &str) -> PResult<'_, Option<S
             Ok((saved, None))
         }
     } else {
-        Ok((saved, None))
+        Ok(parse_fallback_type_constraint(saved).unwrap_or((saved, None)))
+    }
+}
+
+fn parse_fallback_type_constraint(rest: &str) -> Option<(&str, Option<String>)> {
+    let (mut r, mut tc) = qualified_ident(rest).ok()?;
+    if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
+        tc.push_str(&r[..2]);
+        r = &r[2..];
+    } else if r.starts_with(':')
+        && r[1..]
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+    {
+        let smiley_rest = &r[1..];
+        let end = smiley_rest
+            .find(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-')
+            .unwrap_or(smiley_rest.len());
+        tc.push_str(&r[..end + 1]);
+        r = &r[end + 1..];
+    }
+    let (r2, _) = ws(r).ok()?;
+    if r2.starts_with('$')
+        || r2.starts_with('@')
+        || r2.starts_with('%')
+        || r2.starts_with('&')
+        || r2.starts_with('\\')
+        || r2.starts_with('(')
+        || keyword("constant", r2).is_some()
+    {
+        Some((r2, Some(tc)))
+    } else {
+        None
     }
 }
 
