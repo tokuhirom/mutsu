@@ -1,6 +1,82 @@
 use super::*;
+use crate::ast::{CallArg, Expr, Stmt};
 
 impl VM {
+    fn try_eval_simple_protect_expr(
+        &self,
+        outer_code: &CompiledCode,
+        expr: &Expr,
+    ) -> Option<Value> {
+        let local_value = |name: &str| {
+            outer_code
+                .locals
+                .iter()
+                .position(|candidate| candidate == name)
+                .and_then(|slot| self.locals.get(slot).cloned())
+        };
+        match expr {
+            Expr::Literal(value) => Some(value.clone()),
+            Expr::Var(name) => local_value(name).or_else(|| self.get_env_with_main_alias(name)),
+            Expr::ArrayVar(name) => {
+                let sigiled = format!("@{name}");
+                local_value(&sigiled).or_else(|| self.get_env_with_main_alias(&sigiled))
+            }
+            Expr::HashVar(name) => {
+                let sigiled = format!("%{name}");
+                local_value(&sigiled).or_else(|| self.get_env_with_main_alias(&sigiled))
+            }
+            _ => None,
+        }
+    }
+
+    pub(super) fn try_exec_simple_shared_protect_block(
+        &mut self,
+        outer_code: &CompiledCode,
+        code_val: &Value,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let Value::Sub(data) = code_val else {
+            return Ok(None);
+        };
+        let [Stmt::Call { name, args }] = data.body.as_slice() else {
+            return Ok(None);
+        };
+        let method = name.resolve();
+        if method != "push" {
+            return Ok(None);
+        }
+        let Some(CallArg::Positional(Expr::ArrayVar(target_name))) = args.first() else {
+            return Ok(None);
+        };
+        let sigiled_target = format!("@{target_name}");
+        if !self.interpreter.shared_vars_active
+            || !matches!(
+                self.interpreter.get_shared_var(&sigiled_target),
+                Some(Value::Array(..))
+            )
+        {
+            return Ok(None);
+        }
+        let mut values = Vec::with_capacity(args.len().saturating_sub(1));
+        for arg in args.iter().skip(1) {
+            let CallArg::Positional(expr) = arg else {
+                return Ok(None);
+            };
+            let Some(value) = self.try_eval_simple_protect_expr(outer_code, expr) else {
+                return Ok(None);
+            };
+            values.push(value);
+        }
+        let Some(target_value) =
+            self.try_eval_simple_protect_expr(outer_code, &Expr::ArrayVar(target_name.clone()))
+        else {
+            return Ok(None);
+        };
+        let result = self
+            .interpreter
+            .push_to_shared_var(&sigiled_target, values, &target_value);
+        Ok(Some(result))
+    }
+
     /// Try compiled method fast path; fall back to interpreter.
     pub(super) fn try_compiled_method_or_interpret(
         &mut self,
