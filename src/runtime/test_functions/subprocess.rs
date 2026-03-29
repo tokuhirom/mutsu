@@ -50,12 +50,14 @@ impl Interpreter {
             } else {
                 Vec::new()
             };
-        let is_doc_mode = compiler_args.iter().any(|a| a == "--doc");
+        let is_doc_mode = compiler_args
+            .iter()
+            .any(|a| a == "--doc" || a.starts_with("--doc="));
         let mut has_unsupported_compiler_args = false;
         let mut ci = 0usize;
         while ci < compiler_args.len() {
             let arg = &compiler_args[ci];
-            if arg == "--doc" {
+            if arg == "--doc" || arg.starts_with("--doc=") {
                 ci += 1;
                 continue;
             }
