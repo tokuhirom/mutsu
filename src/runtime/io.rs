@@ -182,11 +182,15 @@ impl Interpreter {
         )
     }
 
-    fn collect_pod_para(lines: &[&str], mut idx: usize) -> (Value, usize) {
+    fn collect_pod_para(
+        lines: &[&str],
+        mut idx: usize,
+        end_target: Option<&str>,
+    ) -> (Value, usize) {
         let mut para_lines = Vec::new();
         while idx < lines.len() {
             let trimmed = lines[idx].trim_start();
-            if trimmed.is_empty() || trimmed.starts_with('=') {
+            if trimmed.is_empty() || Self::active_pod_directive(lines[idx], end_target).is_some() {
                 break;
             }
             para_lines.push(lines[idx].trim().to_string());
@@ -205,6 +209,7 @@ impl Interpreter {
         lines: &[&str],
         mut idx: usize,
         inline: &str,
+        end_target: Option<&str>,
     ) -> (Option<Value>, usize) {
         let mut para_lines = Vec::new();
         if !inline.trim().is_empty() {
@@ -212,7 +217,7 @@ impl Interpreter {
         }
         while idx < lines.len() {
             let trimmed = lines[idx].trim_start();
-            if trimmed.is_empty() || trimmed.starts_with('=') {
+            if trimmed.is_empty() || Self::active_pod_directive(lines[idx], end_target).is_some() {
                 break;
             }
             para_lines.push(lines[idx].trim().to_string());
@@ -228,6 +233,36 @@ impl Interpreter {
             vec![text]
         };
         (Some(Self::make_pod_para(payload)), idx)
+    }
+
+    fn pod_block_allows_flush_directives(end_target: Option<&str>) -> bool {
+        match end_target {
+            None => true,
+            Some("pod") => true,
+            Some(target) => Self::parse_item_level(target).is_some(),
+        }
+    }
+
+    fn active_pod_directive<'a>(
+        line: &'a str,
+        end_target: Option<&str>,
+    ) -> Option<(&'a str, &'a str)> {
+        let trimmed = line.trim_start();
+        let (directive, rest) = Self::parse_pod_directive_line(trimmed)?;
+        let has_indent = trimmed.len() != line.len();
+
+        if directive == "end" {
+            let target = rest.split_whitespace().next().unwrap_or_default();
+            if end_target.is_some_and(|expected| expected == target) {
+                return Some((directive, rest));
+            }
+        }
+
+        if Self::pod_block_allows_flush_directives(end_target) || has_indent {
+            Some((directive, rest))
+        } else {
+            None
+        }
     }
 
     fn parse_pod_directive_line(line: &str) -> Option<(&str, &str)> {
@@ -268,7 +303,7 @@ impl Interpreter {
                 idx += 1;
                 continue;
             }
-            if let Some((directive, rest)) = Self::parse_pod_directive_line(trimmed) {
+            if let Some((directive, rest)) = Self::active_pod_directive(lines[idx], end_target) {
                 if directive == "end" {
                     let target = rest.split_whitespace().next().unwrap_or_default();
                     if end_target.is_some_and(|expected| expected == target) {
@@ -314,7 +349,7 @@ impl Interpreter {
                         continue;
                     }
                     let (para, next_idx) =
-                        Self::collect_pod_para_with_inline(lines, idx + 1, inline);
+                        Self::collect_pod_para_with_inline(lines, idx + 1, inline, end_target);
                     let mut contents = Vec::new();
                     if let Some(para) = para {
                         contents.push(para);
@@ -338,7 +373,7 @@ impl Interpreter {
                         let mut raw = String::new();
                         while idx < lines.len() {
                             if let Some((end_directive, end_rest)) =
-                                Self::parse_pod_directive_line(lines[idx].trim_start())
+                                Self::active_pod_directive(lines[idx], Some("comment"))
                                 && end_directive == "end"
                                 && end_rest.split_whitespace().next().unwrap_or_default()
                                     == "comment"
@@ -374,7 +409,7 @@ impl Interpreter {
                 }
                 if let Some((level, inline)) = Self::parse_item_directive(trimmed) {
                     let (para, next_idx) =
-                        Self::collect_pod_para_with_inline(lines, idx + 1, inline);
+                        Self::collect_pod_para_with_inline(lines, idx + 1, inline, end_target);
                     let mut item_contents = Vec::new();
                     if let Some(para) = para {
                         item_contents.push(para);
@@ -384,7 +419,8 @@ impl Interpreter {
                     continue;
                 }
 
-                let (para, next_idx) = Self::collect_pod_para_with_inline(lines, idx + 1, rest);
+                let (para, next_idx) =
+                    Self::collect_pod_para_with_inline(lines, idx + 1, rest, end_target);
                 let mut contents = Vec::new();
                 if let Some(para) = para {
                     contents.push(para);
@@ -398,7 +434,7 @@ impl Interpreter {
                 continue;
             }
 
-            let (para, next_idx) = Self::collect_pod_para(lines, idx);
+            let (para, next_idx) = Self::collect_pod_para(lines, idx, end_target);
             entries.push(para);
             idx = next_idx.max(idx + 1);
         }
@@ -439,7 +475,7 @@ impl Interpreter {
         let mut idx = 0usize;
         while idx < lines.len() {
             let trimmed = lines[idx].trim_start();
-            if let Some((directive, rest)) = Self::parse_pod_directive_line(trimmed) {
+            if let Some((directive, rest)) = Self::active_pod_directive(lines[idx], None) {
                 if directive == "end" {
                     idx += 1;
                     continue;
@@ -481,7 +517,7 @@ impl Interpreter {
                         continue;
                     }
                     let (para, next_idx) =
-                        Self::collect_pod_para_with_inline(&lines, idx + 1, inline);
+                        Self::collect_pod_para_with_inline(&lines, idx + 1, inline, None);
                     let mut contents = Vec::new();
                     if let Some(para) = para {
                         contents.push(para);
@@ -505,7 +541,7 @@ impl Interpreter {
                         let mut raw = String::new();
                         while idx < lines.len() {
                             if let Some((end_directive, end_rest)) =
-                                Self::parse_pod_directive_line(lines[idx].trim_start())
+                                Self::active_pod_directive(lines[idx], Some("comment"))
                                 && end_directive == "end"
                                 && end_rest.split_whitespace().next().unwrap_or_default()
                                     == "comment"
@@ -541,7 +577,7 @@ impl Interpreter {
                 }
                 if let Some((level, inline)) = Self::parse_item_directive(trimmed) {
                     let (para, next_idx) =
-                        Self::collect_pod_para_with_inline(&lines, idx + 1, inline);
+                        Self::collect_pod_para_with_inline(&lines, idx + 1, inline, None);
                     let mut item_contents = Vec::new();
                     if let Some(para) = para {
                         item_contents.push(para);
@@ -551,7 +587,8 @@ impl Interpreter {
                     continue;
                 }
 
-                let (para, next_idx) = Self::collect_pod_para_with_inline(&lines, idx + 1, rest);
+                let (para, next_idx) =
+                    Self::collect_pod_para_with_inline(&lines, idx + 1, rest, None);
                 let mut contents = Vec::new();
                 if let Some(para) = para {
                     contents.push(para);
