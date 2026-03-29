@@ -1297,27 +1297,33 @@ impl Interpreter {
         }
 
         fn try_extract_param_name(s: &str) -> Option<String> {
-            let bytes = s.as_bytes();
-            let mut i = 0usize;
-            while i < bytes.len() {
-                let ch = s[i..].chars().next()?;
+            let chars: Vec<(usize, char)> = s.char_indices().collect();
+            let len = chars.len();
+            let mut idx = 0usize;
+            while idx < len {
+                let (byte_pos, ch) = chars[idx];
                 if matches!(ch, '$' | '@' | '%' | '&') {
-                    let start = i;
-                    i += ch.len_utf8();
-                    let mut end = i;
-                    while end < bytes.len() {
-                        let next = s[end..].chars().next()?;
+                    let start = byte_pos;
+                    idx += 1;
+                    let mut end_idx = idx;
+                    while end_idx < len {
+                        let (_, next) = chars[end_idx];
                         if next.is_alphanumeric() || next == '_' || next == '-' {
-                            end += next.len_utf8();
+                            end_idx += 1;
                         } else {
                             break;
                         }
                     }
-                    if end > i {
-                        return Some(s[start..end].to_string());
+                    if end_idx > idx {
+                        let end_byte = if end_idx < len {
+                            chars[end_idx].0
+                        } else {
+                            s.len()
+                        };
+                        return Some(s[start..end_byte].to_string());
                     }
                 }
-                i += ch.len_utf8();
+                idx += 1;
             }
             None
         }
