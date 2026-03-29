@@ -91,6 +91,7 @@ done
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 STOP_FILE="${REPO_ROOT}/tmp/.stop"
+SANDBOX_LOCK_DIR="${REPO_ROOT}/.git/sandbox/.locks"
 
 # --- Build fleet definition from options ---
 # Each entry: "window_name|command"
@@ -149,6 +150,38 @@ window_index() {
 }
 
 # Launch a fleet window
+# Find which sandbox branch a worker is using, by matching lock file PIDs
+# against the worker's process tree.
+find_worker_branch() {
+    local pane_pid="$1"
+    if [[ ! -d "$SANDBOX_LOCK_DIR" ]]; then
+        return
+    fi
+    # Collect all descendant PIDs (including pane_pid itself)
+    local all_pids="$pane_pid"
+    local descendants
+    descendants=$(get_descendants "$pane_pid")
+    if [[ -n "$descendants" ]]; then
+        all_pids="$all_pids $descendants"
+    fi
+    # Check each lock file
+    local lock_file lock_pid branch
+    for lock_file in "$SANDBOX_LOCK_DIR"/*.pid; do
+        [[ -f "$lock_file" ]] || continue
+        lock_pid="$(cat "$lock_file" 2>/dev/null || true)"
+        if [[ -z "$lock_pid" ]]; then
+            continue
+        fi
+        for pid in $all_pids; do
+            if [[ "$pid" == "$lock_pid" ]]; then
+                branch="$(basename "$lock_file" .pid)"
+                echo "$branch"
+                return
+            fi
+        done
+    done
+}
+
 # Capture last N lines from a dead pane (for diagnostics)
 capture_dead_pane() {
     local name="$1"
@@ -215,7 +248,13 @@ show_status() {
             fi
         fi
 
-        printf "  %-25s  %-8s  pid=%-8s\n" "$name" "$status" "$pid"
+        local branch="-"
+        if [[ "$status" == "running" && "$pid" != "-" && "$pid" != "?" ]]; then
+            branch=$(find_worker_branch "$pid")
+            branch="${branch:--}"
+        fi
+
+        printf "  %-25s  %-8s  pid=%-8s  branch=%s\n" "$name" "$status" "$pid" "$branch"
         if [[ "$status" == "DEAD" ]]; then
             capture_dead_pane "$name" 5
         fi
