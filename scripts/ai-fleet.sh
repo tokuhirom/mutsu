@@ -149,6 +149,24 @@ window_index() {
 }
 
 # Launch a fleet window
+# Capture last N lines from a dead pane (for diagnostics)
+capture_dead_pane() {
+    local name="$1"
+    local lines="${2:-10}"
+    local idx
+    idx=$(window_index "$name")
+    if [[ -z "$idx" ]]; then
+        return
+    fi
+    local output
+    output=$(tmux capture-pane -t ":$idx" -p -S "-${lines}" 2>/dev/null || true)
+    if [[ -n "$output" ]]; then
+        echo "  --- Last ${lines} lines from $name ---"
+        echo "$output" | sed 's/^/  | /'
+        echo "  --- end ---"
+    fi
+}
+
 launch_window() {
     local name="$1"
     local cmd="$2"
@@ -156,9 +174,10 @@ launch_window() {
 
     idx=$(window_index "$name")
     if [[ -n "$idx" ]]; then
-        # Window exists but pane is dead — kill and recreate
+        # Window exists but pane is dead — capture output, then kill and recreate
         echo "  Killing dead window: $name"
         if [[ "$DRY_RUN" -eq 0 ]]; then
+            capture_dead_pane "$name" 20
             tmux kill-window -t ":$idx"
         fi
     fi
@@ -166,6 +185,8 @@ launch_window() {
     echo "  Launching: $name"
     if [[ "$DRY_RUN" -eq 0 ]]; then
         tmux new-window -n "$name" -d "cd ${REPO_ROOT} && $cmd"
+        # Keep the window around when the process exits so we can inspect failures
+        tmux set-option -t "$name" remain-on-exit on 2>/dev/null || true
     fi
 }
 
@@ -195,6 +216,9 @@ show_status() {
         fi
 
         printf "  %-25s  %-8s  pid=%-8s\n" "$name" "$status" "$pid"
+        if [[ "$status" == "DEAD" ]]; then
+            capture_dead_pane "$name" 5
+        fi
     done
 }
 
