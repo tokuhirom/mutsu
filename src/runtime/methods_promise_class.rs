@@ -129,6 +129,7 @@ impl Interpreter {
                 Ok(p) => p,
                 Err(e) => return Some(Err(e)),
             };
+            super::native_methods::register_promise_combinator_sources(&promise, promises.clone());
             if promises.is_empty() {
                 promise.keep(Value::Bool(true), String::new(), String::new());
                 return Some(Ok(ret));

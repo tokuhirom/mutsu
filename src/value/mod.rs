@@ -648,6 +648,10 @@ impl SharedPromise {
         lock.lock().unwrap().class_name
     }
 
+    pub(crate) fn id(&self) -> usize {
+        Arc::as_ptr(&self.inner) as usize
+    }
+
     pub(crate) fn keep(&self, result: Value, output: String, stderr: String) {
         let (lock, cvar) = &*self.inner;
         let mut state = lock.lock().unwrap();
