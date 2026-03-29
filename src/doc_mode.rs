@@ -208,7 +208,9 @@ fn render_begin_pod_blocks(source: &str) -> String {
     while i < lines.len() {
         let trimmed = lines[i].trim_start();
         let mut words = trimmed.split_whitespace();
-        if words.next() == Some("=begin") && words.next() == Some("pod") {
+        let first = words.next();
+        let second = words.next();
+        if first == Some("=begin") && second == Some("pod") {
             i += 1;
             while i < lines.len() {
                 let inner = lines[i].trim_start();
@@ -236,10 +238,113 @@ fn render_begin_pod_blocks(source: &str) -> String {
             }
             continue;
         }
+        if first == Some("=for") && second == Some("pod") {
+            i += 1;
+            while i < lines.len() {
+                let inner = lines[i].trim_start();
+                if inner.is_empty() {
+                    i += 1;
+                    break;
+                }
+                if inner.starts_with('=') {
+                    i += 1;
+                    continue;
+                }
+                output.push_str(&decode_pod_entities(lines[i].trim_end()));
+                output.push('\n');
+                i += 1;
+            }
+            continue;
+        }
         i += 1;
     }
 
     output
+}
+
+fn decode_pod_entities(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+
+    while let Some(start) = rest.find("E<") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 2..];
+        if let Some(end) = after.find('>') {
+            let entity = &after[..end];
+            out.push_str(&decode_named_entities(entity));
+            rest = &after[end + 1..];
+        } else {
+            out.push_str(&rest[start..]);
+            return out;
+        }
+    }
+
+    out.push_str(rest);
+    out
+}
+
+fn decode_named_entities(entity: &str) -> String {
+    entity
+        .split(';')
+        .filter(|part| !part.is_empty())
+        .map(|part| match part {
+            "alpha" => "α",
+            "beta" => "β",
+            "gamma" => "γ",
+            _ => "",
+        })
+        .collect()
+}
+
+#[allow(clippy::result_large_err)]
+fn validate_pod_blocks(source: &str) -> Result<(), RuntimeError> {
+    let mut stack: Vec<String> = Vec::new();
+
+    for line in source.lines() {
+        let trimmed = line.trim_start();
+        let mut words = trimmed.split_whitespace();
+        let first = words.next();
+        let second = words.next();
+
+        if first == Some("=begin") {
+            let Some(target) = second else {
+                return Err(RuntimeError::new(
+                    "Malformed Pod block: =begin requires a target",
+                ));
+            };
+            stack.push(target.to_string());
+            continue;
+        }
+
+        if first == Some("=end") {
+            let Some(target) = second else {
+                return Err(RuntimeError::new(
+                    "Malformed Pod block: =end requires a target",
+                ));
+            };
+            let Some(open) = stack.pop() else {
+                return Err(RuntimeError::new(format!(
+                    "Malformed Pod block: unexpected =end {}",
+                    target
+                )));
+            };
+            if open != target {
+                return Err(RuntimeError::new(format!(
+                    "Malformed Pod block: expected =end {}, got =end {}",
+                    open, target
+                )));
+            }
+        }
+    }
+
+    if let Some(open) = stack.pop() {
+        return Err(RuntimeError::new(format!(
+            "Malformed Pod block: missing =end {}",
+            open
+        )));
+    }
+
+    Ok(())
 }
 
 #[allow(clippy::result_large_err)]
@@ -278,6 +383,7 @@ fn run_doc_init_blocks(source: &str) -> Result<(String, i64, bool), RuntimeError
 
 #[allow(clippy::result_large_err)]
 pub fn run_doc_mode(source: &str) -> Result<DocModeResult, RuntimeError> {
+    validate_pod_blocks(source)?;
     let (mut output, status, halted) = run_doc_init_blocks(source)?;
     if !halted {
         output.push_str(&render_doc(source));
@@ -357,5 +463,28 @@ DOC INIT { say 'alive'; exit; }
         let result = run_doc_mode(source).unwrap();
         assert!(result.output.contains("alive"));
         assert!(!result.output.contains("Docs"));
+    }
+
+    #[test]
+    fn test_render_for_pod_nested_para_entities() {
+        let source = "\
+=for pod
+=for nested
+=for para :nested(1)
+E<alpha;beta>E<alpha;beta;gamma>
+";
+        let output = render_begin_pod_blocks(source);
+        assert_eq!(output, "αβαβγ\n");
+    }
+
+    #[test]
+    fn test_run_doc_mode_rejects_malformed_end() {
+        let source = "\
+=begin code
+say 1;
+=end
+";
+        let err = run_doc_mode(source).unwrap_err();
+        assert!(err.message.contains("=end requires a target"));
     }
 }
