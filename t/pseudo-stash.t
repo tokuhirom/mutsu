@@ -1,6 +1,6 @@
 use Test;
 
-plan 5;
+plan 7;
 
 # MY::.keys returns a list that includes declared variables
 my $x = 42;
@@ -17,3 +17,10 @@ ok @vars.grep(* eq '$foo').elems > 0, 'MY::.keys.grep finds $foo';
 
 # MY::.elems returns a positive number
 ok MY::.elems > 0, 'MY::.elems returns positive count';
+
+# MY:: assignment writes back to the lexical and respects type constraints
+my Int:D $typed = 256;
+MY::<$typed> = 111;
+is $typed, 111, 'MY:: assignment updates typed lexical variables';
+throws-like { MY::<$typed> = Int }, X::TypeCheck::Assignment,
+    'MY:: assignment preserves lexical type checks';
