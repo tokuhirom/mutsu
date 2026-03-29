@@ -4433,31 +4433,39 @@ mod tests {
 
     #[test]
     fn is_run_honors_compiler_include_paths() {
-        let mut interp = Interpreter::new();
-        let uniq = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
+        // Needs a larger stack: is_run loads Test::Util which has a deep call chain.
+        let result = std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(|| {
+                let mut interp = Interpreter::new();
+                let uniq = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos();
+                let dir = std::env::temp_dir().join(format!("mutsu-is-run-inc-{}", uniq));
+                fs::create_dir_all(&dir).unwrap();
+                let m_path = dir.join("M.rakumod");
+                fs::write(&m_path, "unit module M;\nsub hi is export { 42 }\n").unwrap();
+
+                let escaped_dir = dir
+                    .to_string_lossy()
+                    .replace('\\', "\\\\")
+                    .replace('"', "\\\"");
+                let program = format!(
+                    "use Test; use lib \"roast/packages/Test-Helpers\"; use Test::Util; \
+                     plan 1; \
+                     is_run \"use M; say hi\", :compiler-args[\"-I\", \"{}\"], {{ :out(\"42\\n\"), :status(0) }}, \"is_run uses -I\";",
+                    escaped_dir
+                );
+                let output = interp.run(&program).unwrap();
+                assert!(output.contains("ok 1 - is_run uses -I"));
+
+                let _ = fs::remove_file(m_path);
+                let _ = fs::remove_dir(dir);
+            })
             .unwrap()
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("mutsu-is-run-inc-{}", uniq));
-        fs::create_dir_all(&dir).unwrap();
-        let m_path = dir.join("M.rakumod");
-        fs::write(&m_path, "unit module M;\nsub hi is export { 42 }\n").unwrap();
-
-        let escaped_dir = dir
-            .to_string_lossy()
-            .replace('\\', "\\\\")
-            .replace('"', "\\\"");
-        let program = format!(
-            "use Test; use lib \"roast/packages/Test-Helpers\"; use Test::Util; \
-             plan 1; \
-             is_run \"use M; say hi\", :compiler-args[\"-I\", \"{}\"], {{ :out(\"42\\n\"), :status(0) }}, \"is_run uses -I\";",
-            escaped_dir
-        );
-        let output = interp.run(&program).unwrap();
-        assert!(output.contains("ok 1 - is_run uses -I"));
-
-        let _ = fs::remove_file(m_path);
-        let _ = fs::remove_dir(dir);
+            .join();
+        result.unwrap();
     }
 
     #[test]
