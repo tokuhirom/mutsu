@@ -1296,6 +1296,32 @@ impl Interpreter {
             })
         }
 
+        fn try_extract_param_name(s: &str) -> Option<String> {
+            let bytes = s.as_bytes();
+            let mut i = 0usize;
+            while i < bytes.len() {
+                let ch = s[i..].chars().next()?;
+                if matches!(ch, '$' | '@' | '%' | '&') {
+                    let start = i;
+                    i += ch.len_utf8();
+                    let mut end = i;
+                    while end < bytes.len() {
+                        let next = s[end..].chars().next()?;
+                        if next.is_alphanumeric() || next == '_' || next == '-' {
+                            end += next.len_utf8();
+                        } else {
+                            break;
+                        }
+                    }
+                    if end > i {
+                        return Some(s[start..end].to_string());
+                    }
+                }
+                i += ch.len_utf8();
+            }
+            None
+        }
+
         fn matching_bracket(c: char) -> Option<char> {
             match c {
                 '(' => Some(')'),
@@ -1705,6 +1731,19 @@ impl Interpreter {
                     class_stack.push(current_class.take());
                     current_class = Some(name);
                 }
+            } else if let Some(param_name) = try_extract_param_name(check_line) {
+                if let Some(leading) = pending_leading.take() {
+                    let entry = self
+                        .doc_comments
+                        .entry(param_name.clone())
+                        .or_insert_with(|| DocComment {
+                            wherefore_name: param_name.clone(),
+                            kind: super::DocDeclKind::Sub,
+                            ..Default::default()
+                        });
+                    entry.leading = append_doc_text(entry.leading.take(), &leading);
+                }
+                last_declarant = None;
             } else {
                 // Not a recognized declaration — discard pending leading
                 pending_leading = None;
