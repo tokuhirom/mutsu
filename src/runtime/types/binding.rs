@@ -674,14 +674,23 @@ impl Interpreter {
                                 &value,
                                 source_type_constraint.as_deref(),
                             ) {
-                                return Err(RuntimeError::new(format!(
+                                let mut err = RuntimeError::new(format!(
                                     "{}: Type check failed in binding to parameter '{}'; expected {} but got {} ({})",
                                     type_error_kind,
                                     pd.name,
                                     expected,
                                     crate::runtime::value_type_name(&value),
                                     crate::runtime::utils::gist_value(&value)
-                                )));
+                                ));
+                                let mut ex_attrs = std::collections::HashMap::new();
+                                ex_attrs
+                                    .insert("message".to_string(), Value::str(err.message.clone()));
+                                let exception = Value::make_instance(
+                                    Symbol::intern("X::TypeCheck::Binding::Parameter"),
+                                    ex_attrs,
+                                );
+                                err.exception = Some(Box::new(exception));
+                                return Err(err);
                             }
                         } else if constraint == "Num"
                             && matches!(
