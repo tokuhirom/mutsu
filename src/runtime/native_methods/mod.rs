@@ -25,9 +25,10 @@ pub(crate) use state_lock::{acquire_lock, current_thread_id, lock_runtime_by_id,
 pub(in crate::runtime) use state::{
     allocate_async_listen_port, get_supply_collected_output, get_supply_taps,
     lookup_async_listener, next_async_socket_id, next_supplier_id, next_supply_id, proc_stdin_map,
-    register_async_connection, register_supply_tap, set_supply_collected_output, supplier_done,
-    supplier_done_deferred, supplier_emit, supplier_id_from_attrs, supplier_quit,
-    supplier_register_promise, supplier_snapshot, supply_channel_map, supply_channel_map_pub,
+    register_async_connection, register_promise_combinator_sources, register_supply_tap,
+    set_supply_collected_output, supplier_done, supplier_done_deferred, supplier_emit,
+    supplier_id_from_attrs, supplier_quit, supplier_register_promise, supplier_snapshot,
+    supply_channel_map, supply_channel_map_pub, take_promise_combinator_sources,
     update_async_connection,
 };
 pub(in crate::runtime) use state_lock::next_lock_id;

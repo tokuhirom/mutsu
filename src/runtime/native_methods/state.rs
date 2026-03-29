@@ -25,6 +25,13 @@ fn supply_collected_map() -> &'static SupplyCollectedMap {
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
+type PromiseCombinatorMap = std::sync::Mutex<HashMap<usize, Vec<SharedPromise>>>;
+
+fn promise_combinator_map() -> &'static PromiseCombinatorMap {
+    static MAP: OnceLock<PromiseCombinatorMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
 pub(super) type CancellationMap = std::sync::Mutex<HashMap<u64, Arc<AtomicBool>>>;
 
 pub(super) fn cancellation_map() -> &'static CancellationMap {
@@ -436,4 +443,23 @@ pub(in crate::runtime) fn get_supply_collected_output(supply_id: u64) -> Option<
         .lock()
         .ok()
         .and_then(|map| map.get(&supply_id).cloned())
+}
+
+pub(in crate::runtime) fn register_promise_combinator_sources(
+    promise: &SharedPromise,
+    sources: Vec<SharedPromise>,
+) {
+    if let Ok(mut map) = promise_combinator_map().lock() {
+        map.insert(promise.id(), sources);
+    }
+}
+
+pub(in crate::runtime) fn take_promise_combinator_sources(
+    promise: &SharedPromise,
+) -> Option<Vec<SharedPromise>> {
+    if let Ok(mut map) = promise_combinator_map().lock() {
+        map.remove(&promise.id())
+    } else {
+        None
+    }
 }
