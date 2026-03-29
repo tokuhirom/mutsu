@@ -230,6 +230,7 @@ roast/S04-blocks-and-statements/let.t
 roast/S04-blocks-and-statements/pointy-rw.t
 roast/S04-blocks-and-statements/pointy.t
 roast/S04-declarations/implicit-parameter.t
+roast/S04-declarations/smiley.t
 roast/S04-exception-handlers/top-level.t
 roast/S04-exceptions/control_across_runloop.t
 roast/S04-exceptions/fail-6e.t
@@ -818,6 +819,7 @@ roast/S32-io/tell.t
 roast/S32-list/are.t
 roast/S32-list/batch.t
 roast/S32-list/categorize.t
+roast/S32-list/classify-list.t
 roast/S32-list/combinations.t
 roast/S32-list/create.t
 roast/S32-list/cross.t

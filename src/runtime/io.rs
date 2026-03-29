@@ -607,7 +607,25 @@ impl Interpreter {
         // $*EXECUTABLE - path to the interpreter binary
         #[cfg(not(target_arch = "wasm32"))]
         let exe_path = std::env::current_exe()
-            .map(|p| p.to_string_lossy().to_string())
+            .map(|path| {
+                let is_cargo_test_binary = path
+                    .parent()
+                    .and_then(|parent| parent.file_name())
+                    .is_some_and(|name| name == "deps")
+                    && path
+                        .file_stem()
+                        .and_then(|stem| stem.to_str())
+                        .is_some_and(|stem| stem.starts_with("mutsu-"));
+                if is_cargo_test_binary
+                    && let Some(target_dir) = path.parent().and_then(|parent| parent.parent())
+                {
+                    let sibling = target_dir.join("mutsu");
+                    if sibling.is_file() {
+                        return sibling.to_string_lossy().to_string();
+                    }
+                }
+                path.to_string_lossy().to_string()
+            })
             .unwrap_or_else(|_| "mutsu".to_string());
         #[cfg(target_arch = "wasm32")]
         let exe_path = "mutsu".to_string();
