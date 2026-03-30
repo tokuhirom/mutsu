@@ -16,7 +16,7 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
     // Try the comprehensive parenthesized assignment parser first.
     // This handles complex LHS forms like %hash{...}, @arr[...], method calls, etc.
     if let Ok((rest, assign_expr)) = super::super::stmt::assign::try_parse_assign_expr(input) {
-        return Ok((rest, assign_expr));
+        return Ok((rest, Expr::Grouped(Box::new(assign_expr))));
     }
     let (input, _) = parse_char(input, '(')?;
     let (input, _) = ws(input)?;

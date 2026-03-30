@@ -1081,6 +1081,49 @@ mod tests {
     }
 
     #[test]
+    fn parse_ternary_allows_parenthesized_assignment_branches() {
+        let (rest, expr) = expression("$x ?? ($y = 1) !! ($y = 2)").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Ternary {
+                then_expr,
+                else_expr,
+                ..
+            } => {
+                assert!(matches!(*then_expr, Expr::Grouped(_)));
+                assert!(matches!(*else_expr, Expr::Grouped(_)));
+            }
+            _ => panic!("expected ternary expression"),
+        }
+    }
+
+    #[test]
+    fn parse_parenthesized_compound_assign_as_lvalue_expression() {
+        let (rest, expr) = expression("($x += 2) *= 3").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::AssignExpr { name, expr } => {
+                assert_eq!(name, "x");
+                assert!(matches!(*expr, Expr::Binary { .. }));
+            }
+            other => panic!("expected nested AssignExpr, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_parenthesized_metaassign_chain_as_lvalue_expression() {
+        let (rest, expr) = expression("(@a ||= 42) += 10").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::AssignExpr { name, expr } => {
+                assert_eq!(name, "@a");
+                assert!(matches!(*expr, Expr::Binary { .. }));
+            }
+            other => panic!("expected nested AssignExpr, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn parse_junctive_op_all() {
         assert_eq!(parse_junctive_op("?|"), Some((JunctiveOp::Or, 2)));
         assert_eq!(parse_junctive_op("?&"), Some((JunctiveOp::And, 2)));
@@ -1987,6 +2030,26 @@ mod tests {
         assert!(matches!(
             expr,
             Expr::MetaOp { ref meta, ref op, .. } if meta == "X" && op == "+>"
+        ));
+    }
+
+    #[test]
+    fn parse_grouped_sequences_as_metaop_operands() {
+        let (rest, expr) = expression("(1 ... *) Z~ ('a' ... 'z')").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::MetaOp { ref meta, ref op, .. } if meta == "Z" && op == "~"
+        ));
+    }
+
+    #[test]
+    fn parse_bracket_infix_func_chain_with_same_operator() {
+        let (rest, expr) = expression("2 [&foo] 3 [&foo] 4").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::InfixFunc { ref name, modifier: None, .. } if name == "foo"
         ));
     }
 

@@ -620,4 +620,33 @@ is_run q<use lib '> ~ $pkg-path ~ q<'; use GH2897-B; (^3).map( { my-counter } ).
             other => panic!("expected uc call, got {other:?}"),
         }
     }
+
+    #[test]
+    fn parse_program_imports_inline_operator_precedence_metadata() {
+        let src = r#"
+module RT128042 {
+    multi infix:<§>($,$) is tighter(&[+]) is export { 0 };
+}
+import RT128042;
+is (1 + 2 § 3), 1, "x";
+"#;
+        let (stmts, _) = parse_program(src).unwrap();
+        match &stmts[2] {
+            Stmt::Expr(Expr::Call { name, args }) => {
+                assert_eq!(name.resolve(), "is");
+                match &args[0] {
+                    Expr::Binary { left, op, right } => {
+                        assert!(matches!(left.as_ref(), Expr::Literal(Value::Int(1))));
+                        assert_eq!(*op, crate::token_kind::TokenKind::Plus);
+                        assert!(matches!(
+                            right.as_ref(),
+                            Expr::InfixFunc { name, .. } if name == "§"
+                        ));
+                    }
+                    other => panic!("expected additive expression, got {other:?}"),
+                }
+            }
+            other => panic!("expected is call, got {other:?}"),
+        }
+    }
 }

@@ -3980,6 +3980,7 @@ impl Interpreter {
             // the only strong reference (refcount=1). This keeps repeated
             // shared pushes in-place instead of degenerating into O(n²) COW.
             self.env.remove(key);
+            let is_thread_clone = self.is_thread_clone();
             let mut sv = self.shared_vars.write().unwrap();
             // Try in-place mutation via get_mut first (avoids remove+insert overhead)
             if let Some(Value::Array(arc_items, kind)) = sv.get_mut(key) {
@@ -3991,7 +3992,9 @@ impl Interpreter {
                 let result = Value::Array(Arc::clone(arc_items), *kind);
                 drop(sv);
                 self.mark_shared_var_dirty(key);
-                self.env.insert(key.to_string(), result.clone());
+                if !is_thread_clone {
+                    self.env.insert(key.to_string(), result.clone());
+                }
                 return result;
             }
             // Fallback: the value might exist but not be an Array yet
@@ -4008,6 +4011,9 @@ impl Interpreter {
                     sv.insert(key.to_string(), Value::Array(arc_items, normalized_kind));
                     drop(sv);
                     self.mark_shared_var_dirty(key);
+                    if !is_thread_clone {
+                        self.env.insert(key.to_string(), result.clone());
+                    }
                     return result;
                 }
                 sv.insert(key.to_string(), shared_value);
@@ -4031,6 +4037,42 @@ impl Interpreter {
         let result = Value::real_array(items);
         self.env.insert(key.to_string(), result.clone());
         result
+    }
+
+    pub(crate) fn push_to_existing_shared_array(
+        &mut self,
+        key: &str,
+        values: Vec<Value>,
+    ) -> Option<Value> {
+        if !key.starts_with('@') || !self.shared_vars_active {
+            return None;
+        }
+        let is_thread_clone = self.is_thread_clone();
+        if is_thread_clone {
+            self.env.remove(key);
+        }
+        let mut sv = self.shared_vars.write().unwrap();
+        let Some(Value::Array(arc_items, kind)) = sv.get_mut(key) else {
+            return None;
+        };
+        let items = Arc::make_mut(arc_items);
+        items.extend(values);
+        if *kind == ArrayKind::List {
+            *kind = ArrayKind::Array;
+        }
+        let result = Value::Array(Arc::clone(arc_items), *kind);
+        drop(sv);
+        if is_thread_clone {
+            let dirty_marker = format!("__mutsu_shared_dirty::{key}");
+            if !self.env.contains_key(&dirty_marker) {
+                self.mark_shared_var_dirty(key);
+                self.env.insert(dirty_marker, Value::Bool(true));
+            }
+        } else {
+            self.mark_shared_var_dirty(key);
+            self.env.insert(key.to_string(), result.clone());
+        }
+        Some(result)
     }
 
     /// Read a shared variable. If the variable is in shared_vars, return

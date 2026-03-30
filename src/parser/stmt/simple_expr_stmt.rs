@@ -263,6 +263,23 @@ fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stmt> {
     })
 }
 
+fn grouped_assign_lvalue_stmt(target: &Expr, rhs: Expr) -> Option<Stmt> {
+    let Expr::Grouped(inner) = target else {
+        return None;
+    };
+    let Expr::AssignExpr { name, .. } = inner.as_ref() else {
+        return None;
+    };
+    Some(Stmt::Block(vec![
+        Stmt::Expr((**inner).clone()),
+        Stmt::Assign {
+            name: name.clone(),
+            expr: rhs,
+            op: AssignOp::Assign,
+        },
+    ]))
+}
+
 /// Parse an expression statement (fallback).
 pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     // Topic mutating method call: .=method(args)
@@ -809,7 +826,11 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 value: Box::new(expr),
             }),
             target => {
-                if let Some(stmt) = single_target_list_lvalue_stmt(target.clone(), expr.clone()) {
+                if let Some(stmt) = grouped_assign_lvalue_stmt(&target, expr.clone()) {
+                    stmt
+                } else if let Some(stmt) =
+                    single_target_list_lvalue_stmt(target.clone(), expr.clone())
+                {
                     stmt
                 } else {
                     Stmt::Expr(callable_lvalue_assign_expr(target, Vec::new(), expr))
@@ -899,7 +920,11 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 value: Box::new(rhs),
             }),
             target => {
-                if let Some(stmt) = single_target_list_lvalue_stmt(target.clone(), rhs.clone()) {
+                if let Some(stmt) = grouped_assign_lvalue_stmt(&target, rhs.clone()) {
+                    stmt
+                } else if let Some(stmt) =
+                    single_target_list_lvalue_stmt(target.clone(), rhs.clone())
+                {
                     stmt
                 } else {
                     Stmt::Expr(callable_lvalue_assign_expr(target, Vec::new(), rhs))

@@ -1560,6 +1560,7 @@ impl Compiler {
                     param_defs: param_defs.clone(),
                     return_type: return_type.clone(),
                     associativity: None,
+                    precedence_trait: None,
                     signature_alternates: Vec::new(),
                     body: body.clone(),
                     multi: *multi,

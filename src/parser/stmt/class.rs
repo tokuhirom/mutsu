@@ -1419,7 +1419,7 @@ pub(super) fn module_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
     // Record exported subs from inline module so `import` can register them at parse time.
-    let exported = extract_exported_sub_names(&body);
+    let exported = extract_exported_subs(&body);
     if !exported.is_empty() {
         super::simple::register_inline_module_exports(&name, exported);
     }
@@ -1442,17 +1442,25 @@ pub(super) fn module_decl(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// Extract names of exported sub declarations from a statement list.
-fn extract_exported_sub_names(stmts: &[Stmt]) -> Vec<String> {
+fn extract_exported_subs(stmts: &[Stmt]) -> Vec<super::simple::InlineModuleExportSpec> {
     let mut names = Vec::new();
     for stmt in stmts {
         match stmt {
             Stmt::SubDecl {
-                name, is_export, ..
+                name,
+                is_export,
+                precedence_trait,
+                associativity,
+                ..
             } if *is_export => {
-                names.push(name.to_string());
+                names.push((
+                    name.to_string(),
+                    precedence_trait.clone(),
+                    associativity.clone(),
+                ));
             }
             Stmt::SyntheticBlock(inner) => {
-                names.extend(extract_exported_sub_names(inner));
+                names.extend(extract_exported_subs(inner));
             }
             _ => {}
         }
