@@ -1085,72 +1085,11 @@ fn try_parse_no_paren_invocant_colon_call<'a>(
 }
 
 fn parse_listop_arg(input: &str) -> PResult<'_, Expr> {
-    // Try to parse a primary expression (variable, literal, call, etc.)
-    // but stop if we hit a statement modifier
     if is_stmt_modifier_ahead(input) {
         return Err(PError::expected("listop argument"));
     }
 
-    // Parse a single term with prefix/postfix operators, but no infix operators.
-    // This keeps named-unary precedence behavior (e.g. `uc 'foo' xor 'bar'` parses as
-    // `(uc 'foo') xor 'bar'`) while still allowing argument postfix chains like
-    // `chmod $file.IO.mode, $other`.
-    //
-    // Exception: range operators are part of a single argument in listop calls,
-    // e.g. `squish 1..Inf` should parse as `squish(1..Inf)`.
-    let (rest, left) = super::super::expr::term_expr(input)?;
-    let (r, _) = ws(rest)?;
-
-    if let Some(rhs) = r.strip_prefix("^..^") {
-        let (r2, right) = super::super::expr::term_expr(rhs)?;
-        return Ok((
-            r2,
-            Expr::Binary {
-                left: Box::new(left),
-                op: crate::token_kind::TokenKind::CaretDotDotCaret,
-                right: Box::new(right),
-            },
-        ));
-    }
-    if let Some(rhs) = r.strip_prefix("^..") {
-        let (r2, right) = super::super::expr::term_expr(rhs)?;
-        return Ok((
-            r2,
-            Expr::Binary {
-                left: Box::new(left),
-                op: crate::token_kind::TokenKind::CaretDotDot,
-                right: Box::new(right),
-            },
-        ));
-    }
-    if let Some(rhs) = r.strip_prefix("..^") {
-        let (r2, right) = super::super::expr::term_expr(rhs)?;
-        return Ok((
-            r2,
-            Expr::Binary {
-                left: Box::new(left),
-                op: crate::token_kind::TokenKind::DotDotCaret,
-                right: Box::new(right),
-            },
-        ));
-    }
-    if r.starts_with("..") && !r.starts_with("...") {
-        let (r2, right) = super::super::expr::term_expr(&r[2..])?;
-        return Ok((
-            r2,
-            Expr::Binary {
-                left: Box::new(left),
-                op: crate::token_kind::TokenKind::DotDot,
-                right: Box::new(right),
-            },
-        ));
-    }
-
-    // Wrap WhateverCode expressions in listop arguments (e.g. `map *.abs, 1, 2`).
-    if crate::parser::expr::should_wrap_whatevercode(&left) {
-        return Ok((rest, crate::parser::expr::wrap_whatevercode(&left)));
-    }
-    Ok((rest, left))
+    super::super::expr::call_arg_expr(input)
 }
 
 fn is_require_terminator(input: &str) -> bool {
@@ -2076,7 +2015,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 if is_stmt_modifier_ahead(input) {
                     return Err(PError::expected("listop argument"));
                 }
-                super::super::expr::listop_arg_expr(input)
+                parse_listop_arg(input)
             };
             let (r2, arg) = parse_arg(r).map_err(|err| PError {
                 messages: merge_expected_messages(
@@ -2149,14 +2088,18 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if let Ok((r2, arg)) = expression_no_sequence(r) {
                 return Ok((r2, make_call_expr(call_name.clone(), input, vec![arg])));
             }
-        } else if is_user_sub && let Ok((r2, expr)) = parse_expr_listop_args(r, call_name.clone()) {
+        } else if is_user_sub
+            && let Ok((r2, expr)) = make_call_expr_from_listop_args(r, input, call_name.clone())
+        {
             return Ok((r2, expr));
         } else if is_imported_sub
-            && let Ok((r2, expr)) = parse_expr_listop_args(r, call_name.clone())
+            && let Ok((r2, expr)) = make_call_expr_from_listop_args(r, input, call_name.clone())
         {
             return Ok((r2, expr));
         }
-        if hyphen_forward_call && let Ok((r2, expr)) = parse_expr_listop_args(r, name.clone()) {
+        if hyphen_forward_call
+            && let Ok((r2, expr)) = make_call_expr_from_listop_args(r, input, name.clone())
+        {
             return Ok((r2, expr));
         }
         // Only trigger if next token starts a term (not an operator)
@@ -2194,8 +2137,8 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 let (r2, arg) = expression_no_sequence(r)?;
                 return Ok((r2, make_call_expr(call_name, input, vec![arg])));
             }
-            if is_user_sub {
-                return parse_expr_listop_args(r, call_name);
+            if is_user_sub || is_imported_sub || hyphen_forward_call {
+                return make_call_expr_from_listop_args(r, input, call_name);
             }
             // Known builtin calls like `defined`, `elems` take a single arg
             // in expression context (no comma-separated multi-arg collection).
@@ -2265,6 +2208,51 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
 
     // Method-like: .new, .elems etc. is handled at expression level
     Ok((rest, Expr::BareWord(name)))
+}
+
+fn make_call_expr_from_listop_args<'a>(
+    rest: &'a str,
+    input: &'a str,
+    name: String,
+) -> PResult<'a, Expr> {
+    let (r, first) = parse_listop_arg(rest).map_err(|err| PError {
+        messages: merge_expected_messages("expected listop argument expression", &err.messages),
+        remaining_len: err.remaining_len.or(Some(rest.len())),
+        exception: err.exception,
+    })?;
+    let (r, invocant_colon_call) = try_parse_no_paren_invocant_colon_call(&name, first.clone(), r)?;
+    if let Some(method_call) = invocant_colon_call {
+        return Ok((r, method_call));
+    }
+    let mut args = vec![first];
+    let mut r = r;
+    loop {
+        let (r2, _) = ws(r)?;
+        if !r2.starts_with(',') || r2.starts_with(",,") {
+            break;
+        }
+        let r2 = &r2[1..];
+        let (r2, _) = ws(r2)?;
+        if r2.is_empty()
+            || r2.starts_with(';')
+            || r2.starts_with('}')
+            || r2.starts_with(')')
+            || is_stmt_modifier_ahead(r2)
+        {
+            break;
+        }
+        let (r2, arg) = parse_listop_arg(r2).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected listop argument expression after ','",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(r2.len())),
+            exception: err.exception,
+        })?;
+        args.push(arg);
+        r = r2;
+    }
+    Ok((r, make_call_expr(name, input, args)))
 }
 
 /// Parse anonymous sub with params: sub ($x, $y) { ... }
