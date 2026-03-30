@@ -9,6 +9,7 @@ use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::operators::*;
@@ -20,6 +21,112 @@ use super::precedence_meta_ops::{
 use super::{contains_whatever, wrap_whatevercode};
 
 static CHAIN_CMP_TMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+fn syntax_exception(class_name: &str, message: impl Into<String>) -> PError {
+    let message = message.into();
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message.clone()));
+    let exception = Value::make_instance(Symbol::intern(class_name), attrs);
+    PError::fatal_with_exception(message, Box::new(exception))
+}
+
+fn non_list_associative_error(lhs: &str, rhs: &str) -> PError {
+    syntax_exception(
+        "X::Syntax::NonListAssociative",
+        format!(
+            "Only identical operators may be list associative; since '{}' and '{}' differ, they are non-associative and you need to clarify with parentheses",
+            lhs, rhs
+        ),
+    )
+}
+
+fn non_associative_error(op_name: &str) -> PError {
+    syntax_exception(
+        "X::Syntax::NonAssociative",
+        format!("Non-associative operator '{}' cannot be chained", op_name),
+    )
+}
+
+fn conditional_precedence_too_loose_error() -> PError {
+    syntax_exception(
+        "X::Syntax::ConditionalOperator::PrecedenceTooLoose",
+        "Assignment operators inside ?? !! are too loose; parenthesize them",
+    )
+}
+
+fn is_assignment_expr(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::AssignExpr { .. } | Expr::IndexAssign { .. } | Expr::MultiDimIndexAssign { .. }
+    )
+}
+
+fn comparison_nonassoc_key(op: &TokenKind) -> Option<&'static str> {
+    match op {
+        TokenKind::LtEqGt => Some("<=>"),
+        TokenKind::Ident(name) if name == "leg" => Some("leg"),
+        TokenKind::Ident(name) if name == "cmp" => Some("cmp"),
+        TokenKind::Ident(name) if name == "coll" => Some("coll"),
+        TokenKind::Ident(name) if name == "eqv" => Some("eqv"),
+        TokenKind::Ident(name) if name == "before" => Some("before"),
+        TokenKind::Ident(name) if name == "after" => Some("after"),
+        _ => None,
+    }
+}
+
+fn is_structural_comparison_op(op: ComparisonOp) -> bool {
+    matches!(
+        op,
+        ComparisonOp::Spaceship
+            | ComparisonOp::Leg
+            | ComparisonOp::Cmp
+            | ComparisonOp::Coll
+            | ComparisonOp::Eqv
+            | ComparisonOp::Before
+            | ComparisonOp::After
+    )
+}
+
+fn structural_comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
+    let (rest, left) = junctive_expr_mode(input, mode)?;
+    let (r, _) = ws(rest)?;
+    let Some((op, len)) = parse_comparison_op(r) else {
+        return Ok((rest, left));
+    };
+    if !is_structural_comparison_op(op) {
+        return Ok((rest, left));
+    }
+    let r = &r[len..];
+    let (r, _) = ws(r)?;
+    let (r, right) = if mode == ExprMode::Full {
+        junctive_expr_mode(r, mode).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected expression after comparison operator",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
+        })?
+    } else {
+        junctive_expr_mode(r, mode)?
+    };
+    let expr = Expr::Binary {
+        left: Box::new(left),
+        op: op.token_kind(),
+        right: Box::new(right),
+    };
+    let (r2, _) = ws(r)?;
+    if let Some((next_op, _)) = parse_comparison_op(r2)
+        && is_structural_comparison_op(next_op)
+    {
+        return Err(non_associative_error(&format!(
+            "{} and {}",
+            comparison_nonassoc_key(&op.token_kind()).unwrap_or("<=>"),
+            comparison_nonassoc_key(&next_op.token_kind()).unwrap_or("<=>")
+        )));
+    }
+    Ok((r, expr))
+}
 
 /// Ternary: expr ?? expr !! expr
 pub(super) fn ternary(input: &str) -> PResult<'_, Expr> {
@@ -72,6 +179,9 @@ pub(super) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         } else {
             ternary_mode(input, mode)?
         };
+        if is_assignment_expr(&then_expr) || is_assignment_expr(&else_expr) {
+            return Err(conditional_precedence_too_loose_error());
+        }
         if let Expr::Binary { left, op, right } = cond {
             if matches!(
                 op,
@@ -286,6 +396,7 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let (r, _) = ws(r)?;
     let (r, rhs) = parse_assignment_rhs_mode(r, mode)?;
 
+    let expr = unwrap_grouped_lvalue(expr);
     match expr {
         Expr::Var(name) => Ok((
             r,
@@ -402,8 +513,15 @@ fn assignment_ro_expr(lhs: Expr, rhs: Expr) -> Expr {
     }
 }
 
-fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
+fn unwrap_grouped_lvalue(target: Expr) -> Expr {
     match target {
+        Expr::Grouped(inner) => unwrap_grouped_lvalue(*inner),
+        other => other,
+    }
+}
+
+fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
+    match unwrap_grouped_lvalue(target) {
         Expr::Var(name) => Expr::AssignExpr {
             name,
             expr: Box::new(value),
@@ -482,6 +600,7 @@ fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
 }
 
 fn build_compound_assign_target_expr(target: Expr, op_name: &str, value: Expr) -> Expr {
+    let target = unwrap_grouped_lvalue(target);
     if op_name == "=" {
         return assign_to_target_expr(target, value);
     }
@@ -818,6 +937,7 @@ fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         ExprMode::NoSequenceNoFeed => range_expr,
     };
     let (mut rest, mut left) = next_fn(input)?;
+    let mut last_junction: Option<JunctionInfixOp> = None;
     loop {
         let (r, _) = ws(rest)?;
         if let Some((op, len)) = parse_junctive_op(r) {
@@ -844,6 +964,26 @@ fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         }
         // Junction infix operators: |, &, ^
         if let Some((op, len)) = parse_junction_infix_op(r) {
+            if let Some(prev) = last_junction
+                && matches!(
+                    (prev, op),
+                    (JunctionInfixOp::Any, JunctionInfixOp::One)
+                        | (JunctionInfixOp::One, JunctionInfixOp::Any)
+                )
+            {
+                return Err(non_list_associative_error(
+                    match prev {
+                        JunctionInfixOp::Any => "|",
+                        JunctionInfixOp::All => "&",
+                        JunctionInfixOp::One => "^",
+                    },
+                    match op {
+                        JunctionInfixOp::Any => "|",
+                        JunctionInfixOp::All => "&",
+                        JunctionInfixOp::One => "^",
+                    },
+                ));
+            }
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = if mode == ExprMode::Full {
@@ -862,6 +1002,7 @@ fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 op: op.token_kind(),
                 right: Box::new(right),
             };
+            last_junction = Some(op);
             rest = r;
             continue;
         }
@@ -874,7 +1015,8 @@ fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
 /// Used in NoSequence mode (e.g. inside parenthesized expressions).
 fn list_infix_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = range_expr(input)?;
-    rest = parse_list_infix_loop(rest, &mut left)?;
+    let mut current_assoc_key = None;
+    rest = parse_list_infix_loop(rest, &mut left, &mut current_assoc_key)?;
     Ok((rest, left))
 }
 
@@ -882,6 +1024,7 @@ fn list_infix_expr(input: &str) -> PResult<'_, Expr> {
 /// All have Raku precedence level f= (list associative).
 fn sequence_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = range_expr(input)?;
+    let mut current_assoc_key: Option<String> = None;
 
     // Helper: wrap LHS WhateverCode before building the sequence node.
     fn maybe_wrap_lhs(left: &mut Expr) {
@@ -895,6 +1038,11 @@ fn sequence_expr(input: &str) -> PResult<'_, Expr> {
 
         // ...^ / …^ (exclusive-end sequence), ... / … (sequence)
         if let Some((r2, op, op_str)) = strip_sequence_op(r) {
+            if let Some(prev) = current_assoc_key.as_deref()
+                && prev != op_str
+            {
+                return Err(non_list_associative_error(prev, op_str));
+            }
             let (r2, _) = ws(r2)?;
             let (r2, mut right) =
                 comparison_expr_mode(r2, ExprMode::NoSequence).map_err(|err| {
@@ -913,11 +1061,12 @@ fn sequence_expr(input: &str) -> PResult<'_, Expr> {
                 op,
                 right: Box::new(right),
             };
+            current_assoc_key = Some(op_str.to_string());
             rest = r2;
             continue;
         }
         // Try Z/X/meta/infix-func operators
-        let new_rest = parse_list_infix_loop(rest, &mut left)?;
+        let new_rest = parse_list_infix_loop(rest, &mut left, &mut current_assoc_key)?;
         if new_rest.len() < rest.len() {
             rest = new_rest;
             continue;
@@ -929,7 +1078,11 @@ fn sequence_expr(input: &str) -> PResult<'_, Expr> {
 
 /// Shared loop for Z/X meta operators and infix function calls.
 /// Modifies `left` in place and returns the remaining input.
-fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str, PError> {
+fn parse_list_infix_loop<'a>(
+    input: &'a str,
+    left: &mut Expr,
+    current_assoc_key: &mut Option<String>,
+) -> Result<&'a str, PError> {
     let mut rest = input;
     loop {
         let (r, _) = ws(rest)?;
@@ -963,6 +1116,16 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
         }
         // Infixed function call: [&func], R[&func], X[&func], Z[&func]
         if let Some((modifier, name, len)) = parse_infix_func_op(r) {
+            let op_key = if let Some(modifier) = modifier.as_deref() {
+                format!("{modifier}[{name}]")
+            } else {
+                format!("[{name}]")
+            };
+            if let Some(prev) = current_assoc_key.as_deref()
+                && prev != op_key
+            {
+                return Err(non_list_associative_error(prev, &op_key));
+            }
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, mut right_exprs) = if modifier.as_deref() == Some("X") {
@@ -997,6 +1160,7 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
                 right: right_exprs,
                 modifier,
             };
+            *current_assoc_key = Some(op_key);
             rest = r;
             continue;
         }
@@ -1212,6 +1376,12 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
             continue;
         }
         if let Some((meta, op, len)) = parse_meta_op(r) {
+            let op_key = format!("{meta}{op}");
+            if let Some(prev) = current_assoc_key.as_deref()
+                && prev != op_key
+            {
+                return Err(non_list_associative_error(prev, &op_key));
+            }
             if meta == "X"
                 && op == "cmp"
                 && matches!(
@@ -1223,10 +1393,7 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
                     } if prev_meta == "X" && prev_op == "cmp"
                 )
             {
-                return Err(PError::expected_at(
-                    "Non-associative operator 'Xcmp' cannot be chained",
-                    r,
-                ));
+                return Err(non_associative_error("Xcmp"));
             }
             let r = &r[len..];
             let (r, _) = ws(r)?;
@@ -1279,22 +1446,29 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
                 left: Box::new(left.clone()),
                 right: Box::new(right),
             };
+            *current_assoc_key = Some(op_key);
             rest = r;
             continue;
         }
         // Flip-flop operators: ff/fff and endpoint-excluding forms.
         if let Some((name, len)) = parse_flipflop_infix(r) {
+            if let Some(prev) = current_assoc_key.as_deref()
+                && prev != name
+            {
+                return Err(non_list_associative_error(prev, &name));
+            }
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = range_expr(r).map_err(|err| {
                 enrich_expected_error(err, "expected expression after flip-flop operator", r.len())
             })?;
             *left = Expr::InfixFunc {
-                name,
+                name: name.clone(),
                 left: Box::new(left.clone()),
                 right: vec![right],
                 modifier: None,
             };
+            *current_assoc_key = Some(name);
             rest = r;
             continue;
         }
@@ -1396,10 +1570,7 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
                 },
                 "non" => {
                     if args.len() > 2 {
-                        return Err(PError::fatal(format!(
-                            "Non-associative operator '{}' cannot be chained",
-                            name
-                        )));
+                        return Err(non_associative_error(&name));
                     }
                     Expr::InfixFunc {
                         name: name.clone(),
@@ -1718,7 +1889,7 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         parse_junctive_op(rest).is_some() || parse_junction_infix_op(rest).is_some()
     }
 
-    let (rest, mut left) = junctive_expr_mode(input, mode)?;
+    let (rest, mut left) = structural_comparison_expr_mode(input, mode)?;
     let (r, _) = ws(rest)?;
     // Detect Perl 5 =~ and !~ brainos (only when followed by space or m/)
     if r.starts_with("=~") && !r.starts_with("=~=") && !r.starts_with("=:=") {
@@ -1844,7 +2015,7 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         let r = &r[len..];
         let (r, _) = ws(r)?;
         let (r, right) = if mode == ExprMode::Full {
-            junctive_expr_mode(r, mode).map_err(|err| PError {
+            structural_comparison_expr_mode(r, mode).map_err(|err| PError {
                 messages: merge_expected_messages(
                     "expected expression after comparison operator",
                     &err.messages,
@@ -1853,7 +2024,7 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 exception: None,
             })?
         } else {
-            junctive_expr_mode(r, mode)?
+            structural_comparison_expr_mode(r, mode)?
         };
         let mut result = Expr::Unary {
             op: TokenKind::Bang,
@@ -1941,7 +2112,7 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             if let Ok((rest, expr)) = crate::parser::primary::regex::regex_lit(r) {
                 if regex_rhs_needs_more_parsing(rest) {
                     if mode == ExprMode::Full {
-                        junctive_expr_mode(r, mode).map_err(|err| {
+                        structural_comparison_expr_mode(r, mode).map_err(|err| {
                             // Preserve fatal errors with structured exceptions (e.g., X::Obsolete)
                             if err.is_fatal() && err.exception.is_some() {
                                 return err;
@@ -1956,14 +2127,14 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                             }
                         })?
                     } else {
-                        junctive_expr_mode(r, mode)?
+                        structural_comparison_expr_mode(r, mode)?
                     }
                 } else {
                     rhs_is_regex_lit = true;
                     (rest, expr)
                 }
             } else if mode == ExprMode::Full {
-                junctive_expr_mode(r, mode).map_err(|err| {
+                structural_comparison_expr_mode(r, mode).map_err(|err| {
                     // Preserve fatal errors with structured exceptions (e.g., X::Obsolete)
                     if err.is_fatal() && err.exception.is_some() {
                         return err;
@@ -1978,10 +2149,10 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                     }
                 })?
             } else {
-                junctive_expr_mode(r, mode)?
+                structural_comparison_expr_mode(r, mode)?
             }
         } else if mode == ExprMode::Full {
-            junctive_expr_mode(r, mode).map_err(|err| {
+            structural_comparison_expr_mode(r, mode).map_err(|err| {
                 // Preserve fatal errors with structured exceptions (e.g., X::Obsolete)
                 if err.is_fatal() && err.exception.is_some() {
                     return err;
@@ -1996,7 +2167,7 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 }
             })?
         } else {
-            junctive_expr_mode(r, mode)?
+            structural_comparison_expr_mode(r, mode)?
         };
         if matches!(op, ComparisonOp::SmartMatch | ComparisonOp::SmartNotMatch) {
             right = wrap_smartmatch_rhs(right);
@@ -2019,32 +2190,52 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         loop {
             let (r2, _) = ws(r)?;
             if let Some((cop, chain_len)) = parse_negated_meta_comparison_op(r2) {
+                if is_structural_comparison_op(cop) {
+                    break;
+                }
                 let r2 = &r2[chain_len..];
                 let (r2, _) = ws(r2)?;
-                let (r2, next_right) = junctive_expr_mode(r2, mode).map_err(|err| PError {
-                    messages: merge_expected_messages(
-                        "expected expression after chained negated comparison operator",
-                        &err.messages,
-                    ),
-                    remaining_len: err.remaining_len.or(Some(r2.len())),
-                    exception: None,
-                })?;
+                let (r2, next_right) =
+                    structural_comparison_expr_mode(r2, mode).map_err(|err| PError {
+                        messages: merge_expected_messages(
+                            "expected expression after chained negated comparison operator",
+                            &err.messages,
+                        ),
+                        remaining_len: err.remaining_len.or(Some(r2.len())),
+                        exception: None,
+                    })?;
+                if let (Some(prev), Some(next)) = (
+                    comparison_nonassoc_key(&chain_ops.last().expect("chain op").0),
+                    comparison_nonassoc_key(&cop.token_kind()),
+                ) {
+                    return Err(non_associative_error(&format!("{prev} and {next}")));
+                }
                 chain_ops.push((cop.token_kind(), true));
                 operands.push(next_right);
                 r = r2;
                 continue;
             }
             if let Some((cop, chain_len)) = parse_comparison_op(r2) {
+                if is_structural_comparison_op(cop) {
+                    break;
+                }
                 let r2 = &r2[chain_len..];
                 let (r2, _) = ws(r2)?;
-                let (r2, next_right) = junctive_expr_mode(r2, mode).map_err(|err| PError {
-                    messages: merge_expected_messages(
-                        "expected expression after chained comparison operator",
-                        &err.messages,
-                    ),
-                    remaining_len: err.remaining_len.or(Some(r2.len())),
-                    exception: None,
-                })?;
+                let (r2, next_right) =
+                    structural_comparison_expr_mode(r2, mode).map_err(|err| PError {
+                        messages: merge_expected_messages(
+                            "expected expression after chained comparison operator",
+                            &err.messages,
+                        ),
+                        remaining_len: err.remaining_len.or(Some(r2.len())),
+                        exception: None,
+                    })?;
+                if let (Some(prev), Some(next)) = (
+                    comparison_nonassoc_key(&chain_ops.last().expect("chain op").0),
+                    comparison_nonassoc_key(&cop.token_kind()),
+                ) {
+                    return Err(non_associative_error(&format!("{prev} and {next}")));
+                }
                 let next_right =
                     if matches!(cop, ComparisonOp::SmartMatch | ComparisonOp::SmartNotMatch) {
                         wrap_smartmatch_rhs(next_right)
@@ -2359,4 +2550,18 @@ pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
         ));
     }
     Ok((rest, left))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::parser::expr::expression;
+
+    #[test]
+    fn mixed_cross_and_sequence_are_non_list_associative() {
+        let err = expression("4 X+> 1...2").unwrap_err();
+        assert!(err.messages.iter().any(|msg| {
+            msg.as_str()
+                .contains("Only identical operators may be list associative")
+        }));
+    }
 }

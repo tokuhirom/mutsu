@@ -460,6 +460,7 @@ pub(crate) enum Stmt {
         param_defs: Vec<ParamDef>,
         return_type: Option<String>,
         associativity: Option<String>,
+        precedence_trait: Option<(String, String)>,
         signature_alternates: Vec<(Vec<String>, Vec<ParamDef>)>,
         body: Vec<Stmt>,
         multi: bool,

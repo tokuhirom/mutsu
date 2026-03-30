@@ -192,8 +192,11 @@ impl VM {
             let kind = kind.clone();
             let mut results = Vec::new();
             for v in values.iter() {
-                let r = if let Some(nr) = self.try_native_method(v, Symbol::intern(&method), &args)
+                let r = if let Some(threaded) =
+                    self.maybe_autothread_method_args(v, &method, &args)?
                 {
+                    threaded
+                } else if let Some(nr) = self.try_native_method(v, Symbol::intern(&method), &args) {
                     nr?
                 } else {
                     self.try_compiled_method_or_interpret(v.clone(), &method, args.clone())?
@@ -262,7 +265,11 @@ impl VM {
         {
             let result = self
                 .interpreter
-                .push_to_shared_var(&target_name, args, &target);
+                .push_to_existing_shared_array(&target_name, args.clone())
+                .unwrap_or_else(|| {
+                    self.interpreter
+                        .push_to_shared_var(&target_name, args, &target)
+                });
             self.stack.push(result);
             self.env_dirty = true;
             return Ok(());

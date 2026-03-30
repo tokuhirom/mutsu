@@ -783,8 +783,7 @@ impl Interpreter {
                     && let Some(constraint) = &pd.type_constraint
                 {
                     if let Some(captured_name) = constraint.strip_prefix("::") {
-                        self.env
-                            .insert(captured_name.to_string(), Self::captured_type_object(&base));
+                        self.bind_type_capture(captured_name, &base);
                     } else {
                         let coercion_target = if let Some(open) = constraint.find('(') {
                             if constraint.ends_with(')') && open > 0 {
@@ -915,7 +914,8 @@ impl Interpreter {
         };
         // Apply return type spec (e.g. `--> 5` returns literal 5 from empty body)
         let result = if let Some(ref return_spec) = method_def.return_type {
-            self.finalize_return_with_spec(result, Some(return_spec.as_str()))
+            let effective_return_spec = self.resolved_type_capture_name(return_spec);
+            self.finalize_return_with_spec(result, Some(effective_return_spec.as_str()))
         } else {
             result
         };

@@ -466,6 +466,9 @@ impl VM {
             Value::Str(s) => Some(s.to_string()),
             _ => None,
         });
+        let effective_return_spec = return_spec
+            .as_deref()
+            .map(|spec| self.interpreter.resolved_type_capture_name(spec));
 
         match result {
             Ok(()) if fail_bypass => Ok(ret_val),
@@ -473,7 +476,7 @@ impl VM {
                 // For closures, absorb `return` — don't re-propagate as error.
                 let base_val = explicit_return.unwrap_or(ret_val);
                 self.interpreter
-                    .finalize_return_with_spec(Ok(base_val), return_spec.as_deref())
+                    .finalize_return_with_spec(Ok(base_val), effective_return_spec.as_deref())
             }
             Err(e) => Err(e),
         }

@@ -194,6 +194,9 @@ impl Interpreter {
         self.block_stack.pop();
         self.pop_test_assertion_context(pushed_assertion);
         self.set_current_package(saved_package);
+        let effective_return_spec = return_spec
+            .as_deref()
+            .map(|spec| self.resolved_type_capture_name(spec));
         let implicit_return = self.env.get("_").cloned().unwrap_or(Value::Nil);
         let mut restored_env = saved_env;
         self.pop_caller_env_with_writeback(&mut restored_env);
@@ -229,7 +232,8 @@ impl Interpreter {
             Ok(()) => Ok(implicit_return),
             Err(e) => Err(e),
         };
-        let finalized = self.finalize_return_with_spec(call_result, return_spec.as_deref());
+        let finalized =
+            self.finalize_return_with_spec(call_result, effective_return_spec.as_deref());
         finalized.and_then(|v| self.maybe_fetch_rw_proxy(v, def.is_rw))
     }
 
@@ -344,13 +348,16 @@ impl Interpreter {
                     }
                     self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
                     self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
+                    let effective_return_spec = return_spec
+                        .as_deref()
+                        .map(|spec| self.resolved_type_capture_name(spec));
                     self.env = restored_env;
                     self.restore_readonly_vars(saved_readonly);
                     let call_result = match result {
                         Ok(()) => Ok(implicit_return),
                         Err(e) => Err(e),
                     };
-                    self.finalize_return_with_spec(call_result, return_spec.as_deref())?;
+                    self.finalize_return_with_spec(call_result, effective_return_spec.as_deref())?;
                 } else if let Some(err) = self.take_pending_dispatch_error() {
                     return Err(err);
                 } else if self.has_proto(name) {

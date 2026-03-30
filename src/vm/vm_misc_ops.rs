@@ -329,16 +329,15 @@ impl VM {
     }
 
     fn array_elements_match_constraint(&mut self, constraint: &str, value: &Value) -> bool {
-        // When the constraint is a parameterized container type (e.g. Array[Int]),
-        // check each element directly against the constraint without recursing into
-        // sub-arrays. For simple constraints (e.g. Int), recurse as usual.
-        let is_container_constraint = constraint.contains('[')
-            && constraint.split_once('[').is_some_and(|(base, _)| {
-                matches!(
-                    base,
-                    "Array" | "Hash" | "List" | "Seq" | "Positional" | "Associative"
-                )
-            });
+        // Container element constraints like `Array` or `Array[Int]` match each
+        // element as a whole. Scalar constraints like `Int` recurse into nested arrays.
+        let constraint_base = constraint
+            .split_once('[')
+            .map_or(constraint, |(base, _)| base);
+        let is_container_constraint = matches!(
+            constraint_base,
+            "Array" | "Hash" | "List" | "Seq" | "Positional" | "Associative"
+        );
         match value {
             Value::Array(items, ..) => {
                 if is_container_constraint {
@@ -1558,6 +1557,20 @@ impl VM {
             .split_once('(')
             .map_or(base_constraint, |(target, _)| target);
         let value = self.stack.last().expect("TypeCheck: empty stack").clone();
+        if var_name.is_some_and(|name| name.starts_with('%')) {
+            return Ok(());
+        }
+        if var_name.is_some_and(|name| name.starts_with('@'))
+            && let Value::Array(..) = &value
+        {
+            if !self.array_elements_match_constraint(constraint, &value) {
+                return Err(RuntimeError::typed_msg(
+                    "X::Syntax::Number::LiteralType",
+                    "Literal type mismatch",
+                ));
+            }
+            return Ok(());
+        }
         // When the constraint is a container type (List, Array, Positional, Seq, Cool, Any, Mu),
         // an Array value directly satisfies it — do NOT descend into element-level matching.
         // Element-level matching is for declarations like `my Int @x = 1, 2, 3`.

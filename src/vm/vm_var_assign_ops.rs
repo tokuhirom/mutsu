@@ -583,6 +583,27 @@ impl VM {
             let target_type = coercion_target(constraint).unwrap_or_else(|| constraint.to_string());
             let coerced = if self.interpreter.type_matches_value(&target_type, item) {
                 item.clone()
+            } else if target_type == "Array" {
+                match item {
+                    Value::Array(items, kind) if !kind.is_real_array() => {
+                        Value::Array(items.clone(), crate::value::ArrayKind::Array)
+                    }
+                    Value::Scalar(inner) => match inner.as_ref() {
+                        Value::Array(items, kind) if !kind.is_real_array() => {
+                            Value::Array(items.clone(), crate::value::ArrayKind::Array)
+                        }
+                        Value::Array(..) => inner.as_ref().clone(),
+                        _ => self
+                            .interpreter
+                            .try_coerce_value_for_constraint("Array()", item.clone())?,
+                    },
+                    _ => self
+                        .interpreter
+                        .try_coerce_value_for_constraint("Array()", item.clone())?,
+                }
+            } else if matches!(target_type.as_str(), "Array" | "List" | "Hash") {
+                self.interpreter
+                    .try_coerce_value_for_constraint(&format!("{target_type}()"), item.clone())?
             } else {
                 self.interpreter
                     .try_coerce_value_for_constraint(constraint, item.clone())?
@@ -2406,7 +2427,12 @@ impl VM {
         // closures created during the RHS expression can capture it.
         // This enables capture-by-reference patterns like:
         //   my $proxy := Proxy.new(STORE => -> $, \v { $proxy.VAR... })
-        if !self.interpreter.env().contains_key(name) {
+        //
+        // Skip &-sigiled variables here: seeding the lexical environment with
+        // `&name = Any` before the RHS runs makes `EVAL(q[sub name() { ... }])`
+        // look like a routine redeclaration instead of producing a callable to
+        // bind into `my &name = ...`.
+        if !name.starts_with('&') && !self.interpreter.env().contains_key(name) {
             let default = if name.starts_with('@') {
                 Value::real_array(Vec::new())
             } else if name.starts_with('%') {

@@ -1,4 +1,5 @@
 use super::*;
+use num_traits::ToPrimitive;
 
 /// Parse a coercion type like "Int()" or "Int(Rat)".
 /// Returns Some((target_type, optional_source_type)) if it's a coercion type.
@@ -19,7 +20,7 @@ pub(crate) fn parse_coercion_type(constraint: &str) -> Option<(&str, Option<&str
 }
 
 #[inline]
-pub(in crate::runtime) fn is_coercion_constraint(constraint: &str) -> bool {
+pub(crate) fn is_coercion_constraint(constraint: &str) -> bool {
     let bytes = constraint.as_bytes();
     bytes.last() == Some(&b')') && bytes.contains(&b'(') && !bytes.contains(&b'[')
 }
@@ -103,6 +104,26 @@ pub(in crate::runtime) fn coerce_value(target: &str, value: Value) -> Value {
                 _ => value,
             }
         }
+        "Complex" => match &value {
+            Value::Complex(_, _) => value,
+            Value::Int(n) => Value::Complex(*n as f64, 0.0),
+            Value::Num(n) => Value::Complex(*n, 0.0),
+            Value::Rat(n, d) if *d != 0 => Value::Complex(*n as f64 / *d as f64, 0.0),
+            Value::FatRat(n, d) if *d != 0 => Value::Complex(*n as f64 / *d as f64, 0.0),
+            Value::BigInt(n) => Value::Complex(n.to_f64().unwrap_or(0.0), 0.0),
+            Value::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
+                Value::Complex(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0), 0.0)
+            }
+            Value::Str(s) => match crate::runtime::str_numeric::parse_raku_str_to_numeric(s) {
+                Some(Value::Complex(re, im)) => Value::Complex(re, im),
+                Some(Value::Int(n)) => Value::Complex(n as f64, 0.0),
+                Some(Value::Num(n)) => Value::Complex(n, 0.0),
+                Some(Value::Rat(n, d)) if d != 0 => Value::Complex(n as f64 / d as f64, 0.0),
+                Some(Value::FatRat(n, d)) if d != 0 => Value::Complex(n as f64 / d as f64, 0.0),
+                _ => value,
+            },
+            _ => value,
+        },
         "Bool" => Value::Bool(value.truthy()),
         _ => value,
     }

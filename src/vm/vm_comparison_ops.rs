@@ -579,17 +579,19 @@ impl VM {
     pub(super) fn exec_spaceship_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let (left, right) = self.coerce_numeric_bridge_pair(left, right)?;
-        // NaN <=> anything produces Nil (unordered)
-        if is_nan_value(&left) || is_nan_value(&right) {
-            self.stack.push(Value::Nil);
-            return Ok(());
-        }
-        // Complex <=> Real: check $*TOLERANCE for imaginary part
-        let left = self.coerce_complex_to_real_if_tolerant(&left)?;
-        let right = self.coerce_complex_to_real_if_tolerant(&right)?;
-        let ord = Self::numeric_spaceship_ordering(&left, &right)?;
-        self.stack.push(runtime::make_order(ord));
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            // NaN <=> anything produces Nil (unordered)
+            if is_nan_value(&l) || is_nan_value(&r) {
+                return Ok(Value::Nil);
+            }
+            // Complex <=> Real: check $*TOLERANCE for imaginary part
+            let l = vm.coerce_complex_to_real_if_tolerant(&l)?;
+            let r = vm.coerce_complex_to_real_if_tolerant(&r)?;
+            let ord = Self::numeric_spaceship_ordering(&l, &r)?;
+            Ok(runtime::make_order(ord))
+        })?;
+        self.stack.push(result);
         Ok(())
     }
 

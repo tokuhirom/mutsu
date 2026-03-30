@@ -66,6 +66,12 @@ impl VM {
             };
             values.push(value);
         }
+        if let Some(result) = self
+            .interpreter
+            .push_to_existing_shared_array(&sigiled_target, values.clone())
+        {
+            return Ok(Some(result));
+        }
         let Some(target_value) =
             self.try_eval_simple_protect_expr(outer_code, &Expr::ArrayVar(target_name.clone()))
         else {

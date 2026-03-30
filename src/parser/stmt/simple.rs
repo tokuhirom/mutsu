@@ -40,6 +40,16 @@ struct LexicalScope {
     user_types: HashSet<String>,
 }
 
+#[derive(Clone)]
+struct InlineModuleExport {
+    name: String,
+    precedence: Option<i32>,
+    associativity: Option<String>,
+}
+
+pub(in crate::parser) type InlineModuleExportSpec =
+    (String, Option<(String, String)>, Option<String>);
+
 thread_local! {
     /// Lexical scope stack. Each `{ }` block pushes a new scope.
     /// `sub` declarations and `use` imports register names into the current (innermost) scope.
@@ -69,7 +79,7 @@ thread_local! {
     /// Inline module exports: module name → list of exported sub names.
     /// Populated when parsing `module Foo { sub bar() is export { ... } }` blocks.
     /// Used by `import` to register exported operators at parse time.
-    static INLINE_MODULE_EXPORTS: RefCell<HashMap<String, Vec<String>>> =
+    static INLINE_MODULE_EXPORTS: RefCell<HashMap<String, Vec<InlineModuleExport>>> =
         RefCell::new(HashMap::new());
 }
 
@@ -312,6 +322,11 @@ pub(in crate::parser) const PREC_PREFIX: i32 = 70;
 pub(in crate::parser) fn resolve_op_precedence(ref_op: &str) -> Option<i32> {
     // Strip &-sigil if present: &infix:<+> -> infix:<+>
     let op = ref_op.strip_prefix('&').unwrap_or(ref_op);
+
+    // Reduction form: &[+] -> +
+    if let Some(symbol) = op.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+        return resolve_infix_symbol_precedence(symbol);
+    }
 
     // Full categorical name: infix:<+>, prefix:<foo>, etc.
     if let Some(symbol) = op.strip_prefix("infix:<").and_then(|s| s.strip_suffix('>')) {
@@ -1001,10 +1016,30 @@ pub(in crate::parser) fn register_module_exports(module: &str) {
 
 /// Record exported subs from an inline `module Name { ... }` block.
 /// Called after parsing the module body, passing the module name and its exported sub names.
-pub(in crate::parser) fn register_inline_module_exports(module: &str, exports: Vec<String>) {
+pub(in crate::parser) fn register_inline_module_exports(
+    module: &str,
+    exports: Vec<InlineModuleExportSpec>,
+) {
     if exports.is_empty() {
         return;
     }
+    let exports = exports
+        .into_iter()
+        .map(|(name, precedence_trait, associativity)| {
+            let precedence = precedence_trait.as_ref().and_then(|(trait_name, ref_op)| {
+                resolve_op_precedence(ref_op).map(|ref_level| match trait_name.as_str() {
+                    "tighter" => ref_level + 5,
+                    "looser" => ref_level - 5,
+                    _ => ref_level,
+                })
+            });
+            InlineModuleExport {
+                name,
+                precedence,
+                associativity,
+            }
+        })
+        .collect();
     INLINE_MODULE_EXPORTS.with(|m| {
         m.borrow_mut().insert(module.to_string(), exports);
     });
@@ -1015,9 +1050,15 @@ pub(in crate::parser) fn register_inline_module_exports(module: &str, exports: V
 pub(in crate::parser) fn import_inline_module_exports(module: &str) {
     let exports = INLINE_MODULE_EXPORTS.with(|m| m.borrow().get(module).cloned());
     if let Some(exports) = exports {
-        for name in &exports {
-            register_user_sub(name);
-            register_user_callable_term_symbol(name);
+        for export in &exports {
+            register_user_sub(&export.name);
+            register_user_callable_term_symbol(&export.name);
+            if let Some(precedence) = export.precedence {
+                register_op_precedence(&export.name, precedence);
+            }
+            if let Some(assoc) = export.associativity.as_deref() {
+                register_user_infix_assoc(&export.name, assoc);
+            }
         }
         // Also register imported functions
         SCOPES.with(|s| {
@@ -1025,8 +1066,8 @@ pub(in crate::parser) fn import_inline_module_exports(module: &str) {
             let current = scopes
                 .last_mut()
                 .expect("scope stack should never be empty");
-            for name in &exports {
-                current.imported_functions.insert(name.clone());
+            for export in &exports {
+                current.imported_functions.insert(export.name.clone());
             }
         });
     }
@@ -1266,6 +1307,8 @@ fn check_io_func_followed_by_loop<'a>(name: &str, rest_after_ws: &'a str) -> PRe
 #[cfg(test)]
 mod tests {
     use super::extract_exported_names;
+    use super::{say_stmt, statement};
+    use crate::ast::{Expr, Stmt};
 
     #[test]
     fn extract_exported_names_fallback_handles_proto_and_kebab_case_names() {
@@ -1281,6 +1324,67 @@ sub helper() { }
         assert!(names.contains(&"doesn't-hang".to_string()));
         assert!(!names.contains(&"helper".to_string()));
     }
+
+    #[test]
+    fn say_stmt_rejects_adjacent_statement_keyword_without_separator() {
+        let err = say_stmt("say and die 73266").unwrap_err();
+        assert!(
+            err.messages
+                .iter()
+                .any(|msg| msg.contains("comma or statement end after argument"))
+        );
+    }
+
+    #[test]
+    fn statement_does_not_fall_back_after_invalid_say_args() {
+        assert!(statement("say and die 73266").is_err());
+    }
+
+    #[test]
+    fn statement_rewrites_scalar_decl_before_cross_metaop() {
+        let (_, stmt) = statement("my $a = (1, 3) X (2, 4);").unwrap();
+        match stmt {
+            Stmt::Expr(Expr::MetaOp { meta, left, .. }) => {
+                assert_eq!(meta, "X");
+                match left.as_ref() {
+                    Expr::DoStmt(inner) => match inner.as_ref() {
+                        Stmt::VarDecl { name, expr, .. } => {
+                            assert_eq!(name, "a");
+                            assert!(matches!(expr, Expr::ArrayLiteral(items) if items.len() == 2));
+                        }
+                        other => panic!("expected VarDecl in DoStmt, got {other:?}"),
+                    },
+                    other => panic!("expected DoStmt on left side, got {other:?}"),
+                }
+            }
+            other => panic!("expected rewritten X meta-op statement, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn statement_keeps_array_meta_assign_as_assignment() {
+        let (_, stmt) = statement("@a [X+]= @b;").unwrap();
+        match stmt {
+            Stmt::Assign { name, expr, .. } => {
+                assert_eq!(name, "@a");
+                match expr {
+                    Expr::MetaOp {
+                        meta,
+                        op,
+                        left,
+                        right,
+                    } => {
+                        assert_eq!(meta, "X");
+                        assert_eq!(op, "+");
+                        assert!(matches!(left.as_ref(), Expr::ArrayVar(name) if name == "a"));
+                        assert!(matches!(right.as_ref(), Expr::ArrayVar(name) if name == "b"));
+                    }
+                    other => panic!("expected meta-op rhs, got {other:?}"),
+                }
+            }
+            other => panic!("expected array assignment statement, got {other:?}"),
+        }
+    }
 }
 
 /// Parse a `say` statement.
@@ -1292,7 +1396,7 @@ pub(super) fn say_stmt(input: &str) -> PResult<'_, Stmt> {
     if let Ok((rest, stmt)) = parse_io_colon_invocant_stmt(rest, "say") {
         return parse_statement_modifier(rest, stmt);
     }
-    let (rest, args) = parse_expr_list(rest)?;
+    let (rest, args) = parse_io_expr_list(rest)?;
     let stmt = Stmt::Say(args);
     parse_statement_modifier(rest, stmt)
 }
@@ -1306,7 +1410,7 @@ pub(super) fn print_stmt(input: &str) -> PResult<'_, Stmt> {
     if let Ok((rest, stmt)) = parse_io_colon_invocant_stmt(rest, "print") {
         return parse_statement_modifier(rest, stmt);
     }
-    let (rest, args) = parse_expr_list(rest)?;
+    let (rest, args) = parse_io_expr_list(rest)?;
     let stmt = Stmt::Print(args);
     parse_statement_modifier(rest, stmt)
 }
@@ -1320,7 +1424,7 @@ pub(super) fn put_stmt(input: &str) -> PResult<'_, Stmt> {
     if let Ok((rest, stmt)) = parse_io_colon_invocant_stmt(rest, "put") {
         return parse_statement_modifier(rest, stmt);
     }
-    let (rest, args) = parse_expr_list(rest)?;
+    let (rest, args) = parse_io_expr_list(rest)?;
     let stmt = Stmt::Put(args);
     parse_statement_modifier(rest, stmt)
 }
@@ -1330,7 +1434,7 @@ pub(super) fn note_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("note", input).ok_or_else(|| PError::expected("note statement"))?;
     // `note` with no arguments is valid (prints "Noted\n")
     if let Ok((rest2, _)) = ws1(rest)
-        && let Ok((rest3, args)) = parse_expr_list(rest2)
+        && let Ok((rest3, args)) = parse_io_expr_list(rest2)
     {
         return parse_statement_modifier(rest3, Stmt::Note(args));
     }
@@ -1346,6 +1450,19 @@ pub(super) fn parse_expr_list(input: &str) -> PResult<'_, Vec<Expr>> {
     loop {
         let (r, _) = ws(rest)?;
         if !r.starts_with(',') {
+            let gap = &rest[..rest.len() - r.len()];
+            if !gap.contains('\n')
+                && !r.is_empty()
+                && !r.starts_with(';')
+                && !r.starts_with('}')
+                && !r.starts_with(')')
+                && !is_stmt_modifier_keyword(r)
+                && r.chars()
+                    .next()
+                    .is_some_and(crate::parser::helpers::is_raku_identifier_start)
+            {
+                return Err(PError::expected("comma or statement end after argument"));
+            }
             return Ok((r, items));
         }
         let (r, _) = parse_char(r, ',')?;
@@ -1361,6 +1478,23 @@ pub(super) fn parse_expr_list(input: &str) -> PResult<'_, Vec<Expr>> {
         let (r, next) = expression(r)?;
         items.push(next);
         rest = r;
+    }
+}
+
+fn parse_io_expr_list(input: &str) -> PResult<'_, Vec<Expr>> {
+    match parse_expr_list(input) {
+        Ok(ok) => Ok(ok),
+        Err(err)
+            if err
+                .messages
+                .iter()
+                .any(|msg| msg.contains("comma or statement end after argument")) =>
+        {
+            Err(PError::fatal(err.messages.first().cloned().unwrap_or_else(
+                || "comma or statement end after argument".to_string(),
+            )))
+        }
+        Err(err) => Err(err),
     }
 }
 

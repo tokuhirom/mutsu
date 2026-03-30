@@ -11,7 +11,7 @@ mod type_matching_static;
 mod type_registry;
 
 // Re-export public items from submodules
-pub(crate) use coercion::{coerce_impossible_error, parse_coercion_type};
+pub(crate) use coercion::{coerce_impossible_error, is_coercion_constraint, parse_coercion_type};
 pub(in crate::runtime) use signature::{
     bind_named_rename_sub_signature, bind_sub_signature_from_value, flatten_into_slurpy,
     indexed_varref_from_value, make_varref_value, sigilless_alias_key, sigilless_readonly_key,
@@ -19,7 +19,6 @@ pub(in crate::runtime) use signature::{
     varref_from_value, wrap_native_int_for_binding,
 };
 // Internal re-exports used by submodules via `use super::*`
-use coercion::is_coercion_constraint;
 use signature::code_signature_matches_value;
 
 const TEST_CALLSITE_LINE_KEY: &str = "__mutsu_test_callsite_line";
@@ -234,8 +233,15 @@ impl Interpreter {
     }
 
     pub(crate) fn bind_type_capture(&mut self, name: &str, value: &Value) {
-        self.env
-            .insert(name.to_string(), Self::captured_type_object(value));
+        let captured = Self::captured_type_object(value);
+        self.env.insert(name.to_string(), captured.clone());
+        if self.current_package != "GLOBAL"
+            && !name.contains("::")
+            && !name.starts_with(['$', '@', '%', '&', '!', '.', '?', '*', '/'])
+        {
+            self.env
+                .insert(format!("{}::{}", self.current_package, name), captured);
+        }
         self.env
             .insert(Self::type_capture_marker_key(name), Value::Bool(true));
     }
