@@ -159,6 +159,12 @@ impl Interpreter {
         match stmt {
             Stmt::Say(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) | Stmt::Put(exprs) => {
                 for expr in exprs {
+                    if let Expr::BareWord(name) = expr
+                        && !self.has_function(name)
+                        && !self.has_class(name)
+                    {
+                        return Some(name.clone());
+                    }
                     if let Some(name) = self.find_undeclared_var_in_expr(expr, declared) {
                         return Some(name);
                     }
