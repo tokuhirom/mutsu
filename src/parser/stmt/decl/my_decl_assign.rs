@@ -188,18 +188,62 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     }
     // Save flags before `s` is partially moved.
     let is_scalar = !s.is_array && !s.is_hash;
+    let var_name_for_leave = s.name.clone();
     // Scalar declarations stop at comma; array/hash consume the full comma list.
     let (rest, expr) = if s.is_array || s.is_hash {
         parse_assign_expr_or_comma(rest)?
     } else {
         expression(rest)?
     };
+    let expr = match expr {
+        Expr::MetaOp {
+            meta,
+            op,
+            left,
+            right,
+        } if is_scalar && matches!(meta.as_str(), "X" | "Z") => {
+            let stmt = Stmt::Expr(Expr::MetaOp {
+                meta,
+                op,
+                left: Box::new(Expr::DoStmt(Box::new(Stmt::VarDecl {
+                    name: s.name.clone(),
+                    expr: *left,
+                    type_constraint: s.type_constraint.clone(),
+                    is_state: s.is_state,
+                    is_our: s.is_our,
+                    is_dynamic: s.has_dynamic_trait,
+                    is_export: s.has_export_trait,
+                    export_tags: s.export_tags.clone(),
+                    custom_traits: {
+                        let mut traits = s.custom_traits.clone();
+                        if !traits.iter().any(|(name, _)| name == "__has_initializer") {
+                            traits.push(("__has_initializer".to_string(), None));
+                        }
+                        traits
+                    },
+                    where_constraint: s.where_constraint.clone(),
+                }))),
+                right,
+            });
+            let stmt = wrap_with_will_leave(stmt, &var_name_for_leave, s.will_leave_body);
+            let (rest, stmt) = parse_comma_chained_decls(rest, stmt)?;
+            let (rest, stmt) = if s.apply_modifier {
+                consume_scalar_decl_trailing_comma(rest, stmt)?
+            } else {
+                (rest, stmt)
+            };
+            if s.apply_modifier {
+                return parse_statement_modifier(rest, stmt);
+            }
+            return Ok((rest, stmt));
+        }
+        other => other,
+    };
     let expr = if let Some(dims) = s.shape_dims {
         shaped_array_new_with_data_expr(dims, expr)
     } else {
         expr
     };
-    let var_name_for_leave = s.name.clone();
     let mut custom_traits = s.custom_traits.clone();
     if !custom_traits
         .iter()

@@ -688,6 +688,46 @@ fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Expr> {
     }
 }
 
+pub(crate) fn rewrite_scalar_assignment_rhs_as_sink(name: String, rhs: Expr) -> Option<Expr> {
+    match rhs {
+        Expr::MetaOp {
+            meta,
+            op,
+            left,
+            right,
+        } if name.starts_with('$') && matches!(meta.as_str(), "X" | "Z") => Some(Expr::MetaOp {
+            meta,
+            op,
+            left: Box::new(Expr::AssignExpr { name, expr: left }),
+            right,
+        }),
+        _ => None,
+    }
+}
+
+pub(crate) fn rewrite_scalar_assignment_stmt_as_sink(name: String, rhs: Expr) -> Option<Stmt> {
+    match rhs {
+        Expr::MetaOp {
+            meta,
+            op,
+            left,
+            right,
+        } if name.starts_with('$') && matches!(meta.as_str(), "X" | "Z") => {
+            Some(Stmt::Expr(Expr::MetaOp {
+                meta,
+                op,
+                left: Box::new(Expr::DoStmt(Box::new(Stmt::Assign {
+                    name,
+                    expr: *left,
+                    op: AssignOp::Assign,
+                }))),
+                right,
+            }))
+        }
+        _ => None,
+    }
+}
+
 fn compound_index_assign_expr<F>(target: Expr, index: Expr, build_assigned_value: F) -> Expr
 where
     F: FnOnce(Expr) -> Expr,
@@ -731,6 +771,10 @@ pub(crate) fn build_compound_assign_expr(
     op: CompoundAssignOp,
     rhs: Expr,
 ) -> Result<Expr, PError> {
+    let lhs = match lhs {
+        Expr::Grouped(inner) => *inner,
+        other => other,
+    };
     Ok(match lhs {
         Expr::AssignExpr { name, expr } => {
             // ($x += 2) *= 3 → first evaluate inner assign, then apply outer op
@@ -859,6 +903,10 @@ fn build_custom_compound_assign_expr(
     op_name: String,
     rhs: Expr,
 ) -> Result<Expr, PError> {
+    let lhs = match lhs {
+        Expr::Grouped(inner) => *inner,
+        other => other,
+    };
     Ok(match lhs {
         Expr::Var(name) => Expr::AssignExpr {
             name: name.clone(),
@@ -1727,11 +1775,15 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 },
             ));
         }
+        let name = format!("{}{}", prefix, var);
         return Ok((
             rest,
-            Expr::AssignExpr {
-                name,
-                expr: Box::new(rhs),
+            match rewrite_scalar_assignment_rhs_as_sink(name.clone(), rhs.clone()) {
+                Some(expr) => expr,
+                None => Expr::AssignExpr {
+                    name,
+                    expr: Box::new(rhs),
+                },
             },
         ));
     }
@@ -1960,10 +2012,13 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             left: Box::new(var_expr),
             right: Box::new(rhs),
         };
-        let stmt = Stmt::Assign {
-            name,
-            expr,
-            op: AssignOp::Assign,
+        let stmt = match rewrite_scalar_assignment_stmt_as_sink(name.clone(), expr.clone()) {
+            Some(stmt) => stmt,
+            None => Stmt::Assign {
+                name,
+                expr,
+                op: AssignOp::Assign,
+            },
         };
         return parse_statement_modifier(rest, stmt);
     }

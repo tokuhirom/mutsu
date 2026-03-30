@@ -286,6 +286,7 @@ impl VM {
             is_test_assertion,
             supersede,
             custom_traits,
+            ..
         } = stmt
         {
             let resolved_name = if let Some(expr) = name_expr {

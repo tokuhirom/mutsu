@@ -3,7 +3,9 @@ use super::super::parse_result::{PError, PResult};
 use super::super::stmt::assign::parse_meta_compound_assign_op;
 
 use crate::ast::Expr;
+use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
+use crate::value::Value;
 
 use super::operators::*;
 use super::postfix::{postfix_expr_continue, prefix_expr};
@@ -1044,6 +1046,33 @@ fn autoincrement_expr(
         let rest = &input[len..];
         // Recurse to allow nested ++/-- (e.g. ++++$x)
         let (rest, expr) = autoincrement_expr(rest, base_parser)?;
+        if matches!(
+            expr,
+            Expr::PostfixOp {
+                op: TokenKind::PlusPlus | TokenKind::MinusMinus,
+                ..
+            }
+        ) {
+            let message = match op {
+                PrefixUnaryOp::PreInc => "prefix:<++>",
+                PrefixUnaryOp::PreDec => "prefix:<-->",
+                _ => unreachable!(),
+            };
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert(
+                "message".to_string(),
+                Value::str(format!(
+                    "Non-associative operator '{}' cannot be chained",
+                    message
+                )),
+            );
+            let exception =
+                Value::make_instance(Symbol::intern("X::Syntax::NonAssociative"), attrs);
+            return Err(PError::fatal_with_exception(
+                format!("Non-associative operator '{}' cannot be chained", message),
+                Box::new(exception),
+            ));
+        }
         return Ok((
             rest,
             Expr::Unary {
@@ -1099,10 +1128,25 @@ fn power_expr_inner(input: &str, base_parser: fn(&str) -> PResult<'_, Expr>) -> 
             let (r, exp) = super::postfix::prefix_expr(r).map_err(|err| {
                 enrich_expected_error(err, "expected exponent expression after '**'", r.len())
             })?; // right-associative, allow prefix on RHS
-            base = Expr::Binary {
-                left: Box::new(base),
-                op: TokenKind::StarStar,
-                right: Box::new(exp),
+            base = match base {
+                Expr::Binary {
+                    left,
+                    op: TokenKind::StarStar,
+                    right,
+                } => Expr::Binary {
+                    left,
+                    op: TokenKind::StarStar,
+                    right: Box::new(Expr::Binary {
+                        left: right,
+                        op: TokenKind::StarStar,
+                        right: Box::new(exp),
+                    }),
+                },
+                other => Expr::Binary {
+                    left: Box::new(other),
+                    op: TokenKind::StarStar,
+                    right: Box::new(exp),
+                },
             };
             rest = r;
             continue;

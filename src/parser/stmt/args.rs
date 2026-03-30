@@ -9,6 +9,79 @@ use crate::value::Value;
 
 use super::{ident, is_stmt_modifier_keyword, try_parse_assign_expr};
 
+fn regroup_assign_expr_metaop_rhs(expr: Expr) -> Expr {
+    let Expr::AssignExpr { name, expr } = expr else {
+        return expr;
+    };
+    let Expr::ArrayLiteral(mut items) = *expr else {
+        return Expr::AssignExpr { name, expr };
+    };
+    let Some(last) = items.pop() else {
+        return Expr::AssignExpr {
+            name,
+            expr: Box::new(Expr::ArrayLiteral(items)),
+        };
+    };
+    match last {
+        Expr::MetaOp {
+            meta,
+            op,
+            left,
+            right,
+        } if matches!(meta.as_str(), "X" | "Z") => {
+            items.push(*left);
+            Expr::AssignExpr {
+                name,
+                expr: Box::new(Expr::MetaOp {
+                    meta,
+                    op,
+                    left: Box::new(Expr::ArrayLiteral(items)),
+                    right,
+                }),
+            }
+        }
+        other => {
+            items.push(other);
+            Expr::AssignExpr {
+                name,
+                expr: Box::new(Expr::ArrayLiteral(items)),
+            }
+        }
+    }
+}
+
+fn split_assignment_rhs_call_args(expr: Expr) -> (Expr, Vec<Expr>) {
+    match expr {
+        Expr::AssignExpr { name, expr } => {
+            let (rhs, extras) = split_assignment_rhs_call_args(*expr);
+            (
+                Expr::AssignExpr {
+                    name,
+                    expr: Box::new(rhs),
+                },
+                extras,
+            )
+        }
+        Expr::ArrayLiteral(mut items) if items.len() > 1 => {
+            let first = items.remove(0);
+            (first, items)
+        }
+        other => (other, Vec::new()),
+    }
+}
+
+fn expand_call_arg(arg: CallArg) -> Vec<CallArg> {
+    match arg {
+        CallArg::Positional(expr @ Expr::AssignExpr { .. }) => {
+            let (expr, extras) = split_assignment_rhs_call_args(expr);
+            let mut args = vec![CallArg::Positional(expr)];
+            args.extend(extras.into_iter().map(CallArg::Positional));
+            args
+        }
+        other => vec![other],
+    }
+}
+
 /// Parse call arguments for statement-level function calls.
 /// Handles positional args, named args (fat arrow and colon pairs).
 pub(super) fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
@@ -63,7 +136,7 @@ pub(super) fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
                 return Ok((r2, args));
             }
         }
-        args.push(first_arg);
+        args.extend(expand_call_arg(first_arg));
         let mut r = r;
         loop {
             let (r2, _) = ws(r)?;
@@ -92,7 +165,7 @@ pub(super) fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
                 && !r2.starts_with("::")
                 && let Ok((r3, arg)) = parse_single_call_arg(r2)
             {
-                args.push(arg);
+                args.extend(expand_call_arg(arg));
                 r = r3;
                 continue;
             }
@@ -114,7 +187,7 @@ pub(super) fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
                 remaining_len: err.remaining_len.or(Some(r2.len())),
                 exception: None,
             })?;
-            args.push(arg);
+            args.extend(expand_call_arg(arg));
             r = r2;
         }
     }
@@ -199,7 +272,7 @@ pub(super) fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>
         args.append(&mut more);
         return Ok((after_args, args));
     }
-    args.push(first);
+    args.extend(expand_call_arg(first));
     loop {
         let (r, _) = ws(rest)?;
         if !r.starts_with(',') {
@@ -219,7 +292,7 @@ pub(super) fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
-        args.push(arg);
+        args.extend(expand_call_arg(arg));
         rest = r;
     }
 }
@@ -485,6 +558,7 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
 
     // Positional argument — try assignment expression first ($x = expr).
     // But do not consume a prefix before a fat-arrow chain (e.g. `2 => "x" => {...}`).
+    let parsed_expr = expression(input).or_else(|_| reduction_call_style_expr(input));
     if let Ok((rest, assign_expr)) = try_parse_assign_expr(input) {
         let (rest_ws, _) = ws(rest)?;
         let assign_is_arg_boundary = rest_ws.is_empty()
@@ -494,15 +568,24 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
             || rest_ws.starts_with(')')
             || is_stmt_modifier_keyword(rest_ws)
             || (rest_ws.starts_with(':') && !rest_ws.starts_with("::"));
-        if assign_is_arg_boundary && (!rest_ws.starts_with("=>") || rest_ws.starts_with("==>")) {
-            return Ok((rest, CallArg::Positional(assign_expr)));
+        let expr_consumes_more = parsed_expr
+            .as_ref()
+            .ok()
+            .is_some_and(|(expr_rest, _)| expr_rest.len() < rest.len());
+        if assign_is_arg_boundary
+            && !expr_consumes_more
+            && (!rest_ws.starts_with("=>") || rest_ws.starts_with("==>"))
+        {
+            return Ok((
+                rest,
+                CallArg::Positional(regroup_assign_expr_metaop_rhs(assign_expr)),
+            ));
         }
     }
     // Prefer full expression parsing for statement call arguments.
     // `reduction_call_style_expr` can misparse quote forms like `q<...>` as
     // infix-word operators in this context; keep it only as a fallback.
     // Also preserves correct behavior for unary-minus angle terms like `-<...>`.
-    let parsed_expr = expression(input).or_else(|_| reduction_call_style_expr(input));
     let (rest, expr) = parsed_expr.map_err(|err| PError {
         messages: merge_expected_messages("expected positional argument expression", &err.messages),
         remaining_len: err.remaining_len.or(Some(input.len())),
@@ -532,7 +615,10 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
         }
         return Ok((r, CallArg::Positional(compound_expr)));
     }
-    Ok((rest, CallArg::Positional(expr)))
+    Ok((
+        rest,
+        CallArg::Positional(regroup_assign_expr_metaop_rhs(expr)),
+    ))
 }
 
 #[cfg(test)]
@@ -565,5 +651,31 @@ mod tests {
     fn parse_single_call_arg_ascii_minus_angle_complex_literal() {
         let (rest, _) = parse_single_call_arg("-<42+2i>, 'x'").unwrap();
         assert_eq!(rest, ", 'x'");
+    }
+
+    #[test]
+    fn parse_call_args_prefers_longer_expression_over_partial_assign() {
+        let (rest, args) = parse_stmt_call_args("(@d = 1,3 Z 2,4), \"desc\";").unwrap();
+        assert_eq!(rest, ";");
+        match &args[0] {
+            CallArg::Positional(Expr::AssignExpr { name, expr }) => {
+                assert_eq!(name, "@d");
+                match expr.as_ref() {
+                    Expr::MetaOp {
+                        meta, left, right, ..
+                    } => {
+                        assert_eq!(meta, "Z");
+                        assert!(
+                            matches!(left.as_ref(), Expr::ArrayLiteral(items) if items.len() == 2)
+                        );
+                        assert!(
+                            matches!(right.as_ref(), Expr::ArrayLiteral(items) if items.len() == 2)
+                        );
+                    }
+                    other => panic!("expected Z meta-op RHS, got {other:?}"),
+                }
+            }
+            other => panic!("expected assignment expression argument, got {other:?}"),
+        }
     }
 }

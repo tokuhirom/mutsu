@@ -1993,6 +1993,57 @@ mod tests {
     }
 
     #[test]
+    fn known_call_stmt_keeps_chained_assignment_as_single_argument() {
+        simple::register_module_exports("Test");
+        let (rest, stmt) = simple::known_call_stmt("is $x = $y = $z, 18;").unwrap();
+        assert_eq!(rest, "");
+        match stmt {
+            Stmt::Call { name, args } => {
+                assert_eq!(name, "is");
+                assert!(matches!(
+                    args.first(),
+                    Some(CallArg::Positional(Expr::AssignExpr { .. }))
+                ));
+                assert!(matches!(
+                    args.get(1),
+                    Some(CallArg::Positional(Expr::Literal(Value::Int(18))))
+                ));
+            }
+            other => panic!("expected known call statement, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn known_call_stmt_splits_assignment_from_following_test_args() {
+        simple::register_module_exports("Test");
+        let (rest, stmt) = simple::known_call_stmt(
+            "is $ = bar(), \"NoModule::bar\", \"can import symbol not inside module\";",
+        )
+        .unwrap();
+        assert_eq!(rest, "");
+        match stmt {
+            Stmt::Call { name, args } => {
+                assert_eq!(name, "is");
+                assert!(matches!(
+                    args.first(),
+                    Some(CallArg::Positional(Expr::AssignExpr { .. }))
+                ));
+                assert!(matches!(
+                    args.get(1),
+                    Some(CallArg::Positional(Expr::Literal(Value::Str(expected))))
+                        if **expected == "NoModule::bar"
+                ));
+                assert!(matches!(
+                    args.get(2),
+                    Some(CallArg::Positional(Expr::Literal(Value::Str(expected))))
+                        if **expected == "can import symbol not inside module"
+                ));
+            }
+            other => panic!("expected known call statement, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn qualified_ident_requires_segment_after_double_colon() {
         let err = qualified_ident("Foo::").unwrap_err();
         assert!(err.message().contains("identifier after '::'"));
