@@ -1,6 +1,27 @@
 use super::*;
 
 impl Interpreter {
+    fn parameter_binding_error(message: String) -> RuntimeError {
+        let mut err = RuntimeError::new(message);
+        let mut ex_attrs = std::collections::HashMap::new();
+        ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+        let exception =
+            Value::make_instance(Symbol::intern("X::TypeCheck::Binding::Parameter"), ex_attrs);
+        err.exception = Some(Box::new(exception));
+        err
+    }
+
+    fn normalize_coercion_binding_error(err: RuntimeError) -> RuntimeError {
+        if matches!(
+            err.exception.as_deref(),
+            Some(Value::Instance { class_name, .. }) if class_name.resolve() == "X::Coerce::Impossible"
+        ) {
+            err
+        } else {
+            Self::parameter_binding_error(err.message)
+        }
+    }
+
     pub(crate) fn bind_function_args_values(
         &mut self,
         param_defs: &[ParamDef],
@@ -25,6 +46,25 @@ impl Interpreter {
         let mut rw_bindings = Vec::new();
         let mut raw_nonlvalue_params: Vec<String> = Vec::new();
         let mut raw_slurpy_sources = std::collections::HashSet::new();
+        if let Some(invocant_value) = self
+            .env
+            .get("self")
+            .cloned()
+            .or_else(|| self.env.get("?CLASS").cloned())
+        {
+            for pd in param_defs {
+                if !(pd.is_invocant || pd.traits.iter().any(|t| t == "invocant")) {
+                    continue;
+                }
+                if let Some(captured_name) = pd
+                    .type_constraint
+                    .as_deref()
+                    .and_then(|constraint| constraint.strip_prefix("::"))
+                {
+                    self.bind_type_capture(captured_name, &invocant_value);
+                }
+            }
+        }
         if param_defs.is_empty() {
             if params.is_empty() {
                 // No param_defs and no placeholder params -- nothing to bind.
@@ -530,27 +570,22 @@ impl Interpreter {
                         }
                     }
                     let raw_arg = args[positional_idx].clone();
-                    let source_type_constraint = varref_from_value(&raw_arg)
-                        .and_then(|(source_name, _)| {
-                            self.var_type_constraint(&source_name).or_else(|| {
-                                self.var_type_constraint(
-                                    source_name.trim_start_matches(['$', '@', '%', '&']),
-                                )
-                            })
-                        })
+                    let source_name = varref_from_value(&raw_arg)
+                        .map(|(source_name, _)| source_name)
                         .or_else(|| {
                             arg_sources
                                 .as_ref()
                                 .and_then(|names| names.get(positional_idx))
                                 .and_then(|name| name.as_ref())
-                                .and_then(|name| {
-                                    self.var_type_constraint(name).or_else(|| {
-                                        self.var_type_constraint(
-                                            name.trim_start_matches(['$', '@', '%', '&']),
-                                        )
-                                    })
-                                })
+                                .cloned()
                         });
+                    let source_type_constraint = source_name.as_deref().and_then(|source_name| {
+                        self.var_type_constraint(source_name).or_else(|| {
+                            self.var_type_constraint(
+                                source_name.trim_start_matches(['$', '@', '%', '&']),
+                            )
+                        })
+                    });
                     let bound_type_constraint = source_type_constraint
                         .clone()
                         .or_else(|| pd.type_constraint.clone());
@@ -588,6 +623,7 @@ impl Interpreter {
                     if let Some(constraint) = &pd.type_constraint
                         && (pd.name != "__type_only__" || self.is_resolvable_type(constraint))
                     {
+                        let resolved_constraint = self.resolved_type_capture_name(constraint);
                         let type_error_kind = "X::TypeCheck::Binding::Parameter";
                         // For &-sigil parameters, the type constraint specifies the
                         // callable's return type, not the type of the value itself.
@@ -599,7 +635,7 @@ impl Interpreter {
                                     "{}: Type check failed in binding to parameter '{}'; expected Callable[{}] but got {} ({})",
                                     type_error_kind,
                                     pd.name,
-                                    constraint,
+                                    resolved_constraint,
                                     crate::runtime::value_type_name(&value),
                                     crate::runtime::utils::gist_value(&value)
                                 ));
@@ -615,14 +651,15 @@ impl Interpreter {
                             }
                             // Then check the callable's return type matches the constraint
                             let return_type = self.callable_return_type(&value);
-                            let return_ok =
-                                return_type.as_deref().is_some_and(|rt| rt == constraint);
+                            let return_ok = return_type
+                                .as_deref()
+                                .is_some_and(|rt| rt == resolved_constraint);
                             if !return_ok {
                                 let mut err = RuntimeError::new(format!(
                                     "{}: Type check failed in binding to parameter '{}'; expected Callable[{}] but got {} ({})",
                                     type_error_kind,
                                     pd.name,
-                                    constraint,
+                                    resolved_constraint,
                                     crate::runtime::value_type_name(&value),
                                     crate::runtime::utils::gist_value(&value)
                                 ));
@@ -636,9 +673,11 @@ impl Interpreter {
                                 err.exception = Some(Box::new(exception));
                                 return Err(err);
                             }
-                        } else if let Some(captured_name) = constraint.strip_prefix("::") {
+                        } else if let Some(captured_name) = resolved_constraint.strip_prefix("::") {
                             self.bind_type_capture(captured_name, &value);
-                        } else if let Some((target, source)) = parse_coercion_type(constraint) {
+                        } else if let Some((target, source)) =
+                            parse_coercion_type(&resolved_constraint)
+                        {
                             // Coercion type: check source type if specified, then coerce
                             if let Some(src) = source
                                 && !self.type_matches_value(src, &value)
@@ -646,7 +685,7 @@ impl Interpreter {
                                 let mut err = RuntimeError::new(format!(
                                     "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
                                     pd.name,
-                                    constraint,
+                                    resolved_constraint,
                                     crate::runtime::value_type_name(&value)
                                 ));
                                 let mut ex_attrs = std::collections::HashMap::new();
@@ -660,18 +699,24 @@ impl Interpreter {
                                 return Err(err);
                             }
                             let original = value.clone();
-                            value = self.try_coerce_value_for_constraint(constraint, value)?;
+                            value = self
+                                .try_coerce_value_for_constraint(&resolved_constraint, value)
+                                .map_err(Self::normalize_coercion_binding_error)?;
                             if !self.type_matches_value(target, &value) {
-                                return Err(coerce_impossible_error(constraint, &original));
+                                return Err(coerce_impossible_error(
+                                    &resolved_constraint,
+                                    &original,
+                                ));
                             }
                         } else if pd.name.starts_with('@') || pd.name.starts_with('%') {
                             let expected = self
-                                .typed_container_param_expected(&pd.name, constraint)
-                                .unwrap_or_else(|| constraint.to_string());
+                                .typed_container_param_expected(&pd.name, &resolved_constraint)
+                                .unwrap_or_else(|| resolved_constraint.clone());
                             if !self.typed_container_param_matches(
                                 &pd.name,
-                                constraint,
+                                &resolved_constraint,
                                 &value,
+                                source_name.as_deref(),
                                 source_type_constraint.as_deref(),
                             ) {
                                 let mut err = RuntimeError::new(format!(
@@ -692,7 +737,7 @@ impl Interpreter {
                                 err.exception = Some(Box::new(exception));
                                 return Err(err);
                             }
-                        } else if constraint == "Num"
+                        } else if resolved_constraint == "Num"
                             && matches!(
                                 value,
                                 Value::Int(_)
@@ -703,9 +748,9 @@ impl Interpreter {
                             )
                         {
                             // Binding accepts numeric widening into Num parameters.
-                        } else if !self.type_matches_value(constraint, &value) {
+                        } else if !self.type_matches_value(&resolved_constraint, &value) {
                             let display_name = if pd.name == "__type_only__" {
-                                format!("parameter '{}'", constraint)
+                                format!("parameter '{}'", resolved_constraint)
                             } else {
                                 pd.name.clone()
                             };
@@ -713,14 +758,16 @@ impl Interpreter {
                                 "{}: Type check failed for {}: expected {}, got {}",
                                 type_error_kind,
                                 display_name,
-                                constraint,
+                                resolved_constraint,
                                 crate::runtime::value_type_name(&value)
                             )));
                         } else {
-                            value = self.try_coerce_value_for_constraint(constraint, value)?;
+                            value = self
+                                .try_coerce_value_for_constraint(&resolved_constraint, value)
+                                .map_err(Self::normalize_coercion_binding_error)?;
                         }
-                        if (constraint.starts_with("Associative[")
-                            || constraint.starts_with("Hash["))
+                        if (resolved_constraint.starts_with("Associative[")
+                            || resolved_constraint.starts_with("Hash["))
                             && let Value::Array(items, ..) = &value
                         {
                             let mut map = std::collections::HashMap::new();

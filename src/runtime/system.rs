@@ -332,6 +332,9 @@ impl Interpreter {
             ));
         }
         let previous_pod = self.env.get("=pod").cloned();
+        let saved_in_eval = self.env.get("__mutsu_in_eval").cloned();
+        self.env
+            .insert("__mutsu_in_eval".to_string(), Value::Bool(true));
         self.collect_pod_blocks(trimmed);
         // Collect operator sub names so the parser recognizes them in EVAL context
         let op_names = self.collect_operator_sub_names();
@@ -392,13 +395,27 @@ impl Interpreter {
             && err.message.contains("X::UnitScope::Invalid")
         {
             let wrapped = format!("{{ {}; }}", trimmed);
+            let saved_wrapped_eval = self.env.get("__mutsu_eval_wrapped_decls").cloned();
+            self.env
+                .insert("__mutsu_eval_wrapped_decls".to_string(), Value::Bool(true));
             result =
                 self.parse_and_eval_with_operators(&wrapped, &op_names, &op_assoc, &imported_names);
+            if let Some(saved) = saved_wrapped_eval {
+                self.env
+                    .insert("__mutsu_eval_wrapped_decls".to_string(), saved);
+            } else {
+                self.env.remove("__mutsu_eval_wrapped_decls");
+            }
         }
         if let Some(saved) = previous_pod {
             self.env.insert("=pod".to_string(), saved);
         } else {
             self.env.remove("=pod");
+        }
+        if let Some(saved) = saved_in_eval {
+            self.env.insert("__mutsu_in_eval".to_string(), saved);
+        } else {
+            self.env.remove("__mutsu_in_eval");
         }
         self.restore_routine_registry_eval(routine_snapshot);
         let current_roles = self.roles.clone();
@@ -456,6 +473,22 @@ impl Interpreter {
                 self.env.insert(key.clone(), value);
             } else {
                 self.env.remove(key);
+            }
+        }
+        // Lexical code variables created inside EVAL must not leak back into the
+        // caller's environment, or repeated EVALs of the same helper sub will
+        // trip routine redeclaration checks on stale `&name` bindings.
+        let callable_keys: std::collections::HashSet<String> = current_env
+            .keys()
+            .chain(env_snapshot.keys())
+            .filter(|key| key.starts_with('&'))
+            .cloned()
+            .collect();
+        for key in callable_keys {
+            if let Some(value) = env_snapshot.get(&key).cloned() {
+                self.env.insert(key, value);
+            } else {
+                self.env.remove(&key);
             }
         }
         // Restore $_ so EVAL does not clobber the caller's topic variable

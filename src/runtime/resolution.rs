@@ -210,6 +210,36 @@ impl Interpreter {
             .map(|(_, def)| def)
     }
 
+    fn method_args_match_for_invocant(
+        &mut self,
+        class_name: &str,
+        def: &MethodDef,
+        arg_values: &[Value],
+        role_bindings: Option<&HashMap<String, Value>>,
+    ) -> bool {
+        let saved_env = self.env.clone();
+        if let Some(bindings) = role_bindings {
+            for (name, value) in bindings {
+                self.env.insert(name.clone(), value.clone());
+            }
+        }
+        for pd in &def.param_defs {
+            if !(pd.is_invocant || pd.traits.iter().any(|t| t == "invocant")) {
+                continue;
+            }
+            if let Some(captured_name) = pd
+                .type_constraint
+                .as_deref()
+                .and_then(|constraint| constraint.strip_prefix("::"))
+            {
+                self.bind_type_capture(captured_name, &Value::Package(Symbol::intern(class_name)));
+            }
+        }
+        let args_match = self.method_args_match(arg_values, &def.param_defs);
+        self.env = saved_env;
+        args_match
+    }
+
     pub(crate) fn resolve_method_with_owner(
         &mut self,
         class_name: &str,
@@ -233,6 +263,7 @@ impl Interpreter {
                 .cloned()
             {
                 let any_multi = overloads.iter().any(|d| d.is_multi);
+                let mut first_visible_non_multi: Option<MethodDef> = None;
                 // Check if all overloads are submethods on an ancestor class
                 let all_submethods = overloads.iter().all(|d| d.is_my);
                 let is_ancestor = cn != class_name;
@@ -245,14 +276,15 @@ impl Interpreter {
                     if def.is_my && is_ancestor {
                         continue;
                     }
-                    let saved_env = self.env.clone();
-                    if let Some(bindings) = &role_bindings {
-                        for (name, value) in bindings {
-                            self.env.insert(name.clone(), value.clone());
-                        }
+                    if !any_multi && first_visible_non_multi.is_none() {
+                        first_visible_non_multi = Some(def.clone());
                     }
-                    let args_match = self.method_args_match(arg_values, &def.param_defs);
-                    self.env = saved_env;
+                    let args_match = self.method_args_match_for_invocant(
+                        class_name,
+                        &def,
+                        arg_values,
+                        role_bindings.as_ref(),
+                    );
                     if args_match {
                         if !any_multi {
                             // Non-multi: return the first match immediately
@@ -272,7 +304,7 @@ impl Interpreter {
                 // For non-multi methods, stop here — a subclass override
                 // hides the parent's version.
                 if !any_multi && all_matches.is_empty() {
-                    return None;
+                    return first_visible_non_multi.map(|def| (cn.clone(), def));
                 }
             }
         }
@@ -300,6 +332,34 @@ impl Interpreter {
             .map(|(i, _)| i)
             .collect();
         if tied.len() > 1 {
+            let best_where = tied
+                .iter()
+                .map(|&i| {
+                    all_matches[i]
+                        .1
+                        .param_defs
+                        .iter()
+                        .filter(|p| p.where_constraint.is_some())
+                        .count()
+                })
+                .max()
+                .unwrap_or(0);
+            let narrowed: Vec<usize> = tied
+                .iter()
+                .copied()
+                .filter(|&i| {
+                    all_matches[i]
+                        .1
+                        .param_defs
+                        .iter()
+                        .filter(|p| p.where_constraint.is_some())
+                        .count()
+                        == best_where
+                })
+                .collect();
+            if let Some(&i) = narrowed.first() {
+                best_idx = i;
+            }
             for &i in &tied {
                 if all_matches[i].1.is_default {
                     best_idx = i;
@@ -317,7 +377,7 @@ impl Interpreter {
         let mut total = 0usize;
         let mut arg_idx = 0;
         for pd in &def.param_defs {
-            if pd.is_invocant || pd.named {
+            if pd.is_invocant || pd.named || pd.name.starts_with("__type_capture__") {
                 continue;
             }
             if let Some(tc) = &pd.type_constraint {
@@ -397,6 +457,7 @@ impl Interpreter {
         method_name: &str,
         arg_values: &[Value],
     ) -> Vec<(String, MethodDef)> {
+        let role_bindings = self.class_role_param_bindings.get(class_name).cloned();
         let mro = self.class_mro(class_name);
         let mut matches = Vec::new();
         for cn in &mro {
@@ -415,7 +476,12 @@ impl Interpreter {
                     if def.is_my && is_ancestor {
                         continue;
                     }
-                    if self.method_args_match(arg_values, &def.param_defs) {
+                    if self.method_args_match_for_invocant(
+                        class_name,
+                        &def,
+                        arg_values,
+                        role_bindings.as_ref(),
+                    ) {
                         matches.push((cn.clone(), def));
                     }
                 }
@@ -444,6 +510,7 @@ impl Interpreter {
         method_name: &str,
         arg_values: &[Value],
     ) -> Option<(String, MethodDef)> {
+        let role_bindings = self.class_role_param_bindings.get(class_name).cloned();
         let mro = self.class_mro(class_name);
         for cn in mro {
             if cn != owner_class {
@@ -459,7 +526,12 @@ impl Interpreter {
                     if !def.is_private {
                         continue;
                     }
-                    if self.method_args_match(arg_values, &def.param_defs) {
+                    if self.method_args_match_for_invocant(
+                        class_name,
+                        &def,
+                        arg_values,
+                        role_bindings.as_ref(),
+                    ) {
                         return Some((cn.clone(), def));
                     }
                 }
@@ -474,6 +546,7 @@ impl Interpreter {
         method_name: &str,
         arg_values: &[Value],
     ) -> Option<(String, MethodDef)> {
+        let role_bindings = self.class_role_param_bindings.get(class_name).cloned();
         if arg_values.is_empty()
             && let Some(cached) = self
                 .private_zeroarg_method_cache
@@ -548,7 +621,12 @@ impl Interpreter {
                     if Self::is_stub_method_body(&def.body) {
                         continue;
                     }
-                    if self.method_args_match(arg_values, &def.param_defs) {
+                    if self.method_args_match_for_invocant(
+                        class_name,
+                        def,
+                        arg_values,
+                        role_bindings.as_ref(),
+                    ) {
                         return Some((cn.clone(), def.clone()));
                     }
                 }
@@ -556,7 +634,12 @@ impl Interpreter {
                     if !def.is_private {
                         continue;
                     }
-                    if self.method_args_match(arg_values, &def.param_defs) {
+                    if self.method_args_match_for_invocant(
+                        class_name,
+                        &def,
+                        arg_values,
+                        role_bindings.as_ref(),
+                    ) {
                         return Some((cn.clone(), def));
                     }
                 }
@@ -1015,6 +1098,9 @@ impl Interpreter {
                 }
                 other => other,
             };
+            let effective_return_spec = return_spec
+                .as_deref()
+                .map(|spec| self.resolved_type_capture_name(spec));
             self.block_stack.pop();
             self.routine_stack.pop();
             // Manage let saves based on sub result
@@ -1080,7 +1166,8 @@ impl Interpreter {
                 Err(e) if e.is_leave => return Err(e),
                 other => other,
             };
-            let finalized = self.finalize_return_with_spec(result, return_spec.as_deref());
+            let finalized =
+                self.finalize_return_with_spec(result, effective_return_spec.as_deref());
             let fetch_rw = data.is_rw && !data.is_raw;
             return finalized.and_then(|v| {
                 let v = if let Value::LazyList(list) = v {

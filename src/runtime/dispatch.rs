@@ -1,10 +1,11 @@
 use super::*;
+use crate::runtime::types::is_coercion_constraint;
 use crate::symbol::Symbol;
 
 type DispatchShape = (Option<String>, bool, bool, bool, bool, bool, bool);
 
 impl Interpreter {
-    fn constraint_base_name(constraint: &str) -> &str {
+    pub(crate) fn constraint_base_name(constraint: &str) -> &str {
         let mut end = constraint.len();
         for (idx, ch) in constraint.char_indices() {
             if ch == '[' || ch == '(' || ch == ':' {
@@ -289,7 +290,24 @@ impl Interpreter {
                 if i < args.len() {
                     // Unwrap VarRef Capture wrappers and check the source
                     // variable's declared type constraint for native type dispatch.
-                    let (arg, var_type) = self.unwrap_varref_for_dispatch(&args[i]);
+                    let (mut arg, var_type) = self.unwrap_varref_for_dispatch(&args[i]);
+                    if pd.name.starts_with('&')
+                        && let Some(return_type) = self.callable_return_type(&arg)
+                    {
+                        total += self.type_hierarchy_distance(
+                            base,
+                            &Value::Package(Symbol::intern(&return_type)),
+                        );
+                        continue;
+                    }
+                    if is_coercion_constraint(constraint)
+                        && let Value::Str(s) = &arg
+                        && matches!(base, "Int" | "Num" | "Rat" | "Complex" | "Numeric" | "Real")
+                        && let Some(parsed) =
+                            crate::runtime::str_numeric::parse_raku_str_to_numeric(s)
+                    {
+                        arg = parsed;
+                    }
                     if (pd.name.starts_with('@') || pd.name.starts_with('%'))
                         && let Some(info) = self.container_type_metadata(&arg)
                         && !info.value_type.is_empty()
@@ -344,6 +362,18 @@ impl Interpreter {
         } else {
             constraint
         };
+        if base == "Inf" {
+            return match value {
+                Value::Num(n) if n.is_infinite() && n.is_sign_positive() => 0,
+                _ => 500,
+            };
+        }
+        if base == "NaN" {
+            return match value {
+                Value::Num(n) if n.is_nan() => 0,
+                _ => 500,
+            };
+        }
         if base == value_type {
             return 0;
         }
@@ -561,6 +591,9 @@ impl Interpreter {
             .filter(|v| !matches!(v, Value::Pair(..)))
             .count();
         if name.contains("::") {
+            if let Some(def) = self.functions.get(&Symbol::intern(name)).cloned() {
+                return Some(def);
+            }
             let prefix = format!("{}/{arity}:", name);
             let untyped_key = format!("{}/{}", name, arity);
             let untyped_key_sym = Symbol::intern(&untyped_key);
@@ -581,6 +614,14 @@ impl Interpreter {
                 return Some(def);
             }
             return self.functions.get(&Symbol::intern(name)).cloned();
+        }
+        let exact_local = format!("{}::{}", self.current_package, name);
+        if let Some(def) = self.functions.get(&Symbol::intern(&exact_local)).cloned() {
+            return Some(def);
+        }
+        let exact_global = format!("GLOBAL::{}", name);
+        if let Some(def) = self.functions.get(&Symbol::intern(&exact_global)).cloned() {
+            return Some(def);
         }
         let prefix_local = format!("{}::{}/{}:", self.current_package, name, arity);
         let prefix_global = format!("GLOBAL::{}/{}:", name, arity);

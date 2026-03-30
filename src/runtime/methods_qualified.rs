@@ -210,6 +210,12 @@ impl Interpreter {
         if method.starts_with('!') || matches!(target, Value::Instance { .. }) {
             return None;
         }
+        // Let constructor dispatch handle qualified base-constructor calls like
+        // `self.Mu::new(...)`. Routing this through unqualified `.new` re-enters
+        // user-defined constructors and recurses indefinitely.
+        if matches!(target, Value::Package(_)) && qualifier == "Mu" && actual_method == "new" {
+            return None;
+        }
         let type_name = super::utils::value_type_name(target);
         let type_matches = qualifier == type_name || Self::type_inherits(type_name, qualifier);
         if type_matches {

@@ -92,7 +92,7 @@ impl Compiler {
             }
         }
         // Hoist sub declarations within the sub body
-        sub_compiler.hoist_sub_decls(body);
+        sub_compiler.hoist_sub_decls(body, true);
         // If sub body contains CATCH/CONTROL, wrap in implicit try
         if Self::has_catch_or_control(body) {
             sub_compiler.compile_try(body, &None);
@@ -402,7 +402,7 @@ impl Compiler {
             }
         }
         // Hoist sub declarations within the closure body
-        sub_compiler.hoist_sub_decls(body);
+        sub_compiler.hoist_sub_decls(body, true);
         // If body contains CATCH/CONTROL, wrap in implicit try
         if Self::has_catch_or_control(body) {
             sub_compiler.compile_try(body, &None);

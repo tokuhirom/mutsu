@@ -437,6 +437,9 @@ impl VM {
         self.interpreter
             .pop_test_assertion_context(pushed_assertion);
         self.interpreter.pop_block();
+        let effective_return_spec = return_spec
+            .as_deref()
+            .map(|spec| self.interpreter.resolved_type_capture_name(spec));
 
         let frame = self.pop_call_frame();
         let mut restored_env = frame.saved_env;
@@ -467,7 +470,7 @@ impl VM {
                     Ok(ret_val)
                 };
                 self.interpreter
-                    .finalize_return_with_spec(base_result, return_spec.as_deref())
+                    .finalize_return_with_spec(base_result, effective_return_spec.as_deref())
             }
             Err(e) => Err(e),
         }

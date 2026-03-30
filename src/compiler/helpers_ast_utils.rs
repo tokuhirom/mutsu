@@ -109,10 +109,19 @@ impl Compiler {
     /// the normal SubDecl handling will compile the body. Compiling here
     /// would cause the compiled_functions map (which is flat) to be overwritten
     /// by later hoists from other scopes.
-    pub(super) fn hoist_sub_decls(&mut self, stmts: &[Stmt]) {
+    pub(super) fn hoist_sub_decls(&mut self, stmts: &[Stmt], lexical_hoist: bool) {
         for stmt in stmts {
             if let Stmt::SubDecl { .. } = stmt {
-                let idx = self.code.add_stmt(stmt.clone());
+                let mut hoisted = stmt.clone();
+                if lexical_hoist
+                    && let Stmt::SubDecl { custom_traits, .. } = &mut hoisted
+                    && !custom_traits
+                        .iter()
+                        .any(|trait_name| trait_name == "__lexical_hoist")
+                {
+                    custom_traits.push("__lexical_hoist".to_string());
+                }
+                let idx = self.code.add_stmt(hoisted);
                 self.code.emit(OpCode::RegisterSub(idx));
             }
         }
