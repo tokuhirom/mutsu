@@ -26,6 +26,16 @@ pub(super) fn ternary(input: &str) -> PResult<'_, Expr> {
     ternary_mode(input, ExprMode::Full)
 }
 
+/// Parse a no-paren callable argument expression.
+///
+/// This uses the precedence tier just tighter than loose word-logicals
+/// (`and`, `or`, `xor`, `orelse`, `andthen`, `notandthen`) so that:
+/// - `foo 3 != 3` parses as `foo(3 != 3)`
+/// - `isfive 5 and isfive 5` parses as `isfive(5) and isfive(5)`
+pub(in crate::parser) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
+    or_or_expr_mode(input, ExprMode::NoSequenceNoFeed)
+}
+
 pub(super) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let (rest, cond) = or_expr_no_assign_mode(input, mode)?;
     let (rest_ws, _) = ws(rest)?;
