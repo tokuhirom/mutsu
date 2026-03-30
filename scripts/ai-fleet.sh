@@ -91,6 +91,7 @@ done
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 STOP_FILE="${REPO_ROOT}/tmp/.stop"
+SANDBOX_LOCK_DIR="${REPO_ROOT}/.git/sandbox/.locks"
 
 # --- Build fleet definition from options ---
 # Each entry: "window_name|command"
@@ -149,6 +150,56 @@ window_index() {
 }
 
 # Launch a fleet window
+# Find which sandbox branch a worker is using, by matching lock file PIDs
+# against the worker's process tree.
+find_worker_branch() {
+    local pane_pid="$1"
+    if [[ ! -d "$SANDBOX_LOCK_DIR" ]]; then
+        return
+    fi
+    # Collect all descendant PIDs (including pane_pid itself)
+    local all_pids="$pane_pid"
+    local descendants
+    descendants=$(get_descendants "$pane_pid")
+    if [[ -n "$descendants" ]]; then
+        all_pids="$all_pids $descendants"
+    fi
+    # Check each lock file
+    local lock_file lock_pid branch
+    for lock_file in "$SANDBOX_LOCK_DIR"/*.pid; do
+        [[ -f "$lock_file" ]] || continue
+        lock_pid="$(cat "$lock_file" 2>/dev/null || true)"
+        if [[ -z "$lock_pid" ]]; then
+            continue
+        fi
+        for pid in $all_pids; do
+            if [[ "$pid" == "$lock_pid" ]]; then
+                branch="$(basename "$lock_file" .pid)"
+                echo "$branch"
+                return
+            fi
+        done
+    done
+}
+
+# Capture last N lines from a dead pane (for diagnostics)
+capture_dead_pane() {
+    local name="$1"
+    local lines="${2:-10}"
+    local idx
+    idx=$(window_index "$name")
+    if [[ -z "$idx" ]]; then
+        return
+    fi
+    local output
+    output=$(tmux capture-pane -t ":$idx" -p -S "-${lines}" 2>/dev/null || true)
+    if [[ -n "$output" ]]; then
+        echo "  --- Last ${lines} lines from $name ---"
+        echo "$output" | sed 's/^/  | /'
+        echo "  --- end ---"
+    fi
+}
+
 launch_window() {
     local name="$1"
     local cmd="$2"
@@ -156,9 +207,10 @@ launch_window() {
 
     idx=$(window_index "$name")
     if [[ -n "$idx" ]]; then
-        # Window exists but pane is dead — kill and recreate
+        # Window exists but pane is dead — capture output, then kill and recreate
         echo "  Killing dead window: $name"
         if [[ "$DRY_RUN" -eq 0 ]]; then
+            capture_dead_pane "$name" 20
             tmux kill-window -t ":$idx"
         fi
     fi
@@ -166,6 +218,8 @@ launch_window() {
     echo "  Launching: $name"
     if [[ "$DRY_RUN" -eq 0 ]]; then
         tmux new-window -n "$name" -d "cd ${REPO_ROOT} && $cmd"
+        # Keep the window around when the process exits so we can inspect failures
+        tmux set-option -t "$name" remain-on-exit on 2>/dev/null || true
     fi
 }
 
@@ -194,7 +248,16 @@ show_status() {
             fi
         fi
 
-        printf "  %-25s  %-8s  pid=%-8s\n" "$name" "$status" "$pid"
+        local branch="-"
+        if [[ "$status" == "running" && "$pid" != "-" && "$pid" != "?" ]]; then
+            branch=$(find_worker_branch "$pid")
+            branch="${branch:--}"
+        fi
+
+        printf "  %-25s  %-8s  pid=%-8s  branch=%s\n" "$name" "$status" "$pid" "$branch"
+        if [[ "$status" == "DEAD" ]]; then
+            capture_dead_pane "$name" 5
+        fi
     done
 }
 
@@ -295,6 +358,18 @@ do_stop() {
 }
 
 # --- Main ---
+
+# Preflight: validate GH_TOKEN
+if [[ "$DRY_RUN" -eq 0 ]]; then
+    echo "Checking GH_TOKEN validity..."
+    if ! gh auth status 2>&1 | grep -q "Logged in"; then
+        echo "Error: GH_TOKEN is invalid or gh is not authenticated." >&2
+        echo "Run 'gh auth login' or update GH_TOKEN in .env" >&2
+        exit 1
+    fi
+    echo "GH_TOKEN is valid."
+    echo ""
+fi
 
 # Remove stop file if it exists (we're starting fresh)
 if [[ -f "$STOP_FILE" ]]; then
