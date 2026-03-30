@@ -1735,13 +1735,21 @@ impl VM {
         let val = if let Some(stored) = self.interpreter.get_state_var(&scoped_key) {
             stored.clone()
         } else {
-            self.interpreter.set_state_var(scoped_key, init_val.clone());
+            self.interpreter
+                .set_state_var(scoped_key.clone(), init_val.clone());
             init_val
         };
         let slot_idx = slot as usize;
         self.locals[slot_idx] = val.clone();
         let name = code.locals[slot_idx].clone();
-        self.interpreter.env_mut().insert(name, val);
+        self.interpreter.env_mut().insert(name.clone(), val);
+        // Store metadata mapping variable name to its state storage key.
+        // Closures that capture this variable can use this to update state
+        // storage when they modify the variable.
+        let meta_key = format!("__mutsu_state_key::{}", name);
+        self.interpreter
+            .env_mut()
+            .insert(meta_key, Value::str(scoped_key));
     }
 
     pub(super) fn exec_block_scope_op(

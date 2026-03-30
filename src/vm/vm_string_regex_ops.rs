@@ -217,121 +217,6 @@ fn samespace_replace(replacement: &str, matched: &str) -> String {
     result
 }
 
-/// Interpolate variables in s/// replacement strings (like a double-quoted string).
-/// Handles: $var, $var[idx], @var, ${...}
-fn interpolate_subst_replacement(
-    template: &str,
-    interpreter: &crate::runtime::Interpreter,
-) -> String {
-    let mut out = String::new();
-    let mut i = 0usize;
-    let bytes = template.as_bytes();
-    while i < bytes.len() {
-        // Handle escape sequences
-        if bytes[i] == b'\\' && i + 1 < bytes.len() {
-            let next = bytes[i + 1];
-            match next {
-                b'n' => {
-                    out.push('\n');
-                    i += 2;
-                }
-                b't' => {
-                    out.push('\t');
-                    i += 2;
-                }
-                b'\\' => {
-                    out.push('\\');
-                    i += 2;
-                }
-                b'$' => {
-                    out.push('$');
-                    i += 2;
-                }
-                b'@' => {
-                    out.push('@');
-                    i += 2;
-                }
-                _ => {
-                    out.push('\\');
-                    i += 1;
-                }
-            }
-            continue;
-        }
-        // Handle ${...}
-        if i + 1 < bytes.len()
-            && bytes[i] == b'$'
-            && bytes[i + 1] == b'{'
-            && let Some(close) = template[i + 2..].find('}')
-        {
-            let name = &template[i + 2..i + 2 + close];
-            let value = interpreter.env().get(name).cloned().unwrap_or(Value::Nil);
-            out.push_str(&value.to_string_value());
-            i += 2 + close + 1;
-            continue;
-        }
-        // Handle $var and $var[idx]
-        if bytes[i] == b'$' && i + 1 < bytes.len() {
-            let after = &template[i + 1..];
-            if let Some(name_len) = take_var_name(after) {
-                let name = &after[..name_len];
-                let after_name = &after[name_len..];
-                // Check for postcircumfix [idx]
-                if after_name.starts_with('[')
-                    && let Some(close) = after_name.find(']')
-                {
-                    let idx_str = &after_name[1..close];
-                    let value = interpreter.env().get(name).cloned().unwrap_or(Value::Nil);
-                    if let Ok(idx) = idx_str.parse::<i64>() {
-                        match &value {
-                            Value::Array(arr, _) => {
-                                let idx = if idx < 0 {
-                                    (arr.len() as i64 + idx) as usize
-                                } else {
-                                    idx as usize
-                                };
-                                let elem = arr.get(idx).cloned().unwrap_or(Value::Nil);
-                                out.push_str(&elem.to_string_value());
-                            }
-                            _ => {
-                                out.push_str(&value.to_string_value());
-                            }
-                        }
-                    } else {
-                        out.push_str(&value.to_string_value());
-                    }
-                    i += 1 + name_len + close + 1;
-                    continue;
-                }
-                let value = interpreter.env().get(name).cloned().unwrap_or(Value::Nil);
-                out.push_str(&value.to_string_value());
-                i += 1 + name_len;
-                continue;
-            }
-        }
-        // Handle @var
-        if bytes[i] == b'@' && i + 1 < bytes.len() {
-            let after = &template[i + 1..];
-            if let Some(name_len) = take_var_name(after) {
-                let name = &after[..name_len];
-                let value = interpreter
-                    .env()
-                    .get(&format!("@{name}"))
-                    .or_else(|| interpreter.env().get(name))
-                    .cloned()
-                    .unwrap_or(Value::Nil);
-                out.push_str(&value.to_string_value());
-                i += 1 + name_len;
-                continue;
-            }
-        }
-        let ch = template[i..].chars().next().unwrap();
-        out.push(ch);
-        i += ch.len_utf8();
-    }
-    out
-}
-
 /// Extract a variable name (identifier chars: alpha, digit, _, -, ::)
 fn take_var_name(input: &str) -> Option<usize> {
     let mut chars = input.char_indices();
@@ -416,7 +301,8 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
         let raw_replacement = normalize_subst_replacement(Self::const_str(code, replacement_idx));
-        let replacement = interpolate_subst_replacement(&raw_replacement, &self.interpreter);
+        let replacement = self.interpolate_subst_replacement_with_closures(&raw_replacement);
+
         let nth_spec = nth_idx.map(|idx| Self::const_str(code, idx).to_string());
         let x_count = x_count.map(|n| n as usize);
         let target = self
@@ -518,7 +404,8 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
         let raw_replacement = normalize_subst_replacement(Self::const_str(code, replacement_idx));
-        let replacement = interpolate_subst_replacement(&raw_replacement, &self.interpreter);
+        let replacement = self.interpolate_subst_replacement_with_closures(&raw_replacement);
+
         let nth_spec = nth_idx.map(|idx| Self::const_str(code, idx).to_string());
         let x_count = x_count.map(|n| n as usize);
         let target = self
@@ -1460,6 +1347,193 @@ impl VM {
                 }
             }
         }
+    }
+
+    /// Interpolate a substitution replacement string, evaluating `{...}` blocks
+    /// as closures (Raku double-quoted string semantics).
+    fn interpolate_subst_replacement_with_closures(&mut self, template: &str) -> String {
+        let mut out = String::new();
+        let mut i = 0usize;
+        let bytes = template.as_bytes();
+        while i < bytes.len() {
+            // Handle escape sequences
+            if bytes[i] == b'\\' && i + 1 < bytes.len() {
+                match bytes[i + 1] {
+                    b'n' => {
+                        out.push('\n');
+                        i += 2;
+                    }
+                    b't' => {
+                        out.push('\t');
+                        i += 2;
+                    }
+                    b'\\' => {
+                        out.push('\\');
+                        i += 2;
+                    }
+                    b'$' => {
+                        out.push('$');
+                        i += 2;
+                    }
+                    b'@' => {
+                        out.push('@');
+                        i += 2;
+                    }
+                    b'{' => {
+                        out.push('{');
+                        i += 2;
+                    }
+                    _ => {
+                        out.push('\\');
+                        i += 1;
+                    }
+                }
+                continue;
+            }
+            // Handle {expr} code blocks
+            if bytes[i] == b'{' {
+                // Find matching closing brace (respecting nesting)
+                let mut depth = 1;
+                let mut j = i + 1;
+                while j < bytes.len() && depth > 0 {
+                    if bytes[j] == b'{' {
+                        depth += 1;
+                    }
+                    if bytes[j] == b'}' {
+                        depth -= 1;
+                    }
+                    if depth > 0 {
+                        j += 1;
+                    }
+                }
+                if depth == 0 {
+                    let code_str = &template[i + 1..j];
+                    let parsed = crate::parse_dispatch::parse_source(code_str);
+                    if let Ok((stmts, _)) = parsed {
+                        // Save $_ before evaluating the code block, as
+                        // eval_block_value may clobber the topic variable.
+                        let saved_topic = self.interpreter.env().get("_").cloned();
+                        let val = self
+                            .interpreter
+                            .eval_block_value(&stmts)
+                            .unwrap_or(Value::Nil);
+                        // Restore $_ so the substitution can find the target
+                        if let Some(topic) = saved_topic {
+                            self.interpreter.env_mut().insert("_".to_string(), topic);
+                        }
+                        out.push_str(&val.to_string_value());
+                    } else {
+                        // If parsing fails, treat as literal text
+                        out.push('{');
+                        out.push_str(code_str);
+                        out.push('}');
+                    }
+                    i = j + 1;
+                    continue;
+                }
+                // Handle ${...}
+                if i + 1 < bytes.len()
+                    && bytes[i] == b'$'
+                    && bytes[i + 1] == b'{'
+                    && let Some(close) = template[i + 2..].find('}')
+                {
+                    let name = &template[i + 2..i + 2 + close];
+                    let value = self
+                        .interpreter
+                        .env()
+                        .get(name)
+                        .cloned()
+                        .unwrap_or(Value::Nil);
+                    out.push_str(&value.to_string_value());
+                    i += 2 + close + 1;
+                    continue;
+                }
+            }
+            // Handle $var and $var[idx]
+            if bytes[i] == b'$' && i + 1 < bytes.len() {
+                let after = &template[i + 1..];
+                if let Some(name_len) = take_var_name(after) {
+                    let name = &after[..name_len];
+                    let after_name = &after[name_len..];
+                    // Check for postcircumfix [idx]
+                    if after_name.starts_with('[')
+                        && let Some(close) = after_name.find(']')
+                    {
+                        let idx_str = &after_name[1..close];
+                        let value = self
+                            .interpreter
+                            .env()
+                            .get(name)
+                            .cloned()
+                            .unwrap_or(Value::Nil);
+                        if let Ok(idx) = idx_str.parse::<i64>() {
+                            match &value {
+                                Value::Array(arr, _) => {
+                                    let idx = if idx < 0 {
+                                        (arr.len() as i64 + idx) as usize
+                                    } else {
+                                        idx as usize
+                                    };
+                                    let elem = arr.get(idx).cloned().unwrap_or(Value::Nil);
+                                    out.push_str(&elem.to_string_value());
+                                }
+                                _ => {
+                                    out.push_str(&value.to_string_value());
+                                }
+                            }
+                        } else {
+                            out.push_str(&value.to_string_value());
+                        }
+                        i += 1 + name_len + close + 1;
+                        continue;
+                    }
+                    let value = self
+                        .interpreter
+                        .env()
+                        .get(name)
+                        .cloned()
+                        .unwrap_or(Value::Nil);
+                    out.push_str(&value.to_string_value());
+                    i += 1 + name_len;
+                    continue;
+                }
+            }
+            // Handle @var[]
+            if bytes[i] == b'@' && i + 1 < bytes.len() {
+                let after = &template[i + 1..];
+                if let Some(name_len) = take_var_name(after) {
+                    let name = &after[..name_len];
+                    let after_name = &after[name_len..];
+                    if after_name.starts_with('[')
+                        && let Some(close) = after_name.find(']')
+                    {
+                        let arr_name = format!("@{}", name);
+                        let value = self
+                            .interpreter
+                            .env()
+                            .get(&arr_name)
+                            .cloned()
+                            .unwrap_or(Value::Nil);
+                        out.push_str(&value.to_string_value());
+                        i += 1 + name_len + close + 1;
+                        continue;
+                    }
+                    let arr_name = format!("@{}", name);
+                    let value = self
+                        .interpreter
+                        .env()
+                        .get(&arr_name)
+                        .cloned()
+                        .unwrap_or(Value::Nil);
+                    out.push_str(&value.to_string_value());
+                    i += 1 + name_len;
+                    continue;
+                }
+            }
+            out.push(template[i..].chars().next().unwrap());
+            i += template[i..].chars().next().unwrap().len_utf8();
+        }
+        out
     }
 }
 
