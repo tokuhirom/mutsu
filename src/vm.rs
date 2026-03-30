@@ -99,6 +99,14 @@ pub(crate) struct VM {
     /// When Some, state var keys are suffixed with `#c{id}` to give each
     /// closure clone its own state. Pushed/popped around closure calls.
     state_scope_id: Option<u64>,
+    /// Cache for compiled function resolution.
+    /// Maps (name, arity) → (compiled_fns key, fingerprint).
+    #[allow(clippy::type_complexity)]
+    fn_resolve_cache: HashMap<(Symbol, usize, Vec<String>), (String, u64, String)>,
+    /// Generation counter for fn_resolve_cache invalidation.
+    fn_resolve_gen: u64,
+    /// The generation at which fn_resolve_cache was last populated.
+    fn_resolve_cache_gen: u64,
 }
 
 impl VM {
@@ -239,6 +247,9 @@ impl VM {
             explicit_initializer_context: false,
             otf_compile_cache: HashMap::new(),
             state_scope_id: None,
+            fn_resolve_cache: HashMap::new(),
+            fn_resolve_gen: 0,
+            fn_resolve_cache_gen: 0,
         }
     }
 

@@ -449,17 +449,14 @@ impl VM {
         }
 
         // Clean up variables that were declared locally in this closure but
-        // not captured from an outer scope.  Only iterate when there are
-        // locals that might need cleanup (skip for trivial closures).
-        if local_names.len() > captured_names.len() + param_names.len() {
-            for local_name in cc.locals.iter() {
-                if !local_name.is_empty()
-                    && !captured_names.contains(local_name.as_str())
-                    && !param_names.contains(local_name.as_str())
-                    && !local_name.starts_with("__mutsu_")
-                {
-                    restored_env.remove(local_name);
-                }
+        // not captured from an outer scope.
+        for local_name in cc.locals.iter() {
+            if !local_name.is_empty()
+                && !captured_names.contains(local_name.as_str())
+                && !param_names.contains(local_name.as_str())
+                && !local_name.starts_with("__mutsu_")
+            {
+                restored_env.remove(local_name);
             }
         }
 

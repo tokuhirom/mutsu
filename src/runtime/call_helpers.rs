@@ -197,7 +197,15 @@ impl Interpreter {
 
     pub(crate) fn inject_pending_callsite_line(&mut self) {
         if let Some(line) = self.test_pending_callsite_line {
-            self.env.insert("?LINE".to_string(), Value::Int(line));
+            // Only insert if ?LINE differs, to avoid triggering Arc::make_mut
+            // deep clone on the CoW env in tight function call loops.
+            let needs_update = self
+                .env
+                .get("?LINE")
+                .is_none_or(|v| !matches!(v, Value::Int(l) if *l == line));
+            if needs_update {
+                self.env.insert("?LINE".to_string(), Value::Int(line));
+            }
         }
     }
 
