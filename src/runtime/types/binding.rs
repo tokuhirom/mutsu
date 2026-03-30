@@ -38,9 +38,18 @@ impl Interpreter {
             .cloned()
             .map(unwrap_varref_value)
             .collect();
-        // Always set @_ for legacy Perl-style argument access
-        self.env
-            .insert("@_".to_string(), Value::array(plain_args.clone()));
+        // Always set @_ for legacy Perl-style argument access.
+        // Skip the insert when args are empty and @_ is already empty,
+        // to avoid triggering Arc::make_mut deep clone on the CoW env.
+        let skip_at_underscore = plain_args.is_empty()
+            && self
+                .env
+                .get("@_")
+                .is_some_and(|v| matches!(v, Value::Array(elems, _) if elems.is_empty()));
+        if !skip_at_underscore {
+            self.env
+                .insert("@_".to_string(), Value::array(plain_args.clone()));
+        }
         let args = filtered_args.as_slice();
         let arg_sources = self.take_pending_call_arg_sources();
         let mut rw_bindings = Vec::new();

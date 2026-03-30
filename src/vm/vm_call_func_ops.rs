@@ -327,13 +327,17 @@ impl VM {
                 self.interpreter.push_samewith_context(name, None);
                 // Use the function's defining package so that lookups inside the
                 // function body resolve against the correct namespace.
-                let resolved_def = self.interpreter.resolve_function_with_types(name, &args);
-                if let Some(ref def) = resolved_def {
-                    self.interpreter.check_deprecation_for_def(def);
-                }
-                let pkg = resolved_def
-                    .map(|def| def.package.resolve())
-                    .unwrap_or_else(|| self.interpreter.current_package().to_string());
+                let pkg = if let Some(cached_pkg) = self.cached_fn_package(name, args.len()) {
+                    cached_pkg
+                } else {
+                    let resolved_def = self.interpreter.resolve_function_with_types(name, &args);
+                    if let Some(ref def) = resolved_def {
+                        self.interpreter.check_deprecation_for_def(def);
+                    }
+                    resolved_def
+                        .map(|def| def.package.resolve())
+                        .unwrap_or_else(|| self.interpreter.current_package().to_string())
+                };
                 let cf_auto_fetch = !cf.is_raw;
                 let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, name);
                 self.interpreter.set_pending_call_arg_sources(None);
