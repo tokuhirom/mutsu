@@ -323,7 +323,7 @@ pub(crate) fn parse_program_partial(input: &str) -> (Vec<Stmt>, Option<String>) 
 mod tests {
     use super::parse_program;
     use crate::ast::{Expr, Stmt};
-    use crate::value::RuntimeErrorCode;
+    use crate::value::{RuntimeErrorCode, Value};
 
     /// Filter out SetLine statements from parsed output for test assertions.
     fn filter_setline(stmts: Vec<Stmt>) -> Vec<Stmt> {
@@ -551,5 +551,73 @@ is_run q<use lib '> ~ $pkg-path ~ q<'; use GH2897-B; (^3).map( { my-counter } ).
         let src = r#"use Test; sub postfix:<R>($x) { $x.FatRat }; isa-ok .88888888888R.WHAT, FatRat, 'leading-dot decimal with postfix/method in args';"#;
         let parsed = parse_program(src);
         assert!(parsed.is_ok(), "{parsed:?}");
+    }
+
+    #[test]
+    fn parse_program_stops_user_sub_args_before_loose_and() {
+        let src = r#"sub isfive(*@args) { }; isfive 5 and isfive 5;"#;
+        let (stmts, _) = parse_program(src).unwrap();
+        match &stmts[1] {
+            Stmt::Expr(Expr::Binary { left, op, right }) => {
+                assert_eq!(*op, crate::token_kind::TokenKind::AndAnd);
+                match left.as_ref() {
+                    Expr::Call { name, args } => {
+                        assert_eq!(name.resolve(), "isfive");
+                        assert_eq!(args.len(), 1);
+                        assert!(matches!(args[0], Expr::Literal(Value::Int(5))));
+                    }
+                    other => panic!("expected lhs call, got {other:?}"),
+                }
+                match right.as_ref() {
+                    Expr::Call { name, args } => {
+                        assert_eq!(name.resolve(), "isfive");
+                        assert_eq!(args.len(), 1);
+                        assert!(matches!(args[0], Expr::Literal(Value::Int(5))));
+                    }
+                    other => panic!("expected rhs call, got {other:?}"),
+                }
+            }
+            other => panic!("expected binary and expression, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_program_keeps_comparison_inside_user_sub_arg() {
+        let src = r#"sub foo($x) { }; foo 3 != 3;"#;
+        let (stmts, _) = parse_program(src).unwrap();
+        match &stmts[1] {
+            Stmt::Expr(Expr::Call { name, args }) => {
+                assert_eq!(name.resolve(), "foo");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(
+                    args[0],
+                    Expr::Binary {
+                        op: crate::token_kind::TokenKind::BangEq,
+                        ..
+                    }
+                ));
+            }
+            other => panic!("expected foo call, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_program_keeps_eq_inside_named_unary_arg() {
+        let src = r#"uc "a" eq "A";"#;
+        let (stmts, _) = parse_program(src).unwrap();
+        match &stmts[0] {
+            Stmt::Expr(Expr::Call { name, args }) => {
+                assert_eq!(name.resolve(), "uc");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(
+                    args[0],
+                    Expr::Binary {
+                        op: crate::token_kind::TokenKind::Ident(ref op),
+                        ..
+                    } if op == "eq"
+                ));
+            }
+            other => panic!("expected uc call, got {other:?}"),
+        }
     }
 }
