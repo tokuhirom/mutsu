@@ -408,7 +408,7 @@ impl Compiler {
         } else {
             stmts
         };
-        self.hoist_sub_decls(stmts);
+        self.hoist_sub_decls(stmts, false);
         // If the top-level body contains a CATCH block, wrap in implicit try.
         let has_catch = stmts.iter().any(|s| matches!(s, Stmt::Catch(_)));
         if has_catch {

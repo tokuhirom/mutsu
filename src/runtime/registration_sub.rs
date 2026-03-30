@@ -94,6 +94,8 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let is_method_value_decl = custom_traits.iter().any(|t| t == "__mutsu_method_decl");
         let allow_redeclare = supersede || is_method_value_decl;
+        let is_our_scoped = custom_traits.iter().any(|t| t == "__our_scoped");
+        let is_lexical_hoist = custom_traits.iter().any(|t| t == "__lexical_hoist");
         Self::validate_callable_param_return_redeclaration(param_defs)?;
         if let Some(spec) = return_type
             && self.is_definite_return_spec(spec)
@@ -165,6 +167,19 @@ impl Interpreter {
                 t.strip_prefix("DEPRECATED:").map(|msg| msg.to_string())
             }
         });
+        if multi {
+            let single_key = format!("{}::{}", self.current_package, name);
+            if is_our_scoped && !self.proto_subs.contains(&single_key) {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert(
+                    "message".to_string(),
+                    Value::str(
+                        "Cannot declare individual multi candidates in 'our' scope".to_string(),
+                    ),
+                );
+                return Err(RuntimeError::typed("X::Declaration::Scope::Multi", attrs));
+            }
+        }
         let new_def = FunctionDef {
             package: Symbol::intern(&self.current_package),
             name: Symbol::intern(name),
@@ -189,7 +204,12 @@ impl Interpreter {
             .keys()
             .any(|k| k.resolve().starts_with(&multi_prefix));
         let has_proto = self.proto_subs.contains(&single_key);
-        let allow_lexical_shadow = self.block_scope_depth > 0;
+        let allow_lexical_shadow = (self.block_scope_depth > 0 || is_lexical_hoist)
+            && !matches!(self.env.get("__mutsu_in_eval"), Some(Value::Bool(true)))
+            && !matches!(
+                self.env.get("__mutsu_eval_wrapped_decls"),
+                Some(Value::Bool(true))
+            );
         let code_var_key = format!("&{}", name);
         if let Some(existing) = self.env.get(&code_var_key) {
             // Mixin values in &name come from trait_mod and should not block registration
@@ -238,17 +258,23 @@ impl Interpreter {
             if has_single && !has_proto && !allow_redeclare && !allow_lexical_shadow {
                 return Err(RuntimeError::redeclaration_routine(name));
             }
-        } else if !allow_redeclare {
-            // Defining a plain sub when multi candidates exist (without proto) is always
-            // an error, even in inner scopes, because it creates an ambiguous dispatch.
+        } else if !allow_redeclare && !allow_lexical_shadow {
             if has_multi && !has_proto {
                 return Err(RuntimeError::redeclaration_routine(name));
             }
-            if !allow_lexical_shadow && has_single && !existing_is_stub {
+            if has_single && !existing_is_stub {
                 return Err(RuntimeError::redeclaration_routine(name));
             }
         }
         let def = new_def;
+        if !multi && allow_lexical_shadow && !is_our_scoped {
+            let lexical_single = format!("{}::{}", self.current_package, name);
+            let lexical_multi_prefix = format!("{}::{}/", self.current_package, name);
+            self.functions.retain(|key, _| {
+                let resolved = key.resolve();
+                resolved != lexical_single && !resolved.starts_with(&lexical_multi_prefix)
+            });
+        }
         if let Some(assoc) = associativity {
             self.operator_assoc.insert(name.to_string(), assoc.clone());
             self.operator_assoc
@@ -328,7 +354,6 @@ impl Interpreter {
         }
         // If this is an our-scoped sub, also store it in the persistent our_scoped_functions
         // so it survives block scope restoration.
-        let is_our_scoped = custom_traits.iter().any(|t| t == "__our_scoped");
         if is_our_scoped {
             let fq = format!("{}::{}", self.current_package, name);
             if let Some(f) = self.functions.get(&Symbol::intern(&fq)) {
@@ -427,6 +452,11 @@ impl Interpreter {
         if self.proto_subs.contains(&key) {
             return Err(RuntimeError::redeclaration_routine(name));
         }
+        let prefix = format!("{key}/");
+        self.functions.retain(|existing, _| {
+            let resolved = existing.resolve();
+            resolved != key && !resolved.starts_with(&prefix)
+        });
         self.proto_subs.insert(key);
         let fq = format!("{}::{}", self.current_package, name);
         self.proto_functions.insert(
