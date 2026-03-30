@@ -359,6 +359,18 @@ do_stop() {
 
 # --- Main ---
 
+# Preflight: validate GH_TOKEN
+if [[ "$DRY_RUN" -eq 0 ]]; then
+    echo "Checking GH_TOKEN validity..."
+    if ! gh auth status 2>&1 | grep -q "Logged in"; then
+        echo "Error: GH_TOKEN is invalid or gh is not authenticated." >&2
+        echo "Run 'gh auth login' or update GH_TOKEN in .env" >&2
+        exit 1
+    fi
+    echo "GH_TOKEN is valid."
+    echo ""
+fi
+
 # Remove stop file if it exists (we're starting fresh)
 if [[ -f "$STOP_FILE" ]]; then
     echo "Removing stale stop file: $STOP_FILE"
