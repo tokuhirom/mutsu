@@ -272,6 +272,7 @@ impl Interpreter {
         );
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("got".to_string(), got.clone());
         let exception = Value::make_instance(Symbol::intern("X::TypeCheck::Return"), attrs);
         let mut err = RuntimeError::new(msg);
         err.exception = Some(Box::new(exception));
@@ -305,6 +306,8 @@ impl Interpreter {
         spec: &str,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        let resolved_spec = self.resolved_type_capture_name(spec);
+        let spec = resolved_spec.as_str();
         // Nil and Failure pass through unconditionally
         if matches!(value, Value::Nil) || Self::is_failure_value(&value) {
             return Ok(value);
@@ -948,6 +951,12 @@ impl Interpreter {
             }
         } else if let Some(def) = def {
             let mut captured_env = self.env.clone();
+            if let Some(ref return_type) = def.return_type {
+                captured_env.insert(
+                    "__mutsu_return_type".to_string(),
+                    Value::str(return_type.clone()),
+                );
+            }
             if def.is_method {
                 captured_env.insert(
                     "__mutsu_callable_type".to_string(),

@@ -26,7 +26,7 @@ impl Interpreter {
         }
     }
 
-    pub(in crate::runtime) fn resolved_type_capture_name(&self, constraint: &str) -> String {
+    pub(crate) fn resolved_type_capture_name(&self, constraint: &str) -> String {
         if self.has_type_capture_binding(constraint)
             && let Some(value) = self.env.get(constraint)
         {
@@ -73,25 +73,39 @@ impl Interpreter {
         name: &str,
         constraint: &str,
         value: &Value,
+        source_name: Option<&str>,
         source_constraint: Option<&str>,
     ) -> bool {
         let resolved_constraint = self.resolved_type_capture_name(constraint);
+        if let Some(source_name) = source_name {
+            if source_name.starts_with('@') && name.starts_with('%') {
+                return false;
+            }
+            if source_name.starts_with('%') && name.starts_with('@') {
+                return false;
+            }
+        }
+        let container_kind_matches = if name.starts_with('@') {
+            matches!(value, Value::Array(..) | Value::Slip(..))
+        } else if name.starts_with('%') {
+            matches!(value, Value::Hash(..) | Value::Array(..))
+        } else {
+            false
+        };
+        if container_kind_matches && let Some(source) = source_constraint {
+            return self.type_matches_value(
+                &resolved_constraint,
+                &Value::Package(Symbol::intern(source)),
+            );
+        }
         if let Some(metadata) = self.container_type_metadata(value)
             && !metadata.value_type.is_empty()
+            && container_kind_matches
         {
-            let container_kind_matches = if name.starts_with('@') {
-                matches!(value, Value::Array(..) | Value::Slip(..))
-            } else if name.starts_with('%') {
-                matches!(value, Value::Hash(..) | Value::Array(..))
-            } else {
-                false
-            };
-            if container_kind_matches {
-                return self.type_matches_value(
-                    &resolved_constraint,
-                    &Value::Package(Symbol::intern(&metadata.value_type)),
-                );
-            }
+            return self.type_matches_value(
+                &resolved_constraint,
+                &Value::Package(Symbol::intern(&metadata.value_type)),
+            );
         }
 
         if name.starts_with('@') {
@@ -193,6 +207,12 @@ impl Interpreter {
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
         if let Value::Scalar(inner) = value {
             return self.type_matches_value(constraint, inner.as_ref());
+        }
+        if constraint == "Inf" {
+            return matches!(value, Value::Num(n) if n.is_infinite() && n.is_sign_positive());
+        }
+        if constraint == "NaN" {
+            return matches!(value, Value::Num(n) if n.is_nan());
         }
         if constraint == "UInt" {
             return match value {

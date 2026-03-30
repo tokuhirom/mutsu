@@ -17,7 +17,7 @@ impl Compiler {
             return;
         }
         // Hoist sub declarations
-        self.hoist_sub_decls(stmts);
+        self.hoist_sub_decls(stmts, true);
         for (i, stmt) in stmts.iter().enumerate() {
             let is_last = i == stmts.len() - 1;
             if is_last {

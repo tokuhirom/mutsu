@@ -1,6 +1,18 @@
 use super::*;
 
 impl Interpreter {
+    fn coercion_dispatch_value(&mut self, constraint: &str, arg: &Value) -> Option<Value> {
+        let (target, source) = parse_coercion_type(constraint)?;
+        if let Some(src) = source
+            && !self.type_matches_value(src, arg)
+        {
+            return None;
+        }
+        self.try_coerce_value_for_constraint(constraint, arg.clone())
+            .ok()
+            .filter(|coerced| self.type_matches_value(target, coerced))
+    }
+
     pub(in crate::runtime) fn args_match_param_types(
         &mut self,
         args: &[Value],
@@ -163,55 +175,71 @@ impl Interpreter {
                 if let Some(constraint) = &pd.type_constraint
                     && let Some(arg) = arg_for_checks.as_ref()
                 {
-                    let source_constraint = args
+                    let resolved_constraint = self.resolved_type_capture_name(constraint);
+                    if pd.name.starts_with('&') {
+                        if !self.type_matches_value("Callable", arg) {
+                            return false;
+                        }
+                        let Some(return_type) = self.callable_return_type(arg) else {
+                            return false;
+                        };
+                        if !self.type_matches_value(
+                            &resolved_constraint,
+                            &Value::Package(Symbol::intern(&return_type)),
+                        ) {
+                            return false;
+                        }
+                    }
+                    let dispatch_arg = self
+                        .coercion_dispatch_value(&resolved_constraint, arg)
+                        .unwrap_or_else(|| arg.clone());
+                    let source_name = args
                         .get(i)
                         .and_then(varref_from_value)
-                        .and_then(|(source_name, _)| {
-                            self.var_type_constraint(&source_name).or_else(|| {
-                                self.var_type_constraint(
-                                    source_name.trim_start_matches(['$', '@', '%', '&']),
-                                )
-                            })
-                        })
+                        .map(|(source_name, _)| source_name)
                         .or_else(|| {
                             self.pending_call_arg_sources
                                 .as_ref()
                                 .and_then(|sources| sources.get(i))
                                 .and_then(|name| name.as_ref())
-                                .and_then(|name| {
-                                    self.var_type_constraint(name).or_else(|| {
-                                        self.var_type_constraint(
-                                            name.trim_start_matches(['$', '@', '%', '&']),
-                                        )
-                                    })
-                                })
+                                .cloned()
                         });
-                    if let Some(captured_name) = constraint.strip_prefix("::") {
-                        self.bind_type_capture(captured_name, arg);
+                    let source_constraint = source_name.as_deref().and_then(|source_name| {
+                        self.var_type_constraint(source_name).or_else(|| {
+                            self.var_type_constraint(
+                                source_name.trim_start_matches(['$', '@', '%', '&']),
+                            )
+                        })
+                    });
+                    if let Some(captured_name) = resolved_constraint.strip_prefix("::") {
+                        self.bind_type_capture(captured_name, &dispatch_arg);
                     } else if pd.name == "__type_only__" {
                         // Bare identifier param (e.g., enum value) -- resolve from env and compare
-                        if let Some(expected_val) = self.env.get(constraint).cloned() {
-                            if arg != &expected_val {
+                        if let Some(expected_val) = self.env.get(&resolved_constraint).cloned() {
+                            if dispatch_arg != expected_val {
                                 return false;
                             }
-                        } else if !self.type_matches_value(constraint, arg) {
+                        } else if !self.type_matches_value(&resolved_constraint, &dispatch_arg) {
                             return false;
                         }
+                    } else if pd.name.starts_with('&') {
+                        // Callable return-type matching was handled above.
                     } else if pd.name.starts_with('@') || pd.name.starts_with('%') {
                         if !self.typed_container_param_matches(
                             &pd.name,
-                            constraint,
-                            arg,
+                            &resolved_constraint,
+                            &dispatch_arg,
+                            source_name.as_deref(),
                             source_constraint.as_deref(),
                         ) && self
-                            .typed_container_param_expected(&pd.name, constraint)
+                            .typed_container_param_expected(&pd.name, &resolved_constraint)
                             .is_some()
                         {
                             return false;
                         }
-                    } else if constraint == "Num"
+                    } else if resolved_constraint == "Num"
                         && matches!(
-                            arg,
+                            dispatch_arg,
                             Value::Int(_)
                                 | Value::Num(_)
                                 | Value::Rat(_, _)
@@ -220,10 +248,18 @@ impl Interpreter {
                         )
                     {
                         // Multi-dispatch numeric widening: Int/Rat/FatRat can satisfy Num.
-                    } else if !is_coercion_constraint(constraint)
-                        && !self.type_matches_value(constraint, arg)
-                    {
-                        // Coercion source-type validation is deferred until bind time.
+                    } else if is_coercion_constraint(&resolved_constraint) {
+                        if self
+                            .coercion_dispatch_value(&resolved_constraint, arg)
+                            .is_none()
+                            || !self.type_matches_value(
+                                Self::constraint_base_name(&resolved_constraint),
+                                &dispatch_arg,
+                            )
+                        {
+                            return false;
+                        }
+                    } else if !self.type_matches_value(&resolved_constraint, &dispatch_arg) {
                         return false;
                     }
                 }
@@ -308,6 +344,14 @@ impl Interpreter {
                     if !ok {
                         return false;
                     }
+                }
+                if let Some(arg) = arg_for_checks.as_ref()
+                    && !pd.name.is_empty()
+                    && pd.name != "_capture"
+                    && pd.name != "__subsig__"
+                    && !pd.name.starts_with("__type_capture__")
+                {
+                    self.bind_param_value(&pd.name, arg.clone());
                 }
                 if is_subsig_capture {
                     i = args.len();
