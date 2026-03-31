@@ -46,7 +46,7 @@ impl Interpreter {
                     }
                     nested.env.insert(k.clone(), v.clone());
                 }
-                let run_result = nested.run(code).map(|_| Value::Nil);
+                let run_result = nested.eval_eval_string(code).map(|_| Value::Nil);
                 // If execution succeeded, check if the last evaluated value was
                 // a Failure (which would throw in sink context in Raku).
                 match run_result {

@@ -12,6 +12,7 @@ impl Interpreter {
         match crate::parser::parse_program_with_operators(src, op_names, op_assoc, imported_names) {
             Ok((stmts, _)) => {
                 self.check_eval_class_redeclarations(&stmts)?;
+                self.check_eval_undeclared_names(&stmts)?;
                 self.check_eval_undeclared_vars(&stmts)?;
                 let value = self.eval_block_value(&stmts)?;
                 if self.eval_result_is_unresolved_bareword(&stmts, &value) {
@@ -79,6 +80,15 @@ impl Interpreter {
             let is_stub = body_no_sl.len() == 1
                 && matches!(body_no_sl[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
                     if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn");
+
+            // Check against classes already registered in the outer environment
+            if !is_stub && self.has_type(&name) {
+                return Err(RuntimeError::new(format!(
+                    "X::Redeclaration: Redeclaration of symbol '{}'",
+                    name
+                )));
+            }
+
             match seen_classes.get(&name) {
                 None => {
                     seen_classes.insert(name.to_string(), is_stub);
@@ -101,6 +111,76 @@ impl Interpreter {
             }
         }
         Ok(())
+    }
+
+    /// Check for undeclared type names in EVAL'd code.
+    /// Walks the AST looking for BareWord expressions that start with uppercase
+    /// and aren't known types, classes, or packages. This mirrors Raku's
+    /// compile-time check for undeclared symbols.
+    fn check_eval_undeclared_names(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        // Collect class names declared within this EVAL code
+        let mut local_classes: HashSet<String> = HashSet::new();
+        for stmt in stmts {
+            if let Stmt::ClassDecl { name, .. } = stmt {
+                local_classes.insert(name.resolve());
+            }
+        }
+        for stmt in stmts {
+            if let Some(name) = self.find_undeclared_name_in_stmt(stmt, &local_classes) {
+                return Err(RuntimeError::undeclared_symbols(format!(
+                    "Undeclared name:\n    {} used at line 1",
+                    name
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Find an undeclared type name (BareWord starting with uppercase) in a statement.
+    fn find_undeclared_name_in_stmt(
+        &self,
+        stmt: &Stmt,
+        local_classes: &HashSet<String>,
+    ) -> Option<String> {
+        match stmt {
+            Stmt::Expr(expr) => self.find_undeclared_name_in_expr(expr, local_classes),
+            Stmt::VarDecl { expr, .. } => self.find_undeclared_name_in_expr(expr, local_classes),
+            _ => None,
+        }
+    }
+
+    /// Find an undeclared type name in an expression.
+    fn find_undeclared_name_in_expr(
+        &self,
+        expr: &Expr,
+        local_classes: &HashSet<String>,
+    ) -> Option<String> {
+        match expr {
+            Expr::BareWord(name) => {
+                // Only check uppercase-starting names (type name convention)
+                if !name.chars().next().is_some_and(|c| c.is_uppercase()) {
+                    return None;
+                }
+                // Skip if known type, class, builtin type, enum, function, or env entry
+                if self.has_type(name)
+                    || self.has_class(name)
+                    || self.has_function(name)
+                    || self.has_multi_function(name)
+                    || self.env().contains_key(name)
+                    || local_classes.contains(name.as_str())
+                    || crate::vm::VM::is_builtin_type(name)
+                    || name.contains("::")
+                    || matches!(name.as_str(), "NaN" | "Inf" | "Empty")
+                {
+                    return None;
+                }
+                Some(name.clone())
+            }
+            Expr::Binary { left, right, .. } => self
+                .find_undeclared_name_in_expr(left, local_classes)
+                .or_else(|| self.find_undeclared_name_in_expr(right, local_classes)),
+            _ => None,
+        }
     }
 
     /// Check for undeclared variable references in EVAL'd code.
