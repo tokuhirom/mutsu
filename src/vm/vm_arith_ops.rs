@@ -311,6 +311,8 @@ impl VM {
 
     pub(super) fn exec_not_op(&mut self) {
         let val = self.stack.pop().unwrap();
+        // Boolifying a Failure marks it as handled
+        val.mark_failure_handled();
         let t = self.eval_truthy(&val);
         self.stack.push(Value::Bool(!t));
     }
@@ -329,7 +331,11 @@ impl VM {
                     .unwrap_or(Value::Nil);
                 Value::Bool(self.vm_smart_match(&topic, &val))
             }
-            _ => Value::Bool(val.truthy()),
+            _ => {
+                // Boolifying a Failure marks it as handled
+                val.mark_failure_handled();
+                Value::Bool(val.truthy())
+            }
         };
         self.stack.push(out);
     }

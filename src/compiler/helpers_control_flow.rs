@@ -237,7 +237,7 @@ impl Compiler {
         } else {
             for (i, stmt) in main_stmts.iter().enumerate() {
                 let is_last = i == main_stmts.len() - 1;
-                if is_last {
+                if is_last && !has_explicit_catch {
                     if let Stmt::Expr(expr) = stmt {
                         self.compile_expr(expr);
                         main_leaves_value = true;

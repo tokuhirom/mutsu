@@ -1930,8 +1930,19 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
 
     let (rest, body) = block(rest)?;
 
-    // Prepend $_ = <cond_expr> to the body for topicalization
-    let mut with_body = vec![topicalize(&cond_expr)];
+    // Use a temp variable in the condition to evaluate cond_expr exactly once.
+    // This is important for expressions like `Failure.new` where evaluating
+    // twice would create two distinct objects, and the `.defined` call on the
+    // condition would not mark the same instance that `$_` receives.
+    static WITH_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let with_id = WITH_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp_name = format!("__with_tmp_{}", with_id);
+    let tmp_var = Expr::Var(tmp_name.clone());
+
+    // The body uses $_ which was set in the condition block.
+    // We still prepend topicalize(&tmp_var) as a no-op marker so that
+    // $_ is visible in the body scope (but it's already set by the condition).
+    let mut with_body = vec![topicalize(&tmp_var)];
     // If a named parameter was given (-> $param), also assign it
     if let Some(ref pname) = param_name {
         // Check if this is a sub-signature destructuring (e.g. -> ($x) or -> (Int() $x is copy))
@@ -1940,7 +1951,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                 // Declare the unpack variable holding the condition value
                 with_body.push(Stmt::VarDecl {
                     name: pname.clone(),
-                    expr: cond_expr.clone(),
+                    expr: tmp_var.clone(),
                     type_constraint: None,
                     is_state: false,
                     is_our: false,
@@ -2006,7 +2017,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                 // Simple parameter with possible traits from parse_for_params
                 with_body.push(Stmt::VarDecl {
                     name: pname.clone(),
-                    expr: cond_expr.clone(),
+                    expr: tmp_var.clone(),
                     type_constraint: None,
                     is_state: false,
                     is_our: false,
@@ -2021,16 +2032,16 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             // Attributive parameter: bind the value to self's attribute.
             // $!foo → set attribute "foo" on self.
             let attr_name = &pname[1..];
-            // Emit: $!attr = cond_expr (attribute assignment)
+            // Emit: $!attr = tmp_var (attribute assignment)
             with_body.push(Stmt::Assign {
                 name: format!("!{}", attr_name),
-                expr: cond_expr.clone(),
+                expr: tmp_var.clone(),
                 op: crate::ast::AssignOp::Assign,
             });
         } else {
             with_body.push(Stmt::VarDecl {
                 name: pname.clone(),
-                expr: cond_expr.clone(),
+                expr: tmp_var.clone(),
                 type_constraint: None,
                 is_state: false,
                 is_our: false,
@@ -2044,9 +2055,25 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     with_body.extend(body);
 
-    let cond_expr_clone = cond_expr.clone();
-    let cond = Expr::MethodCall {
-        target: Box::new(cond_expr),
+    // Build the condition as (my $tmp = cond_expr).defined() (or
+    // !(my $tmp = cond_expr).defined() for without). The DoStmt(VarDecl)
+    // evaluates cond_expr once, declares $tmp in the current scope, and
+    // returns the value. Then .defined() checks it. The body uses $tmp
+    // for topicalization instead of re-evaluating cond_expr.
+    let var_decl_expr = Expr::DoStmt(Box::new(Stmt::VarDecl {
+        name: tmp_name.clone(),
+        expr: cond_expr.clone(),
+        type_constraint: None,
+        is_state: false,
+        is_our: false,
+        is_dynamic: false,
+        is_export: false,
+        export_tags: Vec::new(),
+        custom_traits: Vec::new(),
+        where_constraint: None,
+    }));
+    let defined_check = Expr::MethodCall {
+        target: Box::new(var_decl_expr),
         name: Symbol::intern("defined"),
         args: Vec::new(),
         modifier: None,
@@ -2055,12 +2082,11 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     let cond = if is_without {
         Expr::Unary {
             op: TokenKind::Bang,
-            expr: Box::new(cond),
+            expr: Box::new(defined_check),
         }
     } else {
-        cond
+        defined_check
     };
-
     // Parse orwith / else chains
     let rest_before_ws = rest;
     let (rest, _) = ws(rest)?;
@@ -2217,11 +2243,11 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
         };
         let (r, else_body) = block(r)?;
         // Topicalize $_ in else branch to the with/without condition
-        let mut else_with_topic = vec![topicalize(&cond_expr_clone)];
+        let mut else_with_topic = vec![topicalize(&tmp_var)];
         if let Some(ref pname) = else_param {
             else_with_topic.push(Stmt::VarDecl {
                 name: pname.clone(),
-                expr: cond_expr_clone.clone(),
+                expr: tmp_var.clone(),
                 type_constraint: None,
                 is_state: false,
                 is_our: false,

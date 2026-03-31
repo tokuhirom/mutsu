@@ -1,6 +1,21 @@
 use super::*;
 
 impl VM {
+    /// Build a simple backtrace string from the interpreter's routine stack.
+    /// Each frame is formatted as "  in sub <name>" (or "  in method <name>").
+    pub(super) fn build_backtrace_string(&self) -> String {
+        let stack = self.interpreter.routine_stack();
+        let mut lines = Vec::new();
+        for (_package, name) in stack.iter().rev() {
+            if name.is_empty() || name == "<unit>" {
+                lines.push("  in block <unit>".to_string());
+            } else {
+                lines.push(format!("  in sub {}", name));
+            }
+        }
+        lines.join("\n")
+    }
+
     /// If the value is a `LazyIoLines`, force it into an eager array by reading
     /// all remaining lines from the file handle. Otherwise return the value as-is.
     pub(super) fn force_if_lazy_io_lines(&mut self, val: Value) -> Result<Value, RuntimeError> {
