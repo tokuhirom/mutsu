@@ -1559,18 +1559,44 @@ impl Interpreter {
                     // QuantHash types (Set, Bag, Mix) are treated as single
                     // elements, not flattened.
                     let mut weights: HashMap<String, f64> = HashMap::new();
+                    let mut original_keys: HashMap<String, Value> = HashMap::new();
+                    let mut has_non_str_keys = false;
+                    let add_item = |weights: &mut HashMap<String, f64>,
+                                    original_keys: &mut HashMap<String, Value>,
+                                    has_non_str: &mut bool,
+                                    item: &Value| {
+                        let str_key = item.to_string_value();
+                        if !matches!(item, Value::Str(_)) {
+                            *has_non_str = true;
+                            original_keys
+                                .entry(str_key.clone())
+                                .or_insert_with(|| item.clone());
+                        }
+                        *weights.entry(str_key).or_insert(0.0) += 1.0;
+                    };
                     for arg in &args {
                         // Don't flatten QuantHash types
                         if matches!(arg, Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)) {
-                            *weights.entry(arg.to_string_value()).or_insert(0.0) += 1.0;
+                            add_item(&mut weights, &mut original_keys, &mut has_non_str_keys, arg);
                         } else {
                             for item in Self::value_to_list(arg) {
-                                *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
+                                add_item(
+                                    &mut weights,
+                                    &mut original_keys,
+                                    &mut has_non_str_keys,
+                                    &item,
+                                );
                             }
                         }
                     }
                     let is_hash_variant = class_name.resolve() == "MixHash";
-                    let result = if is_hash_variant {
+                    let result = if has_non_str_keys {
+                        if is_hash_variant {
+                            Value::mix_hash_with_original_keys(weights, original_keys)
+                        } else {
+                            Value::mix_with_original_keys(weights, original_keys)
+                        }
+                    } else if is_hash_variant {
                         Value::mix_hash(weights)
                     } else {
                         Value::mix(weights)

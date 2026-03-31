@@ -158,7 +158,7 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Mix(m, _) => Ok((**m).clone()),
+            Value::Mix(m, _) => Ok(m.weights.clone()),
             Value::Bag(b, _) => Ok(b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect()),
             other => {
                 let set = Self::union_set_keys(other)?;
@@ -341,7 +341,7 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Mix(m, _) => Ok((**m).clone()),
+            Value::Mix(m, _) => Ok(m.weights.clone()),
             Value::Bag(b, _) => {
                 let resolved = crate::runtime::utils::resolve_bag_tab_keys(b);
                 Ok(resolved.into_iter().map(|(k, v)| (k, v as f64)).collect())
@@ -541,7 +541,7 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Mix(m, _) => Ok((**m).clone()),
+            Value::Mix(m, _) => Ok(m.weights.clone()),
             Value::Bag(b, _) => Ok(b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect()),
             Value::Set(s, _) => Ok(s.iter().map(|k| (k.clone(), 1.0)).collect()),
             Value::Hash(map) => {

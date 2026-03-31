@@ -72,6 +72,64 @@ impl PartialEq for BagData {
     }
 }
 
+/// Mix data: wraps HashMap<String, f64> with optional original-typed keys.
+/// Implements Deref to HashMap<String, f64> so existing code works unchanged.
+#[derive(Debug, Clone)]
+pub(crate) struct MixData {
+    pub weights: HashMap<String, f64>,
+    /// Maps string keys back to original Values (e.g. Int(2), Bool(false)).
+    /// Only populated when the Mix is created from mixed-type data.
+    pub original_keys: Option<HashMap<String, Value>>,
+}
+
+impl MixData {
+    pub fn new(weights: HashMap<String, f64>) -> Self {
+        MixData {
+            weights,
+            original_keys: None,
+        }
+    }
+
+    pub fn with_original_keys(
+        weights: HashMap<String, f64>,
+        original_keys: HashMap<String, Value>,
+    ) -> Self {
+        MixData {
+            weights,
+            original_keys: Some(original_keys),
+        }
+    }
+
+    /// Get the original Value for a key, falling back to Str.
+    pub fn typed_key(&self, str_key: &str) -> Value {
+        if let Some(ref orig) = self.original_keys
+            && let Some(v) = orig.get(str_key)
+        {
+            return v.clone();
+        }
+        Value::Str(Arc::new(str_key.to_string()))
+    }
+}
+
+impl Deref for MixData {
+    type Target = HashMap<String, f64>;
+    fn deref(&self) -> &Self::Target {
+        &self.weights
+    }
+}
+
+impl DerefMut for MixData {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.weights
+    }
+}
+
+impl PartialEq for MixData {
+    fn eq(&self, other: &Self) -> bool {
+        self.weights == other.weights
+    }
+}
+
 mod display;
 mod error;
 mod serde_support;
@@ -491,7 +549,7 @@ pub enum Value {
     /// Bag (immutable) or BagHash (mutable). The bool is `true` for mutable (BagHash).
     Bag(Arc<BagData>, bool),
     /// Mix (immutable) or MixHash (mutable). The bool is `true` for mutable (MixHash).
-    Mix(Arc<HashMap<String, f64>>, bool),
+    Mix(Arc<MixData>, bool),
     CompUnitDepSpec {
         short_name: Symbol,
     },
@@ -1433,11 +1491,31 @@ impl Value {
     }
     pub fn mix(mut m: HashMap<String, f64>) -> Self {
         m.retain(|_, weight| *weight != 0.0);
-        Value::Mix(Arc::new(m), false)
+        Value::Mix(Arc::new(MixData::new(m)), false)
     }
     pub fn mix_hash(mut m: HashMap<String, f64>) -> Self {
         m.retain(|_, weight| *weight != 0.0);
-        Value::Mix(Arc::new(m), true)
+        Value::Mix(Arc::new(MixData::new(m)), true)
+    }
+    pub fn mix_with_original_keys(
+        mut weights: HashMap<String, f64>,
+        original_keys: HashMap<String, Value>,
+    ) -> Self {
+        weights.retain(|_, weight| *weight != 0.0);
+        Value::Mix(
+            Arc::new(MixData::with_original_keys(weights, original_keys)),
+            false,
+        )
+    }
+    pub fn mix_hash_with_original_keys(
+        mut weights: HashMap<String, f64>,
+        original_keys: HashMap<String, Value>,
+    ) -> Self {
+        weights.retain(|_, weight| *weight != 0.0);
+        Value::Mix(
+            Arc::new(MixData::with_original_keys(weights, original_keys)),
+            true,
+        )
     }
     pub fn slip(items: Vec<Value>) -> Self {
         Value::Slip(Arc::new(items))

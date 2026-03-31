@@ -2109,7 +2109,7 @@ fn set_type_level(v: &Value) -> u8 {
 /// Convert a value to a Mix-level HashMap (key → f64 count)
 fn to_mix_map(v: &Value) -> HashMap<String, f64> {
     match v {
-        Value::Mix(m, _) => (**m).clone(),
+        Value::Mix(m, _) => m.weights.clone(),
         Value::Bag(b, _) => {
             let resolved = resolve_bag_tab_keys(b);
             resolved.into_iter().map(|(k, v)| (k, v as f64)).collect()
@@ -2330,7 +2330,7 @@ fn coerce_to_bag(val: &Value) -> HashMap<String, i64> {
 /// Coerce a value to a Mix (HashMap<String, f64>)
 fn coerce_to_mix(val: &Value) -> HashMap<String, f64> {
     match val {
-        Value::Mix(m, _) => (**m).clone(),
+        Value::Mix(m, _) => m.weights.clone(),
         Value::Bag(b, _) => {
             let resolved = resolve_bag_tab_keys(b);
             resolved.into_iter().map(|(k, v)| (k, v as f64)).collect()
