@@ -73,6 +73,69 @@ pub(super) fn make_multi_no_match_error(method_name: &str) -> RuntimeError {
 }
 
 impl Interpreter {
+    /// Extract shape dimensions from a default expression that matches the pattern
+    /// `Array.new(:shape(N))` or `Array.new(:shape(N, M, ...))`, as generated
+    /// for `has @.a[2]` or `has @.a[2;3]` declarations.
+    /// Returns `Some(vec![dim1, dim2, ...])` if the pattern matches.
+    pub(crate) fn extract_shape_from_default(
+        default: Option<&crate::ast::Expr>,
+    ) -> Option<Vec<usize>> {
+        use crate::ast::Expr;
+        use crate::token_kind::TokenKind;
+
+        let expr = default?;
+        // Match Array.new(:shape(...)) or Array.new(:shape(...), :data(...))
+        let Expr::MethodCall {
+            target, name, args, ..
+        } = expr
+        else {
+            return None;
+        };
+        if name.resolve() != "new" {
+            return None;
+        }
+        if !matches!(target.as_ref(), Expr::BareWord(s) if s == "Array") {
+            return None;
+        }
+        // Find the :shape(...) pair in args
+        for arg in args {
+            if let Expr::Binary {
+                left,
+                op: TokenKind::FatArrow,
+                right,
+            } = arg
+                && let Expr::Literal(Value::Str(key)) = left.as_ref()
+                && key.as_str() == "shape"
+            {
+                return Self::extract_dims_from_shape_expr(right);
+            }
+        }
+        None
+    }
+
+    fn extract_dims_from_shape_expr(expr: &crate::ast::Expr) -> Option<Vec<usize>> {
+        use crate::ast::Expr;
+        match expr {
+            Expr::Literal(Value::Int(n)) if *n >= 0 => Some(vec![*n as usize]),
+            Expr::ArrayLiteral(items) => {
+                let mut dims = Vec::new();
+                for item in items {
+                    if let Expr::Literal(Value::Int(n)) = item {
+                        if *n >= 0 {
+                            dims.push(*n as usize);
+                        } else {
+                            return None;
+                        }
+                    } else {
+                        return None;
+                    }
+                }
+                if dims.is_empty() { None } else { Some(dims) }
+            }
+            _ => None,
+        }
+    }
+
     /// Coerce a value based on attribute sigil: @ → Array, % → Hash
     pub(crate) fn coerce_attr_value_by_sigil(val: Value, sigil: char) -> Value {
         match sigil {
