@@ -394,7 +394,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(target.clone()))
                 }
             }
-            Value::Seq(items) | Value::Slip(items) => Some(Ok(Value::array(items.to_vec()))),
+            Value::Seq(items) | Value::Slip(items) => {
+                if method == "Array" {
+                    Some(Ok(Value::real_array(items.to_vec())))
+                } else {
+                    Some(Ok(Value::array(items.to_vec())))
+                }
+            }
             Value::Channel(_) => None, // fall through to runtime for drain
             Value::Hash(map) => {
                 let pairs: Vec<Value> = map
