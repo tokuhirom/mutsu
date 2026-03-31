@@ -323,6 +323,7 @@ impl VM {
                 | "DateTime"
                 | "Dateish"
                 | "ObjAt"
+                | "ValueObjAt"
                 | "Code"
                 | "Capture"
                 | "Junction"

@@ -11,6 +11,29 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
         match method {
+            "new" if matches!(target, Value::Package(name) if matches!(name.resolve().as_str(), "ObjAt" | "ValueObjAt")) =>
+            {
+                let class_name = if let Value::Package(n) = target {
+                    n.resolve()
+                } else {
+                    unreachable!()
+                };
+                // Find the first non-Pair positional argument (Pairs are named args)
+                let positional = args
+                    .iter()
+                    .find(|a| !matches!(a, Value::Pair(_, _) | Value::ValuePair(_, _)));
+                match positional {
+                    Some(val) => {
+                        let which_str = val.to_string_value();
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("WHICH".to_string(), Value::str(which_str));
+                        Some(Ok(Value::make_instance(Symbol::intern(&class_name), attrs)))
+                    }
+                    None => Some(Err(RuntimeError::new(
+                        "Too few positionals passed; expected 2 arguments but got 1".to_string(),
+                    ))),
+                }
+            }
             "new" if matches!(target, Value::Package(name) if matches!(name.resolve().as_str(), "IntStr" | "NumStr" | "RatStr" | "ComplexStr")) =>
             {
                 let type_name = if let Value::Package(n) = target {

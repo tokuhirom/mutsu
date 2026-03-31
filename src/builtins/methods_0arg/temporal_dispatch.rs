@@ -111,7 +111,10 @@ pub fn date_method_0arg(
             let which = format!("Date|{}", days);
             let mut attrs = HashMap::new();
             attrs.insert("WHICH".to_string(), Value::str(which));
-            Some(Ok(Value::make_instance(Symbol::intern("ObjAt"), attrs)))
+            Some(Ok(Value::make_instance(
+                Symbol::intern("ValueObjAt"),
+                attrs,
+            )))
         }
         _ => None,
     }
