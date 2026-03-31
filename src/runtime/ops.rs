@@ -133,7 +133,7 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Bag(b, _) => Ok((**b).clone()),
+            Value::Bag(b, _) => Ok(b.counts.clone()),
             Value::Mix(m, _) => Ok(m
                 .iter()
                 .filter_map(|(k, w)| {
@@ -464,7 +464,7 @@ impl Interpreter {
         Ok(Value::bag(result))
     }
 
-    /// Coerce a value to bag-like weights for the (+) operator.
+    /// Coerce a value to bag-like count map for the (+) operator.
     /// Unlike union_bag_counts, this properly handles Hash and Pair values.
     fn addition_bag_counts(
         value: &Value,
@@ -473,7 +473,7 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Bag(b, _) => Ok((**b).clone()),
+            Value::Bag(b, _) => Ok(b.counts.clone()),
             Value::Mix(m, _) => Ok(m
                 .iter()
                 .filter_map(|(k, w)| {
@@ -930,7 +930,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let to_bag_counts = |value: &Value| -> Option<std::collections::HashMap<String, i64>> {
             match value {
-                Value::Bag(items, _) => Some((**items).clone()),
+                Value::Bag(items, _) => Some(items.counts.clone()),
                 Value::Set(items, _) => Some(items.iter().map(|k| (k.clone(), 1)).collect()),
                 Value::Hash(items) => Some({
                     let mut counts = std::collections::HashMap::new();

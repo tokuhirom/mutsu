@@ -65,6 +65,7 @@ impl Interpreter {
 
     pub(super) fn dispatch_to_bag(&self, target: Value) -> Result<Value, RuntimeError> {
         let mut counts: HashMap<String, i64> = HashMap::new();
+        let mut original_keys: HashMap<String, Value> = HashMap::new();
         let pair_weight = |v: &Value| -> i64 {
             match v {
                 Value::Int(i) => *i,
@@ -81,6 +82,7 @@ impl Interpreter {
                 *map.entry(key).or_insert(0) += weight;
             }
         };
+        let mut has_non_str_keys = false;
         match target {
             Value::Bag(_, _) => return Ok(target),
             Value::Array(items, ..) => {
@@ -90,10 +92,24 @@ impl Interpreter {
                             add_pair_key(&mut counts, k.clone(), pair_weight(v));
                         }
                         Value::ValuePair(k, v) => {
-                            add_pair_key(&mut counts, k.to_string_value(), pair_weight(v));
+                            let str_key = k.to_string_value();
+                            if !matches!(k.as_ref(), Value::Str(_)) {
+                                has_non_str_keys = true;
+                                original_keys
+                                    .entry(str_key.clone())
+                                    .or_insert_with(|| k.as_ref().clone());
+                            }
+                            add_pair_key(&mut counts, str_key, pair_weight(v));
                         }
                         _ => {
-                            *counts.entry(item.to_string_value()).or_insert(0) += 1;
+                            let str_key = item.to_string_value();
+                            if !matches!(item, Value::Str(_)) {
+                                has_non_str_keys = true;
+                                original_keys
+                                    .entry(str_key.clone())
+                                    .or_insert_with(|| item.clone());
+                            }
+                            *counts.entry(str_key).or_insert(0) += 1;
                         }
                     }
                 }
@@ -121,14 +137,32 @@ impl Interpreter {
             }
             other if other.is_range() => {
                 for item in Self::value_to_list(&other) {
-                    *counts.entry(item.to_string_value()).or_insert(0) += 1;
+                    let str_key = item.to_string_value();
+                    if !matches!(item, Value::Str(_)) {
+                        has_non_str_keys = true;
+                        original_keys
+                            .entry(str_key.clone())
+                            .or_insert_with(|| item.clone());
+                    }
+                    *counts.entry(str_key).or_insert(0) += 1;
                 }
             }
             other => {
-                counts.insert(other.to_string_value(), 1);
+                let str_key = other.to_string_value();
+                if !matches!(other, Value::Str(_)) {
+                    has_non_str_keys = true;
+                    original_keys
+                        .entry(str_key.clone())
+                        .or_insert(other.clone());
+                }
+                counts.insert(str_key, 1);
             }
         }
-        Ok(Value::bag(counts))
+        if has_non_str_keys {
+            Ok(Value::bag_typed(counts, original_keys))
+        } else {
+            Ok(Value::bag(counts))
+        }
     }
 
     fn mix_pair_weight(v: &Value) -> f64 {

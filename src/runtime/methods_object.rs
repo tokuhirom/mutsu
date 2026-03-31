@@ -1504,22 +1504,48 @@ impl Interpreter {
                     //   but NOT QuantHash types which are single elements)
                     // - Multiple args: each arg is a single element (no flattening)
                     let mut counts: HashMap<String, i64> = HashMap::new();
+                    let mut original_keys: HashMap<String, Value> = HashMap::new();
+                    let mut has_non_str_keys = false;
+                    let add_item = |counts: &mut HashMap<String, i64>,
+                                        original_keys: &mut HashMap<String, Value>,
+                                        has_non_str: &mut bool,
+                                        item: &Value| {
+                        let str_key = item.to_string_value();
+                        if !matches!(item, Value::Str(_)) {
+                            *has_non_str = true;
+                            original_keys
+                                .entry(str_key.clone())
+                                .or_insert_with(|| item.clone());
+                        }
+                        *counts.entry(str_key).or_insert(0) += 1;
+                    };
                     if args.len() == 1 {
                         let arg = &args[0];
                         // QuantHash types are always single elements
                         if matches!(arg, Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)) {
-                            *counts.entry(arg.to_string_value()).or_insert(0) += 1;
+                            add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, arg);
                         } else {
                             for item in Self::value_to_list(arg) {
-                                *counts.entry(item.to_string_value()).or_insert(0) += 1;
+                                add_item(
+                                    &mut counts,
+                                    &mut original_keys,
+                                    &mut has_non_str_keys,
+                                    &item,
+                                );
                             }
                         }
                     } else {
                         for arg in &args {
-                            *counts.entry(arg.to_string_value()).or_insert(0) += 1;
+                            add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, arg);
                         }
                     }
-                    return Ok(if base_class_name == "BagHash" {
+                    return Ok(if has_non_str_keys {
+                        if base_class_name == "BagHash" {
+                            Value::bag_hash_typed(counts, original_keys)
+                        } else {
+                            Value::bag_typed(counts, original_keys)
+                        }
+                    } else if base_class_name == "BagHash" {
                         Value::bag_hash(counts)
                     } else {
                         Value::bag(counts)

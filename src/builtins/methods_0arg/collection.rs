@@ -336,9 +336,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Value::Set(s, _) => Some(Ok(Value::array(
                     s.iter().map(|k| Value::str(k.clone())).collect(),
                 ))),
-                Value::Bag(b, _) => Some(Ok(Value::array(
-                    b.keys().map(|k| Value::str(k.clone())).collect(),
-                ))),
+                Value::Bag(b, _) => {
+                    Some(Ok(Value::array(b.keys().map(|k| b.typed_key(k)).collect())))
+                }
                 Value::Mix(m, _) => Some(Ok(Value::array(
                     m.keys().map(|k| Value::str(k.clone())).collect(),
                 ))),
