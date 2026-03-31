@@ -870,7 +870,11 @@ impl Compiler {
                 self.compile_expr(&normalized_iterable);
                 if let Some(source_name) = Self::for_iterable_source_name(iterable) {
                     let source_idx = self.code.add_constant(Value::str(source_name));
-                    self.code.emit(OpCode::TagContainerRef(source_idx));
+                    if Self::for_iterable_is_reversed(iterable) {
+                        self.code.emit(OpCode::TagContainerRefReversed(source_idx));
+                    } else {
+                        self.code.emit(OpCode::TagContainerRef(source_idx));
+                    }
                 }
                 // If the for-loop parameter name already has a local slot
                 // (e.g. from a prior `my $i` in an enclosing scope), we must

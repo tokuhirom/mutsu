@@ -352,8 +352,21 @@ impl Compiler {
             } if args.is_empty() && (*name == "values" || *name == "kv" || *name == "value") => {
                 Self::for_iterable_source_name(target)
             }
+            // Handle @a.reverse → source is @a (reversed)
+            Expr::MethodCall {
+                target, name, args, ..
+            } if args.is_empty() && *name == "reverse" => Self::for_iterable_source_name(target),
             _ => None,
         }
+    }
+
+    /// Check if the for-loop iterable involves a `.reverse` call on a container.
+    fn for_iterable_is_reversed(iterable: &Expr) -> bool {
+        matches!(
+            iterable,
+            Expr::MethodCall { name, args, .. }
+                if args.is_empty() && *name == "reverse"
+        )
     }
 
     /// Extract per-element variable names when the iterable is a list of

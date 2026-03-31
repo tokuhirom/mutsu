@@ -416,6 +416,8 @@ pub(crate) enum OpCode {
     ReactDone,
     /// Tag the current value as coming from a named container (for Scalar binding)
     TagContainerRef(u32),
+    /// Tag the current value as coming from a reversed named container (for `@a.reverse` writeback)
+    TagContainerRefReversed(u32),
 
     // -- Unary coercion --
     NumCoerce,

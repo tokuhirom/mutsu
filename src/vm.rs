@@ -71,6 +71,8 @@ pub(crate) struct VM {
     last_topic_value: Option<Value>,
     /// Container name from when/default body (for Scalar container binding)
     container_ref_var: Option<String>,
+    /// When true, the container ref is reversed (e.g. `for @a.reverse`)
+    container_ref_reversed: bool,
     /// Source variable name for topic binding in for loops
     topic_source_var: Option<String>,
     /// Stack of saved call frames for compiled function/closure/method calls.
@@ -241,6 +243,7 @@ impl VM {
             transliterate_in_smartmatch: false,
             last_topic_value: None,
             container_ref_var: None,
+            container_ref_reversed: false,
             topic_source_var: None,
             call_frames: Vec::new(),
             env_dirty: false,
@@ -1904,6 +1907,13 @@ impl VM {
             OpCode::TagContainerRef(name_idx) => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.container_ref_var = Some(name);
+                self.container_ref_reversed = false;
+                *ip += 1;
+            }
+            OpCode::TagContainerRefReversed(name_idx) => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                self.container_ref_var = Some(name);
+                self.container_ref_reversed = true;
                 *ip += 1;
             }
 
