@@ -324,6 +324,10 @@ impl Interpreter {
         }
         // Determine associativity from the operator name
         let assoc = Self::op_associativity(&combiner);
+        // Check if the combiner has special multi-arg semantics (e.g. set
+        // symmetric difference) that requires passing all elements at once
+        // rather than folding pairwise.
+        let use_multi_arg = Self::combiner_needs_multi_arg(&combiner);
         let max_expand: usize = 1_000;
         let min_len = lists
             .iter()
@@ -336,6 +340,10 @@ impl Interpreter {
             let elements: Vec<Value> = lists.iter().map(|l| l[i].clone()).collect();
             let combined = if elements.len() <= 1 {
                 elements.into_iter().next().unwrap_or(Value::Nil)
+            } else if elements.len() > 2 && use_multi_arg {
+                // Pass all elements at once for operators with special
+                // multi-arg semantics (e.g. set symmetric difference).
+                self.call_sub_value(combiner.clone(), elements, false)?
             } else {
                 match assoc {
                     OpAssoc::Right => {
@@ -389,6 +397,25 @@ impl Interpreter {
         } else {
             Ok(Value::array(result))
         }
+    }
+
+    /// Check if a combiner operator needs all elements passed at once
+    /// (multi-arg semantics) rather than pairwise folding. This is true
+    /// for set operators like (^)/⊖ where multi-arg behavior differs
+    /// from left-fold.
+    fn combiner_needs_multi_arg(func: &Value) -> bool {
+        let name_str = match func {
+            Value::Routine { name, .. } => name.resolve(),
+            _ => return false,
+        };
+        let op = name_str
+            .strip_prefix("infix:<")
+            .and_then(|s: &str| s.strip_suffix('>'))
+            .unwrap_or(&name_str);
+        matches!(
+            op,
+            "(^)" | "⊖" | "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(.)" | "⊍" | "(+)" | "⊎"
+        )
     }
 
     /// Determine the associativity of an operator from its name.

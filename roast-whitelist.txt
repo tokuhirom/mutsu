@@ -193,6 +193,7 @@ roast/S03-operators/set_intersection.t
 roast/S03-operators/set_multiply.t
 roast/S03-operators/set_proper_subset.t
 roast/S03-operators/set_subset.t
+roast/S03-operators/set_symmetric_difference.t
 roast/S03-operators/set_union.t
 roast/S03-operators/short-circuit.t
 roast/S03-operators/so.t
