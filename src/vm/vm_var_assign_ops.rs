@@ -2031,6 +2031,12 @@ impl VM {
                 self.interpreter.assign_proxy_lvalue(proxy_val, val)?;
                 return Ok(());
             }
+            // If the current value is a HashSlotRef, write back to the parent hash
+            if let Value::HashSlotRef { .. } = &self.locals[idx] {
+                self.locals[idx].hash_slot_write(val);
+                self.locals_dirty = true;
+                return Ok(());
+            }
             if !name.starts_with('@') && !name.starts_with('%') {
                 val = Self::normalize_scalar_assignment_value(val);
             }
@@ -2303,6 +2309,12 @@ impl VM {
         {
             let proxy_val = self.locals[idx].clone();
             self.interpreter.assign_proxy_lvalue(proxy_val, val)?;
+            return Ok(());
+        }
+        // If the current value is a HashSlotRef, write back to the parent hash
+        if !is_bind && let Value::HashSlotRef { .. } = &self.locals[idx] {
+            self.locals[idx].hash_slot_write(val);
+            self.locals_dirty = true;
             return Ok(());
         }
         // When binding a Proxy to a variable, update FETCH/STORE closures' captured envs

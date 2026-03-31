@@ -360,6 +360,7 @@ impl Value {
                 }
             }
             Value::LazyIoLines { .. } => true,
+            Value::HashSlotRef { .. } => self.hash_slot_read().truthy(),
         }
     }
 
@@ -485,6 +486,7 @@ impl Value {
                 "Scalar" // unforced lazy thunk
             }
             Value::LazyIoLines { .. } => "Seq",
+            Value::HashSlotRef { .. } => return self.hash_slot_read().isa_check(type_name),
         };
         if my_type == type_name {
             return true;

@@ -762,6 +762,10 @@ pub struct Interpreter {
     pub(crate) suppress_exports: bool,
     /// When true, rw routine calls should not auto-FETCH Proxy return values.
     pub(crate) in_lvalue_assignment: bool,
+    /// When true, hash indexing with a missing key autovivifies (creates an
+    /// empty Hash entry and returns it).  Set during reduce with `is raw`
+    /// callbacks so that container semantics are preserved.
+    pub(crate) hash_autovivify: bool,
     pub(crate) newline_mode: NewlineMode,
     /// Stack of snapshots for lexical import scoping.
     /// Each entry saves (function_keys, class_names, newline_mode, strict_mode, fatal_mode)
@@ -2542,6 +2546,7 @@ impl Interpreter {
             exported_vars: HashMap::new(),
             suppress_exports: false,
             in_lvalue_assignment: false,
+            hash_autovivify: false,
             newline_mode: NewlineMode::Lf,
             import_scope_stack: Vec::new(),
             strict_mode: false,
@@ -3895,6 +3900,7 @@ impl Interpreter {
             exported_vars: self.exported_vars.clone(),
             suppress_exports: false,
             in_lvalue_assignment: false,
+            hash_autovivify: false,
             newline_mode: self.newline_mode,
             import_scope_stack: Vec::new(),
             strict_mode: self.strict_mode,

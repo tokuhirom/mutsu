@@ -247,7 +247,6 @@ roast/S04-phasers/begin.t
 roast/S04-phasers/check.t
 roast/S04-phasers/descending-order.t
 roast/S04-phasers/end.t
-roast/S04-phasers/enter-leave.t
 roast/S04-phasers/exit-in-check.t
 roast/S04-phasers/first.t
 roast/S04-phasers/in-loop.t
@@ -866,6 +865,7 @@ roast/S32-list/map.t
 roast/S32-list/map_function_return_values.t
 roast/S32-list/pick.t
 roast/S32-list/produce.t
+roast/S32-list/reduce.t
 roast/S32-list/repeated.t
 roast/S32-list/roll.t
 roast/S32-list/rotor.t

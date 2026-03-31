@@ -593,6 +593,14 @@ pub enum Value {
         handle: Box<Value>,
         kv: bool,
     },
+    /// A reference to a hash slot, used for autovivification in `is raw` contexts.
+    /// Reading this value returns the current value at the key (or Any).
+    /// Assigning to it writes back to the parent hash via interior mutation.
+    /// Indexing it autovivifies (creates an empty Hash at the key if missing).
+    HashSlotRef {
+        hash: Arc<HashMap<String, Value>>,
+        key: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1275,6 +1283,77 @@ impl Value {
     }
     pub fn hash(map: HashMap<String, Value>) -> Self {
         Value::Hash(Arc::new(map))
+    }
+
+    /// Autovivify a hash entry: if the key doesn't exist, insert an empty Hash.
+    /// Returns a `HashSlotRef` pointing to the entry in the parent hash.
+    /// Uses interior mutation of the `Arc<HashMap>` so that **all** clones of
+    /// the same `Arc` observe the change.  This is sound in mutsu because the
+    /// interpreter is single-threaded and no `&HashMap` borrows are live
+    /// across this call.
+    ///
+    /// Returns `None` if `self` is not a `Value::Hash`.
+    pub fn hash_autovivify(&self, key: &str) -> Option<Value> {
+        if let Value::Hash(arc) = self {
+            // SAFETY: mutsu is single-threaded.  We ensure no immutable
+            // references into the HashMap are alive when we mutate.
+            let ptr = Arc::as_ptr(arc) as *mut HashMap<String, Value>;
+            unsafe {
+                if !(*ptr).contains_key(key) {
+                    let new_hash = Value::hash(HashMap::new());
+                    (*ptr).insert(key.to_string(), new_hash);
+                }
+            }
+            Some(Value::HashSlotRef {
+                hash: arc.clone(),
+                key: key.to_string(),
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Autovivify a hash entry with a scalar value (for binding/assignment).
+    /// Inserts the given value at the key if missing, or replaces the existing value.
+    /// Returns the value stored at the key after the operation.
+    /// Uses the same interior-mutation approach as `hash_autovivify`.
+    pub fn hash_assign_at(&self, key: &str, val: Value) -> Option<Value> {
+        if let Value::Hash(arc) = self {
+            let ptr = Arc::as_ptr(arc) as *mut HashMap<String, Value>;
+            unsafe {
+                (*ptr).insert(key.to_string(), val.clone());
+            }
+            Some(val)
+        } else {
+            None
+        }
+    }
+
+    /// Read the current value from a HashSlotRef.
+    /// Returns the value at the key in the parent hash, or Any (type object) if missing.
+    pub fn hash_slot_read(&self) -> Value {
+        if let Value::HashSlotRef { hash, key } = self {
+            let ptr = Arc::as_ptr(hash);
+            unsafe {
+                (*ptr)
+                    .get(key.as_str())
+                    .cloned()
+                    .unwrap_or(Value::Package(crate::symbol::Symbol::intern("Any")))
+            }
+        } else {
+            self.clone()
+        }
+    }
+
+    /// Write a value to a HashSlotRef's parent hash at the stored key.
+    /// Uses interior mutation (same as hash_autovivify).
+    pub fn hash_slot_write(&self, val: Value) {
+        if let Value::HashSlotRef { hash, key } = self {
+            let ptr = Arc::as_ptr(hash) as *mut HashMap<String, Value>;
+            unsafe {
+                (*ptr).insert(key.clone(), val);
+            }
+        }
     }
 
     /// Encode a Value as a hash key string.
