@@ -390,7 +390,14 @@ impl VM {
                     type_name
                 )),
             );
-            ex_attrs.insert("got".to_string(), v.clone());
+            // For Seq endpoints, store the type object (Raku behavior); for others,
+            // store the actual value.
+            let got_val = if matches!(v, Value::Seq(_)) {
+                Value::Package(Symbol::intern(type_name))
+            } else {
+                v.clone()
+            };
+            ex_attrs.insert("got".to_string(), got_val);
             let exception = Value::make_instance(Symbol::intern("X::Range::InvalidArg"), ex_attrs);
             RuntimeError::from_exception_value(exception)
         })
@@ -403,13 +410,14 @@ impl VM {
                 runtime::coerce_to_numeric(Value::str(value.to_string_value()))
             }
             Value::Array(..)
-            | Value::Seq(..)
             | Value::Slip(..)
             | Value::LazyList(..)
             | Value::Hash(..)
             | Value::Set(..)
             | Value::Bag(..)
             | Value::Mix(..) => runtime::coerce_to_numeric(value),
+            // Seq is NOT scalarized here — it must be caught by check_range_invalid_arg
+            Value::Seq(..) => value,
             other => other,
         }
     }
