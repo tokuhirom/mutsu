@@ -414,6 +414,8 @@ impl Compiler {
         if has_catch {
             self.compile_try(stmts, &None);
             self.code.emit(OpCode::Pop);
+        } else if self.is_routine && Self::has_block_enter_leave_phasers(stmts) {
+            self.compile_toplevel_block_scope(stmts);
         } else {
             for (i, stmt) in stmts.iter().enumerate() {
                 let is_last = i == stmts.len() - 1;
@@ -481,5 +483,102 @@ impl Compiler {
             }
         }
         (self.code, self.compiled_functions)
+    }
+
+    fn compile_toplevel_block_scope(&mut self, stmts: &[Stmt]) {
+        let idx = self.code.emit(OpCode::BlockScope {
+            pre_end: 0,
+            enter_end: 0,
+            body_end: 0,
+            keep_start: 0,
+            undo_start: 0,
+            post_start: 0,
+            end: 0,
+        });
+        Self::compile_pre_phasers(self, stmts);
+        self.code.patch_block_pre_end(idx);
+        for s in stmts {
+            if let Stmt::Phaser {
+                kind: PhaserKind::Enter,
+                body,
+            } = s
+            {
+                for inner in body {
+                    self.compile_stmt(inner);
+                }
+            }
+        }
+        self.code.patch_block_enter_end(idx);
+        let body_stmts: Vec<&Stmt> = stmts
+            .iter()
+            .filter(|s| {
+                !matches!(
+                    s,
+                    Stmt::Phaser {
+                        kind: PhaserKind::Enter
+                            | PhaserKind::Leave
+                            | PhaserKind::Keep
+                            | PhaserKind::Undo
+                            | PhaserKind::Pre
+                            | PhaserKind::Post,
+                        ..
+                    }
+                )
+            })
+            .collect();
+        for (i, s) in body_stmts.iter().enumerate() {
+            let is_last = i == body_stmts.len() - 1;
+            if is_last {
+                self.compile_last_stmt_as_topic(s);
+            } else {
+                self.compile_stmt(s);
+            }
+        }
+        self.code.patch_block_body_end(idx);
+        self.code.patch_block_keep_start(idx);
+        {
+            let mut prev_guard: Option<usize> = None;
+            for s in stmts.iter().rev() {
+                if let Stmt::Phaser { kind, body } = s
+                    && matches!(kind, PhaserKind::Leave | PhaserKind::Keep)
+                {
+                    if let Some(pg) = prev_guard {
+                        self.code.patch_leave_guard_next(pg);
+                    }
+                    let guard_idx = self.code.emit(OpCode::LeaveGuard { next: 0 });
+                    for inner in body {
+                        self.compile_stmt(inner);
+                    }
+                    prev_guard = Some(guard_idx);
+                }
+            }
+            if let Some(pg) = prev_guard {
+                self.code.patch_leave_guard_next(pg);
+            }
+        }
+        self.code.patch_block_undo_start(idx);
+        {
+            let mut prev_guard: Option<usize> = None;
+            for s in stmts.iter().rev() {
+                if let Stmt::Phaser { kind, body } = s
+                    && matches!(kind, PhaserKind::Leave | PhaserKind::Undo)
+                {
+                    if let Some(pg) = prev_guard {
+                        self.code.patch_leave_guard_next(pg);
+                    }
+                    let guard_idx = self.code.emit(OpCode::LeaveGuard { next: 0 });
+                    for inner in body {
+                        self.compile_stmt(inner);
+                    }
+                    prev_guard = Some(guard_idx);
+                }
+            }
+            if let Some(pg) = prev_guard {
+                self.code.patch_leave_guard_next(pg);
+            }
+        }
+        self.code.patch_block_post_start(idx);
+        Self::compile_post_phasers(self, stmts);
+        self.code.patch_loop_end(idx);
     }
 }
