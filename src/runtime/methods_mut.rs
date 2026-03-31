@@ -1799,6 +1799,8 @@ impl Interpreter {
                     } else {
                         args
                     };
+                    // Check element type constraints from container metadata
+                    self.check_array_value_element_types(&target, &normalized_args)?;
                     if let Some(Value::Array(arc_items, kind)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);
                         if method == "append" {
