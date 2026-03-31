@@ -172,7 +172,12 @@ impl Interpreter {
         // When UNDO phasers ran for this fail, the Failure is marked as handled
         // (Raku semantics: UNDO acts as a handler, so sinking the Failure won't throw).
         failure_attrs.insert("handled".to_string(), Value::Bool(err.fail_handled));
-        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+        let failure = Value::make_instance(Symbol::intern("Failure"), failure_attrs);
+        // Register in the pending failure registry for $!.pending support
+        if let Value::Instance { id, .. } = &failure {
+            crate::value::register_pending_failure(*id, failure.clone());
+        }
+        failure
     }
 
     fn malformed_return_value_error(&self, value: &Value) -> RuntimeError {

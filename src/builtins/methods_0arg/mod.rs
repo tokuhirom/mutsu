@@ -311,6 +311,15 @@ pub(crate) fn native_method_0arg(
         return native_method_0arg(inner, method_sym);
     }
 
+    // $!.pending returns a list of all tracked Failure values (S04 spec).
+    if method == "pending" {
+        let failures = crate::value::get_pending_failures();
+        return Some(Ok(Value::Array(
+            std::sync::Arc::new(failures),
+            crate::value::ArrayKind::List,
+        )));
+    }
+
     // Nil absorber for common methods: Nil.message, Nil.payload, etc.
     // In Raku, calling most methods on Nil returns Nil.
     if matches!(target, Value::Nil)

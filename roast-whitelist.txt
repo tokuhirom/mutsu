@@ -242,6 +242,7 @@ roast/S04-exception-handlers/top-level.t
 roast/S04-exceptions/control_across_runloop.t
 roast/S04-exceptions/fail-6e.t
 roast/S04-exceptions/fail.t
+roast/S04-exceptions/pending.t
 roast/S04-phasers/ascending-order.t
 roast/S04-phasers/begin.t
 roast/S04-phasers/check.t

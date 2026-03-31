@@ -257,6 +257,24 @@ pub(crate) fn remove_failure_handled(id: u64) {
     });
 }
 
+// Global registry of all live Failure values, used to implement $!.pending.
+// Maps Failure instance IDs to the Failure Value itself.
+thread_local! {
+    static FAILURE_PENDING_REGISTRY: RefCell<HashMap<u64, Value>> = RefCell::new(HashMap::new());
+}
+
+/// Register a Failure value in the pending registry.
+pub(crate) fn register_pending_failure(id: u64, value: Value) {
+    FAILURE_PENDING_REGISTRY.with(|reg| {
+        reg.borrow_mut().insert(id, value);
+    });
+}
+
+/// Return all pending (tracked) Failure values.
+pub(crate) fn get_pending_failures() -> Vec<Value> {
+    FAILURE_PENDING_REGISTRY.with(|reg| reg.borrow().values().cloned().collect())
+}
+
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum JunctionKind {
     Any,
