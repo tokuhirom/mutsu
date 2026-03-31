@@ -785,6 +785,7 @@ roast/S32-array/keys_values.t
 roast/S32-array/kv.t
 roast/S32-array/pairs.t
 roast/S32-array/pop.t
+roast/S32-array/push.t
 roast/S32-array/rotate.t
 roast/S32-array/shift.t
 roast/S32-array/unshift.t

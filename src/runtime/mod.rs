@@ -3561,6 +3561,36 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Check element type constraints using container metadata (for typed arrays
+    /// obtained from instance attributes or other non-variable sources).
+    pub(crate) fn check_array_value_element_types(
+        &mut self,
+        target: &Value,
+        values: &[Value],
+    ) -> Result<(), RuntimeError> {
+        if let Some(info) = self.container_type_metadata(target) {
+            let constraint = &info.value_type;
+            if constraint != "Mu" && constraint != "Any" {
+                for val in values {
+                    if !matches!(val, Value::Nil) && !self.type_matches_value(constraint, val) {
+                        let msg =
+                            crate::runtime::utils::type_check_element_error("@_", constraint, val);
+                        let mut err = RuntimeError::new(msg.clone());
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("message".to_string(), Value::str(msg));
+                        let ex = Value::make_instance(
+                            crate::symbol::Symbol::intern("X::TypeCheck::Assignment"),
+                            attrs,
+                        );
+                        err.exception = Some(Box::new(ex));
+                        return Err(err);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn is_var_dynamic(&self, name: &str) -> bool {
         self.var_dynamic_flags
             .get(Self::normalize_var_meta_name(name))

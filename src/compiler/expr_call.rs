@@ -200,7 +200,10 @@ impl Compiler {
         // Rewrite push(@arr, val...)/unshift(@arr, val...)/append/prepend/splice -> @arr.method(val...)
         // splice needs only 1 arg (the array); others need at least 2
         else if !args.is_empty()
-            && matches!(args[0], Expr::ArrayVar(_) | Expr::Var(_))
+            && matches!(
+                args[0],
+                Expr::ArrayVar(_) | Expr::Var(_) | Expr::Index { .. }
+            )
             && (matches!(
                 name.resolve().as_str(),
                 "push" | "unshift" | "append" | "prepend"

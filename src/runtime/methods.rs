@@ -257,6 +257,10 @@ impl Interpreter {
             "push" | "pop" | "shift" | "unshift" | "append" | "prepend"
         ) && matches!(&target, Value::Array(_, kind) if kind.is_real_array())
         {
+            // Check element type constraints from container metadata (e.g., typed attribute arrays)
+            if matches!(method, "push" | "append" | "unshift" | "prepend") {
+                self.check_array_value_element_types(&target, &args)?;
+            }
             return self.array_mutate_copy(target, method, args);
         }
         // IO::Special.new("<STDOUT>")
