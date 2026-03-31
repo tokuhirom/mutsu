@@ -732,7 +732,10 @@ roast/S24-testing/8-die_on_fail.t
 roast/S24-testing/9-is_deeply.t
 roast/S24-testing/fails-like.t
 roast/S24-testing/line-numbers.t
+roast/S26-documentation/01-delimited.t
+roast/S26-documentation/02-paragraph.t
 roast/S26-documentation/03-abbreviated.t
+roast/S26-documentation/04a-input-output.t
 roast/S26-documentation/05-comment.t
 roast/S26-documentation/06-lists.t
 roast/S26-documentation/07c-tables.t
@@ -740,6 +743,7 @@ roast/S26-documentation/10-doc-cli.t
 roast/S26-documentation/12-non-breaking-space.t
 roast/S26-documentation/block-leading-user-format.t
 roast/S26-documentation/module-comment.t
+roast/S26-documentation/multiline-leading.t
 roast/S26-documentation/multiline-trailing.t
 roast/S28-named-variables/cwd.t
 roast/S28-named-variables/init-instant.t
@@ -926,6 +930,7 @@ roast/S32-str/windows-1251-windows-1252-encode-decode.t
 roast/S32-str/words.t
 roast/S32-temporal/Date.t
 roast/S32-temporal/DateTime.t
+roast/S32-temporal/baum-gregorian-data.t
 roast/S32-temporal/calendar.t
 roast/S32-temporal/greg-jd-frac-seconds.t
 roast/S32-trig/atan2.t
