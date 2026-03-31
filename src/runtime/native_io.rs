@@ -537,13 +537,28 @@ impl Interpreter {
                 Ok(Value::Int(ts))
             }
             "changed" => {
-                let ts = fs::metadata(&path_buf)
-                    .and_then(|meta| meta.modified())
-                    .map(Self::system_time_to_int)
-                    .map_err(|err| {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::MetadataExt;
+                    let meta = fs::metadata(&path_buf).map_err(|err| {
                         RuntimeError::new(format!("Failed to get changed time '{}': {}", p, err))
                     })?;
-                Ok(Value::Int(ts))
+                    Ok(Value::Int(meta.ctime()))
+                }
+                #[cfg(not(unix))]
+                {
+                    // On non-Unix platforms, fall back to modified time
+                    let ts = fs::metadata(&path_buf)
+                        .and_then(|meta| meta.modified())
+                        .map(Self::system_time_to_int)
+                        .map_err(|err| {
+                            RuntimeError::new(format!(
+                                "Failed to get changed time '{}': {}",
+                                p, err
+                            ))
+                        })?;
+                    Ok(Value::Int(ts))
+                }
             }
             "lines" => {
                 let content = fs::read_to_string(&path_buf)
