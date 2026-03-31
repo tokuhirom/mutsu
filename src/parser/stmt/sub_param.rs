@@ -7,6 +7,42 @@ use crate::symbol::Symbol;
 use crate::value::Value;
 use std::collections::HashMap;
 
+/// Check for invalid type smileys (e.g. Int:foo) in a type constraint string.
+/// Valid smileys are :D, :U, and :_. Anything else raises X::InvalidTypeSmiley.
+pub(super) fn check_invalid_type_smiley(type_constraint: &Option<String>) -> Result<(), PError> {
+    if let Some(tc) = type_constraint
+        && let Some(colon_pos) = tc.rfind(':')
+        && (colon_pos == 0 || tc.as_bytes()[colon_pos - 1] != b':')
+    {
+        let smiley = &tc[colon_pos + 1..];
+        if !smiley.is_empty()
+            && smiley != "D"
+            && smiley != "U"
+            && smiley != "_"
+            && smiley.chars().next().is_some_and(|c| c.is_alphabetic())
+        {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("name".to_string(), Value::str(smiley.to_string()));
+            attrs.insert(
+                "message".to_string(),
+                Value::str(format!(
+                    "Invalid type smiley ':{}' used, only ':D', ':U' and ':_' are allowed",
+                    smiley
+                )),
+            );
+            let ex = Value::make_instance(Symbol::intern("X::InvalidTypeSmiley"), attrs);
+            return Err(PError::fatal_with_exception(
+                format!(
+                    "Invalid type smiley ':{}' used, only ':D', ':U' and ':_' are allowed",
+                    smiley
+                ),
+                Box::new(ex),
+            ));
+        }
+    }
+    Ok(())
+}
+
 use super::decl::parse_array_shape_suffix;
 use super::sub::{
     literal_value_from_expr, parse_indirect_decl_name, parse_param_list,
@@ -93,6 +129,16 @@ pub(super) fn parse_implicit_invocant_marker(input: &str) -> Option<(&str, Strin
     }
     let after_colon = rest.strip_prefix(':')?;
     if after_colon.starts_with(':') {
+        return None;
+    }
+    // If the character after ':' is alphanumeric or '_', this is likely a type
+    // smiley (e.g., Int:foo) rather than an invocant marker (e.g., Int: $self).
+    // Invocant markers must be followed by whitespace, sigil, or ')'.
+    if after_colon
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_alphanumeric() || c == '_')
+    {
         return None;
     }
     let (after_colon, _) = ws(after_colon).ok()?;
@@ -702,6 +748,8 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         && !skip_type_for_named_alias
         && let Some((r, tc)) = parse_type_constraint_expr(rest)
     {
+        // Validate type smiley before proceeding
+        check_invalid_type_smiley(&Some(tc.clone()))?;
         let (r2, _) = ws(r)?;
 
         // Check for coercion type: Int() or Int(Rat)

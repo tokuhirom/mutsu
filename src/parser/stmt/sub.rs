@@ -1665,6 +1665,8 @@ pub(super) fn parse_return_type_annotation(input: &str) -> PResult<'_, String> {
             ));
         }
     }
+    // Validate type smiley in return type annotation
+    super::sub_param::check_invalid_type_smiley(&Some(annotation.clone()))?;
     let (tail, _) = ws(&rest[idx..])?;
     Ok((tail, annotation))
 }
