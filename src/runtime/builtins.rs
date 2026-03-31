@@ -488,7 +488,35 @@ impl Interpreter {
             "tc" => self.builtin_tc(&args),
             "trim" => self.builtin_trim(&args),
             "chars" => self.builtin_chars(&args),
-            "sprintf" | "zprintf" => self.builtin_sprintf(&args),
+            "sprintf" | "zprintf" => {
+                // If the first arg is a Junction, thread through it:
+                // call .Str on each element and concatenate.
+                if let Some(Value::Junction { kind: _, values }) = args.first() {
+                    let mut content = String::new();
+                    for v in values.iter() {
+                        content.push_str(&self.render_str_value(v));
+                    }
+                    Ok(Value::str(content))
+                } else {
+                    self.builtin_sprintf(&args)
+                }
+            }
+            "printf" => {
+                // If the first arg is a Junction, thread through it:
+                // call .Str on each element and print the result.
+                if let Some(Value::Junction { kind: _, values }) = args.first() {
+                    let mut content = String::new();
+                    for v in values.iter() {
+                        content.push_str(&self.render_str_value(v));
+                    }
+                    self.write_to_named_handle("$*OUT", &content, false)?;
+                    Ok(Value::Bool(true))
+                } else {
+                    let formatted = self.builtin_sprintf(&args)?;
+                    self.write_to_named_handle("$*OUT", &formatted.to_string_value(), false)?;
+                    Ok(Value::Bool(true))
+                }
+            }
             "split" => self.handle_split_function(args),
             // File I/O
             "slurp" => self.builtin_slurp(&args),
@@ -716,6 +744,7 @@ impl Interpreter {
                 | "rand"
                 | "sprintf"
                 | "zprintf"
+                | "printf"
                 | "uniname"
                 | "uniprop"
                 | "unimatch"

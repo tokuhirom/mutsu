@@ -158,7 +158,18 @@ impl Interpreter {
                 let val = if let Some(expr) = default {
                     self.eval_block_value(&[Stmt::Expr(expr)])?
                 } else {
-                    Value::Nil
+                    // Native types have zero/empty defaults instead of Nil
+                    let type_constraint =
+                        self.get_attr_type_constraint(&class_name.resolve(), &attr_name);
+                    match type_constraint.as_deref() {
+                        Some(
+                            "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8"
+                            | "uint16" | "uint32" | "uint64" | "byte" | "atomicint",
+                        ) => Value::Int(0),
+                        Some("num" | "num32" | "num64") => Value::Num(0.0),
+                        Some("str") => Value::str("".to_string()),
+                        _ => Value::Nil,
+                    }
                 };
                 attributes.insert(attr_name, val);
             }

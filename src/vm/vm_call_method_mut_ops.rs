@@ -187,6 +187,8 @@ impl VM {
                     | "THREAD"
                     | "raku"
                     | "perl"
+                    | "say"
+                    | "note"
             )
         {
             let kind = kind.clone();

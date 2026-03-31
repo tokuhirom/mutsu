@@ -93,9 +93,9 @@ impl Interpreter {
             }
             return Ok(Value::junction(kind, results));
         }
-        // Junction .raku/.perl/.gist rendering
+        // Junction .raku/.perl/.gist/.Str rendering
         if args.is_empty()
-            && matches!(method, "raku" | "perl" | "gist")
+            && matches!(method, "raku" | "perl" | "gist" | "Str")
             && let Value::Junction { kind, values } = &target
         {
             let kind_name = match kind {
@@ -104,7 +104,11 @@ impl Interpreter {
                 JunctionKind::One => "one",
                 JunctionKind::None => "none",
             };
-            let render_method = if method == "gist" { "gist" } else { "raku" };
+            let render_method = match method {
+                "gist" => "gist",
+                "Str" => "Str",
+                _ => "raku",
+            };
             let mut parts = Vec::with_capacity(values.len());
             for value in values.iter() {
                 if method == "gist" && matches!(value, Value::Nil) {

@@ -199,6 +199,36 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let name = self.atomic_var_name_arg(args)?;
         self.check_readonly_for_modify(&name)?;
+        // For instance attribute variables (private `!attr` or public `.attr`),
+        // use a per-instance shared_vars key so that multiple method calls on the
+        // same object (via different Value clones, e.g. in Junction gist) see
+        // consistent state. The key includes the instance ID for isolation.
+        if name.starts_with('!') || name.starts_with('.') {
+            let instance_id = match self.env.get("self") {
+                Some(Value::Instance { id, .. }) => Some(*id),
+                _ => None,
+            };
+            if let Some(id) = instance_id {
+                // Use shared_vars keyed by instance ID + attr name for atomicity
+                let instance_key = format!("__mutsu_atomic_attr::{}::{}", id, name);
+                let mut shared = self.shared_vars.write().unwrap();
+                let current = shared
+                    .get(&instance_key)
+                    .cloned()
+                    .or_else(|| self.env.get(&name).cloned())
+                    .unwrap_or(Value::Int(0));
+                let next = crate::builtins::arith_add(current.clone(), Value::Int(delta))?;
+                self.env.insert(name, next.clone());
+                shared.insert(instance_key, next.clone());
+                drop(shared);
+                return if return_old { Ok(current) } else { Ok(next) };
+            }
+            // Fallback for non-instance context: use env directly
+            let current = self.env.get(&name).cloned().unwrap_or(Value::Int(0));
+            let next = crate::builtins::arith_add(current.clone(), Value::Int(delta))?;
+            self.env.insert(name, next.clone());
+            return if return_old { Ok(current) } else { Ok(next) };
+        }
         let value_key = self.atomic_value_key_for_name(&name);
         let mut shared = self.shared_vars.write().unwrap();
         let current = self.atomic_current_value(&shared, &name, &value_key);

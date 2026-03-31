@@ -103,6 +103,8 @@ impl Interpreter {
                 | "perl"
                 | "first"
                 | "grep"
+                | "say"
+                | "note"
         )
     }
 

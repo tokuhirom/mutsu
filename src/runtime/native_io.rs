@@ -1843,15 +1843,25 @@ impl Interpreter {
                 Ok(Value::Bool(true))
             }
             "printf" => {
-                let fmt = args
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                let rest = &args[1..];
-                super::sprintf::validate_sprintf_directives(&fmt, rest.len())?;
-                let content = super::sprintf::format_sprintf_args(&fmt, rest);
-                self.write_to_handle_value_trying(&target_val, &content, false, "printf")?;
-                Ok(Value::Bool(true))
+                // If the first arg is a Junction, thread through it
+                if let Some(Value::Junction { kind: _, values }) = args.first() {
+                    let mut content = String::new();
+                    for v in values.iter() {
+                        content.push_str(&self.render_str_value(v));
+                    }
+                    self.write_to_handle_value_trying(&target_val, &content, false, "printf")?;
+                    Ok(Value::Bool(true))
+                } else {
+                    let fmt = args
+                        .first()
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    let rest = &args[1..];
+                    super::sprintf::validate_sprintf_directives(&fmt, rest.len())?;
+                    let content = super::sprintf::format_sprintf_args(&fmt, rest);
+                    self.write_to_handle_value_trying(&target_val, &content, false, "printf")?;
+                    Ok(Value::Bool(true))
+                }
             }
             "say" => {
                 let mut content = String::new();

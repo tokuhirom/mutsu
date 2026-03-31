@@ -34,8 +34,6 @@ impl VM {
                     | "infix:<,>"
                     | "infix:<=>>"
                     | "say"
-                    | "print"
-                    | "put"
                     | "note"
                     | "dd"
                     | "warn"
@@ -338,6 +336,8 @@ impl VM {
                 | "print"
                 | "put"
                 | "note"
+                | "printf"
+                | "sprintf"
         ) {
             return Ok(None);
         }

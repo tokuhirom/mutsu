@@ -9,8 +9,20 @@ impl Interpreter {
     }
 
     pub(super) fn dispatch_print(&mut self, target: &Value) -> Result<Value, RuntimeError> {
-        self.write_to_named_handle("$*OUT", &target.to_string_value(), false)?;
+        let content = self.render_str_value(target);
+        self.write_to_named_handle("$*OUT", &content, false)?;
         Ok(Value::Bool(true))
+    }
+
+    pub(super) fn dispatch_printf(&mut self, target: &Value) -> Result<Value, RuntimeError> {
+        let content = self.render_str_value(target);
+        self.write_to_named_handle("$*OUT", &content, false)?;
+        Ok(Value::Bool(true))
+    }
+
+    pub(super) fn dispatch_sprintf(&mut self, target: &Value) -> Result<Value, RuntimeError> {
+        let content = self.render_str_value(target);
+        Ok(Value::str(content))
     }
 
     pub(super) fn dispatch_put(&mut self, target: &Value) -> Result<Value, RuntimeError> {
