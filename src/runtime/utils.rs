@@ -1300,6 +1300,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
             "Scalar"
         }
         Value::LazyIoLines { .. } => "Seq",
+        Value::HashSlotRef { .. } => "Scalar",
     }
 }
 

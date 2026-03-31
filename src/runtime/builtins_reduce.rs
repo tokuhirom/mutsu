@@ -121,6 +121,15 @@ impl Interpreter {
         self.reduce_items(callable, items)
     }
 
+    /// Check if the first positional parameter of a callable has the `is raw` trait.
+    fn callable_has_raw_first_param(&self, callable: &Value) -> bool {
+        let (_, param_defs) = self.callable_signature(callable);
+        param_defs
+            .first()
+            .map(|pd| pd.traits.iter().any(|t| t == "raw"))
+            .unwrap_or(false)
+    }
+
     pub(crate) fn reduce_items(
         &mut self,
         callable: Value,
@@ -137,8 +146,15 @@ impl Interpreter {
         let step = arity.saturating_sub(1).max(1);
         let assoc = self.callable_reduce_assoc(&callable);
         let is_thunky = Self::is_thunky_reduce_op(&callable);
+        let is_raw = self.callable_has_raw_first_param(&callable);
 
-        match assoc {
+        // Save and set autovivify flag for `is raw` reduce callbacks.
+        let saved_autovivify = self.hash_autovivify;
+        if is_raw {
+            self.hash_autovivify = true;
+        }
+
+        let result = match assoc {
             OpAssoc::Right => {
                 let mut acc = items.last().cloned().unwrap();
                 let mut right_edge = items.len().saturating_sub(1);
@@ -183,7 +199,10 @@ impl Interpreter {
                 }
                 Ok(acc)
             }
-        }
+        };
+
+        self.hash_autovivify = saved_autovivify;
+        result
     }
 
     fn is_thunky_reduce_op(callable: &Value) -> bool {

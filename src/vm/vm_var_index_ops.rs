@@ -61,6 +61,15 @@ impl VM {
             self.stack.push(Value::junction(kind.clone(), results));
             return Ok(());
         }
+        // If target is a HashSlotRef, resolve it to the actual value and re-index.
+        if let Value::HashSlotRef { .. } = &target {
+            let resolved = target.hash_slot_read();
+            // If the resolved value is a Hash, push it as the target for indexing.
+            // This supports chained autovivification (e.g. %h<a><b><c>).
+            self.stack.push(resolved);
+            self.stack.push(index);
+            return self.exec_index_op();
+        }
         // If target is a Failure, propagate it (// will catch it as undefined)
         if matches!(&target, Value::Instance { class_name, .. } if class_name == "Failure") {
             self.stack.push(target);
@@ -348,19 +357,48 @@ impl VM {
                 )
             }
             (Value::Hash(items), Value::Str(key)) => {
-                let default = self.typed_container_default(&Value::Hash(items.clone()));
                 let v = self.resolve_hash_entry(&items, &key);
-                if matches!(v, Value::Nil) { default } else { v }
+                if matches!(v, Value::Nil) {
+                    if self.interpreter.hash_autovivify {
+                        Value::Hash(items)
+                            .hash_autovivify(&key)
+                            .unwrap_or(Value::Nil)
+                    } else {
+                        self.typed_container_default(&Value::Hash(items))
+                    }
+                } else {
+                    v
+                }
             }
             (Value::Hash(items), Value::Int(key)) => {
-                let default = self.typed_container_default(&Value::Hash(items.clone()));
-                let v = self.resolve_hash_entry(&items, &key.to_string());
-                if matches!(v, Value::Nil) { default } else { v }
+                let key_str = key.to_string();
+                let v = self.resolve_hash_entry(&items, &key_str);
+                if matches!(v, Value::Nil) {
+                    if self.interpreter.hash_autovivify {
+                        Value::Hash(items)
+                            .hash_autovivify(&key_str)
+                            .unwrap_or(Value::Nil)
+                    } else {
+                        self.typed_container_default(&Value::Hash(items))
+                    }
+                } else {
+                    v
+                }
             }
             (Value::Hash(items), key) => {
-                let default = self.typed_container_default(&Value::Hash(items.clone()));
-                let v = self.resolve_hash_entry(&items, &key.to_string_value());
-                if matches!(v, Value::Nil) { default } else { v }
+                let key_str = key.to_string_value();
+                let v = self.resolve_hash_entry(&items, &key_str);
+                if matches!(v, Value::Nil) {
+                    if self.interpreter.hash_autovivify {
+                        Value::Hash(items)
+                            .hash_autovivify(&key_str)
+                            .unwrap_or(Value::Nil)
+                    } else {
+                        self.typed_container_default(&Value::Hash(items))
+                    }
+                } else {
+                    v
+                }
             }
             (
                 Value::Instance {

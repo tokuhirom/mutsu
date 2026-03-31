@@ -159,6 +159,9 @@ impl Interpreter {
                 "Scalar"
             }
             Value::LazyIoLines { .. } => "Seq",
+            Value::HashSlotRef { .. } => {
+                return self.dispatch_what(&target.hash_slot_read(), args);
+            }
         };
         let visible_type_name = if crate::value::is_internal_anon_type_name(type_name) {
             ""
