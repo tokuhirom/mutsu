@@ -18,15 +18,21 @@ impl Interpreter {
                 } else {
                     unreachable!()
                 };
-                if args.is_empty() {
-                    return Some(Err(RuntimeError::new(
+                // Find the first non-Pair positional argument (Pairs are named args)
+                let positional = args
+                    .iter()
+                    .find(|a| !matches!(a, Value::Pair(_, _) | Value::ValuePair(_, _)));
+                match positional {
+                    Some(val) => {
+                        let which_str = val.to_string_value();
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("WHICH".to_string(), Value::str(which_str));
+                        Some(Ok(Value::make_instance(Symbol::intern(&class_name), attrs)))
+                    }
+                    None => Some(Err(RuntimeError::new(
                         "Too few positionals passed; expected 2 arguments but got 1".to_string(),
-                    )));
+                    ))),
                 }
-                let which_str = args[0].to_string_value();
-                let mut attrs = std::collections::HashMap::new();
-                attrs.insert("WHICH".to_string(), Value::str(which_str));
-                Some(Ok(Value::make_instance(Symbol::intern(&class_name), attrs)))
             }
             "new" if matches!(target, Value::Package(name) if matches!(name.resolve().as_str(), "IntStr" | "NumStr" | "RatStr" | "ComplexStr")) =>
             {
