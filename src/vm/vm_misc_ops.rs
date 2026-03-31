@@ -1794,6 +1794,9 @@ impl VM {
         let saved_env = self.interpreter.env().clone();
         let saved_locals = self.locals.clone();
         let once_scope = self.interpreter.next_once_scope_id();
+        // Track variables declared within this block scope.
+        self.block_declared_vars
+            .push(std::collections::HashSet::new());
 
         // Run PRE phasers first (before ENTER)
         self.run_range(code, pre_start, enter_start, compiled_fns)?;
@@ -1905,6 +1908,9 @@ impl VM {
 
         self.interpreter.restore_routine_registry(routine_snapshot);
 
+        // Pop the block-declared variables set.
+        let block_declared = self.block_declared_vars.pop().unwrap_or_default();
+
         self.ensure_env_synced(code);
         let current_env = self.interpreter.env().clone();
         let mut restored_env = saved_env.clone();
@@ -1918,6 +1924,12 @@ impl VM {
                 // Dynamic variables (e.g. $*VAR) are scoped to the block:
                 // restore to the saved value rather than propagating the inner value.
                 if k.starts_with('*') {
+                    continue;
+                }
+                // Variables declared with `my` inside this block should not
+                // propagate their values to the outer scope. Restore the outer
+                // scope's original value instead.
+                if block_declared.contains(&k) {
                     continue;
                 }
                 restored_env.insert(k, v);

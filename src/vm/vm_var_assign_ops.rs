@@ -2442,6 +2442,12 @@ impl VM {
             };
             self.interpreter.env_mut().insert(name.to_string(), default);
         }
+        // Track this variable as declared within the current block scope.
+        // BlockScope restoration uses this to avoid propagating block-local
+        // variable values back to the outer scope.
+        if let Some(set) = self.block_declared_vars.last_mut() {
+            set.insert(name.to_string());
+        }
     }
 
     pub(super) fn exec_assign_expr_local_op(

@@ -107,6 +107,10 @@ pub(crate) struct VM {
     fn_resolve_gen: u64,
     /// The generation at which fn_resolve_cache was last populated.
     fn_resolve_cache_gen: u64,
+    /// Stack of sets tracking variable names declared (via SetVarDynamic) within
+    /// each active BlockScope. Used during BlockScope restoration to avoid
+    /// propagating block-local variable values to the outer scope.
+    block_declared_vars: Vec<std::collections::HashSet<String>>,
 }
 
 impl VM {
@@ -250,6 +254,7 @@ impl VM {
             fn_resolve_cache: HashMap::new(),
             fn_resolve_gen: 0,
             fn_resolve_cache_gen: 0,
+            block_declared_vars: Vec::new(),
         }
     }
 
