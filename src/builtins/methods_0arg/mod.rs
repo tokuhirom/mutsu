@@ -918,25 +918,38 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         if cn == "Exception" || cn.starts_with("X::") || cn.starts_with("CX::") {
             match method {
                 "gist" => {
+                    let bt = attributes
+                        .get("backtrace")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    let append_bt = |msg: String| -> String {
+                        if bt.is_empty() {
+                            msg
+                        } else {
+                            format!("{}\n{}", msg, bt)
+                        }
+                    };
                     if let Some(msg) = attributes.get("message") {
                         let msg_str = msg.to_string_value();
                         if !msg_str.is_empty() {
-                            return Some(Ok(Value::str(msg_str)));
+                            return Some(Ok(Value::str(append_bt(msg_str))));
                         }
                     }
                     if cn == "Exception" {
-                        return Some(Ok(Value::str_from("Unthrown Exception with no message")));
+                        return Some(Ok(Value::str(append_bt(
+                            "Unthrown Exception with no message".to_string(),
+                        ))));
                     }
                     if cn == "X::AdHoc" {
                         if let Some(payload) = attributes.get("payload") {
                             let payload_str = payload.to_string_value();
                             if !payload_str.is_empty() {
-                                return Some(Ok(Value::str(payload_str)));
+                                return Some(Ok(Value::str(append_bt(payload_str))));
                             }
                         }
-                        return Some(Ok(Value::str_from("Unexplained error")));
+                        return Some(Ok(Value::str(append_bt("Unexplained error".to_string()))));
                     }
-                    return Some(Ok(Value::str(format!("{} with no message", cn))));
+                    return Some(Ok(Value::str(append_bt(format!("{} with no message", cn)))));
                 }
                 "Str" => {
                     if let Some(msg) = attributes.get("message") {

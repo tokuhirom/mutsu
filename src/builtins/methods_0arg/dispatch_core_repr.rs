@@ -113,7 +113,14 @@ pub(super) fn dispatch(
             if method == "gist" {
                 Some(Ok(Value::str(msg)))
             } else if method == "raku" || method == "perl" {
-                Some(Ok(Value::str(format!("Failure.new(\"{}\")", msg))))
+                let raku_str = if target.is_failure_handled() {
+                    // For handled Failures, produce an expression that when
+                    // EVALed creates a handled Failure, preserving the flag.
+                    format!("do {{ my $f = Failure.new(\"{}\"); $f.Bool; $f }}", msg)
+                } else {
+                    format!("Failure.new(\"{}\")", msg)
+                };
+                Some(Ok(Value::str(raku_str)))
             } else {
                 // Str, Numeric, Int, etc. -- using a Failure in a value
                 // context throws the wrapped exception.

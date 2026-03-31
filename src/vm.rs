@@ -2134,7 +2134,18 @@ impl VM {
                 } else {
                     val
                 };
-                return Err(self.runtime_error_from_exception_value(val, "Failed", true));
+                // Build a backtrace from the routine stack so that
+                // Exception.gist can show where the fail originated.
+                let backtrace = self.build_backtrace_string();
+                let mut err = self.runtime_error_from_exception_value(val, "Failed", true);
+                // Attach backtrace to the exception value
+                if let Some(ref mut exc_box) = err.exception
+                    && let Value::Instance { attributes, .. } = exc_box.as_mut()
+                {
+                    std::sync::Arc::make_mut(attributes)
+                        .insert("backtrace".to_string(), Value::str(backtrace));
+                }
+                return Err(err);
             }
             OpCode::Return => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
