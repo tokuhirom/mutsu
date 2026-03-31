@@ -710,9 +710,18 @@ impl VM {
                     .or_else(|| {
                         name.strip_prefix('%')
                             .and_then(|bare| self.interpreter.env().get(bare).cloned())
-                    })
-                    .unwrap_or(Value::Nil);
-                self.stack.push(val);
+                    });
+                match val {
+                    Some(v) => self.stack.push(v),
+                    None => {
+                        // %ENV (without * twigil) is not declared in Raku;
+                        // only %*ENV is valid. Throw an undeclared error for %ENV specifically.
+                        if name == "%ENV" {
+                            return Err(RuntimeError::undeclared("name", "%ENV"));
+                        }
+                        self.stack.push(Value::Nil);
+                    }
+                }
                 *ip += 1;
             }
             OpCode::GetBareWord(name_idx) => {
