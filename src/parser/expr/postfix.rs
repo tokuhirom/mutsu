@@ -2031,6 +2031,32 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             continue;
         }
 
+        // Guillemet postcircumfix subscript: expr«key» (equivalent to expr<key> with interpolation)
+        // Must be checked before hyper ops consume «op» as infix hyper operator.
+        if rest.starts_with('\u{00AB}') {
+            let r = &rest['\u{00AB}'.len_utf8()..];
+            if let Some(end) = r.find('\u{00BB}') {
+                let content = &r[..end];
+                let r = &r[end + '\u{00BB}'.len_utf8()..];
+                let keys = split_angle_words(content);
+                let index_expr = if keys.len() == 1 {
+                    Expr::Literal(Value::str(keys[0].to_string()))
+                } else {
+                    Expr::ArrayLiteral(
+                        keys.into_iter()
+                            .map(|k| Expr::Literal(Value::str(k.to_string())))
+                            .collect(),
+                    )
+                };
+                expr = Expr::Index {
+                    target: Box::new(expr),
+                    index: Box::new(index_expr),
+                };
+                rest = r;
+                continue;
+            }
+        }
+
         // Object constructor shorthand: Type{ :named(...) } / Type{ key => value, ... }.
         // Treat this as Type.new(...) for package/type barewords.
         // But NOT for sigilless variables (term symbols like \h), which should use

@@ -234,6 +234,20 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             }
         };
         let (r, _) = ws(r)?;
+        // Detect "Two terms in a row" on the same line after the for iterable.
+        // e.g., `.say for (1, 2, 3)«~» "!"` — the `"!"` is a term without
+        // an infix operator separating it from the iterable.
+        if !r.is_empty()
+            && !r.starts_with(';')
+            && !r.starts_with('}')
+            && !r.starts_with(')')
+            && !r.starts_with("->")
+            && !r.starts_with('{')
+            && !is_stmt_modifier_keyword(r)
+            && starts_with_term_char(r)
+        {
+            return Err(PError::fatal("Confused. Two terms in a row".to_string()));
+        }
         // Do not consume full loop headers as statement modifiers.
         // This preserves parsing of:
         //   { ... }
@@ -477,4 +491,23 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
     }
 
     Ok(None)
+}
+
+/// Check if the input starts with a character that unambiguously begins a term
+/// (string literal, number, etc.). Used to detect "Two terms in a row" errors.
+fn starts_with_term_char(input: &str) -> bool {
+    let Some(ch) = input.chars().next() else {
+        return false;
+    };
+    ch.is_ascii_digit()
+        || matches!(
+            ch,
+            '\'' | '"'
+                | '\u{2018}'
+                | '\u{2019}'
+                | '\u{201A}'
+                | '\u{201C}'
+                | '\u{201D}'
+                | '\u{201E}'
+        )
 }

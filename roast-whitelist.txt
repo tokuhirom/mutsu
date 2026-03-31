@@ -172,6 +172,7 @@ roast/S03-operators/is-divisible-by.t
 roast/S03-operators/lcm.t
 roast/S03-operators/list-quote-junction.t
 roast/S03-operators/minmax.t
+roast/S03-operators/misc.t
 roast/S03-operators/names.t
 roast/S03-operators/nesting.t
 roast/S03-operators/not.t

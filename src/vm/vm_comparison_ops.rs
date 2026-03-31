@@ -1,5 +1,26 @@
 use super::*;
 
+/// Check if a value is a numeric type object (undefined) used in numeric context.
+/// In Raku, numeric type objects (Int, Num, Rat, etc.) throw a hard error when
+/// used in numeric comparison, even inside `quietly`. Non-numeric type objects
+/// (Any, Str, etc.) only produce a suppressible warning and coerce to 0.
+fn check_type_object_in_numeric_context(v: &Value) -> Result<(), RuntimeError> {
+    if let Value::Package(name) = v {
+        let type_name = name.resolve();
+        let is_numeric_type = matches!(
+            type_name.as_ref(),
+            "Int" | "Num" | "Rat" | "FatRat" | "Complex" | "int" | "num"
+        );
+        if is_numeric_type {
+            return Err(RuntimeError::new(format!(
+                "Use of uninitialized value of type {} in numeric context",
+                type_name
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Extract (real, imaginary) parts from a value, treating non-Complex as having im=0.
 fn complex_parts(v: &Value) -> (f64, f64) {
     match v {
@@ -132,6 +153,8 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            check_type_object_in_numeric_context(&l)?;
+            check_type_object_in_numeric_context(&r)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Interpreter::compare(l, r, |o| o < 0)
         })?;
@@ -143,6 +166,8 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            check_type_object_in_numeric_context(&l)?;
+            check_type_object_in_numeric_context(&r)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Interpreter::compare(l, r, |o| o <= 0)
         })?;
@@ -154,6 +179,8 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            check_type_object_in_numeric_context(&l)?;
+            check_type_object_in_numeric_context(&r)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Interpreter::compare(l, r, |o| o > 0)
         })?;
@@ -165,6 +192,8 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            check_type_object_in_numeric_context(&l)?;
+            check_type_object_in_numeric_context(&r)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Interpreter::compare(l, r, |o| o >= 0)
         })?;
