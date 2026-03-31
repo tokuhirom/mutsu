@@ -5,7 +5,7 @@ MUTSU_BIN ?= $(CARGO_TARGET_DIR)/release/mutsu
 
 test:
 	@mkdir -p tmp
-	(cargo test && cargo build --release && prove -e '$(MUTSU_BIN)' t/) 2>&1 | tee tmp/make-test.log
+	(cargo build && cargo test && cargo build --release && prove -e '$(MUTSU_BIN)' t/) 2>&1 | tee tmp/make-test.log
 
 roast:
 	@mkdir -p tmp
