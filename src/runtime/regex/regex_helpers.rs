@@ -250,6 +250,10 @@ pub(super) fn is_word_char(c: char) -> bool {
 /// combining marks (Unicode category M) so that a single regex atom
 /// consumes the full grapheme, matching Raku's grapheme-level semantics.
 pub(super) fn grapheme_end(chars: &[char], pos: usize) -> usize {
+    // \r\n is a single grapheme cluster in Raku
+    if pos < chars.len() && chars[pos] == '\r' && pos + 1 < chars.len() && chars[pos + 1] == '\n' {
+        return pos + 2;
+    }
     let mut end = pos + 1;
     while end < chars.len() && is_combining_mark(chars[end]) {
         end += 1;

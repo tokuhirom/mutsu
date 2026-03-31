@@ -378,7 +378,17 @@ impl Interpreter {
                 }
             }
             RegexAtom::Any => true,
-            RegexAtom::CharClass(class) => self.regex_match_class_ignorecase(class, c, ignore_case),
+            RegexAtom::CharClass(class) => {
+                // \r\n is a single grapheme cluster in Raku; treat it as matching \n
+                if c == '\r'
+                    && pos + 1 < chars.len()
+                    && chars[pos + 1] == '\n'
+                    && self.regex_match_class_ignorecase(class, '\n', ignore_case)
+                {
+                    return Some(pos + 2);
+                }
+                self.regex_match_class_ignorecase(class, c, ignore_case)
+            }
             RegexAtom::UnicodeProp {
                 name,
                 negated,
@@ -392,15 +402,21 @@ impl Interpreter {
                 if *negated { !prop_match } else { prop_match }
             }
             RegexAtom::CompositeClass { positive, negative } => {
-                let check_char = if ignore_case {
-                    c.to_lowercase().next().unwrap_or(c)
+                // \r\n is a single grapheme cluster in Raku; treat it as matching \n
+                let effective_c = if c == '\r' && pos + 1 < chars.len() && chars[pos + 1] == '\n' {
+                    '\n'
                 } else {
                     c
                 };
-                let chars_to_check: Vec<char> = if ignore_case {
-                    CaseFoldIter::new(c).collect()
+                let check_char = if ignore_case {
+                    effective_c.to_lowercase().next().unwrap_or(effective_c)
                 } else {
-                    vec![c]
+                    effective_c
+                };
+                let chars_to_check: Vec<char> = if ignore_case {
+                    CaseFoldIter::new(effective_c).collect()
+                } else {
+                    vec![effective_c]
                 };
                 let pos_match = positive.iter().any(|item| match item {
                     ClassItem::NamedBuiltin(n) => chars_to_check
