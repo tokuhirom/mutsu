@@ -4,6 +4,8 @@
 
 mutsu aims to be a lightweight, embeddable Raku interpreter. It is under heavy active development and is **not yet suitable for production use**.
 
+Try it in your browser: **https://tokuhirom.github.io/mutsu/** (WebAssembly demo)
+
 ## Status
 
 mutsu passes **1,010 out of ~1,300** official [Roast](https://github.com/Raku/roast) test files (~165,000 subtests), covering core language features including:
