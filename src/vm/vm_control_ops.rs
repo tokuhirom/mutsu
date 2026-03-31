@@ -336,6 +336,8 @@ impl VM {
             .flatten();
         let saved_topic_source = self.topic_source_var.take();
         let container_binding = self.container_ref_var.take();
+        let container_reversed = self.container_ref_reversed;
+        self.container_ref_reversed = false;
         // Capture hash key order before the loop so writeback uses the
         // original key order even after the hash is mutated during iteration.
         let hash_keys_for_writeback: Option<Vec<String>> = if rw_writeback {
@@ -352,6 +354,7 @@ impl VM {
         } else {
             None
         };
+        let total_items = chunked_items.len();
         'for_loop: for (idx, item) in chunked_items.into_iter().enumerate() {
             self.topic_source_var = if writes_back_topic {
                 container_binding.clone()
@@ -399,7 +402,13 @@ impl VM {
                             self.sync_state_locals_in_range(code, body_start, loop_end);
                         }
                         if writes_back_topic {
-                            self.write_back_for_topic_item(code, &container_binding, idx);
+                            self.write_back_for_topic_item(
+                                code,
+                                &container_binding,
+                                idx,
+                                container_reversed,
+                                total_items,
+                            );
                         }
                         if rw_writeback {
                             self.write_back_for_rw_param(
@@ -439,7 +448,13 @@ impl VM {
                     }
                     Err(e) if e.is_succeed => {
                         if writes_back_topic {
-                            self.write_back_for_topic_item(code, &container_binding, idx);
+                            self.write_back_for_topic_item(
+                                code,
+                                &container_binding,
+                                idx,
+                                container_reversed,
+                                total_items,
+                            );
                         }
                         if rw_writeback {
                             self.write_back_for_rw_param(
@@ -484,7 +499,13 @@ impl VM {
                             && Self::label_matches(&e.label, &spec.label) =>
                     {
                         if writes_back_topic {
-                            self.write_back_for_topic_item(code, &container_binding, idx);
+                            self.write_back_for_topic_item(
+                                code,
+                                &container_binding,
+                                idx,
+                                container_reversed,
+                                total_items,
+                            );
                         }
                         if rw_writeback {
                             self.write_back_for_rw_param(
@@ -520,7 +541,13 @@ impl VM {
                     }
                     Err(e) if e.is_last && Self::label_matches(&e.label, &spec.label) => {
                         if writes_back_topic {
-                            self.write_back_for_topic_item(code, &container_binding, idx);
+                            self.write_back_for_topic_item(
+                                code,
+                                &container_binding,
+                                idx,
+                                container_reversed,
+                                total_items,
+                            );
                         }
                         if rw_writeback {
                             self.write_back_for_rw_param(
@@ -544,7 +571,13 @@ impl VM {
                     }
                     Err(e) if e.is_next && Self::label_matches(&e.label, &spec.label) => {
                         if writes_back_topic {
-                            self.write_back_for_topic_item(code, &container_binding, idx);
+                            self.write_back_for_topic_item(
+                                code,
+                                &container_binding,
+                                idx,
+                                container_reversed,
+                                total_items,
+                            );
                         }
                         if rw_writeback {
                             self.write_back_for_rw_param(
@@ -980,6 +1013,8 @@ impl VM {
         code: &CompiledCode,
         source_var: &Option<String>,
         idx: usize,
+        reversed: bool,
+        total_items: usize,
     ) {
         let Some(source) = source_var else {
             return;
@@ -993,11 +1028,16 @@ impl VM {
         let Some(Value::Array(items, kind)) = self.get_env_with_main_alias(source) else {
             return;
         };
-        if idx >= items.len() {
+        let actual_idx = if reversed && total_items > 0 {
+            total_items - 1 - idx
+        } else {
+            idx
+        };
+        if actual_idx >= items.len() {
             return;
         }
         let mut updated = items.to_vec();
-        updated[idx] = current_topic;
+        updated[actual_idx] = current_topic;
         let updated_value = Value::Array(std::sync::Arc::new(updated), kind);
         self.set_env_with_main_alias(source, updated_value.clone());
         self.update_local_if_exists(code, source, &updated_value);
