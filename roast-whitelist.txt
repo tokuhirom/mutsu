@@ -99,6 +99,7 @@ roast/S02-types/array_ref.t
 roast/S02-types/assigning-refs.t
 roast/S02-types/bag-iterator.t
 roast/S02-types/bool.t
+roast/S02-types/bool.t
 roast/S02-types/built-in.t
 roast/S02-types/compact.t
 roast/S02-types/fatrat.t
@@ -261,6 +262,7 @@ roast/S04-statement-parsing/hash.t
 roast/S04-statements/do.t
 roast/S04-statements/for-scope.t
 roast/S04-statements/for_with_only_one_item.t
+roast/S04-statements/given.t
 roast/S04-statements/given.t
 roast/S04-statements/goto.t
 roast/S04-statements/if.t
@@ -842,6 +844,7 @@ roast/S32-list/grep-kv.t
 roast/S32-list/grep-p.t
 roast/S32-list/grep-v.t
 roast/S32-list/grep.t
+roast/S32-list/grep.t
 roast/S32-list/join.t
 roast/S32-list/map.t
 roast/S32-list/map_function_return_values.t
@@ -863,6 +866,7 @@ roast/S32-num/cool-num.t
 roast/S32-num/exp.t
 roast/S32-num/expmod.t
 roast/S32-num/fatrat.t
+roast/S32-num/int.t
 roast/S32-num/int.t
 roast/S32-num/is-prime.t
 roast/S32-num/log.t
@@ -904,6 +908,7 @@ roast/S32-str/rindex.t
 roast/S32-str/samecase.t
 roast/S32-str/samemark.t
 roast/S32-str/space-chars.t
+roast/S32-str/split.t
 roast/S32-str/split.t
 roast/S32-str/sprintf-b.t
 roast/S32-str/sprintf-c.t
