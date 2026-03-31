@@ -443,13 +443,15 @@ impl Interpreter {
         // or about arity mismatch.
         let is_arity_error = err.message.contains("Too few positionals passed")
             || err.message.contains("Too many positionals passed");
-        let is_type_only_mismatch = err.exception.is_none()
+        let has_binding_param_exception = err.exception.as_ref().is_some_and(|ex| {
+            matches!(ex.as_ref(), Value::Instance { class_name, .. }
+                if class_name.resolve() == "X::TypeCheck::Binding::Parameter")
+        });
+        let is_type_mismatch = (err.exception.is_none() || has_binding_param_exception)
             && err
                 .message
-                .contains("X::TypeCheck::Binding::Parameter: Type check failed")
-            && (err.message.contains("for parameter '")
-                || err.message.contains("for __type_only__"));
-        if (is_arity_error || is_type_only_mismatch) && err.exception.is_none() {
+                .contains("X::TypeCheck::Binding::Parameter: Type check failed");
+        if is_arity_error || is_type_mismatch {
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("message".to_string(), Value::str(enhanced_msg.clone()));
             attrs.insert("objname".to_string(), Value::str(func_name.to_string()));
