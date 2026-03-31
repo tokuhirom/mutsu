@@ -339,9 +339,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Value::Bag(b, _) => {
                     Some(Ok(Value::array(b.keys().map(|k| b.typed_key(k)).collect())))
                 }
-                Value::Mix(m, _) => Some(Ok(Value::array(
-                    m.keys().map(|k| Value::str(k.clone())).collect(),
-                ))),
+                Value::Mix(m, _) => {
+                    Some(Ok(Value::array(m.keys().map(|k| m.typed_key(k)).collect())))
+                }
                 Value::Package(_) => None, // let runtime handle (may be enum type)
                 v if v.is_range() => Some(Ok(Value::array(positional_keys(
                     &crate::runtime::utils::value_to_list(v),

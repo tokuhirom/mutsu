@@ -348,7 +348,7 @@ impl VM {
             return Err(Self::lazy_list_error());
         }
         match value {
-            Value::Mix(m, _) => Ok((**m).clone()),
+            Value::Mix(m, _) => Ok(m.weights.clone()),
             Value::Bag(b, _) => Ok(b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect()),
             other => {
                 let set = Self::value_to_set_keys(other)?;
@@ -388,7 +388,7 @@ impl VM {
 
         let result = match (left, right) {
             (Value::Mix(a, _), Value::Mix(b, _)) => {
-                let mut result = (*a).clone();
+                let mut result = a.weights.clone();
                 for (k, v) in b.iter() {
                     let e = result.entry(k.clone()).or_insert(0.0);
                     *e = e.max(*v);
@@ -603,7 +603,7 @@ impl VM {
     /// Coerce a value to a Mix (HashMap<String, f64>)
     fn coerce_to_mix(val: &Value) -> HashMap<String, f64> {
         match val {
-            Value::Mix(m, _) => (**m).clone(),
+            Value::Mix(m, _) => m.weights.clone(),
             Value::Bag(b, _) => b.iter().map(|(k, v)| (k.clone(), *v as f64)).collect(),
             Value::Set(s, _) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
             Value::Hash(map) => {

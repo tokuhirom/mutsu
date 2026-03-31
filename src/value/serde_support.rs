@@ -154,7 +154,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
         Value::Complex(r, i) => Ok(SerValue::Complex(*r, *i)),
         Value::Set(s, _) => Ok(SerValue::Set((**s).clone())),
         Value::Bag(b, _) => Ok(SerValue::Bag(b.counts.clone())),
-        Value::Mix(m, _) => Ok(SerValue::Mix((**m).clone())),
+        Value::Mix(m, _) => Ok(SerValue::Mix(m.weights.clone())),
         Value::CompUnitDepSpec { short_name } => Ok(SerValue::CompUnitDepSpec {
             short_name: *short_name,
         }),
@@ -347,7 +347,7 @@ fn ser_to_value(sv: SerValue) -> Value {
         SerValue::Complex(r, i) => Value::Complex(r, i),
         SerValue::Set(s) => Value::Set(Arc::new(s), false),
         SerValue::Bag(b) => Value::bag(b),
-        SerValue::Mix(m) => Value::Mix(Arc::new(m), false),
+        SerValue::Mix(m) => Value::mix(m),
         SerValue::CompUnitDepSpec { short_name } => Value::CompUnitDepSpec { short_name },
         SerValue::Package(s) => Value::Package(s),
         SerValue::Routine {

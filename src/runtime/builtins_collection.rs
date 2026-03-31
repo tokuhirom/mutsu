@@ -1867,7 +1867,7 @@ impl Interpreter {
             _ => None,
         };
         let mut mix_counts: Option<HashMap<String, f64>> = match into_target.as_ref() {
-            Some(Value::Mix(m, _)) => Some(m.as_ref().clone()),
+            Some(Value::Mix(m, _)) => Some(m.weights.clone()),
             _ => None,
         };
 
