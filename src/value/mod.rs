@@ -14,6 +14,64 @@ use num_traits::{Signed, ToPrimitive, Zero};
 /// Shared mutable attribute storage for Proxy subclasses.
 pub(crate) type ProxySubclassAttrs = Arc<Mutex<HashMap<String, Value>>>;
 
+/// Bag data: wraps HashMap<String, i64> with optional original-typed keys.
+/// Implements Deref to HashMap<String, i64> so existing code works unchanged.
+#[derive(Debug, Clone)]
+pub(crate) struct BagData {
+    pub counts: HashMap<String, i64>,
+    /// Maps string keys back to original Values (e.g. Int(2), Bool(false)).
+    /// Only populated when the Bag is created from mixed-type data.
+    pub original_keys: Option<HashMap<String, Value>>,
+}
+
+impl BagData {
+    pub fn new(counts: HashMap<String, i64>) -> Self {
+        BagData {
+            counts,
+            original_keys: None,
+        }
+    }
+
+    pub fn with_original_keys(
+        counts: HashMap<String, i64>,
+        original_keys: HashMap<String, Value>,
+    ) -> Self {
+        BagData {
+            counts,
+            original_keys: Some(original_keys),
+        }
+    }
+
+    /// Get the original Value for a key, falling back to Str.
+    pub fn typed_key(&self, str_key: &str) -> Value {
+        if let Some(ref orig) = self.original_keys
+            && let Some(v) = orig.get(str_key)
+        {
+            return v.clone();
+        }
+        Value::Str(Arc::new(str_key.to_string()))
+    }
+}
+
+impl Deref for BagData {
+    type Target = HashMap<String, i64>;
+    fn deref(&self) -> &Self::Target {
+        &self.counts
+    }
+}
+
+impl DerefMut for BagData {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.counts
+    }
+}
+
+impl PartialEq for BagData {
+    fn eq(&self, other: &Self) -> bool {
+        self.counts == other.counts
+    }
+}
+
 mod display;
 mod error;
 mod serde_support;
@@ -413,7 +471,7 @@ pub enum Value {
     /// Set (immutable) or SetHash (mutable). The bool is `true` for mutable (SetHash).
     Set(Arc<HashSet<String>>, bool),
     /// Bag (immutable) or BagHash (mutable). The bool is `true` for mutable (BagHash).
-    Bag(Arc<HashMap<String, i64>>, bool),
+    Bag(Arc<BagData>, bool),
     /// Mix (immutable) or MixHash (mutable). The bool is `true` for mutable (MixHash).
     Mix(Arc<HashMap<String, f64>>, bool),
     CompUnitDepSpec {
@@ -1254,10 +1312,27 @@ impl Value {
         Value::Set(Arc::new(s), true)
     }
     pub fn bag(m: HashMap<String, i64>) -> Self {
-        Value::Bag(Arc::new(m), false)
+        Value::Bag(Arc::new(BagData::new(m)), false)
     }
     pub fn bag_hash(m: HashMap<String, i64>) -> Self {
-        Value::Bag(Arc::new(m), true)
+        Value::Bag(Arc::new(BagData::new(m)), true)
+    }
+    /// Create a Bag with preserved original key types.
+    pub fn bag_typed(counts: HashMap<String, i64>, original_keys: HashMap<String, Value>) -> Self {
+        Value::Bag(
+            Arc::new(BagData::with_original_keys(counts, original_keys)),
+            false,
+        )
+    }
+    /// Create a BagHash with preserved original key types.
+    pub fn bag_hash_typed(
+        counts: HashMap<String, i64>,
+        original_keys: HashMap<String, Value>,
+    ) -> Self {
+        Value::Bag(
+            Arc::new(BagData::with_original_keys(counts, original_keys)),
+            true,
+        )
     }
     pub fn mix(mut m: HashMap<String, f64>) -> Self {
         m.retain(|_, weight| *weight != 0.0);

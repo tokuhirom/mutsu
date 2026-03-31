@@ -325,7 +325,7 @@ impl VM {
             return Err(Self::lazy_list_error());
         }
         match value {
-            Value::Bag(b, _) => Ok((**b).clone()),
+            Value::Bag(b, _) => Ok(b.counts.clone()),
             Value::Mix(m, _) => Ok(m
                 .iter()
                 .filter_map(|(k, w)| {
@@ -396,7 +396,7 @@ impl VM {
                 Value::mix(result)
             }
             (Value::Bag(a, _), Value::Bag(b, _)) => {
-                let mut result = (*a).clone();
+                let mut result = a.counts.clone();
                 for (k, v) in b.iter() {
                     let e = result.entry(k.clone()).or_insert(0);
                     *e = (*e).max(*v);
@@ -563,7 +563,7 @@ impl VM {
     /// Coerce a value to a Bag (HashMap<String, i64>)
     fn coerce_to_bag(val: &Value) -> HashMap<String, i64> {
         match val {
-            Value::Bag(b, _) => (**b).clone(),
+            Value::Bag(b, _) => b.counts.clone(),
             Value::Set(s, _) => s.iter().map(|k| (k.clone(), 1)).collect(),
             Value::Mix(m, _) => m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect(),
             Value::Hash(map) => {
