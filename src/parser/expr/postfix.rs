@@ -1093,10 +1093,12 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         ));
     }
     // lazy prefix: wrap inner expression with .lazy method call
+    // `lazy` is a statement prefix — it wraps the full following expression
+    // (including infix operators like `..`), not just the next prefix term.
     if input.starts_with("lazy") && !is_ident_char(input.as_bytes().get(4).copied()) {
         let r = &input[4..];
         let (r, _) = ws(r)?;
-        let (r, expr) = prefix_expr(r)?;
+        let (r, expr) = expression_no_sequence(r)?;
         return Ok((
             r,
             Expr::MethodCall {
@@ -1112,7 +1114,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if input.starts_with("hyper") && !is_ident_char(input.as_bytes().get(5).copied()) {
         let r = &input[5..];
         let (r, _) = ws(r)?;
-        let (r, expr) = prefix_expr(r)?;
+        let (r, expr) = expression_no_sequence(r)?;
         return Ok((
             r,
             Expr::MethodCall {
@@ -1128,7 +1130,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if input.starts_with("eager") && !is_ident_char(input.as_bytes().get(5).copied()) {
         let r = &input[5..];
         let (r, _) = ws(r)?;
-        let (r, expr) = prefix_expr(r)?;
+        let (r, expr) = expression_no_sequence(r)?;
         return Ok((r, Expr::Eager(Box::new(expr))));
     }
     // ^expr — upto operator: ^5 means 0..^5

@@ -473,6 +473,7 @@ roast/S12-attributes/smiley.t
 roast/S12-attributes/undeclared.t
 roast/S12-class/anonymous.t
 roast/S12-class/attributes-required.t
+roast/S12-class/attributes.t
 roast/S12-class/augment-supersede.t
 roast/S12-class/declaration-order.t
 roast/S12-class/extending-arrays.t
