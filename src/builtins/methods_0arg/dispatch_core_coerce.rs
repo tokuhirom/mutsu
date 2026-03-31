@@ -96,6 +96,23 @@ pub(super) fn dispatch(
             _ => true,
         })))),
         "WHICH" => {
+            // Determine if this is a value type (ValueObjAt) or reference type (ObjAt)
+            let is_value_type = matches!(
+                target,
+                Value::Int(_)
+                    | Value::BigInt(_)
+                    | Value::Num(_)
+                    | Value::Str(_)
+                    | Value::Bool(_)
+                    | Value::Rat(_, _)
+                    | Value::BigRat(_, _)
+                    | Value::FatRat(_, _)
+                    | Value::Complex(_, _)
+                    | Value::Set(_, _)
+                    | Value::Bag(_, _)
+                    | Value::Mix(_, _)
+                    | Value::Nil
+            );
             let which_str = match target {
                 Value::Package(name) => format!("{}|U{}", name.resolve(), name.id()),
                 Value::CustomType { name, id, .. } => {
@@ -143,15 +160,16 @@ pub(super) fn dispatch(
                     format!("Mix|{:016X}", hasher.finish())
                 }
                 _ => format!(
-                    "{:?}|0x{:p}",
+                    "{}|0x{:p}",
                     runtime::utils::value_type_name(target),
                     target as *const Value
                 ),
             };
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("WHICH".to_string(), Value::str(which_str));
+            let objat_class = if is_value_type { "ValueObjAt" } else { "ObjAt" };
             Some(Some(Ok(Value::make_instance(
-                Symbol::intern("ObjAt"),
+                Symbol::intern(objat_class),
                 attrs,
             ))))
         }

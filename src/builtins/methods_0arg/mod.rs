@@ -354,7 +354,7 @@ pub(crate) fn native_method_0arg(
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("WHICH".to_string(), Value::str(which_str));
             return Some(Ok(Value::make_instance(
-                crate::symbol::Symbol::intern("ObjAt"),
+                crate::symbol::Symbol::intern("ValueObjAt"),
                 attrs,
             )));
         }

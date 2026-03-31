@@ -630,6 +630,14 @@ impl Value {
                 self,
                 Value::Array(..) | Value::LazyList(_) | Value::Hash(_) | Value::Seq(_)
             ),
+            "ObjAt" => {
+                // ValueObjAt is a subclass of ObjAt
+                matches!(
+                    self,
+                    Value::Instance { class_name, .. }
+                        if class_name == "ObjAt" || class_name == "ValueObjAt"
+                )
+            }
             "Pod::Block" => matches!(
                 self,
                 Value::Instance { class_name, .. }

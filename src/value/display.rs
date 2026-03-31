@@ -603,7 +603,7 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "ObjAt" => attributes
+            } if class_name == "ObjAt" || class_name == "ValueObjAt" => attributes
                 .get("WHICH")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_else(|| format!("{}()", class_name)),

@@ -11,6 +11,21 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
         match method {
+            "new" if matches!(target, Value::Package(name) if matches!(name.resolve().as_str(), "ObjAt" | "ValueObjAt")) =>
+            {
+                let class_name = if let Value::Package(n) = target {
+                    n.resolve()
+                } else {
+                    unreachable!()
+                };
+                let which_str = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("WHICH".to_string(), Value::str(which_str));
+                Some(Ok(Value::make_instance(Symbol::intern(&class_name), attrs)))
+            }
             "new" if matches!(target, Value::Package(name) if matches!(name.resolve().as_str(), "IntStr" | "NumStr" | "RatStr" | "ComplexStr")) =>
             {
                 let type_name = if let Value::Package(n) = target {

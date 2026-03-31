@@ -24,7 +24,7 @@ pub(super) fn dispatch(
                 )))
             }
         }
-        Value::Nil => Some(Ok(Value::str_from("(Any)"))),
+        Value::Nil => Some(Ok(Value::str_from("Nil"))),
         Value::FatRat(n, d) => {
             if *d == 0 && (method == "gist" || method == "Str") {
                 Some(Err(RuntimeError::numeric_divide_by_zero_with(Some(

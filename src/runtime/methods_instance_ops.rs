@@ -658,12 +658,18 @@ impl Interpreter {
                 && args.is_empty()
                 && !self.has_user_method(&class_name.resolve(), method)
             {
-                if class_name == "ObjAt" {
+                if *class_name == Symbol::intern("ObjAt")
+                    || *class_name == Symbol::intern("ValueObjAt")
+                {
                     let which = attributes
                         .get("WHICH")
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
-                    return Ok(Value::str(format!("ObjAt.new(\"{}\")", which)));
+                    return Ok(Value::str(format!(
+                        "{}.new(\"{}\")",
+                        class_name.resolve(),
+                        which
+                    )));
                 }
                 // Collect public attributes for .raku representation
                 let class_key = class_name.resolve();

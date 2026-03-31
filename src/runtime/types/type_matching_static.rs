@@ -160,6 +160,10 @@ impl Interpreter {
         if constraint == "Variable" && matches!(value_type, "Scalar" | "Array" | "Hash" | "Sub") {
             return true;
         }
+        // ValueObjAt is a subtype of ObjAt
+        if constraint == "ObjAt" && value_type == "ValueObjAt" {
+            return true;
+        }
         // Exception hierarchy: all X::* types are subtypes of Exception
         if constraint == "Exception"
             && (value_type.starts_with("X::")
