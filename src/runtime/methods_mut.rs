@@ -1076,6 +1076,28 @@ impl Interpreter {
                         value.to_string_value()
                     )));
                 }
+                // Element-level type check for @ attributes (e.g. `has @.a of int`)
+                if attr_sigil == '@'
+                    && let Some(type_constraint) =
+                        self.get_attr_type_constraint(&class_name.resolve(), method)
+                    && let Value::Array(items, ..) = &value
+                {
+                    for item in items.iter() {
+                        if !self.type_matches_value(&type_constraint, item) {
+                            let native_name = match type_constraint.as_str() {
+                                "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8"
+                                | "uint16" | "uint32" | "uint64" => "a native integer",
+                                "num" | "num32" | "num64" => "a native number",
+                                _ => &type_constraint,
+                            };
+                            return Err(RuntimeError::new(format!(
+                                "This type cannot unbox to {}: P6opaque, {}",
+                                native_name,
+                                super::utils::value_type_name(item),
+                            )));
+                        }
+                    }
+                }
                 let attr_key = if attributes.contains_key(method) {
                     method.to_string()
                 } else if attributes.contains_key(&format!("@{}", method)) {
