@@ -836,7 +836,7 @@ impl Interpreter {
                             let call_name = name_str.strip_prefix('&').unwrap_or(&name_str);
                             match self.call_function(call_name, args) {
                                 Ok(v) => v,
-                                Err(e) if suppress_generator_error => break 'seq_gen,
+                                Err(_e) if suppress_generator_error => break 'seq_gen,
                                 Err(e) => return Err(e),
                             }
                         } else {
@@ -876,7 +876,7 @@ impl Interpreter {
                             if needs_full_binding {
                                 match self.call_sub_value(Value::Sub(data.clone()), args, false) {
                                     Ok(v) => v,
-                                    Err(e) if suppress_generator_error => break 'seq_gen,
+                                    Err(_e) if suppress_generator_error => break 'seq_gen,
                                     Err(e) => return Err(e),
                                 }
                             } else {
@@ -938,7 +938,7 @@ impl Interpreter {
                                         self.env = restore_env_with_side_effects(saved, &self.env);
                                         break;
                                     }
-                                    Err(e) if suppress_generator_error => {
+                                    Err(_e) if suppress_generator_error => {
                                         self.env = restore_env_with_side_effects(saved, &self.env);
                                         break 'seq_gen;
                                     }
@@ -977,7 +977,7 @@ impl Interpreter {
                         };
                         match self.call_sub_value(genfn.clone(), args, false) {
                             Ok(v) => v,
-                            Err(e) if suppress_generator_error => break 'seq_gen,
+                            Err(_e) if suppress_generator_error => break 'seq_gen,
                             Err(e) => return Err(e),
                         }
                     } else {

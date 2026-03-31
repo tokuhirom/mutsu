@@ -649,10 +649,11 @@ impl VM {
         let saved_topic_source = self.topic_source_var.take();
 
         self.env_dirty = true;
-        let end = if inclusive { end_val + 1 } else { end_val };
         let mut i = start;
 
-        'for_loop: while i < end {
+        // Use <= for inclusive ranges instead of end_val + 1 to avoid overflow
+        // when end_val is i64::MAX
+        'for_loop: while if inclusive { i <= end_val } else { i < end_val } {
             let item = Value::Int(i);
             self.topic_source_var = None;
 
@@ -759,7 +760,11 @@ impl VM {
             if self.interpreter.is_halted() {
                 break;
             }
-            i += 1;
+            // Use checked_add to avoid overflow when i is i64::MAX
+            match i.checked_add(1) {
+                Some(next) => i = next,
+                None => break, // i was i64::MAX, no more values possible
+            }
         }
         // Unmark readonly params after loop completion
         if !spec.is_rw
