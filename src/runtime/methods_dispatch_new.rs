@@ -18,10 +18,12 @@ impl Interpreter {
                 } else {
                     unreachable!()
                 };
-                let which_str = args
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
+                if args.is_empty() {
+                    return Some(Err(RuntimeError::new(
+                        "Too few positionals passed; expected 2 arguments but got 1".to_string(),
+                    )));
+                }
+                let which_str = args[0].to_string_value();
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("WHICH".to_string(), Value::str(which_str));
                 Some(Ok(Value::make_instance(Symbol::intern(&class_name), attrs)))
