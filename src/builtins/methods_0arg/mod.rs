@@ -618,7 +618,9 @@ fn is_infinite_range(value: &Value) -> bool {
 }
 
 pub(crate) fn is_value_lazy(value: &Value) -> bool {
-    matches!(value, Value::LazyList(_)) || is_infinite_range(value)
+    matches!(value, Value::LazyList(_))
+        || matches!(value, Value::Array(_, kind) if kind.is_lazy())
+        || is_infinite_range(value)
 }
 
 fn flatten_deep_value(value: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
@@ -748,7 +750,7 @@ fn range_gist_string(value: &Value) -> String {
 
 fn gist_array_wrap(inner: &str, kind: ArrayKind) -> String {
     match kind {
-        ArrayKind::Array | ArrayKind::Shaped => format!("[{}]", inner),
+        ArrayKind::Array | ArrayKind::Shaped | ArrayKind::Lazy => format!("[{}]", inner),
         ArrayKind::List => format!("({})", inner),
         ArrayKind::ItemArray => format!("$[{}]", inner),
         ArrayKind::ItemList => format!("$({})", inner),

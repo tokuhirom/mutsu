@@ -303,15 +303,23 @@ pub enum ArrayKind {
     ItemArray,
     /// `my @a[2;3]` — shaped (multidimensional) array declared with fixed dimensions
     Shaped,
+    /// Lazy array — backed by an infinite range or similar lazy source.
+    /// Operations like `pop`, `push`, `elems` should throw `X::Cannot::Lazy`.
+    Lazy,
 }
 
 impl ArrayKind {
-    /// True for `Array`, `ItemArray`, and `Shaped` (the `[...]` constructor or shaped declaration).
+    /// True for `Array`, `ItemArray`, `Shaped`, and `Lazy` (the `[...]` constructor or shaped declaration).
     pub fn is_real_array(self) -> bool {
         matches!(
             self,
-            ArrayKind::Array | ArrayKind::ItemArray | ArrayKind::Shaped
+            ArrayKind::Array | ArrayKind::ItemArray | ArrayKind::Shaped | ArrayKind::Lazy
         )
+    }
+
+    /// True for lazy arrays backed by an infinite source.
+    pub fn is_lazy(self) -> bool {
+        matches!(self, ArrayKind::Lazy)
     }
 
     /// True for `ItemList` and `ItemArray` (Scalar-wrapped).

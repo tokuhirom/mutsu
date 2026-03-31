@@ -234,6 +234,9 @@ impl Interpreter {
                         args.len() + 1
                     )));
                 }
+                if kind.is_lazy() {
+                    return Err(RuntimeError::cannot_lazy("pop"));
+                }
                 if items.is_empty() {
                     Ok(Value::Array(Arc::new(items), kind))
                 } else {

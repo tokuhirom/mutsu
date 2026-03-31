@@ -413,6 +413,11 @@ impl VM {
                     && args.is_empty()
                     && matches!(&target, Value::Array(_, kind) if kind.is_real_array())
                 {
+                    if let Value::Array(_, kind) = &target
+                        && kind.is_lazy()
+                    {
+                        return Err(RuntimeError::cannot_lazy(&method));
+                    }
                     if let Value::Array(items, _) = &target {
                         Ok(if items.is_empty() {
                             crate::runtime::make_empty_array_failure(&method)

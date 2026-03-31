@@ -1590,6 +1590,11 @@ impl Interpreter {
                             args.len() + 1
                         )));
                     }
+                    if let Some(Value::Array(_, kind)) = self.env.get(&key)
+                        && kind.is_lazy()
+                    {
+                        return Err(RuntimeError::cannot_lazy("pop"));
+                    }
                     if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);
                         let out = if items.is_empty() {
@@ -1822,6 +1827,11 @@ impl Interpreter {
                             "Too many positionals passed; expected 1 argument but got {}",
                             args.len() + 1
                         )));
+                    }
+                    if let Some(Value::Array(_, kind)) = self.env.get(&key)
+                        && kind.is_lazy()
+                    {
+                        return Err(RuntimeError::cannot_lazy("pop"));
                     }
                     if let Some(Value::Array(arc_items, _)) = self.env.get_mut(&key) {
                         let items = Arc::make_mut(arc_items);

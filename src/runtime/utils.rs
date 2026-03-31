@@ -583,27 +583,67 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
         }
         Value::Nil => Value::real_array(Vec::new()),
         Value::Range(a, b) => {
-            let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
-            Value::real_array((a..=end).map(Value::Int).collect())
+            if b == i64::MAX {
+                // Infinite range — mark as lazy
+                let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
+                Value::Array(
+                    Arc::new((a..=end).map(Value::Int).collect()),
+                    ArrayKind::Lazy,
+                )
+            } else {
+                let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
+                Value::real_array((a..=end).map(Value::Int).collect())
+            }
         }
         Value::RangeExcl(a, b) => {
-            let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
-            Value::real_array((a..end).map(Value::Int).collect())
+            if b == i64::MAX {
+                let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
+                Value::Array(
+                    Arc::new((a..end).map(Value::Int).collect()),
+                    ArrayKind::Lazy,
+                )
+            } else {
+                let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
+                Value::real_array((a..end).map(Value::Int).collect())
+            }
         }
         Value::RangeExclStart(a, b) => {
-            let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
-            Value::real_array((a + 1..=end).map(Value::Int).collect())
+            if b == i64::MAX {
+                let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
+                Value::Array(
+                    Arc::new((a + 1..=end).map(Value::Int).collect()),
+                    ArrayKind::Lazy,
+                )
+            } else {
+                let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
+                Value::real_array((a + 1..=end).map(Value::Int).collect())
+            }
         }
         Value::RangeExclBoth(a, b) => {
-            let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
-            Value::real_array((a + 1..end).map(Value::Int).collect())
+            if b == i64::MAX {
+                let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
+                Value::Array(
+                    Arc::new((a + 1..end).map(Value::Int).collect()),
+                    ArrayKind::Lazy,
+                )
+            } else {
+                let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
+                Value::real_array((a + 1..end).map(Value::Int).collect())
+            }
         }
         Value::GenericRange {
             ref start, ref end, ..
         } if matches!(start.as_ref(), Value::Str(_)) && matches!(end.as_ref(), Value::Str(_)) => {
             Value::real_array(value_to_list(&value))
         }
-        Value::GenericRange { .. } => Value::real_array(value_to_list(&value)),
+        Value::GenericRange { ref end, .. } => {
+            let end_f = end.to_f64();
+            if end_f.is_infinite() && end_f.is_sign_positive() {
+                Value::Array(Arc::new(value_to_list(&value)), ArrayKind::Lazy)
+            } else {
+                Value::real_array(value_to_list(&value))
+            }
+        }
         Value::Slip(items) | Value::Seq(items) => Value::Array(items, ArrayKind::Array),
         Value::LazyList(_) => value,
         other => Value::real_array(vec![other]),
@@ -654,6 +694,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
             match kind {
                 crate::value::ArrayKind::Array
                 | crate::value::ArrayKind::Shaped
+                | crate::value::ArrayKind::Lazy
                 | crate::value::ArrayKind::ItemArray => {
                     // .gist does NOT show the `$` prefix — only .raku does.
                     format!("[{}]", inner)

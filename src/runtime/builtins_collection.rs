@@ -999,6 +999,12 @@ impl Interpreter {
                 args.len()
             )));
         }
+        match args.first() {
+            Some(Value::Array(_, kind)) if kind.is_lazy() => {
+                return Err(RuntimeError::cannot_lazy("pop"));
+            }
+            _ => {}
+        }
         Ok(match args.first().cloned() {
             Some(Value::Array(mut items, ..)) => {
                 let items_mut = Arc::make_mut(&mut items);
