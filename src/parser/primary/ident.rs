@@ -509,45 +509,59 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if input.starts_with("rand")
         && !input[4..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
     {
-        // rand() and rand(N) are Perl 5 syntax — throw X::Obsolete
-        let after_rand = &input[4..];
-        let after_ws = after_rand.trim_start();
-        if after_ws.starts_with('(') {
-            return Err(PError::fatal(
-                "X::Obsolete: Unsupported use of rand().  In Raku please use: rand.".to_string(),
+        let after = input[4..].trim_start();
+        // Don't treat as a call if followed by => (fat arrow creates a Pair)
+        if after.starts_with("=>") && !after.starts_with("==>") {
+            // Fall through to identifier_or_call which handles pair creation
+        } else {
+            // rand() and rand(N) are Perl 5 syntax — throw X::Obsolete
+            let after_ws = after;
+            if after_ws.starts_with('(') {
+                return Err(PError::fatal(
+                    "X::Obsolete: Unsupported use of rand().  In Raku please use: rand."
+                        .to_string(),
+                ));
+            }
+            return Ok((
+                &input[4..],
+                Expr::Call {
+                    name: Symbol::intern("rand"),
+                    args: vec![],
+                },
             ));
         }
-        return Ok((
-            &input[4..],
-            Expr::Call {
-                name: Symbol::intern("rand"),
-                args: vec![],
-            },
-        ));
     }
     // now — returns current time as Instant (term)
     if input.starts_with("now")
         && !input[3..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
     {
-        return Ok((
-            &input[3..],
-            Expr::Call {
-                name: Symbol::intern("now"),
-                args: vec![],
-            },
-        ));
+        let after = input[3..].trim_start();
+        // Don't treat as a call if followed by => (fat arrow creates a Pair)
+        if !after.starts_with("=>") || after.starts_with("==>") {
+            return Ok((
+                &input[3..],
+                Expr::Call {
+                    name: Symbol::intern("now"),
+                    args: vec![],
+                },
+            ));
+        }
     }
     // time — returns current epoch time as Int (term)
     if input.starts_with("time")
         && !input[4..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
     {
-        return Ok((
-            &input[4..],
-            Expr::Call {
-                name: Symbol::intern("time"),
-                args: vec![],
-            },
-        ));
+        let after = input[4..].trim_start();
+        // Don't treat as a call if followed by => (fat arrow creates a Pair)
+        if !after.starts_with("=>") || after.starts_with("==>") {
+            return Ok((
+                &input[4..],
+                Expr::Call {
+                    name: Symbol::intern("time"),
+                    args: vec![],
+                },
+            ));
+        }
     }
     // times — returns ($user, $system) CPU times
     // Only treated as a 0-arg call when followed by parens or used standalone
