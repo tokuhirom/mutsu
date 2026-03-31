@@ -54,6 +54,8 @@ impl Interpreter {
             "say" if args.is_empty() => Some(self.dispatch_say(&target)),
             "print" if args.is_empty() => Some(self.dispatch_print(&target)),
             "put" if args.is_empty() => Some(self.dispatch_put(&target)),
+            "printf" if args.is_empty() => Some(self.dispatch_printf(&target)),
+            "sprintf" if args.is_empty() => Some(self.dispatch_sprintf(&target)),
             "shape" if args.is_empty() => self.dispatch_shape(&target),
             "default" if args.is_empty() => Self::dispatch_default(&target),
             "note" if args.is_empty() => Some(self.dispatch_note(&target)),

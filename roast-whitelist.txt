@@ -643,6 +643,7 @@ roast/S16-io/cwd.t
 roast/S16-io/home.t
 roast/S16-io/newline.t
 roast/S16-io/note.t
+roast/S16-io/print.t
 roast/S16-io/prompt.t
 roast/S16-io/put.t
 roast/S16-io/readchars.t

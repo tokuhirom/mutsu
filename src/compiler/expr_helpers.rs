@@ -322,6 +322,20 @@ impl Compiler {
             });
             return;
         }
+        // $!attr (private twigil) — direct attribute access.
+        // In Raku, $!attr reads the attribute directly from the instance,
+        // bypassing any accessor method. The runtime sets `!attr_name` in the
+        // env when a method body executes on an instance.
+        if let Some(attr_name) = name.strip_prefix('!')
+            && !attr_name.is_empty()
+        {
+            // Look up `!attr_name` in the environment
+            let name_idx = self
+                .code
+                .add_constant(Value::str(self.qualify_variable_name(name)));
+            self.code.emit(OpCode::GetGlobal(name_idx));
+            return;
+        }
         // $CALLER:: / $CALLER::CALLER:: variable access
         if let Some((bare_name, depth)) = Self::parse_caller_prefix(name) {
             let name_idx = self.code.add_constant(Value::str(bare_name));

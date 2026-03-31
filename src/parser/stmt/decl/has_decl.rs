@@ -431,6 +431,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     }
 
     // Auto-default: typed scalar attribute with no explicit default → use type object
+    // Native types (int, atomicint, num, str, etc.) get zero/empty defaults.
     if !has_explicit_default
         && is_required.is_none()
         && sigil == b'$'
@@ -441,7 +442,13 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         } else if tc == "::?ROLE" {
             default = Some(Expr::Var("?ROLE".to_string()));
         } else {
-            default = Some(Expr::BareWord(tc.clone()));
+            default = Some(match tc.as_str() {
+                "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
+                | "uint32" | "uint64" | "byte" | "atomicint" => Expr::Literal(Value::Int(0)),
+                "num" | "num32" | "num64" => Expr::Literal(Value::Num(0.0)),
+                "str" => Expr::Literal(Value::str("".to_string())),
+                _ => Expr::BareWord(tc.clone()),
+            });
         }
     }
 

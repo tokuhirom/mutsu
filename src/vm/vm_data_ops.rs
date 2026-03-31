@@ -12,6 +12,7 @@ fn needs_method_dispatch(v: &Value) -> bool {
             | Value::CustomTypeInstance { .. }
             | Value::Mixin(..)
             | Value::Proxy { .. }
+            | Value::Junction { .. }
     )
 }
 
@@ -225,10 +226,29 @@ impl VM {
         let mut content = String::new();
         for v in &values {
             check_rat_divide_by_zero(v)?;
-            content.push_str(&v.to_string_value());
+            // For Junctions, thread: call .Str on each element recursively
+            self.collect_str_threaded(v, &mut content)?;
         }
         self.interpreter
             .write_to_named_handle("$*OUT", &content, false)?;
+        Ok(())
+    }
+
+    /// Recursively collect .Str output from a value, threading through Junctions.
+    fn collect_str_threaded(&mut self, v: &Value, out: &mut String) -> Result<(), RuntimeError> {
+        match v {
+            Value::Junction { values, .. } => {
+                for elem in values.iter() {
+                    self.collect_str_threaded(elem, out)?;
+                }
+            }
+            _ if needs_method_dispatch(v) => {
+                out.push_str(&self.interpreter.render_str_value(v));
+            }
+            _ => {
+                out.push_str(&v.to_string_value());
+            }
+        }
         Ok(())
     }
 }
