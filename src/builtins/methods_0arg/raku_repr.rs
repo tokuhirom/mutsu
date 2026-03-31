@@ -11,7 +11,7 @@ fn is_self_array_ref_marker(v: &Value) -> bool {
 
 fn raku_array_wrap_counted(inner: &str, kind: ArrayKind, count: usize) -> String {
     match kind {
-        ArrayKind::Array | ArrayKind::Shaped => format!("[{}]", inner),
+        ArrayKind::Array | ArrayKind::Shaped | ArrayKind::Lazy => format!("[{}]", inner),
         ArrayKind::List => {
             if count == 1 {
                 format!("({},)", inner)

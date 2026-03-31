@@ -378,6 +378,7 @@ impl Interpreter {
     fn dispatch_is_lazy_method(&self, target: &Value) -> Value {
         let value_is_lazy = |v: &Value| match v {
             Value::LazyList(_) => true,
+            Value::Array(_, kind) if kind.is_lazy() => true,
             Value::Range(_, end)
             | Value::RangeExcl(_, end)
             | Value::RangeExclStart(_, end)

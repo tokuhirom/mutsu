@@ -411,6 +411,7 @@ impl Interpreter {
             )));
         }
         match target {
+            Value::Array(_, kind) if kind.is_lazy() => Err(RuntimeError::cannot_lazy("pop")),
             Value::Array(mut items, ..) => {
                 let items_mut = Arc::make_mut(&mut items);
                 Ok(if items_mut.is_empty() {
