@@ -365,7 +365,12 @@ impl Interpreter {
         } else {
             Self::value_to_list(&target)
         };
-        self.eval_map_over_items(args.first().cloned(), items)
+        let result = self.eval_map_over_items(args.first().cloned(), items)?;
+        // .map() returns a Seq per Raku spec
+        Ok(match result {
+            Value::Array(items, _) => Value::Seq(items),
+            other => other,
+        })
     }
 
     /// Dispatch "min" and "max" methods.

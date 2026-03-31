@@ -39,6 +39,7 @@ fn flatten_append_args(args: Vec<Value>) -> Vec<Value> {
     if args.len() == 1 {
         match &args[0] {
             Value::Array(vals, kind) if !kind.is_itemized() => vals.to_vec(),
+            Value::Seq(vals) => vals.to_vec(),
             _ => args,
         }
     } else {
