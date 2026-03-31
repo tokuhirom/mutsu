@@ -139,8 +139,35 @@ pub(super) fn ternary(input: &str) -> PResult<'_, Expr> {
 /// (`and`, `or`, `xor`, `orelse`, `andthen`, `notandthen`) so that:
 /// - `foo 3 != 3` parses as `foo(3 != 3)`
 /// - `isfive 5 and isfive 5` parses as `isfive(5) and isfive(5)`
+///
+/// Also handles item assignment (`=`, `~=`, `+=`, etc.) within a single
+/// argument so that `f $a ~= $b, $c` parses as `f(($a ~= $b), $c)`.
 pub(in crate::parser) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
-    or_or_expr_mode(input, ExprMode::NoSequenceNoFeed)
+    let (rest, expr) = or_or_expr_mode(input, ExprMode::NoSequenceNoFeed)?;
+    let (r, _) = ws(rest)?;
+
+    // Handle compound assignment operators (+=, ~=, //=, etc.) in call-arg context.
+    // The RHS is a single expression (no comma collection) since commas separate
+    // function arguments at this level.
+    if let Some((after_op, op)) = parse_compound_assign_op(r) {
+        let (after_ws, _) = ws(after_op)?;
+        if let Ok((r2, rhs)) = or_or_expr_mode(after_ws, ExprMode::NoSequenceNoFeed)
+            && let Ok(result) = build_compound_assign_expr(expr.clone(), op, rhs)
+        {
+            return Ok((r2, result));
+        }
+    }
+
+    // Handle simple assignment (=) in call-arg context.
+    if r.starts_with('=') && !r.starts_with("==") && !r.starts_with("=>") {
+        let r_eq = &r[1..];
+        let (r_eq, _) = ws(r_eq)?;
+        if let Ok((r2, rhs)) = or_or_expr_mode(r_eq, ExprMode::NoSequenceNoFeed) {
+            return Ok((r2, assign_to_target_expr(expr, rhs)));
+        }
+    }
+
+    Ok((rest, expr))
 }
 
 pub(super) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {

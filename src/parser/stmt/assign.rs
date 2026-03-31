@@ -1607,10 +1607,10 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
     }
     if let Some((stripped, op)) = parse_compound_assign_op(r2) {
         let (rest, _) = ws(stripped)?;
-        // RHS: try chained assign, else single expression
+        // RHS: try chained assign, else single expression (no sequence)
         let (rest, rhs) = match try_parse_assign_expr(rest) {
             Ok(r) => r,
-            Err(_) => expression(rest)?,
+            Err(_) => expression_no_sequence(rest)?,
         };
         let name = format!("{}{}", prefix, var);
         return Ok((
@@ -1696,9 +1696,10 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
     }
     if let Some((stripped, op_name)) = parse_custom_compound_assign_op(r2) {
         let (rest, _) = ws(stripped)?;
+        // RHS: no sequence for custom compound assign
         let (rest, rhs) = match try_parse_assign_expr(rest) {
             Ok(r) => r,
-            Err(_) => expression(rest)?,
+            Err(_) => expression_no_sequence(rest)?,
         };
         let name = format!("{}{}", prefix, var);
         return Ok((
