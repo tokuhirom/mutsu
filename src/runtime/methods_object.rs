@@ -1507,9 +1507,9 @@ impl Interpreter {
                     let mut original_keys: HashMap<String, Value> = HashMap::new();
                     let mut has_non_str_keys = false;
                     let add_item = |counts: &mut HashMap<String, i64>,
-                                        original_keys: &mut HashMap<String, Value>,
-                                        has_non_str: &mut bool,
-                                        item: &Value| {
+                                    original_keys: &mut HashMap<String, Value>,
+                                    has_non_str: &mut bool,
+                                    item: &Value| {
                         let str_key = item.to_string_value();
                         if !matches!(item, Value::Str(_)) {
                             *has_non_str = true;
