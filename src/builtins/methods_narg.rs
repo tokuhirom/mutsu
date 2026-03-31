@@ -906,7 +906,7 @@ pub(crate) fn native_method_1arg(
                             .into_iter()
                             .map(Value::str)
                             .collect();
-                    return Some(Ok(Value::array(lines)));
+                    return Some(Ok(Value::Seq(std::sync::Arc::new(lines))));
                 }
                 return None;
             }
@@ -928,7 +928,7 @@ pub(crate) fn native_method_1arg(
                 lines.truncate(n);
             }
             let lines: Vec<Value> = lines.into_iter().map(Value::str).collect();
-            Some(Ok(Value::array(lines)))
+            Some(Ok(Value::Seq(std::sync::Arc::new(lines))))
         }
         "words" => {
             let s = target.to_string_value();

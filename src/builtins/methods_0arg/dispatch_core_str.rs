@@ -1,5 +1,7 @@
 /// String and text methods: words, codes, lines, trim, trim-leading, trim-trailing,
 /// flip, so, not, is-lazy, lazy, chomp, chop, comb, fmt, join
+use std::sync::Arc;
+
 use crate::runtime;
 use crate::value::{RuntimeError, Value};
 use unicode_segmentation::UnicodeSegmentation;
@@ -38,7 +40,7 @@ pub(super) fn dispatch(
                 .into_iter()
                 .map(Value::str)
                 .collect();
-            Some(Some(Ok(Value::array(lines))))
+            Some(Some(Ok(Value::Seq(Arc::new(lines)))))
         }
         "trim" => Some(Some(Ok(Value::str(
             target.to_string_value().trim().to_string(),
