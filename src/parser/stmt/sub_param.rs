@@ -14,7 +14,12 @@ pub(super) fn check_invalid_type_smiley(type_constraint: &Option<String>) -> Res
         && let Some(colon_pos) = tc.rfind(':')
         && (colon_pos == 0 || tc.as_bytes()[colon_pos - 1] != b':')
     {
-        let smiley = &tc[colon_pos + 1..];
+        let after_colon = &tc[colon_pos + 1..];
+        // Extract the smiley portion: only alphanumeric and underscore/hyphen chars
+        let smiley_end = after_colon
+            .find(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-')
+            .unwrap_or(after_colon.len());
+        let smiley = &after_colon[..smiley_end];
         if !smiley.is_empty()
             && smiley != "D"
             && smiley != "U"
