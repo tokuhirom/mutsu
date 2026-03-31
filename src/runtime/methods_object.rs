@@ -2067,6 +2067,25 @@ impl Interpreter {
                         }
                     }
                 }
+                // For @-sigiled attributes with shaped array declarations,
+                // convert user-provided values to shaped arrays preserving shape.
+                for (attr_name, _is_public, default, _is_rw, _is_required, sigil, _) in
+                    &class_attrs_info
+                {
+                    if *sigil == '@'
+                        && let Some(dims) = Self::extract_shape_from_default(default.as_ref())
+                        && let Some(val) = attrs.get(attr_name)
+                        && !matches!(val, Value::Array(_, ArrayKind::Shaped))
+                    {
+                        let items = match val {
+                            Value::Array(items, _) => (**items).clone(),
+                            _ => vec![val.clone()],
+                        };
+                        let shaped = Value::Array(std::sync::Arc::new(items), ArrayKind::Shaped);
+                        crate::runtime::utils::mark_shaped_array(&shaped, Some(&dims));
+                        attrs.insert(attr_name.clone(), shaped);
+                    }
+                }
                 self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
                 self.enforce_attribute_smiley_constraints(class_key, &attrs)?;
                 let int_ctor_val =
