@@ -1,4 +1,4 @@
-use super::super::expr::expression;
+use super::super::expr::{expression, expression_no_sequence};
 use super::super::helpers::{split_angle_words, ws};
 use super::super::parse_result::{PError, PResult, merge_expected_messages, parse_char};
 use super::super::primary::misc::block_or_hash_expr;
@@ -568,10 +568,25 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
             || rest_ws.starts_with(')')
             || is_stmt_modifier_keyword(rest_ws)
             || (rest_ws.starts_with(':') && !rest_ws.starts_with("::"));
-        let expr_consumes_more = parsed_expr
-            .as_ref()
-            .ok()
-            .is_some_and(|(expr_rest, _)| expr_rest.len() < rest.len());
+        // In call-argument context, prefer the assign parse that stops at a comma
+        // over an expression parse that consumed past it for COMPOUND assignments
+        // ($a ~= $b, $c -> compound assign stops at comma). For simple assignments
+        // to array/hash vars (@d = 1,3 Z 2,4), the expression parse is correct
+        // since commas are part of the list being assigned.
+        let is_compound_assign = matches!(
+            &assign_expr,
+            Expr::AssignExpr { expr, .. }
+                if matches!(expr.as_ref(), Expr::Binary { .. })
+        );
+        let expr_consumes_past_comma = is_compound_assign
+            && parsed_expr.as_ref().ok().is_some_and(|(expr_rest, expr)| {
+                expr_rest.len() < rest.len() && matches!(expr, Expr::AssignExpr { .. })
+            });
+        let expr_consumes_more = !expr_consumes_past_comma
+            && parsed_expr
+                .as_ref()
+                .ok()
+                .is_some_and(|(expr_rest, _)| expr_rest.len() < rest.len());
         if assign_is_arg_boundary
             && !expr_consumes_more
             && (!rest_ws.starts_with("=>") || rest_ws.starts_with("==>"))
@@ -596,7 +611,7 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
     let (rest_ws, _) = ws(rest)?;
     if let Some((stripped, op)) = super::assign::parse_compound_assign_op(rest_ws) {
         let (r, _) = ws(stripped)?;
-        let (r, rhs) = expression(r).map_err(|err| PError {
+        let (r, rhs) = expression_no_sequence(r).map_err(|err| PError {
             messages: merge_expected_messages(
                 "expected right-hand expression after compound assignment",
                 &err.messages,
