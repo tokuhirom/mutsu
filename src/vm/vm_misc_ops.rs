@@ -339,7 +339,7 @@ impl VM {
             "Array" | "Hash" | "List" | "Seq" | "Positional" | "Associative"
         );
         match value {
-            Value::Array(items, ..) => {
+            Value::Array(items, ..) | Value::Seq(items) => {
                 if is_container_constraint {
                     // Each element is checked as a whole against the constraint
                     items
@@ -1569,7 +1569,7 @@ impl VM {
             return Ok(());
         }
         if var_name.is_some_and(|name| name.starts_with('@'))
-            && let Value::Array(..) = &value
+            && matches!(&value, Value::Array(..) | Value::Seq(_))
         {
             if !self.array_elements_match_constraint(constraint, &value) {
                 return Err(RuntimeError::typed_msg(
