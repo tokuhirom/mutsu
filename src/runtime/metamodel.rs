@@ -177,14 +177,21 @@ impl Interpreter {
             && let Some(ref cache) = data.type_check_cache
         {
             // If call_accepts is set, delegate to HOW.accepts_type
-            if data.call_accepts
-                && let Ok(result) = self.call_method_with_values(
+            if data.call_accepts {
+                // Clear stale pending call arg sources that may have been left
+                // behind by a previous VM method call dispatch.  Some dispatch
+                // paths (e.g. Metamodel::Primitives methods) do not consume
+                // the sources via bind_function_args_values, leaving stale
+                // data that corrupts sigilless parameter binding on subsequent
+                // method calls.
+                self.pending_call_arg_sources = None;
+                if let Ok(result) = self.call_method_with_values(
                     rhs_how.clone(),
                     "accepts_type",
                     vec![Value::Nil, lhs.clone()],
-                )
-            {
-                return result.truthy();
+                ) {
+                    return result.truthy();
+                }
             }
 
             // Cache-only check: identity-based matching
