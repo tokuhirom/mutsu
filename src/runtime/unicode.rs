@@ -61,9 +61,15 @@ pub(super) fn check_unicode_property_with_args(prop: &str, args: &str, c: char) 
     match prop_lower.as_str() {
         "numericvalue" | "numeric_value" | "nv" => check_numeric_value_property(args, c),
         "name" | "na" => check_name_property(args, c),
+        "numerictype" | "numeric_type" | "nt" => {
+            let actual = crate::builtins::uniprop::unicode_numeric_type(c);
+            actual.eq_ignore_ascii_case(args.trim())
+        }
         _ => {
-            // Fall back to simple property check (ignore args)
-            check_unicode_property(prop, c)
+            // Reconstruct property with angle-bracket args so check_unicode_property
+            // can handle it as a parameterized property (e.g. Script<Latin>)
+            let combined = format!("{}<{}>", prop, args);
+            check_unicode_property(&combined, c)
         }
     }
 }
@@ -309,7 +315,7 @@ fn unicode_block_range(name: &str) -> Option<(u32, u32)> {
         .collect();
     // Unicode blocks table (Unicode 15.0)
     match normalized.as_str() {
-        "basiclatin" => Some((0x0000, 0x007F)),
+        "basiclatin" | "ascii" => Some((0x0000, 0x007F)),
         "latin1supplement" | "latin1" => Some((0x0080, 0x00FF)),
         "latinextendeda" => Some((0x0100, 0x017F)),
         "latinextendedb" => Some((0x0180, 0x024F)),

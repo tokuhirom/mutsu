@@ -206,6 +206,12 @@ fn split_prop_args(s: &str) -> (&str, Option<&str>) {
     {
         return (&s[..open], Some(&s[open + 1..close]));
     }
+    // Also handle angle-bracket args: Numeric_Type<Digit> → ("Numeric_Type", Some("Digit"))
+    if let Some(open) = s.find('<')
+        && let Some(close) = s.rfind('>')
+    {
+        return (&s[..open], Some(&s[open + 1..close]));
+    }
     (s, None)
 }
 
