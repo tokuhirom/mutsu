@@ -327,13 +327,13 @@ struct MethodDispatchFrame {
 
 /// Frame for navigating through wrapper chain during callsame/callwith.
 #[derive(Debug, Clone)]
-struct WrapDispatchFrame {
+pub(crate) struct WrapDispatchFrame {
     /// The sub id being wrapped (to prevent re-entrant wrap dispatch).
-    sub_id: u64,
+    pub(crate) sub_id: u64,
     /// Remaining callables: inner wrappers then original sub. Next to call is first.
-    remaining: Vec<Value>,
+    pub(crate) remaining: Vec<Value>,
     /// Original call arguments.
-    args: Vec<Value>,
+    pub(crate) args: Vec<Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -857,6 +857,9 @@ pub struct Interpreter {
     wrap_handle_counter: u64,
     /// Stack of wrap dispatch frames for callsame/callwith inside wrappers.
     wrap_dispatch_stack: Vec<WrapDispatchFrame>,
+    /// Method-level wrap chains: (class_name, method_name, candidate_index) ->
+    /// stack of (handle_id, wrapper_sub).
+    method_wrap_chains: HashMap<(String, String, usize), Vec<(u64, Value)>>,
     /// Names suppressed by `anon class`. These bare words should error as undeclared.
     suppressed_names: HashSet<String>,
     /// Fully-qualified names of `my`-scoped classes/subs inside packages.
@@ -2621,6 +2624,7 @@ impl Interpreter {
             wrap_callable_ids: HashMap::new(),
             wrap_handle_counter: 0,
             wrap_dispatch_stack: Vec::new(),
+            method_wrap_chains: HashMap::new(),
             suppressed_names: HashSet::new(),
             my_scoped_package_items: HashSet::new(),
             lexical_class_scopes: Vec::new(),
@@ -4102,6 +4106,7 @@ impl Interpreter {
             wrap_callable_ids: self.wrap_callable_ids.clone(),
             wrap_handle_counter: self.wrap_handle_counter,
             wrap_dispatch_stack: Vec::new(),
+            method_wrap_chains: self.method_wrap_chains.clone(),
             suppressed_names: self.suppressed_names.clone(),
             my_scoped_package_items: self.my_scoped_package_items.clone(),
             lexical_class_scopes: self.lexical_class_scopes.clone(),

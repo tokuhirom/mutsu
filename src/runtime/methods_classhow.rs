@@ -16,30 +16,21 @@ impl Interpreter {
             && let Some(defs) = class_def.methods.get(method_name)
             && let Some(def) = defs.first()
         {
-            // Prepend an invocant parameter (self) to the param_defs
+            let has_multi = defs.iter().any(|d| d.is_multi);
             let mut full_param_defs = Vec::with_capacity(def.param_defs.len() + 1);
-            full_param_defs.push(crate::ast::ParamDef {
-                name: String::new(),
-                default: None,
-                multi_invocant: true,
-                required: false,
-                named: false,
-                slurpy: false,
-                double_slurpy: false,
-                onearg: false,
-                sigilless: false,
-                type_constraint: Some(class_name_str.clone()),
-                literal_value: None,
-                sub_signature: None,
-                where_constraint: None,
-                traits: Vec::new(),
-                optional_marker: false,
-                outer_sub_signature: None,
-                code_signature: None,
-                is_invocant: true,
-                shape_constraints: None,
-            });
+            full_param_defs.push(Self::make_invocant_param(&class_name_str));
             full_param_defs.extend(def.param_defs.iter().cloned());
+            let mut env = crate::env::Env::new();
+            if has_multi {
+                env.insert(
+                    "__mutsu_lookup_class".to_string(),
+                    Value::str(class_name_str.clone()),
+                );
+                env.insert(
+                    "__mutsu_lookup_method".to_string(),
+                    Value::str(method_name.to_string()),
+                );
+            }
             return Some(Value::make_sub(
                 class_name,
                 Symbol::intern(method_name),
@@ -47,7 +38,7 @@ impl Interpreter {
                 full_param_defs,
                 (*def.body).clone(),
                 def.is_rw,
-                crate::env::Env::new(),
+                env,
             ));
         }
         // Check built-in type methods — return a Routine marker that the
@@ -60,6 +51,74 @@ impl Interpreter {
             });
         }
         None
+    }
+
+    fn make_invocant_param(class_name: &str) -> crate::ast::ParamDef {
+        crate::ast::ParamDef {
+            name: String::new(),
+            default: None,
+            multi_invocant: true,
+            required: false,
+            named: false,
+            slurpy: false,
+            double_slurpy: false,
+            onearg: false,
+            sigilless: false,
+            type_constraint: Some(class_name.to_string()),
+            literal_value: None,
+            sub_signature: None,
+            where_constraint: None,
+            traits: Vec::new(),
+            optional_marker: false,
+            outer_sub_signature: None,
+            code_signature: None,
+            is_invocant: true,
+            shape_constraints: None,
+        }
+    }
+
+    /// Return all multi method candidates for a class method as Sub values.
+    pub(super) fn classhow_lookup_all_candidates(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        package: crate::symbol::Symbol,
+    ) -> Vec<Value> {
+        let Some(class_def) = self.classes.get(class_name) else {
+            return Vec::new();
+        };
+        let Some(defs) = class_def.methods.get(method_name) else {
+            return Vec::new();
+        };
+        defs.iter()
+            .enumerate()
+            .map(|(idx, def)| {
+                let mut full_param_defs = vec![Self::make_invocant_param(class_name)];
+                full_param_defs.extend(def.param_defs.iter().cloned());
+                let mut env = crate::env::Env::new();
+                env.insert(
+                    "__mutsu_lookup_class".to_string(),
+                    Value::str(class_name.to_string()),
+                );
+                env.insert(
+                    "__mutsu_lookup_method".to_string(),
+                    Value::str(method_name.to_string()),
+                );
+                env.insert(
+                    "__mutsu_lookup_candidate_idx".to_string(),
+                    Value::Int(idx as i64),
+                );
+                Value::make_sub(
+                    package,
+                    crate::symbol::Symbol::intern(method_name),
+                    def.params.clone(),
+                    full_param_defs,
+                    (*def.body).clone(),
+                    def.is_rw,
+                    env,
+                )
+            })
+            .collect()
     }
 
     /// Check if a method name belongs to a built-in type (Str, Int, etc.)

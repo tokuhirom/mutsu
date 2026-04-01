@@ -635,22 +635,101 @@ impl Interpreter {
                 method_name,
             ));
         };
-        let all_candidates =
-            self.resolve_all_methods_with_owner(receiver_class_name, method_name, &args);
-        let invocant_for_dispatch = if let Some(inv) = &invocant {
-            inv.clone()
-        } else if attributes.is_empty() {
-            Value::Package(Symbol::intern(receiver_class_name))
-        } else {
-            Value::make_instance(Symbol::intern(receiver_class_name), attributes.clone())
+        // Helper to build remaining candidates, skipping the chosen one
+        let build_remaining = |this: &mut Self,
+                               method_def: &MethodDef|
+         -> Vec<(String, MethodDef)> {
+            let all = this.resolve_all_methods_with_owner(receiver_class_name, method_name, &args);
+            let chosen_fp = crate::ast::function_body_fingerprint(
+                &method_def.params,
+                &method_def.param_defs,
+                &method_def.body,
+            );
+            let mut remaining = Vec::new();
+            let mut skipped = false;
+            for (owner, def) in all {
+                let fp =
+                    crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+                if !skipped && fp == chosen_fp {
+                    skipped = true;
+                    continue;
+                }
+                if this.should_skip_defer_method_candidate(receiver_class_name, &owner) {
+                    continue;
+                }
+                remaining.push((owner, def));
+            }
+            remaining
         };
-        let remaining: Vec<(String, MethodDef)> = all_candidates
-            .into_iter()
-            .skip(1)
-            .filter(|(candidate_owner, _)| {
-                !self.should_skip_defer_method_candidate(receiver_class_name, candidate_owner)
-            })
-            .collect();
+        let make_invocant_for_dispatch =
+            |invocant: &Option<Value>, attributes: &HashMap<String, Value>| -> Value {
+                if let Some(inv) = invocant {
+                    inv.clone()
+                } else if attributes.is_empty() {
+                    Value::Package(Symbol::intern(receiver_class_name))
+                } else {
+                    Value::make_instance(Symbol::intern(receiver_class_name), attributes.clone())
+                }
+            };
+        // Check for method-level wrap chain on this candidate
+        if !self.is_inside_wrap_dispatch()
+            && let Some(cand_idx) =
+                self.find_method_candidate_index(&owner_class, method_name, &method_def)
+            && let Some(chain) = self
+                .get_method_wrap_chain(&owner_class, method_name, cand_idx)
+                .cloned()
+        {
+            let invocant_for_dispatch = make_invocant_for_dispatch(&invocant, &attributes);
+            let remaining = build_remaining(self, &method_def);
+            let pushed_dispatch = !remaining.is_empty();
+            self.samewith_context_stack
+                .push((method_name.to_string(), Some(invocant_for_dispatch.clone())));
+            if pushed_dispatch {
+                self.method_dispatch_stack.push(MethodDispatchFrame {
+                    receiver_class: receiver_class_name.to_string(),
+                    invocant: invocant_for_dispatch,
+                    args: args.clone(),
+                    remaining,
+                });
+            }
+            let mut orig_env = crate::env::Env::new();
+            orig_env.insert(
+                "__mutsu_method_wrap_original".to_string(),
+                Value::Bool(true),
+            );
+            let original_sub = Value::make_sub(
+                Symbol::intern(&owner_class),
+                Symbol::intern(method_name),
+                method_def.params.clone(),
+                method_def.param_defs.clone(),
+                (*method_def.body).clone(),
+                method_def.is_rw,
+                orig_env,
+            );
+            let outermost = chain.last().unwrap().1.clone();
+            let mut wrap_remaining: Vec<Value> = Vec::new();
+            for i in (0..chain.len() - 1).rev() {
+                wrap_remaining.push(chain[i].1.clone());
+            }
+            wrap_remaining.push(original_sub);
+            let mut call_args = vec![inv_value.clone()];
+            call_args.extend(args);
+            let frame = WrapDispatchFrame {
+                sub_id: 0,
+                remaining: wrap_remaining,
+                args: call_args.clone(),
+            };
+            self.wrap_dispatch_stack.push(frame);
+            let result = self.call_sub_value(outermost, call_args, false);
+            self.wrap_dispatch_stack.pop();
+            self.samewith_context_stack.pop();
+            if pushed_dispatch {
+                self.method_dispatch_stack.pop();
+            }
+            return result.map(|v| (v, attributes));
+        }
+        let invocant_for_dispatch = make_invocant_for_dispatch(&invocant, &attributes);
+        let remaining = build_remaining(self, &method_def);
         let pushed_dispatch = !remaining.is_empty();
         self.samewith_context_stack
             .push((method_name.to_string(), Some(invocant_for_dispatch.clone())));

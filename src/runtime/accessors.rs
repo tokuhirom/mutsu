@@ -649,13 +649,24 @@ impl Interpreter {
         self.samewith_context_stack
             .push((method_name.to_string(), Some(invocant.clone())));
         let all_candidates = self.resolve_all_methods_with_owner(receiver_class, method_name, args);
-        let remaining: Vec<(String, super::MethodDef)> = all_candidates
-            .into_iter()
-            .skip(1)
-            .filter(|(candidate_owner, _)| {
-                !self.should_skip_defer_method_candidate(receiver_class, candidate_owner)
-            })
-            .collect();
+        // Identify the chosen candidate and skip exactly that one
+        let chosen = self.resolve_method_with_owner(receiver_class, method_name, args);
+        let chosen_fp = chosen.as_ref().map(|(_, def)| {
+            crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body)
+        });
+        let mut remaining: Vec<(String, super::MethodDef)> = Vec::new();
+        let mut skipped_chosen = false;
+        for (owner, def) in all_candidates {
+            let fp = crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+            if !skipped_chosen && Some(fp) == chosen_fp {
+                skipped_chosen = true;
+                continue;
+            }
+            if self.should_skip_defer_method_candidate(receiver_class, &owner) {
+                continue;
+            }
+            remaining.push((owner, def));
+        }
         let pushed = !remaining.is_empty();
         if pushed {
             self.method_dispatch_stack.push(super::MethodDispatchFrame {
@@ -666,6 +677,52 @@ impl Interpreter {
             });
         }
         pushed
+    }
+
+    pub(crate) fn is_inside_wrap_dispatch(&self) -> bool {
+        !self.wrap_dispatch_stack.is_empty()
+    }
+
+    pub(crate) fn push_wrap_dispatch_frame(&mut self, frame: super::WrapDispatchFrame) {
+        self.wrap_dispatch_stack.push(frame);
+    }
+
+    pub(crate) fn pop_wrap_dispatch_frame(&mut self) {
+        self.wrap_dispatch_stack.pop();
+    }
+
+    /// Get method-level wrap chain for a specific candidate.
+    pub(crate) fn get_method_wrap_chain(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        candidate_idx: usize,
+    ) -> Option<&Vec<(u64, Value)>> {
+        let key = (
+            class_name.to_string(),
+            method_name.to_string(),
+            candidate_idx,
+        );
+        self.method_wrap_chains.get(&key).filter(|c| !c.is_empty())
+    }
+
+    /// Find the candidate index for a method definition in its class.
+    pub(crate) fn find_method_candidate_index(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        method_def: &super::MethodDef,
+    ) -> Option<usize> {
+        let class_def = self.classes.get(class_name)?;
+        let defs = class_def.methods.get(method_name)?;
+        let target_fp = crate::ast::function_body_fingerprint(
+            &method_def.params,
+            &method_def.param_defs,
+            &method_def.body,
+        );
+        defs.iter().position(|d| {
+            crate::ast::function_body_fingerprint(&d.params, &d.param_defs, &d.body) == target_fp
+        })
     }
 
     /// Pop a method dispatch frame (must only be called if push returned true).

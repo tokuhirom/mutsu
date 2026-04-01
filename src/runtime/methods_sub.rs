@@ -477,6 +477,12 @@ impl Interpreter {
             return Some(Ok(Value::Sub(std::sync::Arc::new(next))));
         }
         if method == "candidates" && args.is_empty() {
+            if let Some(Value::Str(cls)) = data.env.get("__mutsu_lookup_class")
+                && let Some(Value::Str(meth)) = data.env.get("__mutsu_lookup_method")
+            {
+                let candidates = self.classhow_lookup_all_candidates(cls, meth, data.package);
+                return Some(Ok(Value::array(candidates)));
+            }
             return Some(Ok(Value::array(vec![target.clone()])));
         }
         if method == "cando" && args.len() == 1 {
@@ -566,6 +572,26 @@ impl Interpreter {
             };
             self.wrap_handle_counter += 1;
             let handle_id = self.wrap_handle_counter;
+            // Method candidate wrap: if this Sub came from ^lookup().candidates[N],
+            // store the wrap chain in method_wrap_chains instead.
+            if let Some(Value::Str(cls)) = data.env.get("__mutsu_lookup_class")
+                && let Some(Value::Str(meth)) = data.env.get("__mutsu_lookup_method")
+                && let Some(Value::Int(idx)) = data.env.get("__mutsu_lookup_candidate_idx")
+            {
+                let key = (cls.to_string(), meth.to_string(), *idx as usize);
+                self.method_wrap_chains
+                    .entry(key)
+                    .or_default()
+                    .push((handle_id, wrapper));
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("sub-id".to_string(), Value::Int(data.id as i64));
+                attrs.insert("handle-id".to_string(), Value::Int(handle_id as i64));
+                attrs.insert("wrapped-sub".to_string(), target.clone());
+                return Some(Ok(Value::make_instance(
+                    Symbol::intern("Routine::WrapHandle"),
+                    attrs,
+                )));
+            }
             // Look up original sub_id by name if already wrapped, since &foo creates fresh Sub.
             // However, if the sub has been redefined (e.g. a new `sub foo` in a different
             // block), the old wrap chain should be cleared.  We detect redefinition by

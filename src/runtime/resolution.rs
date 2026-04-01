@@ -320,8 +320,10 @@ impl Interpreter {
                         invocant,
                     );
                     if args_match {
-                        if !any_multi {
-                            // Non-multi: return the first match immediately
+                        if !any_multi && all_matches.is_empty() {
+                            // Non-multi: return the first match immediately,
+                            // but only if no multi candidates were already
+                            // collected from a child class in the MRO.
                             return Some((cn.clone(), def));
                         }
                         all_matches.push((cn.clone(), def));
