@@ -1268,7 +1268,8 @@ fn parse_export_trait_tags(input: &str) -> PResult<'_, Vec<String>> {
 /// These require `self`, which subs don't have.
 fn reject_attr_params_in_sub(params: &[ParamDef]) -> Result<(), PError> {
     for p in params {
-        if p.name.starts_with('!') || p.name.starts_with('.') {
+        // $! is the error variable, not an attribute; only reject $!name (attribute twigil)
+        if (p.name.starts_with('!') && p.name != "!") || p.name.starts_with('.') {
             let variable = format!("${}", &p.name);
             let msg = format!(
                 "X::Syntax::NoSelf: Variable {} used where no 'self' is available",

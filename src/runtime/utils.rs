@@ -1264,7 +1264,18 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::Channel(_) => "Channel",
         Value::Whatever => "Whatever",
         Value::HyperWhatever => "HyperWhatever",
-        Value::Capture { .. } => "Capture",
+        Value::Capture { positional, named } => {
+            // Unwrap internal VarRef captures used by the VM for rw binding
+            if positional.is_empty()
+                && named
+                    .get("__mutsu_varref_name")
+                    .is_some_and(|v| matches!(v, Value::Str(_)))
+                && let Some(inner) = named.get("__mutsu_varref_value")
+            {
+                return value_type_name(inner);
+            }
+            "Capture"
+        }
         Value::Uni { form, .. } => match form.as_str() {
             "NFC" => "NFC",
             "NFD" => "NFD",
