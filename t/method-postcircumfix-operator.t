@@ -8,11 +8,11 @@ class A {
 }
 
 eval-lives-ok q[
-class A {
+class A2 {
     has %!attrs;
     method postcircumfix:<{ }>($key) { %!attrs{$key} }
 }
-A.new(:attrs({ foo => "bar" }))<foo>;
+A2.new(:attrs({ foo => "bar" }))<foo>;
 ], "postcircumfix method name parses in class and can be invoked with <...>";
 
 eval-lives-ok q[
