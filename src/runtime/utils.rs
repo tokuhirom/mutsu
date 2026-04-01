@@ -538,10 +538,13 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
             Value::ValuePair(key, boxed_val) => {
                 map.insert(Value::hash_key_encode(&key), *boxed_val);
             }
-            Value::Hash(ref h) => {
-                // Flatten hash entries into the target hash (e.g., `%m = %h, a => 42`).
-                for (k, v) in h.as_ref() {
-                    map.insert(k.clone(), v.clone());
+            Value::Slip(ref items) => {
+                // Flatten slips (e.g., from %h in list context) into the target hash.
+                let slip_hash = build_hash_from_items(items.iter().cloned().collect())?;
+                if let Value::Hash(ref h) = slip_hash {
+                    for (k, v) in h.as_ref() {
+                        map.insert(k.clone(), v.clone());
+                    }
                 }
             }
             other => {

@@ -98,6 +98,10 @@ impl Compiler {
                     self.compile_expr(elem);
                     if Self::expr_is_scalar_var(elem) {
                         self.code.emit(OpCode::Itemize);
+                    } else if matches!(elem, Expr::HashVar(_)) {
+                        // Hash variables in list context slip their pairs into
+                        // the list (standard Raku flattening for % sigil).
+                        self.code.emit(OpCode::MakeSlip);
                     }
                 }
                 self.code.emit(OpCode::MakeArray(elems.len() as u32));
