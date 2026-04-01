@@ -950,6 +950,16 @@ impl Interpreter {
                 _ => None,
             }
         };
+        let to_complex = |v: &Value| -> Option<(f64, f64)> {
+            let mut cur = v;
+            while let Value::Mixin(inner, _) = cur {
+                cur = inner;
+            }
+            match cur {
+                Value::Complex(r, i) => Some((*r, *i)),
+                _ => None,
+            }
+        };
         let to_num = |v: &Value| -> f64 {
             let mut cur = v;
             while let Value::Mixin(inner, _) = cur {
@@ -1278,17 +1288,21 @@ impl Interpreter {
                     super::to_big_rat_parts(right),
                 ) {
                     Ok(Value::Bool(super::big_rat_parts_equal(a, b)))
+                } else if let (Some(l), Some(r)) = (to_complex(left), to_complex(right)) {
+                    Ok(Value::Bool(l.0 == r.0 && l.1 == r.1))
                 } else {
                     Ok(Value::Bool(to_num(left) == to_num(right)))
                 }
             }
             "=" => Ok(right.clone()),
-            "!=" => {
+            "!=" | "!==" => {
                 if let (Some(a), Some(b)) = (
                     super::to_big_rat_parts(left),
                     super::to_big_rat_parts(right),
                 ) {
                     Ok(Value::Bool(!super::big_rat_parts_equal(a, b)))
+                } else if let (Some(l), Some(r)) = (to_complex(left), to_complex(right)) {
+                    Ok(Value::Bool(l.0 != r.0 || l.1 != r.1))
                 } else {
                     Ok(Value::Bool(to_num(left) != to_num(right)))
                 }
@@ -1486,6 +1500,7 @@ impl Interpreter {
             "=:=" => Ok(Value::Bool(super::values_identical(left, right))),
             "!=:=" => Ok(Value::Bool(!super::values_identical(left, right))),
             "===" => Ok(Value::Bool(super::values_identical(left, right))),
+            "!===" => Ok(Value::Bool(!super::values_identical(left, right))),
             "=>" => match left {
                 Value::Str(_) => Ok(Value::Pair(left.to_string_value(), Box::new(right.clone()))),
                 _ => Ok(Value::ValuePair(

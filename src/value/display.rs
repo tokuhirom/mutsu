@@ -96,10 +96,17 @@ pub fn format_complex(r: f64, i: f64) -> String {
             }
         } else if v.fract() == 0.0 {
             // Preserve sign of -0.0
-            if v.is_sign_negative() {
-                format!("-{}", (-v) as i64)
+            // Check if value fits in i64 range before casting (large floats saturate)
+            let abs_v = v.abs();
+            if abs_v <= i64::MAX as f64 {
+                if v.is_sign_negative() {
+                    format!("-{}", (-v) as i64)
+                } else {
+                    format!("{}", v as i64)
+                }
             } else {
-                format!("{}", v as i64)
+                // Large float that doesn't fit in i64: use scientific notation
+                format!("{:e}", v)
             }
         } else {
             format!("{}", v)

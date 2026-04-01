@@ -70,7 +70,15 @@ impl Interpreter {
                 let arg = &args[0];
                 match op {
                     "i" => {
-                        let n = crate::runtime::coerce_to_numeric(arg.clone());
+                        // For Instance/Package types, try calling .Numeric method first
+                        let coerced = if matches!(arg, Value::Instance { .. } | Value::Package(..))
+                        {
+                            self.call_method_with_values(arg.clone(), "Numeric", vec![])
+                                .unwrap_or_else(|_| arg.clone())
+                        } else {
+                            arg.clone()
+                        };
+                        let n = crate::runtime::coerce_to_numeric(coerced);
                         let num_val = match &n {
                             Value::Int(i) => *i as f64,
                             Value::Num(f) => *f,
