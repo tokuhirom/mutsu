@@ -59,6 +59,18 @@ fn raku_value_as_element(v: &Value) -> String {
 /// Render array contents for `.raku`, extracted from `raku_value` so that
 /// cycle detection can happen before entering the rendering loop.
 fn raku_value_array(items: &[Value], kind: ArrayKind, v: &Value) -> String {
+    // De-containerize elements only for real arrays (@-sigiled), not for Lists.
+    // In Raku, `my @a = $[1,2]; @a.raku` strips the `$` from elements,
+    // but `($[1,2], $[3,4]).raku` preserves `$` on itemized elements.
+    let is_real_array = kind.is_real_array();
+    let render_element = |item: &Value| -> String {
+        if is_real_array {
+            raku_value_as_element(item)
+        } else {
+            raku_value(item)
+        }
+    };
+
     // Shaped arrays: Array.new(:shape(d1, d2), [row1], [row2])
     if kind == crate::value::ArrayKind::Shaped
         && let Some(shape) = crate::runtime::utils::shaped_array_shape(v)
@@ -71,7 +83,7 @@ fn raku_value_array(items: &[Value], kind: ArrayKind, v: &Value) -> String {
             .join(", ");
         let rows = items
             .iter()
-            .map(raku_value_as_element)
+            .map(&render_element)
             .collect::<Vec<_>>()
             .join(", ");
         return format!("Array.new(:shape({}), {})", shape_str, rows);
@@ -80,7 +92,7 @@ fn raku_value_array(items: &[Value], kind: ArrayKind, v: &Value) -> String {
         let inner = items
             .iter()
             .filter(|item| !is_self_array_ref_marker(item))
-            .map(raku_value_as_element)
+            .map(&render_element)
             .collect::<Vec<_>>()
             .join(", ");
         raku_array_wrap(&inner, k)
@@ -91,7 +103,7 @@ fn raku_value_array(items: &[Value], kind: ArrayKind, v: &Value) -> String {
             if is_self_array_ref_marker(item) {
                 snapshot(kind)
             } else {
-                raku_value_as_element(item)
+                render_element(item)
             }
         })
         .collect();
