@@ -1496,6 +1496,12 @@ fn parse_param_list_inner(input: &str) -> PResult<'_, Vec<ParamDef>> {
                 mark_params_as_invocant(&mut params);
                 return Ok((r, params));
             }
+            // Handle --> return type after invocant marker
+            if let Some(stripped) = r.strip_prefix("-->") {
+                mark_params_as_invocant(&mut params);
+                let r = skip_return_type_annotation(stripped)?;
+                return Ok((r, params));
+            }
             mark_params_as_invocant(&mut params);
             let (r, p) = parse_single_param(r)?;
             params.push(p);
@@ -1735,6 +1741,13 @@ fn parse_param_list_with_return_inner(input: &str) -> PResult<'_, (Vec<ParamDef>
             let (r, _) = ws(r)?;
             if r.starts_with(')') {
                 mark_params_as_invocant(&mut params);
+                return Ok((r, (params, return_type)));
+            }
+            // Handle --> return type after invocant marker
+            if let Some(stripped) = r.strip_prefix("-->") {
+                mark_params_as_invocant(&mut params);
+                let (r, rt) = parse_return_type_annotation(stripped)?;
+                return_type = Some(rt);
                 return Ok((r, (params, return_type)));
             }
             mark_params_as_invocant(&mut params);

@@ -2184,7 +2184,24 @@ impl Interpreter {
                     // Validate that $!attr references in the method body are declared
                     // in this role (same check as for class methods).
                     Self::validate_attr_declared_in_class(&role_own_attrs, method_body)?;
+                    // Stub multi methods (body is `{...}`) that use ::?CLASS
+                    // must be implemented by the composing class.
+                    // Non-stub multi methods with ::?CLASS are fine.
+                    let body_is_stub = {
+                        let filtered: Vec<_> = method_body
+                            .iter()
+                            .filter(|s| !matches!(s, Stmt::SetLine(_)))
+                            .collect();
+                        filtered.len() == 1
+                            && matches!(
+                                filtered[0],
+                                Stmt::Expr(Expr::Call { name, .. })
+                                    if name == "__mutsu_stub_die"
+                                        || name == "__mutsu_stub_warn"
+                            )
+                    };
                     if *multi
+                        && body_is_stub
                         && (param_defs.iter().any(|pd| {
                             pd.type_constraint
                                 .as_deref()

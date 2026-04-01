@@ -551,6 +551,46 @@ impl RuntimeError {
         Self::typed("X::TypeCheck::Assignment", attrs)
     }
 
+    /// X::Parameter::InvalidConcreteness - Invocant concreteness mismatch
+    pub(crate) fn parameter_invalid_concreteness(
+        expected: &str,
+        got: &str,
+        routine: &str,
+        param: &str,
+        should_be_concrete: bool,
+        param_is_invocant: bool,
+    ) -> Self {
+        let kind = if should_be_concrete {
+            "an object instance"
+        } else {
+            "a type object"
+        };
+        let actual_kind = if should_be_concrete {
+            "a type object"
+        } else {
+            "an object instance"
+        };
+        let msg = format!(
+            "Invocant of method '{}' must be {} of type\n'{}', not {} of type '{}'.  Did you forget a '.new'?",
+            routine, kind, expected, actual_kind, got
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("expected".to_string(), Value::str(expected.to_string()));
+        attrs.insert("got".to_string(), Value::str(got.to_string()));
+        attrs.insert("routine".to_string(), Value::str(routine.to_string()));
+        attrs.insert("param".to_string(), Value::str(param.to_string()));
+        attrs.insert(
+            "should-be-concrete".to_string(),
+            Value::Bool(should_be_concrete),
+        );
+        attrs.insert(
+            "param-is-invocant".to_string(),
+            Value::Bool(param_is_invocant),
+        );
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::Parameter::InvalidConcreteness", attrs)
+    }
+
     /// X::IO::Closed - IO::Handle is closed
     pub(crate) fn io_closed(trying: &str) -> Self {
         let msg = format!("Cannot do '{}' on a closed handle", trying);

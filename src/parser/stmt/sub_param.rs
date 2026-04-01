@@ -642,17 +642,19 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         } else {
             (r, pseudo_type.to_string())
         };
-        if let Some(r) = r.strip_prefix(':') {
-            // This invocant marker is handled at parse_param_list level.
-            let (r, _) = ws(r)?;
-            if r.starts_with(')') || r.starts_with("-->") {
-                let mut p = make_param("self".to_string());
-                p.type_constraint = Some(tc);
-                p.is_invocant = true;
-                p.traits.push("invocant".to_string());
-                return Ok((r, p));
-            }
-            return parse_single_param(r);
+        if r.starts_with(':')
+            && !r.starts_with(":D")
+            && !r.starts_with(":U")
+            && !r.starts_with(":_")
+        {
+            // The `:` here is the invocant marker. Return the invocant param
+            // with rest positioned AT the `:` so parse_param_list_inner can
+            // detect it and mark the param as invocant before parsing more params.
+            let mut p = make_param("self".to_string());
+            p.type_constraint = Some(tc);
+            p.is_invocant = true;
+            p.traits.push("invocant".to_string());
+            return Ok((r, p));
         }
         let (r, _) = ws(r)?;
         if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') {

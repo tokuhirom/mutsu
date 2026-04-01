@@ -189,7 +189,7 @@ impl VM {
         if let Some(cn) = class_name
             && let Some((owner_class, method_def)) = self
                 .interpreter
-                .resolve_method_with_owner(&cn, method, &args)
+                .resolve_method_with_owner_invocant(&cn, method, &args, &target)
             && let Some(ref cc) = method_def.compiled_code
         {
             let cc = cc.clone();
@@ -357,7 +357,7 @@ impl VM {
         if let Some(cn) = class_name
             && let Some((owner_class, method_def)) = self
                 .interpreter
-                .resolve_method_with_owner(&cn, method, &args)
+                .resolve_method_with_owner_invocant(&cn, method, &args, &target)
             && let Some(ref cc) = method_def.compiled_code
         {
             let cc = cc.clone();

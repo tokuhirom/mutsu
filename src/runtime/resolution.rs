@@ -216,6 +216,7 @@ impl Interpreter {
         def: &MethodDef,
         arg_values: &[Value],
         role_bindings: Option<&HashMap<String, Value>>,
+        invocant: Option<&Value>,
     ) -> bool {
         let saved_env = self.env.clone();
         if let Some(bindings) = role_bindings {
@@ -227,12 +228,24 @@ impl Interpreter {
             if !(pd.is_invocant || pd.traits.iter().any(|t| t == "invocant")) {
                 continue;
             }
-            if let Some(captured_name) = pd
-                .type_constraint
-                .as_deref()
-                .and_then(|constraint| constraint.strip_prefix("::"))
-            {
-                self.bind_type_capture(captured_name, &Value::Package(Symbol::intern(class_name)));
+            if let Some(constraint) = pd.type_constraint.as_deref() {
+                if let Some(captured_name) = constraint.strip_prefix("::") {
+                    self.bind_type_capture(
+                        captured_name,
+                        &Value::Package(Symbol::intern(class_name)),
+                    );
+                }
+                // Check type constraint on the invocant (including :U/:D smileys).
+                // Resolve ::?CLASS to the actual class name for matching.
+                // Pure type captures (e.g. ::T) don't constrain the invocant.
+                if let Some(inv) = invocant {
+                    let resolved = constraint.replace("::?CLASS", class_name);
+                    let is_type_capture = resolved.starts_with("::");
+                    if !is_type_capture && !self.type_matches_value(&resolved, inv) {
+                        self.env = saved_env;
+                        return false;
+                    }
+                }
             }
         }
         let args_match = self.method_args_match(arg_values, &def.param_defs);
@@ -245,6 +258,26 @@ impl Interpreter {
         class_name: &str,
         method_name: &str,
         arg_values: &[Value],
+    ) -> Option<(String, MethodDef)> {
+        self.resolve_method_with_owner_impl(class_name, method_name, arg_values, None)
+    }
+
+    pub(crate) fn resolve_method_with_owner_invocant(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        arg_values: &[Value],
+        invocant: &Value,
+    ) -> Option<(String, MethodDef)> {
+        self.resolve_method_with_owner_impl(class_name, method_name, arg_values, Some(invocant))
+    }
+
+    fn resolve_method_with_owner_impl(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        arg_values: &[Value],
+        invocant: Option<&Value>,
     ) -> Option<(String, MethodDef)> {
         let role_bindings = self.class_role_param_bindings.get(class_name).cloned();
         let mro = self.class_mro(class_name);
@@ -284,6 +317,7 @@ impl Interpreter {
                         &def,
                         arg_values,
                         role_bindings.as_ref(),
+                        invocant,
                     );
                     if args_match {
                         if !any_multi {
@@ -481,6 +515,7 @@ impl Interpreter {
                         &def,
                         arg_values,
                         role_bindings.as_ref(),
+                        None,
                     ) {
                         matches.push((cn.clone(), def));
                     }
@@ -531,6 +566,7 @@ impl Interpreter {
                         &def,
                         arg_values,
                         role_bindings.as_ref(),
+                        None,
                     ) {
                         return Some((cn.clone(), def));
                     }
@@ -626,6 +662,7 @@ impl Interpreter {
                         def,
                         arg_values,
                         role_bindings.as_ref(),
+                        None,
                     ) {
                         return Some((cn.clone(), def.clone()));
                     }
@@ -639,6 +676,7 @@ impl Interpreter {
                         &def,
                         arg_values,
                         role_bindings.as_ref(),
+                        None,
                     ) {
                         return Some((cn.clone(), def));
                     }
