@@ -111,6 +111,7 @@ pub(super) fn dispatch(
                     | Value::Set(_, _)
                     | Value::Bag(_, _)
                     | Value::Mix(_, _)
+                    | Value::Junction { .. }
                     | Value::Nil
             );
             let which_str = match target {
@@ -159,11 +160,78 @@ pub(super) fn dispatch(
                     }
                     format!("Mix|{:016X}", hasher.finish())
                 }
-                _ => format!(
-                    "{}|0x{:p}",
-                    runtime::utils::value_type_name(target),
-                    target as *const Value
-                ),
+                Value::Sub(sub_data) => {
+                    format!(
+                        "{}|{}",
+                        runtime::utils::value_type_name(target),
+                        sub_data.id
+                    )
+                }
+                Value::Regex(pattern) => {
+                    format!("Regex|{:p}", Arc::as_ptr(pattern))
+                }
+                Value::RegexWithAdverbs { pattern, .. } => {
+                    format!("Regex|{:p}", Arc::as_ptr(pattern))
+                }
+                Value::Instance { id, .. } => {
+                    format!("{}|{}", runtime::utils::value_type_name(target), id)
+                }
+                Value::Junction { kind, values } => {
+                    use std::hash::{Hash, Hasher};
+                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                    // Hash the kind
+                    match kind {
+                        crate::value::JunctionKind::Any => 0u8.hash(&mut hasher),
+                        crate::value::JunctionKind::All => 1u8.hash(&mut hasher),
+                        crate::value::JunctionKind::One => 2u8.hash(&mut hasher),
+                        crate::value::JunctionKind::None => 3u8.hash(&mut hasher),
+                    }
+                    // Hash each eigenstate's string representation
+                    for v in values.iter() {
+                        v.to_string_value().hash(&mut hasher);
+                    }
+                    format!("Junction|{:016X}", hasher.finish())
+                }
+                Value::Seq(items) => {
+                    format!("Seq|{:p}", Arc::as_ptr(items))
+                }
+                Value::Slip(items) => {
+                    format!("Slip|{:p}", Arc::as_ptr(items))
+                }
+                Value::Array(items, ..) => {
+                    format!("Array|{:p}", Arc::as_ptr(items))
+                }
+                Value::Hash(map) => {
+                    format!("Hash|{:p}", Arc::as_ptr(map))
+                }
+                Value::Promise(p) => {
+                    format!("Promise|{:p}", p.arc_ptr())
+                }
+                Value::Channel(c) => {
+                    format!("Channel|{:p}", c.arc_ptr())
+                }
+                Value::Whatever => {
+                    use std::sync::atomic::{AtomicU64, Ordering};
+                    static WHATEVER_ID: AtomicU64 = AtomicU64::new(0);
+                    // Whatever is a type object singleton
+                    let id = WHATEVER_ID.load(Ordering::Relaxed);
+                    if id == 0 {
+                        WHATEVER_ID.store(1, Ordering::Relaxed);
+                    }
+                    format!("Whatever|U{}", WHATEVER_ID.load(Ordering::Relaxed))
+                }
+                _ => {
+                    // Fallback: use a global counter to ensure uniqueness
+                    // This is not ideal since the same value will get different IDs
+                    // on repeated calls, but it prevents false identity collisions.
+                    use std::sync::atomic::{AtomicU64, Ordering};
+                    static COUNTER: AtomicU64 = AtomicU64::new(1);
+                    format!(
+                        "{}|{}",
+                        runtime::utils::value_type_name(target),
+                        COUNTER.fetch_add(1, Ordering::Relaxed)
+                    )
+                }
             };
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("WHICH".to_string(), Value::str(which_str));

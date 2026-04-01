@@ -2672,6 +2672,10 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
         Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
         Value::Str(s) => s.trim().parse::<f64>().ok(),
         Value::Nil => Some(0.0),
+        Value::Set(items, _) => Some(items.len() as f64),
+        Value::Bag(items, _) => Some(items.len() as f64),
+        Value::Mix(items, _) => Some(items.len() as f64),
+        Value::Hash(items) => Some(items.len() as f64),
         _ if val.as_list_items().is_some() => Some(val.as_list_items().unwrap().len() as f64),
         Value::LazyList(ll) => {
             if let Some(cached) = ll.cache.lock().unwrap().as_ref() {
@@ -2693,7 +2697,6 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
         Value::Instance { attributes, .. } => {
             attributes.get("__mutsu_int_value").and_then(to_float_value)
         }
-        Value::Hash(map) => Some(map.len() as f64),
         _ => None,
     }
 }

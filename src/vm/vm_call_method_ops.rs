@@ -58,6 +58,7 @@ impl VM {
                 "Bool"
                     | "so"
                     | "WHAT"
+                    | "WHICH"
                     | "^name"
                     | "gist"
                     | "Str"

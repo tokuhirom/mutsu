@@ -758,6 +758,11 @@ pub(crate) struct SharedPromise {
 }
 
 impl SharedPromise {
+    /// Returns a raw pointer to the inner Arc data, for use in WHICH identity.
+    pub fn arc_ptr(&self) -> *const () {
+        Arc::as_ptr(&self.inner) as *const ()
+    }
+
     pub(crate) fn new() -> Self {
         Self::new_with_class(Symbol::intern("Promise"))
     }
@@ -900,6 +905,11 @@ pub(crate) struct SharedChannel {
 }
 
 impl SharedChannel {
+    /// Returns a raw pointer to the inner Arc data, for use in WHICH identity.
+    pub fn arc_ptr(&self) -> *const () {
+        Arc::as_ptr(&self.inner) as *const ()
+    }
+
     pub(crate) fn new() -> Self {
         let closed_promise = SharedPromise::new();
         Self {

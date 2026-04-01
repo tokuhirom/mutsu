@@ -94,6 +94,7 @@ impl Interpreter {
             "Bool"
                 | "so"
                 | "WHAT"
+                | "WHICH"
                 | "^name"
                 | "gist"
                 | "Str"
