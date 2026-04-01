@@ -4,6 +4,26 @@ use crate::symbol::Symbol;
 impl Interpreter {
     fn builtin_index_var_meta(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let source_name = args.first().map(Value::to_string_value).unwrap_or_default();
+        let index_key = args.get(1);
+
+        // For Map containers, .VAR returns the value itself (no Scalar container)
+        // since Map decontainerizes all values.
+        if let Some(container) = self.env.get(&source_name)
+            && let Value::Hash(map) = container
+        {
+            let is_map = self
+                .container_type_metadata(container)
+                .and_then(|info| info.declared_type)
+                .is_some_and(|dt| dt == "Map");
+            if is_map {
+                if let Some(key) = index_key {
+                    let key_str = key.to_string_value();
+                    return Ok(map.get(&key_str).cloned().unwrap_or(Value::Nil));
+                }
+                return Ok(Value::Nil);
+            }
+        }
+
         let mut attributes = std::collections::HashMap::new();
         attributes.insert("name".to_string(), Value::str(format!("{source_name}[]")));
         attributes.insert(

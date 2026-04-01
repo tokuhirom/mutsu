@@ -1839,6 +1839,12 @@ impl VM {
         }
 
         // Hash-in-Hash auto-vivification (original behavior)
+        // Drop the locals copy first so the Arc refcount is 1.
+        // This avoids unnecessary cloning in Arc::make_mut which would
+        // change the pointer and break .WHICH identity stability.
+        if let Some(slot) = self.find_local_slot(code, &var_name) {
+            self.locals[slot] = Value::Nil;
+        }
         if let Some(Value::Hash(outer_hash)) = self.interpreter.env_mut().get_mut(&var_name) {
             let oh = Arc::make_mut(outer_hash);
             let inner_hash = oh
