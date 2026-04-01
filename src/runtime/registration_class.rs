@@ -159,6 +159,7 @@ fn delegation_double_slurpy_param() -> ParamDef {
 pub(crate) struct ClassDeclModifiers<'a> {
     pub(crate) class_is_rw: bool,
     pub(crate) is_hidden: bool,
+    pub(crate) is_lexical: bool,
     pub(crate) hidden_parents: &'a [String],
     pub(crate) does_parents: &'a [String],
 }
@@ -570,6 +571,7 @@ impl Interpreter {
         let ClassDeclModifiers {
             class_is_rw,
             is_hidden,
+            is_lexical,
             hidden_parents,
             does_parents,
         } = modifiers;
@@ -613,7 +615,8 @@ impl Interpreter {
 
         // Detect X::Redeclaration when a class redefines a role in the same scope.
         // Only check user-declared roles (not pre-registered builtins like Iterator).
-        if self.user_declared_roles.contains(name) {
+        // Lexical classes (`my class`) are allowed to shadow outer role names.
+        if !is_lexical && self.user_declared_roles.contains(name) {
             // Only report redeclaration for non-stub class bodies
             let body_non_stub: Vec<_> = body
                 .iter()
