@@ -615,9 +615,22 @@ impl Interpreter {
         args: Vec<Value>,
         invocant: Option<Value>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
-        let Some((owner_class, method_def)) =
-            self.resolve_method_with_owner(receiver_class_name, method_name, &args)
-        else {
+        let inv_value = if let Some(inv) = &invocant {
+            inv.clone()
+        } else if attributes.is_empty() {
+            Value::Package(crate::symbol::Symbol::intern(receiver_class_name))
+        } else {
+            Value::make_instance(
+                crate::symbol::Symbol::intern(receiver_class_name),
+                attributes.clone(),
+            )
+        };
+        let Some((owner_class, method_def)) = self.resolve_method_with_owner_invocant(
+            receiver_class_name,
+            method_name,
+            &args,
+            &inv_value,
+        ) else {
             return Err(super::methods_signature::make_multi_no_match_error(
                 method_name,
             ));
@@ -821,6 +834,24 @@ impl Interpreter {
                             self.env = saved_env;
                             self.var_bindings = saved_var_bindings;
                             self.restore_readonly_vars(saved_readonly);
+                            // :D/:U smiley mismatch → X::Parameter::InvalidConcreteness
+                            if constraint.ends_with(":D") || constraint.ends_with(":U") {
+                                let (base_type, _) = super::types::strip_type_smiley(constraint);
+                                let should_be_concrete = constraint.ends_with(":D");
+                                let routine = self
+                                    .samewith_context_stack
+                                    .last()
+                                    .map(|(name, _)| name.as_str())
+                                    .unwrap_or("<method>");
+                                return Err(RuntimeError::parameter_invalid_concreteness(
+                                    base_type,
+                                    base_type,
+                                    routine,
+                                    &format!("${}", param_name),
+                                    should_be_concrete,
+                                    pd.is_invocant,
+                                ));
+                            }
                             return Err(RuntimeError::new(format!(
                                 "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
                                 param_name,

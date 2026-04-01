@@ -174,6 +174,20 @@ impl VM {
                             self.stack.truncate(saved_stack_depth);
                             let frame = self.pop_call_frame();
                             *self.interpreter.env_mut() = frame.saved_env;
+                            // :D/:U smiley mismatch → X::Parameter::InvalidConcreteness
+                            if constraint.ends_with(":D") || constraint.ends_with(":U") {
+                                let (base_type, _) =
+                                    crate::runtime::types::strip_type_smiley(constraint);
+                                let should_be_concrete = constraint.ends_with(":D");
+                                return Err(RuntimeError::parameter_invalid_concreteness(
+                                    base_type,
+                                    base_type,
+                                    method_name,
+                                    &format!("${}", param_name),
+                                    should_be_concrete,
+                                    pd.is_invocant,
+                                ));
+                            }
                             return Err(RuntimeError::new(format!(
                                 "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
                                 param_name,

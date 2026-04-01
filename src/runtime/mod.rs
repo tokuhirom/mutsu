@@ -2122,6 +2122,40 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "X::Parameter".to_string(),
+            ClassDef {
+                parents: vec!["Exception".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["X::Parameter".to_string(), "Exception".to_string()],
+                attribute_types: HashMap::new(),
+                attribute_smileys: HashMap::new(),
+                wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
+            },
+        );
+        classes.insert(
+            "X::Parameter::InvalidConcreteness".to_string(),
+            ClassDef {
+                parents: vec!["X::Parameter".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec![
+                    "X::Parameter::InvalidConcreteness".to_string(),
+                    "X::Parameter".to_string(),
+                    "Exception".to_string(),
+                ],
+                attribute_types: HashMap::new(),
+                attribute_smileys: HashMap::new(),
+                wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
+            },
+        );
+        classes.insert(
             "X::Supply::Combinator".to_string(),
             ClassDef {
                 parents: vec!["Exception".to_string()],
