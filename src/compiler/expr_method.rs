@@ -14,16 +14,17 @@ impl Compiler {
             // element variable metadata for .VAR on @a[0] / %h<k>.
             self.compile_expr(index_target);
             self.code.emit(OpCode::Pop);
-            self.compile_expr(index);
-            self.code.emit(OpCode::Pop);
+            // Pass the index key so __mutsu_index_var_meta can look up the
+            // actual value for Map containers (which decontainerize values).
             let name_idx = self.code.add_constant(Value::str(source_name));
             self.code.emit(OpCode::LoadConst(name_idx));
+            self.compile_expr(index);
             let builtin_idx = self
                 .code
                 .add_constant(Value::str("__mutsu_index_var_meta".to_string()));
             self.code.emit(OpCode::CallFunc {
                 name_idx: builtin_idx,
-                arity: 1,
+                arity: 2,
                 arg_sources_idx: None,
             });
         }
