@@ -885,6 +885,7 @@ impl VM {
                 crate::runtime::ClassDeclModifiers {
                     class_is_rw: *class_is_rw,
                     is_hidden: *is_hidden,
+                    is_lexical: *is_lexical,
                     hidden_parents,
                     does_parents,
                 },
