@@ -2312,6 +2312,7 @@ impl Interpreter {
         register_x("X::Backslash::UnrecognizedSequence", "X::Backslash");
         register_x("X::Syntax::Regex::SolitaryQuantifier", "X::Syntax");
         register_x("X::Syntax::Regex::NullRegex", "X::Syntax");
+        register_x("X::Syntax::Regex::NonQuantifiable", "X::Syntax");
         register_x("X::Syntax::Term::MissingInitializer", "X::Syntax");
         register_x("X::Syntax::WithoutElse", "X::Syntax");
         register_x("X::Syntax::UnlessElse", "X::Syntax");
