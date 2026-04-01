@@ -21,6 +21,7 @@ impl Interpreter {
         let mut interp = Interpreter {
             env,
             functions: self.functions.clone(),
+            token_defs: self.token_defs.clone(),
             current_package: self.current_package.clone(),
             ..Default::default()
         };
@@ -106,6 +107,7 @@ impl Interpreter {
         let mut interp = Interpreter {
             env,
             functions: self.functions.clone(),
+            token_defs: self.token_defs.clone(),
             current_package: self.current_package.clone(),
             ..Default::default()
         };
