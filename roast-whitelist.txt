@@ -579,6 +579,7 @@ roast/S15-nfg/mass-roundtrip-nfc.t
 roast/S15-nfg/mass-roundtrip-nfd.t
 roast/S15-nfg/mass-roundtrip-nfkc.t
 roast/S15-nfg/mass-roundtrip-nfkd.t
+roast/S15-nfg/regex.t
 roast/S15-normalization/nfc-0.t
 roast/S15-normalization/nfc-1.t
 roast/S15-normalization/nfc-10.t

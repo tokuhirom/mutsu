@@ -245,6 +245,17 @@ pub(super) fn is_word_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
+/// Check if a CharClass contains only exact character items (Char and Range).
+/// Such classes should NOT match grapheme clusters with combining marks,
+/// because in Raku, `<[Dd]>` matches the grapheme "D" but not "D + combiners".
+/// Property-based classes like `\w` match on the base character regardless.
+pub(super) fn class_has_only_exact_chars(class: &CharClass) -> bool {
+    class
+        .items
+        .iter()
+        .all(|item| matches!(item, ClassItem::Char(_) | ClassItem::Range(_, _)))
+}
+
 /// Advance past a single grapheme cluster starting at `pos` in `chars`.
 /// After matching the base character at `pos`, this skips any trailing
 /// combining marks (Unicode category M) so that a single regex atom

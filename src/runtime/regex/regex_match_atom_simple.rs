@@ -1,5 +1,7 @@
 use super::super::*;
-use super::regex_helpers::{CaseFoldIter, grapheme_end, is_word_char, matches_named_builtin};
+use super::regex_helpers::{
+    CaseFoldIter, class_has_only_exact_chars, grapheme_end, is_word_char, matches_named_builtin,
+};
 
 impl Interpreter {
     #[allow(dead_code)]
@@ -387,7 +389,17 @@ impl Interpreter {
                 {
                     return Some(pos + 2);
                 }
-                self.regex_match_class_ignorecase(class, c, ignore_case)
+                // In Raku, enumerated char classes like <[Dd]> match whole graphemes.
+                // If the grapheme has combining marks, exact Char/Range items should
+                // NOT match (e.g., "D + combining marks" is not the same as "D").
+                let ge = grapheme_end(chars, pos);
+                if ge > pos + 1 && class_has_only_exact_chars(class) {
+                    // Grapheme has combining marks and class only has exact chars;
+                    // no match.
+                    false
+                } else {
+                    self.regex_match_class_ignorecase(class, c, ignore_case)
+                }
             }
             RegexAtom::UnicodeProp {
                 name,
