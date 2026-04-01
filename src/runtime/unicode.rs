@@ -66,8 +66,10 @@ pub(super) fn check_unicode_property_with_args(prop: &str, args: &str, c: char) 
             actual.eq_ignore_ascii_case(args.trim())
         }
         _ => {
-            // Fall back to simple property check (ignore args)
-            check_unicode_property(prop, c)
+            // Reconstruct property with angle-bracket args so check_unicode_property
+            // can handle it as a parameterized property (e.g. Script<Latin>)
+            let combined = format!("{}<{}>", prop, args);
+            check_unicode_property(&combined, c)
         }
     }
 }
