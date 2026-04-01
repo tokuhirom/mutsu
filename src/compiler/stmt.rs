@@ -134,7 +134,10 @@ impl Compiler {
     fn compile_test_more_use(&mut self, arg: &Option<Expr>) {
         // `Test::More` is provided by native Test functions.
         let test_name_idx = self.code.add_constant(Value::str_from("Test"));
-        self.code.emit(OpCode::UseModule(test_name_idx));
+        self.code.emit(OpCode::UseModule {
+            name_idx: test_name_idx,
+            tags_idx: None,
+        });
         if let Some(plan_arg) = Self::extract_test_more_plan_arg(arg) {
             self.compile_expr(plan_arg);
             let plan_name_idx = self.code.add_constant(Value::str_from("plan"));
@@ -1616,17 +1619,17 @@ impl Compiler {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RegisterProtoToken(idx));
             }
-            Stmt::Use { module, arg } if module == "lib" && arg.is_some() => {
+            Stmt::Use { module, arg, .. } if module == "lib" && arg.is_some() => {
                 if let Some(expr) = arg {
                     self.compile_expr(expr);
                     self.code.emit(OpCode::UseLibPath);
                 }
             }
-            Stmt::Use { module, arg } if module == "lib" && arg.is_none() => {}
-            Stmt::Use { module, arg } if module == "dynamic-scope" => {
+            Stmt::Use { module, arg, .. } if module == "lib" && arg.is_none() => {}
+            Stmt::Use { module, arg, .. } if module == "dynamic-scope" => {
                 self.apply_dynamic_scope_pragma(arg.as_ref());
             }
-            Stmt::Use { module, arg } if module == "newline" => {
+            Stmt::Use { module, arg, .. } if module == "newline" => {
                 if let Some(expr) = arg {
                     self.compile_expr(expr);
                     let name_idx = self
@@ -1639,7 +1642,7 @@ impl Compiler {
                     });
                 }
             }
-            Stmt::Use { module, arg } if module == "variables" => {
+            Stmt::Use { module, arg, .. } if module == "variables" => {
                 // `use variables :D/:U/:_` pragma — emit a SetVariablesPragma opcode
                 if let Some(arg_expr) = arg {
                     self.compile_expr(arg_expr);
@@ -1650,7 +1653,7 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::str("variables".to_string()));
                 self.code.emit(OpCode::SetPragma(name_idx));
             }
-            Stmt::Use { module, arg } if module == "attributes" => {
+            Stmt::Use { module, arg, .. } if module == "attributes" => {
                 // `use attributes :D/:U/:_` pragma — emit a SetPragma opcode
                 if let Some(arg_expr) = arg {
                     self.compile_expr(arg_expr);
@@ -1671,18 +1674,30 @@ impl Compiler {
                     || module == "class" => {}
             Stmt::Use { module, .. } if module == "MONKEY-TYPING" || module == "MONKEY" => {
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
-                self.code.emit(OpCode::UseModule(name_idx));
+                self.code.emit(OpCode::UseModule {
+                    name_idx,
+                    tags_idx: None,
+                });
             }
-            Stmt::Use { module, arg } if module == "Test::More" => {
+            Stmt::Use { module, arg, .. } if module == "Test::More" => {
                 self.compile_test_more_use(arg);
             }
             Stmt::Use { module, .. } if module == "Test" || module.starts_with("Test::") => {
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
-                self.code.emit(OpCode::UseModule(name_idx));
+                self.code.emit(OpCode::UseModule {
+                    name_idx,
+                    tags_idx: None,
+                });
             }
-            Stmt::Use { module, .. } => {
+            Stmt::Use { module, tags, .. } => {
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
-                self.code.emit(OpCode::UseModule(name_idx));
+                let tags_idx = if tags.is_empty() {
+                    None
+                } else {
+                    let entries = tags.iter().cloned().map(Value::str).collect::<Vec<Value>>();
+                    Some(self.code.add_constant(Value::array(entries)))
+                };
+                self.code.emit(OpCode::UseModule { name_idx, tags_idx });
             }
             Stmt::Import { module, tags } => {
                 let name_idx = self.code.add_constant(Value::str(module.clone()));

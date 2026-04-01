@@ -700,7 +700,10 @@ pub(crate) enum OpCode {
         param_idx: Option<u32>,
         target_var_idx: Option<u32>,
     },
-    UseModule(u32),
+    UseModule {
+        name_idx: u32,
+        tags_idx: Option<u32>,
+    },
     ImportModule {
         name_idx: u32,
         tags_idx: Option<u32>,

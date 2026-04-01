@@ -774,10 +774,37 @@ impl VM {
         self.stack.push(val);
     }
 
-    pub(super) fn exec_get_code_var_op(&mut self, code: &CompiledCode, name_idx: u32) {
+    pub(super) fn exec_get_code_var_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
         let val = self.interpreter.resolve_code_var(name);
+        // In Raku, &foo for an undefined routine is a compile-time error.
+        // We approximate this at runtime, but only inside EVAL context
+        // to avoid breaking code that relies on &name returning Nil for
+        // non-existent routines (e.g. custom EXPORT mechanisms).
+        if matches!(val, Value::Nil)
+            && !name.contains("::")
+            && !name.starts_with('?')
+            && !name.starts_with('*')
+            && matches!(
+                self.interpreter.env().get("__mutsu_in_eval"),
+                Some(Value::Bool(true))
+            )
+        {
+            let env_key = format!("&{}", name);
+            let is_declared = self.interpreter.env().contains_key(&env_key);
+            if !is_declared {
+                return Err(RuntimeError::undeclared_symbols(format!(
+                    "Undeclared routine:\n    {} used at line 1",
+                    name
+                )));
+            }
+        }
         self.stack.push(val);
+        Ok(())
     }
 
     pub(super) fn exec_indirect_code_lookup_op(&mut self, code: &CompiledCode, name_idx: u32) {

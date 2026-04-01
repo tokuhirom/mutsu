@@ -2881,13 +2881,21 @@ impl Interpreter {
     }
 
     pub fn use_module(&mut self, module: &str) -> Result<(), RuntimeError> {
+        self.use_module_with_tags(module, &[])
+    }
+
+    pub fn use_module_with_tags(
+        &mut self,
+        module: &str,
+        tags: &[String],
+    ) -> Result<(), RuntimeError> {
         if self.loaded_modules.contains(module) {
             if module == "strict" {
                 self.strict_mode = true;
             } else if module == "fatal" {
                 self.fatal_mode = true;
             }
-            return match self.import_module(module, &[]) {
+            return match self.import_module(module, tags) {
                 Ok(()) => Ok(()),
                 Err(err) if err.message.starts_with("No exports found for module:") => Ok(()),
                 Err(err) => Err(err),
@@ -2904,6 +2912,7 @@ impl Interpreter {
         self.module_load_stack.push(module.to_string());
         let class_snapshot: HashSet<String> = self.classes.keys().cloned().collect();
         let env_snapshot: HashSet<String> = self.env.keys().cloned().collect();
+        let func_keys_before: HashSet<Symbol> = self.functions.keys().copied().collect();
 
         let result = if module == "Test"
             || matches!(
@@ -2993,8 +3002,50 @@ impl Interpreter {
             } else if module == "fatal" {
                 self.fatal_mode = true;
             }
+            // Remove GLOBAL:: function aliases for non-DEFAULT/non-MANDATORY
+            // exports that were created by sub hoisting during module loading.
+            // The hoisting registers ALL exported subs under GLOBAL:: before
+            // export tag filtering can occur. We use the exported_subs table
+            // to identify which functions should NOT be globally accessible.
+            let requested_tags: HashSet<String> = if tags.is_empty() {
+                ["DEFAULT".to_string()].into_iter().collect()
+            } else {
+                tags.iter().cloned().collect()
+            };
+            let want_all = requested_tags.contains("ALL");
+            // Check exports registered under GLOBAL (for unit modules) and under module name
+            let export_sources = ["GLOBAL", module];
+            for source in &export_sources {
+                if let Some(subs) = self.exported_subs.get(*source) {
+                    for (name, symbol_tags) in subs {
+                        let is_mandatory = symbol_tags.contains("MANDATORY");
+                        if !want_all && !is_mandatory && symbol_tags.is_disjoint(&requested_tags) {
+                            // This export should NOT be imported — remove from GLOBAL
+                            let global_key = Symbol::intern(&format!("GLOBAL::{}", name));
+                            if !func_keys_before.contains(&global_key) {
+                                self.functions.remove(&global_key);
+                            }
+                            // Also remove multi-dispatch variants
+                            let prefix = format!("GLOBAL::{}/", name);
+                            let multi_keys: Vec<Symbol> = self
+                                .functions
+                                .keys()
+                                .filter(|k| {
+                                    let ks = k.resolve();
+                                    ks.starts_with(&prefix) && !func_keys_before.contains(k)
+                                })
+                                .copied()
+                                .collect();
+                            for mk in multi_keys {
+                                self.functions.remove(&mk);
+                            }
+                        }
+                    }
+                }
+            }
+
             self.loaded_modules.insert(module.to_string());
-            if let Err(err) = self.import_module(module, &[])
+            if let Err(err) = self.import_module(module, tags)
                 && !err.message.starts_with("No exports found for module:")
             {
                 return Err(err);
@@ -3093,13 +3144,58 @@ impl Interpreter {
             )));
         }
 
+        // Validate that all requested tags actually exist in the module's exports.
+        if !tags.is_empty() && !import_all {
+            // Collect all known tags from the module
+            let mut known_tags: HashSet<String> = HashSet::new();
+            known_tags.insert("DEFAULT".to_string());
+            known_tags.insert("ALL".to_string());
+            known_tags.insert("MANDATORY".to_string());
+            for symbol_tags in subs.values() {
+                for tag in symbol_tags {
+                    known_tags.insert(tag.clone());
+                }
+            }
+            for symbol_tags in vars.values() {
+                for tag in symbol_tags {
+                    known_tags.insert(tag.clone());
+                }
+            }
+            for tag in &requested {
+                if !known_tags.contains(tag) {
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("source-package".to_string(), Value::str(module.to_string()));
+                    attrs.insert("tag".to_string(), Value::str(tag.clone()));
+                    attrs.insert(
+                        "message".to_string(),
+                        Value::str(format!(
+                            "Error while importing from '{}': no such tag '{}' declared",
+                            module, tag
+                        )),
+                    );
+                    let ex = Value::make_instance(
+                        crate::symbol::Symbol::intern("X::Import::NoSuchTag"),
+                        attrs,
+                    );
+                    let mut err = RuntimeError::new(format!(
+                        "Error while importing from '{}': no such tag '{}' declared",
+                        module, tag
+                    ));
+                    err.exception = Some(Box::new(ex));
+                    return Err(err);
+                }
+            }
+        }
+
         // Import into the current package scope so that `use Foo` inside
         // `module Bar { }` makes Foo's exports available as `Bar::name`
         // rather than polluting the GLOBAL namespace.
         let target_pkg = self.current_package.clone();
 
         for (name, symbol_tags) in subs {
-            if !import_all && symbol_tags.is_disjoint(&requested) {
+            // MANDATORY exports are always imported regardless of requested tags
+            let is_mandatory = symbol_tags.contains("MANDATORY");
+            if !import_all && !is_mandatory && symbol_tags.is_disjoint(&requested) {
                 continue;
             }
             let source_single = format!("{module}::{name}");
@@ -3145,7 +3241,8 @@ impl Interpreter {
         }
 
         for (name, symbol_tags) in vars {
-            if !import_all && symbol_tags.is_disjoint(&requested) {
+            let is_mandatory = symbol_tags.contains("MANDATORY");
+            if !import_all && !is_mandatory && symbol_tags.is_disjoint(&requested) {
                 continue;
             }
             let (source, target) = if let Some(sigil) = name.chars().next()
