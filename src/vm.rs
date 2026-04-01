@@ -764,6 +764,8 @@ impl VM {
                 {
                     return Err(self.strict_undeclared_error(&name));
                 }
+                // Check readonly variables (e.g., $*USAGE)
+                self.interpreter.check_readonly_for_modify(&name)?;
                 // Reject assignment to immutable type objects (e.g., `Foo .= new`)
                 if !name.starts_with('$')
                     && !name.starts_with('@')

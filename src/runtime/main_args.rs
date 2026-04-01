@@ -121,7 +121,22 @@ impl Interpreter {
                     }
 
                     // Build args for the call
-                    return self.call_main_with_parsed_args(candidate, &parsed);
+                    match self.call_main_with_parsed_args(candidate, &parsed) {
+                        Ok(()) => return Ok(()),
+                        Err(e) => {
+                            // If MAIN call failed due to a constraint check or
+                            // similar runtime error, fall through to GENERATE-USAGE
+                            // rather than leaking the internal exception.
+                            let msg = e.message.to_lowercase();
+                            if msg.contains("constraint")
+                                || msg.contains("type check")
+                                || msg.contains("where")
+                            {
+                                continue;
+                            }
+                            return Err(e);
+                        }
+                    }
                 }
                 Err(_) => continue,
             }
@@ -404,13 +419,15 @@ impl Interpreter {
             args.push(Value::Pair(name.clone(), Box::new(value.clone())));
         }
 
-        // Set $*USAGE
+        // Set $*USAGE (read-only)
         let all_candidates = self.collect_main_candidates();
         let usage_text = self.generate_usage_from_candidates(&all_candidates);
         self.env
             .insert("$*USAGE".to_string(), Value::str(usage_text.clone()));
         self.env
             .insert("*USAGE".to_string(), Value::str(usage_text));
+        self.mark_readonly("$*USAGE");
+        self.mark_readonly("*USAGE");
 
         // Call the specific candidate directly
         match self.call_function_def(candidate, &args) {
@@ -429,6 +446,8 @@ impl Interpreter {
             .insert("$*USAGE".to_string(), Value::str(usage.clone()));
         self.env
             .insert("*USAGE".to_string(), Value::str(usage.clone()));
+        self.mark_readonly("$*USAGE");
+        self.mark_readonly("*USAGE");
 
         if self.resolve_function("GENERATE-USAGE").is_some() {
             let result = self.call_function("GENERATE-USAGE", vec![])?;

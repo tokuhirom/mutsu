@@ -559,7 +559,7 @@ fn stmt_list_with_mode(
                     stmts.push(Stmt::SetLine(line));
                 }
                 stmts.push(stmt);
-                rest = r;
+                rest = consume_trailing_comma(r);
             }
             Err(e) => {
                 if e.is_fatal() {
@@ -585,12 +585,30 @@ fn stmt_list_with_mode(
 
 /// Consume zero or more semicolons.
 fn consume_semicolons(mut input: &str) -> &str {
-    while input.starts_with(';') {
+    // In Raku, a comma can act as a statement separator after block-bearing
+    // declarations (e.g. `multi sub foo() { }, multi sub bar() { }`).
+    while input.starts_with(';') || input.starts_with(',') {
         input = &input[1..];
-        // Also consume whitespace after semicolons
+        // Also consume whitespace after separators
         if let Ok((r, _)) = ws(input) {
             input = r;
         }
+    }
+    input
+}
+
+/// Consume an optional trailing comma after a statement, used as a statement
+/// separator after block-bearing declarations in Raku
+/// (e.g. `multi sub foo() { }, multi sub bar() { }`).
+fn consume_trailing_comma(input: &str) -> &str {
+    if let Ok((after_ws, _)) = ws(input)
+        && after_ws.starts_with(',')
+    {
+        let r = &after_ws[1..];
+        if let Ok((after_comma_ws, _)) = ws(r) {
+            return after_comma_ws;
+        }
+        return r;
     }
     input
 }
