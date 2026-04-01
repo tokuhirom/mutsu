@@ -64,12 +64,24 @@ impl Interpreter {
         override_args: Option<Vec<Value>>,
         tail_call: bool,
     ) -> Result<Value, RuntimeError> {
-        // Try wrap dispatch stack first (wrapper chains)
+        // Try wrap dispatch stack first (wrapper chains).
         if let Some(frame) = self.wrap_dispatch_stack.last_mut() {
             if let Some(next) = frame.remaining.first().cloned() {
                 frame.remaining.remove(0);
                 let call_args = override_args.unwrap_or_else(|| frame.args.clone());
-                let result = self.call_sub_value(next, call_args, false)?;
+                // If this is a method wrap original, separate the invocant
+                // from the args and dispatch as a method call.
+                let result = if let Value::Sub(ref data) = next
+                    && data.env.get("__mutsu_method_wrap_original").is_some()
+                    && !call_args.is_empty()
+                {
+                    let invocant = call_args[0].clone();
+                    let method_args = call_args[1..].to_vec();
+                    let method_name = data.name.resolve();
+                    self.call_method_with_values(invocant, &method_name, method_args)?
+                } else {
+                    self.call_sub_value(next, call_args, false)?
+                };
                 if tail_call {
                     return Err(RuntimeError {
                         return_value: Some(result),
@@ -78,14 +90,19 @@ impl Interpreter {
                 }
                 return Ok(result);
             }
-            // No more wrappers — return Nil
-            if tail_call {
-                return Err(RuntimeError {
-                    return_value: Some(Value::Nil),
-                    ..RuntimeError::new("")
-                });
+            // Remaining is empty.
+            if frame.sub_id != 0 {
+                // Non-method wrap: exhausted — return Nil
+                if tail_call {
+                    return Err(RuntimeError {
+                        return_value: Some(Value::Nil),
+                        ..RuntimeError::new("")
+                    });
+                }
+                return Ok(Value::Nil);
             }
-            return Ok(Value::Nil);
+            // Method wraps (sub_id == 0): fall through to method dispatch stack
+            // so callsame inside the original method can continue the MRO chain.
         }
         // Try method dispatch stack
         if !self.method_dispatch_stack.is_empty() {
@@ -96,7 +113,13 @@ impl Interpreter {
                     return Ok(Value::Nil);
                 };
                 frame.remaining.remove(0);
-                let call_args = override_args.unwrap_or_else(|| frame.args.clone());
+                let call_args = if let Some(new_args) = override_args {
+                    // Update the frame's args so subsequent callsame uses the new args
+                    frame.args = new_args.clone();
+                    new_args
+                } else {
+                    frame.args.clone()
+                };
                 // Use the current `self` from the environment instead of the stale
                 // frame invocant.  The method body may have mutated attributes
                 // (e.g. `$.tracker ~= "bar,"`) before calling callsame/callwith,

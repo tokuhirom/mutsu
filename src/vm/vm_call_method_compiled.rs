@@ -190,64 +190,65 @@ impl VM {
             && let Some((owner_class, method_def)) = self
                 .interpreter
                 .resolve_method_with_owner_invocant(&cn, method, &args, &target)
-            && let Some(ref cc) = method_def.compiled_code
         {
-            let cc = cc.clone();
-            let target_id = match &target {
-                Value::Instance { id, .. } => Some(*id),
-                _ => None,
-            };
-            let attributes = match &target {
-                Value::Instance { attributes, .. } => (**attributes).clone(),
-                _ => std::collections::HashMap::new(),
-            };
-            // Set up dispatch frame for nextsame/callsame support
-            let invocant_for_dispatch = if attributes.is_empty() {
-                Value::Package(crate::symbol::Symbol::intern(&cn))
-            } else {
-                target.clone()
-            };
-            let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
-                &cn,
-                method,
-                &args,
-                invocant_for_dispatch,
-            );
-            let invocant = Some(target);
-            // Method bodies are compiled independently; function calls
-            // within them resolve through the interpreter fallback.
-            let empty_fns = HashMap::new();
-            let method_result = self.call_compiled_method(
-                &cn,
-                &owner_class,
-                method,
-                &method_def,
-                &cc,
-                attributes,
-                args,
-                invocant,
-                &empty_fns,
-            );
-            if pushed_dispatch {
-                self.interpreter.pop_method_dispatch();
+            if let Some(result) =
+                self.check_method_wrap_chain(&cn, &owner_class, method, &method_def, &target, &args)
+            {
+                return result;
             }
-            self.interpreter.pop_method_samewith_context();
-            let (result, new_attrs) = method_result?;
-            // Propagate attribute mutations to all bindings of this instance
-            if let Some(id) = target_id {
-                self.interpreter.overwrite_instance_bindings_by_identity(
+            if let Some(ref cc) = method_def.compiled_code {
+                let cc = cc.clone();
+                let target_id = match &target {
+                    Value::Instance { id, .. } => Some(*id),
+                    _ => None,
+                };
+                let attributes = match &target {
+                    Value::Instance { attributes, .. } => (**attributes).clone(),
+                    _ => std::collections::HashMap::new(),
+                };
+                let invocant_for_dispatch = if attributes.is_empty() {
+                    Value::Package(crate::symbol::Symbol::intern(&cn))
+                } else {
+                    target.clone()
+                };
+                let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
                     &cn,
-                    id,
-                    new_attrs.clone(),
+                    method,
+                    &args,
+                    invocant_for_dispatch,
                 );
-                // Auto-FETCH if the method returned a Proxy
-                if let Value::Proxy { ref fetcher, .. } = result {
-                    return self
-                        .interpreter
-                        .proxy_fetch(fetcher, None, &cn, &new_attrs, id);
+                let invocant = Some(target);
+                let empty_fns = HashMap::new();
+                let method_result = self.call_compiled_method(
+                    &cn,
+                    &owner_class,
+                    method,
+                    &method_def,
+                    &cc,
+                    attributes,
+                    args,
+                    invocant,
+                    &empty_fns,
+                );
+                if pushed_dispatch {
+                    self.interpreter.pop_method_dispatch();
                 }
+                self.interpreter.pop_method_samewith_context();
+                let (result, new_attrs) = method_result?;
+                if let Some(id) = target_id {
+                    self.interpreter.overwrite_instance_bindings_by_identity(
+                        &cn,
+                        id,
+                        new_attrs.clone(),
+                    );
+                    if let Value::Proxy { ref fetcher, .. } = result {
+                        return self
+                            .interpreter
+                            .proxy_fetch(fetcher, None, &cn, &new_attrs, id);
+                    }
+                }
+                return Ok(result);
             }
-            return Ok(result);
         }
         self.interpreter
             .call_method_with_values(target, method, args)
@@ -358,59 +359,65 @@ impl VM {
             && let Some((owner_class, method_def)) = self
                 .interpreter
                 .resolve_method_with_owner_invocant(&cn, method, &args, &target)
-            && let Some(ref cc) = method_def.compiled_code
         {
-            let cc = cc.clone();
-            let target_id = match &target {
-                Value::Instance { id, .. } => Some(*id),
-                _ => None,
-            };
-            let attributes = match &target {
-                Value::Instance { attributes, .. } => (**attributes).clone(),
-                _ => std::collections::HashMap::new(),
-            };
-            let invocant_for_dispatch = if attributes.is_empty() {
-                Value::Package(crate::symbol::Symbol::intern(&cn))
-            } else {
-                target.clone()
-            };
-            let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
-                &cn,
-                method,
-                &args,
-                invocant_for_dispatch,
-            );
-            let invocant = Some(target);
-            let empty_fns = HashMap::new();
-            let method_result = self.call_compiled_method(
-                &cn,
-                &owner_class,
-                method,
-                &method_def,
-                &cc,
-                attributes,
-                args,
-                invocant,
-                &empty_fns,
-            );
-            if pushed_dispatch {
-                self.interpreter.pop_method_dispatch();
+            if let Some(result) =
+                self.check_method_wrap_chain(&cn, &owner_class, method, &method_def, &target, &args)
+            {
+                return result;
             }
-            self.interpreter.pop_method_samewith_context();
-            let (result, new_attrs) = method_result?;
-            if let Some(id) = target_id {
-                self.interpreter.overwrite_instance_bindings_by_identity(
+            if let Some(ref cc) = method_def.compiled_code {
+                let cc = cc.clone();
+                let target_id = match &target {
+                    Value::Instance { id, .. } => Some(*id),
+                    _ => None,
+                };
+                let attributes = match &target {
+                    Value::Instance { attributes, .. } => (**attributes).clone(),
+                    _ => std::collections::HashMap::new(),
+                };
+                let invocant_for_dispatch = if attributes.is_empty() {
+                    Value::Package(crate::symbol::Symbol::intern(&cn))
+                } else {
+                    target.clone()
+                };
+                let pushed_dispatch = self.interpreter.push_method_dispatch_frame(
                     &cn,
-                    id,
-                    new_attrs.clone(),
+                    method,
+                    &args,
+                    invocant_for_dispatch,
                 );
-                if let Value::Proxy { ref fetcher, .. } = result {
-                    return self
-                        .interpreter
-                        .proxy_fetch(fetcher, None, &cn, &new_attrs, id);
+                let invocant = Some(target);
+                let empty_fns = HashMap::new();
+                let method_result = self.call_compiled_method(
+                    &cn,
+                    &owner_class,
+                    method,
+                    &method_def,
+                    &cc,
+                    attributes,
+                    args,
+                    invocant,
+                    &empty_fns,
+                );
+                if pushed_dispatch {
+                    self.interpreter.pop_method_dispatch();
                 }
+                self.interpreter.pop_method_samewith_context();
+                let (result, new_attrs) = method_result?;
+                if let Some(id) = target_id {
+                    self.interpreter.overwrite_instance_bindings_by_identity(
+                        &cn,
+                        id,
+                        new_attrs.clone(),
+                    );
+                    if let Value::Proxy { ref fetcher, .. } = result {
+                        return self
+                            .interpreter
+                            .proxy_fetch(fetcher, None, &cn, &new_attrs, id);
+                    }
+                }
+                return Ok(result);
             }
-            return Ok(result);
         }
         self.interpreter
             .call_method_mut_with_values(target_name, target, method, args)
@@ -540,5 +547,67 @@ impl VM {
             Some(e) => Err(e),
             None => Ok(ret_val),
         }
+    }
+
+    /// Check if a method candidate has a wrap chain from ^lookup().candidates[N].wrap().
+    /// If so, dispatch through the wrapper and return Some(result).
+    fn check_method_wrap_chain(
+        &mut self,
+        cn: &str,
+        owner_class: &str,
+        method: &str,
+        method_def: &crate::runtime::MethodDef,
+        target: &Value,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if self.interpreter.is_inside_wrap_dispatch() {
+            return None;
+        }
+        let cand_idx =
+            self.interpreter
+                .find_method_candidate_index(owner_class, method, method_def)?;
+        let chain = self
+            .interpreter
+            .get_method_wrap_chain(owner_class, method, cand_idx)?
+            .clone();
+        let invocant_for_dispatch = target.clone();
+        let pushed_dispatch =
+            self.interpreter
+                .push_method_dispatch_frame(cn, method, args, invocant_for_dispatch);
+        let mut orig_env = crate::env::Env::new();
+        orig_env.insert(
+            "__mutsu_method_wrap_original".to_string(),
+            Value::Bool(true),
+        );
+        let original_sub = Value::make_sub(
+            crate::symbol::Symbol::intern(owner_class),
+            crate::symbol::Symbol::intern(method),
+            method_def.params.clone(),
+            method_def.param_defs.clone(),
+            (*method_def.body).clone(),
+            method_def.is_rw,
+            orig_env,
+        );
+        let outermost = chain.last().unwrap().1.clone();
+        let mut remaining: Vec<Value> = Vec::new();
+        for i in (0..chain.len() - 1).rev() {
+            remaining.push(chain[i].1.clone());
+        }
+        remaining.push(original_sub);
+        let mut call_args = vec![target.clone()];
+        call_args.extend(args.to_vec());
+        let frame = crate::runtime::WrapDispatchFrame {
+            sub_id: 0,
+            remaining,
+            args: call_args.clone(),
+        };
+        self.interpreter.push_wrap_dispatch_frame(frame);
+        let result = self.interpreter.call_sub_value(outermost, call_args, false);
+        self.interpreter.pop_wrap_dispatch_frame();
+        if pushed_dispatch {
+            self.interpreter.pop_method_dispatch();
+        }
+        self.interpreter.pop_method_samewith_context();
+        Some(result)
     }
 }

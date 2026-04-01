@@ -1199,6 +1199,8 @@ impl Interpreter {
         }
         // Make the class visible while its body executes so introspection calls
         // like `A.^add_method(...)` inside the declaration can resolve `A`.
+        // Clear stale method wrap chains from a previous class with the same name.
+        self.method_wrap_chains.retain(|(cls, _, _), _| cls != name);
         self.classes.insert(name.to_string(), class_def.clone());
         if is_stub_body {
             self.class_stubs.insert(name.to_string());
