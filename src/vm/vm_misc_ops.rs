@@ -665,6 +665,21 @@ impl VM {
         if let Some(err) = self.interpreter.failure_to_runtime_error_if_unhandled(&val) {
             return Err(err);
         }
+        // Check for user-defined prefix:<~> multi sub first (operator overloading).
+        // This must come before .Stringy()/.Str() to avoid infinite recursion when
+        // .Stringy() is defined as `{ ~self }` which delegates to prefix:<~>.
+        {
+            let args = vec![val.clone()];
+            if let Some(def) = self
+                .interpreter
+                .resolve_function_with_types("prefix:<~>", &args)
+            {
+                let empty_fns = std::collections::HashMap::new();
+                let result = self.compile_and_call_function_def(&def, args, &empty_fns)?;
+                self.stack.push(result);
+                return Ok(());
+            }
+        }
         // If the value is an Instance, try calling the Stringy method, then Str
         if let Value::Instance { .. } = &val {
             if let Ok(result) =
