@@ -13,6 +13,7 @@ impl Interpreter {
             Ok((stmts, _)) => {
                 self.check_eval_class_redeclarations(&stmts)?;
                 self.check_eval_undeclared_vars(&stmts)?;
+                self.check_eval_undeclared_names(&stmts)?;
                 let value = self.eval_block_value(&stmts)?;
                 if self.eval_result_is_unresolved_bareword(&stmts, &value) {
                     return Err(RuntimeError::undeclared_symbols("Undeclared name"));
@@ -65,11 +66,19 @@ impl Interpreter {
         }
     }
 
-    fn check_eval_class_redeclarations(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+    pub(crate) fn check_eval_class_redeclarations(
+        &self,
+        stmts: &[Stmt],
+    ) -> Result<(), RuntimeError> {
         let mut seen_classes: HashMap<String, bool> = HashMap::new();
         for stmt in stmts {
-            let (name, body) = match stmt {
-                Stmt::ClassDecl { name, body, .. } => (name.resolve(), body),
+            let (name, body, is_lexical) = match stmt {
+                Stmt::ClassDecl {
+                    name,
+                    body,
+                    is_lexical,
+                    ..
+                } => (name.resolve(), body, *is_lexical),
                 _ => continue,
             };
             let body_no_sl: Vec<_> = body
@@ -79,6 +88,19 @@ impl Interpreter {
             let is_stub = body_no_sl.len() == 1
                 && matches!(body_no_sl[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
                     if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn");
+            // Check against classes already registered in the outer environment.
+            // A non-stub, non-lexical class that already exists cannot be redeclared.
+            // Lexical classes (`my class`) are allowed to shadow outer names.
+            // Only check package-qualified names (containing `::`) because simple
+            // names may have been registered by block-scoped class declarations that
+            // leaked into the global registry (a known scoping limitation).
+            if !is_stub && !is_lexical && name.contains("::") && self.has_class(&name) {
+                return Err(RuntimeError::new(format!(
+                    "X::Redeclaration: Redeclaration of symbol '{}'",
+                    name
+                )));
+            }
+
             match seen_classes.get(&name) {
                 None => {
                     seen_classes.insert(name.to_string(), is_stub);
@@ -221,6 +243,89 @@ impl Interpreter {
         }
     }
 
+    /// Check for undeclared type names in EVAL'd code.
+    /// Walks the AST looking for BareWord expressions that start with uppercase
+    /// and aren't known types, classes, or packages. This mirrors Raku's
+    /// compile-time check for undeclared symbols.
+    pub(crate) fn check_eval_undeclared_names(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        // Collect class/role names declared within this EVAL code
+        let mut local_classes: HashSet<String> = HashSet::new();
+        for stmt in stmts {
+            if let Stmt::ClassDecl { name, .. } = stmt {
+                local_classes.insert(name.resolve());
+            }
+            if let Stmt::RoleDecl { name, .. } = stmt {
+                local_classes.insert(name.resolve());
+            }
+        }
+        for stmt in stmts {
+            if let Some(name) = self.find_undeclared_name_in_stmt(stmt, &local_classes) {
+                return Err(RuntimeError::undeclared_symbols(format!(
+                    "Undeclared name:\n    {} used at line 1",
+                    name
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Find an undeclared type name (BareWord starting with uppercase) in a statement.
+    fn find_undeclared_name_in_stmt(
+        &self,
+        stmt: &Stmt,
+        local_classes: &HashSet<String>,
+    ) -> Option<String> {
+        match stmt {
+            Stmt::Expr(expr) => self.find_undeclared_name_in_expr(expr, local_classes),
+            _ => None,
+        }
+    }
+
+    /// Find an undeclared type name in an expression.
+    /// Only checks BareWord nodes that start with uppercase and are not known types.
+    fn find_undeclared_name_in_expr(
+        &self,
+        expr: &Expr,
+        local_classes: &HashSet<String>,
+    ) -> Option<String> {
+        match expr {
+            Expr::BareWord(name) => {
+                // Only check uppercase-starting names (type name convention)
+                if !name.chars().next().is_some_and(|c| c.is_uppercase()) {
+                    return None;
+                }
+                // Skip well-known constants and special names
+                if matches!(
+                    name.as_str(),
+                    "NaN" | "Inf" | "Empty" | "True" | "False" | "Nil" | "Any" | "Mu"
+                ) {
+                    return None;
+                }
+                // Skip names with :: (package-qualified)
+                if name.contains("::") {
+                    return None;
+                }
+                // Skip if it's a known type, class, role, enum, function, or env entry
+                if self.has_type(name)
+                    || self.has_class(name)
+                    || self.has_function(name)
+                    || self.has_multi_function(name)
+                    || self.env().contains_key(name)
+                    || local_classes.contains(name.as_str())
+                    || crate::vm::VM::is_builtin_type(name)
+                {
+                    return None;
+                }
+                Some(name.clone())
+            }
+            Expr::Binary { left, right, .. } => self
+                .find_undeclared_name_in_expr(left, local_classes)
+                .or_else(|| self.find_undeclared_name_in_expr(right, local_classes)),
+            Expr::Unary { expr, .. } => self.find_undeclared_name_in_expr(expr, local_classes),
+            _ => None,
+        }
+    }
+
     fn eval_result_is_unresolved_bareword(&self, stmts: &[Stmt], result: &Value) -> bool {
         let [Stmt::Expr(Expr::BareWord(name))] = stmts else {
             return false;
@@ -237,7 +342,7 @@ impl Interpreter {
     /// Only collects circumfix/postcircumfix operators since they require parser support
     /// to recognize their delimiter syntax. Other operator categories (prefix, postfix,
     /// infix, term) work through runtime dispatch without parser pre-registration.
-    fn collect_operator_sub_names(&self) -> Vec<String> {
+    pub(crate) fn collect_operator_sub_names(&self) -> Vec<String> {
         let mut names = Vec::new();
         for key in self.functions.keys() {
             let key_s = key.resolve();
@@ -260,7 +365,7 @@ impl Interpreter {
         names
     }
 
-    fn collect_operator_assoc_map(&self) -> HashMap<String, String> {
+    pub(crate) fn collect_operator_assoc_map(&self) -> HashMap<String, String> {
         let mut assoc = HashMap::new();
         for (key, value) in &self.operator_assoc {
             let name = if let Some(pos) = key.rfind("::") {
@@ -275,7 +380,7 @@ impl Interpreter {
         assoc
     }
 
-    fn collect_eval_imported_function_names(&self) -> Vec<String> {
+    pub(crate) fn collect_eval_imported_function_names(&self) -> Vec<String> {
         const TEST_EXPORTS: &[&str] = &[
             "ok",
             "nok",

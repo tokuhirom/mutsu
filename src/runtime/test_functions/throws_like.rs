@@ -46,18 +46,40 @@ impl Interpreter {
                     }
                     nested.env.insert(k.clone(), v.clone());
                 }
-                let run_result = nested.run(code).map(|_| Value::Nil);
-                // If execution succeeded, check if the last evaluated value was
-                // a Failure (which would throw in sink context in Raku).
-                match run_result {
-                    Ok(_) => {
-                        if let Some(last_val) = nested.last_value.take() {
-                            Self::sink_failure_to_error(last_val)
-                        } else {
-                            Ok(Value::Nil)
-                        }
+                // Pre-check for undeclared names (compile-time errors in Raku).
+                // Parse the code and check for undeclared type names before running.
+                let pre_check_result = {
+                    let op_names = nested.collect_operator_sub_names();
+                    let op_assoc = nested.collect_operator_assoc_map();
+                    let imported_names = nested.collect_eval_imported_function_names();
+                    match crate::parser::parse_program_with_operators(
+                        code,
+                        &op_names,
+                        &op_assoc,
+                        &imported_names,
+                    ) {
+                        Ok((stmts, _)) => nested
+                            .check_eval_class_redeclarations(&stmts)
+                            .and_then(|()| nested.check_eval_undeclared_names(&stmts)),
+                        Err(e) => Err(e),
                     }
-                    err => err,
+                };
+                if let Err(e) = pre_check_result {
+                    Err(e)
+                } else {
+                    let run_result = nested.run(code).map(|_| Value::Nil);
+                    // If execution succeeded, check if the last evaluated value was
+                    // a Failure (which would throw in sink context in Raku).
+                    match run_result {
+                        Ok(_) => {
+                            if let Some(last_val) = nested.last_value.take() {
+                                Self::sink_failure_to_error(last_val)
+                            } else {
+                                Ok(Value::Nil)
+                            }
+                        }
+                        err => err,
+                    }
                 }
             }
             // When throws-like receives a non-code value (e.g., a Failure from
