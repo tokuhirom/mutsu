@@ -443,12 +443,55 @@ impl Interpreter {
         // or about arity mismatch.
         let is_arity_error = err.message.contains("Too few positionals passed")
             || err.message.contains("Too many positionals passed");
+        // Also detect named parameter type mismatches with simple builtin types
+        // (e.g. `sub foo(Int $x) {}; foo("hi")` should be X::TypeCheck::Argument),
+        // but NOT when type captures are involved (e.g. `sub foo(::T, T $a, T $b)`)
+        // and NOT when the constraint is a user-defined type (subset, class, etc.).
+        let has_type_captures = param_defs
+            .iter()
+            .any(|pd| pd.name.starts_with("::") || pd.name == "__type_capture__");
         let is_type_only_mismatch = err.exception.is_none()
+            && !has_type_captures
             && err
                 .message
                 .contains("X::TypeCheck::Binding::Parameter: Type check failed")
-            && (err.message.contains("for parameter '")
-                || err.message.contains("for __type_only__"));
+            && param_defs.iter().any(|pd| {
+                pd.type_constraint.as_ref().is_some_and(|tc| {
+                    matches!(
+                        tc.as_str(),
+                        "Int"
+                            | "Str"
+                            | "Bool"
+                            | "Num"
+                            | "Rat"
+                            | "Complex"
+                            | "Real"
+                            | "Numeric"
+                            | "Cool"
+                            | "Any"
+                            | "Mu"
+                            | "IO"
+                            | "Regex"
+                            | "Callable"
+                            | "Positional"
+                            | "Associative"
+                            | "Range"
+                            | "Match"
+                            | "Pair"
+                            | "List"
+                            | "Array"
+                            | "Hash"
+                            | "Set"
+                            | "Bag"
+                            | "Mix"
+                            | "Junction"
+                            | "Seq"
+                            | "Supply"
+                            | "Promise"
+                            | "Channel"
+                    )
+                })
+            });
         if (is_arity_error || is_type_only_mismatch) && err.exception.is_none() {
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("message".to_string(), Value::str(enhanced_msg.clone()));
