@@ -291,6 +291,9 @@ impl Interpreter {
                     "dir-sep" => {
                         return Ok(Value::str_from(if is_win32 { "\\" } else { "/" }));
                     }
+                    "devnull" => {
+                        return Ok(Value::str_from(if is_win32 { "NUL" } else { "/dev/null" }));
+                    }
                     _ => {}
                 }
             }

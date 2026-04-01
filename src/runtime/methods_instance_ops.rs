@@ -422,6 +422,10 @@ impl Interpreter {
                         let joined = parts.join(sep);
                         return Ok(Value::str(joined));
                     }
+                    "devnull" => {
+                        let devnull = if is_win32 { "NUL" } else { "/dev/null" };
+                        return Ok(Value::str_from(devnull));
+                    }
                     "catpath" => {
                         let vol = args
                             .first()
