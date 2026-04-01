@@ -24,7 +24,17 @@ pub(super) fn dispatch(
                 )))
             }
         }
-        Value::Nil => Some(Ok(Value::str_from("(Any)"))),
+        Value::Nil => {
+            if method == "raku" || method == "perl" {
+                Some(Ok(Value::str_from("Nil")))
+            } else {
+                // gist returns "(Any)" because mutsu uses Value::Nil
+                // for uninitialized variables (which are actually Any).
+                // TODO: fix variable initialization to use type objects
+                // instead of Nil, then change gist to return "Nil".
+                Some(Ok(Value::str_from("(Any)")))
+            }
+        }
         Value::FatRat(n, d) => {
             if *d == 0 && (method == "gist" || method == "Str") {
                 Some(Err(RuntimeError::numeric_divide_by_zero_with(Some(
