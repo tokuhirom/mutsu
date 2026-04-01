@@ -4,6 +4,16 @@ use crate::symbol::Symbol;
 use std::io::{Read, Write};
 use std::sync::mpsc;
 
+/// Create a Buf Value from raw bytes.
+fn make_buf_value(bytes: &[u8]) -> Value {
+    let mut battrs = HashMap::new();
+    battrs.insert(
+        "bytes".to_string(),
+        Value::array(bytes.iter().map(|b| Value::Int(*b as i64)).collect()),
+    );
+    Value::make_instance(Symbol::intern("Buf"), battrs)
+}
+
 impl Interpreter {
     pub(super) fn native_proc_async_mut(
         &mut self,
@@ -85,6 +95,14 @@ impl Interpreter {
                     }
                     None
                 });
+
+                // Check if stdout/stderr should deliver binary (Buf) data
+                let stdout_bin = attrs
+                    .get("stdout_mode")
+                    .is_some_and(|v| matches!(v, Value::Str(s) if s.as_str() == "bin"));
+                let stderr_bin = attrs
+                    .get("stderr_mode")
+                    .is_some_and(|v| matches!(v, Value::Str(s) if s.as_str() == "bin"));
 
                 // Check if :w flag is set (stdin should be piped)
                 let w_flag = attrs.get("w").map(|v| v.truthy()).unwrap_or(false);
@@ -271,6 +289,7 @@ impl Interpreter {
                     // Spawn stdout reader thread — streams raw chunks through channel
                     let stdout_handle = child_stdout.map(|stdout| {
                         let tx = stdout_channel;
+                        let bin_mode = stdout_bin;
                         std::thread::spawn(move || {
                             use std::io::Read;
                             let mut stdout = stdout;
@@ -280,12 +299,21 @@ impl Interpreter {
                                 match stdout.read(&mut buf) {
                                     Ok(0) => break,
                                     Ok(n) => {
-                                        let chunk = String::from_utf8_lossy(&buf[..n]).into_owned();
-                                        if let Some(ref tx) = tx {
-                                            let _ = tx
-                                                .send(SupplyEvent::Emit(Value::str(chunk.clone())));
+                                        if bin_mode {
+                                            if let Some(ref tx) = tx {
+                                                let buf_val = make_buf_value(&buf[..n]);
+                                                let _ = tx.send(SupplyEvent::Emit(buf_val));
+                                            }
+                                        } else {
+                                            let chunk =
+                                                String::from_utf8_lossy(&buf[..n]).into_owned();
+                                            if let Some(ref tx) = tx {
+                                                let _ = tx.send(SupplyEvent::Emit(Value::str(
+                                                    chunk.clone(),
+                                                )));
+                                            }
+                                            collected.push_str(&chunk);
                                         }
-                                        collected.push_str(&chunk);
                                     }
                                     Err(_) => break,
                                 }
@@ -300,6 +328,7 @@ impl Interpreter {
                     // Spawn stderr reader thread — streams raw chunks through channel
                     let stderr_handle = child_stderr.map(|stderr| {
                         let tx = stderr_channel;
+                        let bin_mode = stderr_bin;
                         std::thread::spawn(move || {
                             use std::io::Read;
                             let mut stderr = stderr;
@@ -309,12 +338,21 @@ impl Interpreter {
                                 match stderr.read(&mut buf) {
                                     Ok(0) => break,
                                     Ok(n) => {
-                                        let chunk = String::from_utf8_lossy(&buf[..n]).into_owned();
-                                        if let Some(ref tx) = tx {
-                                            let _ = tx
-                                                .send(SupplyEvent::Emit(Value::str(chunk.clone())));
+                                        if bin_mode {
+                                            if let Some(ref tx) = tx {
+                                                let buf_val = make_buf_value(&buf[..n]);
+                                                let _ = tx.send(SupplyEvent::Emit(buf_val));
+                                            }
+                                        } else {
+                                            let chunk =
+                                                String::from_utf8_lossy(&buf[..n]).into_owned();
+                                            if let Some(ref tx) = tx {
+                                                let _ = tx.send(SupplyEvent::Emit(Value::str(
+                                                    chunk.clone(),
+                                                )));
+                                            }
+                                            collected.push_str(&chunk);
                                         }
-                                        collected.push_str(&chunk);
                                     }
                                     Err(_) => break,
                                 }
