@@ -13,6 +13,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
     let mut chars = source.chars().peekable();
     let mut prev_was_quantifier = false;
     let mut prev_was_tilde = false;
+    let mut prev_was_anchor = false; // Track non-quantifiable anchors (^, ^^, $, $$)
 
     while let Some(c) = chars.next() {
         match c {
@@ -22,9 +23,21 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                 // should still be caught (e.g., "a+ +")
                 continue;
             }
-            // Valid metacharacters (includes word boundary markers «»)
-            '.' | '^' | '|' | '&' | '~' | '=' | ',' | '«' | '»' => {
+            // Anchors: ^, ^^, $, $$ — these are non-quantifiable
+            '^' => {
                 prev_was_quantifier = false;
+                prev_was_tilde = false;
+                // ^^ is start-of-line, ^ is start-of-string — both non-quantifiable
+                if chars.peek() == Some(&'^') {
+                    chars.next(); // consume second ^
+                }
+                prev_was_anchor = true;
+                continue;
+            }
+            // Valid metacharacters (includes word boundary markers «»)
+            '.' | '|' | '&' | '~' | '=' | ',' | '«' | '»' => {
+                prev_was_quantifier = false;
+                prev_was_anchor = false;
                 prev_was_tilde = c == '~';
             }
             // % is a separator quantifier modifier, but %var is a hash interpolation (reserved)
@@ -42,12 +55,36 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                     return Err(err);
                 }
                 prev_was_quantifier = false;
+                prev_was_anchor = false;
             }
             // Variable interpolation: $, @
             // These can be followed by variable names, <name>, {code}, digits, etc.
             // After the variable reference, '=' is valid (capture aliasing)
             '$' | '@' => {
                 prev_was_quantifier = false;
+                prev_was_anchor = false;
+                // $ can be an anchor (end-of-string) or $$ (end-of-line)
+                if c == '$' {
+                    if chars.peek() == Some(&'$') {
+                        chars.next(); // consume second $
+                        prev_was_anchor = true;
+                        continue;
+                    }
+                    // Bare $ not followed by variable chars is an anchor
+                    let is_var = chars.peek().is_some_and(|&ch| {
+                        ch.is_alphabetic()
+                            || ch == '_'
+                            || ch == '<'
+                            || ch == '{'
+                            || ch == '('
+                            || ch == '!'
+                            || ch.is_ascii_digit()
+                    });
+                    if !is_var {
+                        prev_was_anchor = true;
+                        continue;
+                    }
+                }
                 // Check for attribute interpolation: $!attr (prohibited in regex)
                 if c == '$' && chars.peek() == Some(&'!') {
                     let mut symbol = String::from("$!");
@@ -76,6 +113,9 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             }
             // Quantifiers
             '*' | '+' | '?' => {
+                if prev_was_anchor {
+                    return Err(make_non_quantifiable_error());
+                }
                 if prev_was_tilde {
                     let msg = "Quantifier quantifies nothing";
                     let mut attrs = HashMap::new();
@@ -93,6 +133,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                 }
                 prev_was_quantifier = true;
                 prev_was_tilde = false;
+                prev_was_anchor = false;
                 // ** is the general quantifier (e.g., ** 2, ** 2..5)
                 if c == '*' && chars.peek() == Some(&'*') {
                     chars.next(); // consume second *
@@ -123,6 +164,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             '\\' => {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
+                prev_was_anchor = false;
                 if let Some(&esc) = chars.peek() {
                     chars.next();
                     if esc.is_ascii_alphabetic() {
@@ -135,6 +177,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             '\'' | '"' | '\u{2018}' | '\u{201A}' | '\u{201C}' | '\u{201E}' | '\u{FF62}' => {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
+                prev_was_anchor = false;
                 let close = match c {
                     '\'' => '\'',
                     '"' => '"',
@@ -160,17 +203,20 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             '<' if chars.peek() == Some(&'<') => {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
+                prev_was_anchor = false;
                 chars.next(); // consume second <
             }
             '>' if chars.peek() == Some(&'>') => {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
+                prev_was_anchor = false;
                 chars.next(); // consume second >
             }
             // Assertions/named rules — skip balanced <...>
             '<' => {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
+                prev_was_anchor = false;
                 // Collect the content to check for longname aliases
                 let mut content = String::new();
                 let mut depth = 1u32;
@@ -221,16 +267,19 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             '[' => {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
+                prev_was_anchor = false;
                 skip_balanced(&mut chars, '[', ']');
             }
             '(' => {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
+                prev_was_anchor = false;
                 skip_balanced(&mut chars, '(', ')');
             }
             '{' => {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
+                prev_was_anchor = false;
                 // Collect content inside braces to check for $!attr
                 let mut content = String::new();
                 let mut depth = 1u32;
@@ -276,11 +325,13 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             ']' | ')' | '}' | '>' => {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
+                prev_was_anchor = false;
             }
             // Comment
             '#' => {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
+                prev_was_anchor = false;
                 for ch in chars.by_ref() {
                     if ch == '\n' {
                         break;
@@ -290,6 +341,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             // Modifier colon in regex (e.g., :i, :s, :11, :my $var = expr;)
             ':' => {
                 prev_was_quantifier = false;
+                prev_was_anchor = false;
                 // Backtracking control modifier (e.g., [ ... ]:!).
                 // It applies to the preceding atom and is valid as a standalone
                 // modifier marker with no name.
@@ -360,6 +412,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             _ if c.is_alphanumeric() || c == '_' => {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
+                prev_was_anchor = false;
             }
             // Bare '-' is not valid as a literal in regex
             '-' => {
@@ -551,6 +604,16 @@ fn make_unrecognized_modifier_error(modifier: &str) -> RuntimeError {
         Symbol::intern("X::Syntax::Regex::UnrecognizedModifier"),
         attrs,
     );
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
+fn make_non_quantifiable_error() -> RuntimeError {
+    let msg = "Can only quantify a construct that produces a match".to_string();
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    let ex = Value::make_instance(Symbol::intern("X::Syntax::Regex::NonQuantifiable"), attrs);
     let mut err = RuntimeError::new(msg);
     err.exception = Some(Box::new(ex));
     err

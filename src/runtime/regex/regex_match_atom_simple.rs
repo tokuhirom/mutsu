@@ -198,23 +198,50 @@ impl Interpreter {
                 };
             }
             RegexAtom::StartOfLine => {
-                return if pos == 0 || chars[pos - 1] == '\n' {
-                    Some(pos)
-                } else {
-                    None
-                };
+                if pos == 0 {
+                    return Some(pos);
+                }
+                // After \n: match unless at end-of-string (trailing newline)
+                // or \n was part of \r\n (match after complete \r\n, not between \r and \n)
+                if chars[pos - 1] == '\n' {
+                    // Don't match at end-of-string after trailing \n
+                    if pos == chars.len() {
+                        return None;
+                    }
+                    return Some(pos);
+                }
+                // After \r not followed by \n: standalone \r is a line ending
+                if chars[pos - 1] == '\r' {
+                    // \r followed by \n is NOT a standalone line ending;
+                    // don't match between \r and \n
+                    if pos < chars.len() && chars[pos] == '\n' {
+                        return None;
+                    }
+                    // Don't match at end-of-string after trailing \r
+                    if pos == chars.len() {
+                        return None;
+                    }
+                    return Some(pos);
+                }
+                return None;
             }
             RegexAtom::EndOfLine => {
                 if pos == chars.len() {
+                    // At end-of-string: only match if not preceded by a newline char
+                    if pos > 0 && (chars[pos - 1] == '\n' || chars[pos - 1] == '\r') {
+                        return None;
+                    }
                     return Some(pos);
                 }
                 if chars[pos] == '\n' {
+                    // Before \n: don't match if preceded by \r (the \r already serves as EOL)
                     if pos > 0 && chars[pos - 1] == '\r' {
                         return None;
                     }
                     return Some(pos);
                 }
-                if chars[pos] == '\r' && (pos + 1 >= chars.len() || chars[pos + 1] != '\n') {
+                if chars[pos] == '\r' {
+                    // Before \r: always EOL (whether standalone or part of \r\n)
                     return Some(pos);
                 }
                 return None;
