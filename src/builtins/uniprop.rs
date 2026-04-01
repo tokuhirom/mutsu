@@ -138,7 +138,7 @@ fn unicode_numeric_value(ch: char) -> Value {
 }
 
 /// Look up Numeric_Type for uniprop.
-fn unicode_numeric_type(ch: char) -> String {
+pub(crate) fn unicode_numeric_type(ch: char) -> String {
     // Check Nd (Decimal)
     static ND_RE: OnceLock<regex::Regex> = OnceLock::new();
     let nd_re = ND_RE.get_or_init(|| regex::Regex::new(r"^\p{Nd}$").unwrap());
