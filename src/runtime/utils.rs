@@ -538,6 +538,12 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
             Value::ValuePair(key, boxed_val) => {
                 map.insert(Value::hash_key_encode(&key), *boxed_val);
             }
+            // Flatten Hash values into the result (merge their key-value pairs)
+            Value::Hash(ref inner_map) => {
+                for (k, v) in inner_map.iter() {
+                    map.insert(k.clone(), v.clone());
+                }
+            }
             other => {
                 let Some(value) = iter.next() else {
                     let message = format!(
