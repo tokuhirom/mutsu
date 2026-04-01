@@ -552,7 +552,39 @@ impl Interpreter {
                                 Value::Array(items, ..)
                                 | Value::Seq(items)
                                 | Value::Slip(items) => items.to_vec(),
+                                Value::Range(..)
+                                | Value::RangeExcl(..)
+                                | Value::RangeExclStart(..)
+                                | Value::RangeExclBoth(..)
+                                | Value::GenericRange { .. } => {
+                                    crate::runtime::value_to_list(&data_val)
+                                }
                                 other => vec![other],
+                            };
+                            // For 1D shaped arrays, flatten nested arrays in the data
+                            // e.g. Array.new(:shape(5,), [1,2,3,4,0]) should produce [1,2,3,4,0]
+                            let data_items = if dims.len() == 1 {
+                                let mut flat = Vec::new();
+                                for item in data_items {
+                                    match item {
+                                        Value::Array(inner, ..)
+                                        | Value::Seq(inner)
+                                        | Value::Slip(inner) => {
+                                            flat.extend(inner.iter().cloned());
+                                        }
+                                        Value::Range(..)
+                                        | Value::RangeExcl(..)
+                                        | Value::RangeExclStart(..)
+                                        | Value::RangeExclBoth(..)
+                                        | Value::GenericRange { .. } => {
+                                            flat.extend(crate::runtime::value_to_list(&item));
+                                        }
+                                        other => flat.push(other),
+                                    }
+                                }
+                                flat
+                            } else {
+                                data_items
                             };
                             if let Value::Array(ref items, is_arr) = shaped {
                                 let dim_size = dims[0];

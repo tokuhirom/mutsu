@@ -2207,6 +2207,27 @@ impl VM {
                     other => runtime::coerce_to_array(other),
                 }
             };
+            // Preserve shaped array property on re-assignment
+            if let Some(shape) = crate::runtime::utils::shaped_array_shape(&self.locals[idx])
+                && shape.len() == 1
+            {
+                let items = runtime::value_to_list(&assigned);
+                let item_count = items.len();
+                let mut shaped_items: Vec<Value> = items.into_iter().take(shape[0]).collect();
+                if item_count < shape[0] {
+                    shaped_items.resize(shape[0], Value::Nil);
+                }
+                assigned = Value::Array(
+                    std::sync::Arc::new(shaped_items),
+                    crate::value::ArrayKind::Shaped,
+                );
+                crate::runtime::utils::mark_shaped_array(&assigned, Some(&shape));
+                // Preserve container type metadata
+                if let Some(info) = self.interpreter.container_type_metadata(&self.locals[idx]) {
+                    self.interpreter
+                        .register_container_type_metadata(&assigned, info);
+                }
+            }
             let class_name = match &self.locals[idx] {
                 Value::Instance { class_name, .. } => Some(*class_name),
                 Value::Package(class_name) => Some(*class_name),

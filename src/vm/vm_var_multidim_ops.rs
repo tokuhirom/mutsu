@@ -207,6 +207,13 @@ impl VM {
                 .get(&var_name)
                 .is_some_and(crate::runtime::utils::is_shaped_array);
 
+        // Capture container type metadata before mutation (Arc pointer may change)
+        let old_type_info = self
+            .interpreter
+            .env()
+            .get(&var_name)
+            .and_then(|v| self.interpreter.container_type_metadata(v));
+
         // Get mutable reference to the target variable
         if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
             if is_shaped {
@@ -215,6 +222,14 @@ impl VM {
             } else {
                 Self::multi_dim_assign(container, &dims, value.clone())?;
             }
+        }
+
+        // Re-register container type metadata if Arc pointer changed
+        if let Some(info) = old_type_info
+            && let Some(updated) = self.interpreter.env().get(&var_name).cloned()
+        {
+            self.interpreter
+                .register_container_type_metadata(&updated, info);
         }
 
         self.stack.push(value);

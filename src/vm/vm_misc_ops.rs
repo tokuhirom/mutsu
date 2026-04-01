@@ -1004,10 +1004,64 @@ impl VM {
             }
         } else if name.starts_with('@') {
             let mut assigned = runtime::coerce_to_array(raw_val);
+            // Check for shaped array on current value, and preserve on re-assignment
+            let current_val = code
+                .locals
+                .iter()
+                .position(|n| n == &name)
+                .and_then(|idx| self.locals.get(idx).cloned())
+                .or_else(|| self.get_env_with_main_alias(&name));
+            let current_shape = current_val
+                .as_ref()
+                .and_then(crate::runtime::utils::shaped_array_shape)
+                .or_else(|| {
+                    // Also check declared shape metadata for multi-dim
+                    let key = format!("__mutsu_shaped_array_dims::{}", name);
+                    self.interpreter.env().get(&key).and_then(|v| {
+                        if let Value::Array(dims, ..) = v {
+                            Some(
+                                dims.iter()
+                                    .filter_map(|d| {
+                                        if let Value::Int(n) = d {
+                                            Some(*n as usize)
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .collect(),
+                            )
+                        } else {
+                            None
+                        }
+                    })
+                });
+            if let Some(ref shape) = current_shape {
+                // For 1D shaped arrays, rebuild with the same shape
+                if shape.len() == 1 {
+                    let items = runtime::value_to_list(&assigned);
+                    let item_count = items.len();
+                    let mut shaped_items: Vec<Value> = items.into_iter().take(shape[0]).collect();
+                    if item_count < shape[0] {
+                        shaped_items.resize(shape[0], Value::Nil);
+                    }
+                    assigned = Value::Array(
+                        std::sync::Arc::new(shaped_items),
+                        crate::value::ArrayKind::Shaped,
+                    );
+                    crate::runtime::utils::mark_shaped_array(&assigned, Some(shape));
+                    // Preserve container type metadata from old array
+                    if let Some(ref cv) = current_val
+                        && let Some(info) = self.interpreter.container_type_metadata(cv)
+                    {
+                        self.interpreter
+                            .register_container_type_metadata(&assigned, info);
+                    }
+                }
+            }
             if let Some(current) = self.get_env_with_main_alias(&name) {
-                let class_name = match current {
-                    Value::Instance { class_name, .. } => Some(class_name),
-                    Value::Package(class_name) => Some(class_name),
+                let class_name = match &current {
+                    Value::Instance { class_name, .. } => Some(*class_name),
+                    Value::Package(class_name) => Some(*class_name),
                     _ => None,
                 };
                 if let Some(class_name) = class_name {

@@ -72,21 +72,46 @@ fn raku_value_array(items: &[Value], kind: ArrayKind, v: &Value) -> String {
     };
 
     // Shaped arrays: Array.new(:shape(d1, d2), [row1], [row2])
-    if kind == crate::value::ArrayKind::Shaped
+    // For 1D: Array.new(:shape(N,), [elem1, elem2, ...])
+    // Only render shaped prefix for the top-level shaped array, not sub-arrays.
+    thread_local! {
+        static IN_SHAPED_RAKU: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+    let already_in_shaped = IN_SHAPED_RAKU.with(|f| f.get());
+    if !already_in_shaped
+        && kind == crate::value::ArrayKind::Shaped
         && let Some(shape) = crate::runtime::utils::shaped_array_shape(v)
-        && shape.len() > 1
+        && !shape.is_empty()
     {
-        let shape_str = shape
-            .iter()
-            .map(|d| d.to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let rows = items
-            .iter()
-            .map(&render_element)
-            .collect::<Vec<_>>()
-            .join(", ");
-        return format!("Array.new(:shape({}), {})", shape_str, rows);
+        IN_SHAPED_RAKU.with(|f| f.set(true));
+        let shape_str = if shape.len() == 1 {
+            // Trailing comma for 1D shapes: :shape(5,)
+            format!("{},", shape[0])
+        } else {
+            shape
+                .iter()
+                .map(|d| d.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let content = if shape.len() == 1 {
+            // 1D shaped array: wrap all elements in a single [...]
+            let inner = items
+                .iter()
+                .map(&render_element)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("[{}]", inner)
+        } else {
+            // Multi-dim: each top-level element is a row
+            items
+                .iter()
+                .map(&render_element)
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        IN_SHAPED_RAKU.with(|f| f.set(false));
+        return format!("Array.new(:shape({}), {})", shape_str, content);
     }
     let snapshot = |k: ArrayKind| {
         let inner = items
