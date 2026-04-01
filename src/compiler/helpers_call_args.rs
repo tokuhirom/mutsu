@@ -156,6 +156,9 @@ impl Compiler {
             Expr::HashVar(n) => Some(format!("%{}", n)),
             Expr::CodeVar(n) => Some(format!("&{}", n)),
             Expr::BareWord(n) => Some(n.clone()),
+            // Anonymous scalar assignment (`$ = value`) produces a writable
+            // container, so wrap it with VarRef so `is rw` dispatch can match.
+            Expr::AssignExpr { name, .. } => Some(name.clone()),
             _ => None,
         };
         if let Some(name) = source_name {
