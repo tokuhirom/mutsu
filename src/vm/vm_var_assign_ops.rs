@@ -1996,7 +1996,13 @@ impl VM {
                 let nominal = self
                     .interpreter
                     .nominal_type_object_name_for_constraint(&constraint);
-                self.stack.push(Value::Package(Symbol::intern(&nominal)));
+                // Nil type constraint: the type object for Nil is Value::Nil itself,
+                // not Value::Package("Nil").
+                if nominal == "Nil" {
+                    self.stack.push(Value::Nil);
+                } else {
+                    self.stack.push(Value::Package(Symbol::intern(&nominal)));
+                }
                 return Ok(());
             }
         }
@@ -2072,7 +2078,7 @@ impl VM {
                     val
                 };
                 // Wrap native integer values on assignment (overflow wrapping)
-                let val = Self::wrap_native_int_by_constraint(&constraint, val);
+                let val = Self::wrap_native_int_by_constraint(&constraint, val)?;
                 self.locals[idx] = val;
             } else {
                 self.locals[idx] = val;
@@ -2276,7 +2282,7 @@ impl VM {
                     .try_coerce_value_for_constraint(&constraint, val)?;
             }
             // Wrap native integer values on assignment (overflow wrapping)
-            val = Self::wrap_native_int_by_constraint(&constraint, val);
+            val = Self::wrap_native_int_by_constraint(&constraint, val)?;
         }
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
@@ -2861,31 +2867,47 @@ impl VM {
 
     /// Wrap an integer value to fit within a native integer type's range.
     /// For non-native constraints or non-integer values, returns the value unchanged.
-    pub(super) fn wrap_native_int_by_constraint(constraint: &str, val: Value) -> Value {
+    pub(super) fn wrap_native_int_by_constraint(
+        constraint: &str,
+        val: Value,
+    ) -> Result<Value, RuntimeError> {
         use crate::runtime::native_types;
         use num_bigint::BigInt as NumBigInt;
         use num_traits::ToPrimitive;
 
         let (base, _) = crate::runtime::types::strip_type_smiley(constraint);
         if !native_types::is_native_int_type(base) {
-            return val;
+            return Ok(val);
         }
         // Full-width native types don't wrap — they should throw on overflow.
         if matches!(base, "int" | "int64" | "uint" | "uint64") {
-            return val;
+            if let Value::BigInt(ref n) = val {
+                // For unsigned types, values that fit in u64 are valid
+                if matches!(base, "uint" | "uint64") && n.to_u64().is_some() {
+                    return Ok(val);
+                }
+                // For signed types, any BigInt is too large (i64 values are Value::Int)
+                // For unsigned types that didn't fit in u64, also too large
+                let bits = n.bits();
+                return Err(RuntimeError::new(format!(
+                    "Cannot unbox {} bit wide bigint into native integer",
+                    bits
+                )));
+            }
+            return Ok(val);
         }
         let big_val = match &val {
             Value::Int(n) => NumBigInt::from(*n),
             Value::BigInt(n) => (**n).clone(),
-            _ => return val,
+            _ => return Ok(val),
         };
         if native_types::is_in_native_range(base, &big_val) {
-            return val;
+            return Ok(val);
         }
         let wrapped = native_types::wrap_native_int(base, &big_val);
-        wrapped
+        Ok(wrapped
             .to_i64()
             .map(Value::Int)
-            .unwrap_or_else(|| Value::bigint(wrapped))
+            .unwrap_or_else(|| Value::bigint(wrapped)))
     }
 }
