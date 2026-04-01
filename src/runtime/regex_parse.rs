@@ -961,6 +961,22 @@ impl Interpreter {
                             negated: true,
                             items: vec![ClassItem::Space],
                         }),
+                        'h' => RegexAtom::CharClass(CharClass {
+                            negated: false,
+                            items: vec![ClassItem::HorizSpace],
+                        }),
+                        'H' => RegexAtom::CharClass(CharClass {
+                            negated: true,
+                            items: vec![ClassItem::HorizSpace],
+                        }),
+                        'v' => RegexAtom::CharClass(CharClass {
+                            negated: false,
+                            items: vec![ClassItem::VertSpace],
+                        }),
+                        'V' => RegexAtom::CharClass(CharClass {
+                            negated: true,
+                            items: vec![ClassItem::VertSpace],
+                        }),
                         'n' => RegexAtom::Newline,
                         'N' => RegexAtom::NotNewline,
                         't' => RegexAtom::Literal('\t'),

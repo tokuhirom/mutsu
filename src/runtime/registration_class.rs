@@ -1372,6 +1372,51 @@ impl Interpreter {
                 } => {
                     self.validate_private_access_in_stmts(name, method_body)?;
                     Self::validate_attr_declared_in_class(&class_own_attrs, method_body)?;
+                    // In BUILD/TWEAK submethods, :$!attr parameters must refer
+                    // to declared attributes; reject undeclared ones with
+                    // X::Attribute::Undeclared.
+                    {
+                        let mn = method_name.resolve();
+                        if mn == "BUILD" || mn == "TWEAK" {
+                            for pd in param_defs {
+                                if pd.name.starts_with('!') && pd.name != "!" {
+                                    let attr_name = &pd.name[1..]; // strip '!'
+                                    if !class_own_attrs.contains(attr_name) {
+                                        let variable = format!("$!{}", attr_name);
+                                        let message = format!(
+                                            "Attribute {} not declared in class {}",
+                                            variable, name
+                                        );
+                                        let mut attrs = HashMap::new();
+                                        attrs.insert(
+                                            "name".to_string(),
+                                            Value::str(variable.clone()),
+                                        );
+                                        attrs.insert(
+                                            "package-name".to_string(),
+                                            Value::str(name.to_string()),
+                                        );
+                                        attrs.insert(
+                                            "message".to_string(),
+                                            Value::str(message.clone()),
+                                        );
+                                        let ex = Value::make_instance(
+                                            Symbol::intern("X::Attribute::Undeclared"),
+                                            attrs,
+                                        );
+                                        let mut err = RuntimeError::new(format!(
+                                            "X::Attribute::Undeclared: {}",
+                                            message
+                                        ));
+                                        err.exception = Some(Box::new(ex));
+                                        self.current_package = saved_package;
+                                        self.env = saved_env;
+                                        return Err(err);
+                                    }
+                                }
+                            }
+                        }
+                    }
                     let resolved_method_name = if let Some(expr) = name_expr {
                         self.eval_block_value(&[Stmt::Expr(expr.clone())])?
                             .to_string_value()
