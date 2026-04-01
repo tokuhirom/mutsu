@@ -758,6 +758,26 @@ impl VM {
                 result.push_str(&str_result.to_string_value());
                 continue;
             }
+            // For non-Buf instances, try .Stringy() for string context (Raku spec:
+            // string interpolation calls .Str which delegates to .Stringy).
+            if let Value::Instance { .. } = &v {
+                if let Ok(str_result) =
+                    self.try_compiled_method_or_interpret(v.clone(), "Stringy", Vec::new())
+                {
+                    result.push_str(&str_result.to_string_value());
+                    continue;
+                }
+                // Fall back to .Str() if .Stringy() is not defined
+                if let Ok(str_result) =
+                    self.try_compiled_method_or_interpret(v.clone(), "Str", Vec::new())
+                {
+                    result.push_str(&str_result.to_string_value());
+                    continue;
+                }
+                // Fall through to default stringification
+                result.push_str(&crate::runtime::utils::coerce_to_str(&v));
+                continue;
+            }
             result.push_str(&crate::runtime::utils::coerce_to_str(&v));
         }
         let normalized: String = result.nfc().collect();
