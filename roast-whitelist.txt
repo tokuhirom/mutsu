@@ -369,6 +369,7 @@ roast/S05-syntactic-categories/new-symbols.t
 roast/S05-transliteration/79778.t
 roast/S05-transliteration/trans-TR-operator.t
 roast/S05-transliteration/trans.t
+roast/S05-transliteration/with-closure.t
 roast/S06-advanced/callframe.t
 roast/S06-advanced/callsame.t
 roast/S06-advanced/recurse.t

@@ -548,21 +548,45 @@ impl Interpreter {
         Ok(result)
     }
 
-    /// Call a closure for trans replacement, setting up $0, $1, etc.
+    /// Call a closure for trans replacement, setting up $_ and $0, $1, etc.
     fn call_closure_for_trans(
         &mut self,
         closure: &Value,
-        _matched: &str,
+        matched: &str,
         captures: Option<&[String]>,
     ) -> Result<String, RuntimeError> {
-        // Set positional captures ($0, $1, ...) if provided
-        if let Some(caps) = captures {
+        // Build the topic ($_) value: if we have captures, create a Match object
+        // so that $_[0] etc. work; otherwise just use the matched string.
+        let topic = if let Some(caps) = captures {
+            // Set positional captures ($0, $1, ...) as well
             for (idx, cap) in caps.iter().enumerate() {
                 self.env_mut()
                     .insert(idx.to_string(), Value::Str(cap.clone().into()));
             }
-        }
+            Value::make_match_object_with_captures(
+                matched.to_string(),
+                0,
+                matched.len() as i64,
+                caps,
+                &std::collections::HashMap::new(),
+            )
+        } else {
+            Value::str(matched.to_string())
+        };
+
+        // Set $_ to the matched text (or Match object) before calling the closure
+        let old_topic = self.env().get("_").cloned();
+        self.env_mut().insert("_".to_string(), topic);
+
         let result = self.call_sub_value(closure.clone(), vec![], true)?;
+
+        // Restore previous $_
+        if let Some(old) = old_topic {
+            self.env_mut().insert("_".to_string(), old);
+        } else {
+            self.env_mut().remove("_");
+        }
+
         Ok(result.to_string_value())
     }
 
