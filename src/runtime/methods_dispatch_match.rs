@@ -184,14 +184,12 @@ impl Interpreter {
         if let Some(lim) = limit
             && lim <= 0
         {
-            return Some(Ok(Value::array(Vec::new())));
+            return Some(Ok(Value::Seq(std::sync::Arc::new(Vec::new()))));
         }
 
         let matcher = positional.first().copied();
 
-        // TODO: comb should return Seq per Raku spec, but our Seq type doesn't iterate
-        // properly in map/for/hash-slice contexts yet. Return Array for now to avoid regressions.
-        let make_seq = Value::array;
+        let make_seq = |items: Vec<Value>| Value::Seq(std::sync::Arc::new(items));
 
         match matcher {
             Some(Value::Int(n)) => {

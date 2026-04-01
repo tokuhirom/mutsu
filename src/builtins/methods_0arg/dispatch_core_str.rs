@@ -173,7 +173,7 @@ pub(super) fn dispatch(
                 .graphemes(true)
                 .map(|g| Value::str(g.to_string()))
                 .collect();
-            Some(Some(Ok(Value::array(parts))))
+            Some(Some(Ok(Value::Seq(std::sync::Arc::new(parts)))))
         }
         "fmt" => {
             // .fmt() with no arguments: use default format and separator
