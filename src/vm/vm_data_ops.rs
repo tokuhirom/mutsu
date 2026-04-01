@@ -211,7 +211,7 @@ impl VM {
             if needs_method_dispatch(&v) {
                 content.push_str(&self.interpreter.render_str_value(&v));
             } else {
-                content.push_str(&v.to_string_value());
+                content.push_str(&v.to_str_context());
             }
         }
         self.interpreter
@@ -246,7 +246,7 @@ impl VM {
                 out.push_str(&self.interpreter.render_str_value(v));
             }
             _ => {
-                out.push_str(&v.to_string_value());
+                out.push_str(&v.to_str_context());
             }
         }
         Ok(())
