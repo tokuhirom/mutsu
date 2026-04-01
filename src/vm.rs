@@ -854,7 +854,7 @@ impl VM {
                             .try_coerce_value_for_constraint(&constraint, val)?;
                     }
                     // Wrap native integer values on assignment (overflow wrapping)
-                    val = Self::wrap_native_int_by_constraint(&constraint, val);
+                    val = Self::wrap_native_int_by_constraint(&constraint, val)?;
                 }
                 if self.interpreter.fatal_mode
                     && !name.contains("__mutsu_")
@@ -955,7 +955,9 @@ impl VM {
                 self.interpreter
                     .set_var_type_constraint(&name, Some(constraint.clone()));
                 // For scalar variables, if the current value is Nil, set it to the type object.
-                if !name.starts_with('@') && !name.starts_with('%') {
+                // Exception: if the constraint is "Nil", keep the value as Value::Nil
+                // (the Nil type object is Value::Nil, not Value::Package("Nil")).
+                if !name.starts_with('@') && !name.starts_with('%') && constraint != "Nil" {
                     let is_nil =
                         matches!(self.interpreter.env().get(&name), Some(Value::Nil) | None);
                     if is_nil {
