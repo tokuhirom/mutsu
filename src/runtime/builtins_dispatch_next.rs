@@ -271,17 +271,28 @@ impl Interpreter {
         // Check method dispatch stack
         // (not yet implemented for methods — return Nil)
         // Check multi dispatch stack
-        let Some((_name, candidates, _orig_args)) = self.multi_dispatch_stack.last().cloned()
-        else {
+        let Some((_name, candidates, orig_args)) = self.multi_dispatch_stack.last().cloned() else {
             return Ok(Value::Nil);
         };
-        let Some(next_def) = candidates.first().cloned() else {
+        // Find the first candidate that matches the original arguments,
+        // mirroring the behavior of dispatch_next_candidate/callsame.
+        // This ensures nextcallee returns the candidate that callsame would
+        // have dispatched to, skipping non-matching candidates.
+        let mut matched_idx = None;
+        for (i, cand) in candidates.iter().enumerate() {
+            if self.args_match_param_types(&orig_args, &cand.param_defs) {
+                matched_idx = Some(i);
+                break;
+            }
+        }
+        let Some(idx) = matched_idx else {
             return Ok(Value::Nil);
         };
-        // Remove this candidate from the remaining list
-        let remaining = candidates[1..].to_vec();
+        let next_def = candidates[idx].clone();
+        // Remove this candidate and all before it from the remaining list
+        let remaining = candidates[idx + 1..].to_vec();
         let stack_len = self.multi_dispatch_stack.len();
-        self.multi_dispatch_stack[stack_len - 1] = (_name, remaining, Vec::new());
+        self.multi_dispatch_stack[stack_len - 1] = (_name, remaining, orig_args);
         // Return as a callable Sub value
         Ok(Value::make_sub(
             next_def.package,
