@@ -581,7 +581,7 @@ impl Interpreter {
                 Ok(Value::array(parts))
             }
             "slurp" => {
-                let (_, _, _, bin, _, _, _, _, _, _) = self.parse_io_flags_values(&args);
+                let (_, _, _, bin, _, _, _, _, enc, _) = self.parse_io_flags_values(&args);
                 if bin {
                     let bytes = fs::read(&path_buf).map_err(|err| {
                         RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
@@ -594,11 +594,25 @@ impl Interpreter {
                     attrs.insert("bytes".to_string(), Value::array(byte_vals));
                     return Ok(Value::make_instance(Symbol::intern("Buf[uint8]"), attrs));
                 }
-                let content = fs::read_to_string(&path_buf).map_err(|err| {
-                    RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
-                })?;
-                let content = super::utils::strip_utf8_bom(content);
-                Ok(Value::str(content))
+                // If an encoding is specified and it's not utf-8, read raw bytes
+                // and decode with the specified encoding
+                let needs_non_utf8 = enc.as_ref().is_some_and(|e| {
+                    let lower = e.to_lowercase();
+                    lower != "utf-8" && lower != "utf8"
+                });
+                if needs_non_utf8 {
+                    let bytes = fs::read(&path_buf).map_err(|err| {
+                        RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
+                    })?;
+                    let decoded = self.decode_with_encoding(&bytes, enc.as_ref().unwrap())?;
+                    Ok(Value::str(decoded))
+                } else {
+                    let content = fs::read_to_string(&path_buf).map_err(|err| {
+                        RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
+                    })?;
+                    let content = super::utils::strip_utf8_bom(content);
+                    Ok(Value::str(content))
+                }
             }
             "open" => {
                 let (

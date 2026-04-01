@@ -118,16 +118,28 @@ impl Interpreter {
         matched
     }
 
-    pub(super) fn builtin_slurp(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let path = args
-            .first()
-            .map(|v| v.to_string_value())
-            .ok_or_else(|| RuntimeError::new("slurp requires a path argument"))?;
+    pub(super) fn builtin_slurp(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // Check if first arg is a named pair (not a positional path)
+        let first_is_pair = args.first().is_none_or(|v| matches!(v, Value::Pair(_, _)));
+        // If no positional path argument, slurp from $*ARGFILES
+        if first_is_pair {
+            let argfiles = self.env.get("$*ARGFILES").cloned().unwrap_or(Value::Nil);
+            return self.call_method_with_values(argfiles, "slurp", args.to_vec());
+        }
+        let path = args.first().unwrap().to_string_value();
         check_null_in_path(&path)?;
         let bin = args
             .iter()
             .skip(1)
             .any(|arg| matches!(arg, Value::Pair(name, value) if name == "bin" && value.truthy()));
+        let enc = args.iter().skip(1).find_map(|arg| {
+            if let Value::Pair(name, value) = arg
+                && name == "enc"
+            {
+                return Some(value.to_string_value());
+            }
+            None
+        });
         if bin {
             let bytes = fs::read(&path)
                 .map_err(|err| RuntimeError::new(format!("Failed to slurp '{}': {}", path, err)))?;
@@ -139,10 +151,22 @@ impl Interpreter {
             attrs.insert("bytes".to_string(), Value::array(byte_vals));
             return Ok(Value::make_instance(Symbol::intern("Buf[uint8]"), attrs));
         }
-        let content = fs::read_to_string(&path)
-            .map_err(|err| RuntimeError::new(format!("Failed to slurp '{}': {}", path, err)))?;
-        let content = super::utils::strip_utf8_bom(content);
-        Ok(Value::str(content))
+        // If a non-UTF-8 encoding is specified, read raw bytes and decode
+        let needs_non_utf8 = enc.as_ref().is_some_and(|e| {
+            let lower = e.to_lowercase();
+            lower != "utf-8" && lower != "utf8"
+        });
+        if needs_non_utf8 {
+            let bytes = fs::read(&path)
+                .map_err(|err| RuntimeError::new(format!("Failed to slurp '{}': {}", path, err)))?;
+            let decoded = self.decode_with_encoding(&bytes, enc.as_ref().unwrap())?;
+            Ok(Value::str(decoded))
+        } else {
+            let content = fs::read_to_string(&path)
+                .map_err(|err| RuntimeError::new(format!("Failed to slurp '{}': {}", path, err)))?;
+            let content = super::utils::strip_utf8_bom(content);
+            Ok(Value::str(content))
+        }
     }
 
     pub(super) fn builtin_spurt(&self, args: &[Value]) -> Result<Value, RuntimeError> {

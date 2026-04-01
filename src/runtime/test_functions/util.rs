@@ -150,9 +150,18 @@ impl Interpreter {
         let path = tmp_dir.join(rand_name);
 
         if let Some(c) = content {
-            let text = c.to_string_value();
-            std::fs::write(&path, &text)
-                .map_err(|e| RuntimeError::new(format!("make-temp-file: cannot write: {}", e)))?;
+            // If content is a Buf/Blob, write raw bytes instead of string representation
+            if crate::vm::VM::is_buf_value(&c) {
+                let raw_bytes = crate::vm::VM::extract_buf_bytes(&c);
+                std::fs::write(&path, &raw_bytes).map_err(|e| {
+                    RuntimeError::new(format!("make-temp-file: cannot write: {}", e))
+                })?;
+            } else {
+                let text = c.to_string_value();
+                std::fs::write(&path, &text).map_err(|e| {
+                    RuntimeError::new(format!("make-temp-file: cannot write: {}", e))
+                })?;
+            }
         } else if chmod_val.is_some() {
             // :chmod without :content -- create empty file
             std::fs::write(&path, "")

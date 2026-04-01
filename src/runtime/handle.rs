@@ -454,7 +454,56 @@ impl Interpreter {
             IoHandleTarget::Stdout | IoHandleTarget::Stderr => {
                 Err(RuntimeError::new("Handle not readable"))
             }
-            IoHandleTarget::Stdin | IoHandleTarget::ArgFiles => Ok(Vec::new()),
+            IoHandleTarget::Stdin => Ok(Vec::new()),
+            IoHandleTarget::ArgFiles => {
+                // Read bytes from files listed in @*ARGS sequentially
+                let argfiles_list: Vec<String> = self
+                    .env
+                    .get("@*ARGS")
+                    .and_then(|v| {
+                        if let Value::Array(items, ..) = v {
+                            Some(items.iter().map(|v| v.to_string_value()).collect())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_default();
+                if argfiles_list.is_empty() {
+                    return Ok(Vec::new());
+                }
+                // Re-borrow state after extracting args list
+                let state = self.handle_state_mut(handle_value)?;
+                let mut result = Vec::new();
+                loop {
+                    if state.argfiles_index >= argfiles_list.len() {
+                        break;
+                    }
+                    if state.argfiles_reader.is_none() {
+                        let path = &argfiles_list[state.argfiles_index];
+                        let file = std::fs::File::open(path).map_err(|e| {
+                            RuntimeError::new(format!("Failed to open file '{}': {}", path, e))
+                        })?;
+                        state.argfiles_reader = Some(std::io::BufReader::new(file));
+                    }
+                    let reader = state.argfiles_reader.as_mut().unwrap();
+                    let mut buffer = vec![0u8; count.min(8192)];
+                    let bytes_read = reader
+                        .read(&mut buffer)
+                        .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                    if bytes_read == 0 {
+                        state.argfiles_reader = None;
+                        state.argfiles_index += 1;
+                        continue;
+                    }
+                    buffer.truncate(bytes_read);
+                    result.extend(buffer);
+                    if result.len() >= count {
+                        break;
+                    }
+                }
+                result.truncate(count);
+                Ok(result)
+            }
             IoHandleTarget::File => {
                 let file = state
                     .file
