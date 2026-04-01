@@ -422,7 +422,7 @@ pub(crate) fn native_method_0arg(
             }
             "comb" => {
                 let parts: Vec<Value> = text.chars().map(|c| Value::str(c.to_string())).collect();
-                return Some(Ok(Value::array(parts)));
+                return Some(Ok(Value::Seq(std::sync::Arc::new(parts))));
             }
             "Str" => return Some(Ok(Value::str(text.clone()))),
             "Int" | "Numeric" => {

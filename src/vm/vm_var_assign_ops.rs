@@ -1108,6 +1108,12 @@ impl VM {
         let idx = self.stack.pop().unwrap_or(Value::Nil);
         let index_target = self.interpreter.env().get(&var_name).cloned();
         let idx = self.resolve_whatever_index_for_target(idx, index_target.as_ref());
+        // Normalize Seq index to Array for uniform handling in assignment
+        let idx = if let Value::Seq(items) = idx {
+            Value::Array(items, crate::value::ArrayKind::List)
+        } else {
+            idx
+        };
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
         let (val, bind_mode, bind_sources) = match raw_val {
             Value::Pair(name, payload) if name == "__mutsu_bind_index_value" => match *payload {

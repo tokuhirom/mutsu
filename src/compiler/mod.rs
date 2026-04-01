@@ -299,6 +299,23 @@ impl Compiler {
                     } else {
                         bind_stmts.push(bind_stmt(sub.name.clone(), method_result));
                     }
+                } else if sub.slurpy && sub.sigilless {
+                    // |rest capture parameter: collect remaining elements into a Capture
+                    // Generates: rest = \(|target[positional_index..*])
+                    let slice_expr = Expr::Index {
+                        target: Box::new(Expr::Var(target_name.clone())),
+                        index: Box::new(Expr::Binary {
+                            left: Box::new(Expr::Literal(Value::Int(positional_index as i64))),
+                            op: crate::token_kind::TokenKind::DotDot,
+                            right: Box::new(Expr::Whatever),
+                        }),
+                    };
+                    let capture_expr = Expr::CaptureLiteral(vec![Expr::Unary {
+                        op: crate::token_kind::TokenKind::Pipe,
+                        expr: Box::new(slice_expr),
+                    }]);
+                    bind_stmts.push(bind_stmt(sub.name.clone(), capture_expr));
+                    // No need to increment positional_index; capture consumes all remaining
                 } else {
                     bind_stmts.push(bind_stmt(
                         sub.name.clone(),

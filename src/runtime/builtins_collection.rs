@@ -1366,7 +1366,9 @@ impl Interpreter {
                 list_items.extend(crate::runtime::utils::shaped_array_leaves(arg));
             } else {
                 match arg {
-                    Value::Array(items, ..) => list_items.extend(items.iter().cloned()),
+                    Value::Array(items, ..) | Value::Seq(items) => {
+                        list_items.extend(items.iter().cloned())
+                    }
                     Value::Hash(map) => {
                         // Hashes in list context flatten to key-value Pairs
                         for (k, v) in map.iter() {
