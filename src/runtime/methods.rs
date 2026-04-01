@@ -770,6 +770,28 @@ impl Interpreter {
         {
             return self.dispatch_constrained_hash_raku(map, &info);
         }
+        // .raku/.perl on native typed shaped array (e.g. array[int])
+        if matches!(method, "raku" | "perl")
+            && args.is_empty()
+            && matches!(&target, Value::Array(_, crate::value::ArrayKind::Shaped))
+            && let Some(info) = self.container_type_metadata(&target)
+            && info.value_type != "Any"
+            && info.value_type != "Mu"
+        {
+            let raku_str = crate::builtins::methods_0arg::raku_repr::raku_value(&target);
+            let type_prefix = if let Some(ref dt) = info.declared_type {
+                dt.clone()
+            } else {
+                format!("array[{}]", info.value_type)
+            };
+            // Replace the "Array.new(" prefix with the typed prefix
+            let result = if let Some(rest) = raku_str.strip_prefix("Array.new(") {
+                format!("{}.new({}", type_prefix, rest)
+            } else {
+                raku_str
+            };
+            return Ok(Value::str(result));
+        }
 
         if let Some(result) = native_result {
             if method == "decode" {

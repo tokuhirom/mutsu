@@ -452,6 +452,7 @@ roast/S07-slip/slip.t
 roast/S09-multidim/assign.t
 roast/S09-multidim/decl.t
 roast/S09-multidim/indexing.t
+roast/S09-multidim/methods.t
 roast/S09-multidim/subs.t
 roast/S09-subscript/multidim-assignment.t
 roast/S10-packages/export.t

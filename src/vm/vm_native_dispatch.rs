@@ -70,6 +70,16 @@ impl VM {
             && args.is_empty()
             && matches!(method_sym.resolve().as_ref(), "raku" | "perl" | "keyof")
             && self.interpreter.container_type_metadata(target).is_some();
+        // Native typed array (e.g. array[int]): bypass builtins for .raku/.perl
+        // so the runtime can produce the correct type prefix (e.g. "array[int].new(...)")
+        let bypass_typed_array_raku =
+            matches!(target, Value::Array(_, crate::value::ArrayKind::Shaped))
+                && args.is_empty()
+                && matches!(method_sym.resolve().as_ref(), "raku" | "perl")
+                && self
+                    .interpreter
+                    .container_type_metadata(target)
+                    .is_some_and(|info| info.value_type != "Any" && info.value_type != "Mu");
         // Unconstrained Hash .keyof must also bypass builtins (returns Str(Any))
         let bypass_hash_keyof = matches!(target, Value::Hash(_))
             && args.is_empty()
@@ -92,6 +102,7 @@ impl VM {
             || bypass_proxy
             || bypass_constrained_hash
             || bypass_hash_keyof
+            || bypass_typed_array_raku
         {
             return None;
         }

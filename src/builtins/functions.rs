@@ -677,10 +677,16 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             _ => Some(Ok(Value::Int(1))),
         },
         "reverse" => {
-            if crate::runtime::utils::is_shaped_array(arg) {
-                return Some(Err(RuntimeError::illegal_on_fixed_dimension_array(
-                    "reverse",
-                )));
+            if let Some(shape) = crate::runtime::utils::shaped_array_shape(arg) {
+                if shape.len() > 1 {
+                    return Some(Err(RuntimeError::illegal_on_fixed_dimension_array(
+                        "reverse",
+                    )));
+                }
+                // 1D shaped array: reverse the leaves
+                let mut leaves = crate::runtime::utils::shaped_array_leaves(arg);
+                leaves.reverse();
+                return Some(Ok(Value::array(leaves)));
             }
             Some(Ok(match arg {
                 Value::Array(items, ..) => {
@@ -708,10 +714,23 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             }))
         }
         "rotate" => {
-            if crate::runtime::utils::is_shaped_array(arg) {
-                return Some(Err(RuntimeError::illegal_on_fixed_dimension_array(
-                    "rotate",
-                )));
+            if let Some(shape) = crate::runtime::utils::shaped_array_shape(arg) {
+                if shape.len() > 1 {
+                    return Some(Err(RuntimeError::illegal_on_fixed_dimension_array(
+                        "rotate",
+                    )));
+                }
+                // 1D shaped array: rotate the leaves
+                let leaves = crate::runtime::utils::shaped_array_leaves(arg);
+                let len = leaves.len();
+                if len == 0 {
+                    return Some(Ok(Value::array(Vec::new())));
+                }
+                let n = 1usize % len;
+                let mut rotated = Vec::with_capacity(len);
+                rotated.extend_from_slice(&leaves[n..]);
+                rotated.extend_from_slice(&leaves[..n]);
+                return Some(Ok(Value::array(rotated)));
             }
             Some(Ok(match arg {
                 Value::Array(items, ..) => {
@@ -996,10 +1015,25 @@ fn native_function_2arg(
             }
         }
         "rotate" => {
-            if crate::runtime::utils::is_shaped_array(arg1) {
-                return Some(Err(RuntimeError::illegal_on_fixed_dimension_array(
-                    "rotate",
-                )));
+            if let Some(shape) = crate::runtime::utils::shaped_array_shape(arg1) {
+                if shape.len() > 1 {
+                    return Some(Err(RuntimeError::illegal_on_fixed_dimension_array(
+                        "rotate",
+                    )));
+                }
+                // 1D shaped array: rotate the leaves
+                let leaves = crate::runtime::utils::shaped_array_leaves(arg1);
+                let len = leaves.len() as i64;
+                if len == 0 {
+                    return Some(Ok(Value::array(Vec::new())));
+                }
+                let count = runtime::to_int(arg2);
+                let n = ((count % len) + len) % len;
+                let n = n as usize;
+                let mut rotated = Vec::with_capacity(leaves.len());
+                rotated.extend_from_slice(&leaves[n..]);
+                rotated.extend_from_slice(&leaves[..n]);
+                return Some(Ok(Value::array(rotated)));
             }
             match arg1 {
                 Value::Array(items, ..) => {
