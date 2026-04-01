@@ -518,10 +518,16 @@ impl Compiler {
                 // applies to element values, not to the collection itself.
                 // TODO: enforce per-element type constraints at assignment time.
                 let is_hash = name.starts_with('%');
+                let is_native_type = type_constraint.as_ref().is_some_and(|tc| {
+                    crate::runtime::native_types::is_native_int_type(tc)
+                        || matches!(tc.as_str(), "num" | "num32" | "num64" | "str")
+                });
                 if let Some(tc) = type_constraint
                     && !is_hash
                     && !has_default_trait
-                    && !(has_explicit_initializer && matches!(expr, Expr::Literal(Value::Nil)))
+                    && !(has_explicit_initializer
+                        && matches!(expr, Expr::Literal(Value::Nil))
+                        && !is_native_type)
                 {
                     let tc_idx = self.code.add_constant(Value::str(tc.clone()));
                     // Build the display name for error messages (e.g. "a" -> "$a")
