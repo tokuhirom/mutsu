@@ -351,6 +351,32 @@ impl Interpreter {
                         self.bind_param_value(&key, slurpy_value.clone());
                         self.set_var_type_constraint(&key, pd.type_constraint.clone());
                     }
+                    // Check where constraint for slurpy params
+                    if let Some(where_expr) = &pd.where_constraint {
+                        let saved_topic = self.env.get("_").cloned();
+                        self.env.insert("_".to_string(), slurpy_value.clone());
+                        let ok = match where_expr.as_ref() {
+                            Expr::AnonSub { body, .. } => self
+                                .eval_block_value(body)
+                                .map(|v| v.truthy())
+                                .unwrap_or(false),
+                            expr => self
+                                .eval_block_value(&[Stmt::Expr(expr.clone())])
+                                .map(|v| self.smart_match(&slurpy_value, &v))
+                                .unwrap_or(false),
+                        };
+                        if let Some(previous) = saved_topic {
+                            self.env.insert("_".to_string(), previous);
+                        } else {
+                            self.env.remove("_");
+                        }
+                        if !ok {
+                            return Err(RuntimeError::new(format!(
+                                "X::TypeCheck::Binding::Parameter: where constraint failed for parameter '{}'",
+                                pd.name
+                            )));
+                        }
+                    }
                     // Unpack sub-signature from the slurpy array (e.g., *[$a, $b, $c])
                     if let Some(sub_params) = &pd.sub_signature {
                         bind_sub_signature_from_value(self, sub_params, &slurpy_value)?;
