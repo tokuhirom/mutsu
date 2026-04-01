@@ -1990,7 +1990,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::GetCodeVar(name_idx) => {
-                self.exec_get_code_var_op(code, *name_idx);
+                self.exec_get_code_var_op(code, *name_idx)?;
                 *ip += 1;
             }
 
@@ -2580,8 +2580,8 @@ impl VM {
                 self.exec_register_proto_token_op(code, *idx)?;
                 *ip += 1;
             }
-            OpCode::UseModule(name_idx) => {
-                self.exec_use_module_op(code, *name_idx)?;
+            OpCode::UseModule { name_idx, tags_idx } => {
+                self.exec_use_module_op(code, *name_idx, *tags_idx)?;
                 *ip += 1;
             }
             OpCode::ImportModule { name_idx, tags_idx } => {

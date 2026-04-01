@@ -28,6 +28,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
             Stmt::Use {
                 module: "v6".to_string(),
                 arg: Some(Expr::Literal(Value::str(version))),
+                tags: Vec::new(),
             },
         ));
     }
@@ -55,18 +56,21 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
             Stmt::Use {
                 module,
                 arg: Some(arg),
+                tags: Vec::new(),
             },
         ));
     }
 
-    // Skip adverbs/colonpairs on use (e.g. `use Foo :ALL`, `use Foo :tag1, :tag2`)
+    // Collect adverbs/colonpairs on use (e.g. `use Foo :ALL`, `use Foo :tag1, :tag2`)
     let mut rest = rest;
+    let mut use_tags: Vec<String> = Vec::new();
     loop {
         if rest.starts_with(':') && !rest.starts_with("::") {
             let r = &rest[1..];
             // :!name
             let r = r.strip_prefix('!').unwrap_or(r);
-            if let Ok((r, _name)) = ident(r) {
+            if let Ok((r, tag_name)) = ident(r) {
+                use_tags.push(tag_name.to_string());
                 // :name(expr)
                 let r = skip_balanced_parens(r);
                 let (r, _) = ws(r)?;
@@ -103,7 +107,14 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     // Register exported function names so they are recognized as calls without parens.
     super::super::simple::register_module_exports(&module);
-    Ok((rest, Stmt::Use { module, arg }))
+    Ok((
+        rest,
+        Stmt::Use {
+            module,
+            arg,
+            tags: use_tags,
+        },
+    ))
 }
 
 /// Parse `use <pragma_name> :D/:U/:_` pragma.
@@ -242,6 +253,7 @@ fn parse_use_smiley_pragma<'a>(input: &'a str, pragma_name: &'a str) -> PResult<
         Stmt::Use {
             module: pragma_name.to_string(),
             arg: Some(Expr::Literal(Value::str(format!(":{}", smiley)))),
+            tags: Vec::new(),
         },
     ))
 }

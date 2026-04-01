@@ -1148,13 +1148,26 @@ fn extract_exported_names(source: &str) -> Vec<String> {
     for stmt in &stmts {
         match stmt {
             Stmt::SubDecl {
-                name, is_export, ..
+                name,
+                is_export,
+                export_tags,
+                ..
             } if *is_export => {
-                names.insert(name.resolve());
+                // Only include subs that are in the DEFAULT or MANDATORY export tags.
+                // Subs tagged only with custom tags (e.g. :others) should not be
+                // imported by a plain `use Module`.
+                if export_tags
+                    .iter()
+                    .any(|t| t == "DEFAULT" || t == "MANDATORY")
+                {
+                    names.insert(name.resolve());
+                }
             }
             Stmt::ProtoDecl {
                 name, is_export, ..
             } if *is_export => {
+                // ProtoDecl doesn't carry export_tags; proto declarations with
+                // `is export` default to DEFAULT so always include them.
                 names.insert(name.resolve());
             }
             _ => {}
@@ -1175,22 +1188,28 @@ fn extract_exported_names_fallback(source: &str) -> Vec<String> {
     // `sub foo(...) is export`
     // `multi sub foo(...) is export`
     // `proto sub foo(|) is export`
+    // We capture the name and the text after `is export` to check for tag lists.
     let sub_re = Regex::new(
-        r"\b(?:our\s+)?(?:proto\s+|multi\s+)?sub\s+([A-Za-z_][A-Za-z0-9_'\-]*)\b[^;{]*\bis\s+export\b",
+        r"\b(?:our\s+)?(?:proto\s+|multi\s+)?sub\s+([A-Za-z_][A-Za-z0-9_'\-]*)\b[^;{]*\bis\s+export\b(\s*\([^)]*\))?",
     )
     .expect("valid exported-sub regex");
     // `proto foo(|) is export` (without the `sub` keyword)
-    let proto_re = Regex::new(r"\bproto\s+([A-Za-z_][A-Za-z0-9_'\-]*)\b[^;{]*\bis\s+export\b")
-        .expect("valid exported-proto regex");
+    let proto_re =
+        Regex::new(r"\bproto\s+([A-Za-z_][A-Za-z0-9_'\-]*)\b[^;{]*\bis\s+export\b(\s*\([^)]*\))?")
+            .expect("valid exported-proto regex");
 
     let mut names = HashSet::new();
     for caps in sub_re.captures_iter(source) {
-        if let Some(name) = caps.get(1) {
+        if let Some(name) = caps.get(1)
+            && is_default_export_from_regex_match(&caps)
+        {
             names.insert(name.as_str().to_string());
         }
     }
     for caps in proto_re.captures_iter(source) {
-        if let Some(name) = caps.get(1) {
+        if let Some(name) = caps.get(1)
+            && is_default_export_from_regex_match(&caps)
+        {
             names.insert(name.as_str().to_string());
         }
     }
@@ -1198,6 +1217,19 @@ fn extract_exported_names_fallback(source: &str) -> Vec<String> {
     let mut names: Vec<String> = names.into_iter().collect();
     names.sort();
     names
+}
+
+/// Check if an `is export(...)` match should be included in the DEFAULT import set.
+/// If no tag list is present (`is export` bare), it's DEFAULT.
+/// If a tag list is present, include only if it mentions DEFAULT or MANDATORY.
+fn is_default_export_from_regex_match(caps: &regex::Captures) -> bool {
+    match caps.get(2) {
+        None => true, // bare `is export` → DEFAULT
+        Some(tag_match) => {
+            let tag_text = tag_match.as_str();
+            tag_text.contains("DEFAULT") || tag_text.contains("MANDATORY")
+        }
+    }
 }
 
 /// Functions exported by `use Test`.

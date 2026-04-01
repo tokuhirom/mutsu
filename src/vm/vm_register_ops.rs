@@ -450,9 +450,22 @@ impl VM {
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        tags_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let module = Self::const_str(code, name_idx);
-        self.interpreter.use_module(module)?;
+        let tags: Vec<String> = tags_idx
+            .and_then(|idx| code.constants.get(idx as usize))
+            .and_then(|v| match v {
+                Value::Array(items, ..) => Some(
+                    items
+                        .iter()
+                        .map(|v| v.to_string_value())
+                        .collect::<Vec<String>>(),
+                ),
+                _ => None,
+            })
+            .unwrap_or_default();
+        self.interpreter.use_module_with_tags(module, &tags)?;
         self.env_dirty = true;
         Ok(())
     }

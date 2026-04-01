@@ -522,6 +522,9 @@ pub(crate) enum Stmt {
     Use {
         module: String,
         arg: Option<Expr>,
+        /// Import tags specified as colonpairs (e.g. `:ALL`, `:others`).
+        /// Empty means default import (:DEFAULT).
+        tags: Vec<String>,
     },
     /// `no Module ...;` — disable pragma/module effects for current lexical scope.
     No {
