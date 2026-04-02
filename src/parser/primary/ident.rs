@@ -309,6 +309,46 @@ pub(super) fn class_literal(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("class literal"));
     }
     let rest = &input[2..];
+    if rest.is_empty()
+        || rest.starts_with('.')
+        || rest.starts_with(';')
+        || rest.starts_with(')')
+        || rest.starts_with(',')
+        || rest.starts_with(' ')
+        || rest.starts_with('\n')
+        || rest.starts_with('\r')
+        || rest.starts_with('\t')
+        || rest.starts_with('}')
+    {
+        return Ok((rest, Expr::PseudoStash("::".to_string())));
+    }
+    if let Some(after_bracket) = rest.strip_prefix('<')
+        && let Some(end) = after_bracket.find('>')
+    {
+        let symbol = &after_bracket[..end];
+        if matches!(symbol.chars().next(), Some('$' | '@' | '%' | '&')) {
+            return Ok((
+                &after_bracket[end + 1..],
+                Expr::Index {
+                    target: Box::new(Expr::PseudoStash("::".to_string())),
+                    index: Box::new(Expr::Literal(Value::str(symbol.to_string()))),
+                },
+            ));
+        }
+    }
+    if let Some(after_brace) = rest.strip_prefix('{') {
+        let (r, _) = ws(after_brace)?;
+        let (r, key_expr) = expression(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, '}')?;
+        return Ok((
+            r,
+            Expr::Index {
+                target: Box::new(Expr::PseudoStash("::".to_string())),
+                index: Box::new(key_expr),
+            },
+        ));
+    }
     // Handle ::?PACKAGE and ::?MODULE — compile-time pseudo-packages
     if let Some(after) = rest.strip_prefix("?PACKAGE")
         && after

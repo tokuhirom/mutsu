@@ -21,6 +21,7 @@ fn is_angle_key_char(c: char) -> bool {
         || c == '_'
         || c == '-'
         || c == '!'
+        || c == '*'
         || c == '.'
         || c == ':'
         || c == '?'

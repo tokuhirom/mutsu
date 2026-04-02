@@ -685,6 +685,59 @@ mod tests {
     }
 
     #[test]
+    fn parse_root_stash_symbol_lookup_term() {
+        let (rest, expr) = primary("::<$x>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Index { target, index }
+                if matches!(target.as_ref(), Expr::PseudoStash(s) if s.as_str() == "::")
+                && matches!(index.as_ref(), Expr::Literal(Value::Str(s)) if s.as_str() == "$x")
+        ));
+    }
+
+    #[test]
+    fn parse_root_stash_brace_lookup_term() {
+        let (rest, expr) = primary("::{'$x'}").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Index { target, index }
+                if matches!(target.as_ref(), Expr::PseudoStash(s) if s.as_str() == "::")
+                && matches!(index.as_ref(), Expr::Literal(Value::Str(s)) if s.as_str() == "$x")
+        ));
+    }
+
+    #[test]
+    fn parse_root_stash_term() {
+        let (rest, expr) = primary("::").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::PseudoStash(ref s) if s.as_str() == "::"));
+    }
+
+    #[test]
+    fn parse_scalar_var_root_stash_symbol_lookup() {
+        let (rest, expr) = primary("$::<bear>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Index { target, index }
+                if matches!(target.as_ref(), Expr::PseudoStash(s) if s.as_str() == "::")
+                && matches!(index.as_ref(), Expr::Literal(Value::Str(s)) if s.as_str() == "bear")
+        ));
+    }
+
+    #[test]
+    fn parse_scalar_var_with_dynamic_package_segment() {
+        let (rest, expr) = primary("$Terrain::($mountain)::mountain").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::SymbolicDeref { sigil, .. } if sigil == "$"
+        ));
+    }
+
+    #[test]
     fn parse_anonymous_role_expr() {
         let (rest, expr) = primary("role { method foo { 1 } }").unwrap();
         assert_eq!(rest, "");
