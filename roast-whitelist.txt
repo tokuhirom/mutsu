@@ -56,6 +56,7 @@ roast/S02-literals/pair-boolean.t
 roast/S02-literals/quoting-unicode.t
 roast/S02-literals/quoting.t
 roast/S02-literals/radix.t
+roast/S02-literals/sub-calls.t
 roast/S02-literals/subscript.t
 roast/S02-literals/types.t
 roast/S02-literals/version.t

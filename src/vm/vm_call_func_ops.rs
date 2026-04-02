@@ -357,6 +357,18 @@ impl VM {
                 let result = self.interpreter.call_function_fallback(name, &args);
                 self.interpreter.set_pending_call_arg_sources(None);
                 self.interpreter.maybe_fetch_rw_proxy(result?, true)
+            } else if self
+                .interpreter
+                .resolve_function_with_types(name, &args)
+                .is_some_and(|def| !def.body.is_empty())
+            {
+                // User-defined function (with non-empty body) takes priority
+                // over native builtins. This handles EVAL context where user subs
+                // from outer scope should shadow builtins like `first`, `sort`, etc.
+                self.interpreter.set_pending_call_arg_sources(arg_sources);
+                let result = self.interpreter.call_function_fallback(name, &args);
+                self.interpreter.set_pending_call_arg_sources(None);
+                self.interpreter.maybe_fetch_rw_proxy(result?, true)
             } else if let Some(native_result) =
                 self.try_native_function(Symbol::intern(name), &args)
             {
