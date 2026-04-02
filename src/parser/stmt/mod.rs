@@ -489,6 +489,43 @@ fn skip_to_next_statement(input: &str) -> Option<&str> {
     None
 }
 
+/// Check if a statement ends with a block (closing `}`).
+/// These "statement-ending blocks" can omit the semicolon only if followed
+/// by a newline, semicolon, closing brace, comma, or end-of-input.
+fn is_block_ending_stmt(stmt: &Stmt) -> bool {
+    match stmt {
+        // Sub declarations only count if they have a body (not forward declarations).
+        // sub_decl does NOT call parse_statement_modifier, so trailing separators
+        // remain in the rest for us to check.
+        Stmt::SubDecl { body, .. } => !body.is_empty(),
+        // Note: MethodDecl is excluded because it can arrive via my_decl which calls
+        // parse_statement_modifier, consuming the trailing separator before we see it.
+        // Stmt::Block, Stmt::If, Stmt::For, ClassDecl, RoleDecl, Package, etc. are
+        // also excluded for similar reasons -- they may go through paths that consume
+        // trailing separators before returning to stmt_list_with_mode.
+        _ => false,
+    }
+}
+
+/// Check that the remaining input has a proper statement separator
+/// (newline, semicolon, comma, closing brace, or end-of-input)
+/// before any non-whitespace code on the same line.
+fn has_statement_separator(rest: &str) -> bool {
+    for ch in rest.chars() {
+        match ch {
+            // Horizontal whitespace -- keep scanning
+            ' ' | '\t' => continue,
+            // Valid separators: newline, semicolon, closing brace, comma,
+            // or `#` (start of line comment, effectively end-of-statement)
+            '\n' | '\r' | ';' | '}' | ',' | '#' => return true,
+            // Any other non-whitespace on the same line -> missing separator
+            _ => return false,
+        }
+    }
+    // End of input is a valid separator
+    true
+}
+
 /// Parse a list of statements (inside a block or at program level).
 fn stmt_list(input: &str) -> PResult<'_, Vec<Stmt>> {
     stmt_list_with_mode(input, true, false)
@@ -549,6 +586,16 @@ fn stmt_list_with_mode(
         let line_valid = crate::parser::primary::is_within_original_source(r);
         match statement(r) {
             Ok((r, stmt)) => {
+                // In Raku, after a statement-ending block (e.g. `sub f { 3 }`),
+                // a semicolon, newline, closing brace, or end-of-input is required
+                // before the next statement.  `sub f { 3 } sub g { 3 }` on a
+                // single line is a syntax error.
+                if is_block_ending_stmt(&stmt) && !has_statement_separator(r) {
+                    return Err(PError::fatal(
+                        "X::Syntax::Confused: Strange text after block (missing semicolon or comma?)"
+                            .to_string(),
+                    ));
+                }
                 if matches!(
                     stmt,
                     Stmt::Package { .. } | Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. }
@@ -770,6 +817,27 @@ mod tests {
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
         assert!(matches!(&stmts[0], Stmt::Use { module, .. } if module == "Test"));
+    }
+
+    #[test]
+    fn parse_block_semicolon_expr() {
+        // `{ 1 }; 2` should parse: block followed by semicolon then expression
+        let result = program("{ 1 }; 2");
+        assert!(
+            result.is_ok(),
+            "Failed to parse '{{ 1 }}; 2': {:?}",
+            result.err()
+        );
+        let (rest, stmts) = result.unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 2);
+    }
+
+    #[test]
+    fn parse_block_same_line_no_separator_errors() {
+        // `sub f { 3 } sub g { 3 }` should fail
+        let result = program("sub f { 3 } sub g { 3 }");
+        assert!(result.is_err());
     }
 
     #[test]

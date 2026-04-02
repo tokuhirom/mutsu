@@ -17,7 +17,8 @@ fn is_superscript_digit(c: char) -> bool {
 
 use super::super::expr::{expression, expression_no_sequence, or_expr_pub};
 use super::super::helpers::{
-    consume_unspace, is_loop_label_name, normalize_raku_identifier, ws, ws1,
+    consume_unspace, is_loop_label_name, is_raku_identifier_start, normalize_raku_identifier, ws,
+    ws1,
 };
 use super::current_line_number;
 use super::misc::parse_block_body;
@@ -1932,6 +1933,14 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     // If ws() consumed unspace (e.g., `foo\ .lc` → r = ".lc"), record this so
     // we can prevent parsing `.lc` as a listop argument below.
     let ws_consumed_unspace = rest.starts_with('\\') && !std::ptr::eq(r, rest);
+    // Unspace is not allowed within an identifier: `fo\ o` is an error.
+    // If unspace was consumed and the next character starts an identifier,
+    // that means someone wrote `ident\ ident` which is forbidden.
+    if ws_consumed_unspace && r.chars().next().is_some_and(is_raku_identifier_start) {
+        return Err(PError::fatal(
+            "X::Comp: Unspace is not allowed in the middle of an identifier".to_string(),
+        ));
+    }
     if r.starts_with("=>") && !r.starts_with("==>") {
         let r2 = &r[2..];
         let (r2, _) = ws(r2)?;
