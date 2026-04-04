@@ -262,6 +262,42 @@ impl Interpreter {
             "__mutsu_qw_result" => Ok(args.first().cloned().unwrap_or(Value::Nil)),
             "__mutsu_unknown_backslash_escape" => self.builtin_unknown_backslash_escape(&args),
             "undefine" => Ok(Value::Nil),
+            "__mutsu_undefine_rvalue" => {
+                // Called when undefine receives a non-variable expression.
+                // Immutable types (Bool, Int, Str, etc.) must die.
+                let val = args.first().cloned().unwrap_or(Value::Nil);
+                match &val {
+                    Value::Bool(b) => Err(RuntimeError::new(format!(
+                        "Cannot modify an immutable Bool ({b})"
+                    ))),
+                    Value::Int(i) => Err(RuntimeError::new(format!(
+                        "Cannot modify an immutable Int ({i})"
+                    ))),
+                    Value::Num(n) => Err(RuntimeError::new(format!(
+                        "Cannot modify an immutable Num ({n})"
+                    ))),
+                    Value::Str(s) => Err(RuntimeError::new(format!(
+                        "Cannot modify an immutable Str ({s})"
+                    ))),
+                    Value::Rat(n, d) => Err(RuntimeError::new(format!(
+                        "Cannot modify an immutable Rat ({n}/{d})"
+                    ))),
+                    Value::Sub(sub_def) => {
+                        let sub_name = sub_def.name.resolve();
+                        Err(RuntimeError::new(format!(
+                            "Cannot modify an immutable Sub (&{sub_name})"
+                        )))
+                    }
+                    Value::Routine { name, .. } => {
+                        let sub_name = name.resolve();
+                        Err(RuntimeError::new(format!(
+                            "Cannot modify an immutable Sub (&{sub_name})"
+                        )))
+                    }
+                    Value::Nil | Value::Array(..) | Value::Hash(..) => Ok(Value::Nil),
+                    _ => Ok(Value::Nil),
+                }
+            }
             "local" => Ok(Value::Nil),
             "VAR" => Ok(args.first().cloned().unwrap_or(Value::Nil)),
             "WHAT" => {

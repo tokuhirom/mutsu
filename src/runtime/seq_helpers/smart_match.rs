@@ -199,7 +199,7 @@ impl Interpreter {
                         }
                         return true;
                     }
-                    self.env.insert("/".to_string(), Value::Nil);
+                    self.clear_match_state();
                     return false;
                 }
                 // Fallback: call as sub
@@ -325,19 +325,19 @@ impl Interpreter {
                     Ok(v) => v,
                     Err(message) => {
                         Self::set_pending_nth_error(message);
-                        self.env.insert("/".to_string(), Value::Nil);
+                        self.clear_match_state();
                         return false;
                     }
                 };
                 if resolved.is_empty() {
                     Self::set_pending_nth_error("Invalid :nth index".to_string());
-                    self.env.insert("/".to_string(), Value::Nil);
+                    self.clear_match_state();
                     return false;
                 }
                 let mut selected = Vec::new();
                 for idx in resolved {
                     if idx == 0 || idx > non_overlapping.len() {
-                        self.env.insert("/".to_string(), Value::Nil);
+                        self.clear_match_state();
                         return false;
                     }
                     selected.push(non_overlapping[idx - 1].clone());
@@ -369,7 +369,7 @@ impl Interpreter {
                     self.apply_single_regex_captures(&captures);
                     return true;
                 }
-                self.env.insert("/".to_string(), Value::Nil);
+                self.clear_match_state();
                 false
             }
             // :pos/:p anchored match (non-exhaustive/non-global) -- match at $/.to (or 0)
@@ -391,7 +391,7 @@ impl Interpreter {
                     self.apply_single_regex_captures(&captures);
                     return true;
                 }
-                self.env.insert("/".to_string(), Value::Nil);
+                self.clear_match_state();
                 false
             }
             // :x(N) without :g/:ex/:ov -- require at least N non-overlapping matches,
@@ -430,7 +430,7 @@ impl Interpreter {
                 let Some(selected) =
                     Self::select_matches_by_repeat_bounds(non_overlapping, *needed, Some(*needed))
                 else {
-                    self.env.insert("/".to_string(), Value::Nil);
+                    self.clear_match_state();
                     return false;
                 };
                 self.apply_multi_regex_captures(&selected);
@@ -471,12 +471,12 @@ impl Interpreter {
                 // then skip matches that overlap with already-selected ones
                 let non_overlapping = self.select_non_overlapping_matches(all);
                 if non_overlapping.is_empty() {
-                    self.env.insert("/".to_string(), Value::Nil);
+                    self.clear_match_state();
                     return false;
                 }
                 let selected = if let Some(needed) = *repeat {
                     if non_overlapping.len() < needed {
-                        self.env.insert("/".to_string(), Value::Nil);
+                        self.clear_match_state();
                         return false;
                     }
                     non_overlapping.into_iter().take(needed).collect::<Vec<_>>()
@@ -515,7 +515,7 @@ impl Interpreter {
                     self.regex_match_all_with_captures(&pattern, &text)
                 };
                 if all.is_empty() {
-                    self.env.insert("/".to_string(), Value::Nil);
+                    self.clear_match_state();
                     return false;
                 }
                 // Keep longest match at each starting position
@@ -564,14 +564,14 @@ impl Interpreter {
                     self.regex_match_all_with_captures(&pattern, &text)
                 };
                 if all.is_empty() {
-                    self.env.insert("/".to_string(), Value::Nil);
+                    self.clear_match_state();
                     return false;
                 }
                 let selected = if let Some(needed) = *repeat {
                     let earliest = all.iter().map(|c| c.from).min().unwrap_or(0);
                     all.retain(|c| c.from == earliest);
                     if all.len() < needed {
-                        self.env.insert("/".to_string(), Value::Nil);
+                        self.clear_match_state();
                         return false;
                     }
                     all.into_iter().take(needed).collect::<Vec<_>>()
@@ -591,7 +591,7 @@ impl Interpreter {
                         return true;
                     }
                 }
-                self.env.insert("/".to_string(), Value::Nil);
+                self.clear_match_state();
                 false
             }
             // Hash ~~ Regex: iterate keys, match each individually
@@ -602,7 +602,7 @@ impl Interpreter {
                         return true;
                     }
                 }
-                self.env.insert("/".to_string(), Value::Nil);
+                self.clear_match_state();
                 false
             }
             // Single match: plain Regex or RegexWithAdverbs without multi-match flags
@@ -679,7 +679,7 @@ impl Interpreter {
                     self.env.insert("/".to_string(), match_obj);
                     return true;
                 }
-                self.env.insert("/".to_string(), Value::Nil);
+                self.clear_match_state();
                 false
             }
             // P5 regex single match
@@ -704,7 +704,7 @@ impl Interpreter {
                     self.apply_single_regex_captures(&captures);
                     return true;
                 }
-                self.env.insert("/".to_string(), Value::Nil);
+                self.clear_match_state();
                 false
             }
             (_, Value::Junction { kind, values }) => match kind {

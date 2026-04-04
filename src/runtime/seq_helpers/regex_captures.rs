@@ -3,6 +3,20 @@ use crate::symbol::Symbol;
 use std::collections::HashMap;
 
 impl Interpreter {
+    /// Clear `$/` and all numeric capture variables (`$0`, `$1`, ...) after a failed match.
+    pub(in crate::runtime) fn clear_match_state(&mut self) {
+        self.env.insert("/".to_string(), Value::Nil);
+        let numeric_keys: Vec<String> = self
+            .env
+            .keys()
+            .filter(|k| !k.is_empty() && k.chars().all(|ch| ch.is_ascii_digit()))
+            .cloned()
+            .collect();
+        for key in numeric_keys {
+            self.env.insert(key, Value::Nil);
+        }
+    }
+
     pub(in crate::runtime) fn apply_single_regex_captures(&mut self, captures: &RegexCaptures) {
         let make_capture_match = |capture: &str, from: usize, to: usize| {
             let mut attrs = HashMap::new();
