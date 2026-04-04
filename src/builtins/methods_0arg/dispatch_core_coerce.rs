@@ -530,8 +530,21 @@ pub(super) fn dispatch(
                     if im.abs() <= 1e-15 {
                         Value::Num(*r)
                     } else {
-                        return Some(Some(Err(RuntimeError::new(
-                            "Cannot convert Complex to Real: imaginary part not zero",
+                        let mut ex_attrs = std::collections::HashMap::new();
+                        ex_attrs.insert(
+                            "message".to_string(),
+                            Value::str_from(
+                                "Cannot convert Complex to Real: imaginary part not zero",
+                            ),
+                        );
+                        ex_attrs.insert("target".to_string(), Value::str_from("Real"));
+                        ex_attrs.insert("source".to_string(), target.clone());
+                        let ex = Value::make_instance(Symbol::intern("X::Numeric::Real"), ex_attrs);
+                        let mut failure_attrs = std::collections::HashMap::new();
+                        failure_attrs.insert("exception".to_string(), ex);
+                        return Some(Some(Ok(Value::make_instance(
+                            Symbol::intern("Failure"),
+                            failure_attrs,
                         ))));
                     }
                 }

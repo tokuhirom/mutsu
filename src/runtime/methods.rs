@@ -793,6 +793,37 @@ impl Interpreter {
             return Ok(Value::str(result));
         }
 
+        // ACCEPTS for allomorphic types with Instance arguments
+        // This handles custom classes with .Numeric/.Str methods that the
+        // pure builtin cannot call.
+        if method == "ACCEPTS"
+            && matches!(&target, Value::Mixin(_, m) if m.contains_key("Str"))
+            && args.len() == 1
+            && matches!(&args[0], Value::Instance { .. })
+            && let Value::Mixin(target_inner, _) = &target
+        {
+            // Call .Numeric on the instance to get its numeric value
+            let numeric_val =
+                self.call_method_with_values(args[0].clone(), "Numeric", vec![])?;
+            // Compare numerically using == semantics
+            let tf = match target_inner.as_ref() {
+                Value::Int(i) => *i as f64,
+                Value::Num(f) => *f,
+                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                Value::Complex(r, _) => *r,
+                _ => 0.0,
+            };
+            let af = match &numeric_val {
+                Value::Int(i) => *i as f64,
+                Value::Num(f) => *f,
+                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                Value::Complex(r, _) => *r,
+                _ => 0.0,
+            };
+            let result = (tf - af).abs() < 1e-15;
+            return Ok(Value::Bool(result));
+        }
+
         if let Some(result) = native_result {
             if method == "decode" {
                 return result.map(|value| match value {

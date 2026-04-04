@@ -984,7 +984,7 @@ impl Interpreter {
             let mut env_hash = HashMap::new();
             #[cfg(not(target_family = "wasm"))]
             for (key, value) in std::env::vars() {
-                env_hash.insert(key, Value::str(value));
+                env_hash.insert(key, builtins_collection::builtin_val(&[Value::str(value)]));
             }
             env.insert(
                 "%*ENV".to_string(),
