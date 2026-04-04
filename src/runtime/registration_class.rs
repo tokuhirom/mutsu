@@ -2234,6 +2234,34 @@ impl Interpreter {
                     // Validate that $!attr references in the method body are declared
                     // in this role (same check as for class methods).
                     Self::validate_attr_declared_in_class(&role_own_attrs, method_body)?;
+                    // Validate that type constraints in method parameters are resolvable.
+                    // Undeclared types like A::C should throw X::Parameter::InvalidType.
+                    for pd in param_defs {
+                        if let Some(tc) = pd.type_constraint.as_deref() {
+                            // Skip type captures (::T), invocant markers, and role type params
+                            if tc.starts_with("::")
+                                || tc == "__invocant__"
+                                || type_params.iter().any(|tp| tp == tc)
+                            {
+                                continue;
+                            }
+                            if !self.is_resolvable_type(tc) {
+                                let mut attrs = std::collections::HashMap::new();
+                                attrs.insert("type".to_string(), Value::str(tc.to_string()));
+                                attrs.insert(
+                                    "message".to_string(),
+                                    Value::str(format!(
+                                        "Invalid typename '{}' in parameter declaration.",
+                                        tc
+                                    )),
+                                );
+                                return Err(RuntimeError::typed(
+                                    "X::Parameter::InvalidType",
+                                    attrs,
+                                ));
+                            }
+                        }
+                    }
                     // Stub multi methods (body is `{...}`) that use ::?CLASS
                     // must be implemented by the composing class.
                     // Non-stub multi methods with ::?CLASS are fine.
@@ -2311,7 +2339,10 @@ impl Interpreter {
                         // time so they can be re-evaluated with concrete type bindings.
                         role_def.deferred_body_stmts.push(stmt.clone());
                     } else {
-                        self.run_block_raw(std::slice::from_ref(stmt))?;
+                        // Defer execution until after the role is registered so that
+                        // role methods can be called from within the role block body
+                        // (e.g. `role R { method foo {}; R.foo }`).
+                        role_def.deferred_body_stmts.push(stmt.clone());
                     }
                 }
             }
