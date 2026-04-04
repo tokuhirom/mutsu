@@ -169,7 +169,9 @@ impl VM {
                                 id,
                                 new_attrs.clone(),
                             );
-                            if let Value::Proxy { ref fetcher, .. } = result {
+                            if !self.interpreter.in_lvalue_assignment
+                                && let Value::Proxy { ref fetcher, .. } = result
+                            {
                                 return self
                                     .interpreter
                                     .proxy_fetch(fetcher, None, &cn, &new_attrs, id);
@@ -241,7 +243,9 @@ impl VM {
                         id,
                         new_attrs.clone(),
                     );
-                    if let Value::Proxy { ref fetcher, .. } = result {
+                    if !self.interpreter.in_lvalue_assignment
+                        && let Value::Proxy { ref fetcher, .. } = result
+                    {
                         return self
                             .interpreter
                             .proxy_fetch(fetcher, None, &cn, &new_attrs, id);
@@ -339,7 +343,9 @@ impl VM {
                                 id,
                                 new_attrs.clone(),
                             );
-                            if let Value::Proxy { ref fetcher, .. } = result {
+                            if !self.interpreter.in_lvalue_assignment
+                                && let Value::Proxy { ref fetcher, .. } = result
+                            {
                                 return self
                                     .interpreter
                                     .proxy_fetch(fetcher, None, &cn, &new_attrs, id);
@@ -410,7 +416,9 @@ impl VM {
                         id,
                         new_attrs.clone(),
                     );
-                    if let Value::Proxy { ref fetcher, .. } = result {
+                    if !self.interpreter.in_lvalue_assignment
+                        && let Value::Proxy { ref fetcher, .. } = result
+                    {
                         return self
                             .interpreter
                             .proxy_fetch(fetcher, None, &cn, &new_attrs, id);

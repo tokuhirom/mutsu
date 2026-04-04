@@ -209,6 +209,15 @@ fn var_name(input: &str) -> PResult<'_, String> {
                 return Ok((r, "!".to_string()));
             }
         }
+        if twigil.is_empty()
+            && let Some(after_bracket) = r.strip_prefix("::<")
+            && let Some(end) = after_bracket.find('>')
+        {
+            let symbol = &after_bracket[..end];
+            if !symbol.is_empty() {
+                return Ok((&after_bracket[end + 1..], format!("::<{symbol}>")));
+            }
+        }
         // Handle bare $ (anonymous variable) — no name after sigil
         if let Ok((mut rest, mut name)) = qualified_ident(r) {
             while rest.starts_with(':') && !rest.starts_with("::") {
@@ -2234,5 +2243,12 @@ mod tests {
         let (rest, stmt) = simple::known_call_stmt("succeed").unwrap();
         assert!(rest.is_empty());
         assert!(matches!(stmt, Stmt::Succeed));
+    }
+
+    #[test]
+    fn var_name_accepts_root_stash_symbol_declarator() {
+        let (rest, name) = var_name("$::<!@#$>").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(name, "::<!@#$>");
     }
 }

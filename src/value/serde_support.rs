@@ -152,7 +152,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
         Value::FatRat(n, d) => Ok(SerValue::FatRat(*n, *d)),
         Value::BigRat(n, d) => Ok(SerValue::BigRat(n.clone(), d.clone())),
         Value::Complex(r, i) => Ok(SerValue::Complex(*r, *i)),
-        Value::Set(s, _) => Ok(SerValue::Set((**s).clone())),
+        Value::Set(s, _) => Ok(SerValue::Set(s.elements.clone())),
         Value::Bag(b, _) => Ok(SerValue::Bag(b.counts.clone())),
         Value::Mix(m, _) => Ok(SerValue::Mix(m.weights.clone())),
         Value::CompUnitDepSpec { short_name } => Ok(SerValue::CompUnitDepSpec {
@@ -345,7 +345,7 @@ fn ser_to_value(sv: SerValue) -> Value {
         SerValue::FatRat(n, d) => Value::FatRat(n, d),
         SerValue::BigRat(n, d) => Value::BigRat(n, d),
         SerValue::Complex(r, i) => Value::Complex(r, i),
-        SerValue::Set(s) => Value::Set(Arc::new(s), false),
+        SerValue::Set(s) => Value::set(s),
         SerValue::Bag(b) => Value::bag(b),
         SerValue::Mix(m) => Value::mix(m),
         SerValue::CompUnitDepSpec { short_name } => Value::CompUnitDepSpec { short_name },

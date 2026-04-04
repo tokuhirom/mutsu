@@ -1045,6 +1045,19 @@ impl VM {
                     .insert(name_str, Value::Package(Symbol::intern(&qualified_name)));
             }
             self.env_dirty = true;
+            // Execute deferred non-declaration body statements now that the role
+            // name is fully available in the environment.  This lets code like
+            // `role R { method foo {}; R.foo }` work.
+            if type_params.is_empty() {
+                let deferred = self
+                    .interpreter
+                    .get_role_def(&qualified_name)
+                    .map(|r| r.deferred_body_stmts.clone())
+                    .unwrap_or_default();
+                for stmt in &deferred {
+                    self.interpreter.run_block_raw(std::slice::from_ref(stmt))?;
+                }
+            }
             Ok(())
         } else {
             Err(RuntimeError::new("RegisterRole expects RoleDecl"))

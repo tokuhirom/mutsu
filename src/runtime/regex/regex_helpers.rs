@@ -6,6 +6,9 @@ use unicode_segmentation::UnicodeSegmentation;
 
 thread_local! {
     pub(super) static PENDING_REGEX_GOAL_FAILURE: RefCell<Option<(String, usize)>> = const { RefCell::new(None) };
+    /// Collects plain (non-assertion) code blocks that should be executed eagerly
+    /// during regex matching, even if the overall match fails. Used by `comb` etc.
+    pub(crate) static EAGER_CODE_BLOCKS: RefCell<Option<Vec<CodeBlockContext>>> = const { RefCell::new(None) };
 }
 
 /// Strip combining marks from a character, returning just the base character(s).

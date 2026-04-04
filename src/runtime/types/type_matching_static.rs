@@ -75,7 +75,12 @@ impl Interpreter {
         if constraint == "atomicint" && value_type == "Int" {
             return true;
         }
-        if constraint == "str" && value_type == "Str" {
+        if constraint == "str"
+            && matches!(
+                value_type,
+                "Str" | "IntStr" | "NumStr" | "RatStr" | "ComplexStr"
+            )
+        {
             return true;
         }
         // Native integer types match Int values

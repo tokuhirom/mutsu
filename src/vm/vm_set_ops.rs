@@ -277,7 +277,7 @@ impl VM {
             return Err(Self::lazy_list_error());
         }
         match value {
-            Value::Set(s, _) => Ok((**s).clone()),
+            Value::Set(s, _) => Ok(s.elements.clone()),
             Value::Bag(b, _) => Ok(b.keys().cloned().collect()),
             Value::Mix(m, _) => Ok(m.keys().cloned().collect()),
             Value::Hash(h) => Ok(h
@@ -404,7 +404,7 @@ impl VM {
                 Value::bag(result)
             }
             (Value::Set(a, _), Value::Set(b, _)) => {
-                let mut result = (*a).clone();
+                let mut result = a.elements.clone();
                 for elem in b.iter() {
                     result.insert(elem.clone());
                 }

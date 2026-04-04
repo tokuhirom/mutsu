@@ -160,10 +160,20 @@ impl Compiler {
                 Expr::Var(n) => Some(n.clone()),
                 Expr::ArrayVar(n) => Some(format!("@{}", n)),
                 Expr::HashVar(n) => Some(format!("%{}", n)),
-                Expr::CodeVar(n) => Some(format!("&{}", n)),
                 _ => None,
             };
-            if let Some(vname) = var_name {
+            if matches!(&args[0], Expr::CodeVar(_)) {
+                // undefine &sub -- always dies (subs are immutable)
+                self.compile_expr(&args[0]);
+                let builtin_name = self
+                    .code
+                    .add_constant(Value::str("__mutsu_undefine_rvalue".to_string()));
+                self.code.emit(OpCode::CallFunc {
+                    name_idx: builtin_name,
+                    arity: 1,
+                    arg_sources_idx: None,
+                });
+            } else if let Some(vname) = var_name {
                 // Push Nil and assign to the variable
                 self.code.emit(OpCode::LoadNil);
                 let name_idx = self.code.add_constant(Value::str(vname));
@@ -180,7 +190,18 @@ impl Compiler {
                     self.compile_expr(&assign_expr);
                 }
             } else {
-                self.code.emit(OpCode::LoadNil);
+                // Evaluate the expression and check at runtime whether the
+                // result is mutable.  Immutable values (Bool, Int, etc.)
+                // must die with "Cannot modify an immutable <Type>".
+                self.compile_expr(&args[0]);
+                let builtin_name = self
+                    .code
+                    .add_constant(Value::str("__mutsu_undefine_rvalue".to_string()));
+                self.code.emit(OpCode::CallFunc {
+                    name_idx: builtin_name,
+                    arity: 1,
+                    arg_sources_idx: None,
+                });
             }
         }
         // Rewrite shift(@arr)/pop(@arr) -> @arr.shift()/@arr.pop() for mutability

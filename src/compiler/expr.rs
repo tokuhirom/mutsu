@@ -157,6 +157,18 @@ impl Compiler {
             } if Self::is_mutating_method_on_index(target, name) => {
                 self.compile_expr_method_on_index(target, name, args, modifier, *quoted);
             }
+            // Compile-time fold: Nil.gist / Nil.raku / Nil.perl → "Nil"
+            // Value::Nil is also used for uninitialized variables (which are Any type objects),
+            // so we can only constant-fold when the target is the *literal* Nil keyword.
+            Expr::MethodCall {
+                target, name, args, ..
+            } if matches!(target.as_ref(), Expr::Literal(Value::Nil))
+                && args.is_empty()
+                && matches!(name.resolve().as_str(), "gist" | "raku" | "perl") =>
+            {
+                let idx = self.code.add_constant(Value::str_from("Nil"));
+                self.code.emit(OpCode::LoadConst(idx));
+            }
             // Method call on non-variable target (no writeback needed)
             Expr::MethodCall {
                 target,

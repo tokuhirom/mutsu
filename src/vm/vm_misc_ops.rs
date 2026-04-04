@@ -1288,11 +1288,17 @@ impl VM {
         let val = if let Some(Value::Hash(env_hash)) = self.interpreter.env().get("%*ENV") {
             env_hash.get(key).cloned().unwrap_or_else(|| {
                 std::env::var_os(key)
-                    .map(|v| Value::str(v.to_string_lossy().to_string()))
+                    .map(|v| {
+                        crate::runtime::builtins_collection::builtin_val(&[Value::str(
+                            v.to_string_lossy().to_string(),
+                        )])
+                    })
                     .unwrap_or(Value::Nil)
             })
         } else if let Some(value) = std::env::var_os(key) {
-            Value::str(value.to_string_lossy().to_string())
+            crate::runtime::builtins_collection::builtin_val(&[Value::str(
+                value.to_string_lossy().to_string(),
+            )])
         } else {
             Value::Nil
         };

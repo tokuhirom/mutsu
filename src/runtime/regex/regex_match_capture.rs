@@ -175,12 +175,20 @@ impl Interpreter {
                 // Plain { code } block — always succeeds, record for side effects
                 let mut new_caps = current_caps.clone();
                 let matched_so_far: String = chars[current_caps.match_from..pos].iter().collect();
-                new_caps.code_blocks.push(CodeBlockContext {
+                let ctx = CodeBlockContext {
                     code: code.clone(),
                     named: current_caps.named.clone(),
                     matched_so_far,
                     positional: current_caps.positional.clone(),
+                };
+                // If eager code block collection is enabled, push immediately
+                // so the block is captured even if the overall match fails later.
+                super::regex_helpers::EAGER_CODE_BLOCKS.with(|slot| {
+                    if let Some(ref mut vec) = *slot.borrow_mut() {
+                        vec.push(ctx.clone());
+                    }
                 });
+                new_caps.code_blocks.push(ctx);
                 return Some((pos, new_caps));
             }
             RegexAtom::ClosureInterpolation { code } => {

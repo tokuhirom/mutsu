@@ -404,9 +404,25 @@ impl Interpreter {
         if let Value::Sub(data) = callback {
             let saved_env = self.env.clone();
             let mut new_env = saved_env.clone();
-            // Merge captured env
+            // Merge captured env. For user variables that already exist in the
+            // current env, prefer the current (live) value over the captured
+            // snapshot. This approximates Raku's shared-binding closure semantics
+            // for Proxy callbacks (FETCH should see changes made by STORE).
+            // Internal/special variables always use the captured value so that
+            // the callback's lexical context is properly restored.
             for (k, v) in &data.env {
-                new_env.insert(k.clone(), v.clone());
+                let is_user_var = !k.starts_with('!')
+                    && !k.starts_with('.')
+                    && !k.starts_with('*')
+                    && !k.starts_with('?')
+                    && !k.starts_with("__")
+                    && k != "self"
+                    && k != "_";
+                if is_user_var && new_env.contains_key(k) {
+                    // Keep current env value (live binding)
+                } else {
+                    new_env.insert(k.clone(), v.clone());
+                }
             }
             // Override !attr bindings with current instance attributes
             for (attr_name, attr_val) in instance_attrs {
@@ -427,7 +443,11 @@ impl Interpreter {
                     updated_attrs.insert(attr_name.clone(), val.clone());
                 }
             }
-            // Propagate outer variable changes (e.g., our variables, closured scalars)
+            // Propagate outer variable changes (e.g., our variables, closured scalars).
+            // Only propagate values that were genuinely modified by the callback body,
+            // not values merely loaded from the captured env. This prevents stale
+            // captured env entries (e.g. an old instance snapshot) from overwriting
+            // current env values.
             let mut restored = saved_env;
             for (k, v) in &self.env {
                 if restored.contains_key(k)
@@ -436,6 +456,13 @@ impl Interpreter {
                     && k != "self"
                     && k != "_"
                 {
+                    // Skip if the value is unchanged from the captured env —
+                    // it was merely loaded, not modified by the callback.
+                    if let Some(captured_v) = data.env.get(k)
+                        && v == captured_v
+                    {
+                        continue;
+                    }
                     restored.insert(k.clone(), v.clone());
                 }
             }
@@ -492,7 +519,7 @@ impl Interpreter {
             subclass: None,
             decontainerized: false,
         };
-        let (result, updated) =
+        let (_result, updated) =
             self.call_proxy_callback(storer, vec![proxy_val, new_value.clone()], attributes)?;
         // Propagate attribute changes back to the instance
         if let Some(var_name) = target_var {
@@ -502,7 +529,8 @@ impl Interpreter {
                 Value::make_instance_with_id(Symbol::intern(class_name), updated, target_id),
             );
         }
-        Ok(result)
+        // Assignment returns the assigned value, not the STORE callback's return value
+        Ok(new_value)
     }
 
     fn rw_method_attribute_target(body: &[Stmt]) -> Option<String> {
@@ -1276,10 +1304,16 @@ impl Interpreter {
             }
         }
 
-        // The method body doesn't directly expose an attribute — run it and check for Proxy
+        // The method body doesn't directly expose an attribute — run it and check for Proxy.
+        // Set in_lvalue_assignment so the VM skips Proxy auto-fetching on method call
+        // results, allowing the raw Proxy to flow back for STORE dispatch.
+        let was_lvalue = self.in_lvalue_assignment;
+        self.in_lvalue_assignment = true;
         let attrs_map = (*attributes).clone();
-        let (method_result, updated_attrs) =
-            self.run_instance_method(&class_name.resolve(), attrs_map, method, method_args, None)?;
+        let method_result =
+            self.run_instance_method(&class_name.resolve(), attrs_map, method, method_args, None);
+        self.in_lvalue_assignment = was_lvalue;
+        let (method_result, updated_attrs) = method_result?;
         if let Value::Proxy { storer, .. } = &method_result {
             return self.proxy_store(
                 storer,
@@ -2616,7 +2650,9 @@ impl Interpreter {
                     Value::make_instance_with_id(class_name, updated, target_id),
                 );
                 // Auto-FETCH if the method returned a Proxy
-                if let Value::Proxy { ref fetcher, .. } = result {
+                if !self.in_lvalue_assignment
+                    && let Value::Proxy { ref fetcher, .. } = result
+                {
                     return self.proxy_fetch(
                         fetcher,
                         Some(target_var),

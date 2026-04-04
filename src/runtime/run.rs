@@ -780,7 +780,7 @@ impl Interpreter {
         Ok(())
     }
 
-    pub(super) fn run_block_raw(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+    pub(crate) fn run_block_raw(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
         if stmts.is_empty() {
             return Ok(());
         }

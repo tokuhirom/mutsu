@@ -4,6 +4,97 @@ use std::sync::Arc;
 
 use super::range_endpoint_display;
 
+/// Format a finite f64 in Raku's Num.raku style: always includes 'e'.
+/// Raku's approach: use the shortest natural string representation,
+/// then ensure 'e' is present (append 'e0' if not).
+/// Examples: 42e0 → "42e0", 1.5e0 → "1.5e0", 0.1e0 → "0.1e0",
+///           2.026887777243374e-48 → "2.026887777243374e-48"
+pub(crate) fn format_num_raku(f: f64) -> String {
+    if f == 0.0 {
+        return if f.is_sign_negative() {
+            "-0e0".to_string()
+        } else {
+            "0e0".to_string()
+        };
+    }
+
+    // Use format_num_str to get the natural Raku string form,
+    // then ensure 'e' is present.
+    let s = format_num_str(f);
+    if s.contains('e') || s.contains('E') {
+        s.replace('E', "e")
+    } else {
+        format!("{}e0", s)
+    }
+}
+
+/// Format an f64 as Raku's Num.Str would: shortest representation that
+/// round-trips, using scientific notation only for very large/small values.
+pub(crate) fn format_num_str(f: f64) -> String {
+    if f.is_nan() {
+        return "NaN".to_string();
+    }
+    if f.is_infinite() {
+        return if f > 0.0 {
+            "Inf".to_string()
+        } else {
+            "-Inf".to_string()
+        };
+    }
+    if f == 0.0 {
+        return if f.is_sign_negative() {
+            "-0".to_string()
+        } else {
+            "0".to_string()
+        };
+    }
+    let abs_f = f.abs();
+    let sign = if f < 0.0 { "-" } else { "" };
+
+    // For numbers that are naturally expressible without scientific notation
+    // (roughly 1e-4 to 1e15), use fixed-point representation.
+    // For others, use scientific notation.
+    if (1e-4..1e16).contains(&abs_f) {
+        // Find shortest fixed-point round-trip representation
+        for prec in 0..=20 {
+            let candidate = format!("{sign}{abs_f:.prec$}");
+            if let Ok(parsed) = candidate.parse::<f64>()
+                && parsed == f
+            {
+                // Trim trailing zeros after decimal point, but keep at least the integer
+                if candidate.contains('.') {
+                    let trimmed = candidate.trim_end_matches('0').trim_end_matches('.');
+                    return trimmed.to_string();
+                }
+                return candidate;
+            }
+        }
+    }
+
+    // Use scientific notation for very large/small numbers
+    // Find shortest round-trip in scientific notation
+    for prec in 0..=17 {
+        let candidate = format!("{:.prec$e}", abs_f);
+        if let Ok(parsed) = candidate.parse::<f64>()
+            && parsed == abs_f
+        {
+            // Clean up: trim trailing zeros in mantissa
+            let e_pos = candidate.find('e').unwrap();
+            let mantissa = &candidate[..e_pos];
+            let exp_str = &candidate[e_pos + 1..];
+            let mantissa = if mantissa.contains('.') {
+                mantissa.trim_end_matches('0').trim_end_matches('.')
+            } else {
+                mantissa
+            };
+            return format!("{sign}{mantissa}e{exp_str}");
+        }
+    }
+
+    // Fallback: full precision
+    format!("{}", f)
+}
+
 /// Helper for .raku representation of a value
 fn is_self_array_ref_marker(v: &Value) -> bool {
     matches!(v, Value::Pair(name, _) if name == "__mutsu_self_array_ref")
@@ -256,13 +347,9 @@ pub fn raku_value(v: &Value) -> String {
                     "-Inf".to_string()
                 }
             } else {
-                // Num.raku must include 'e' so it round-trips as Num, not Rat
-                let s = format!("{}", f);
-                if s.contains('e') || s.contains('E') {
-                    s
-                } else {
-                    format!("{}e0", s)
-                }
+                // Num.raku must include 'e' so it round-trips as Num, not Rat.
+                // Use Raku's format: significand + 'e' + exponent.
+                format_num_raku(*f)
             }
         }
         Value::Complex(r, i) => format!("<{}>", crate::value::format_complex(*r, *i)),

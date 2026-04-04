@@ -72,6 +72,64 @@ impl PartialEq for BagData {
     }
 }
 
+/// Set data: wraps HashSet<String> with optional original-typed keys.
+/// Implements Deref to HashSet<String> so existing code works unchanged.
+#[derive(Debug, Clone)]
+pub(crate) struct SetData {
+    pub elements: HashSet<String>,
+    /// Maps string keys back to original Values (e.g. Int(2), Bool(false)).
+    /// Only populated when the Set is created from mixed-type data.
+    pub original_keys: Option<HashMap<String, Value>>,
+}
+
+impl SetData {
+    pub fn new(elements: HashSet<String>) -> Self {
+        SetData {
+            elements,
+            original_keys: None,
+        }
+    }
+
+    pub fn with_original_keys(
+        elements: HashSet<String>,
+        original_keys: HashMap<String, Value>,
+    ) -> Self {
+        SetData {
+            elements,
+            original_keys: Some(original_keys),
+        }
+    }
+
+    /// Get the original Value for a key, falling back to Str.
+    pub fn typed_key(&self, str_key: &str) -> Value {
+        if let Some(ref orig) = self.original_keys
+            && let Some(v) = orig.get(str_key)
+        {
+            return v.clone();
+        }
+        Value::Str(Arc::new(str_key.to_string()))
+    }
+}
+
+impl Deref for SetData {
+    type Target = HashSet<String>;
+    fn deref(&self) -> &Self::Target {
+        &self.elements
+    }
+}
+
+impl DerefMut for SetData {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.elements
+    }
+}
+
+impl PartialEq for SetData {
+    fn eq(&self, other: &Self) -> bool {
+        self.elements == other.elements
+    }
+}
+
 /// Mix data: wraps HashMap<String, f64> with optional original-typed keys.
 /// Implements Deref to HashMap<String, f64> so existing code works unchanged.
 #[derive(Debug, Clone)]
@@ -545,7 +603,7 @@ pub enum Value {
     BigRat(NumBigInt, NumBigInt),
     Complex(f64, f64),
     /// Set (immutable) or SetHash (mutable). The bool is `true` for mutable (SetHash).
-    Set(Arc<HashSet<String>>, bool),
+    Set(Arc<SetData>, bool),
     /// Bag (immutable) or BagHash (mutable). The bool is `true` for mutable (BagHash).
     Bag(Arc<BagData>, bool),
     /// Mix (immutable) or MixHash (mutable). The bool is `true` for mutable (MixHash).
@@ -1471,10 +1529,27 @@ impl Value {
         }
     }
     pub fn set(s: HashSet<String>) -> Self {
-        Value::Set(Arc::new(s), false)
+        Value::Set(Arc::new(SetData::new(s)), false)
     }
     pub fn set_hash(s: HashSet<String>) -> Self {
-        Value::Set(Arc::new(s), true)
+        Value::Set(Arc::new(SetData::new(s)), true)
+    }
+    /// Create a Set with preserved original key types.
+    pub fn set_typed(elements: HashSet<String>, original_keys: HashMap<String, Value>) -> Self {
+        Value::Set(
+            Arc::new(SetData::with_original_keys(elements, original_keys)),
+            false,
+        )
+    }
+    /// Create a SetHash with preserved original key types.
+    pub fn set_hash_typed(
+        elements: HashSet<String>,
+        original_keys: HashMap<String, Value>,
+    ) -> Self {
+        Value::Set(
+            Arc::new(SetData::with_original_keys(elements, original_keys)),
+            true,
+        )
     }
     pub fn bag(m: HashMap<String, i64>) -> Self {
         Value::Bag(Arc::new(BagData::new(m)), false)

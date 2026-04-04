@@ -779,7 +779,9 @@ impl Interpreter {
                     updated.clone(),
                 );
                 // Auto-FETCH if the method returned a Proxy
-                if let Value::Proxy { ref fetcher, .. } = result {
+                if !self.in_lvalue_assignment
+                    && let Value::Proxy { ref fetcher, .. } = result
+                {
                     return self.proxy_fetch(
                         fetcher,
                         None,

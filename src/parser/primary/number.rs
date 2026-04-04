@@ -241,6 +241,11 @@ pub(super) fn integer(input: &str) -> PResult<'_, Expr> {
 pub(super) fn decimal(input: &str) -> PResult<'_, Expr> {
     let (rest, int_clean) = scan_decimal_digits(input).ok_or_else(|| PError::expected("digits"))?;
     let (rest, _) = parse_char(rest, '.')?;
+    // The first character after the dot must be a digit, not an underscore.
+    // `4_2._0_1` is parsed as `42._0_1` (method call), not as the number 42.01.
+    if !starts_with_decimal_digit(rest) {
+        return Err(PError::expected("fraction digits"));
+    }
     let (rest, frac_clean) =
         scan_decimal_digits(rest).ok_or_else(|| PError::expected("fraction digits"))?;
     let num_str = format!("{}.{}", int_clean, frac_clean);

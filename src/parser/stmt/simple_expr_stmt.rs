@@ -936,11 +936,17 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
 
     // Generic bind assignment on non-variable lhs (e.g. `($a, $b) := |(f)`).
     // Keep this as a parse fallback so complex bind lvalues don't fail early.
-    if !matches!(expr, Expr::AssignExpr { .. }) && rest.starts_with(":=") {
+    if !matches!(expr, Expr::AssignExpr { .. })
+        && (rest.starts_with(":=") || rest.starts_with("::="))
+    {
         // Signature binding: `:($f, $o, $) := @a`
         // Extract variable names from the Signature literal and generate assignments.
         if let Some(param_names) = extract_signature_param_names(&expr) {
-            let r = &rest[2..];
+            let r = if let Some(stripped) = rest.strip_prefix("::=") {
+                stripped
+            } else {
+                &rest[2..]
+            };
             let (r, _) = ws(r)?;
             let (r, rhs) = super::assign::parse_assign_expr_or_comma(r).map_err(|err| PError {
                 messages: merge_expected_messages(
@@ -1011,7 +1017,11 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 Box::new(ex),
             ));
         }
-        let r = &rest[2..];
+        let r = if let Some(stripped) = rest.strip_prefix("::=") {
+            stripped
+        } else {
+            &rest[2..]
+        };
         let (r, _) = ws(r)?;
         let (r, rhs) = super::assign::parse_assign_expr_or_comma(r).map_err(|err| PError {
             messages: merge_expected_messages(

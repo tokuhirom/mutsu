@@ -230,25 +230,65 @@ impl Interpreter {
                 Some(Ok(make_seq(result)))
             }
             Some(Value::Regex(pat)) => {
-                let matches = self.regex_find_all(pat, &text);
-                if return_match {
-                    let result: Vec<Value> = matches
-                        .iter()
-                        .map(|(start, end)| self.create_match_object(&text, *start, *end, pat))
-                        .collect();
-                    let result = Self::apply_limit(result, limit);
-                    Some(Ok(make_seq(result)))
+                // Use the capturing path only when the regex contains code
+                // blocks that need eager execution (e.g. `{ take $/.Str }`).
+                // For regular regexes, use the faster non-capturing path.
+                let has_code = self.has_code_block_in_prefix(pat);
+                if has_code {
+                    self.enable_eager_code_blocks();
+                    let matches = self.regex_find_all_with_caps(pat, &text);
+                    let eager_blocks = self.drain_eager_code_blocks();
+                    if !eager_blocks.is_empty() {
+                        self.execute_regex_code_blocks(&eager_blocks);
+                    } else {
+                        for (_, _, caps) in &matches {
+                            if !caps.code_blocks.is_empty() {
+                                self.execute_regex_code_blocks(&caps.code_blocks);
+                            }
+                        }
+                    }
+                    if return_match {
+                        let result: Vec<Value> = matches
+                            .iter()
+                            .map(|(start, end, _)| {
+                                self.create_match_object(&text, *start, *end, pat)
+                            })
+                            .collect();
+                        let result = Self::apply_limit(result, limit);
+                        Some(Ok(make_seq(result)))
+                    } else {
+                        let chars: Vec<char> = text.chars().collect();
+                        let result: Vec<Value> = matches
+                            .iter()
+                            .map(|(start, end, _)| {
+                                let s: String = chars[*start..*end].iter().collect();
+                                Value::str(s)
+                            })
+                            .collect();
+                        let result = Self::apply_limit(result, limit);
+                        Some(Ok(make_seq(result)))
+                    }
                 } else {
-                    let chars: Vec<char> = text.chars().collect();
-                    let result: Vec<Value> = matches
-                        .iter()
-                        .map(|(start, end)| {
-                            let s: String = chars[*start..*end].iter().collect();
-                            Value::str(s)
-                        })
-                        .collect();
-                    let result = Self::apply_limit(result, limit);
-                    Some(Ok(make_seq(result)))
+                    let matches = self.regex_find_all(pat, &text);
+                    if return_match {
+                        let result: Vec<Value> = matches
+                            .iter()
+                            .map(|(start, end)| self.create_match_object(&text, *start, *end, pat))
+                            .collect();
+                        let result = Self::apply_limit(result, limit);
+                        Some(Ok(make_seq(result)))
+                    } else {
+                        let chars: Vec<char> = text.chars().collect();
+                        let result: Vec<Value> = matches
+                            .iter()
+                            .map(|(start, end)| {
+                                let s: String = chars[*start..*end].iter().collect();
+                                Value::str(s)
+                            })
+                            .collect();
+                        let result = Self::apply_limit(result, limit);
+                        Some(Ok(make_seq(result)))
+                    }
                 }
             }
             Some(Value::Sub(_)) | Some(Value::WeakSub(_)) => Some(Err(RuntimeError::new(

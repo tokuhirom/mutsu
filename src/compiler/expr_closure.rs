@@ -257,6 +257,15 @@ impl Compiler {
                 ],
             };
             self.compile_expr(&rewritten);
+        } else if let Some(arr_name) = Self::map_rw_identity_target_name(target) {
+            // @arr.map(-> $v is rw {$v})[idx] = val  →  @arr[idx] = val
+            // When map's closure has an `is rw` parameter and returns it unchanged,
+            // the result is a list of containers bound to the original array elements.
+            // Assignment through them writes back to the original array.
+            self.compile_expr(value);
+            self.compile_expr(index);
+            let name_idx = self.code.add_constant(Value::str(arr_name));
+            self.code.emit(OpCode::IndexAssignExprNamed(name_idx));
         } else {
             // Generic fallback: compile target, then index, then value
             // and emit IndexAssignGeneric to do runtime assignment.

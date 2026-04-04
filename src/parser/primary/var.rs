@@ -28,6 +28,48 @@ fn concat_exprs(left: Expr, right: Expr) -> Expr {
     }
 }
 
+fn parse_qualified_ident_prefix_with_hyphens<'a>(input: &'a str) -> PResult<'a, String> {
+    let (mut rest, first) = parse_ident_with_hyphens(input)?;
+    let mut full = first.to_string();
+    while let Some(after) = rest.strip_prefix("::") {
+        if after.starts_with('(') {
+            break;
+        }
+        if let Ok((r2, part)) = parse_ident_with_hyphens(after) {
+            full.push_str("::");
+            full.push_str(part);
+            rest = r2;
+        } else {
+            break;
+        }
+    }
+    Ok((rest, full))
+}
+
+fn parse_symbolic_deref_segments(mut rest: &str, mut combined: Expr) -> PResult<'_, Expr> {
+    loop {
+        if let Some(after_sep) = rest.strip_prefix("::(") {
+            combined = concat_exprs(combined, Expr::Literal(Value::str("::".to_string())));
+            let (after_expr, seg_expr) = expression(after_sep)?;
+            let (after_expr, _) = ws(after_expr)?;
+            let (r, _) = parse_char(after_expr, ')')?;
+            combined = concat_exprs(combined, seg_expr);
+            rest = r;
+        } else if let Some(after_sep) = rest.strip_prefix("::") {
+            if let Ok((r, ident)) = parse_ident_with_hyphens(after_sep) {
+                let sep_ident = format!("::{}", ident);
+                combined = concat_exprs(combined, Expr::Literal(Value::str(sep_ident)));
+                rest = r;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    Ok((rest, combined))
+}
+
 /// Parse a variable name from raw string (used in interpolation).
 pub(super) fn parse_var_name_from_str(input: &str) -> (&str, String) {
     // Handle twigils: $*, $?, $!, $^
@@ -173,32 +215,8 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     if let Some(after_colons) = input.strip_prefix("::(") {
         let (after_expr, first_expr) = expression(after_colons)?;
         let (after_expr, _) = ws(after_expr)?;
-        let (mut rest, _) = parse_char(after_expr, ')')?;
-        let mut combined = first_expr;
-        // Continue parsing ::ident and ::($expr) segments
-        loop {
-            if let Some(after_sep) = rest.strip_prefix("::(") {
-                // Dynamic segment: ::($expr)
-                let sep_lit = Expr::Literal(Value::str("::".to_string()));
-                combined = concat_exprs(combined, sep_lit);
-                let (after_expr, seg_expr) = expression(after_sep)?;
-                let (after_expr, _) = ws(after_expr)?;
-                let (r, _) = parse_char(after_expr, ')')?;
-                combined = concat_exprs(combined, seg_expr);
-                rest = r;
-            } else if let Some(after_sep) = rest.strip_prefix("::") {
-                // Static segment: ::ident
-                if let Ok((r, ident)) = parse_ident_with_hyphens(after_sep) {
-                    let sep_ident = format!("::{}", ident);
-                    combined = concat_exprs(combined, Expr::Literal(Value::str(sep_ident)));
-                    rest = r;
-                } else {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
+        let (rest, _) = parse_char(after_expr, ')')?;
+        let (rest, combined) = parse_symbolic_deref_segments(rest, first_expr)?;
         return Ok((
             rest,
             Expr::SymbolicDeref {
@@ -206,6 +224,33 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
                 expr: Box::new(combined),
             },
         ));
+    }
+    if let Some(after_brace) = input.strip_prefix("::{") {
+        let (rest, _) = ws(after_brace)?;
+        let (rest, key_expr) = expression(rest)?;
+        let (rest, _) = ws(rest)?;
+        let (rest, _) = parse_char(rest, '}')?;
+        return Ok((
+            rest,
+            Expr::Index {
+                target: Box::new(Expr::PseudoStash("::".to_string())),
+                index: Box::new(key_expr),
+            },
+        ));
+    }
+    if let Some(after_bracket) = input.strip_prefix("::<")
+        && let Some(end) = after_bracket.find('>')
+    {
+        let symbol = &after_bracket[..end];
+        if !symbol.is_empty() {
+            return Ok((
+                &after_bracket[end + 1..],
+                Expr::Index {
+                    target: Box::new(Expr::PseudoStash("::".to_string())),
+                    index: Box::new(Expr::Literal(Value::str(symbol.to_string()))),
+                },
+            ));
+        }
     }
     // Named parameter variable inside blocks: $:name
     if let Some(after_colon) = input.strip_prefix(':') {
@@ -268,7 +313,18 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     } else {
         (input, "")
     };
-    let (rest, name) = parse_qualified_ident_with_hyphens(rest)?;
+    let (rest, name) = parse_qualified_ident_prefix_with_hyphens(rest)?;
+    if rest.starts_with("::(") {
+        let (rest, combined) =
+            parse_symbolic_deref_segments(rest, Expr::Literal(Value::str(name.clone())))?;
+        return Ok((
+            rest,
+            Expr::SymbolicDeref {
+                sigil: "$".to_string(),
+                expr: Box::new(combined),
+            },
+        ));
+    }
     let (rest, name) = parse_var_name_adverb_suffixes(rest, name);
     let full_name = if twigil.is_empty() {
         name

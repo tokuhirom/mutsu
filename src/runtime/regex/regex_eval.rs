@@ -117,6 +117,18 @@ impl Interpreter {
         }
     }
 
+    /// Enable eager collection of plain code blocks during regex matching.
+    /// When enabled, code blocks are recorded even if the overall match fails.
+    pub(in crate::runtime) fn enable_eager_code_blocks(&self) {
+        super::regex_helpers::EAGER_CODE_BLOCKS.with(|slot| *slot.borrow_mut() = Some(Vec::new()));
+    }
+
+    /// Drain and return eagerly-collected code blocks, disabling collection.
+    pub(in crate::runtime) fn drain_eager_code_blocks(&self) -> Vec<CodeBlockContext> {
+        super::regex_helpers::EAGER_CODE_BLOCKS
+            .with(|slot| slot.borrow_mut().take().unwrap_or_default())
+    }
+
     /// Execute code blocks collected during regex matching for side effects.
     pub(in crate::runtime) fn execute_regex_code_blocks(
         &mut self,
@@ -341,6 +353,60 @@ impl Interpreter {
             }
         }
         if class.negated { !matched } else { matched }
+    }
+
+    /// Find all non-overlapping regex matches using the capturing path,
+    /// returning (start, end) pairs and captures (including code blocks).
+    pub(crate) fn regex_find_all_with_caps(
+        &self,
+        pattern: &str,
+        text: &str,
+    ) -> Vec<(usize, usize, RegexCaptures)> {
+        let parsed = match self.parse_regex(pattern) {
+            Some(p) => p,
+            None => return Vec::new(),
+        };
+        let pkg = self.current_package.clone();
+        let chars: Vec<char> = text.chars().collect();
+        let mut results = Vec::new();
+        let mut pos = 0;
+        while pos <= chars.len() {
+            let mut found = None;
+            if parsed.anchor_start {
+                if pos == 0
+                    && let Some((end, mut caps)) =
+                        self.regex_match_end_from_caps_in_pkg(&parsed, &chars, 0, &pkg)
+                {
+                    caps.from = caps.capture_start.unwrap_or(0);
+                    caps.to = caps.capture_end.unwrap_or(end);
+                    caps.matched = chars[caps.from..caps.to].iter().collect();
+                    found = Some((0, end, caps));
+                }
+            } else {
+                for start in pos..=chars.len() {
+                    if let Some((end, mut caps)) =
+                        self.regex_match_end_from_caps_in_pkg(&parsed, &chars, start, &pkg)
+                    {
+                        caps.from = caps.capture_start.unwrap_or(start);
+                        caps.to = caps.capture_end.unwrap_or(end);
+                        caps.matched = chars[caps.from..caps.to].iter().collect();
+                        found = Some((start, end, caps));
+                        break;
+                    }
+                }
+            }
+            match found {
+                Some((start, end, caps)) => {
+                    results.push((start, end, caps));
+                    pos = if end > start { end } else { start + 1 };
+                }
+                None => break,
+            }
+            if parsed.anchor_start {
+                break;
+            }
+        }
+        results
     }
 
     /// Find all non-overlapping regex matches, returning (start, end) char-index pairs.
