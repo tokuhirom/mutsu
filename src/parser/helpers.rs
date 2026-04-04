@@ -62,7 +62,7 @@ fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
         // content is NOT unspace.
         if let Some(after_bs) = r.strip_prefix('\\') {
             let next = after_bs.chars().next();
-            if next.is_some_and(|c| c.is_whitespace() || c == '#') {
+            if next.is_some_and(|c| c.is_whitespace()) {
                 // Peek ahead: skip whitespace and check for non-empty content
                 let peek = after_bs.trim_start();
                 if !peek.is_empty() {
@@ -70,6 +70,14 @@ fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
                     at_line_start = false;
                     continue;
                 }
+            }
+            // `\#` is only valid unspace when `#` starts an embedded comment
+            // (e.g. `\#`(...)`). A plain `\#` followed by non-backtick is NOT
+            // unspace — the `#` would start a line comment eating the rest.
+            if next == Some('#') && skip_embedded_comment(after_bs).is_some() {
+                rest = after_bs;
+                at_line_start = false;
+                continue;
             }
         }
         // Pod blocks only appear at the start of a line
