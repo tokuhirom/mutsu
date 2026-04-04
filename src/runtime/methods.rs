@@ -803,8 +803,7 @@ impl Interpreter {
             && let Value::Mixin(target_inner, _) = &target
         {
             // Call .Numeric on the instance to get its numeric value
-            let numeric_val =
-                self.call_method_with_values(args[0].clone(), "Numeric", vec![])?;
+            let numeric_val = self.call_method_with_values(args[0].clone(), "Numeric", vec![])?;
             // Compare numerically using == semantics
             let tf = match target_inner.as_ref() {
                 Value::Int(i) => *i as f64,
