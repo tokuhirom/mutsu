@@ -81,19 +81,53 @@ impl Interpreter {
 
     pub(super) fn builtin_set(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let mut elems = HashSet::new();
+        let mut original_keys = HashMap::new();
+        let mut has_typed_keys = false;
+
+        let insert_value = |val: &Value,
+                            elems: &mut HashSet<String>,
+                            original_keys: &mut HashMap<String, Value>,
+                            has_typed_keys: &mut bool| {
+            let key = val.to_string_value();
+            if !elems.contains(&key) {
+                // Track original type for non-Str values
+                if !matches!(val, Value::Str(_)) {
+                    original_keys.insert(key.clone(), val.clone());
+                    *has_typed_keys = true;
+                }
+                elems.insert(key);
+            }
+        };
+
         for arg in args {
             match arg {
+                // Itemized arrays ($[...]) are treated as a single element
+                Value::Array(_, kind) if kind.is_itemized() => {
+                    insert_value(arg, &mut elems, &mut original_keys, &mut has_typed_keys);
+                }
+                // Regular arrays are flattened
                 Value::Array(items, ..) => {
                     for item in items.iter() {
-                        elems.insert(item.to_string_value());
+                        insert_value(item, &mut elems, &mut original_keys, &mut has_typed_keys);
+                    }
+                }
+                // Hashes are decomposed into their pairs
+                Value::Hash(map) => {
+                    for (k, v) in map.iter() {
+                        let pair = Value::Pair(k.clone(), Box::new(v.clone()));
+                        insert_value(&pair, &mut elems, &mut original_keys, &mut has_typed_keys);
                     }
                 }
                 other => {
-                    elems.insert(other.to_string_value());
+                    insert_value(other, &mut elems, &mut original_keys, &mut has_typed_keys);
                 }
             }
         }
-        Ok(Value::set(elems))
+        if has_typed_keys {
+            Ok(Value::set_typed(elems, original_keys))
+        } else {
+            Ok(Value::set(elems))
+        }
     }
 
     pub(super) fn builtin_bag(&self, args: &[Value]) -> Result<Value, RuntimeError> {

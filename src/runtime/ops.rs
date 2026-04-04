@@ -83,7 +83,7 @@ impl Interpreter {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
         }
         match value {
-            Value::Set(s, _) => Ok((**s).clone()),
+            Value::Set(s, _) => Ok(s.elements.clone()),
             Value::Bag(b, _) => Ok(b.keys().cloned().collect()),
             Value::Mix(m, _) => Ok(m.keys().cloned().collect()),
             Value::Hash(h) => Ok(h
