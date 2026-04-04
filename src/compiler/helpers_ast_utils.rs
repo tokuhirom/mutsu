@@ -90,6 +90,40 @@ impl Compiler {
         }
     }
 
+    /// Detect `@arr.map(-> $v is rw {$v})` pattern where the map closure is an
+    /// identity function with an `is rw` parameter. Returns the array variable
+    /// name (e.g. "@n") so the caller can compile a direct array slice assignment.
+    pub(super) fn map_rw_identity_target_name(target: &Expr) -> Option<String> {
+        if let Expr::MethodCall {
+            target: method_target,
+            name: method_name,
+            args: method_args,
+            ..
+        } = target
+            && method_name.resolve() == "map"
+            && method_args.len() == 1
+            && let Expr::AnonSubParams {
+                params,
+                param_defs,
+                body,
+                ..
+            } = &method_args[0]
+            && params.len() == 1
+            && param_defs.len() == 1
+            && param_defs[0].traits.iter().any(|t| t == "rw")
+        {
+            // Check if the body is an identity function: just returns the parameter.
+            // Body may contain SetLine statements before the final Expr.
+            let final_expr = body.iter().rev().find(|s| !matches!(s, Stmt::SetLine(_)));
+            if let Some(Stmt::Expr(Expr::Var(var_name))) = final_expr
+                && *var_name == params[0]
+            {
+                return Self::index_assign_target_name(method_target);
+            }
+        }
+        None
+    }
+
     pub(super) fn index_assign_nested_target(target: &Expr) -> Option<(String, &Expr)> {
         if let Expr::Index {
             target: inner_target,
