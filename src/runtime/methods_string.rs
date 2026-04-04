@@ -902,8 +902,7 @@ impl Interpreter {
             (true, false) => substr.to_lowercase() == needle.to_lowercase(),
             (false, true) => self.strip_marks(&substr) == self.strip_marks(&needle),
             (true, true) => {
-                self.strip_marks(&substr).to_lowercase()
-                    == self.strip_marks(&needle).to_lowercase()
+                self.strip_marks(&substr).to_lowercase() == self.strip_marks(&needle).to_lowercase()
             }
         };
         Ok(Value::Bool(eq))
