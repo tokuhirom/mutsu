@@ -209,7 +209,7 @@ pub(super) fn dispatch(
         }),
         "floor" => Some(match target {
             Value::Num(f) if f.is_nan() || f.is_infinite() => Some(Ok(Value::Num(*f))),
-            Value::Num(f) => Some(Ok(Value::Int(f.floor() as i64))),
+            Value::Num(f) => Some(Ok(Value::Num(f.floor()))),
             Value::Int(i) => Some(Ok(Value::Int(*i))),
             Value::BigInt(_) => Some(Ok(target.clone())),
             Value::Rat(n, d) if *d != 0 => {
@@ -244,7 +244,7 @@ pub(super) fn dispatch(
         }),
         "ceiling" | "ceil" => Some(match target {
             Value::Num(f) if f.is_nan() || f.is_infinite() => Some(Ok(Value::Num(*f))),
-            Value::Num(f) => Some(Ok(Value::Int(f.ceil() as i64))),
+            Value::Num(f) => Some(Ok(Value::Num(f.ceil()))),
             Value::Int(i) => Some(Ok(Value::Int(*i))),
             Value::BigInt(_) => Some(Ok(target.clone())),
             Value::Rat(n, d) if *d != 0 => {
