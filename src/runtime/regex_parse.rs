@@ -1406,15 +1406,23 @@ impl Interpreter {
                                 continue;
                             }
                         } else if peek_str.starts_with("before ")
+                            || peek_str.starts_with(".before ")
                             || peek_str.starts_with("?before ")
                             || peek_str.starts_with("!before ")
                             || peek_str.starts_with("after ")
+                            || peek_str.starts_with(".after ")
                             || peek_str.starts_with("?after ")
                             || peek_str.starts_with("!after ")
                         {
                             let (negated, is_behind, keyword) = if peek_str.starts_with("before ") {
                                 (false, false, "before ")
+                            } else if peek_str.starts_with(".before ") {
+                                chars.next();
+                                (false, false, "before ")
                             } else if peek_str.starts_with("after ") {
+                                (false, true, "after ")
+                            } else if peek_str.starts_with(".after ") {
+                                chars.next();
                                 (false, true, "after ")
                             } else {
                                 let negated = peek_str.starts_with('!');

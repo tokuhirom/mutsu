@@ -321,7 +321,7 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        use crate::builtins::split::{SplitOpts, apply_split_opts};
+        use crate::builtins::split::{SplitOpts, apply_split_opts, parse_split_limit};
 
         let (positional, mut opts) = SplitOpts::from_args(&args);
         if positional.is_empty() {
@@ -332,7 +332,7 @@ impl Interpreter {
 
         let splitter = positional[0].clone();
         if positional.len() > 1 {
-            opts.limit = Some(crate::runtime::to_int(positional[1]).max(0) as usize);
+            opts.limit = parse_split_limit(positional[1])?;
         }
 
         let text = target.to_string_value();
@@ -346,7 +346,7 @@ impl Interpreter {
         &mut self,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        use crate::builtins::split::{SplitOpts, apply_split_opts};
+        use crate::builtins::split::{SplitOpts, apply_split_opts, parse_split_limit};
 
         let (positional, mut opts) = SplitOpts::from_args(&args);
         if positional.len() < 2 {
@@ -358,7 +358,7 @@ impl Interpreter {
         let splitter = positional[0].clone();
         let target = positional[1].clone();
         if positional.len() > 2 {
-            opts.limit = Some(crate::runtime::to_int(positional[2]).max(0) as usize);
+            opts.limit = parse_split_limit(positional[2])?;
         }
 
         let text = target.to_string_value();
@@ -404,6 +404,9 @@ impl Interpreter {
         pattern: &str,
         limit: Option<usize>,
     ) -> Result<Vec<(String, Option<SplitMatch>)>, RuntimeError> {
+        if limit == Some(0) {
+            return Ok(Vec::new());
+        }
         let chars: Vec<char> = text.chars().collect();
         let mut result = Vec::new();
 
@@ -479,6 +482,9 @@ impl Interpreter {
         splitters: &[Value],
         limit: Option<usize>,
     ) -> Result<Vec<(String, Option<SplitMatch>)>, RuntimeError> {
+        if limit == Some(0) {
+            return Ok(Vec::new());
+        }
         let chars: Vec<char> = text.chars().collect();
         let mut result = Vec::new();
 
@@ -590,6 +596,9 @@ fn split_by_string_static(
     sep: &str,
     limit: Option<usize>,
 ) -> Vec<(String, Option<SplitMatch>)> {
+    if limit == Some(0) {
+        return Vec::new();
+    }
     let mut result = Vec::new();
     let chars: Vec<char> = text.chars().collect();
 
@@ -690,6 +699,9 @@ fn split_by_strings_static(
     splitters: &[String],
     limit: Option<usize>,
 ) -> Vec<(String, Option<SplitMatch>)> {
+    if limit == Some(0) {
+        return Vec::new();
+    }
     let mut result = Vec::new();
     let chars: Vec<char> = text.chars().collect();
 

@@ -1,5 +1,6 @@
 #![allow(clippy::result_large_err)]
 
+use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 use std::sync::Arc;
 
@@ -71,6 +72,39 @@ impl SplitOpts {
     }
 }
 
+pub(crate) fn parse_split_limit(value: &Value) -> Result<Option<usize>, RuntimeError> {
+    match value {
+        Value::Whatever | Value::HyperWhatever => return Ok(None),
+        _ => {}
+    }
+
+    let numeric = value.to_f64();
+    if numeric.is_nan() {
+        let msg = "X::TypeCheck::Argument: split() limit must be an Int-compatible value, not NaN"
+            .to_string();
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        let ex = Value::make_instance(Symbol::intern("X::TypeCheck::Argument"), attrs);
+        let mut err = RuntimeError::new(msg);
+        err.exception = Some(Box::new(ex));
+        return Err(err);
+    }
+    if numeric.is_infinite() {
+        return Ok(if numeric.is_sign_negative() {
+            Some(0)
+        } else {
+            None
+        });
+    }
+
+    let limit = crate::runtime::to_int(value);
+    Ok(if limit <= 0 {
+        Some(0)
+    } else {
+        Some(limit as usize)
+    })
+}
+
 /// A split match: the matched separator text and which splitter index matched.
 #[allow(dead_code)]
 pub(crate) struct SplitMatch {
@@ -92,6 +126,9 @@ fn split_by_string(
     sep: &str,
     limit: Option<usize>,
 ) -> Vec<(String, Option<SplitMatch>)> {
+    if limit == Some(0) {
+        return Vec::new();
+    }
     let mut result = Vec::new();
     let chars: Vec<char> = text.chars().collect();
 
@@ -192,6 +229,9 @@ fn split_by_strings(
     splitters: &[String],
     limit: Option<usize>,
 ) -> Vec<(String, Option<SplitMatch>)> {
+    if limit == Some(0) {
+        return Vec::new();
+    }
     let mut result = Vec::new();
     let chars: Vec<char> = text.chars().collect();
 
@@ -401,7 +441,10 @@ pub(crate) fn native_split_function(args: &[Value]) -> Option<Result<Value, Runt
     let splitter = positional[0];
     let target = positional[1];
     if positional.len() > 2 {
-        opts.limit = Some(positional[2].to_f64().max(0.0) as usize);
+        opts.limit = match parse_split_limit(positional[2]) {
+            Ok(limit) => limit,
+            Err(err) => return Some(Err(err)),
+        };
     }
 
     let splitters = get_string_splitters(splitter)?;
