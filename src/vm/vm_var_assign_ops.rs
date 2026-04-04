@@ -1828,7 +1828,19 @@ impl VM {
         let var_name = Self::const_str(code, name_idx).to_string();
         let inner_idx = self.stack.pop().unwrap_or(Value::Nil);
         let outer_idx = self.stack.pop().unwrap_or(Value::Nil);
-        let val = self.stack.pop().unwrap_or(Value::Nil);
+        let raw_val = self.stack.pop().unwrap_or(Value::Nil);
+        // Detect bind marker (__mutsu_bind_index_value) and extract the actual value
+        let val = match raw_val {
+            Value::Pair(ref name, ref payload) if name == "__mutsu_bind_index_value" => {
+                match payload.as_ref() {
+                    Value::Array(items, ..) if !items.is_empty() => {
+                        items.first().cloned().unwrap_or(Value::Nil)
+                    }
+                    other => other.clone(),
+                }
+            }
+            other => other,
+        };
         let inner_key = inner_idx.to_string_value();
         let outer_key = outer_idx.to_string_value();
 

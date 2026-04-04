@@ -157,6 +157,7 @@ impl Interpreter {
                 | "eval-lives-ok"
                 | "eval-dies-ok"
                 | "throws-like"
+                | "throws-like-any"
                 | "fails-like"
                 | "is_run"
                 | "run"
@@ -219,6 +220,7 @@ impl Interpreter {
             "eval-lives-ok" => self.test_fn_eval_lives_ok(args).map(Some),
             "eval-dies-ok" => self.test_fn_eval_dies_ok(args).map(Some),
             "throws-like" => self.test_fn_throws_like(args).map(Some),
+            "throws-like-any" => self.test_fn_throws_like_any(args).map(Some),
             "fails-like" => self.test_fn_fails_like(args).map(Some),
             "is_run" => self.test_fn_is_run(args).map(Some),
             "run" | "Test::Util::run" => self.test_fn_run(args).map(Some),

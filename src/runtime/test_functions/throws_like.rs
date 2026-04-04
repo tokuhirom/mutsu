@@ -278,4 +278,160 @@ impl Interpreter {
         )?;
         Ok(Value::Bool(type_ok))
     }
+
+    /// `throws-like-any($code, @ex_type, $reason?, *%matcher)`
+    /// Like `throws-like` but accepts an array of exception types and passes if
+    /// the thrown exception matches *any* of them.
+    pub(crate) fn test_fn_throws_like_any(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let code_val =
+            Self::positional_value_required(args, 0, "throws-like-any expects code")?.clone();
+        let types_val =
+            Self::positional_value_required(args, 1, "throws-like-any expects type list")?.clone();
+
+        // Extract type names from the array argument
+        let type_names: Vec<String> = match &types_val {
+            Value::Array(items, _) => items
+                .iter()
+                .map(|v| {
+                    let s = v.to_string_value();
+                    // Normalize "(Exception)" -> "Exception"
+                    let normalized: String = s
+                        .strip_prefix('(')
+                        .and_then(|s2| s2.strip_suffix(')'))
+                        .unwrap_or(&s)
+                        .to_string();
+                    normalized
+                })
+                .collect(),
+            _ => vec![types_val.to_string_value()],
+        };
+
+        let desc = Self::positional_string(args, 2);
+
+        // Execute the code (reuse the same logic as throws-like)
+        let result = match &code_val {
+            Value::Sub(data) => self.eval_block_value(&data.body),
+            Value::Str(code) => {
+                let mut nested = Interpreter::new();
+                nested.strict_mode = self.strict_mode;
+                nested.lib_paths = self.lib_paths.clone();
+                nested.program_path = self.program_path.clone();
+                nested.functions = self.functions.clone();
+                nested.proto_functions = self.proto_functions.clone();
+                nested.token_defs = self.token_defs.clone();
+                nested.proto_subs = self.proto_subs.clone();
+                nested.proto_tokens = self.proto_tokens.clone();
+                nested.classes = self.classes.clone();
+                nested.roles = self.roles.clone();
+                nested.subsets = self.subsets.clone();
+                nested.enum_types = self.enum_types.clone();
+                nested.type_metadata = self.type_metadata.clone();
+                for (k, v) in &self.env {
+                    if !k.contains("::") {
+                        nested.env.insert(k.clone(), v.clone());
+                    }
+                }
+                let pre_check_result = {
+                    let op_names = nested.collect_operator_sub_names();
+                    let op_assoc = nested.collect_operator_assoc_map();
+                    let imported_names = nested.collect_eval_imported_function_names();
+                    match crate::parser::parse_program_with_operators(
+                        code,
+                        &op_names,
+                        &op_assoc,
+                        &imported_names,
+                    ) {
+                        Ok((stmts, _)) => nested
+                            .check_eval_class_redeclarations(&stmts)
+                            .and_then(|()| nested.check_eval_undeclared_names(&stmts)),
+                        Err(e) => Err(e),
+                    }
+                };
+                if let Err(e) = pre_check_result {
+                    Err(e)
+                } else {
+                    let run_result = nested.run(code).map(|_| Value::Nil);
+                    match run_result {
+                        Ok(_) => {
+                            if let Some(last_val) = nested.last_value.take() {
+                                Self::sink_failure_to_error(last_val)
+                            } else {
+                                Ok(Value::Nil)
+                            }
+                        }
+                        err => err,
+                    }
+                }
+            }
+            other => Self::sink_failure_to_error(other.clone()),
+        };
+        let result = match result {
+            Ok(val) => Self::sink_failure_to_error(val),
+            err => err,
+        };
+
+        // Check if the exception matches any of the provided types
+        let type_ok = match &result {
+            Ok(_) => false,
+            Err(err) => {
+                let ex_class = err.exception.as_ref().and_then(|ex| {
+                    if let Value::Instance { class_name, .. } = ex.as_ref() {
+                        Some(class_name.resolve().to_string())
+                    } else {
+                        None
+                    }
+                });
+                type_names.iter().any(|expected: &String| -> bool {
+                    if expected.is_empty() || expected == "Exception" {
+                        return true;
+                    }
+                    if let Some(cls) = &ex_class
+                        && (cls == expected
+                            || cls.starts_with(&format!("{}::", expected))
+                            || self
+                                .classes
+                                .get(cls)
+                                .is_some_and(|def| def.mro.iter().any(|parent| parent == expected)))
+                    {
+                        return true;
+                    }
+                    // Fallback: message-based matching
+                    err.message.contains(expected.as_str())
+                })
+            }
+        };
+
+        let type_display = type_names.join(", ");
+
+        let ctx = self.begin_subtest();
+        let state = self.test_state.get_or_insert_with(TestState::new);
+        state.planned = Some(2);
+        self.emit_output("1..2\n");
+        self.test_ok(result.is_err(), "code dies", false)?;
+        self.test_ok(
+            type_ok,
+            &format!("right exception type ({})", type_display),
+            false,
+        )?;
+
+        let all_ok = type_ok && result.is_err();
+        let label = if desc.is_empty() {
+            format!("did we throws-like {}?", type_display)
+        } else {
+            desc.clone()
+        };
+        self.finish_subtest(
+            ctx,
+            &label,
+            if all_ok {
+                Ok(())
+            } else {
+                Err(RuntimeError::new(""))
+            },
+        )?;
+        Ok(Value::Bool(type_ok))
+    }
 }

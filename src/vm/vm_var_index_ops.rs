@@ -385,6 +385,32 @@ impl VM {
                     v
                 }
             }
+            // WhateverCode positional index on Hash: {}[*-1]
+            // Treat hash as a list of pairs with elems = hash.len()
+            (Value::Hash(items), Value::Sub(ref data)) => {
+                let len = items.len() as i64;
+                let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
+                let mut sub_env = data.env.clone();
+                sub_env.insert(param.to_string(), Value::Int(len));
+                let saved_env = std::mem::take(self.interpreter.env_mut());
+                *self.interpreter.env_mut() = sub_env;
+                let idx = self
+                    .interpreter
+                    .eval_block_value(&data.body)
+                    .unwrap_or(Value::Nil);
+                *self.interpreter.env_mut() = saved_env;
+                match &idx {
+                    Value::Int(i) if *i < 0 => Self::make_out_of_range_failure(*i),
+                    Value::Int(i) => {
+                        let pairs: Vec<Value> = items
+                            .iter()
+                            .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                            .collect();
+                        pairs.get(*i as usize).cloned().unwrap_or(Value::Nil)
+                    }
+                    _ => Value::Nil,
+                }
+            }
             (Value::Hash(items), key) => {
                 let key_str = key.to_string_value();
                 let v = self.resolve_hash_entry(&items, &key_str);
@@ -973,6 +999,18 @@ impl VM {
                 } else {
                     positional.get(i as usize).cloned().unwrap_or(Value::Nil)
                 }
+            }
+            // Mu type object does not support postcircumfix { }
+            (Value::Package(name), _) if name.resolve() == "Mu" => {
+                return Err(RuntimeError::typed(
+                    "X::Multi::NoMatch",
+                    [(
+                        "message".to_string(),
+                        Value::str("Cannot resolve caller postcircumfix:<{ }>(Mu:U)".to_string()),
+                    )]
+                    .into_iter()
+                    .collect(),
+                ));
             }
             // Role parameterization: e.g. R1[C1] → ParametricRole
             (Value::Package(name), idx) if self.interpreter.is_role(&name.resolve()) => {

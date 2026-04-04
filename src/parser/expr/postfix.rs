@@ -2168,7 +2168,8 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         }
 
         // Hash indexing with braces: %hash{"key"}, %hash{$var}, @a[0]{"key"}, etc.
-        // Also handles sigilless variables (BareWord) that are declared term symbols.
+        // Also handles sigilless variables (BareWord) that are declared term symbols,
+        // and literal values (e.g. 5{'c'} which should produce a Failure).
         if rest.starts_with('{')
             && matches!(
                 &expr,
@@ -2178,6 +2179,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     | Expr::Index { .. }
                     | Expr::MethodCall { .. }
                     | Expr::Call { .. }
+                    | Expr::Literal(_)
             )
         {
             let r = &rest[1..];
