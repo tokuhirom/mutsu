@@ -333,9 +333,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 Value::ValuePair(key, _) => Some(Ok(Value::Seq(Arc::new(vec![*key.clone()])))),
                 Value::Nil => Some(Ok(Value::array(Vec::new()))),
-                Value::Set(s, _) => Some(Ok(Value::array(
-                    s.iter().map(|k| Value::str(k.clone())).collect(),
-                ))),
+                Value::Set(s, _) => {
+                    Some(Ok(Value::array(s.iter().map(|k| s.typed_key(k)).collect())))
+                }
                 Value::Bag(b, _) => {
                     Some(Ok(Value::array(b.keys().map(|k| b.typed_key(k)).collect())))
                 }

@@ -2010,7 +2010,7 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
 
     match val {
         Value::Scalar(inner) => coerce_to_set(inner),
-        Value::Set(s, _) => (**s).clone(),
+        Value::Set(s, _) => s.elements.clone(),
         Value::Bag(b, _) => {
             let resolved = resolve_bag_tab_keys(b);
             resolved.keys().cloned().collect()
