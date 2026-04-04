@@ -525,6 +525,7 @@ roast/S12-enums/non-int.t
 roast/S12-enums/pseudo-functional.t
 roast/S12-enums/thorough.t
 roast/S12-introspection/WHAT.t
+roast/S12-introspection/attributes.t
 roast/S12-introspection/can.t
 roast/S12-introspection/definite.t
 roast/S12-introspection/meta-class.t

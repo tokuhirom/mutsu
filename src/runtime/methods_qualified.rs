@@ -119,7 +119,9 @@ impl Interpreter {
                 Err(e) => return Some(Err(e)),
             };
             self.overwrite_instance_bindings_by_identity(&inst_cn, tid, updated);
-            if let Value::Proxy { ref fetcher, .. } = result {
+            if !self.in_lvalue_assignment
+                && let Value::Proxy { ref fetcher, .. } = result
+            {
                 let _ = method_def;
                 return Some(self.proxy_fetch(
                     fetcher,
