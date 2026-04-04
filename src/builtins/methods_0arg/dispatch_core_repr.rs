@@ -30,8 +30,8 @@ pub(super) fn dispatch(
             } else {
                 // gist returns "(Any)" because mutsu uses Value::Nil
                 // for uninitialized variables (which are actually Any).
-                // TODO: fix variable initialization to use type objects
-                // instead of Nil, then change gist to return "Nil".
+                // The literal `Nil.gist` case is handled by compile-time
+                // folding in the compiler (see compiler/expr.rs).
                 Some(Ok(Value::str_from("(Any)")))
             }
         }
