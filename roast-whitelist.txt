@@ -250,6 +250,7 @@ roast/S04-phasers/begin.t
 roast/S04-phasers/check.t
 roast/S04-phasers/descending-order.t
 roast/S04-phasers/end.t
+roast/S04-phasers/enter-leave.t
 roast/S04-phasers/exit-in-check.t
 roast/S04-phasers/first.t
 roast/S04-phasers/in-loop.t
@@ -466,6 +467,7 @@ roast/S11-compunit/compunit-dependencyspecification.t
 roast/S11-compunit/rt126904.t
 roast/S11-modules/export.t
 roast/S11-modules/gh2979.t
+roast/S11-modules/import-tag.t
 roast/S11-modules/import.t
 roast/S11-modules/lexical.t
 roast/S11-modules/module-file.t
