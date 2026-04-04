@@ -229,6 +229,27 @@ impl VM {
                 name.resolve()
             )));
         }
+        // For strings, first coerce to numeric (preserving Rat/Complex types and
+        // producing X::Str::Numeric for invalid strings), then negate the result.
+        if let Value::Str(ref s) = val {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                self.stack.push(Value::Int(0));
+                return Ok(());
+            }
+            if let Some(numeric) = crate::runtime::str_numeric::parse_raku_str_to_numeric(trimmed) {
+                self.stack.push(crate::builtins::arith_negate(numeric)?);
+            } else {
+                return Err(RuntimeError::typed_msg(
+                    "X::Str::Numeric",
+                    format!(
+                        "Cannot convert string to number: base-10 number must begin with valid digits or '.' in '{}'",
+                        s
+                    ),
+                ));
+            }
+            return Ok(());
+        }
         let val = self.coerce_numeric_bridge_value(val)?;
         self.stack.push(crate::builtins::arith_negate(val)?);
         Ok(())
