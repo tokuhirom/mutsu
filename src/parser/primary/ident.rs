@@ -1967,6 +1967,35 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         return Ok((rest, make_call_expr(name, input, args)));
     }
 
+    // Identifier immediately followed by a quote character (no whitespace) is a syntax
+    // error in Raku: "Two terms in a row".  e.g., `foo'bar'` or `foo"bar"`.
+    // The only valid forms are `foo(...)` (handled above) or `foo 'bar'` (with space).
+    if rest.starts_with('\'') || rest.starts_with('"') {
+        return Err(PError::fatal(
+            "X::Syntax::Confused: Two terms in a row".to_string(),
+        ));
+    }
+
+    // Identifier immediately followed by single `:` and alphabetic char (no space):
+    // `foo:bar` is a package-qualified long name, not a function call with adverb.
+    // Raku treats this as an undeclared symbol.
+    if rest.starts_with(':')
+        && !rest.starts_with("::")
+        && rest.len() > 1
+        && rest.as_bytes()[1].is_ascii_alphabetic()
+    {
+        // Consume the `:name` part to form the full long name
+        let adverb_rest = &rest[1..];
+        let end = adverb_rest
+            .find(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
+            .unwrap_or(adverb_rest.len());
+        let long_name = format!("{}:{}", name, &adverb_rest[..end]);
+        return Err(PError::fatal(format!(
+            "X::Undeclared::Symbols: Undeclared routine:\n    {} used at line 1",
+            long_name
+        )));
+    }
+
     // Bareword followed by => — Pair constructor (higher precedence than operators)
     // e.g., b => "foo" should parse as Pair even in `%a ~~ b => "foo"`
     let (r, _) = ws(rest)?;
@@ -2122,6 +2151,9 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     // User-defined function call in listop style: bareword followed by space and a term
     // e.g., `äöü 17` or `my-func $x`
     // Exclude single uppercase letters (like Z, X, R) which are infix meta-operators.
+    // Raku requires whitespace between an identifier and listop arguments.
+    // `foo'bar'` is a syntax error (two terms in a row), not `foo('bar')`.
+    // `foo:bar` is a package-qualified name, not `foo(:bar)`.
     if !is_keyword(&name)
         && !is_infix_word_op(&name)
         && !r.is_empty()
@@ -2133,7 +2165,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && !rest.starts_with('.')
         && !(ws_consumed_unspace && r.starts_with('.') && !r.starts_with(".."))
         && !is_stmt_modifier_ahead(r)
-        && !(std::ptr::eq(rest, r) && is_unspace_before_postfix(r))
+        && !std::ptr::eq(rest, r)
     {
         let is_user_sub = crate::parser::stmt::simple::is_user_declared_sub(&name);
         let is_user_prefix_sub = crate::parser::stmt::simple::is_user_declared_prefix_sub(&name);
