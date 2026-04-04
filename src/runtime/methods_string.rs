@@ -843,26 +843,48 @@ impl Interpreter {
     }
 
     pub(super) fn dispatch_substr_eq(
-        &self,
+        &mut self,
         target: Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        if args.is_empty() {
+        // Separate positional and named args
+        let mut positional: Vec<Value> = Vec::new();
+        let mut ignore_case = false;
+        let mut ignore_mark = false;
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                match key.as_str() {
+                    "i" | "ignorecase" => ignore_case = value.truthy(),
+                    "m" | "ignoremark" => ignore_mark = value.truthy(),
+                    _ => {}
+                }
+            } else {
+                positional.push(arg.clone());
+            }
+        }
+        if positional.is_empty() {
             return Err(RuntimeError::new(
                 "Too few positionals passed to 'substr-eq'",
             ));
         }
+        // Type objects (Package) as needle should throw
+        if let Value::Package(type_name) = &positional[0] {
+            return Err(RuntimeError::new(format!(
+                "Cannot resolve caller substr-eq({}:U)",
+                type_name
+            )));
+        }
         let text = target.to_string_value();
-        let needle = args[0].to_string_value();
-        let start = if let Some(pos) = args.get(1) {
-            match self.value_to_position(pos) {
+        let needle = positional[0].to_string_value();
+        let len = text.chars().count() as i64;
+        let start = if let Some(pos) = positional.get(1) {
+            match self.substr_resolve_position(pos, len as usize) {
                 Ok(v) => v,
                 Err(err) => return Ok(Self::runtime_error_to_failure(err)),
             }
         } else {
             0
         };
-        let len = text.chars().count() as i64;
         if start < 0 || start > len {
             return Ok(RuntimeError::out_of_range_failure(
                 "start",
@@ -873,9 +895,18 @@ impl Interpreter {
         let substr: String = text
             .chars()
             .skip(start as usize)
-            .take(needle.len())
+            .take(needle.chars().count())
             .collect();
-        Ok(Value::Bool(substr == needle))
+        let eq = match (ignore_case, ignore_mark) {
+            (false, false) => substr == needle,
+            (true, false) => substr.to_lowercase() == needle.to_lowercase(),
+            (false, true) => self.strip_marks(&substr) == self.strip_marks(&needle),
+            (true, true) => {
+                self.strip_marks(&substr).to_lowercase()
+                    == self.strip_marks(&needle).to_lowercase()
+            }
+        };
+        Ok(Value::Bool(eq))
     }
 
     pub(super) fn dispatch_substr(
@@ -1067,7 +1098,7 @@ impl Interpreter {
         })
     }
 
-    /// Resolve a position argument to an i64, handling Int, Num, Rat, WhateverCode/Sub.
+    /// Resolve a position argument to an i64, handling Int, Num, Rat, BigInt, WhateverCode/Sub.
     pub(crate) fn substr_resolve_position(
         &mut self,
         pos: &Value,
@@ -1077,6 +1108,15 @@ impl Interpreter {
             Value::Int(i) => Ok(*i),
             Value::Num(f) => Ok(*f as i64),
             Value::Rat(n, d) if *d != 0 => Ok(*n / *d),
+            Value::BigInt(b) => {
+                if b.as_ref() > &num_bigint::BigInt::from(i64::MAX)
+                    || b.as_ref() < &num_bigint::BigInt::from(i64::MIN)
+                {
+                    Err(self.out_of_range_error(Value::bigint((**b).clone())))
+                } else {
+                    Ok(b.to_string().parse::<i64>().unwrap_or(0))
+                }
+            }
             Value::Sub { .. } => {
                 // WhateverCode/Callable: call with total_len to resolve position
                 let result =
