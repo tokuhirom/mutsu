@@ -286,7 +286,24 @@ fn try_parse_scientific(body: &str, sign: i32) -> Option<Value> {
     if exp_clean.is_empty() || !exp_clean.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
-    let exp_val: i32 = exp_clean.parse().ok()?;
+    // If the exponent is too large for i32, the result overflows to Inf/0.0
+    let exp_val: i32 = match exp_clean.parse() {
+        Ok(v) => v,
+        Err(_) => {
+            // Exponent too large -- result is Inf or 0
+            let result = if exp_sign > 0 {
+                if sign < 0 {
+                    f64::NEG_INFINITY
+                } else {
+                    f64::INFINITY
+                }
+            } else {
+                // Huge negative exponent → 0.0
+                if sign < 0 { -0.0 } else { 0.0 }
+            };
+            return Some(Value::Num(result));
+        }
+    };
     let exp = exp_sign * exp_val;
 
     let result = mantissa * 10f64.powi(exp);

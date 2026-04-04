@@ -421,7 +421,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             }
             Some(Ok(match arg {
                 Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
-                Value::Num(f) => Value::Int(f.floor() as i64),
+                Value::Num(f) => Value::Num(f.floor()),
                 Value::Int(i) => Value::Int(*i),
                 Value::Rat(n, d) if *d != 0 => {
                     let q = *n / *d;
@@ -441,7 +441,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             }
             Some(Ok(match arg {
                 Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
-                Value::Num(f) => Value::Int(f.ceil() as i64),
+                Value::Num(f) => Value::Num(f.ceil()),
                 Value::Int(i) => Value::Int(*i),
                 Value::Rat(n, d) if *d != 0 => {
                     let q = *n / *d;

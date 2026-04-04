@@ -936,7 +936,13 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
                 (Value::BigInt(a), Value::BigInt(b)) => {
                     Value::from_bigint(num_integer::Integer::mod_floor(a.as_ref(), b.as_ref()))
                 }
+                (Value::Num(_), Value::Num(0.0)) => {
+                    return Err(RuntimeError::numeric_divide_by_zero_full(None, Some("%")));
+                }
                 (Value::Num(a), Value::Num(b)) => Value::Num(float_mod_floor(a, b)),
+                (_, Value::Num(0.0)) => {
+                    return Err(RuntimeError::numeric_divide_by_zero_full(None, Some("%")));
+                }
                 (Value::Int(a), Value::Num(b)) => Value::Num(float_mod_floor(a as f64, b)),
                 (Value::Num(a), Value::Int(b)) => Value::Num(float_mod_floor(a, b as f64)),
                 _ => Value::Int(0),
@@ -968,7 +974,13 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
             (Value::BigInt(a), Value::BigInt(b)) => {
                 Value::from_bigint(num_integer::Integer::mod_floor(a.as_ref(), b.as_ref()))
             }
+            (Value::Num(_), Value::Num(0.0)) => {
+                return Err(RuntimeError::numeric_divide_by_zero_full(None, Some("%")));
+            }
             (Value::Num(a), Value::Num(b)) => Value::Num(float_mod_floor(a, b)),
+            (_, Value::Num(0.0)) => {
+                return Err(RuntimeError::numeric_divide_by_zero_full(None, Some("%")));
+            }
             (Value::Int(a), Value::Num(b)) => Value::Num(float_mod_floor(a as f64, b)),
             (Value::Num(a), Value::Int(b)) => Value::Num(float_mod_floor(a, b as f64)),
             _ => Value::Int(0),

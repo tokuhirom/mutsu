@@ -414,11 +414,29 @@ pub(super) fn is_raku_identifier_start(c: char) -> bool {
     c == '_' || (c.is_alphabetic() && !c.is_numeric())
 }
 
-/// Raku identifier continuation: start chars, decimal digits, and combining marks.
+/// Raku identifier continuation: start chars, numeric chars (excluding superscript
+/// digits which are used as postfix exponentiation operators), and combining marks.
 pub(super) fn is_raku_identifier_continue(c: char) -> bool {
     is_raku_identifier_start(c)
-        || c.is_numeric()
+        || (c.is_numeric() && !is_superscript_digit(c))
         || unicode_normalization::char::is_combining_mark(c)
+}
+
+/// Check if a character is a superscript digit (used for postfix exponentiation).
+/// These must NOT be treated as identifier continuation characters so that
+/// `$x²` parses as `$x ** 2` rather than variable `$x²`.
+fn is_superscript_digit(c: char) -> bool {
+    matches!(
+        c,
+        '\u{2070}'          // ⁰
+        | '\u{00B9}'        // ¹
+        | '\u{00B2}'        // ²
+        | '\u{00B3}'        // ³
+        | '\u{2074}'
+            ..='\u{2079}'  // ⁴⁵⁶⁷⁸⁹
+        | '\u{207A}'        // ⁺
+        | '\u{207B}' // ⁻
+    )
 }
 
 /// Normalize an identifier using canonical composition only (NFC).
