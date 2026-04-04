@@ -931,6 +931,7 @@ roast/S32-str/bool.t
 roast/S32-str/capitalize.t
 roast/S32-str/chomp.t
 roast/S32-str/chop.t
+roast/S32-str/comb.t
 roast/S32-str/contains.t
 roast/S32-str/ends-with.t
 roast/S32-str/fc.t
