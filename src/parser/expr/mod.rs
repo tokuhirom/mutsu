@@ -1371,6 +1371,18 @@ mod tests {
     }
 
     #[test]
+    fn parse_dynamic_pseudostash_dot_angle_with_dynamic_var() {
+        let (rest, expr) = expression("DYNAMIC::.<$*x80>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Index { target, index }
+                if matches!(target.as_ref(), Expr::PseudoStash(s) if s.as_str() == "DYNAMIC::")
+                && matches!(index.as_ref(), Expr::Literal(Value::Str(s)) if s.as_str() == "$*x80")
+        ));
+    }
+
+    #[test]
     fn expression_memo_reuses_result() {
         reset_expression_memo();
         let (rest, expr) = expression("1 + 2").unwrap();
