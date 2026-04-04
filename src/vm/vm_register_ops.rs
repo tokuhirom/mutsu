@@ -334,6 +334,19 @@ impl VM {
                     custom_traits,
                 )?;
             }
+            // In Raku, a named sub declaration evaluates to the Sub value.
+            // Push the Sub value so it can serve as a return value when the
+            // declaration is the last statement in a block/function.
+            let sub_val = Value::make_sub(
+                crate::symbol::Symbol::intern(self.interpreter.current_package()),
+                crate::symbol::Symbol::intern(&resolved_name),
+                params.clone(),
+                param_defs.clone(),
+                body.clone(),
+                *is_rw,
+                self.interpreter.env().clone(),
+            );
+            self.stack.push(sub_val);
             Ok(())
         } else {
             Err(RuntimeError::new("RegisterSub expects SubDecl"))

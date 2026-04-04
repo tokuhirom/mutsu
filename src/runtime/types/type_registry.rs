@@ -393,4 +393,19 @@ impl Interpreter {
         // This handles cases like user-defined enum types that may not be registered as classes
         false
     }
+
+    /// Resolve the ultimate base type of a constraint, following subset chains.
+    /// Returns the constraint itself if it is not a subset type.
+    pub(crate) fn resolve_subset_base_type<'a>(&'a self, constraint: &'a str) -> &'a str {
+        let mut current = constraint;
+        // Follow subset chain up to a reasonable depth to avoid cycles
+        for _ in 0..20 {
+            if let Some(subset) = self.subsets.get(current) {
+                current = &subset.base;
+            } else {
+                break;
+            }
+        }
+        current
+    }
 }

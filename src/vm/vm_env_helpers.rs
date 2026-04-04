@@ -229,7 +229,11 @@ impl VM {
         // bare variable name in the environment.
         if let Some(bare) = Self::pseudo_package_unqualified_name(name) {
             self.interpreter.env_mut().insert(bare, value);
+            return;
         }
+        // Fallback: always insert bare names (e.g. "a", "x") into env so they
+        // are visible to closure captures and where-constraint evaluation.
+        self.interpreter.env_mut().insert(name.to_string(), value);
     }
 
     pub(super) fn sync_locals_from_env(&mut self, code: &CompiledCode) {

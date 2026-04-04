@@ -297,10 +297,15 @@ impl Interpreter {
                 return self.nominal_type_object_name_for_constraint(&resolved);
             }
         }
-        if let Some(subset) = self.subsets.get(&base_name)
-            && subset.base != base_name
-        {
-            return self.nominal_type_object_name_for_constraint(&subset.base);
+        if let Some(subset) = self.subsets.get(&base_name) {
+            if language_version_is_6e_or_newer(&subset.version) {
+                // In v6.e, the default for a subset variable is the base type's
+                // type object (the subset's "nominalization").
+                return self.nominal_type_object_name_for_constraint(&subset.base);
+            }
+            // In pre-6.e, the default for a subset variable is the subset
+            // type object itself.
+            return base_name;
         }
         base_name
     }

@@ -312,6 +312,27 @@ impl VM {
             let result = self.try_compiled_method_or_interpret(callable, "CALL-ME", args);
             self.interpreter.maybe_fetch_rw_proxy(result?, true)
         } else {
+            // Check if there's a lexical &name binding (e.g., `my &bar := ...`)
+            // that should take precedence over the registered function.
+            // Only use the lexical binding if it's a Sub value (closure) that
+            // was explicitly bound (has a non-empty env), distinguishing it
+            // from the &name entries automatically created by RegisterSub.
+            let amp_name = format!("&{}", name);
+            let lexical_sub = self.get_env_with_main_alias(&amp_name).and_then(|v| {
+                if let Value::Sub(ref sd) = v
+                    && !sd.env.is_empty()
+                {
+                    return Some(v);
+                }
+                None
+            });
+            if let Some(sub_val) = lexical_sub {
+                // Lexical &name binding takes precedence over registered function.
+                // TODO: compile to bytecode - use compiled closure dispatch
+                // instead of interpreter fallback for better performance.
+                let result = self.interpreter.call_sub_value(sub_val, args, false)?;
+                return self.interpreter.maybe_fetch_rw_proxy(result, true);
+            }
             self.interpreter
                 .set_pending_call_arg_sources(arg_sources.clone());
             let compiled = if !self.interpreter.has_proto(name) {
