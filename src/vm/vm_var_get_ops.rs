@@ -147,21 +147,10 @@ impl VM {
             || Interpreter::is_implicit_zero_arg_builtin(name)
             || self.interpreter.has_multi_function(name)
         {
-            // User-defined functions (with non-empty body in the function registry)
-            // shadow native builtins. Check if there's a user definition first.
-            let has_user_def = self
-                .interpreter
-                .resolve_function_with_types(name, &[])
-                .is_some_and(|def| !def.body.is_empty());
             if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
                 let pkg = self.interpreter.current_package().to_string();
                 let result =
                     self.call_compiled_function_named(cf, Vec::new(), compiled_fns, &pkg, name)?;
-                self.env_dirty = true;
-                result
-            } else if has_user_def {
-                // User-defined function takes priority over native builtins
-                let result = self.interpreter.call_function_fallback(name, &[])?;
                 self.env_dirty = true;
                 result
             } else if let Some(native_result) =
