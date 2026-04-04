@@ -319,7 +319,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
                 let keys: Vec<Value> = indexed
                     .into_iter()
-                    .map(|(idx, _)| Value::array(idx.into_iter().map(Value::Int).collect()))
+                    .map(|(idx, _)| {
+                        if idx.len() == 1 {
+                            Value::Int(idx[0])
+                        } else {
+                            Value::array(idx.into_iter().map(Value::Int).collect())
+                        }
+                    })
                     .collect();
                 return Some(Ok(Value::array(keys)));
             }
@@ -389,7 +395,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
                 let mut kv = Vec::with_capacity(indexed.len() * 2);
                 for (idx, val) in indexed {
-                    kv.push(Value::array(idx.into_iter().map(Value::Int).collect()));
+                    if idx.len() == 1 {
+                        kv.push(Value::Int(idx[0]));
+                    } else {
+                        kv.push(Value::array(idx.into_iter().map(Value::Int).collect()));
+                    }
                     kv.push(val);
                 }
                 return Some(Ok(Value::array(kv)));
@@ -462,7 +472,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 let pairs: Vec<Value> = indexed
                     .into_iter()
                     .map(|(idx, val)| {
-                        let key = Value::array(idx.into_iter().map(Value::Int).collect());
+                        let key = if idx.len() == 1 {
+                            Value::Int(idx[0])
+                        } else {
+                            Value::array(idx.into_iter().map(Value::Int).collect())
+                        };
                         Value::ValuePair(Box::new(key), Box::new(val))
                     })
                     .collect();
@@ -539,7 +553,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 let pairs: Vec<Value> = indexed
                     .into_iter()
                     .map(|(idx, val)| {
-                        let key = Value::array(idx.into_iter().map(Value::Int).collect());
+                        let key = if idx.len() == 1 {
+                            Value::Int(idx[0])
+                        } else {
+                            Value::array(idx.into_iter().map(Value::Int).collect())
+                        };
                         make_inverted_pair(val, key)
                     })
                     .collect();

@@ -884,6 +884,7 @@ roast/S32-list/grep-p.t
 roast/S32-list/grep-v.t
 roast/S32-list/grep.t
 roast/S32-list/grep.t
+roast/S32-list/iterator.t
 roast/S32-list/join.t
 roast/S32-list/map.t
 roast/S32-list/map_function_return_values.t
