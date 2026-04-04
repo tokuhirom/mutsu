@@ -29,7 +29,34 @@ impl Interpreter {
                 }
             }
         };
+        // When either operand is a Junction, thread the comparison through it.
+        // cmp-ok checks the boolean truthiness of the resulting junction.
+        let has_junction =
+            matches!(&left, Value::Junction { .. }) || matches!(&right, Value::Junction { .. });
         let ok = match &op_val {
+            Value::Str(op)
+                if has_junction
+                    && matches!(
+                        op.as_str(),
+                        "==" | "!="
+                            | "<"
+                            | "<="
+                            | ">"
+                            | ">="
+                            | "eq"
+                            | "ne"
+                            | "lt"
+                            | "le"
+                            | "gt"
+                            | "ge"
+                            | "==="
+                            | "!=="
+                            | "eqv"
+                    ) =>
+            {
+                let result = Self::cmp_ok_junction_thread(&left, &right, op);
+                result.truthy()
+            }
             Value::Str(op) => match op.as_str() {
                 "~~" => self.smart_match(&left, &right),
                 "!~~" => !self.smart_match(&left, &right),
@@ -94,6 +121,43 @@ impl Interpreter {
             eprint!("{}", diag);
         }
         Ok(Value::Bool(ok))
+    }
+
+    /// Thread a comparison operator through junctions for cmp-ok.
+    fn cmp_ok_junction_thread(left: &Value, right: &Value, op: &str) -> Value {
+        if let Value::Junction { kind, values } = left {
+            let results: Vec<Value> = values
+                .iter()
+                .map(|v| Self::cmp_ok_junction_thread(v, right, op))
+                .collect();
+            return Value::junction(kind.clone(), results);
+        }
+        if let Value::Junction { kind, values } = right {
+            let results: Vec<Value> = values
+                .iter()
+                .map(|v| Self::cmp_ok_junction_thread(left, v, op))
+                .collect();
+            return Value::junction(kind.clone(), results);
+        }
+        let ok = match op {
+            "==" => super::super::to_float_value(left) == super::super::to_float_value(right),
+            "!=" => super::super::to_float_value(left) != super::super::to_float_value(right),
+            "<" => super::super::to_float_value(left) < super::super::to_float_value(right),
+            "<=" => super::super::to_float_value(left) <= super::super::to_float_value(right),
+            ">" => super::super::to_float_value(left) > super::super::to_float_value(right),
+            ">=" => super::super::to_float_value(left) >= super::super::to_float_value(right),
+            "eq" => left.to_string_value() == right.to_string_value(),
+            "ne" => left.to_string_value() != right.to_string_value(),
+            "lt" => left.to_string_value() < right.to_string_value(),
+            "le" => left.to_string_value() <= right.to_string_value(),
+            "gt" => left.to_string_value() > right.to_string_value(),
+            "ge" => left.to_string_value() >= right.to_string_value(),
+            "===" => crate::runtime::utils::values_identical(left, right),
+            "!==" => !crate::runtime::utils::values_identical(left, right),
+            "eqv" => Self::cmp_eqv_bool(left, right),
+            _ => false,
+        };
+        Value::Bool(ok)
     }
 
     pub(crate) fn test_fn_like(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

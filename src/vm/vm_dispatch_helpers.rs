@@ -98,6 +98,10 @@ impl VM {
             }
             return Ok(Value::array(results));
         }
+        // Thread junctions through arithmetic/comparison reduction ops
+        if matches!(left, Value::Junction { .. }) || matches!(right, Value::Junction { .. }) {
+            return self.eval_reduction_op_with_junctions(op, left.clone(), right.clone());
+        }
         let normalized_op = if op == "\u{2218}" { "o" } else { op };
         match Interpreter::apply_reduction_op(normalized_op, left, right) {
             Ok(v) => Ok(v),
@@ -383,5 +387,32 @@ impl VM {
             *cache = Some(result.clone());
         }
         Ok(result)
+    }
+
+    /// Thread a reduction operator through junctions.
+    fn eval_reduction_op_with_junctions(
+        &mut self,
+        op: &str,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, RuntimeError> {
+        if let Value::Junction { kind, values } = left {
+            let results: Result<Vec<Value>, RuntimeError> = values
+                .iter()
+                .cloned()
+                .map(|v| self.eval_reduction_op_with_junctions(op, v, right.clone()))
+                .collect();
+            return Ok(Value::junction(kind, results?));
+        }
+        if let Value::Junction { kind, values } = right {
+            let results: Result<Vec<Value>, RuntimeError> = values
+                .iter()
+                .cloned()
+                .map(|v| self.eval_reduction_op_with_junctions(op, left.clone(), v))
+                .collect();
+            return Ok(Value::junction(kind, results?));
+        }
+        let normalized_op = if op == "\u{2218}" { "o" } else { op };
+        Interpreter::apply_reduction_op(normalized_op, &left, &right)
     }
 }

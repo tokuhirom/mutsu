@@ -408,12 +408,10 @@ impl Interpreter {
             Value::Seq(items) | Value::Slip(items) => {
                 self.eval_grep_with_adverb(args.first().cloned(), items.to_vec(), &grep_adverb)
             }
-            other => match grep_adverb {
-                GrepAdverb::K => Ok(Value::Int(0)),
-                GrepAdverb::Kv => Ok(Value::array(vec![Value::Int(0), other])),
-                GrepAdverb::P => Ok(Value::Pair("0".to_string(), Box::new(other))),
-                GrepAdverb::V => Ok(other),
-            },
+            other => {
+                // Treat any other value as a single-element list for grep
+                self.eval_grep_with_adverb(args.first().cloned(), vec![other], &grep_adverb)
+            }
         }
     }
 

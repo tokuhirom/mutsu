@@ -1208,6 +1208,44 @@ impl VM {
                 ));
             }
         }
+        // Immutable List/Range containers - prevent assignment and binding
+        if let Some(target_val) = self.interpreter.env().get(&var_name) {
+            let is_immutable = matches!(
+                target_val,
+                Value::Array(_, crate::value::ArrayKind::List)
+                    | Value::Array(_, crate::value::ArrayKind::ItemList)
+                    | Value::Range(..)
+                    | Value::RangeExcl(..)
+                    | Value::RangeExclStart(..)
+                    | Value::RangeExclBoth(..)
+                    | Value::GenericRange { .. }
+            );
+            if is_immutable {
+                if bind_mode {
+                    return Err(RuntimeError::typed(
+                        "X::Bind",
+                        [("target".to_string(), Value::str(var_name.clone()))]
+                            .into_iter()
+                            .collect(),
+                    ));
+                }
+                let type_name = match target_val {
+                    Value::Array(..) => "List",
+                    _ => "Range",
+                };
+                let display = target_val.to_string_value();
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert(
+                    "message".to_string(),
+                    Value::str(format!(
+                        "Cannot modify an immutable {} ({})",
+                        type_name, display
+                    )),
+                );
+                attrs.insert("value".to_string(), target_val.clone());
+                return Err(RuntimeError::typed("X::Assignment::RO", attrs));
+            }
+        }
         let encoded_idx = Self::encode_bound_index(&idx);
         let is_bound_index = if bind_mode {
             self.is_bound_index(&var_name, &encoded_idx)

@@ -1487,6 +1487,35 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
             Some(Ok(Value::Seq(std::sync::Arc::new(result))))
         }
         "sum" => {
+            // If any argument (or element inside an array arg) is a Junction,
+            // fold with junction-aware addition
+            let has_junction = args.iter().any(|a| match a {
+                Value::Junction { .. } => true,
+                Value::Array(items, ..) | Value::Seq(items) => {
+                    items.iter().any(|v| matches!(v, Value::Junction { .. }))
+                }
+                _ => false,
+            });
+            if has_junction {
+                let items: Vec<Value> = args
+                    .iter()
+                    .flat_map(|a| match a {
+                        Value::Array(items, ..) | Value::Seq(items) => {
+                            items.iter().cloned().collect::<Vec<_>>()
+                        }
+                        other => vec![other.clone()],
+                    })
+                    .collect();
+                let result = items.into_iter().try_fold(
+                    Value::Int(0),
+                    |acc, item| -> Result<Value, RuntimeError> {
+                        crate::builtins::methods_0arg::collection::add_with_junction_threading(
+                            acc, item,
+                        )
+                    },
+                );
+                return Some(result);
+            }
             let mut total: i64 = 0;
             let mut has_num = false;
             let mut total_f: f64 = 0.0;
