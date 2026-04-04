@@ -292,7 +292,7 @@ impl Interpreter {
 }
 
 /// Raku `val()` builtin: convert a string into an allomorphic type.
-pub(super) fn builtin_val(args: &[Value]) -> Value {
+pub(crate) fn builtin_val(args: &[Value]) -> Value {
     let arg = match args.first() {
         Some(v) => v,
         None => return Value::Nil,

@@ -944,9 +944,12 @@ fn parse_quote_word_list<'a>(
         let expr = angle_word_expr(words[0]);
         // Single-word angle brackets: <7+8i> produces plain Complex, not ComplexStr
         // and <2/3> produces plain Rat, not RatStr.
+        // However, if the original content had surrounding whitespace (e.g. <01.0+42i >),
+        // keep the allomorphic ComplexStr form.
+        let has_whitespace = content.trim() != content;
         let expr = match expr {
             Expr::Literal(Value::Mixin(inner, _))
-                if matches!(inner.as_ref(), Value::Complex(..)) =>
+                if matches!(inner.as_ref(), Value::Complex(..)) && !has_whitespace =>
             {
                 Expr::Literal(inner.as_ref().clone())
             }

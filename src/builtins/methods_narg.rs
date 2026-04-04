@@ -19,6 +19,89 @@ use num_traits::{ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// ACCEPTS for allomorphic types (IntStr, RatStr, NumStr, ComplexStr).
+/// The allomorph (target) accepts the argument if:
+/// - arg is a plain Str: Str parts are equal
+/// - arg is numeric (not allomorph, not Str): numeric parts are equal (==)
+/// - arg is allomorphic: numeric parts are equal (==)
+/// - arg has .Numeric (custom class): numeric parts are equal (==)
+fn allomorph_accepts(target: &Value, arg: &Value) -> Option<bool> {
+    let Value::Mixin(target_inner, target_mixins) = target else {
+        return Some(false);
+    };
+    let target_str = target_mixins
+        .get("Str")
+        .map(|v| v.to_string_value())
+        .unwrap_or_default();
+
+    // Unwrap Scalar
+    let arg = match arg {
+        Value::Scalar(inner) => inner.as_ref(),
+        other => other,
+    };
+
+    match arg {
+        // Plain string: compare with the Str part
+        Value::Str(s) => Some(**s == target_str),
+        // Allomorphic argument: compare numeric parts
+        Value::Mixin(arg_inner, arg_mixins) if arg_mixins.contains_key("Str") => {
+            Some(allomorph_values_numerically_equal(target_inner, arg_inner))
+        }
+        // Numeric types: compare with the numeric part
+        Value::Int(_)
+        | Value::BigInt(_)
+        | Value::Num(_)
+        | Value::Rat(_, _)
+        | Value::FatRat(_, _)
+        | Value::BigRat(_, _)
+        | Value::Complex(_, _)
+        | Value::Bool(_) => Some(allomorph_values_numerically_equal(target_inner, arg)),
+        // Instance (custom class with .Numeric): needs interpreter to call methods
+        Value::Instance { .. } => None,
+        _ => Some(false),
+    }
+}
+
+/// Check if two values are numerically equal (like Raku's == operator).
+fn allomorph_values_numerically_equal(a: &Value, b: &Value) -> bool {
+    let a_f = allomorph_value_to_f64(a);
+    let b_f = allomorph_value_to_f64(b);
+    match (a_f, b_f) {
+        (Some(af), Some(bf)) => {
+            // Handle Complex: both real and imaginary must match
+            if let (Value::Complex(ar, ai), Value::Complex(br, bi)) = (a, b) {
+                return (ar - br).abs() < 1e-15 && (ai - bi).abs() < 1e-15;
+            }
+            // For Complex vs non-Complex
+            if let Value::Complex(ar, ai) = a {
+                return (ar - bf).abs() < 1e-15 && ai.abs() < 1e-15;
+            }
+            if let Value::Complex(br, bi) = b {
+                return (af - br).abs() < 1e-15 && bi.abs() < 1e-15;
+            }
+            (af - bf).abs() < 1e-15
+        }
+        _ => false,
+    }
+}
+
+fn allomorph_value_to_f64(v: &Value) -> Option<f64> {
+    match v {
+        Value::Int(i) => Some(*i as f64),
+        Value::BigInt(n) => n.to_f64(),
+        Value::Num(f) => Some(*f),
+        Value::Rat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+        Value::FatRat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
+        Value::BigRat(n, d) if !d.is_zero() => {
+            Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
+        }
+        Value::Complex(r, _) => Some(*r),
+        Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
+        Value::Mixin(inner, _) => allomorph_value_to_f64(inner),
+        _ => None,
+    }
+}
+
 /// Raku's Str.indent($steps) method implementation.
 /// $?TABSTOP is hardcoded to 8.
 fn str_indent(s: &str, arg: &Value) -> String {
@@ -582,6 +665,11 @@ pub(crate) fn native_method_1arg(
         }
     }
     match method {
+        // ACCEPTS for allomorphic types (IntStr, RatStr, NumStr, ComplexStr)
+        "ACCEPTS" if matches!(target, Value::Mixin(_, m) if m.contains_key("Str")) => {
+            // Instance args need the interpreter to call .Numeric, so return None
+            allomorph_accepts(target, arg).map(|result| Ok(Value::Bool(result)))
+        }
         // ACCEPTS for Range: value ~~ Range containment, Range ~~ Range subset
         "ACCEPTS" if target.is_range() => {
             let result = if arg.is_range() {
