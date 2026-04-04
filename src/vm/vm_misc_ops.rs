@@ -1684,11 +1684,32 @@ impl VM {
         // When the constraint is a container type (List, Array, Positional, Seq, Cool, Any, Mu),
         // an Array value directly satisfies it — do NOT descend into element-level matching.
         // Element-level matching is for declarations like `my Int @x = 1, 2, 3`.
-        if let Value::Array(..) = &value
-            && !matches!(
-                declared_constraint,
-                "List" | "Array" | "Positional" | "Seq" | "Cool" | "Any" | "Mu" | "Iterable"
+        // Also skip element-level matching for subset types whose base type is a container type
+        // (e.g., `subset NumArray of Array where { ... }`).
+        let is_container_constraint = matches!(
+            declared_constraint,
+            "List" | "Array" | "Positional" | "Seq" | "Cool" | "Any" | "Mu" | "Iterable"
+        ) || {
+            let ultimate_base = self
+                .interpreter
+                .resolve_subset_base_type(declared_constraint);
+            matches!(
+                ultimate_base,
+                "List"
+                    | "Array"
+                    | "Positional"
+                    | "Seq"
+                    | "Cool"
+                    | "Any"
+                    | "Mu"
+                    | "Iterable"
+                    | "Hash"
+                    | "Map"
+                    | "Pair"
             )
+        };
+        if let Value::Array(..) = &value
+            && !is_container_constraint
         {
             if !self.array_elements_match_constraint(constraint, &value) {
                 return Err(RuntimeError::typed_msg(
