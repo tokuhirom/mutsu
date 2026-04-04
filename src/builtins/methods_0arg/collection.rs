@@ -727,6 +727,16 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         },
         "sum" => match target {
             Value::Array(items, ..) => {
+                // If any item is a Junction, fold with junction-aware addition
+                if items.iter().any(|v| matches!(v, Value::Junction { .. })) {
+                    let result = items.iter().cloned().try_fold(
+                        Value::Int(0),
+                        |acc, item| -> Result<Value, RuntimeError> {
+                            add_with_junction_threading(acc, item)
+                        },
+                    );
+                    return Some(result);
+                }
                 // Check for non-numeric strings first
                 for item in items.iter() {
                     if let Value::Str(s) = item {
@@ -950,4 +960,29 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         }
         _ => None,
     }
+}
+
+/// Add two values with junction threading support.
+/// Used by `.sum` to correctly fold arrays containing junctions.
+pub(crate) fn add_with_junction_threading(
+    left: Value,
+    right: Value,
+) -> Result<Value, RuntimeError> {
+    if let Value::Junction { kind, values } = left {
+        let results: Result<Vec<Value>, RuntimeError> = values
+            .iter()
+            .cloned()
+            .map(|v| add_with_junction_threading(v, right.clone()))
+            .collect();
+        return Ok(Value::junction(kind, results?));
+    }
+    if let Value::Junction { kind, values } = right {
+        let results: Result<Vec<Value>, RuntimeError> = values
+            .iter()
+            .cloned()
+            .map(|v| add_with_junction_threading(left.clone(), v))
+            .collect();
+        return Ok(Value::junction(kind, results?));
+    }
+    crate::builtins::arith_add(left, right)
 }

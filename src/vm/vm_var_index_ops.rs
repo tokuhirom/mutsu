@@ -179,7 +179,12 @@ impl VM {
                             None
                         };
                         let effective_idx = resolved_idx.as_ref().unwrap_or(idx);
-                        if let Some(i) = Self::index_to_usize(effective_idx) {
+                        // Range index in a multi-index context produces a sublist
+                        if let Some(range_items) =
+                            Self::resolve_range_index_slice(effective_idx, items, *kind, len, self)
+                        {
+                            out.push(Value::array(range_items));
+                        } else if let Some(i) = Self::index_to_usize(effective_idx) {
                             if is_lazy_index && i >= items.len() {
                                 // Lazy index: stop at array boundary
                                 break;
@@ -1162,5 +1167,45 @@ fn range_params(v: &Value) -> Option<(i64, i64, bool, bool)> {
             Some((s, e, *excl_start, *excl_end))
         }
         _ => None,
+    }
+}
+
+impl VM {
+    /// When indexing an array with a multi-index list (e.g. `@a[0..2, 0..2]`),
+    /// check if an individual index element is a Range and, if so, resolve it
+    /// to a sublist (slice). Returns `None` if the index is not a range.
+    pub(super) fn resolve_range_index_slice(
+        idx: &Value,
+        items: &std::sync::Arc<Vec<Value>>,
+        kind: crate::value::ArrayKind,
+        _len: i64,
+        vm: &mut VM,
+    ) -> Option<Vec<Value>> {
+        let (start, end, excl_end) = match idx {
+            Value::Range(a, b) => (*a, *b, false),
+            Value::RangeExcl(a, b) => (*a, *b, true),
+            Value::RangeExclStart(a, b) => (a + 1, *b, false),
+            Value::RangeExclBoth(a, b) => (a + 1, *b, true),
+            Value::GenericRange {
+                start,
+                end,
+                excl_start,
+                excl_end,
+            } => {
+                let s = start.to_f64() as i64 + if *excl_start { 1 } else { 0 };
+                let e = end.to_f64() as i64;
+                (s, e, *excl_end)
+            }
+            _ => return None,
+        };
+        let actual_end = if excl_end { end } else { end + 1 };
+        let start = start.max(0) as usize;
+        let actual_end = (actual_end.max(0) as usize).min(items.len());
+        let default = vm.typed_container_default(&Value::Array(items.clone(), kind));
+        let mut result = Vec::new();
+        for i in start..actual_end {
+            result.push(vm.resolve_array_entry(items, kind, i, default.clone()));
+        }
+        Some(result)
     }
 }
