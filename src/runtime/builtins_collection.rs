@@ -1395,9 +1395,21 @@ impl Interpreter {
             None
         };
         let mut list_items = Vec::new();
-        for arg in args.iter().skip(1) {
-            if crate::runtime::utils::is_shaped_array(arg) {
+        for (idx, arg) in args.iter().skip(1).enumerate() {
+            // Check if this argument came from a $ variable (itemized container).
+            // Scalar variables don't have a sigil prefix in arg_sources, while
+            // @array and %hash variables start with '@' and '%' respectively.
+            let is_itemized = arg_sources
+                .get(idx + 1)
+                .and_then(|entry| entry.as_ref())
+                .is_some_and(|name| {
+                    !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&')
+                });
+            if !is_itemized && crate::runtime::utils::is_shaped_array(arg) {
                 list_items.extend(crate::runtime::utils::shaped_array_leaves(arg));
+            } else if is_itemized {
+                // Itemized containers (from $ variables) are NOT flattened
+                list_items.push(arg.clone());
             } else {
                 match arg {
                     Value::Array(items, ..) | Value::Seq(items) => {
