@@ -155,12 +155,16 @@ impl Interpreter {
 
     pub(super) fn builtin_lc(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let val = args.first().cloned().unwrap_or(Value::Nil);
-        Ok(Value::str(val.to_string_value().to_lowercase()))
+        Ok(Value::str(crate::builtins::unicode::grapheme_lowercase(
+            &val.to_string_value(),
+        )))
     }
 
     pub(super) fn builtin_uc(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let val = args.first().cloned().unwrap_or(Value::Nil);
-        Ok(Value::str(val.to_string_value().to_uppercase()))
+        Ok(Value::str(crate::builtins::unicode::grapheme_uppercase(
+            &val.to_string_value(),
+        )))
     }
 
     pub(super) fn builtin_tc(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -168,19 +172,7 @@ impl Interpreter {
             .first()
             .map(|v| v.to_string_value())
             .unwrap_or_default();
-        let mut result = String::new();
-        let mut capitalize = true;
-        for ch in val.chars() {
-            if capitalize {
-                for c in ch.to_uppercase() {
-                    result.push(c);
-                }
-                capitalize = false;
-            } else {
-                result.push(ch);
-            }
-        }
-        Ok(Value::str(result))
+        Ok(Value::str(crate::builtins::unicode::titlecase_string(&val)))
     }
 
     pub(super) fn builtin_trim(&self, args: &[Value]) -> Result<Value, RuntimeError> {
