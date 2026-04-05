@@ -740,12 +740,40 @@ impl VM {
                 let has_init_values = match &current_val {
                     Some(Value::Hash(h)) => !h.is_empty(),
                     Some(Value::Array(a, _)) => !a.is_empty(),
+                    // Already converted to a QuantHash by type constraint coercion
+                    Some(Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)) => true,
                     _ => false,
                 };
                 let instance = if has_init_values {
                     let init_val = current_val.unwrap();
-                    // Convert initial values to the target QuantHash type
-                    self.try_compiled_method_or_interpret(init_val, &trait_name, vec![])?
+                    // If already the target QuantHash type, use it directly
+                    let already_target = matches!(
+                        (&init_val, trait_name.as_str()),
+                        (Value::Mix(_, _), "MixHash" | "Mix")
+                            | (Value::Bag(_, _), "BagHash" | "Bag")
+                            | (Value::Set(_, _), "SetHash" | "Set")
+                    );
+                    if already_target {
+                        // Ensure mutability flag matches the trait
+                        match init_val {
+                            Value::Mix(data, _) => {
+                                let mutable = trait_name == "MixHash";
+                                Value::Mix(data, mutable)
+                            }
+                            Value::Bag(data, _) => {
+                                let mutable = trait_name == "BagHash";
+                                Value::Bag(data, mutable)
+                            }
+                            Value::Set(data, _) => {
+                                let mutable = trait_name == "SetHash";
+                                Value::Set(data, mutable)
+                            }
+                            other => other,
+                        }
+                    } else {
+                        // Convert initial values to the target QuantHash type
+                        self.try_compiled_method_or_interpret(init_val, &trait_name, vec![])?
+                    }
                 } else {
                     let type_obj = Value::Package(crate::symbol::Symbol::intern(&trait_name));
                     self.try_compiled_method_or_interpret(type_obj, "new", vec![])?
@@ -760,7 +788,10 @@ impl VM {
                 self.interpreter
                     .register_container_type_metadata(&instance, info);
                 self.locals_set_by_name(code, &name_str, instance.clone());
-                self.set_env_with_main_alias(&name_str, instance);
+                self.set_env_with_main_alias(&name_str, instance.clone());
+                // Set type constraint so future assignments are coerced correctly
+                self.interpreter
+                    .set_var_type_constraint(&name_str, Some(trait_name.clone()));
                 self.env_dirty = true;
                 return Ok(());
             }

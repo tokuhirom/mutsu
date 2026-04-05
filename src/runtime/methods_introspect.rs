@@ -49,9 +49,12 @@ impl Interpreter {
             Value::FatRat(_, _) => "FatRat",
             Value::BigRat(_, _) => "Rat",
             Value::Complex(_, _) => "Complex",
-            Value::Set(_, _) => "Set",
-            Value::Bag(_, _) => "Bag",
-            Value::Mix(_, _) => "Mix",
+            Value::Set(_, false) => "Set",
+            Value::Set(_, true) => "SetHash",
+            Value::Bag(_, false) => "Bag",
+            Value::Bag(_, true) => "BagHash",
+            Value::Mix(_, false) => "Mix",
+            Value::Mix(_, true) => "MixHash",
             Value::Pair(_, _) | Value::ValuePair(_, _) => "Pair",
             Value::Enum { enum_type, .. } => {
                 return Ok(Value::Package(Symbol::intern(&enum_type.resolve())));
