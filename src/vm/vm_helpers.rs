@@ -231,9 +231,9 @@ impl VM {
         let env_actually_changed = {
             let merged = self.interpreter.env();
             saved_env.iter().any(|(k, old_val)| {
-                merged.get(k).is_some_and(|new_val| {
-                    new_val.to_string_value() != old_val.to_string_value()
-                })
+                merged
+                    .get(k)
+                    .is_some_and(|new_val| new_val.to_string_value() != old_val.to_string_value())
             })
         };
 
