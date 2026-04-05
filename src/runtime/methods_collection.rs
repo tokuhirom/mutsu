@@ -63,80 +63,170 @@ impl Interpreter {
         Ok(Value::set(elems))
     }
 
+    /// Check if a value is lazy/infinite and cannot be coerced to a QuantHash.
+    pub(super) fn is_lazy_for_coerce(value: &Value) -> bool {
+        match value {
+            Value::LazyList(_) => true,
+            Value::Array(_, kind) if kind.is_lazy() => true,
+            Value::GenericRange { start, end, .. } => {
+                Self::is_infinite_endpoint(start) || Self::is_infinite_endpoint(end)
+            }
+            Value::Range(_, end)
+            | Value::RangeExcl(_, end)
+            | Value::RangeExclStart(_, end)
+            | Value::RangeExclBoth(_, end) => *end == i64::MAX,
+            _ => false,
+        }
+    }
+
+    fn is_infinite_endpoint(v: &Value) -> bool {
+        match v {
+            Value::Num(n) => n.is_infinite(),
+            Value::Rat(_, d) | Value::FatRat(_, d) => *d == 0,
+            Value::HyperWhatever => true,
+            _ => false,
+        }
+    }
+
     pub(super) fn dispatch_to_bag(&self, target: Value) -> Result<Value, RuntimeError> {
+        // Check for lazy/infinite inputs
+        if Self::is_lazy_for_coerce(&target) {
+            return Err(RuntimeError::cannot_lazy_what("Bag"));
+        }
         let mut counts: HashMap<String, i64> = HashMap::new();
         let mut original_keys: HashMap<String, Value> = HashMap::new();
-        let pair_weight = |v: &Value| -> i64 {
-            match v {
-                Value::Int(i) => *i,
-                Value::Num(n) => *n as i64,
-                Value::Rat(n, d) if *d != 0 => n / d,
-                Value::FatRat(n, d) if *d != 0 => n / d,
-                Value::Bool(b) => i64::from(*b),
-                _ => i64::from(v.truthy()),
-            }
-        };
-        let add_pair_key = |map: &mut HashMap<String, i64>, key: String, weight: i64| {
-            if weight > 0 {
-                // Pair value is the weight/count for the Bag entry
-                *map.entry(key).or_insert(0) += weight;
-            }
-        };
         let mut has_non_str_keys = false;
-        match target {
-            Value::Bag(_, _) => return Ok(target),
-            Value::Array(items, ..) => {
-                for item in items.iter() {
-                    match item {
-                        Value::Pair(k, v) => {
-                            add_pair_key(&mut counts, k.clone(), pair_weight(v));
-                        }
-                        Value::ValuePair(k, v) => {
-                            let str_key = k.to_string_value();
-                            if !matches!(k.as_ref(), Value::Str(_)) {
-                                has_non_str_keys = true;
-                                original_keys
-                                    .entry(str_key.clone())
-                                    .or_insert_with(|| k.as_ref().clone());
-                            }
-                            add_pair_key(&mut counts, str_key, pair_weight(v));
-                        }
-                        _ => {
-                            let str_key = item.to_string_value();
-                            if !matches!(item, Value::Str(_)) {
-                                has_non_str_keys = true;
-                                original_keys
-                                    .entry(str_key.clone())
-                                    .or_insert_with(|| item.clone());
-                            }
-                            *counts.entry(str_key).or_insert(0) += 1;
+
+        fn pair_weight(v: &Value) -> Result<i64, RuntimeError> {
+            match v {
+                Value::Int(i) => Ok(*i),
+                Value::Num(n) => {
+                    if n.is_nan() || n.is_infinite() {
+                        return Err(RuntimeError::new(format!(
+                            "X::Numeric::CannotConvert: Cannot convert {} to Int",
+                            v.to_string_value()
+                        )));
+                    }
+                    Ok(*n as i64)
+                }
+                Value::Rat(n, d) if *d != 0 => Ok(n / d),
+                Value::FatRat(n, d) if *d != 0 => Ok(n / d),
+                Value::Bool(b) => Ok(i64::from(*b)),
+                Value::Complex(_, _) => Err(RuntimeError::new(
+                    "X::Numeric::CannotConvert: Cannot convert Complex to Int".to_string(),
+                )),
+                Value::Str(s) => {
+                    // Strings must be numeric to be valid bag weights
+                    match s.parse::<i64>() {
+                        Ok(i) => Ok(i),
+                        Err(_) => Err(RuntimeError::new(format!(
+                            "X::Str::Numeric: Cannot convert string '{}' to a number",
+                            s
+                        ))),
+                    }
+                }
+                _ => Ok(i64::from(v.truthy())),
+            }
+        }
+
+        fn add_item(
+            counts: &mut HashMap<String, i64>,
+            original_keys: &mut HashMap<String, Value>,
+            has_non_str_keys: &mut bool,
+            item: &Value,
+        ) -> Result<(), RuntimeError> {
+            match item {
+                Value::Pair(k, v) => {
+                    let weight = pair_weight(v)?;
+                    if weight > 0 {
+                        *counts.entry(k.clone()).or_insert(0) += weight;
+                    }
+                }
+                Value::ValuePair(k, v) => {
+                    let str_key = k.to_string_value();
+                    if !matches!(k.as_ref(), Value::Str(_)) {
+                        *has_non_str_keys = true;
+                        original_keys
+                            .entry(str_key.clone())
+                            .or_insert_with(|| k.as_ref().clone());
+                    }
+                    let weight = pair_weight(v)?;
+                    if weight > 0 {
+                        *counts.entry(str_key).or_insert(0) += weight;
+                    }
+                }
+                _ => {
+                    let str_key = item.to_string_value();
+                    if !matches!(item, Value::Str(_)) {
+                        *has_non_str_keys = true;
+                        original_keys
+                            .entry(str_key.clone())
+                            .or_insert_with(|| item.clone());
+                    }
+                    *counts.entry(str_key).or_insert(0) += 1;
+                }
+            }
+            Ok(())
+        }
+
+        /// Flatten items from a value into the bag, recursing into arrays and hashes.
+        fn flatten_into(
+            counts: &mut HashMap<String, i64>,
+            original_keys: &mut HashMap<String, Value>,
+            has_non_str_keys: &mut bool,
+            value: &Value,
+        ) -> Result<(), RuntimeError> {
+            match value {
+                Value::Array(_, kind) if kind.is_itemized() => {
+                    add_item(counts, original_keys, has_non_str_keys, value)?;
+                }
+                Value::Array(items, ..) => {
+                    for item in items.iter() {
+                        add_item(counts, original_keys, has_non_str_keys, item)?;
+                    }
+                }
+                Value::Hash(h) => {
+                    for (k, v) in h.iter() {
+                        let weight = pair_weight(v)?;
+                        if weight > 0 {
+                            *counts.entry(k.clone()).or_insert(0) += weight;
                         }
                     }
                 }
-            }
-            Value::Set(s, _) => {
-                for k in s.iter() {
-                    counts.insert(k.clone(), 1);
+                Value::Set(s, _) => {
+                    for k in s.iter() {
+                        counts.insert(k.clone(), 1);
+                    }
+                }
+                Value::Mix(m, _) => {
+                    for (k, v) in m.iter() {
+                        counts.insert(k.clone(), *v as i64);
+                    }
+                }
+                Value::Bag(b, _) => {
+                    for (k, v) in b.iter() {
+                        *counts.entry(k.clone()).or_insert(0) += *v;
+                    }
+                }
+                other => {
+                    add_item(counts, original_keys, has_non_str_keys, other)?;
                 }
             }
-            Value::Mix(m, _) => {
-                for (k, v) in m.iter() {
-                    counts.insert(k.clone(), *v as i64);
-                }
+            Ok(())
+        }
+
+        match target {
+            Value::Bag(_, _) => return Ok(target),
+            Value::Pair(_, _) | Value::ValuePair(_, _) => {
+                add_item(
+                    &mut counts,
+                    &mut original_keys,
+                    &mut has_non_str_keys,
+                    &target,
+                )?;
             }
-            Value::Hash(h) => {
-                for (k, v) in h.iter() {
-                    add_pair_key(&mut counts, k.clone(), pair_weight(v));
-                }
-            }
-            Value::Pair(k, v) => {
-                add_pair_key(&mut counts, k, pair_weight(&v));
-            }
-            Value::ValuePair(k, v) => {
-                add_pair_key(&mut counts, k.to_string_value(), pair_weight(&v));
-            }
-            other if other.is_range() => {
-                for item in Self::value_to_list(&other) {
+            ref other if other.is_range() => {
+                for item in Self::value_to_list(other) {
                     let str_key = item.to_string_value();
                     if !matches!(item, Value::Str(_)) {
                         has_non_str_keys = true;
@@ -147,15 +237,24 @@ impl Interpreter {
                     *counts.entry(str_key).or_insert(0) += 1;
                 }
             }
-            other => {
-                let str_key = other.to_string_value();
-                if !matches!(other, Value::Str(_)) {
-                    has_non_str_keys = true;
-                    original_keys
-                        .entry(str_key.clone())
-                        .or_insert(other.clone());
+            _ => {
+                // Flatten the target into a list and process each item.
+                // This handles tuples/lists like (@a, %x).Bag where arrays
+                // and hashes need to be expanded.
+                let items = Self::value_to_list(&target);
+                if items.is_empty() && !matches!(target, Value::Array(_, _) | Value::Hash(_)) {
+                    // Single non-collection value
+                    add_item(
+                        &mut counts,
+                        &mut original_keys,
+                        &mut has_non_str_keys,
+                        &target,
+                    )?;
+                } else {
+                    for item in &items {
+                        flatten_into(&mut counts, &mut original_keys, &mut has_non_str_keys, item)?;
+                    }
                 }
-                counts.insert(str_key, 1);
             }
         }
         if has_non_str_keys {

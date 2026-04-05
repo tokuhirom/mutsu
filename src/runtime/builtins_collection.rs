@@ -131,20 +131,72 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_bag(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // The `bag` function counts occurrences of each element.
+        // Unlike .Bag coercion, `bag` does NOT decompose pairs into key=>count.
+        // Each element (including pairs) is treated as an opaque value to count.
         let mut counts: HashMap<String, i64> = HashMap::new();
+        let mut original_keys: HashMap<String, Value> = HashMap::new();
+        let mut has_non_str_keys = false;
+
+        fn add_item(
+            counts: &mut HashMap<String, i64>,
+            original_keys: &mut HashMap<String, Value>,
+            has_non_str: &mut bool,
+            item: &Value,
+        ) {
+            let str_key = item.to_string_value();
+            if !matches!(item, Value::Str(_)) {
+                *has_non_str = true;
+                original_keys
+                    .entry(str_key.clone())
+                    .or_insert_with(|| item.clone());
+            }
+            *counts.entry(str_key).or_insert(0) += 1;
+        }
+
         for arg in args {
             match arg {
+                // Itemized arrays/hashes are single elements
+                Value::Array(_, kind) if kind.is_itemized() => {
+                    add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, arg);
+                }
+                // Regular arrays are flattened
                 Value::Array(items, ..) => {
                     for item in items.iter() {
-                        *counts.entry(item.to_string_value()).or_insert(0) += 1;
+                        add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, item);
                     }
                 }
+                // Hashes are flattened into their pairs (each pair is a single element)
+                Value::Hash(map) => {
+                    for (k, v) in map.iter() {
+                        let pair = Value::Pair(k.clone(), Box::new(v.clone()));
+                        add_item(
+                            &mut counts,
+                            &mut original_keys,
+                            &mut has_non_str_keys,
+                            &pair,
+                        );
+                    }
+                }
+                // QuantHash types are single elements
+                Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _) => {
+                    add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, arg);
+                }
                 other => {
-                    *counts.entry(other.to_string_value()).or_insert(0) += 1;
+                    add_item(
+                        &mut counts,
+                        &mut original_keys,
+                        &mut has_non_str_keys,
+                        other,
+                    );
                 }
             }
         }
-        Ok(Value::bag(counts))
+        if has_non_str_keys {
+            Ok(Value::bag_typed(counts, original_keys))
+        } else {
+            Ok(Value::bag(counts))
+        }
     }
 
     pub(super) fn builtin_mix(&self, args: &[Value]) -> Result<Value, RuntimeError> {
