@@ -293,6 +293,21 @@ impl RuntimeError {
         err
     }
 
+    /// Create a Failure value wrapping an X::Numeric::DivideByZero exception
+    /// for a method call on a zero-denominator Rational (e.g. `.floor`, `.Int`).
+    pub(crate) fn divide_by_zero_failure_for_method(method: &str, type_name: &str) -> Value {
+        let mut attrs = HashMap::new();
+        let msg = format!(
+            "Attempt to divide by zero when calling .{} on {}",
+            method, type_name
+        );
+        attrs.insert("message".to_string(), Value::str_from(&msg));
+        let ex = Value::make_instance(Symbol::intern("X::Numeric::DivideByZero"), attrs);
+        let mut failure_attrs = HashMap::new();
+        failure_attrs.insert("exception".to_string(), ex);
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+    }
+
     /// Create a Failure value wrapping an X::Numeric::DivideByZero exception.
     /// In Raku, `div` and `%` by zero return a Failure (lazy exception)
     /// instead of throwing immediately.

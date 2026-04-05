@@ -240,6 +240,15 @@ pub(super) fn dispatch(
                 }
             }
             Value::Complex(re, im) => Some(Ok(Value::Complex(re.floor(), im.floor()))),
+            Value::Rat(_, d) if *d == 0 => Some(Ok(
+                RuntimeError::divide_by_zero_failure_for_method("floor", "Rational"),
+            )),
+            Value::FatRat(_, d) if *d == 0 => Some(Ok(
+                RuntimeError::divide_by_zero_failure_for_method("floor", "Rational"),
+            )),
+            Value::BigRat(_, d) if d.is_zero() => Some(Ok(
+                RuntimeError::divide_by_zero_failure_for_method("floor", "Rational"),
+            )),
             _ => None,
         }),
         "ceiling" | "ceil" => Some(match target {
@@ -275,6 +284,15 @@ pub(super) fn dispatch(
                 }
             }
             Value::Complex(re, im) => Some(Ok(Value::Complex(re.ceil(), im.ceil()))),
+            Value::Rat(_, d) if *d == 0 => Some(Ok(
+                RuntimeError::divide_by_zero_failure_for_method("ceiling", "Rational"),
+            )),
+            Value::FatRat(_, d) if *d == 0 => Some(Ok(
+                RuntimeError::divide_by_zero_failure_for_method("ceiling", "Rational"),
+            )),
+            Value::BigRat(_, d) if d.is_zero() => Some(Ok(
+                RuntimeError::divide_by_zero_failure_for_method("ceiling", "Rational"),
+            )),
             _ => None,
         }),
         "round" => Some(match target {
@@ -306,6 +324,15 @@ pub(super) fn dispatch(
                 Some(Ok(raku_round_to_value(f)))
             }
             Value::Complex(re, im) => Some(Ok(Value::Complex(raku_round(*re), raku_round(*im)))),
+            Value::Rat(_, d) if *d == 0 => Some(Ok(
+                RuntimeError::divide_by_zero_failure_for_method("round", "Rational"),
+            )),
+            Value::FatRat(_, d) if *d == 0 => Some(Ok(
+                RuntimeError::divide_by_zero_failure_for_method("round", "Rational"),
+            )),
+            Value::BigRat(_, d) if d.is_zero() => Some(Ok(
+                RuntimeError::divide_by_zero_failure_for_method("round", "Rational"),
+            )),
             _ => None,
         }),
         "truncate" => Some(match target {
@@ -317,6 +344,15 @@ pub(super) fn dispatch(
             Value::BigRat(n, d) if !d.is_zero() => Some(Ok(Value::bigint(n / d))),
             Value::FatRat(n, d) if *d != 0 => Some(Ok(Value::Int(*n / *d))),
             Value::Complex(re, im) => Some(Ok(Value::Complex(re.trunc(), im.trunc()))),
+            Value::Rat(_, d) if *d == 0 => Some(Ok(
+                RuntimeError::divide_by_zero_failure_for_method("truncate", "Rational"),
+            )),
+            Value::FatRat(_, d) if *d == 0 => Some(Ok(
+                RuntimeError::divide_by_zero_failure_for_method("truncate", "Rational"),
+            )),
+            Value::BigRat(_, d) if d.is_zero() => Some(Ok(
+                RuntimeError::divide_by_zero_failure_for_method("truncate", "Rational"),
+            )),
             _ => None,
         }),
         "narrow" => Some(match target {

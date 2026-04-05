@@ -342,8 +342,23 @@ pub(super) fn dispatch(
                         .unwrap_or(0.0);
                     Value::Int(numeric as i64)
                 }
+                Value::Rat(_, d) if *d == 0 => {
+                    return Some(Some(Ok(RuntimeError::divide_by_zero_failure_for_method(
+                        "Int", "Rational",
+                    ))));
+                }
+                Value::FatRat(_, d) if *d == 0 => {
+                    return Some(Some(Ok(RuntimeError::divide_by_zero_failure_for_method(
+                        "Int", "Rational",
+                    ))));
+                }
                 Value::Rat(n, d) if *d != 0 => Value::Int(*n / *d),
                 Value::FatRat(n, d) if *d != 0 => Value::Int(*n / *d),
+                Value::BigRat(_, d) if d.is_zero() => {
+                    return Some(Some(Ok(RuntimeError::divide_by_zero_failure_for_method(
+                        "Int", "Rational",
+                    ))));
+                }
                 Value::BigRat(n, d) if !d.is_zero() => {
                     use num_traits::ToPrimitive;
                     Value::Int((n / d).to_i64().unwrap_or(i64::MAX))

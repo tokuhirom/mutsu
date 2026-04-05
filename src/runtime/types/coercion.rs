@@ -1,6 +1,11 @@
 use super::*;
 use num_traits::ToPrimitive;
 
+/// Check if a Value is a Failure instance.
+fn is_failure_value(value: &Value) -> bool {
+    matches!(value, Value::Instance { class_name, .. } if class_name == "Failure")
+}
+
 /// Parse a coercion type like "Int()" or "Int(Rat)".
 /// Returns Some((target_type, optional_source_type)) if it's a coercion type.
 pub(crate) fn parse_coercion_type(constraint: &str) -> Option<(&str, Option<&str>)> {
@@ -53,7 +58,14 @@ pub(in crate::runtime) fn coerce_value(target: &str, value: Value) -> Value {
         "Int" => match &value {
             Value::Int(_) => value,
             Value::Num(n) => Value::Int(*n as i64),
-            Value::Rat(n, d) => Value::Int(if *d != 0 { n / d } else { 0 }),
+            Value::Rat(_, d) if *d == 0 => {
+                RuntimeError::divide_by_zero_failure_for_method("Int", "Rational")
+            }
+            Value::Rat(n, d) => Value::Int(n / d),
+            Value::FatRat(_, d) if *d == 0 => {
+                RuntimeError::divide_by_zero_failure_for_method("Int", "Rational")
+            }
+            Value::FatRat(n, d) => Value::Int(n / d),
             Value::Str(s) => Value::Int(s.parse::<i64>().unwrap_or(0)),
             Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
             _ => value,
@@ -189,10 +201,18 @@ impl Interpreter {
             return Ok(enum_value);
         }
         let result = coerce_value(target, value.clone());
+        // If the coercion returned a Failure, propagate it directly
+        if is_failure_value(&result) {
+            return Ok(result);
+        }
         if self.type_matches_value(base_target, &result) {
             return Ok(result);
         }
         if let Ok(coerced) = self.call_method_with_values(value.clone(), base_target, vec![]) {
+            // If the method returned a Failure, propagate it directly
+            if is_failure_value(&coerced) {
+                return Ok(coerced);
+            }
             if self.type_matches_value(base_target, &coerced) {
                 return Ok(coerced);
             }
