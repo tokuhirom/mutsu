@@ -509,20 +509,34 @@ impl Value {
             "SetHash" => matches!(self, Value::Set(_, true)),
             "BagHash" => matches!(self, Value::Bag(_, true)),
             "MixHash" => matches!(self, Value::Mix(_, true)),
-            "Cool" => matches!(
-                self,
-                Value::Int(_)
-                    | Value::BigInt(_)
-                    | Value::Num(_)
-                    | Value::Str(_)
-                    | Value::Bool(_)
-                    | Value::Rat(_, _)
-                    | Value::FatRat(_, _)
-                    | Value::BigRat(_, _)
-                    | Value::Complex(_, _)
-                    | Value::Array(..)
-                    | Value::Hash(_)
-            ),
+            "Cool" => {
+                matches!(
+                    self,
+                    Value::Int(_)
+                        | Value::BigInt(_)
+                        | Value::Num(_)
+                        | Value::Str(_)
+                        | Value::Bool(_)
+                        | Value::Rat(_, _)
+                        | Value::FatRat(_, _)
+                        | Value::BigRat(_, _)
+                        | Value::Complex(_, _)
+                        | Value::Array(..)
+                        | Value::Hash(_)
+                ) || matches!(
+                    self,
+                    Value::Instance { class_name, .. }
+                        if class_name == "Match" || class_name == "Capture"
+                )
+            }
+            "Capture" => {
+                matches!(self, Value::Capture { .. })
+                    || matches!(
+                        self,
+                        Value::Instance { class_name, .. }
+                            if class_name == "Match" || class_name == "Capture"
+                    )
+            }
             "Numeric" => matches!(
                 self,
                 Value::Int(_)

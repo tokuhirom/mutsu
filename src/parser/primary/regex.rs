@@ -937,6 +937,12 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
 
     // rx/pattern/ or rx{pattern}
     if let Ok((rest, _)) = parse_tag(input, "rx") {
+        // `rx(o)` without whitespace before `(` should be parsed as an
+        // identifier call, not a regex with paren delimiters.  Require at
+        // least one whitespace or adverb before `(`.
+        if rest.starts_with('(') {
+            return Err(PError::expected("regex delimiter"));
+        }
         let (spec, adverbs) = parse_match_adverbs(rest)?;
         if adverbs.global
             || adverbs.exhaustive
