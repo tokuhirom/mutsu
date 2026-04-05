@@ -1963,6 +1963,23 @@ impl Interpreter {
         local_only: bool,
         non_transitive: bool,
     ) -> Vec<String> {
+        // If the target is a role (not a class), return its role_parents
+        let is_role = self.roles.contains_key(class_name) && !self.classes.contains_key(class_name);
+        if is_role {
+            if let Some(parents) = self.role_parents.get(class_name) {
+                if non_transitive {
+                    return parents.clone();
+                }
+                let mut result = parents.clone();
+                let mut seen: std::collections::HashSet<String> = parents.iter().cloned().collect();
+                for p in parents {
+                    self.collect_transitive_roles(p, &mut result, &mut seen);
+                }
+                return result;
+            }
+            return Vec::new();
+        }
+
         let mut result = Vec::new();
         let mut seen = std::collections::HashSet::new();
         if local_only || non_transitive {
@@ -1972,6 +1989,22 @@ impl Interpreter {
                         result.push(r.clone());
                     }
                 }
+            }
+            if non_transitive {
+                // Filter out roles that are transitively reachable from other
+                // roles in the list (i.e. keep only directly-composed roles).
+                let all = result.clone();
+                let mut transitive = std::collections::HashSet::new();
+                for r in &all {
+                    let base = r.split_once('[').map(|(b, _)| b).unwrap_or(r.as_str());
+                    if let Some(parents) = self.role_parents.get(base) {
+                        for p in parents {
+                            transitive.insert(p.clone());
+                            self.collect_transitive_set(p, &mut transitive);
+                        }
+                    }
+                }
+                result.retain(|r| !transitive.contains(r));
             }
         } else {
             let mro = if let Some(cd) = self.classes.get(class_name)
@@ -1996,6 +2029,25 @@ impl Interpreter {
             }
         }
         result
+    }
+
+    /// Collect all transitively reachable roles into a set (for filtering).
+    fn collect_transitive_set(
+        &self,
+        role_name: &str,
+        result: &mut std::collections::HashSet<String>,
+    ) {
+        let base = role_name
+            .split_once('[')
+            .map(|(b, _)| b)
+            .unwrap_or(role_name);
+        if let Some(parents) = self.role_parents.get(base) {
+            for p in parents {
+                if result.insert(p.clone()) {
+                    self.collect_transitive_set(p, result);
+                }
+            }
+        }
     }
 
     fn collect_transitive_roles(

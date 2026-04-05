@@ -242,6 +242,11 @@ impl Interpreter {
             } else {
                 (cn_resolved.as_str(), None)
             };
+            // Auto-pun non-parametric role to class early so all class-based
+            // constructor logic works correctly.
+            if !self.classes.contains_key(&cn_resolved) && self.roles.contains_key(&cn_resolved) {
+                self.ensure_role_punned_to_class(&cn_resolved);
+            }
             if cn_resolved.starts_with("IO::Path::") && !self.classes.contains_key(&cn_resolved) {
                 self.classes.insert(
                     cn_resolved.clone(),
@@ -2002,7 +2007,9 @@ impl Interpreter {
                     return Ok(result);
                 }
             }
-            if let Some(role) = self.roles.get(&class_name.resolve()).cloned() {
+            if let Some(role) = self.roles.get(&class_name.resolve()).cloned()
+                && !self.classes.contains_key(&class_name.resolve())
+            {
                 // Check for attribute conflicts detected during role composition
                 if let Some((attr_name, role_a, role_b)) = role.attribute_conflicts.first() {
                     return Err(RuntimeError::new(format!(
