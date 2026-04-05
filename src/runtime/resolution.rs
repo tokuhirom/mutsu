@@ -709,6 +709,17 @@ impl Interpreter {
     }
 
     pub(super) fn class_mro(&mut self, class_name: &str) -> Vec<String> {
+        // Built-in type hierarchies for types that are not user-defined classes
+        if !self.classes.contains_key(class_name) {
+            let builtin_mro: Option<Vec<&str>> = match class_name {
+                "Match" => Some(vec!["Match", "Capture", "Cool", "Any", "Mu"]),
+                "Capture" => Some(vec!["Capture", "Any", "Mu"]),
+                _ => None,
+            };
+            if let Some(mro) = builtin_mro {
+                return mro.into_iter().map(String::from).collect();
+            }
+        }
         if !self.classes.contains_key(class_name)
             && let Some((base, _)) = class_name.split_once('[')
             && class_name.ends_with(']')

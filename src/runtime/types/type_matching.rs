@@ -681,6 +681,14 @@ impl Interpreter {
                     }
                 }
             }
+            // Check MRO (handles built-in type hierarchies like Match -> Capture -> Cool)
+            let mro = self.class_mro(&class_name.resolve());
+            if mro
+                .iter()
+                .any(|parent| Self::type_matches(constraint, parent))
+            {
+                return true;
+            }
             // Check composed roles for the instance's class (and its MRO)
             if self.roles.contains_key(constraint) {
                 let mro = self.class_mro(&class_name.resolve());

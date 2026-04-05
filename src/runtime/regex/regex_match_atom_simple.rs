@@ -355,6 +355,24 @@ impl Interpreter {
                 }
                 return Some(next);
             }
+            // Named rule not found — report error for valid identifier names.
+            // Skip error for names containing special chars (likely parser
+            // artifacts from character class syntax like `<[...]>`).
+            if !spec.silent
+                && !spec.lookup_name.is_empty()
+                && spec
+                    .lookup_name
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == ':')
+            {
+                super::super::regex_parse::PENDING_REGEX_ERROR.with(|e| {
+                    *e.borrow_mut() = Some(RuntimeError::new(format!(
+                        "No such method '{}' for invocant of type 'Match'",
+                        spec.lookup_name
+                    )));
+                });
+                return None;
+            }
         }
         if pos >= chars.len() {
             return None;

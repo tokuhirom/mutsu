@@ -1,12 +1,12 @@
 use Test;
 plan 14;
 
-ok "abc" ~~ /<a>/, 'named capture matches';
-is $<a>, "a", 'capture variable set';
+ok "abc" ~~ /<alpha>/, 'named capture matches';
+is $<alpha>, "a", 'capture variable set';
 
 my $s = "abc";
-$s.match(/<b>/);
-is $<b>, "b", 'capture set via .match';
+$s.match(/<alpha>/);
+is $<alpha>, "a", 'capture set via .match';
 
 ok "hello" ~~ m/ (\w+) /, 'positional capture group matches';
 "hello" ~~ m/ (\w+) /;
