@@ -2125,6 +2125,19 @@ impl Interpreter {
                         }
                     }
                 }
+                // Mu.new only accepts named arguments. If positional args
+                // were passed and this is not a subclass that accepts them, reject.
+                if !positional_ctor_args.is_empty() {
+                    let accepts_positional = class_mro
+                        .iter()
+                        .any(|n| n == "Array" || n == "Int" || n == "Num" || n == "Hash");
+                    if !accepts_positional {
+                        return Err(RuntimeError::new(format!(
+                            "Default constructor for '{}' only takes named arguments",
+                            class_name.resolve()
+                        )));
+                    }
+                }
                 // For @-sigiled attributes with shaped array declarations,
                 // convert user-provided values to shaped arrays preserving shape.
                 for (attr_name, _is_public, default, _is_rw, _is_required, sigil, _) in
@@ -2172,15 +2185,21 @@ impl Interpreter {
                 // binding `self` so default expressions like `self.x` work.
                 // Restore role parameter bindings so that default expressions
                 // referencing role type parameters (e.g., `has $.x = $a`) work.
+                // Also add class-qualified versions (e.g., `AP_2::a`) so that
+                // bindings resolve correctly when current_package is the class.
                 if let Some(role_bindings) = self.class_role_param_bindings.get(class_key) {
                     for (name, value) in role_bindings {
                         self.env.insert(name.clone(), value.clone());
+                        self.env
+                            .insert(format!("{}::{}", class_key, name), value.clone());
                     }
                 } else if let Some(role_bindings) =
                     self.class_role_param_bindings.get(&class_name.resolve())
                 {
                     for (name, value) in role_bindings {
                         self.env.insert(name.clone(), value.clone());
+                        self.env
+                            .insert(format!("{}::{}", class_key, name), value.clone());
                     }
                 }
                 for (attr_name, _is_public, default, _is_rw, _is_required, sigil, _) in
@@ -2200,7 +2219,33 @@ impl Interpreter {
                         let temp_self = Value::make_instance(*class_name, attrs.clone());
                         let old_self = self.env.get("self").cloned();
                         self.env.insert("self".to_string(), temp_self);
+                        // Set !attr_name and .attr_name in env so that $!a / $.a
+                        // references in default expressions resolve to already-
+                        // initialized attributes (e.g. `has $.c = $!a + $!b`).
+                        let mut saved_attr_env: Vec<(String, Option<Value>)> = Vec::new();
+                        for (a_name, a_val) in &attrs {
+                            let bang = format!("!{}", a_name);
+                            let dot = format!(".{}", a_name);
+                            saved_attr_env.push((bang.clone(), self.env.get(&bang).cloned()));
+                            saved_attr_env.push((dot.clone(), self.env.get(&dot).cloned()));
+                            self.env.insert(bang, a_val.clone());
+                            self.env.insert(dot, a_val.clone());
+                        }
+                        // Temporarily switch to the class package so that
+                        // class-scoped subs (e.g. `sub inner`) are found
+                        // when evaluating attribute default expressions.
+                        let saved_package = self.current_package.clone();
+                        self.current_package = class_key.to_string();
                         let result = self.eval_block_value(&[Stmt::Expr(expr)]);
+                        self.current_package = saved_package;
+                        // Restore previous env state for attribute variables
+                        for (key, old_val) in saved_attr_env {
+                            if let Some(v) = old_val {
+                                self.env.insert(key, v);
+                            } else {
+                                self.env.remove(&key);
+                            }
+                        }
                         if let Some(old) = old_self {
                             self.env.insert("self".to_string(), old);
                         } else {
