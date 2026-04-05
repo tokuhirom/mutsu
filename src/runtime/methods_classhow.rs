@@ -1937,9 +1937,17 @@ impl Interpreter {
     }
 
     fn dispatch_classhow_roles(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // Detect whether the invocant is an instance (Mixin or Instance) vs a
+        // type object (Package). For punned role instances, the role itself
+        // should be included in the result.
+        let is_instance = matches!(&args[0], Value::Instance { .. } | Value::Mixin(_, _));
         let class_name = match &args[0] {
             Value::Package(name) => name.resolve(),
             Value::Instance { class_name, .. } => class_name.resolve(),
+            Value::Mixin(inner, _) => match inner.as_ref() {
+                Value::Instance { class_name, .. } => class_name.resolve(),
+                _ => value_type_name(&args[0]).to_string(),
+            },
             _ => value_type_name(&args[0]).to_string(),
         };
         let local = args[1..]
@@ -1948,7 +1956,7 @@ impl Interpreter {
         let non_transitive = args[1..]
             .iter()
             .any(|a| matches!(a, Value::Pair(k, v) if k == "transitive" && !v.truthy()));
-        let roles = self.collect_roles_for_class(&class_name, local, non_transitive);
+        let roles = self.collect_roles_for_class(&class_name, local, non_transitive, is_instance);
         Ok(Value::array(
             roles
                 .into_iter()
@@ -1962,22 +1970,36 @@ impl Interpreter {
         class_name: &str,
         local_only: bool,
         non_transitive: bool,
+        is_instance: bool,
     ) -> Vec<String> {
-        // If the target is a role (not a class), return its role_parents
+        // If the target is a role (not a class), return its role_parents.
+        // For instances (punned roles), include the role itself in the list.
         let is_role = self.roles.contains_key(class_name) && !self.classes.contains_key(class_name);
         if is_role {
-            if let Some(parents) = self.role_parents.get(class_name) {
-                if non_transitive {
-                    return parents.clone();
-                }
-                let mut result = parents.clone();
-                let mut seen: std::collections::HashSet<String> = parents.iter().cloned().collect();
-                for p in parents {
-                    self.collect_transitive_roles(p, &mut result, &mut seen);
+            let mut result = Vec::new();
+            // For instances of punned roles, include the role itself first
+            if is_instance {
+                result.push(class_name.to_string());
+            }
+            if non_transitive {
+                if !is_instance && let Some(parents) = self.role_parents.get(class_name) {
+                    result.extend(parents.clone());
                 }
                 return result;
             }
-            return Vec::new();
+            if let Some(parents) = self.role_parents.get(class_name) {
+                let mut seen: std::collections::HashSet<String> = result.iter().cloned().collect();
+                for p in parents {
+                    if seen.insert(p.clone()) {
+                        result.push(p.clone());
+                    }
+                }
+                let parents_clone = parents.clone();
+                for p in &parents_clone {
+                    self.collect_transitive_roles(p, &mut result, &mut seen);
+                }
+            }
+            return result;
         }
 
         let mut result = Vec::new();
