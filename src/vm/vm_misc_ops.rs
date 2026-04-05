@@ -1876,16 +1876,26 @@ impl VM {
         let init_val = self.stack.pop().unwrap_or(Value::Nil);
         let base_key = Self::const_str(code, key_idx);
         let scoped_key = self.scoped_state_key(base_key);
+        let slot_idx = slot as usize;
+        let name = &code.locals[slot_idx];
         let val = if let Some(stored) = self.interpreter.get_state_var(&scoped_key) {
             stored.clone()
         } else {
+            // Coerce @ variables to Array and % variables to Hash,
+            // matching the behavior of SetLocal for these sigils.
+            let coerced = if name.starts_with('@') {
+                runtime::coerce_to_array(init_val)
+            } else if name.starts_with('%') {
+                runtime::coerce_to_hash(init_val)
+            } else {
+                init_val
+            };
             self.interpreter
-                .set_state_var(scoped_key.clone(), init_val.clone());
-            init_val
+                .set_state_var(scoped_key.clone(), coerced.clone());
+            coerced
         };
-        let slot_idx = slot as usize;
         self.locals[slot_idx] = val.clone();
-        let name = code.locals[slot_idx].clone();
+        let name = name.to_string();
         self.interpreter.env_mut().insert(name.clone(), val);
         // Store metadata mapping variable name to its state storage key.
         // Closures that capture this variable can use this to update state

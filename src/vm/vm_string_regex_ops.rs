@@ -217,6 +217,33 @@ fn samespace_replace(replacement: &str, matched: &str) -> String {
     result
 }
 
+/// Expand positional capture references ($0, $1, ...) in a substitution
+/// replacement string.  Called after the regex match so capture values are known.
+pub(crate) fn expand_capture_refs(template: &str, captures: &[String]) -> String {
+    let mut out = String::new();
+    let bytes = template.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'$' && i + 1 < bytes.len() && bytes[i + 1].is_ascii_digit() {
+            // Parse the digit(s) following $
+            let mut j = i + 1;
+            while j < bytes.len() && bytes[j].is_ascii_digit() {
+                j += 1;
+            }
+            if let Ok(idx) = template[i + 1..j].parse::<usize>()
+                && let Some(cap) = captures.get(idx)
+            {
+                out.push_str(cap);
+            }
+            i = j;
+        } else {
+            out.push(template[i..].chars().next().unwrap());
+            i += template[i..].chars().next().unwrap().len_utf8();
+        }
+    }
+    out
+}
+
 /// Extract a variable name (identifier chars: alpha, digit, _, -, ::)
 fn take_var_name(input: &str) -> Option<usize> {
     let mut chars = input.char_indices();
@@ -314,63 +341,134 @@ impl VM {
         let text = target.to_string_value();
 
         if nth_spec.is_none() && x_count.is_none() && !global {
-            let found = if perl5 {
-                self.interpreter.regex_find_first_p5(&pattern, &text)
+            if perl5 {
+                let found = self.interpreter.regex_find_first_p5(&pattern, &text);
+                if let Some((start, end)) = found {
+                    let out = Self::apply_substitutions(
+                        &text,
+                        &[(start, end)],
+                        &replacement,
+                        samecase,
+                        sigspace,
+                        samemark,
+                        samespace,
+                    );
+                    let result = Value::str(out);
+                    self.interpreter
+                        .env_mut()
+                        .insert("_".to_string(), result.clone());
+                    self.interpreter
+                        .env_mut()
+                        .insert("$_".to_string(), result.clone());
+                    self.interpreter
+                        .env_mut()
+                        .insert("__mutsu_rw_map_topic__".to_string(), result);
+                    self.stack.push(Value::Bool(true));
+                } else {
+                    self.stack.push(Value::Nil);
+                }
             } else {
-                self.interpreter.regex_find_first(&pattern, &text)
-            };
-            if let Some((start, end)) = found {
-                let out = Self::apply_substitutions(
-                    &text,
-                    &[(start, end)],
-                    &replacement,
-                    samecase,
-                    sigspace,
-                    samemark,
-                    samespace,
-                );
-                let result = Value::str(out);
-                self.interpreter
-                    .env_mut()
-                    .insert("_".to_string(), result.clone());
-                self.interpreter
-                    .env_mut()
-                    .insert("$_".to_string(), result.clone());
-                // Track topic mutation for map rw writeback
-                self.interpreter
-                    .env_mut()
-                    .insert("__mutsu_rw_map_topic__".to_string(), result);
-                self.stack.push(Value::Bool(true));
-            } else {
-                self.stack.push(Value::Nil);
+                let found = self
+                    .interpreter
+                    .regex_find_first_from_with_captures(&pattern, &text, 0);
+                if let Some((start, end, captures)) = found {
+                    // Expand $0, $1, ... in the replacement with captured groups
+                    let expanded = expand_capture_refs(&replacement, &captures);
+                    let out = Self::apply_substitutions(
+                        &text,
+                        &[(start, end)],
+                        &expanded,
+                        samecase,
+                        sigspace,
+                        samemark,
+                        samespace,
+                    );
+                    let result = Value::str(out);
+                    self.interpreter
+                        .env_mut()
+                        .insert("_".to_string(), result.clone());
+                    self.interpreter
+                        .env_mut()
+                        .insert("$_".to_string(), result.clone());
+                    self.interpreter
+                        .env_mut()
+                        .insert("__mutsu_rw_map_topic__".to_string(), result);
+                    self.stack.push(Value::Bool(true));
+                } else {
+                    self.stack.push(Value::Nil);
+                }
             }
             return Ok(());
         }
 
-        let all_matches = if perl5 {
-            self.interpreter.regex_find_all_p5(&pattern, &text)
+        // For Raku regex with capture references, collect per-match captures
+        // so each match can expand $0, $1 etc. independently.
+        let (ranges, per_match_captures) = if perl5 {
+            let all_matches = self.interpreter.regex_find_all_p5(&pattern, &text);
+            let selected = if global && nth_spec.is_none() && x_count.is_none() {
+                all_matches
+            } else {
+                Self::select_substitution_ranges(&all_matches, nth_spec.as_deref(), x_count)?
+            };
+            (selected, Vec::new())
         } else {
-            self.interpreter.regex_find_all(&pattern, &text)
-        };
-        let ranges = if global && nth_spec.is_none() && x_count.is_none() {
-            all_matches
-        } else {
-            Self::select_substitution_ranges(&all_matches, nth_spec.as_deref(), x_count)?
+            // Find all matches with captures using iterative find_first_from
+            let mut matches_with_caps: Vec<(usize, usize, Vec<String>)> = Vec::new();
+            let mut pos = 0;
+            while let Some((start, end, caps)) = self
+                .interpreter
+                .regex_find_first_from_with_captures(&pattern, &text, pos)
+            {
+                matches_with_caps.push((start, end, caps));
+                pos = if end > start { end } else { start + 1 };
+            }
+            let all_ranges: Vec<(usize, usize)> =
+                matches_with_caps.iter().map(|(s, e, _)| (*s, *e)).collect();
+            let selected = if global && nth_spec.is_none() && x_count.is_none() {
+                all_ranges
+            } else {
+                Self::select_substitution_ranges(&all_ranges, nth_spec.as_deref(), x_count)?
+            };
+            // Extract captures for selected ranges
+            let captures: Vec<Vec<String>> = selected
+                .iter()
+                .filter_map(|r| {
+                    matches_with_caps
+                        .iter()
+                        .find(|(s, e, _)| *s == r.0 && *e == r.1)
+                        .map(|(_, _, c)| c.clone())
+                })
+                .collect();
+            (selected, captures)
         };
         if ranges.is_empty() {
             self.stack.push(Value::Nil);
             return Ok(());
         }
 
-        let out = Self::apply_substitutions(
-            &text,
-            &ranges,
-            &replacement,
-            samecase,
-            sigspace,
-            samemark,
-            samespace,
-        );
+        let out = if !per_match_captures.is_empty() {
+            // Build output with per-match capture expansion
+            Self::apply_substitutions_with_captures(
+                &text,
+                &ranges,
+                &replacement,
+                &per_match_captures,
+                samecase,
+                sigspace,
+                samemark,
+                samespace,
+            )
+        } else {
+            Self::apply_substitutions(
+                &text,
+                &ranges,
+                &replacement,
+                samecase,
+                sigspace,
+                samemark,
+                samespace,
+            )
+        };
         let result = Value::str(out);
         self.interpreter
             .env_mut()
@@ -417,51 +515,107 @@ impl VM {
         let text = target.to_string_value();
 
         if nth_spec.is_none() && x_count.is_none() && !global {
-            let found = if perl5 {
-                self.interpreter.regex_find_first_p5(&pattern, &text)
+            if perl5 {
+                let found = self.interpreter.regex_find_first_p5(&pattern, &text);
+                if let Some((start, end)) = found {
+                    let out = Self::apply_substitutions(
+                        &text,
+                        &[(start, end)],
+                        &replacement,
+                        samecase,
+                        sigspace,
+                        samemark,
+                        samespace,
+                    );
+                    self.stack.push(Value::str(out));
+                } else {
+                    self.stack.push(Value::str(text));
+                }
             } else {
-                self.interpreter.regex_find_first(&pattern, &text)
-            };
-            if let Some((start, end)) = found {
-                let out = Self::apply_substitutions(
-                    &text,
-                    &[(start, end)],
-                    &replacement,
-                    samecase,
-                    sigspace,
-                    samemark,
-                    samespace,
-                );
-                self.stack.push(Value::str(out));
-            } else {
-                self.stack.push(Value::str(text));
+                let found = self
+                    .interpreter
+                    .regex_find_first_from_with_captures(&pattern, &text, 0);
+                if let Some((start, end, captures)) = found {
+                    let expanded = expand_capture_refs(&replacement, &captures);
+                    let out = Self::apply_substitutions(
+                        &text,
+                        &[(start, end)],
+                        &expanded,
+                        samecase,
+                        sigspace,
+                        samemark,
+                        samespace,
+                    );
+                    self.stack.push(Value::str(out));
+                } else {
+                    self.stack.push(Value::str(text));
+                }
             }
             return Ok(());
         }
 
-        let all_matches = if perl5 {
-            self.interpreter.regex_find_all_p5(&pattern, &text)
+        let (ranges, per_match_captures) = if perl5 {
+            let all_matches = self.interpreter.regex_find_all_p5(&pattern, &text);
+            let selected = if global && nth_spec.is_none() && x_count.is_none() {
+                all_matches
+            } else {
+                Self::select_substitution_ranges(&all_matches, nth_spec.as_deref(), x_count)?
+            };
+            (selected, Vec::new())
         } else {
-            self.interpreter.regex_find_all(&pattern, &text)
-        };
-        let ranges = if global && nth_spec.is_none() && x_count.is_none() {
-            all_matches
-        } else {
-            Self::select_substitution_ranges(&all_matches, nth_spec.as_deref(), x_count)?
+            let mut matches_with_caps: Vec<(usize, usize, Vec<String>)> = Vec::new();
+            let mut pos = 0;
+            while let Some((start, end, caps)) = self
+                .interpreter
+                .regex_find_first_from_with_captures(&pattern, &text, pos)
+            {
+                matches_with_caps.push((start, end, caps));
+                pos = if end > start { end } else { start + 1 };
+            }
+            let all_ranges: Vec<(usize, usize)> =
+                matches_with_caps.iter().map(|(s, e, _)| (*s, *e)).collect();
+            let selected = if global && nth_spec.is_none() && x_count.is_none() {
+                all_ranges
+            } else {
+                Self::select_substitution_ranges(&all_ranges, nth_spec.as_deref(), x_count)?
+            };
+            let captures: Vec<Vec<String>> = selected
+                .iter()
+                .filter_map(|r| {
+                    matches_with_caps
+                        .iter()
+                        .find(|(s, e, _)| *s == r.0 && *e == r.1)
+                        .map(|(_, _, c)| c.clone())
+                })
+                .collect();
+            (selected, captures)
         };
         if ranges.is_empty() {
             self.stack.push(Value::str(text));
             return Ok(());
         }
-        let out = Self::apply_substitutions(
-            &text,
-            &ranges,
-            &replacement,
-            samecase,
-            sigspace,
-            samemark,
-            samespace,
-        );
+        let out = if !per_match_captures.is_empty() {
+            Self::apply_substitutions_with_captures(
+                &text,
+                &ranges,
+                &replacement,
+                &per_match_captures,
+                samecase,
+                sigspace,
+                samemark,
+                samespace,
+            )
+        } else {
+            Self::apply_substitutions(
+                &text,
+                &ranges,
+                &replacement,
+                samecase,
+                sigspace,
+                samemark,
+                samespace,
+            )
+        };
         self.stack.push(Value::str(out));
         Ok(())
     }
@@ -539,6 +693,58 @@ impl VM {
                 }
             } else {
                 replacement.to_string()
+            };
+            if samespace {
+                repl = samespace_replace(&repl, matched_text);
+            }
+            out.push_str(&repl);
+            prev_end_b = end_b;
+        }
+        out.push_str(&text[prev_end_b..]);
+        out
+    }
+
+    /// Like `apply_substitutions` but expands `$0`, `$1`, etc. per match
+    /// using the corresponding capture groups.
+    #[allow(clippy::too_many_arguments)]
+    fn apply_substitutions_with_captures(
+        text: &str,
+        ranges: &[(usize, usize)],
+        replacement: &str,
+        per_match_captures: &[Vec<String>],
+        samecase: bool,
+        sigspace: bool,
+        samemark: bool,
+        samespace: bool,
+    ) -> String {
+        let mut out = String::new();
+        let mut prev_end_b = 0usize;
+        for (i, (start, end)) in ranges.iter().enumerate() {
+            let start_b = runtime::char_idx_to_byte(text, *start);
+            let end_b = runtime::char_idx_to_byte(text, *end);
+            out.push_str(&text[prev_end_b..start_b]);
+            let matched_text = &text[start_b..end_b];
+            let expanded = if let Some(caps) = per_match_captures.get(i) {
+                expand_capture_refs(replacement, caps)
+            } else {
+                replacement.to_string()
+            };
+            let mut repl = if samecase {
+                if sigspace {
+                    samecase_per_word(&expanded, matched_text)
+                } else {
+                    crate::builtins::samecase_string(&expanded, matched_text)
+                }
+            } else if samemark {
+                if matched_text.contains(char::is_whitespace)
+                    && expanded.contains(char::is_whitespace)
+                {
+                    samemark_per_word(&expanded, matched_text)
+                } else {
+                    crate::builtins::samemark_string(&expanded, matched_text)
+                }
+            } else {
+                expanded
             };
             if samespace {
                 repl = samespace_replace(&repl, matched_text);
