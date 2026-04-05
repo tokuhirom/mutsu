@@ -942,6 +942,13 @@ impl Interpreter {
                 is_regex: false,
             };
         }
+        // For &-sigil private attribute access (e.g. &!m), the attribute
+        // value is stored in env as "!m" (not "&!m"), so check directly.
+        if bare_name.starts_with('!')
+            && let Some(val) = self.env.get(bare_name)
+        {
+            return val.clone();
+        }
         // Check if stored as a variable first (my &f = ...)
         let var_key = format!("&{}", bare_name);
         if let Some(val) = self.env.get(&var_key) {
