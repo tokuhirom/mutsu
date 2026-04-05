@@ -692,14 +692,21 @@ impl Interpreter {
             }
             // Set operators with single arg: coerce to appropriate set type
             if matches!(op, "(.)" | "⊍" | "(+)" | "⊎") {
-                let arg0 = match &args[0] {
-                    Value::Scalar(inner) => inner.as_ref(),
-                    other => other,
+                let mut arg0 = match &args[0] {
+                    Value::Scalar(inner) => inner.as_ref().clone(),
+                    other => (*other).clone(),
                 };
-                if matches!(arg0, Value::Mix(_, _)) {
-                    return self.dispatch_to_mix(arg0.clone());
+                // De-itemize arrays for set operator coercion (e.g. [(+)] @a
+                // passes .item-wrapped list, which should be coerced as elements)
+                if let Value::Array(items, kind) = &arg0
+                    && kind.is_itemized()
+                {
+                    arg0 = Value::Array(items.clone(), crate::value::ArrayKind::List);
                 }
-                return self.dispatch_to_bag(arg0.clone());
+                if matches!(arg0, Value::Mix(_, _)) {
+                    return self.dispatch_to_mix(arg0);
+                }
+                return self.dispatch_to_bag(arg0);
             }
             if matches!(op, "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖") {
                 return Ok(coerce_value_to_quanthash(&args[0]));
