@@ -34,7 +34,7 @@ mod vm_native_dispatch;
 mod vm_register_ops;
 mod vm_set_ops;
 pub(crate) mod vm_smart_match;
-mod vm_string_regex_ops;
+pub(crate) mod vm_string_regex_ops;
 mod vm_value_helpers;
 mod vm_var_assign_ops;
 mod vm_var_delete_ops;

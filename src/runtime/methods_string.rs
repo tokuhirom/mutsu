@@ -420,6 +420,16 @@ impl Interpreter {
         orig_text: Option<&str>,
     ) -> Result<String, RuntimeError> {
         if !is_closure {
+            // Expand $0, $1, ... capture references in string replacements
+            if let Some(caps) = captures
+                && !caps.positional.is_empty()
+            {
+                let expanded = crate::vm::vm_string_regex_ops::expand_capture_refs(
+                    replacement_str,
+                    &caps.positional,
+                );
+                return Ok(expanded);
+            }
             return Ok(replacement_str.to_string());
         }
         let sub_data = match replacement_val {
