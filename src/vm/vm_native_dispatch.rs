@@ -193,6 +193,27 @@ impl VM {
         if args.iter().any(|arg| matches!(arg, Value::Instance { .. })) {
             return None;
         }
+        // For functions that need to iterate their arguments (e.g. flat),
+        // force any LazyList arguments first so the pure builtin can process them.
+        if args.iter().any(|a| matches!(a, Value::LazyList(_))) {
+            let name = name_sym.resolve();
+            if matches!(name.as_str(), "flat" | "eager") {
+                let mut forced_args = Vec::with_capacity(args.len());
+                for arg in args {
+                    if let Value::LazyList(ll) = arg {
+                        match self.force_lazy_list_vm(ll) {
+                            Ok(items) => {
+                                forced_args.push(Value::Seq(std::sync::Arc::new(items)));
+                            }
+                            Err(e) => return Some(Err(e)),
+                        }
+                    } else {
+                        forced_args.push(arg.clone());
+                    }
+                }
+                return crate::builtins::native_function(name_sym, &forced_args);
+            }
+        }
         crate::builtins::native_function(name_sym, args)
     }
 }
