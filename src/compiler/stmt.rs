@@ -581,6 +581,18 @@ impl Compiler {
                     if has_explicit_initializer {
                         self.code.emit(OpCode::MarkExplicitInitializerContext);
                     }
+                    // For % variables with QuantHash `is` traits, skip hash coercion
+                    // so the trait handler gets the raw array/list value.
+                    let has_quant_hash_trait = name.starts_with('%')
+                        && custom_traits.iter().any(|(t, _)| {
+                            matches!(
+                                t.as_str(),
+                                "BagHash" | "SetHash" | "MixHash" | "Bag" | "Set" | "Mix"
+                            )
+                        });
+                    if has_quant_hash_trait {
+                        self.code.emit(OpCode::MarkBindContext);
+                    }
                     self.code.emit(OpCode::SetLocal(slot));
                     if *is_our {
                         let qualified = self.qualify_variable_name(name);
