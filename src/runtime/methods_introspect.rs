@@ -221,6 +221,10 @@ impl Interpreter {
         let type_name = match target {
             Value::Package(name) => name.resolve(),
             Value::Instance { class_name, .. } => class_name.resolve(),
+            Value::Mixin(inner, _) => match inner.as_ref() {
+                Value::Instance { class_name, .. } => class_name.resolve(),
+                _ => value_type_name(target).to_string(),
+            },
             _ => {
                 // Get type name via WHAT logic
                 let tn = match target {
@@ -394,6 +398,10 @@ impl Interpreter {
         Ok(Value::str(match target {
             Value::Package(name) => name.resolve(),
             Value::Instance { class_name, .. } => class_name.resolve(),
+            Value::Mixin(inner, _) => match inner.as_ref() {
+                Value::Instance { class_name, .. } => class_name.resolve(),
+                _ => value_type_name(target).to_string(),
+            },
             Value::Promise(p) => p.class_name().resolve(),
             Value::ParametricRole {
                 base_name,

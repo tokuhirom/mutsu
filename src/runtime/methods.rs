@@ -1007,6 +1007,7 @@ impl Interpreter {
                 Some(Value::Package(_))
                     | Some(Value::Instance { .. })
                     | Some(Value::ParametricRole { .. })
+                    | Some(Value::Mixin(_, _))
             ) && let Some(Value::Str(type_name)) = attributes.get("name")
             {
                 how_args.insert(0, Value::Package(Symbol::intern(type_name)));
