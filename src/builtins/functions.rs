@@ -218,9 +218,13 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             builtin_srand(seed);
             Some(Ok(Value::Nil))
         }
-        "uc" => Some(Ok(Value::str(arg.to_string_value().to_uppercase()))),
-        "lc" => Some(Ok(Value::str(arg.to_string_value().to_lowercase()))),
-        "fc" => Some(Ok(Value::str(super::methods_0arg::unicode_foldcase(
+        "uc" => Some(Ok(Value::str(super::unicode::grapheme_uppercase(
+            &arg.to_string_value(),
+        )))),
+        "lc" => Some(Ok(Value::str(super::unicode::grapheme_lowercase(
+            &arg.to_string_value(),
+        )))),
+        "fc" => Some(Ok(Value::str(super::unicode::grapheme_foldcase(
             &arg.to_string_value(),
         )))),
         "tc" => Some(Ok(Value::str(titlecase_string(&arg.to_string_value())))),

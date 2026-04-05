@@ -30,16 +30,197 @@ pub(crate) fn titlecase_string(s: &str) -> String {
     let mut result = String::new();
     let mut graphemes = s.graphemes(true);
     if let Some(first_grapheme) = graphemes.next() {
-        let mut chars = first_grapheme.chars();
-        if let Some(first_char) = chars.next() {
-            result.push_str(&unicode_titlecase_first(first_char));
-            result.extend(chars);
-        }
+        result.push_str(&case_convert_grapheme(first_grapheme, CaseOp::Title));
     }
     for g in graphemes {
         result.push_str(g);
     }
     result.nfc().collect()
+}
+
+/// Grapheme-aware uppercase conversion.
+/// When a base character in a grapheme cluster expands during case conversion
+/// (e.g., ligature ff -> FF), combining marks are placed after the first
+/// resulting base character.
+pub(crate) fn grapheme_uppercase(s: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    use unicode_segmentation::UnicodeSegmentation;
+
+    let mut result = String::new();
+    for g in s.graphemes(true) {
+        result.push_str(&case_convert_grapheme(g, CaseOp::Upper));
+    }
+    result.nfc().collect()
+}
+
+/// Lowercase conversion with NFC normalization.
+/// Lowercase rarely expands characters, and Rust's str::to_lowercase()
+/// correctly handles context-sensitive rules like Greek final sigma.
+pub(crate) fn grapheme_lowercase(s: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    s.to_lowercase().nfc().collect()
+}
+
+/// Grapheme-aware foldcase conversion.
+/// Foldcase uses NFKD decomposition (not just NFD) to expand compatibility
+/// characters like ligatures before applying case folding.
+pub(crate) fn grapheme_foldcase(s: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    use unicode_segmentation::UnicodeSegmentation;
+
+    let mut result = String::new();
+    for g in s.graphemes(true) {
+        result.push_str(&foldcase_grapheme(g));
+    }
+    result.nfc().collect()
+}
+
+enum CaseOp {
+    Upper,
+    Title,
+}
+
+/// Convert a single grapheme cluster with proper combining mark placement.
+/// When a character expands during case conversion (e.g., ligature ff -> FF),
+/// any immediately following combining marks are inserted after the first
+/// character of the expansion.
+///
+/// Characters are processed in NFD order to keep combining marks with their
+/// correct base character. Prepend characters and other non-cased characters
+/// are preserved in their original positions.
+fn case_convert_grapheme(grapheme: &str, op: CaseOp) -> String {
+    use unicode_normalization::UnicodeNormalization;
+
+    let nfd_chars: Vec<char> = grapheme.nfd().collect();
+    if nfd_chars.is_empty() {
+        return String::new();
+    }
+
+    // Track which base character is the "first cased" for Title mode
+    let mut seen_cased = false;
+    let mut result = String::new();
+    let mut i = 0;
+    while i < nfd_chars.len() {
+        let ch = nfd_chars[i];
+        if unicode_normalization::char::is_combining_mark(ch) {
+            // Combining mark: keep as-is
+            result.push(ch);
+            i += 1;
+            continue;
+        }
+
+        // Non-combining character: apply case conversion
+        let converted = match op {
+            CaseOp::Upper => ch.to_uppercase().to_string(),
+            CaseOp::Title if !seen_cased && ch.is_alphabetic() => {
+                seen_cased = true;
+                unicode_titlecase_first(ch)
+            }
+            CaseOp::Title if seen_cased => ch.to_lowercase().to_string(),
+            CaseOp::Title => ch.to_string(), // non-alphabetic before first letter
+        };
+
+        let expanded_len = converted.chars().count();
+        if expanded_len > 1 {
+            // Character expanded: collect following combining marks and insert
+            // them after the first character of the expansion
+            let mut combiners = Vec::new();
+            let mut j = i + 1;
+            while j < nfd_chars.len()
+                && unicode_normalization::char::is_combining_mark(nfd_chars[j])
+            {
+                combiners.push(nfd_chars[j]);
+                j += 1;
+            }
+
+            let mut chars_iter = converted.chars();
+            result.push(chars_iter.next().unwrap());
+            for &c in &combiners {
+                result.push(c);
+            }
+            for c in chars_iter {
+                result.push(c);
+            }
+            // Skip past the combining marks we already consumed
+            i = j;
+        } else {
+            result.push_str(&converted);
+            i += 1;
+        }
+    }
+    result
+}
+
+/// Push a single character's foldcase form into the result string.
+fn push_foldcase_char(result: &mut String, c: char) {
+    match c {
+        '\u{00DF}' | '\u{1E9E}' => result.push_str("ss"),
+        '\u{0345}' => result.push('\u{03B9}'),
+        _ => {
+            for lc in c.to_lowercase() {
+                result.push(lc);
+            }
+        }
+    }
+}
+
+/// Foldcase a single grapheme cluster.
+/// Uses NFD decomposition first (preserving compatibility characters), then
+/// applies NFKD + lowercase per character. This ensures that when a
+/// compatibility character (like a ligature) expands, combining marks from
+/// the original grapheme are placed after the first resulting character.
+fn foldcase_grapheme(grapheme: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+
+    let nfd_chars: Vec<char> = grapheme.nfd().collect();
+    if nfd_chars.is_empty() {
+        return String::new();
+    }
+
+    let mut result = String::new();
+    let mut i = 0;
+    while i < nfd_chars.len() {
+        let ch = nfd_chars[i];
+        if unicode_normalization::char::is_combining_mark(ch) {
+            push_foldcase_char(&mut result, ch);
+            i += 1;
+            continue;
+        }
+
+        // Non-combining character: expand via NFKD then foldcase each part
+        let mut folded = String::new();
+        for kd_ch in ch.to_string().nfkd() {
+            push_foldcase_char(&mut folded, kd_ch);
+        }
+
+        let expanded_len = folded.chars().count();
+        if expanded_len > 1 {
+            // Character expanded: collect following combining marks and insert
+            // them after the first character of the expansion
+            let mut combiners = Vec::new();
+            let mut j = i + 1;
+            while j < nfd_chars.len()
+                && unicode_normalization::char::is_combining_mark(nfd_chars[j])
+            {
+                combiners.push(nfd_chars[j]);
+                j += 1;
+            }
+
+            let mut chars_iter = folded.chars();
+            result.push(chars_iter.next().unwrap());
+            for &c in &combiners {
+                result.push(c);
+            }
+            for c in chars_iter {
+                result.push(c);
+            }
+            i = j;
+        } else {
+            result.push_str(&folded);
+            i += 1;
+        }
+    }
+    result
 }
 
 /// Apply the case pattern of `pattern` to `source`.

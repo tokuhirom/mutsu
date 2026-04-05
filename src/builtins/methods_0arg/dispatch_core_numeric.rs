@@ -1,15 +1,11 @@
+use super::{int_lsb_value, int_msb_value, is_infinite_range, range_elems_lazy_failure};
+use crate::builtins::rng::builtin_rand;
 /// Numeric and element methods: elems, default, Complex-i/i, abs, lsb, msb, rand,
 /// uc, lc, fc, tc, sign
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 use num_traits::{Signed, ToPrimitive, Zero};
-use unicode_normalization::UnicodeNormalization;
-
-use super::{
-    int_lsb_value, int_msb_value, is_infinite_range, range_elems_lazy_failure, unicode_foldcase,
-};
-use crate::builtins::rng::builtin_rand;
 
 pub(super) fn dispatch(
     target: &Value,
@@ -257,22 +253,14 @@ pub(super) fn dispatch(
             Some(Some(Ok(Value::Num(builtin_rand() * max))))
         }
         "uc" => Some(Some(Ok(Value::str(
-            target
-                .to_string_value()
-                .to_uppercase()
-                .nfc()
-                .collect::<String>(),
+            crate::builtins::unicode::grapheme_uppercase(&target.to_string_value()),
         )))),
         "lc" => Some(Some(Ok(Value::str(
-            target
-                .to_string_value()
-                .to_lowercase()
-                .nfc()
-                .collect::<String>(),
+            crate::builtins::unicode::grapheme_lowercase(&target.to_string_value()),
         )))),
-        "fc" => Some(Some(Ok(Value::str(unicode_foldcase(
-            &target.to_string_value(),
-        ))))),
+        "fc" => Some(Some(Ok(Value::str(
+            crate::builtins::unicode::grapheme_foldcase(&target.to_string_value()),
+        )))),
         "tc" => Some(Some(Ok(Value::str(
             crate::builtins::unicode::titlecase_string(&target.to_string_value()),
         )))),

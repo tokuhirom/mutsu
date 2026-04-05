@@ -424,7 +424,10 @@ pub(crate) fn native_method_0arg(
                 let parts: Vec<Value> = text.chars().map(|c| Value::str(c.to_string())).collect();
                 return Some(Ok(Value::Seq(std::sync::Arc::new(parts))));
             }
-            "Str" => return Some(Ok(Value::str(text.clone()))),
+            "Str" => {
+                use unicode_normalization::UnicodeNormalization;
+                return Some(Ok(Value::str(text.nfc().collect::<String>())));
+            }
             "Int" | "Numeric" => {
                 return Some(Ok(Value::Int(text.chars().count() as i64)));
             }
