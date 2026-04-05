@@ -456,6 +456,23 @@ impl Compiler {
                             self.code.emit(OpCode::SetTopic);
                             continue;
                         }
+                        Stmt::Call { name, args } => {
+                            let positional: Option<Vec<Expr>> = args
+                                .iter()
+                                .map(|arg| match arg {
+                                    crate::ast::CallArg::Positional(expr) => Some(expr.clone()),
+                                    _ => None,
+                                })
+                                .collect();
+                            if let Some(positional_args) = positional {
+                                self.compile_expr(&Expr::Call {
+                                    name: *name,
+                                    args: positional_args,
+                                });
+                                self.code.emit(OpCode::SetTopic);
+                                continue;
+                            }
+                        }
                         Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
                             if Self::has_block_placeholders(body) {
                                 self.compile_stmt(&Stmt::Die(Expr::Literal(Value::str(
@@ -488,23 +505,6 @@ impl Compiler {
                             self.code.emit(OpCode::GetLocal(slot));
                             self.code.emit(OpCode::SetTopic);
                             continue;
-                        }
-                        Stmt::Call { name, args } => {
-                            let positional: Option<Vec<Expr>> = args
-                                .iter()
-                                .map(|arg| match arg {
-                                    crate::ast::CallArg::Positional(expr) => Some(expr.clone()),
-                                    _ => None,
-                                })
-                                .collect();
-                            if let Some(positional_args) = positional {
-                                self.compile_expr(&Expr::Call {
-                                    name: *name,
-                                    args: positional_args,
-                                });
-                                self.code.emit(OpCode::SetTopic);
-                                continue;
-                            }
                         }
                         _ => {}
                     }

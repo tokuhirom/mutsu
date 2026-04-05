@@ -126,6 +126,25 @@ impl Interpreter {
             let argfiles = self.env.get("$*ARGFILES").cloned().unwrap_or(Value::Nil);
             return self.call_method_with_values(argfiles, "slurp", args.to_vec());
         }
+        // If first arg is an IO::Handle, delegate to .slurp() method on it
+        if let Some(handle @ Value::Instance { class_name, .. }) = args.first()
+            && class_name == "IO::Handle"
+        {
+            let has_close = args[1..].iter().any(
+                |arg| matches!(arg, Value::Pair(name, value) if name == "close" && value.truthy()),
+            );
+            // Filter out :close from args passed to the slurp method
+            let remaining: Vec<Value> = args[1..]
+                .iter()
+                .filter(|arg| !matches!(arg, Value::Pair(name, _) if name == "close"))
+                .cloned()
+                .collect();
+            let result = self.call_method_with_values(handle.clone(), "slurp", remaining)?;
+            if has_close {
+                self.call_method_with_values(handle.clone(), "close", vec![])?;
+            }
+            return Ok(result);
+        }
         let path = args.first().unwrap().to_string_value();
         check_null_in_path(&path)?;
         let bin = args
