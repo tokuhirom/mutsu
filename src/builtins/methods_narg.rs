@@ -1809,9 +1809,10 @@ pub(crate) fn native_method_1arg(
             None
         }
         "grab" | "grabpairs" => match target {
-            Value::Bag(_, _) => Some(Err(RuntimeError::immutable("Bag", method))),
-            Value::Set(_, _) => Some(Err(RuntimeError::immutable("Set", method))),
-            Value::Mix(_, _) => Some(Err(RuntimeError::immutable("Mix", method))),
+            Value::Bag(_, false) => Some(Err(RuntimeError::immutable("Bag", method))),
+            Value::Set(_, false) => Some(Err(RuntimeError::immutable("Set", method))),
+            Value::Set(_, true) => Some(Err(RuntimeError::immutable("SetHash", method))),
+            Value::Mix(_, false) => Some(Err(RuntimeError::immutable("Mix", method))),
             _ => None,
         },
         "roll" => {

@@ -250,7 +250,8 @@ pub(super) fn dispatch(
                 format_temporal_num(val.to_f64())
             ))))
         }
-        Value::Bag(b, _) => {
+        Value::Bag(b, mutable) => {
+            let type_name = if *mutable { "BagHash" } else { "Bag" };
             let mut keys: Vec<(&String, &i64)> = b.iter().collect();
             keys.sort_by_key(|(k, _)| (*k).clone());
             let inner = keys
@@ -276,13 +277,14 @@ pub(super) fn dispatch(
                     })
                     .collect::<Vec<_>>()
                     .join(",");
-                Some(Ok(Value::str(format!("({}).Bag", pairs))))
+                Some(Ok(Value::str(format!("({}).{}", pairs, type_name))))
             } else {
-                // gist: Bag(key(count) ...)
-                Some(Ok(Value::str(format!("Bag({})", inner))))
+                // gist: Bag(key(count) ...) or BagHash(key(count) ...)
+                Some(Ok(Value::str(format!("{}({})", type_name, inner))))
             }
         }
-        Value::Set(s, _) => {
+        Value::Set(s, mutable) => {
+            let type_name = if *mutable { "SetHash" } else { "Set" };
             let mut keys: Vec<&String> = s.iter().collect();
             keys.sort();
             if method == "raku" || method == "perl" {
@@ -296,18 +298,19 @@ pub(super) fn dispatch(
                     })
                     .collect::<Vec<_>>()
                     .join(",");
-                Some(Ok(Value::str(format!("({}).Set", pairs))))
+                Some(Ok(Value::str(format!("({}).{}", pairs, type_name))))
             } else {
-                // gist: Set(a b c)
+                // gist: Set(a b c) or SetHash(a b c)
                 let inner = keys
                     .iter()
                     .map(|k| k.as_str())
                     .collect::<Vec<_>>()
                     .join(" ");
-                Some(Ok(Value::str(format!("Set({})", inner))))
+                Some(Ok(Value::str(format!("{}({})", type_name, inner))))
             }
         }
-        Value::Mix(m, _) => {
+        Value::Mix(m, mutable) => {
+            let type_name = if *mutable { "MixHash" } else { "Mix" };
             let mut keys: Vec<(&String, &f64)> = m.iter().collect();
             keys.sort_by_key(|(k, _)| (*k).clone());
             if method == "raku" || method == "perl" {
@@ -327,9 +330,9 @@ pub(super) fn dispatch(
                     })
                     .collect::<Vec<_>>()
                     .join(",");
-                Some(Ok(Value::str(format!("({}).Mix", pairs))))
+                Some(Ok(Value::str(format!("({}).{}", pairs, type_name))))
             } else {
-                // gist: Mix(key(weight) ...)
+                // gist: Mix(key(weight) ...) or MixHash(key(weight) ...)
                 let inner = keys
                     .iter()
                     .map(|(k, v)| {
@@ -343,7 +346,7 @@ pub(super) fn dispatch(
                     })
                     .collect::<Vec<_>>()
                     .join(" ");
-                Some(Ok(Value::str(format!("Mix({})", inner))))
+                Some(Ok(Value::str(format!("{}({})", type_name, inner))))
             }
         }
         Value::Package(name) => {

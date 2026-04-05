@@ -242,15 +242,23 @@ impl Interpreter {
                 Value::Seq(Arc::new(grabbed))
             }));
         }
+        // BagHash.grab: select and remove random element(s)
+        if let Value::Bag(ref bag, true) = target {
+            return Some(self.dispatch_bag_grab(&bag.counts, &args));
+        }
         None
     }
 
-    /// Dispatch the "grabpairs" method (MixHash.grabpairs).
+    /// Dispatch the "grabpairs" method (MixHash.grabpairs, BagHash.grabpairs).
     fn dispatch_grabpairs_method(
         &mut self,
         target: Value,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
+        // BagHash.grabpairs
+        if let Value::Bag(ref bag, true) = target {
+            return Some(self.dispatch_bag_grabpairs(&bag.counts, &args));
+        }
         let Value::Mix(ref mix, ..) = target else {
             return None;
         };
@@ -285,6 +293,95 @@ impl Interpreter {
         }
         // TODO: compile to bytecode - should mutate the original variable
         Some(Ok(Value::Seq(Arc::new(grabbed))))
+    }
+
+    /// Helper for BagHash.grab (works on a clone, does not mutate the original).
+    fn dispatch_bag_grab(
+        &mut self,
+        bag: &std::collections::HashMap<String, i64>,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        use crate::builtins::rng::builtin_rand;
+        let count = if args.is_empty() {
+            1usize
+        } else {
+            match &args[0] {
+                Value::Whatever => bag.values().sum::<i64>() as usize,
+                v => v.to_f64().max(0.0) as usize,
+            }
+        };
+        if bag.is_empty() || count == 0 {
+            if args.is_empty() {
+                return Ok(Value::Nil);
+            }
+            return Ok(Value::Seq(Arc::new(Vec::new())));
+        }
+        let mut grabbed = Vec::new();
+        let mut remaining = bag.clone();
+        for _ in 0..count {
+            if remaining.is_empty() {
+                break;
+            }
+            let total: i64 = remaining.values().sum();
+            if total <= 0 {
+                break;
+            }
+            let r = (builtin_rand() * total as f64) as i64;
+            let mut cumulative = 0i64;
+            let mut chosen_key = String::new();
+            for (k, v) in &remaining {
+                cumulative += v;
+                if r < cumulative {
+                    chosen_key = k.clone();
+                    break;
+                }
+            }
+            if let Some(c) = remaining.get_mut(&chosen_key) {
+                *c -= 1;
+                if *c <= 0 {
+                    remaining.remove(&chosen_key);
+                }
+            }
+            grabbed.push(Value::str(chosen_key));
+        }
+        Ok(if grabbed.len() == 1 && args.is_empty() {
+            grabbed.into_iter().next().unwrap()
+        } else {
+            Value::Seq(Arc::new(grabbed))
+        })
+    }
+
+    /// Helper for BagHash.grabpairs (works on a clone, does not mutate the original).
+    fn dispatch_bag_grabpairs(
+        &mut self,
+        bag: &std::collections::HashMap<String, i64>,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        use crate::builtins::rng::builtin_rand;
+        let count = if args.is_empty() {
+            1usize
+        } else {
+            match &args[0] {
+                Value::Whatever => bag.len(),
+                v => v.to_f64().max(0.0) as usize,
+            }
+        };
+        if bag.is_empty() || count == 0 {
+            return Ok(Value::Seq(Arc::new(Vec::new())));
+        }
+        let mut grabbed = Vec::new();
+        let mut remaining = bag.clone();
+        for _ in 0..count {
+            if remaining.is_empty() {
+                break;
+            }
+            let ks: Vec<String> = remaining.keys().cloned().collect();
+            let idx = (builtin_rand() * ks.len() as f64) as usize % ks.len();
+            let key = ks[idx].clone();
+            let val = remaining.remove(&key).unwrap_or(0);
+            grabbed.push(Value::Pair(key, Box::new(Value::Int(val))));
+        }
+        Ok(Value::Seq(Arc::new(grabbed)))
     }
 
     /// Dispatch the "skip" method.

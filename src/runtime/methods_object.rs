@@ -1597,6 +1597,35 @@ impl Interpreter {
                         }
                         *counts.entry(str_key).or_insert(0) += 1;
                     };
+                    // Check for lazy/infinite arguments
+                    let is_lazy_arg = |v: &Value| -> bool {
+                        match v {
+                            Value::LazyList(_) => true,
+                            Value::Array(_, kind) if kind.is_lazy() => true,
+                            Value::Range(_, end)
+                            | Value::RangeExcl(_, end)
+                            | Value::RangeExclStart(_, end)
+                            | Value::RangeExclBoth(_, end) => *end == i64::MAX,
+                            Value::GenericRange { end, .. } => match end.as_ref() {
+                                Value::HyperWhatever => true,
+                                Value::Num(n) => n.is_infinite() && n.is_sign_positive(),
+                                _ => {
+                                    let n = end.to_f64();
+                                    n.is_infinite() && n.is_sign_positive()
+                                }
+                            },
+                            _ => false,
+                        }
+                    };
+                    if args.iter().any(is_lazy_arg) {
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert(
+                            "action".to_string(),
+                            Value::str(".new-from-pairs".to_string()),
+                        );
+                        attrs.insert("what".to_string(), Value::str(base_class_name.to_string()));
+                        return Err(RuntimeError::typed("X::Cannot::Lazy", attrs));
+                    }
                     if args.len() == 1 {
                         let arg = &args[0];
                         // QuantHash types are always single elements
