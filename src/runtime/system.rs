@@ -128,14 +128,11 @@ impl Interpreter {
     /// Check for undeclared variable references in EVAL'd code.
     /// Collects declared variable names from VarDecl/Assign nodes and checks
     /// Var references against them and the outer environment.
-    fn check_eval_undeclared_vars(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+    pub(crate) fn check_eval_undeclared_vars(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
         let mut declared: HashSet<String> = HashSet::new();
-        // Collect all declared variable names from top-level statements
         for stmt in stmts {
+            Self::check_self_referential_init(stmt)?;
             Self::collect_declared_vars(stmt, &mut declared);
-        }
-        // Check for undeclared Var references
-        for stmt in stmts {
             if let Some(var_name) = self.find_undeclared_var_in_stmt(stmt, &declared) {
                 let symbol = format!("${}", var_name);
                 let mut attrs = std::collections::HashMap::new();
@@ -150,14 +147,90 @@ impl Interpreter {
         Ok(())
     }
 
-    /// Collect declared variable names from a statement.
+    fn check_self_referential_init(stmt: &Stmt) -> Result<(), RuntimeError> {
+        let (name, expr, custom_traits) = match stmt {
+            Stmt::VarDecl {
+                name,
+                expr,
+                custom_traits,
+                ..
+            } => (name, expr, custom_traits),
+            Stmt::SyntheticBlock(body) => {
+                for s in body {
+                    Self::check_self_referential_init(s)?;
+                }
+                return Ok(());
+            }
+            _ => return Ok(()),
+        };
+        let has_init = custom_traits.iter().any(|(n, _)| n == "__has_initializer")
+            || !matches!(expr, Expr::Literal(Value::Nil));
+        let self_ref_expr = has_init && Self::expr_references_var(expr, name);
+        let self_ref_trait = custom_traits.iter().any(|(_, arg)| {
+            arg.as_ref()
+                .is_some_and(|e| Self::expr_references_var(e, name))
+        });
+        if self_ref_expr || self_ref_trait {
+            let sigil = if name.starts_with('@') || name.starts_with('%') {
+                ""
+            } else {
+                "$"
+            };
+            let symbol = format!("{}{}", sigil, name);
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("name".to_string(), Value::str(symbol));
+            return Err(RuntimeError::typed(
+                "X::Syntax::Variable::Initializer",
+                attrs,
+            ));
+        }
+        Ok(())
+    }
+
+    fn expr_references_var(expr: &Expr, var_name: &str) -> bool {
+        let bare = var_name
+            .strip_prefix('%')
+            .or_else(|| var_name.strip_prefix('@'))
+            .or_else(|| var_name.strip_prefix('$'))
+            .unwrap_or(var_name);
+        match expr {
+            Expr::Var(name) => name == var_name || name == bare,
+            Expr::HashVar(name) | Expr::ArrayVar(name) => name == bare,
+            Expr::Binary { left, right, .. } | Expr::MetaOp { left, right, .. } => {
+                Self::expr_references_var(left, var_name)
+                    || Self::expr_references_var(right, var_name)
+            }
+            Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => {
+                Self::expr_references_var(expr, var_name)
+            }
+            Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
+                Self::expr_references_var(target, var_name)
+                    || args.iter().any(|a| Self::expr_references_var(a, var_name))
+            }
+            Expr::Index { target, index, .. } => {
+                Self::expr_references_var(target, var_name)
+                    || Self::expr_references_var(index, var_name)
+            }
+            Expr::ArrayLiteral(items) => {
+                items.iter().any(|i| Self::expr_references_var(i, var_name))
+            }
+            _ => false,
+        }
+    }
+
     fn collect_declared_vars(stmt: &Stmt, out: &mut HashSet<String>) {
         match stmt {
-            Stmt::VarDecl { name, .. } => {
+            Stmt::VarDecl { name, expr, .. } => {
                 out.insert(name.clone());
+                Self::collect_declared_vars_in_expr(expr, out);
             }
             Stmt::Assign { name, .. } => {
                 out.insert(name.clone());
+            }
+            Stmt::SyntheticBlock(body) => {
+                for s in body {
+                    Self::collect_declared_vars(s, out);
+                }
             }
             Stmt::For { param, body, .. } => {
                 if let Some(v) = param {
@@ -168,6 +241,12 @@ impl Interpreter {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn collect_declared_vars_in_expr(expr: &Expr, out: &mut HashSet<String>) {
+        if let Expr::DoStmt(stmt) = expr {
+            Self::collect_declared_vars(stmt, out);
         }
     }
 
