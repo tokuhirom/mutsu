@@ -11,28 +11,35 @@ use crate::symbol::Symbol;
 use num_bigint::BigInt as NumBigInt;
 use num_integer::Integer;
 use num_traits::{Signed, ToPrimitive, Zero};
-/// Global set tracking consumed Seq Arc pointers (by address).
-/// When a Seq's iterator is consumed, its Arc pointer address is added here.
-/// A second attempt to iterate the same Seq will detect it as consumed and error.
-static CONSUMED_SEQS: OnceLock<Mutex<HashSet<usize>>> = OnceLock::new();
+/// Global list tracking consumed Seq instances via Weak references.
+/// Uses Weak<Vec<Value>> so that when the Seq is dropped, the Weak expires
+/// and won't cause false positives from address reuse.
+static CONSUMED_SEQS: OnceLock<Mutex<Vec<Weak<Vec<Value>>>>> = OnceLock::new();
 
-fn consumed_seqs() -> &'static Mutex<HashSet<usize>> {
-    CONSUMED_SEQS.get_or_init(|| Mutex::new(HashSet::new()))
+fn consumed_seqs() -> &'static Mutex<Vec<Weak<Vec<Value>>>> {
+    CONSUMED_SEQS.get_or_init(|| Mutex::new(Vec::new()))
 }
 
-/// Mark a Seq (identified by its Arc pointer address) as consumed.
+/// Mark a Seq (identified by its Arc) as consumed.
 /// Returns Err if the Seq was already consumed.
 #[allow(clippy::result_large_err)]
 pub(crate) fn seq_consume(arc_ptr: &Arc<Vec<Value>>) -> Result<(), RuntimeError> {
-    let addr = Arc::as_ptr(arc_ptr) as usize;
-    let mut set = consumed_seqs().lock().unwrap();
-    if !set.insert(addr) {
-        return Err(RuntimeError::new(
-            "The iterator of this Seq is already in use/consumed by another Seq \
-             (you might solve this by adding .cache on usages of the Seq, or by \
-             assigning the Seq into an array)",
-        ));
+    let mut list = consumed_seqs().lock().unwrap();
+    // Clean up expired Weak references and check for duplicates
+    let target_ptr = Arc::as_ptr(arc_ptr);
+    list.retain(|w| w.strong_count() > 0);
+    for w in list.iter() {
+        if let Some(existing) = w.upgrade()
+            && Arc::as_ptr(&existing) == target_ptr
+        {
+            return Err(RuntimeError::new(
+                "The iterator of this Seq is already in use/consumed by another Seq \
+                 (you might solve this by adding .cache on usages of the Seq, or by \
+                 assigning the Seq into an array)",
+            ));
+        }
     }
+    list.push(Arc::downgrade(arc_ptr));
     Ok(())
 }
 
