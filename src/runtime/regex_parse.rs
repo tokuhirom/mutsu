@@ -427,7 +427,17 @@ impl Interpreter {
             let count_spec = caps.get(2).map(|m| m.as_str()).unwrap_or_default();
             let sep_mode = caps.get(3).map(|m| m.as_str());
             let sep = caps.get(4).map(|m| m.as_str());
-            return Self::build_ltm_expansion(atom, count_spec, sep_mode, sep);
+            // Only apply LTM expansion when the atom is a single regex token.
+            // The regex captures everything before ** as the "atom", but if the
+            // "atom" contains multiple regex tokens (e.g., "xe" for /xe**2/),
+            // the expansion would incorrectly repeat all of them.
+            // Detect single atoms: single char, bracket group, angle bracket,
+            // quoted string, or backslash escape.
+            let is_single_atom = Self::is_single_regex_atom(atom);
+            if is_single_atom {
+                return Self::build_ltm_expansion(atom, count_spec, sep_mode, sep);
+            }
+            // Fall through to let the normal parser handle ** quantifiers
         }
         if !Self::has_unquoted_ltm_separator(pattern) {
             return pattern.to_string();
@@ -450,6 +460,33 @@ impl Interpreter {
             return Self::build_ltm_expansion(&atom, "1..*", sep_mode, sep);
         }
         pattern.to_string()
+    }
+
+    /// Check if a string represents a single regex atom (used to guard LTM expansion).
+    /// Returns true for single characters, bracket groups, angle-bracket assertions,
+    /// quoted strings, backslash escapes, and dot (any).
+    fn is_single_regex_atom(s: &str) -> bool {
+        if s.is_empty() {
+            return false;
+        }
+        let chars: Vec<char> = s.chars().collect();
+        // Single character
+        if chars.len() == 1 {
+            return true;
+        }
+        // Backslash escape: \x
+        if chars[0] == '\\' && chars.len() == 2 {
+            return true;
+        }
+        // Bracket groups: [...], (...), <...>, '...'
+        match chars[0] {
+            '[' => *chars.last().unwrap_or(&' ') == ']',
+            '(' => *chars.last().unwrap_or(&' ') == ')',
+            '<' => *chars.last().unwrap_or(&' ') == '>',
+            '\'' => chars.len() >= 2 && *chars.last().unwrap_or(&' ') == '\'',
+            '"' => chars.len() >= 2 && *chars.last().unwrap_or(&' ') == '"',
+            _ => false,
+        }
     }
 
     fn build_ltm_expansion(
@@ -2797,6 +2834,25 @@ impl Interpreter {
                         has_items = true;
                     }
                 }
+            } else if chars
+                .peek()
+                .is_some_and(|ch| unicode_normalization::char::is_combining_mark(*ch))
+            {
+                // NFG synthetic (base char + combining marks) — cannot be used as range endpoint
+                PENDING_REGEX_ERROR.with(|e| {
+                    let mut grapheme = c.to_string();
+                    while chars
+                        .peek()
+                        .is_some_and(|ch| unicode_normalization::char::is_combining_mark(*ch))
+                    {
+                        grapheme.push(chars.next().unwrap());
+                    }
+                    *e.borrow_mut() = Some(RuntimeError::new(format!(
+                        "Cannot use {} as a range endpoint, as it is not a single codepoint",
+                        grapheme
+                    )));
+                });
+                return None;
             } else if Self::peek_dotdot(&chars) {
                 // Check for '..' range syntax: c..end
                 while chars.peek() == Some(&' ') {
@@ -3102,6 +3158,37 @@ impl Interpreter {
                         negated: false,
                     }
                 } else {
+                    // Check if this is a known built-in character class name
+                    let is_known_builtin = matches!(
+                        class_name,
+                        "alpha"
+                            | "upper"
+                            | "lower"
+                            | "digit"
+                            | "xdigit"
+                            | "space"
+                            | "alnum"
+                            | "blank"
+                            | "cntrl"
+                            | "punct"
+                            | "ws"
+                    );
+                    if !is_known_builtin {
+                        // Check if the name resolves as a grammar token in the current package
+                        let is_grammar_token = !self.current_package.is_empty()
+                            && self.resolve_token_defs(class_name).is_some();
+                        if !is_grammar_token {
+                            // Unknown name outside grammar context — set error
+                            let msg = format!(
+                                "No such method '{}' for invocant of type 'Match'",
+                                class_name
+                            );
+                            PENDING_REGEX_ERROR.with(|e| {
+                                *e.borrow_mut() = Some(RuntimeError::new(msg));
+                            });
+                            return None;
+                        }
+                    }
                     ClassItem::NamedBuiltin(class_name.to_string())
                 };
                 if adding {
