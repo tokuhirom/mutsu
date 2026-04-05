@@ -163,8 +163,7 @@ impl Interpreter {
                 // the result carries rw view bindings that must be preserved (Array kind).
                 let is_real_array = matches!(&target, Value::Array(_, k) if k.is_real_array());
                 Some(self.dispatch_grep(target, &args).map(|v| {
-                    if !is_real_array
-                        && let Value::Array(items, crate::value::ArrayKind::List) = v
+                    if !is_real_array && let Value::Array(items, crate::value::ArrayKind::List) = v
                     {
                         return Value::Seq(items);
                     }
