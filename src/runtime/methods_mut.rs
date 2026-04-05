@@ -2004,6 +2004,86 @@ impl Interpreter {
             return Ok(result);
         }
 
+        // BagHash.grab / BagHash.grabpairs: remove random elements, mutating the Bag
+        if matches!(&target, Value::Bag(_, true)) && matches!(method, "grab" | "grabpairs") {
+            let bag = match &target {
+                Value::Bag(b, _) => b.counts.clone(),
+                _ => unreachable!(),
+            };
+            let count = if args.is_empty() {
+                1usize
+            } else {
+                match &args[0] {
+                    Value::Whatever => {
+                        if method == "grabpairs" {
+                            bag.len()
+                        } else {
+                            bag.values().sum::<i64>() as usize
+                        }
+                    }
+                    v => v.to_f64().max(0.0) as usize,
+                }
+            };
+            let keys: Vec<String> = bag.keys().cloned().collect();
+            if keys.is_empty() || count == 0 {
+                if method == "grab" && args.is_empty() {
+                    return Ok(Value::Nil);
+                }
+                return Ok(Value::Seq(Arc::new(Vec::new())));
+            }
+            use crate::builtins::rng::builtin_rand;
+            let mut grabbed = Vec::new();
+            let mut remaining = bag;
+            if method == "grabpairs" {
+                for _ in 0..count {
+                    if remaining.is_empty() {
+                        break;
+                    }
+                    let ks: Vec<String> = remaining.keys().cloned().collect();
+                    let idx = (builtin_rand() * ks.len() as f64) as usize % ks.len();
+                    let key = ks[idx].clone();
+                    let val = remaining.remove(&key).unwrap_or(0);
+                    grabbed.push(Value::Pair(key, Box::new(Value::Int(val))));
+                }
+            } else {
+                // grab: pick weighted random elements one at a time
+                for _ in 0..count {
+                    if remaining.is_empty() {
+                        break;
+                    }
+                    let total: i64 = remaining.values().sum();
+                    if total <= 0 {
+                        break;
+                    }
+                    let r = (builtin_rand() * total as f64) as i64;
+                    let mut cumulative = 0i64;
+                    let mut chosen_key = String::new();
+                    for (k, v) in &remaining {
+                        cumulative += v;
+                        if r < cumulative {
+                            chosen_key = k.clone();
+                            break;
+                        }
+                    }
+                    if let Some(c) = remaining.get_mut(&chosen_key) {
+                        *c -= 1;
+                        if *c <= 0 {
+                            remaining.remove(&chosen_key);
+                        }
+                    }
+                    grabbed.push(Value::str(chosen_key));
+                }
+            }
+            // Update the original variable
+            let new_bag = Value::Bag(Arc::new(crate::value::BagData::new(remaining)), true);
+            self.env.insert(target_var.to_string(), new_bag);
+            return Ok(if grabbed.len() == 1 && args.is_empty() {
+                grabbed.into_iter().next().unwrap()
+            } else {
+                Value::Seq(Arc::new(grabbed))
+            });
+        }
+
         // MixHash.grabpairs: remove random pairs and return them, mutating the Mix
         if matches!(&target, Value::Mix(_, _)) && matches!(method, "grabpairs" | "grab") {
             let mix = match &target {

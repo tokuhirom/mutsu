@@ -750,6 +750,15 @@ impl VM {
                     let type_obj = Value::Package(crate::symbol::Symbol::intern(&trait_name));
                     self.try_compiled_method_or_interpret(type_obj, "new", vec![])?
                 };
+                // Register container type metadata so assignment operations
+                // know to coerce back to BagHash/SetHash/etc.
+                let info = crate::runtime::ContainerTypeInfo {
+                    value_type: String::new(),
+                    key_type: None,
+                    declared_type: Some(trait_name.clone()),
+                };
+                self.interpreter
+                    .register_container_type_metadata(&instance, info);
                 self.locals_set_by_name(code, &name_str, instance.clone());
                 self.set_env_with_main_alias(&name_str, instance);
                 self.env_dirty = true;
