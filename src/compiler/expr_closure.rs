@@ -36,15 +36,18 @@ impl Compiler {
             self.code
                 .emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx), false));
         } else {
-            let placeholders = crate::ast::collect_placeholders(body);
+            // Use deep collection for conflict checking, shallow for params.
+            let deep_placeholders = crate::ast::collect_placeholders(body);
             // Immediate block calls (`{ ... }(...)`) are parsed as AnonSub.
             // Apply the same placeholder conflict checks as block/sub declarations.
-            if let Some(err_val) = self.check_placeholder_conflicts(&placeholders, body, None) {
+            if let Some(err_val) = self.check_placeholder_conflicts(&deep_placeholders, body, None)
+            {
                 let idx = self.code.add_constant(err_val);
                 self.code.emit(OpCode::LoadConst(idx));
                 self.code.emit(OpCode::Die);
                 return;
             }
+            let placeholders = crate::ast::collect_placeholders_shallow(body);
             let compiled = if is_block {
                 self.compile_closure_body(&placeholders, &[], body)
             } else {

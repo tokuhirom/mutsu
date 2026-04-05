@@ -279,7 +279,7 @@ impl Compiler {
     /// Compile Block expression -- inline if no placeholders, closure otherwise.
     pub(super) fn compile_expr_block(&mut self, stmts: &[Stmt]) {
         if Self::has_block_placeholders(stmts) {
-            let placeholders = crate::ast::collect_placeholders(stmts);
+            let placeholders = crate::ast::collect_placeholders_shallow(stmts);
             let compiled = self.compile_closure_body(&placeholders, &[], stmts);
             let cc_idx = self.code.add_closure_code(compiled);
             let idx = self.code.add_stmt(Stmt::Block(stmts.to_vec()));

@@ -66,7 +66,7 @@ impl VM {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
             self.ensure_env_synced(code);
-            let params = crate::ast::collect_placeholders(body);
+            let params = crate::ast::collect_placeholders_shallow(body);
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             let cc_source_line = compiled_code
                 .as_ref()
