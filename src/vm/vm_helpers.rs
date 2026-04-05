@@ -186,6 +186,18 @@ impl VM {
             self.interpreter.pop_gather_take_limit();
         }
 
+        // Sync locals back to env before reading the result environment.
+        // During VM execution, variable assignments go to self.locals, not
+        // to the interpreter env. We must flush them so the merge logic below
+        // can see the changes made by the gather body.
+        for (i, name) in cc.locals.iter().enumerate() {
+            if cc.simple_locals[i] {
+                self.interpreter
+                    .env_mut()
+                    .insert(name.clone(), self.locals[i].clone());
+            }
+        }
+
         // Restore the outer environment, selectively merging changes from
         // the gather body. Only propagate variables that:
         // 1. Existed in the outer scope, AND
@@ -215,10 +227,24 @@ impl VM {
         }
         *self.interpreter.env_mut() = merged_env;
 
+        // Check whether the merged env actually changed any outer-scope variables.
+        let env_actually_changed = {
+            let merged = self.interpreter.env();
+            saved_env.iter().any(|(k, old_val)| {
+                merged.get(k).is_some_and(|new_val| {
+                    new_val.to_string_value() != old_val.to_string_value()
+                })
+            })
+        };
+
         // Restore VM state
         self.locals = saved_locals;
         self.stack = saved_stack;
-        self.env_dirty = saved_env_dirty;
+        self.env_dirty = if env_actually_changed {
+            true
+        } else {
+            saved_env_dirty
+        };
         self.locals_dirty = saved_locals_dirty;
 
         // Check for errors
