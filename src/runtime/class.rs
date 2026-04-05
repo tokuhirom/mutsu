@@ -1019,6 +1019,10 @@ impl Interpreter {
         let implicit_return = self.env.get("_").cloned();
         let result = match block_result {
             Ok(()) => Ok(implicit_return.unwrap_or(Value::Nil)),
+            Err(e) if e.return_value.is_some() && e.return_target_callable_id.is_some() => {
+                // Targeted non-local return: propagate to the correct routine
+                Err(e)
+            }
             Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
             Err(e) => Err(e),
         };

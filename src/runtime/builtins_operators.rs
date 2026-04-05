@@ -320,6 +320,13 @@ impl Interpreter {
             let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
             self.routine_stack
                 .push((def.package.resolve(), def.name.resolve()));
+            // Set __mutsu_callable_id so blocks defined inside this routine
+            // capture the correct target for non-local return.
+            let callable_key = format!("__mutsu_callable_id::{}::{}", def.package, def.name);
+            if let Some(Value::Int(id)) = self.env.get(&callable_key).cloned() {
+                self.env
+                    .insert("__mutsu_callable_id".to_string(), Value::Int(id));
+            }
             // Set current_package to the function's defining package so that
             // unqualified function lookups inside the body resolve correctly
             // (e.g., imported functions from `use` inside a module).
@@ -377,6 +384,19 @@ impl Interpreter {
                 && e.is_fail
             {
                 return Ok(self.fail_error_to_failure_value(e));
+            }
+            // Non-local return targeting a different callable: propagate
+            if let Err(ref e) = result
+                && e.return_value.is_some()
+                && e.return_target_callable_id.is_some()
+            {
+                let my_id = self.env.get(&callable_key).and_then(|v| match v {
+                    Value::Int(i) => Some(*i as u64),
+                    _ => None,
+                });
+                if my_id != e.return_target_callable_id {
+                    return result;
+                }
             }
             let finalized = self.finalize_return_with_spec(result, return_spec.as_deref());
             return finalized.and_then(|v| {

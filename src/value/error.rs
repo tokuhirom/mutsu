@@ -57,6 +57,9 @@ pub struct RuntimeError {
     pub label: Option<String>,
     pub leave_callable_id: Option<u64>,
     pub leave_routine: Option<String>,
+    /// For non-local returns (CX::Return from a block), the callable ID of the
+    /// lexically enclosing routine that the return targets.
+    pub return_target_callable_id: Option<u64>,
     /// Container name for Scalar container binding (e.g. when/default returning $a)
     pub container_name: Option<String>,
     /// Structured exception object (e.g. X::AdHoc, X::Promise::Vowed)
@@ -88,6 +91,7 @@ impl RuntimeError {
             label: None,
             leave_callable_id: None,
             leave_routine: None,
+            return_target_callable_id: None,
             container_name: None,
             exception: None,
         }
@@ -138,6 +142,7 @@ impl RuntimeError {
             label: None,
             leave_callable_id: None,
             leave_routine: None,
+            return_target_callable_id: None,
             container_name: None,
             exception: None,
         }

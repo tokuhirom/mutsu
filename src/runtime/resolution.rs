@@ -1202,6 +1202,30 @@ impl Interpreter {
             {
                 return Ok(self.fail_error_to_failure_value(e));
             }
+            // Bare blocks and pointy blocks are NOT routine boundaries for `return`.
+            // Propagate the return signal with the target callable ID so the
+            // enclosing routine can catch it.
+            let is_non_routine =
+                data.is_bare_block || data.compiled_code.as_ref().is_some_and(|cc| !cc.is_routine);
+            if is_non_routine
+                && let Err(ref e) = result
+                && e.return_value.is_some()
+            {
+                // Only propagate non-local return if we can identify the target
+                // routine (via __mutsu_callable_id in captured env or already set).
+                // If no target exists, catch it locally (e.g., supply block done+return).
+                let has_target = e.return_target_callable_id.is_some()
+                    || data.env.contains_key("__mutsu_callable_id");
+                if has_target {
+                    let mut e = result.unwrap_err();
+                    if e.return_target_callable_id.is_none()
+                        && let Some(Value::Int(id)) = data.env.get("__mutsu_callable_id")
+                    {
+                        e.return_target_callable_id = Some(*id as u64);
+                    }
+                    return Err(e);
+                }
+            }
             let result = match result {
                 Err(e) if e.is_leave => return Err(e),
                 other => other,

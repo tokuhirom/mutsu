@@ -215,6 +215,9 @@ pub(crate) enum Expr {
     AnonSub {
         body: Vec<Stmt>,
         is_rw: bool,
+        /// true when this is a bare block `{ }`, false when it's `sub { }`.
+        /// Bare blocks are NOT routine boundaries for `return`.
+        is_block: bool,
     },
     AnonSubParams {
         params: Vec<String>,
@@ -1203,6 +1206,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
         Expr::AnonSub {
             body: stmts,
             is_rw: false,
+            is_block: true,
         }
     } else {
         Expr::AnonSubParams {

@@ -735,7 +735,14 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
     // Callable block literal dereference: &{ ... }
     if input.starts_with('{') {
         let (rest, body) = parse_block_body(input)?;
-        return Ok((rest, Expr::AnonSub { body, is_rw: false }));
+        return Ok((
+            rest,
+            Expr::AnonSub {
+                body,
+                is_rw: false,
+                is_block: true,
+            },
+        ));
     }
     // Handle &[op] — short form for &infix:<op>
     if let Some(after_bracket) = input.strip_prefix('[')
