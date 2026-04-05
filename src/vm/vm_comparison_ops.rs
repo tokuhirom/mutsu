@@ -42,8 +42,180 @@ fn is_rationalish(v: &Value) -> bool {
 }
 
 /// Check if a value is NaN (for numeric comparison semantics).
+/// In Raku, Rat(0,0) and FatRat(0,0) behave like NaN.
 fn is_nan_value(v: &Value) -> bool {
-    matches!(v, Value::Num(n) if n.is_nan())
+    match v {
+        Value::Num(n) => n.is_nan(),
+        Value::Rat(0, 0) | Value::FatRat(0, 0) => true,
+        Value::BigRat(n, d) => n.is_zero() && d.is_zero(),
+        _ => false,
+    }
+}
+
+/// Check if a value is Inf (positive infinity).
+/// Includes Rat(n,0)/FatRat(n,0) where n > 0.
+fn is_pos_inf(v: &Value) -> bool {
+    match v {
+        Value::Num(n) => n.is_infinite() && n.is_sign_positive(),
+        Value::Rat(n, 0) | Value::FatRat(n, 0) => *n > 0,
+        Value::BigRat(n, d) => !n.is_zero() && d.is_zero() && n.is_positive(),
+        _ => false,
+    }
+}
+
+/// Check if a value is -Inf (negative infinity).
+/// Includes Rat(n,0)/FatRat(n,0) where n < 0.
+fn is_neg_inf(v: &Value) -> bool {
+    match v {
+        Value::Num(n) => n.is_infinite() && n.is_sign_negative(),
+        Value::Rat(n, 0) | Value::FatRat(n, 0) => *n < 0,
+        Value::BigRat(n, d) => !n.is_zero() && d.is_zero() && n.is_negative(),
+        _ => false,
+    }
+}
+
+/// Extract range components (start, end, excl_start, excl_end) from a range value.
+fn extract_range_parts(v: &Value) -> Option<(Value, Value, bool, bool)> {
+    match v {
+        Value::Range(a, b) => Some((Value::Int(*a), Value::Int(*b), false, false)),
+        Value::RangeExcl(a, b) => Some((Value::Int(*a), Value::Int(*b), false, true)),
+        Value::RangeExclStart(a, b) => Some((Value::Int(*a), Value::Int(*b), true, false)),
+        Value::RangeExclBoth(a, b) => Some((Value::Int(*a), Value::Int(*b), true, true)),
+        Value::GenericRange {
+            start,
+            end,
+            excl_start,
+            excl_end,
+        } => Some((
+            start.as_ref().clone(),
+            end.as_ref().clone(),
+            *excl_start,
+            *excl_end,
+        )),
+        _ => None,
+    }
+}
+
+/// Compare two ranges using Raku cmp semantics:
+/// min first, then excludes-min (False < True), then max, then excludes-max (True < False).
+fn range_cmp(left: &Value, right: &Value) -> std::cmp::Ordering {
+    let (l_start, l_end, l_excl_start, l_excl_end) = extract_range_parts(left).unwrap();
+    let (r_start, r_end, r_excl_start, r_excl_end) = extract_range_parts(right).unwrap();
+
+    // Compare min values using cmp semantics
+    let start_cmp = cmp_values(&l_start, &r_start);
+    if start_cmp != std::cmp::Ordering::Equal {
+        return start_cmp;
+    }
+    // Compare excludes-min: False < True (excluding min means higher effective start)
+    let excl_start_cmp = l_excl_start.cmp(&r_excl_start);
+    if excl_start_cmp != std::cmp::Ordering::Equal {
+        return excl_start_cmp;
+    }
+    // Compare max values
+    let end_cmp = cmp_values(&l_end, &r_end);
+    if end_cmp != std::cmp::Ordering::Equal {
+        return end_cmp;
+    }
+    // Compare excludes-max: True < False (excluding max means lower effective end)
+    // Note: we reverse the comparison here
+    r_excl_end.cmp(&l_excl_end)
+}
+
+/// Recursively apply cmp semantics to two values (for use in list element comparison).
+fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
+    // Handle NaN
+    if is_nan_value(left) || is_nan_value(right) {
+        return left.to_string_value().cmp(&right.to_string_value());
+    }
+
+    // Unwrap Mixin
+    let left = match left {
+        Value::Mixin(inner, _) => inner.as_ref(),
+        other => other,
+    };
+    let right = match right {
+        Value::Mixin(inner, _) => inner.as_ref(),
+        other => other,
+    };
+
+    // Inf/-Inf handling for non-numeric types
+    if is_pos_inf(left) {
+        return if is_pos_inf(right) {
+            std::cmp::Ordering::Equal
+        } else {
+            std::cmp::Ordering::Greater
+        };
+    }
+    if is_neg_inf(left) {
+        return if is_neg_inf(right) {
+            std::cmp::Ordering::Equal
+        } else {
+            std::cmp::Ordering::Less
+        };
+    }
+    if is_pos_inf(right) {
+        return std::cmp::Ordering::Less;
+    }
+    if is_neg_inf(right) {
+        return std::cmp::Ordering::Greater;
+    }
+
+    VM::spaceship_ordering(left, right)
+}
+
+/// Get list elements from a value (Array, Seq, List, Slip, etc.)
+fn get_list_elements(v: &Value) -> Option<&[Value]> {
+    match v {
+        Value::Array(elems, _) => Some(elems.as_slice()),
+        Value::Seq(elems) => Some(elems.as_slice()),
+        Value::Slip(elems) => Some(elems.as_slice()),
+        _ => None,
+    }
+}
+
+/// Check if a value is any range variant.
+fn is_range_value(v: &Value) -> bool {
+    extract_range_parts(v).is_some()
+}
+
+/// Expand a range value into a list of integer values (for list-based comparison).
+fn expand_range_to_list(v: &Value) -> Vec<Value> {
+    match v {
+        Value::Range(a, b) => (*a..=*b).map(Value::Int).collect(),
+        Value::RangeExcl(a, b) => (*a..*b).map(Value::Int).collect(),
+        Value::RangeExclStart(a, b) => ((*a + 1)..=*b).map(Value::Int).collect(),
+        Value::RangeExclBoth(a, b) => ((*a + 1)..*b).map(Value::Int).collect(),
+        Value::GenericRange {
+            start,
+            end,
+            excl_start,
+            excl_end,
+        } => {
+            // For GenericRange with integer endpoints, expand to list
+            if let (Some(s), Some(e)) = (value_to_i64(start), value_to_i64(end)) {
+                let s = if *excl_start { s + 1 } else { s };
+                let e = if *excl_end { e } else { e + 1 };
+                (s..e).map(Value::Int).collect()
+            } else {
+                // For non-integer ranges, return as-is (shouldn't happen in practice for cmp)
+                vec![v.clone()]
+            }
+        }
+        _ => vec![v.clone()],
+    }
+}
+
+/// Try to extract an i64 from a Value.
+fn value_to_i64(v: &Value) -> Option<i64> {
+    match v {
+        Value::Int(n) => Some(*n),
+        Value::Num(n) if n.fract() == 0.0 && *n >= i64::MIN as f64 && *n <= i64::MAX as f64 => {
+            Some(*n as i64)
+        }
+        Value::Rat(n, d) if *d != 0 && *n % *d == 0 => Some(*n / *d),
+        _ => None,
+    }
 }
 
 impl VM {
@@ -601,6 +773,71 @@ impl VM {
             (Value::Enum { value: av, .. }, Value::Enum { value: bv, .. }) => {
                 av.as_i64().cmp(&bv.as_i64())
             }
+            // Range cmp Range (both must be ranges; Range vs List handled below)
+            (l, r) if is_range_value(l) && is_range_value(r) => range_cmp(l, r),
+            // Real cmp Range (where Real is not a list/range)
+            (_, r)
+                if is_range_value(r)
+                    && !is_range_value(left)
+                    && get_list_elements(left).is_none() =>
+            {
+                let as_range = Value::GenericRange {
+                    start: Arc::new(left.clone()),
+                    end: Arc::new(left.clone()),
+                    excl_start: false,
+                    excl_end: false,
+                };
+                range_cmp(&as_range, r)
+            }
+            // Range cmp Real (where Real is not a list/range)
+            (l, _)
+                if is_range_value(l)
+                    && !is_range_value(right)
+                    && get_list_elements(right).is_none() =>
+            {
+                let as_range = Value::GenericRange {
+                    start: Arc::new(right.clone()),
+                    end: Arc::new(right.clone()),
+                    excl_start: false,
+                    excl_end: false,
+                };
+                range_cmp(l, &as_range)
+            }
+            // List/Array cmp (including Range vs List: expand range to list)
+            (l, r)
+                if get_list_elements(l).is_some()
+                    || get_list_elements(r).is_some()
+                    || is_range_value(l)
+                    || is_range_value(r) =>
+            {
+                let l_vec;
+                let l_elems: &[Value] = if let Some(elems) = get_list_elements(l) {
+                    elems
+                } else if is_range_value(l) {
+                    l_vec = expand_range_to_list(l);
+                    &l_vec
+                } else {
+                    l_vec = vec![l.clone()];
+                    &l_vec
+                };
+                let r_vec;
+                let r_elems: &[Value] = if let Some(elems) = get_list_elements(r) {
+                    elems
+                } else if is_range_value(r) {
+                    r_vec = expand_range_to_list(r);
+                    &r_vec
+                } else {
+                    r_vec = vec![r.clone()];
+                    &r_vec
+                };
+                for (le, re) in l_elems.iter().zip(r_elems.iter()) {
+                    let ord = cmp_values(le, re);
+                    if ord != std::cmp::Ordering::Equal {
+                        return ord;
+                    }
+                }
+                l_elems.len().cmp(&r_elems.len())
+            }
             _ => left.to_string_value().cmp(&right.to_string_value()),
         }
     }
@@ -677,6 +914,21 @@ impl VM {
         // NaN in cmp context: compare as string "NaN"
         if is_nan_value(&left) || is_nan_value(&right) {
             let ord = left.to_string_value().cmp(&right.to_string_value());
+            self.stack.push(runtime::make_order(ord));
+            return;
+        }
+        // For lists, ranges, and mixed-type comparisons (e.g. Pair cmp Inf),
+        // use cmp_values which handles these cases correctly.
+        if get_list_elements(&left).is_some()
+            || get_list_elements(&right).is_some()
+            || is_range_value(&left)
+            || is_range_value(&right)
+            || is_pos_inf(&left)
+            || is_neg_inf(&left)
+            || is_pos_inf(&right)
+            || is_neg_inf(&right)
+        {
+            let ord = cmp_values(&left, &right);
             self.stack.push(runtime::make_order(ord));
             return;
         }
