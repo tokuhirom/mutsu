@@ -153,9 +153,9 @@ impl Interpreter {
         let mut has_typed_keys = false;
 
         let insert_value = |val: &Value,
-                                weights: &mut HashMap<String, f64>,
-                                original_keys: &mut HashMap<String, Value>,
-                                has_typed_keys: &mut bool| {
+                            weights: &mut HashMap<String, f64>,
+                            original_keys: &mut HashMap<String, Value>,
+                            has_typed_keys: &mut bool| {
             let key = val.to_string_value();
             // Track original type for non-Str values
             if !matches!(val, Value::Str(_)) {
