@@ -1389,6 +1389,17 @@ impl Interpreter {
                             Value::RangeExcl(start, end) => {
                                 (*start..*end).map(Value::Int).collect()
                             }
+                            Value::Instance {
+                                class_name: cn,
+                                attributes: ia,
+                                ..
+                            } if crate::runtime::utils::is_buf_or_blob_class(&cn.resolve()) => {
+                                if let Some(Value::Array(items, ..)) = ia.get("bytes") {
+                                    items.to_vec()
+                                } else {
+                                    vec![]
+                                }
+                            }
                             _ => vec![],
                         })
                         .collect();

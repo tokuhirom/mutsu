@@ -148,7 +148,24 @@ impl Interpreter {
         {
             return true;
         }
-        if constraint == "Stringy" && matches!(value_type, "Str") {
+        if constraint == "Stringy"
+            && matches!(
+                value_type,
+                "Str"
+                    | "Buf"
+                    | "Blob"
+                    | "utf8"
+                    | "utf16"
+                    | "buf8"
+                    | "buf16"
+                    | "buf32"
+                    | "buf64"
+                    | "blob8"
+                    | "blob16"
+                    | "blob32"
+                    | "blob64"
+            )
+        {
             return true;
         }
         if matches!(constraint, "Callable" | "Code" | "Block")
