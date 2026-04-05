@@ -149,41 +149,51 @@ impl Interpreter {
 
     pub(super) fn builtin_mix(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let mut weights: HashMap<String, f64> = HashMap::new();
+        let mut original_keys: HashMap<String, Value> = HashMap::new();
+        let mut has_typed_keys = false;
+
+        let insert_value = |val: &Value,
+                            weights: &mut HashMap<String, f64>,
+                            original_keys: &mut HashMap<String, Value>,
+                            has_typed_keys: &mut bool| {
+            let key = val.to_string_value();
+            // Track original type for non-Str values
+            if !matches!(val, Value::Str(_)) {
+                original_keys.insert(key.clone(), val.clone());
+                *has_typed_keys = true;
+            }
+            *weights.entry(key).or_insert(0.0) += 1.0;
+        };
+
         for arg in args {
             match arg {
+                // Itemized arrays ($[...]) are treated as a single element
+                Value::Array(_, kind) if kind.is_itemized() => {
+                    insert_value(arg, &mut weights, &mut original_keys, &mut has_typed_keys);
+                }
+                // Regular arrays are flattened; each element becomes a key
                 Value::Array(items, ..) => {
                     for item in items.iter() {
-                        match item {
-                            Value::Pair(k, v) => {
-                                let w = match v.as_ref() {
-                                    Value::Int(i) => *i as f64,
-                                    Value::Num(n) => *n,
-                                    Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                                    _ => 1.0,
-                                };
-                                *weights.entry(k.clone()).or_insert(0.0) += w;
-                            }
-                            Value::ValuePair(k, v) => {
-                                let w = match v.as_ref() {
-                                    Value::Int(i) => *i as f64,
-                                    Value::Num(n) => *n,
-                                    Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                                    _ => 1.0,
-                                };
-                                *weights.entry(k.to_string_value()).or_insert(0.0) += w;
-                            }
-                            _ => {
-                                *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
-                            }
-                        }
+                        insert_value(item, &mut weights, &mut original_keys, &mut has_typed_keys);
+                    }
+                }
+                // Hashes are flattened into their pairs; each pair becomes a key
+                Value::Hash(map) => {
+                    for (k, v) in map.iter() {
+                        let pair = Value::Pair(k.clone(), Box::new(v.clone()));
+                        insert_value(&pair, &mut weights, &mut original_keys, &mut has_typed_keys);
                     }
                 }
                 other => {
-                    *weights.entry(other.to_string_value()).or_insert(0.0) += 1.0;
+                    insert_value(other, &mut weights, &mut original_keys, &mut has_typed_keys);
                 }
             }
         }
-        Ok(Value::mix(weights))
+        if has_typed_keys {
+            Ok(Value::mix_with_original_keys(weights, original_keys))
+        } else {
+            Ok(Value::mix(weights))
+        }
     }
 
     pub(super) fn builtin_hash(&self, args: &[Value]) -> Result<Value, RuntimeError> {

@@ -165,41 +165,135 @@ impl Interpreter {
         }
     }
 
-    fn mix_pair_weight(v: &Value) -> f64 {
+    pub(super) fn mix_pair_weight(v: &Value) -> Result<f64, RuntimeError> {
         match v {
-            Value::Int(i) => *i as f64,
-            Value::Num(n) => *n,
-            Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-            Value::Bool(b) => {
-                if *b {
-                    1.0
+            Value::Int(i) => Ok(*i as f64),
+            Value::Num(n) => {
+                if n.is_infinite() {
+                    let mut err = RuntimeError::new(format!(
+                        "Value out of range. Is: {}, should be in -Inf^..^Inf",
+                        if *n > 0.0 { "Inf" } else { "-Inf" }
+                    ));
+                    err.exception = Some(Box::new(Value::make_instance(
+                        crate::symbol::Symbol::intern("X::OutOfRange"),
+                        [
+                            ("what".to_string(), Value::str_from("Value")),
+                            ("got".to_string(), Value::Num(*n)),
+                            ("range".to_string(), Value::str_from("-Inf^..^Inf")),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    )));
+                    Err(err)
+                } else if n.is_nan() {
+                    let mut err =
+                        RuntimeError::new("Value out of range. Is: NaN, should be in -Inf^..^Inf");
+                    err.exception = Some(Box::new(Value::make_instance(
+                        crate::symbol::Symbol::intern("X::OutOfRange"),
+                        [
+                            ("what".to_string(), Value::str_from("Value")),
+                            ("got".to_string(), Value::Num(*n)),
+                            ("range".to_string(), Value::str_from("-Inf^..^Inf")),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    )));
+                    Err(err)
                 } else {
-                    0.0
+                    Ok(*n)
+                }
+            }
+            Value::Rat(n, d) if *d != 0 => Ok(*n as f64 / *d as f64),
+            Value::Bool(b) => Ok(if *b { 1.0 } else { 0.0 }),
+            Value::Complex(_, _) => {
+                let mut err = RuntimeError::new(
+                    "Cannot convert Complex to Real; use .re or .im to extract components",
+                );
+                err.exception = Some(Box::new(Value::make_instance(
+                    crate::symbol::Symbol::intern("X::Numeric::Real"),
+                    [
+                        ("source".to_string(), v.clone()),
+                        (
+                            "reason".to_string(),
+                            Value::str_from("Complex to Real conversion"),
+                        ),
+                        ("target".to_string(), Value::str_from("Real")),
+                    ]
+                    .into_iter()
+                    .collect(),
+                )));
+                Err(err)
+            }
+            Value::Str(s) => {
+                // Try to parse the string as a number
+                if let Ok(n) = s.parse::<f64>() {
+                    if n.is_infinite() || n.is_nan() {
+                        let mut err = RuntimeError::new(format!(
+                            "Cannot convert string to number: base-10 number must begin with valid digits or '.' in '{}' (Str)",
+                            s
+                        ));
+                        err.exception = Some(Box::new(Value::make_instance(
+                            crate::symbol::Symbol::intern("X::Str::Numeric"),
+                            [
+                                ("source".to_string(), Value::str(s.to_string())),
+                                (
+                                    "reason".to_string(),
+                                    Value::str_from(
+                                        "base-10 number must begin with valid digits or '.'",
+                                    ),
+                                ),
+                            ]
+                            .into_iter()
+                            .collect(),
+                        )));
+                        return Err(err);
+                    }
+                    Ok(n)
+                } else {
+                    let mut err = RuntimeError::new(format!(
+                        "Cannot convert string to number: base-10 number must begin with valid digits or '.' in '{}' (Str)",
+                        s
+                    ));
+                    err.exception = Some(Box::new(Value::make_instance(
+                        crate::symbol::Symbol::intern("X::Str::Numeric"),
+                        [
+                            ("source".to_string(), Value::str(s.to_string())),
+                            (
+                                "reason".to_string(),
+                                Value::str_from(
+                                    "base-10 number must begin with valid digits or '.'",
+                                ),
+                            ),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    )));
+                    Err(err)
                 }
             }
             _ => {
                 if v.truthy() {
-                    1.0
+                    Ok(1.0)
                 } else {
-                    0.0
+                    Ok(0.0)
                 }
             }
         }
     }
 
-    fn mix_add_item(weights: &mut HashMap<String, f64>, item: &Value) {
+    fn mix_add_item(weights: &mut HashMap<String, f64>, item: &Value) -> Result<(), RuntimeError> {
         match item {
             Value::Pair(k, v) => {
-                let w = Self::mix_pair_weight(v);
+                let w = Self::mix_pair_weight(v)?;
                 *weights.entry(k.clone()).or_insert(0.0) += w;
             }
             Value::ValuePair(k, v) => {
-                let w = Self::mix_pair_weight(v);
+                let w = Self::mix_pair_weight(v)?;
                 *weights.entry(k.to_string_value()).or_insert(0.0) += w;
             }
             Value::Hash(h) => {
                 for (k, v) in h.iter() {
-                    let w = Self::mix_pair_weight(v);
+                    let w = Self::mix_pair_weight(v)?;
                     if w != 0.0 {
                         *weights.entry(k.clone()).or_insert(0.0) += w;
                     }
@@ -207,7 +301,7 @@ impl Interpreter {
             }
             Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
                 for sub_item in items.iter() {
-                    Self::mix_add_item(weights, sub_item);
+                    Self::mix_add_item(weights, sub_item)?;
                 }
             }
             Value::Set(s, _) => {
@@ -229,15 +323,44 @@ impl Interpreter {
                 *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
             }
         }
+        Ok(())
+    }
+
+    /// Check if a value is a lazy iterable (infinite range, lazy list, etc.)
+    pub(super) fn is_lazy_for_set_ops(v: &Value) -> bool {
+        match v {
+            Value::LazyList(_) => true,
+            Value::Array(_, kind) if kind.is_lazy() => true,
+            Value::Range(_, end)
+            | Value::RangeExcl(_, end)
+            | Value::RangeExclStart(_, end)
+            | Value::RangeExclBoth(_, end) => *end == i64::MAX,
+            Value::GenericRange { end, .. } => {
+                let end_f = end.to_f64();
+                end_f.is_infinite() && end_f.is_sign_positive()
+            }
+            _ => false,
+        }
     }
 
     pub(super) fn dispatch_to_mix(&self, target: Value) -> Result<Value, RuntimeError> {
+        // Check for lazy iterables
+        if Self::is_lazy_for_set_ops(&target) {
+            let mut err = RuntimeError::new("Cannot .Mix a lazy list");
+            err.exception = Some(Box::new(Value::make_instance(
+                crate::symbol::Symbol::intern("X::Cannot::Lazy"),
+                [("what".to_string(), Value::str_from("Mix"))]
+                    .into_iter()
+                    .collect(),
+            )));
+            return Err(err);
+        }
         let mut weights: HashMap<String, f64> = HashMap::new();
         match target {
             Value::Mix(_, _) => return Ok(target),
             Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
                 for item in items.iter() {
-                    Self::mix_add_item(&mut weights, item);
+                    Self::mix_add_item(&mut weights, item)?;
                 }
             }
             ref other @ (Value::Set(_, _)
@@ -245,7 +368,7 @@ impl Interpreter {
             | Value::Pair(..)
             | Value::ValuePair(..)
             | Value::Hash(_)) => {
-                Self::mix_add_item(&mut weights, other);
+                Self::mix_add_item(&mut weights, other)?;
             }
             other if other.is_range() => {
                 for item in Self::value_to_list(&other) {

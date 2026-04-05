@@ -390,8 +390,12 @@ impl VM {
             (Value::Mix(a, _), Value::Mix(b, _)) => {
                 let mut result = a.weights.clone();
                 for (k, v) in b.iter() {
-                    let e = result.entry(k.clone()).or_insert(0.0);
-                    *e = e.max(*v);
+                    // For union: if key exists in both, take max; if only in one side, take that value
+                    if let Some(e) = result.get_mut(k) {
+                        *e = e.max(*v);
+                    } else {
+                        result.insert(k.clone(), *v);
+                    }
                 }
                 Value::mix(result)
             }
@@ -414,8 +418,11 @@ impl VM {
                 let mut left_mix = Self::value_to_mix_weights(&l)?;
                 let right_mix = Self::value_to_mix_weights(&r)?;
                 for (k, v) in right_mix {
-                    let e = left_mix.entry(k).or_insert(0.0);
-                    *e = e.max(v);
+                    if let Some(e) = left_mix.get_mut(&k) {
+                        *e = e.max(v);
+                    } else {
+                        left_mix.insert(k, v);
+                    }
                 }
                 Value::mix(left_mix)
             }

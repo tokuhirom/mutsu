@@ -1646,8 +1646,22 @@ impl Interpreter {
                         }
                         *weights.entry(str_key).or_insert(0.0) += 1.0;
                     };
+                    // Check for lazy iterables
                     for arg in &args {
-                        // Don't flatten QuantHash types
+                        if Self::is_lazy_for_set_ops(arg) {
+                            let mut err = RuntimeError::new("Cannot .Mix a lazy list");
+                            err.exception = Some(Box::new(Value::make_instance(
+                                Symbol::intern("X::Cannot::Lazy"),
+                                [("what".to_string(), Value::str_from("Mix"))]
+                                    .into_iter()
+                                    .collect(),
+                            )));
+                            return Err(err);
+                        }
+                    }
+                    if args.len() == 1 {
+                        let arg = &args[0];
+                        // Single arg: QuantHash types are single elements, others flatten
                         if matches!(arg, Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)) {
                             add_item(&mut weights, &mut original_keys, &mut has_non_str_keys, arg);
                         } else {
@@ -1659,6 +1673,11 @@ impl Interpreter {
                                     &item,
                                 );
                             }
+                        }
+                    } else {
+                        // Multiple args: each arg is a single element (capture semantics)
+                        for arg in &args {
+                            add_item(&mut weights, &mut original_keys, &mut has_non_str_keys, arg);
                         }
                     }
                     let is_hash_variant = class_name.resolve() == "MixHash";

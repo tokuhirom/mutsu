@@ -120,11 +120,129 @@ impl Interpreter {
                     None
                 }
             }
+            "new-from-pairs" => Some(self.dispatch_new_from_pairs(target, args)),
             "new" => Some(self.dispatch_new(target.clone(), args)),
             // self.Mu::new(...)  –  qualified call to Mu's default constructor.
             "Mu::new" => Some(self.call_method_with_values(target.clone(), "bless", args)),
             "bless" => Some(self.dispatch_bless(target, args)),
             _ => None,
+        }
+    }
+
+    /// Handle new-from-pairs: creates a Set/Bag/Mix from Pair arguments.
+    /// Pair keys become element keys, Pair values become weights/counts.
+    /// Duplicate keys have weights summed. Zero-weight entries are removed.
+    fn dispatch_new_from_pairs(
+        &mut self,
+        target: &Value,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let type_name = match target {
+            Value::Package(name) => name.resolve(),
+            _ => {
+                return Err(RuntimeError::new(
+                    "new-from-pairs can only be called on a type object",
+                ));
+            }
+        };
+        // Check for lazy iterables
+        for arg in &args {
+            if Self::is_lazy_for_set_ops(arg) {
+                let what = type_name.split('[').next().unwrap_or(&type_name);
+                let mut err = RuntimeError::new(format!("Cannot .{} a lazy list", what));
+                err.exception = Some(Box::new(Value::make_instance(
+                    Symbol::intern("X::Cannot::Lazy"),
+                    [("what".to_string(), Value::str(what.to_string()))]
+                        .into_iter()
+                        .collect(),
+                )));
+                return Err(err);
+            }
+        }
+        // Flatten a single list argument
+        let items: Vec<Value> = if args.len() == 1 {
+            Self::value_to_list(&args[0])
+        } else {
+            args
+        };
+        match type_name.as_str() {
+            "Mix" | "MixHash" => {
+                let mut weights: HashMap<String, f64> = HashMap::new();
+                for item in &items {
+                    let (key, weight) = match item {
+                        Value::Pair(k, v) => (k.clone(), Self::mix_pair_weight(v)?),
+                        Value::ValuePair(k, v) => (k.to_string_value(), Self::mix_pair_weight(v)?),
+                        other => (other.to_string_value(), 1.0),
+                    };
+                    *weights.entry(key).or_insert(0.0) += weight;
+                }
+                Ok(if type_name == "MixHash" {
+                    Value::mix_hash(weights)
+                } else {
+                    Value::mix(weights)
+                })
+            }
+            "Bag" | "BagHash" => {
+                let mut counts: HashMap<String, i64> = HashMap::new();
+                for item in &items {
+                    let (key, count) = match item {
+                        Value::Pair(k, v) => {
+                            let c = match v.as_ref() {
+                                Value::Int(i) => *i,
+                                Value::Num(n) => *n as i64,
+                                _ => 1,
+                            };
+                            (k.clone(), c)
+                        }
+                        Value::ValuePair(k, v) => {
+                            let c = match v.as_ref() {
+                                Value::Int(i) => *i,
+                                Value::Num(n) => *n as i64,
+                                _ => 1,
+                            };
+                            (k.to_string_value(), c)
+                        }
+                        other => (other.to_string_value(), 1),
+                    };
+                    *counts.entry(key).or_insert(0) += count;
+                }
+                // Remove zero-count entries
+                counts.retain(|_, v| *v > 0);
+                Ok(if type_name == "BagHash" {
+                    Value::bag_hash(counts)
+                } else {
+                    Value::bag(counts)
+                })
+            }
+            "Set" | "SetHash" => {
+                let mut elems = std::collections::HashSet::new();
+                for item in &items {
+                    match item {
+                        Value::Pair(k, v) => {
+                            if v.truthy() {
+                                elems.insert(k.clone());
+                            }
+                        }
+                        Value::ValuePair(k, v) => {
+                            if v.truthy() {
+                                elems.insert(k.to_string_value());
+                            }
+                        }
+                        other => {
+                            elems.insert(other.to_string_value());
+                        }
+                    }
+                }
+                Ok(if type_name == "SetHash" {
+                    Value::set_hash(elems)
+                } else {
+                    Value::set(elems)
+                })
+            }
+            _ => Err(RuntimeError::new(format!(
+                "new-from-pairs not supported on {}",
+                type_name
+            ))),
         }
     }
 
