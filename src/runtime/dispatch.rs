@@ -1538,9 +1538,14 @@ impl Interpreter {
                 body: Self::rewrite_proto_dispatch_stmts(body),
                 is_whatever_code: *is_whatever_code,
             },
-            Expr::AnonSub { body, is_rw } => Expr::AnonSub {
+            Expr::AnonSub {
+                body,
+                is_rw,
+                is_block,
+            } => Expr::AnonSub {
                 body: Self::rewrite_proto_dispatch_stmts(body),
                 is_rw: *is_rw,
+                is_block: *is_block,
             },
             Expr::AnonSubParams {
                 params,

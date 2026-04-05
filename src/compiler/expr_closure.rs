@@ -4,9 +4,15 @@ use std::sync::Arc;
 
 impl Compiler {
     /// Compile AnonSub expression.
-    pub(super) fn compile_expr_anon_sub(&mut self, body: &[Stmt], is_rw: bool) {
+    /// `is_block` = true for bare blocks `{ }`, false for `sub { }`.
+    /// Bare blocks are NOT routine boundaries for `return`.
+    pub(super) fn compile_expr_anon_sub(&mut self, body: &[Stmt], is_rw: bool, is_block: bool) {
         if is_rw {
-            let compiled = self.compile_routine_closure_body(&[], &[], body);
+            let compiled = if is_block {
+                self.compile_closure_body(&[], &[], body)
+            } else {
+                self.compile_routine_closure_body(&[], &[], body)
+            };
             let cc_idx = self.code.add_closure_code(compiled);
             let idx = self.code.add_stmt(Stmt::SubDecl {
                 name: Symbol::intern(""),
@@ -39,7 +45,11 @@ impl Compiler {
                 self.code.emit(OpCode::Die);
                 return;
             }
-            let compiled = self.compile_routine_closure_body(&placeholders, &[], body);
+            let compiled = if is_block {
+                self.compile_closure_body(&placeholders, &[], body)
+            } else {
+                self.compile_routine_closure_body(&placeholders, &[], body)
+            };
             let cc_idx = self.code.add_closure_code(compiled);
             let idx = self.code.add_stmt(Stmt::Block(body.to_vec()));
             self.code.emit(OpCode::MakeAnonSub(idx, Some(cc_idx)));
@@ -114,7 +124,12 @@ impl Compiler {
         let is_pointy = body
             .first()
             .is_some_and(|s| matches!(s, crate::ast::Stmt::SetLine(_)));
-        let mut compiled = self.compile_routine_closure_body(params, param_defs, body);
+        // Pointy blocks are NOT routine boundaries for `return`.
+        let mut compiled = if is_pointy {
+            self.compile_closure_body(params, param_defs, body)
+        } else {
+            self.compile_routine_closure_body(params, param_defs, body)
+        };
         if is_pointy {
             compiled.is_pointy_block = true;
         }
@@ -198,6 +213,7 @@ impl Compiler {
                         Expr::AnonSub {
                             body: vec![Stmt::Expr(value.clone())],
                             is_rw: false,
+                            is_block: true,
                         },
                     ],
                     modifier: None,

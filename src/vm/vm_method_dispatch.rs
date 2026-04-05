@@ -89,6 +89,14 @@ impl VM {
             .env_mut()
             .insert("!".to_string(), Value::Nil);
 
+        // Assign a unique callable ID for this method invocation so that
+        // non-local returns from blocks defined inside this method can target it.
+        let method_callable_id = crate::value::next_instance_id();
+        self.interpreter.env_mut().insert(
+            "__mutsu_callable_id".to_string(),
+            Value::Int(method_callable_id as i64),
+        );
+
         // Role param bindings
         if let Some(role_bindings) = self
             .interpreter
@@ -365,6 +373,15 @@ impl VM {
                     break;
                 }
                 Err(e) if e.return_value.is_some() => {
+                    // Non-local return: if the signal targets a specific callable,
+                    // only catch it if this method is the target.
+                    if let Some(target_id) = e.return_target_callable_id
+                        && target_id != method_callable_id
+                    {
+                        self.interpreter.restore_let_saves(let_mark);
+                        result = Err(e);
+                        break;
+                    }
                     let ret_val = e.return_value.unwrap();
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
@@ -527,7 +544,9 @@ impl VM {
         } else {
             match final_result {
                 Ok(v) => Ok(v),
-                Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
+                Err(e) if e.return_value.is_some() && e.return_target_callable_id.is_none() => {
+                    Ok(e.return_value.unwrap())
+                }
                 Err(e) => Err(e),
             }
         };

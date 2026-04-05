@@ -470,6 +470,7 @@ fn build_topic_subst_compound_expr(
         Expr::AnonSub {
             body: vec![Stmt::Expr(body_expr)],
             is_rw: false,
+            is_block: true,
         },
     ];
     if adverbs.global {
@@ -521,6 +522,7 @@ fn build_topic_subst_expr(
         Expr::AnonSub {
             body: vec![Stmt::Expr(replacement)],
             is_rw: false,
+            is_block: true,
         },
     ];
     if adverbs.global {

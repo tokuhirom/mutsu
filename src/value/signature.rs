@@ -876,7 +876,7 @@ fn is_supertype_of(t1: &str, t2: &str) -> bool {
 /// For type-name constraints like `Int`, creates a Package.
 fn where_expr_to_value(expr: &Expr) -> Value {
     match expr {
-        Expr::AnonSub { body, is_rw } => {
+        Expr::AnonSub { body, is_rw, .. } => {
             // Block constraint: { $_ % 2 == 0 }
             // Create a Sub with no explicit params — $_ is handled implicitly
             Value::make_sub(

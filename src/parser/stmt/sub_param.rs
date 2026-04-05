@@ -257,7 +257,14 @@ fn parse_where_constraint_expr(input: &str) -> PResult<'_, Expr> {
         if stmts_contain_whatever(&body) {
             return Err(malformed_double_closure_error());
         }
-        return Ok((r, Expr::AnonSub { body, is_rw: false }));
+        return Ok((
+            r,
+            Expr::AnonSub {
+                body,
+                is_rw: false,
+                is_block: true,
+            },
+        ));
     }
     expression(input)
 }

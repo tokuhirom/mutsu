@@ -188,6 +188,13 @@ impl Interpreter {
         let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
         self.routine_stack
             .push((def.package.resolve(), def.name.resolve()));
+        // Set __mutsu_callable_id so blocks defined inside this routine
+        // capture the correct target for non-local return.
+        let callable_key = format!("__mutsu_callable_id::{}::{}", def.package, def.name);
+        if let Some(Value::Int(id)) = self.env.get(&callable_key).cloned() {
+            self.env
+                .insert("__mutsu_callable_id".to_string(), Value::Int(id));
+        }
         self.prepare_definite_return_slot(return_spec.as_deref());
         let result = self.run_block(&def.body);
         self.routine_stack.pop();
@@ -232,6 +239,21 @@ impl Interpreter {
             Ok(()) => Ok(implicit_return),
             Err(e) => Err(e),
         };
+        // Non-local return targeting a different callable: propagate without absorbing
+        if let Err(ref e) = call_result
+            && e.return_value.is_some()
+            && let Some(_target_id) = e.return_target_callable_id
+        {
+            // The callable_id for this function is resolved from env.
+            let callable_key = format!("__mutsu_callable_id::{}::{}", def.package, def.name);
+            let my_id = self.env.get(&callable_key).and_then(|v| match v {
+                Value::Int(i) => Some(*i as u64),
+                _ => None,
+            });
+            if my_id != e.return_target_callable_id {
+                return call_result;
+            }
+        }
         let finalized =
             self.finalize_return_with_spec(call_result, effective_return_spec.as_deref());
         finalized.and_then(|v| self.maybe_fetch_rw_proxy(v, def.is_rw))

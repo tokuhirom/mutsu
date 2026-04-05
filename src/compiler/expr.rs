@@ -344,8 +344,12 @@ impl Compiler {
             Expr::CallOn { target, args } => {
                 self.compile_expr_call_on(target, args);
             }
-            Expr::AnonSub { body, is_rw } => {
-                self.compile_expr_anon_sub(body, *is_rw);
+            Expr::AnonSub {
+                body,
+                is_rw,
+                is_block,
+            } => {
+                self.compile_expr_anon_sub(body, *is_rw, *is_block);
             }
             Expr::AnonSubParams {
                 params,

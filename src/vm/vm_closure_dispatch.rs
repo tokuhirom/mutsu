@@ -302,11 +302,27 @@ impl VM {
                     result = Ok(());
                     break;
                 }
-                Err(e) if e.return_value.is_some() => {
-                    // Pointy blocks (`-> { }`) are NOT routine boundaries.
-                    // `return` in a pointy block propagates up to the
-                    // enclosing routine (sub/method).
-                    if cc.is_pointy_block {
+                Err(mut e) if e.return_value.is_some() => {
+                    // Non-routine closures (bare blocks, pointy blocks) are NOT
+                    // return boundaries.  `return` inside them propagates up to
+                    // the lexically enclosing routine (sub/method).
+                    if !cc.is_routine {
+                        // Tag the error with the target callable ID from the
+                        // block's captured env so the correct routine catches it.
+                        if e.return_target_callable_id.is_none()
+                            && let Some(Value::Int(id)) = data.env.get("__mutsu_callable_id")
+                        {
+                            e.return_target_callable_id = Some(*id as u64);
+                        }
+                        self.interpreter.restore_let_saves(let_mark);
+                        result = Err(e);
+                        break;
+                    }
+                    // Routine closures: check if the return targets a specific
+                    // callable; if so, only catch if it matches this closure.
+                    if let Some(target_id) = e.return_target_callable_id
+                        && target_id != data.id
+                    {
                         self.interpreter.restore_let_saves(let_mark);
                         result = Err(e);
                         break;

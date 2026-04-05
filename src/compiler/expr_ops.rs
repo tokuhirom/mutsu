@@ -244,6 +244,7 @@ impl Compiler {
             let thunked = Expr::AnonSub {
                 body: vec![Stmt::Expr(right.clone())],
                 is_rw: false,
+                is_block: true,
             };
             let rewritten = Expr::Call {
                 name: Symbol::intern("__mutsu_cross_shortcircuit"),
@@ -260,6 +261,7 @@ impl Compiler {
             let thunked = Expr::AnonSub {
                 body: vec![Stmt::Expr(left.clone())],
                 is_rw: false,
+                is_block: true,
             };
             let rewritten = Expr::Call {
                 name: Symbol::intern("__mutsu_reverse_xx"),
@@ -273,6 +275,7 @@ impl Compiler {
             let thunked = Expr::AnonSub {
                 body: vec![Stmt::Expr(right.clone())],
                 is_rw: false,
+                is_block: true,
             };
             let rewritten = Expr::Call {
                 name: Symbol::intern("__mutsu_zip_shortcircuit"),
@@ -290,6 +293,7 @@ impl Compiler {
             let thunked = Expr::AnonSub {
                 body: vec![Stmt::Expr(left.clone())],
                 is_rw: false,
+                is_block: true,
             };
             let rewritten = Expr::Call {
                 name: Symbol::intern("__mutsu_zip_xx"),
@@ -317,6 +321,7 @@ impl Compiler {
                 let thunked = Expr::AnonSub {
                     body: vec![Stmt::Expr(eval_right.clone())],
                     is_rw: false,
+                    is_block: true,
                 };
                 let rewritten = Expr::Call {
                     name: Symbol::intern("__mutsu_reverse_andthen"),
@@ -348,6 +353,7 @@ impl Compiler {
                 let thunked = Expr::AnonSub {
                     body: vec![Stmt::Expr(eval_left.clone())],
                     is_rw: false,
+                    is_block: true,
                 };
                 let rewritten = Expr::Call {
                     name: Symbol::intern("__mutsu_reverse_xx"),

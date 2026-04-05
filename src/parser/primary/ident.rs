@@ -1479,7 +1479,15 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             let (r, _) = ws(rest)?;
             if r.starts_with('{') {
                 let (r, body) = parse_block_body(r)?;
-                return Ok((r, make_anon_sub(body)));
+                // `sub { }` is a routine boundary (unlike bare blocks)
+                return Ok((
+                    r,
+                    Expr::AnonSub {
+                        body,
+                        is_rw: false,
+                        is_block: false,
+                    },
+                ));
             }
             if let Ok((r_named, _name)) = super::super::stmt::parse_sub_name_pub(r) {
                 let (r_named, _) = ws(r_named)?;
@@ -1489,7 +1497,11 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 {
                     let (r_named, traits) = super::super::stmt::parse_sub_traits_pub(r_named)?;
                     let (r_named, body) = parse_block_body(r_named)?;
-                    let mut expr = make_anon_sub(body);
+                    let mut expr = Expr::AnonSub {
+                        body,
+                        is_rw: traits.is_rw,
+                        is_block: false,
+                    };
                     if traits.is_rw {
                         expr = set_anon_sub_rw(expr, true);
                     }
@@ -1497,7 +1509,14 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 }
                 if r_named.starts_with('{') {
                     let (r_named, body) = parse_block_body(r_named)?;
-                    return Ok((r_named, make_anon_sub(body)));
+                    return Ok((
+                        r_named,
+                        Expr::AnonSub {
+                            body,
+                            is_rw: false,
+                            is_block: false,
+                        },
+                    ));
                 }
                 if r_named.starts_with('(') {
                     let (r_named, params_body) =
@@ -1515,7 +1534,11 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if r.starts_with("is ") || r.starts_with("returns ") || r.starts_with("of ") {
                 let (r, traits) = super::super::stmt::parse_sub_traits_pub(r)?;
                 let (r, body) = parse_block_body(r)?;
-                let mut expr = make_anon_sub(body);
+                let mut expr = Expr::AnonSub {
+                    body,
+                    is_rw: traits.is_rw,
+                    is_block: false,
+                };
                 if traits.is_rw {
                     expr = set_anon_sub_rw(expr, true);
                 }
@@ -2437,7 +2460,11 @@ fn parse_anon_sub_rest(
 
 fn set_anon_sub_rw(expr: Expr, is_rw: bool) -> Expr {
     match expr {
-        Expr::AnonSub { body, .. } => Expr::AnonSub { body, is_rw },
+        Expr::AnonSub { body, is_block, .. } => Expr::AnonSub {
+            body,
+            is_rw,
+            is_block,
+        },
         Expr::AnonSubParams {
             params,
             param_defs,

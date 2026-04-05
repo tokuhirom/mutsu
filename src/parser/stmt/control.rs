@@ -1394,7 +1394,14 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         let (r, _) = ws1(r)?;
         let (r, constraint) = if r.starts_with('{') {
             let (r, body) = crate::parser::primary::parse_block_body(r)?;
-            (r, Expr::AnonSub { body, is_rw: false })
+            (
+                r,
+                Expr::AnonSub {
+                    body,
+                    is_rw: false,
+                    is_block: true,
+                },
+            )
         } else {
             expression(r)?
         };

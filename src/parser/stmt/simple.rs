@@ -1816,7 +1816,11 @@ pub(super) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
     if has_postfix_dot || has_immediate_call {
         // Use AnonSub so the block compiles as a closure value, not inline code.
         // Handles `{ ... }.method(...)` and `{ ... }()` (immediate closure call).
-        let block_expr = Expr::AnonSub { body, is_rw: false };
+        let block_expr = Expr::AnonSub {
+            body,
+            is_rw: false,
+            is_block: true,
+        };
         let (rest, expr) = super::super::expr::postfix_expr_continue(rest, block_expr)?;
         return parse_statement_modifier(rest, Stmt::Expr(expr));
     }
