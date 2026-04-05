@@ -128,7 +128,8 @@ fn normalize_builtin_encoding_label(name: &str) -> Option<String> {
     let lowered = name.to_lowercase();
     let normalized = match lowered.as_str() {
         "utf8" | "utf-8" => "utf-8",
-        "utf16" | "utf-16" | "utf16le" | "utf-16le" => "utf-16le",
+        "utf16" | "utf-16" => "utf-16",
+        "utf16le" | "utf-16le" => "utf-16le",
         "utf16be" | "utf-16be" => "utf-16be",
         "ascii" => "ascii",
         "latin-1" | "latin1" | "iso-8859-1" => "iso-8859-1",
@@ -146,6 +147,37 @@ fn normalize_builtin_encoding_label(name: &str) -> Option<String> {
     Some(normalized.to_string())
 }
 
+fn utf8_line_col(prefix: &[u8]) -> (usize, usize) {
+    let s = std::str::from_utf8(prefix).unwrap_or("");
+    let (mut line, mut col) = (1usize, 1usize);
+    for ch in s.chars() {
+        if ch == '\n' {
+            line += 1;
+            col = 1;
+        } else {
+            col += 1;
+        }
+    }
+    (line, col)
+}
+
+fn decode_utf16_bytes(bytes: &[u8], big_endian: bool) -> Result<String, RuntimeError> {
+    if !bytes.len().is_multiple_of(2) {
+        return Err(RuntimeError::new("Invalid utf-16 byte length"));
+    }
+    let units: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|chunk| {
+            if big_endian {
+                u16::from_be_bytes([chunk[0], chunk[1]])
+            } else {
+                u16::from_le_bytes([chunk[0], chunk[1]])
+            }
+        })
+        .collect();
+    Ok(String::from_utf16_lossy(&units))
+}
+
 fn decode_bytes_with_builtin_encoding(
     bytes: &[u8],
     encoding_name: &str,
@@ -156,26 +188,40 @@ fn decode_bytes_with_builtin_encoding(
             .map(|b| if *b <= 0x7F { *b as char } else { '\u{FFFD}' })
             .collect()),
         "iso-8859-1" => Ok(bytes.iter().map(|b| *b as char).collect()),
-        "utf-16le" => {
-            if !bytes.len().is_multiple_of(2) {
-                return Err(RuntimeError::new("Invalid utf-16 byte length"));
+        "utf-16" => {
+            if bytes.len() >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF {
+                decode_utf16_bytes(&bytes[2..], true)
+            } else if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE {
+                decode_utf16_bytes(&bytes[2..], false)
+            } else {
+                decode_utf16_bytes(bytes, false)
             }
-            let units: Vec<u16> = bytes
-                .chunks_exact(2)
-                .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
-                .collect();
-            Ok(String::from_utf16_lossy(&units))
         }
-        "utf-16be" => {
-            if !bytes.len().is_multiple_of(2) {
-                return Err(RuntimeError::new("Invalid utf-16be byte length"));
+        "utf-16le" => decode_utf16_bytes(bytes, false),
+        "utf-16be" => decode_utf16_bytes(bytes, true),
+        "utf-8" => match std::str::from_utf8(bytes) {
+            Ok(s) => Ok(s.strip_prefix('\u{FEFF}').unwrap_or(s).to_string()),
+            Err(e) => {
+                let vup = e.valid_up_to();
+                if e.error_len().is_none() {
+                    Err(RuntimeError::new(
+                        "Malformed termination of UTF-8 string".to_string(),
+                    ))
+                } else {
+                    let (line, col) = utf8_line_col(&bytes[..vup]);
+                    let s = if vup > 0 { vup - 1 } else { 0 };
+                    let end = (vup + 2).min(bytes.len());
+                    let near: Vec<String> =
+                        bytes[s..end].iter().map(|b| format!("{:02x}", b)).collect();
+                    Err(RuntimeError::new(format!(
+                        "Malformed UTF-8 near bytes {} at line {} col {}",
+                        near.join(" "),
+                        line,
+                        col
+                    )))
+                }
             }
-            let units: Vec<u16> = bytes
-                .chunks_exact(2)
-                .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
-                .collect();
-            Ok(String::from_utf16_lossy(&units))
-        }
+        },
         _ => {
             let label = if encoding_name == "windows-932" {
                 "shift_jis"

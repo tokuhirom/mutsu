@@ -269,9 +269,9 @@ impl Interpreter {
         Ok(Value::array(out))
     }
 
-    /// Zip xx with thunked left side: ($thunk,) Zxx (counts,)
-    /// Args: [right_list, left_thunk]
-    /// The left thunk is evaluated per-element, repeated `count` times.
+    /// Zip xx with thunked left side: `<a b c> Zxx (0,1,0)`
+    /// For each count in the right list, re-evaluates the thunk `count` times,
+    /// extracting element at position `i`. Preserves side-effect semantics.
     pub(super) fn builtin_zip_xx(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.len() != 2 {
             return Err(RuntimeError::new(
@@ -281,13 +281,18 @@ impl Interpreter {
         let right_values = crate::runtime::value_to_list(&args[0]);
         let thunk = args[1].clone();
         let mut out = Vec::new();
-        for count_val in right_values {
-            let count = crate::runtime::to_int(&count_val);
+        for (i, count_val) in right_values.iter().enumerate() {
+            let count = crate::runtime::to_int(count_val).max(0) as usize;
+            let mut repeated = Vec::with_capacity(count);
             for _ in 0..count {
                 let val = self.eval_call_on_value(thunk.clone(), Vec::new())?;
                 let items = crate::runtime::value_to_list(&val);
-                out.push(items.into_iter().next().unwrap_or(Value::Nil));
+                if i >= items.len() {
+                    return Ok(Value::Seq(std::sync::Arc::new(out)));
+                }
+                repeated.push(items.into_iter().nth(i).unwrap_or(Value::Nil));
             }
+            out.push(Value::Seq(std::sync::Arc::new(repeated)));
         }
         Ok(Value::Seq(std::sync::Arc::new(out)))
     }

@@ -673,6 +673,23 @@ impl Interpreter {
                     return true; // All Buf/Blob types are Blob (Buf inherits Blob)
                 }
             }
+            // blob8/buf8 aliases: blob8 == Blob[uint8], etc.
+            if crate::runtime::utils::is_buf_or_blob_class(constraint)
+                && crate::runtime::utils::is_buf_or_blob_class(&cn)
+            {
+                let nc = crate::runtime::utils::normalize_buf_type_name(constraint);
+                let nv = crate::runtime::utils::normalize_buf_type_name(&cn);
+                if nc == nv {
+                    return true;
+                }
+                if nc.starts_with("Blob") && nv.starts_with("Buf") {
+                    let ci = nc.split_once('[').map(|(_, i)| i.trim_end_matches(']'));
+                    let vi = nv.split_once('[').map(|(_, i)| i.trim_end_matches(']'));
+                    if ci.is_none() || ci == vi {
+                        return true;
+                    }
+                }
+            }
             // Check parent classes of the instance
             if let Some(class_def) = self.classes.get(&class_name.resolve()) {
                 for parent in class_def.parents.clone() {

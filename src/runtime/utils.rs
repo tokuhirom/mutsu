@@ -40,6 +40,23 @@ pub(crate) fn is_buf_or_blob_class(cn: &str) -> bool {
     is_buf_like_class(cn) || is_blob_like_class(cn)
 }
 
+/// Normalize Buf/Blob type aliases to canonical form.
+pub(crate) fn normalize_buf_type_name(name: &str) -> String {
+    match name {
+        "blob8" => "Blob[uint8]".to_string(),
+        "blob16" => "Blob[uint16]".to_string(),
+        "blob32" => "Blob[uint32]".to_string(),
+        "blob64" => "Blob[uint64]".to_string(),
+        "buf8" => "Buf[uint8]".to_string(),
+        "buf16" => "Buf[uint16]".to_string(),
+        "buf32" => "Buf[uint32]".to_string(),
+        "buf64" => "Buf[uint64]".to_string(),
+        "utf8" => "Blob[uint8]".to_string(),
+        "utf16" => "Blob[uint16]".to_string(),
+        _ => name.to_string(),
+    }
+}
+
 /// Create a Failure value for operations on empty arrays (pop, shift, etc.)
 pub(crate) fn make_empty_array_failure(op: &str) -> Value {
     let mut ex_attrs = HashMap::new();

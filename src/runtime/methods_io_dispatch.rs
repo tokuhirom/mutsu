@@ -47,7 +47,13 @@ impl Interpreter {
             .find(|v| !matches!(v, Value::Pair(..)))
             .map(|v| v.to_string_value())
             .unwrap_or_else(|| "utf-8".to_string());
-        let replacement = Self::named_value(args, "replacement").map(|v| v.to_string_value());
+        let replacement = Self::named_value(args, "replacement").map(|v| {
+            if matches!(v, Value::Bool(true)) {
+                "?".to_string()
+            } else {
+                v.to_string_value()
+            }
+        });
         let normalized_encoding = self
             .find_encoding(&encoding)
             .map(|e| e.name.as_str().to_lowercase())
@@ -75,7 +81,7 @@ impl Interpreter {
                 attrs.insert("bytes".to_string(), Value::array(bytes_vals));
                 match normalized_encoding.as_str() {
                     "utf-8" | "utf8" => "utf8",
-                    _ => "Buf",
+                    _ => "Blob[uint8]",
                 }
             }
         };
