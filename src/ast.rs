@@ -768,6 +768,24 @@ pub(crate) fn collect_placeholders(stmts: &[Stmt]) -> Vec<String> {
     names
 }
 
+/// Collect placeholders without recursing into nested closures (AnonSubParams,
+/// Lambda, AnonSub).  Used by Stmt::Block compilation and VM MakeAnonSub to
+/// determine the block's own params without picking up placeholders from
+/// nested closures assigned to variables.
+pub(crate) fn collect_placeholders_shallow(stmts: &[Stmt]) -> Vec<String> {
+    let mut names = Vec::new();
+    for stmt in stmts {
+        collect_ph_stmt_shallow(stmt, &mut names);
+    }
+    names.sort_by(|a, b| {
+        let a_name = placeholder_sort_key(a);
+        let b_name = placeholder_sort_key(b);
+        a_name.cmp(b_name)
+    });
+    names.dedup();
+    names
+}
+
 fn placeholder_sort_key(name: &str) -> &str {
     let without_sigil = if let Some(first) = name.chars().next() {
         if matches!(first, '$' | '@' | '%' | '&') {
@@ -1027,11 +1045,6 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
         Expr::DoStmt(stmt) => {
             collect_ph_stmt(stmt, out);
         }
-        Expr::Lambda { body, .. } => {
-            for s in body {
-                collect_ph_stmt(s, out);
-            }
-        }
         Expr::Try { body, catch } => {
             for s in body {
                 collect_ph_stmt(s, out);
@@ -1075,6 +1088,284 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
             for (_, v) in pairs {
                 if let Some(e) = v {
                     collect_ph_expr(e, out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Shallow version of collect_ph_stmt: skips AnonSub/AnonSubParams/Lambda
+/// closures so their placeholders are not attributed to the outer block.
+fn collect_ph_stmt_shallow(stmt: &Stmt, out: &mut Vec<String>) {
+    match stmt {
+        Stmt::Expr(e)
+        | Stmt::Return(e)
+        | Stmt::Die(e)
+        | Stmt::Fail(e)
+        | Stmt::Take(e)
+        | Stmt::Goto(e) => {
+            collect_ph_expr_shallow(e, out);
+        }
+        Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
+            collect_ph_expr_shallow(expr, out)
+        }
+        Stmt::Call { args, .. } => {
+            for arg in args {
+                match arg {
+                    CallArg::Positional(e) | CallArg::Invocant(e) => {
+                        collect_ph_expr_shallow(e, out)
+                    }
+                    CallArg::Named { value: Some(e), .. } => collect_ph_expr_shallow(e, out),
+                    CallArg::Named { value: None, .. } => {}
+                    CallArg::Slip(e) => collect_ph_expr_shallow(e, out),
+                }
+            }
+        }
+        Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
+            for e in es {
+                collect_ph_expr_shallow(e, out);
+            }
+        }
+        Stmt::If {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            collect_ph_expr_shallow(cond, out);
+            for s in then_branch {
+                collect_ph_stmt_shallow(s, out);
+            }
+            for s in else_branch {
+                collect_ph_stmt_shallow(s, out);
+            }
+        }
+        Stmt::While { cond, body, .. } => {
+            collect_ph_expr_shallow(cond, out);
+            for s in body {
+                collect_ph_stmt_shallow(s, out);
+            }
+        }
+        Stmt::For { iterable, body, .. } => {
+            collect_ph_expr_shallow(iterable, out);
+            for s in body {
+                collect_ph_stmt_shallow(s, out);
+            }
+        }
+        Stmt::Loop { body, .. } | Stmt::React { body } => {
+            for s in body {
+                collect_ph_stmt_shallow(s, out);
+            }
+        }
+        Stmt::Whenever { supply, body, .. } => {
+            collect_ph_expr_shallow(supply, out);
+            for s in body {
+                collect_ph_stmt_shallow(s, out);
+            }
+        }
+        Stmt::Block(body)
+        | Stmt::SyntheticBlock(body)
+        | Stmt::Default(body)
+        | Stmt::Catch(body)
+        | Stmt::Control(body)
+        | Stmt::RoleDecl { body, .. } => {
+            for s in body {
+                collect_ph_stmt_shallow(s, out);
+            }
+        }
+        Stmt::Phaser { body, .. } => {
+            for s in body {
+                collect_ph_stmt_shallow(s, out);
+            }
+        }
+        Stmt::Given { topic, body } => {
+            collect_ph_expr_shallow(topic, out);
+            for s in body {
+                collect_ph_stmt_shallow(s, out);
+            }
+        }
+        Stmt::When { cond, body } => {
+            collect_ph_expr_shallow(cond, out);
+            for s in body {
+                collect_ph_stmt_shallow(s, out);
+            }
+        }
+        Stmt::Let { value, index, .. } => {
+            if let Some(e) = value {
+                collect_ph_expr_shallow(e, out);
+            }
+            if let Some(e) = index {
+                collect_ph_expr_shallow(e, out);
+            }
+        }
+        Stmt::TempMethodAssign {
+            method_args, value, ..
+        } => {
+            for e in method_args {
+                collect_ph_expr_shallow(e, out);
+            }
+            collect_ph_expr_shallow(value, out);
+        }
+        Stmt::Label { stmt, .. } => {
+            collect_ph_stmt_shallow(stmt, out);
+        }
+        Stmt::SubsetDecl {
+            predicate: Some(predicate),
+            ..
+        } => {
+            collect_ph_expr_shallow(predicate, out);
+        }
+        _ => {}
+    }
+}
+
+/// Shallow version of collect_ph_expr: stops at closure boundaries
+/// (AnonSub, AnonSubParams, Lambda) since those closures define their
+/// own placeholder scope.
+fn collect_ph_expr_shallow(expr: &Expr, out: &mut Vec<String>) {
+    match expr {
+        Expr::Var(name) if name.starts_with('^') || name.starts_with(':') => {
+            if !out.contains(name) {
+                out.push(name.clone());
+            }
+        }
+        Expr::CodeVar(name) if name.starts_with('^') => {
+            let prefixed = format!("&{}", name);
+            if !out.contains(&prefixed) {
+                out.push(prefixed);
+            }
+        }
+        Expr::ArrayVar(name) if name.starts_with('^') || name.starts_with(':') => {
+            let prefixed = format!("@{}", name);
+            if !out.contains(&prefixed) {
+                out.push(prefixed);
+            }
+        }
+        Expr::HashVar(name) if name.starts_with('^') || name.starts_with(':') => {
+            let prefixed = format!("%{}", name);
+            if !out.contains(&prefixed) {
+                out.push(prefixed);
+            }
+        }
+        Expr::Binary { left, right, .. } => {
+            collect_ph_expr_shallow(left, out);
+            collect_ph_expr_shallow(right, out);
+        }
+        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => {
+            collect_ph_expr_shallow(expr, out)
+        }
+        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
+            collect_ph_expr_shallow(target, out);
+            for a in args {
+                collect_ph_expr_shallow(a, out);
+            }
+        }
+        Expr::DynamicMethodCall {
+            target,
+            name_expr,
+            args,
+        }
+        | Expr::HyperMethodCallDynamic {
+            target,
+            name_expr,
+            args,
+            ..
+        } => {
+            collect_ph_expr_shallow(target, out);
+            collect_ph_expr_shallow(name_expr, out);
+            for a in args {
+                collect_ph_expr_shallow(a, out);
+            }
+        }
+        Expr::Call { args, .. } => {
+            for a in args {
+                collect_ph_expr_shallow(a, out);
+            }
+        }
+        Expr::CallOn { target, args } => {
+            collect_ph_expr_shallow(target, out);
+            for a in args {
+                collect_ph_expr_shallow(a, out);
+            }
+        }
+        Expr::Index { target, index } => {
+            collect_ph_expr_shallow(target, out);
+            collect_ph_expr_shallow(index, out);
+        }
+        Expr::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            collect_ph_expr_shallow(cond, out);
+            collect_ph_expr_shallow(then_expr, out);
+            collect_ph_expr_shallow(else_expr, out);
+        }
+        Expr::AssignExpr { expr, .. } | Expr::PositionalPair(expr) | Expr::ZenSlice(expr) => {
+            collect_ph_expr_shallow(expr, out)
+        }
+        Expr::Exists { target, arg, .. } => {
+            collect_ph_expr_shallow(target, out);
+            if let Some(a) = arg {
+                collect_ph_expr_shallow(a, out);
+            }
+        }
+        Expr::ArrayLiteral(es)
+        | Expr::BracketArray(es, _)
+        | Expr::StringInterpolation(es)
+        | Expr::CaptureLiteral(es) => {
+            for e in es {
+                collect_ph_expr_shallow(e, out);
+            }
+        }
+        // Stop at closure boundaries: these define their own placeholder scope.
+        Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Lambda { .. } => {}
+        Expr::Block(stmts) | Expr::Gather(stmts) => {
+            for s in stmts {
+                collect_ph_stmt_shallow(s, out);
+            }
+        }
+        Expr::DoBlock { body, .. } => {
+            for s in body {
+                collect_ph_stmt_shallow(s, out);
+            }
+        }
+        Expr::DoStmt(stmt) => {
+            collect_ph_stmt_shallow(stmt, out);
+        }
+        Expr::Try { body, catch } => {
+            for s in body {
+                collect_ph_stmt_shallow(s, out);
+            }
+            if let Some(c) = catch {
+                for s in c {
+                    collect_ph_stmt_shallow(s, out);
+                }
+            }
+        }
+        Expr::PhaserExpr { body, .. } | Expr::Once { body } => {
+            for s in body {
+                collect_ph_stmt_shallow(s, out);
+            }
+        }
+        Expr::Reduction { expr, .. } | Expr::Eager(expr) => collect_ph_expr_shallow(expr, out),
+        Expr::HyperOp { left, right, .. }
+        | Expr::HyperFuncOp { left, right, .. }
+        | Expr::MetaOp { left, right, .. } => {
+            collect_ph_expr_shallow(left, out);
+            collect_ph_expr_shallow(right, out);
+        }
+        Expr::InfixFunc { left, right, .. } => {
+            collect_ph_expr_shallow(left, out);
+            for e in right {
+                collect_ph_expr_shallow(e, out);
+            }
+        }
+        Expr::Hash(pairs) => {
+            for (_, v) in pairs {
+                if let Some(e) = v {
+                    collect_ph_expr_shallow(e, out);
                 }
             }
         }
@@ -1208,7 +1499,7 @@ fn check_bare_var_expr(expr: &Expr, bare_name: &str, found: &mut bool) {
 /// Create an `Expr::AnonSub` or `Expr::AnonSubParams` depending on whether
 /// the block body contains placeholder variables (`$^a`, `$^b`, etc.).
 pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
-    let placeholders = collect_placeholders(&stmts);
+    let placeholders = collect_placeholders_shallow(&stmts);
     if placeholders.is_empty() {
         Expr::AnonSub {
             body: stmts,

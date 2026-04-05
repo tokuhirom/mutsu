@@ -138,6 +138,23 @@ impl VM {
                 .entry(k.clone())
                 .or_insert_with(|| v.clone());
         }
+        // Override with persisted per-closure-instance captured variable state.
+        // This ensures that each closure instance maintains independent mutable
+        // state across calls (e.g. two closures from the same factory each get
+        // their own copy of captured variables).
+        let cap_overrides: Vec<(String, Value)> = data
+            .env
+            .keys()
+            .filter_map(|k| {
+                let persist_key = format!("__mutsu_closure_cap::{}::{}", data.id, k);
+                self.interpreter
+                    .get_state_var(&persist_key)
+                    .map(|val| (k.clone(), val.clone()))
+            })
+            .collect();
+        for (k, val) in cap_overrides {
+            self.interpreter.env_mut().insert(k, val);
+        }
 
         self.interpreter.push_caller_env();
 
@@ -405,6 +422,15 @@ impl VM {
             }
         }
 
+        // Persist captured variable state so this closure instance retains
+        // its own mutable state across calls (independent from other closures).
+        for k in data.env.keys() {
+            if let Some(val) = self.interpreter.env().get(k).cloned() {
+                let persist_key = format!("__mutsu_closure_cap::{}::{}", data.id, k);
+                self.interpreter.set_state_var(persist_key, val);
+            }
+        }
+
         // Environment writeback: merge changes back to caller
         let frame = self.pop_call_frame();
         let mut restored_env = frame.saved_env;
@@ -446,6 +472,13 @@ impl VM {
                     || k.starts_with("__mutsu_sigilless_alias::!"))
                 && (!local_names.contains(k.as_str()) || captured_names.contains(k.as_str()))
             {
+                // Don't leak captured-only variables to callers that don't have
+                // them. This prevents independent closures from sharing state
+                // via the calling env (e.g. two closures from the same factory
+                // should have their own captured variable copies).
+                if captured_names.contains(k.as_str()) && !restored_env.contains_key(k) {
+                    continue;
+                }
                 restored_env.insert(k.clone(), v.clone());
             }
         }

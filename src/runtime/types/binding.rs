@@ -1036,7 +1036,26 @@ impl Interpreter {
                         let target = self.env.get(&pd.name).cloned().unwrap_or(Value::Nil);
                         bind_sub_signature_from_value(self, sub_params, &target)?;
                     }
-                } else if !pd.required && !pd.name.is_empty() {
+                } else if !pd.optional_marker && !pd.name.is_empty() {
+                    // Positional parameter with no default and no `?` marker is required.
+                    // Count required and total positional params for the error message.
+                    let total_positional = param_defs
+                        .iter()
+                        .filter(|p| {
+                            !p.named && !p.slurpy && !p.double_slurpy && !p.name.starts_with(':')
+                        })
+                        .count();
+                    let positional_arg_count = args
+                        .iter()
+                        .filter(|a| !matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)))
+                        .count();
+                    return Err(RuntimeError::new(format!(
+                        "Too few positionals passed; expected {} argument{} but got {}",
+                        total_positional,
+                        if total_positional == 1 { "" } else { "s" },
+                        positional_arg_count
+                    )));
+                } else if !pd.name.is_empty() {
                     // Optional parameters use typed empties/type objects when omitted.
                     self.bind_param_value(&pd.name, Self::missing_optional_param_value(pd));
                     self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());

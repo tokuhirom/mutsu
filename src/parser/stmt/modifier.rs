@@ -46,7 +46,7 @@ fn check_two_terms_across_lines(r: &str) -> Result<(), PError> {
 
 fn rewrite_placeholder_block_modifier_stmt(stmt: Stmt, cond: &Expr) -> Stmt {
     if let Stmt::Block(body) = &stmt
-        && let placeholders = crate::ast::collect_placeholders(body)
+        && let placeholders = crate::ast::collect_placeholders_shallow(body)
         && !placeholders.is_empty()
     {
         let mut rewritten = Vec::new();

@@ -3,7 +3,7 @@ use super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 use crate::token_kind::{TokenKind, lookup_unicode_char_by_name};
 
-use crate::ast::{Expr, ParamDef, Stmt, collect_placeholders};
+use crate::ast::{Expr, ParamDef, Stmt, collect_placeholders_shallow};
 use crate::symbol::Symbol;
 use crate::value::Value;
 
@@ -868,7 +868,7 @@ pub(super) fn sub_decl_body(
     // When no explicit signature is given, collect placeholder variables
     // ($^a, $^b, &^c, etc.) from the body as implicit parameters.
     let (params, param_defs) = if params.is_empty() && param_defs.is_empty() {
-        let placeholders = collect_placeholders(&body);
+        let placeholders = collect_placeholders_shallow(&body);
         if placeholders.is_empty() {
             (params, param_defs)
         } else {

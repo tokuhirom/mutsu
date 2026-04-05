@@ -3,7 +3,7 @@ use super::super::helpers::{ws, ws1};
 use super::super::parse_result::{PError, PResult, opt_char, parse_char};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::ast::{AssignOp, Expr, ParamDef, Stmt, collect_placeholders};
+use crate::ast::{AssignOp, Expr, ParamDef, Stmt, collect_placeholders_shallow};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
@@ -1019,7 +1019,7 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
     let (rest, body) = block(rest)?;
     // When no explicit params, collect placeholder variables from the body
     let (param, params) = if param.is_none() && params.is_empty() {
-        let placeholders = collect_placeholders(&body);
+        let placeholders = collect_placeholders_shallow(&body);
         if placeholders.is_empty() {
             (param, params)
         } else {
