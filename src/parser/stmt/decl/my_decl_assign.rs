@@ -168,7 +168,16 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     if s.is_our && s.is_code {
         if let Some(r) = keyword("method", rest) {
             let (r, _) = ws1(r)?;
-            let (r, stmt) = method_decl_body(r, false, true)?;
+            let (r, mut stmt) = method_decl_body(r, false, true)?;
+            // Mark as `our &name = method` form so the method stays in the
+            // class method table (unlike `our method name()` which does not).
+            if let Stmt::MethodDecl {
+                ref mut our_variable_form,
+                ..
+            } = stmt
+            {
+                *our_variable_form = true;
+            }
             if s.apply_modifier {
                 return parse_statement_modifier(r, stmt);
             }
@@ -178,7 +187,14 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             let (r, _) = ws1(r)?;
             if let Some(r) = keyword("method", r) {
                 let (r, _) = ws1(r)?;
-                let (r, stmt) = method_decl_body(r, true, true)?;
+                let (r, mut stmt) = method_decl_body(r, true, true)?;
+                if let Stmt::MethodDecl {
+                    ref mut our_variable_form,
+                    ..
+                } = stmt
+                {
+                    *our_variable_form = true;
+                }
                 if s.apply_modifier {
                     return parse_statement_modifier(r, stmt);
                 }
