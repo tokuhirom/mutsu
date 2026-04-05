@@ -20,13 +20,18 @@ impl Interpreter {
             "Int" => match value {
                 Value::Int(i) => Value::Int(i),
                 Value::Num(f) => Value::Int(f as i64),
-                Value::Rat(n, d) => {
-                    if d == 0 {
-                        Value::Int(0)
-                    } else {
-                        Value::Int(n / d)
-                    }
+                Value::Rat(_, 0) => {
+                    return Ok(RuntimeError::divide_by_zero_failure_for_method(
+                        "Int", "Rational",
+                    ));
                 }
+                Value::Rat(n, d) => Value::Int(n / d),
+                Value::FatRat(_, 0) => {
+                    return Ok(RuntimeError::divide_by_zero_failure_for_method(
+                        "Int", "Rational",
+                    ));
+                }
+                Value::FatRat(n, d) => Value::Int(n / d),
                 Value::Complex(r, _) => Value::Int(r as i64),
                 Value::Str(s) => Value::Int(s.trim().parse::<i64>().unwrap_or(0)),
                 Value::Bool(b) => Value::Int(if b { 1 } else { 0 }),
