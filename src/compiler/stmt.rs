@@ -434,6 +434,19 @@ impl Compiler {
                     self.code.emit(OpCode::Die);
                     return;
                 }
+                // Re-declaration without initializer/traits is a noop.
+                {
+                    let has_init = custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+                    if !has_init
+                        && custom_traits.is_empty()
+                        && !*is_our
+                        && self.local_map.contains_key(name)
+                    {
+                        let slot = self.alloc_local(name);
+                        self.code.emit(OpCode::GetLocal(slot));
+                        return;
+                    }
+                }
                 // Track constant declarations so the compiler can avoid itemizing
                 // them in `for` loops (constants have no Scalar container).
                 if custom_traits.iter().any(|(t, _)| t == "__constant") {

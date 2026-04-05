@@ -250,10 +250,16 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
     let (rest, _) = opt_char(rest, ';');
     let mut stmts = Vec::new();
     for dvar in &vars {
+        let effective_tc = dvar
+            .per_var_type_constraint
+            .clone()
+            .or_else(|| type_constraint.clone());
         let expr = if let Some(ref def_expr) = group_default_expr {
             dvar.default.clone().unwrap_or_else(|| def_expr.clone())
+        } else if let Some(ref default) = dvar.default {
+            default.clone()
         } else {
-            dvar.default.clone().unwrap_or(Expr::Literal(Value::Nil))
+            native_type_default(&effective_tc)
         };
         let traits = if let Some(ref def_expr) = group_default_expr {
             vec![("default".to_string(), Some(def_expr.clone()))]
@@ -263,7 +269,7 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
         stmts.push(Stmt::VarDecl {
             name: dvar.name.clone(),
             expr,
-            type_constraint: type_constraint.clone(),
+            type_constraint: effective_tc,
             is_state,
             is_our: false,
             is_dynamic: false,
@@ -380,6 +386,19 @@ fn parse_destructuring_with_rhs(
         }
     }
     Ok((rest, Stmt::SyntheticBlock(stmts)))
+}
+
+/// Return the default expression for a native type, or Nil for non-native types.
+fn native_type_default(tc: &Option<String>) -> Expr {
+    match tc.as_deref() {
+        Some(
+            "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16" | "uint32"
+            | "uint64",
+        ) => Expr::Literal(Value::Int(0)),
+        Some("num" | "num32" | "num64") => Expr::Literal(Value::Num(0.0)),
+        Some("str") => Expr::Literal(Value::str(String::new())),
+        _ => Expr::Literal(Value::Nil),
+    }
 }
 
 /// Parse named destructuring: bind from a hash.
