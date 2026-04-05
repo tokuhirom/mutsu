@@ -100,8 +100,10 @@ impl VM {
             };
             target = Value::array(forced);
         }
-        // Normalize Slip target to List for uniform handling
-        if let Value::Slip(items) = target {
+        // Normalize Seq/Slip target to List for uniform handling
+        if let Value::Seq(items) = target {
+            target = Value::Array(items, crate::value::ArrayKind::List);
+        } else if let Value::Slip(items) = target {
             target = Value::Array(items, crate::value::ArrayKind::List);
         }
         // Normalize index: convert Seq/LazyList indices to Array for

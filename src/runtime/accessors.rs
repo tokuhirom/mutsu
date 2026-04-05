@@ -893,7 +893,13 @@ impl Interpreter {
         right: Value,
         exclude_end: bool,
     ) -> Result<Value, RuntimeError> {
-        self.eval_sequence(left, right, exclude_end)
+        let result = self.eval_sequence(left, right, exclude_end)?;
+        // The `...` operator returns a Seq in Raku, not a List/Array.
+        // Convert finite Array results to Seq; LazyList results stay as-is.
+        match result {
+            Value::Array(items, _) => Ok(Value::Seq(items)),
+            other => Ok(other),
+        }
     }
 
     pub(crate) fn resolve_code_var(&self, name: &str) -> Value {

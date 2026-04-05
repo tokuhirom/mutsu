@@ -11,6 +11,31 @@ use crate::symbol::Symbol;
 use num_bigint::BigInt as NumBigInt;
 use num_integer::Integer;
 use num_traits::{Signed, ToPrimitive, Zero};
+/// Global set tracking consumed Seq Arc pointers (by address).
+/// When a Seq's iterator is consumed, its Arc pointer address is added here.
+/// A second attempt to iterate the same Seq will detect it as consumed and error.
+static CONSUMED_SEQS: OnceLock<Mutex<HashSet<usize>>> = OnceLock::new();
+
+fn consumed_seqs() -> &'static Mutex<HashSet<usize>> {
+    CONSUMED_SEQS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+/// Mark a Seq (identified by its Arc pointer address) as consumed.
+/// Returns Err if the Seq was already consumed.
+#[allow(clippy::result_large_err)]
+pub(crate) fn seq_consume(arc_ptr: &Arc<Vec<Value>>) -> Result<(), RuntimeError> {
+    let addr = Arc::as_ptr(arc_ptr) as usize;
+    let mut set = consumed_seqs().lock().unwrap();
+    if !set.insert(addr) {
+        return Err(RuntimeError::new(
+            "The iterator of this Seq is already in use/consumed by another Seq \
+             (you might solve this by adding .cache on usages of the Seq, or by \
+             assigning the Seq into an array)",
+        ));
+    }
+    Ok(())
+}
+
 /// Shared mutable attribute storage for Proxy subclasses.
 pub(crate) type ProxySubclassAttrs = Arc<Mutex<HashMap<String, Value>>>;
 
