@@ -1517,14 +1517,54 @@ impl Interpreter {
                     return Ok(Value::ValuePair(Box::new(key), Box::new(value)));
                 }
                 "Set" | "SetHash" => {
+                    // Set/SetHash.new treats each element as an opaque value
+                    // (does NOT decompose Pairs like the .Set/.SetHash coercion does).
+                    // Single arg: if QuantHash, treat as single element; otherwise iterate.
+                    // Multiple args: each is a single element.
                     let mut elems = HashSet::new();
-                    for arg in &args {
-                        let coerced = self.dispatch_to_set(arg.clone())?;
-                        if let Value::Set(set_items, _) = coerced {
-                            elems.extend(set_items.iter().cloned());
+                    let mut original_keys: HashMap<String, Value> = HashMap::new();
+                    let mut has_non_str_keys = false;
+                    let add_item = |elems: &mut HashSet<String>,
+                                    original_keys: &mut HashMap<String, Value>,
+                                    has_non_str: &mut bool,
+                                    item: &Value| {
+                        let str_key = item.to_string_value();
+                        if !matches!(item, Value::Str(_)) {
+                            *has_non_str = true;
+                            original_keys
+                                .entry(str_key.clone())
+                                .or_insert_with(|| item.clone());
+                        }
+                        elems.insert(str_key);
+                    };
+                    if args.len() == 1 {
+                        let arg = &args[0];
+                        // QuantHash types are always single elements
+                        if matches!(arg, Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)) {
+                            add_item(&mut elems, &mut original_keys, &mut has_non_str_keys, arg);
+                        } else {
+                            for item in Self::value_to_list(arg) {
+                                add_item(
+                                    &mut elems,
+                                    &mut original_keys,
+                                    &mut has_non_str_keys,
+                                    &item,
+                                );
+                            }
+                        }
+                    } else {
+                        for arg in &args {
+                            add_item(&mut elems, &mut original_keys, &mut has_non_str_keys, arg);
                         }
                     }
-                    return Ok(if base_class_name == "SetHash" {
+                    let is_mutable = base_class_name == "SetHash";
+                    return Ok(if has_non_str_keys {
+                        if is_mutable {
+                            Value::set_hash_typed(elems, original_keys)
+                        } else {
+                            Value::set_typed(elems, original_keys)
+                        }
+                    } else if is_mutable {
                         Value::set_hash(elems)
                     } else {
                         Value::set(elems)
