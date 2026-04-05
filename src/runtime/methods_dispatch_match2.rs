@@ -52,6 +52,44 @@ impl Interpreter {
                 }
                 Some(Ok(result))
             }
+            "new-from-pairs" => {
+                // Bag.new-from-pairs(...) / BagHash.new-from-pairs(...)
+                // Takes pairs as arguments and uses pair values as counts.
+                if let Value::Package(name) = &target {
+                    let cn = name.resolve();
+                    if matches!(cn.as_str(), "Bag" | "BagHash") {
+                        // Check for lazy inputs
+                        for a in &args {
+                            if Self::is_lazy_for_coerce(a) {
+                                return Some(Err(RuntimeError::cannot_lazy_what(&cn)));
+                            }
+                        }
+                        // Collect all items, flattening arrays
+                        let mut all_items = Vec::new();
+                        for arg in &args {
+                            match arg {
+                                Value::Array(items, ..) => {
+                                    all_items.extend(items.iter().cloned());
+                                }
+                                other => all_items.push(other.clone()),
+                            }
+                        }
+                        // Convert items to a temporary array and use dispatch_to_bag
+                        let arr = Value::array(all_items);
+                        let result = match self.dispatch_to_bag(arr) {
+                            Ok(r) => r,
+                            Err(e) => return Some(Err(e)),
+                        };
+                        if cn == "BagHash"
+                            && let Value::Bag(items, _) = result
+                        {
+                            return Some(Ok(Value::Bag(items, true)));
+                        }
+                        return Some(Ok(result));
+                    }
+                }
+                None
+            }
             "Mix" | "MixHash" if args.is_empty() => {
                 let result = match self.dispatch_to_mix(target) {
                     Ok(r) => r,

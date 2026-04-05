@@ -733,8 +733,23 @@ impl VM {
                     self.stack.pop(); // discard unused trait argument
                 }
                 let name_str = name.to_string();
-                let type_obj = Value::Package(crate::symbol::Symbol::intern(&trait_name));
-                let instance = self.try_compiled_method_or_interpret(type_obj, "new", vec![])?;
+                // Check if the variable already has initial values from the declaration.
+                // If so, construct the QuantHash from those values instead of creating
+                // an empty one. This handles `my %h is Bag = <a b b c>`.
+                let current_val = self.locals_get_by_name(code, &name_str);
+                let has_init_values = match &current_val {
+                    Some(Value::Hash(h)) => !h.is_empty(),
+                    Some(Value::Array(a, _)) => !a.is_empty(),
+                    _ => false,
+                };
+                let instance = if has_init_values {
+                    let init_val = current_val.unwrap();
+                    // Convert initial values to the target QuantHash type
+                    self.try_compiled_method_or_interpret(init_val, &trait_name, vec![])?
+                } else {
+                    let type_obj = Value::Package(crate::symbol::Symbol::intern(&trait_name));
+                    self.try_compiled_method_or_interpret(type_obj, "new", vec![])?
+                };
                 self.locals_set_by_name(code, &name_str, instance.clone());
                 self.set_env_with_main_alias(&name_str, instance);
                 self.env_dirty = true;

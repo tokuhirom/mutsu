@@ -489,6 +489,16 @@ impl RuntimeError {
         Self::typed("X::Cannot::Lazy", attrs)
     }
 
+    /// X::Cannot::Lazy with a `what` attribute (e.g., for coercion to Bag/Set/Mix)
+    pub(crate) fn cannot_lazy_what(what: &str) -> Self {
+        let msg = format!("Cannot coerce a lazy list to a {}", what);
+        let mut attrs = HashMap::new();
+        attrs.insert("action".to_string(), Value::str("coerce".to_string()));
+        attrs.insert("what".to_string(), Value::str(what.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::Cannot::Lazy", attrs)
+    }
+
     /// X::Syntax::Missing - Missing required syntax element
     #[allow(dead_code)]
     pub(crate) fn syntax_missing(what: &str) -> Self {

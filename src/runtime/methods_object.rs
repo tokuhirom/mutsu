@@ -1531,6 +1531,12 @@ impl Interpreter {
                     });
                 }
                 "Bag" | "BagHash" => {
+                    // Check for lazy inputs
+                    for a in &args {
+                        if Self::is_lazy_for_coerce(a) {
+                            return Err(RuntimeError::cannot_lazy_what(base_class_name));
+                        }
+                    }
                     // BagHash.new(|c) takes a Capture:
                     // - Single arg: iterate over it (flatten lists/arrays/hashes,
                     //   but NOT QuantHash types which are single elements)
