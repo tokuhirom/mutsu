@@ -11,6 +11,38 @@ use crate::symbol::Symbol;
 use num_bigint::BigInt as NumBigInt;
 use num_integer::Integer;
 use num_traits::{Signed, ToPrimitive, Zero};
+/// Global list tracking consumed Seq instances via Weak references.
+/// Uses Weak<Vec<Value>> so that when the Seq is dropped, the Weak expires
+/// and won't cause false positives from address reuse.
+static CONSUMED_SEQS: OnceLock<Mutex<Vec<Weak<Vec<Value>>>>> = OnceLock::new();
+
+fn consumed_seqs() -> &'static Mutex<Vec<Weak<Vec<Value>>>> {
+    CONSUMED_SEQS.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// Mark a Seq (identified by its Arc) as consumed.
+/// Returns Err if the Seq was already consumed.
+#[allow(clippy::result_large_err)]
+pub(crate) fn seq_consume(arc_ptr: &Arc<Vec<Value>>) -> Result<(), RuntimeError> {
+    let mut list = consumed_seqs().lock().unwrap();
+    // Clean up expired Weak references and check for duplicates
+    let target_ptr = Arc::as_ptr(arc_ptr);
+    list.retain(|w| w.strong_count() > 0);
+    for w in list.iter() {
+        if let Some(existing) = w.upgrade()
+            && Arc::as_ptr(&existing) == target_ptr
+        {
+            return Err(RuntimeError::new(
+                "The iterator of this Seq is already in use/consumed by another Seq \
+                 (you might solve this by adding .cache on usages of the Seq, or by \
+                 assigning the Seq into an array)",
+            ));
+        }
+    }
+    list.push(Arc::downgrade(arc_ptr));
+    Ok(())
+}
+
 /// Shared mutable attribute storage for Proxy subclasses.
 pub(crate) type ProxySubclassAttrs = Arc<Mutex<HashMap<String, Value>>>;
 

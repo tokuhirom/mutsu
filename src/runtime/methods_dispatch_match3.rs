@@ -158,7 +158,18 @@ impl Interpreter {
             "grabpairs" => self.dispatch_grabpairs_method(target, args),
             "skip" => Some(self.dispatch_skip_method(target, args)),
             "join" if args.len() <= 1 => self.dispatch_join_method(target, args),
-            "grep" => Some(self.dispatch_grep(target, &args)),
+            "grep" => {
+                // In Raku, .grep returns a Seq. However, when called on an Array,
+                // the result carries rw view bindings that must be preserved (Array kind).
+                let is_real_array = matches!(&target, Value::Array(_, k) if k.is_real_array());
+                Some(self.dispatch_grep(target, &args).map(|v| {
+                    if !is_real_array && let Value::Array(items, crate::value::ArrayKind::List) = v
+                    {
+                        return Value::Seq(items);
+                    }
+                    v
+                }))
+            }
             "toggle" => Some(self.dispatch_toggle(target, &args)),
             "eager" if args.is_empty() => Some(self.dispatch_eager_method(target)),
             "is-lazy" if args.is_empty() => Some(Ok(self.dispatch_is_lazy_method(&target))),

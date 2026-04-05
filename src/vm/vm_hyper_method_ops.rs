@@ -28,6 +28,10 @@ impl VM {
             .stack
             .pop()
             .ok_or_else(|| RuntimeError::new("VM stack underflow in HyperMethodCall target"))?;
+        // Mark Seq as consumed (single-use semantics).
+        if let Value::Seq(ref arc) = target {
+            crate::value::seq_consume(arc)?;
+        }
         let mut items = crate::runtime::value_to_list(&target);
         let mut results = Vec::with_capacity(items.len());
         for (idx, item) in items.iter_mut().enumerate() {
