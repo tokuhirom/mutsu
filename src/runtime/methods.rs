@@ -1117,9 +1117,11 @@ impl Interpreter {
             return result;
         }
 
-        // Constructor dispatch (new, bless, Mu::new)
-        if matches!(method, "new" | "bless" | "Mu::new" | "handled")
-            && let Some(result) = self.dispatch_new_and_constructors(&target, method, args.clone())
+        // Constructor dispatch (new, bless, Mu::new, new-from-pairs)
+        if matches!(
+            method,
+            "new" | "bless" | "Mu::new" | "handled" | "new-from-pairs"
+        ) && let Some(result) = self.dispatch_new_and_constructors(&target, method, args.clone())
         {
             return result;
         }
