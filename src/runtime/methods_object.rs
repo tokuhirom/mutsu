@@ -739,7 +739,7 @@ impl Interpreter {
                         && !constraint.is_empty()
                         && constraint.starts_with(char::is_uppercase)
                     {
-                        for (_, value) in &map {
+                        for value in map.values() {
                             if !self.type_matches_value(constraint, value) {
                                 let got_type = crate::value::what_type_name(value);
                                 let got_repr = value.to_string_value();
