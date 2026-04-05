@@ -2458,6 +2458,29 @@ impl VM {
             return Err(err);
         }
         self.locals[idx] = val.clone();
+        // When binding a typed hash/array to a variable, propagate the container's
+        // type constraints to the variable so that subsequent element assignments
+        // are type-checked (e.g. `my %h := Hash[Int].new; %h<a> = "b"` should die).
+        if is_bind && (name.starts_with('%') || name.starts_with('@')) {
+            if let Some(info) = self.interpreter.container_type_metadata(&val) {
+                if !info.value_type.is_empty() {
+                    // Build the constraint string that set_var_type_constraint expects.
+                    // For hash variables, parse_container_constraint expects "ValueType{KeyType}"
+                    // format for key-typed hashes, and plain "ValueType" otherwise.
+                    let constraint_str = if name.starts_with('%') {
+                        if let Some(ref kt) = info.key_type {
+                            format!("{}{{{}}}", info.value_type, kt)
+                        } else {
+                            info.value_type.clone()
+                        }
+                    } else {
+                        info.value_type.clone()
+                    };
+                    self.interpreter
+                        .set_var_type_constraint(name, Some(constraint_str));
+                }
+            }
+        }
         // Circular hash reference fixup: when assigning to a hash variable,
         // if any values in the new hash reference the old hash (captured on the
         // RHS before assignment), replace them with the new hash's Arc to create
