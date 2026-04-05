@@ -15,6 +15,34 @@ impl Compiler {
         }
     }
 
+    /// Convert `Stmt::Call`'s `Vec<CallArg>` to `Vec<Expr>` for expression-level
+    /// compilation (needed when a Stmt::Call is the last statement in a sub body
+    /// and its return value must be preserved as implicit return).
+    pub(super) fn call_args_to_expr_args(args: &[crate::ast::CallArg]) -> Vec<Expr> {
+        args.iter()
+            .map(|arg| match arg {
+                crate::ast::CallArg::Positional(e) | crate::ast::CallArg::Invocant(e) => e.clone(),
+                crate::ast::CallArg::Named {
+                    name,
+                    value: Some(e),
+                } => Expr::Binary {
+                    left: Box::new(Expr::Literal(Value::str(name.clone()))),
+                    op: crate::token_kind::TokenKind::FatArrow,
+                    right: Box::new(e.clone()),
+                },
+                crate::ast::CallArg::Named { name, value: None } => Expr::Binary {
+                    left: Box::new(Expr::Literal(Value::str(name.clone()))),
+                    op: crate::token_kind::TokenKind::FatArrow,
+                    right: Box::new(Expr::Literal(Value::Bool(true))),
+                },
+                crate::ast::CallArg::Slip(e) => Expr::Unary {
+                    op: crate::token_kind::TokenKind::Pipe,
+                    expr: Box::new(e.clone()),
+                },
+            })
+            .collect()
+    }
+
     /// Compile a SubDecl body to a CompiledFunction and store it.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn compile_sub_body(
@@ -275,6 +303,16 @@ impl Compiler {
                         // Don't emit Pop — leave value on stack as implicit return
                         continue;
                     }
+                    // Stmt::Call as last statement: convert to expression-level
+                    // Expr::Call so the return value is left on the stack.
+                    Stmt::Call { name, args } => {
+                        let expr_args: Vec<Expr> = Self::call_args_to_expr_args(args);
+                        sub_compiler.compile_expr(&Expr::Call {
+                            name: *name,
+                            args: expr_args,
+                        });
+                        continue;
+                    }
                     Stmt::If {
                         cond,
                         then_branch,
@@ -321,22 +359,6 @@ impl Compiler {
                             sub_compiler.code.emit(OpCode::GetGlobal(idx));
                         }
                         continue;
-                    }
-                    Stmt::Call { name, args } => {
-                        let positional: Option<Vec<Expr>> = args
-                            .iter()
-                            .map(|arg| match arg {
-                                crate::ast::CallArg::Positional(expr) => Some(expr.clone()),
-                                _ => None,
-                            })
-                            .collect();
-                        if let Some(positional_args) = positional {
-                            sub_compiler.compile_expr(&Expr::Call {
-                                name: *name,
-                                args: positional_args,
-                            });
-                            continue;
-                        }
                     }
                     _ => {}
                 }
@@ -458,6 +480,23 @@ impl Compiler {
                     sub_compiler.code.emit(OpCode::SetTopic);
                     continue;
                 }
+                if is_last && let Stmt::Call { name, args } = stmt {
+                    let positional: Option<Vec<Expr>> = args
+                        .iter()
+                        .map(|arg| match arg {
+                            crate::ast::CallArg::Positional(expr) => Some(expr.clone()),
+                            _ => None,
+                        })
+                        .collect();
+                    if let Some(positional_args) = positional {
+                        sub_compiler.compile_expr(&Expr::Call {
+                            name: *name,
+                            args: positional_args,
+                        });
+                        sub_compiler.code.emit(OpCode::SetTopic);
+                        continue;
+                    }
+                }
                 sub_compiler.compile_stmt(stmt);
             }
             sub_compiler.code.patch_block_body_end(idx);
@@ -522,6 +561,14 @@ impl Compiler {
                             sub_compiler.compile_expr(expr);
                             continue;
                         }
+                        Stmt::Call { name, args } => {
+                            let expr_args = Self::call_args_to_expr_args(args);
+                            sub_compiler.compile_expr(&Expr::Call {
+                                name: *name,
+                                args: expr_args,
+                            });
+                            continue;
+                        }
                         Stmt::If {
                             cond,
                             then_branch,
@@ -564,22 +611,6 @@ impl Compiler {
                                 sub_compiler.code.emit(OpCode::GetGlobal(idx));
                             }
                             continue;
-                        }
-                        Stmt::Call { name, args } => {
-                            let positional: Option<Vec<Expr>> = args
-                                .iter()
-                                .map(|arg| match arg {
-                                    crate::ast::CallArg::Positional(expr) => Some(expr.clone()),
-                                    _ => None,
-                                })
-                                .collect();
-                            if let Some(positional_args) = positional {
-                                sub_compiler.compile_expr(&Expr::Call {
-                                    name: *name,
-                                    args: positional_args,
-                                });
-                                continue;
-                            }
                         }
                         _ => {}
                     }

@@ -31,6 +31,7 @@ impl VM {
 
     /// Compile a FunctionDef on-the-fly to bytecode and execute via the VM.
     /// This avoids the interpreter's tree-walking execution path.
+    #[allow(dead_code)]
     pub(super) fn compile_and_call_function_def(
         &mut self,
         def: &crate::ast::FunctionDef,
