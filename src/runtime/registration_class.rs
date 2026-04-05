@@ -1366,6 +1366,8 @@ impl Interpreter {
                     is_private,
                     is_our,
                     is_my,
+                    is_submethod,
+                    our_variable_form,
                     return_type,
                     is_default_candidate,
                     deprecated_message,
@@ -1436,7 +1438,11 @@ impl Interpreter {
                         is_rw: *is_rw,
                         is_private: *is_private,
                         is_multi: *multi,
-                        is_my: *is_my,
+                        // Use is_submethod for the MethodDef is_my flag, which
+                        // controls inheritance filtering (submethods not inherited).
+                        // `my method` and `our method` are NOT added to the method
+                        // table at all — they are only registered as functions.
+                        is_my: *is_submethod,
                         role_origin: None,
                         original_role: None,
                         return_type: return_type.clone(),
@@ -1445,28 +1451,43 @@ impl Interpreter {
                         is_default: *is_default_candidate,
                         deprecated_message: deprecated_message.clone(),
                     };
-                    if *multi {
-                        class_def
-                            .methods
-                            .entry(resolved_method_name.clone())
-                            .or_default()
-                            .push(def);
-                    } else {
-                        // Check for duplicate non-multi method definition.
-                        // Only error if the existing method was defined in
-                        // this class (not composed from a role).
-                        if let Some(existing) = class_def.methods.get(&resolved_method_name) {
-                            let all_from_role = existing.iter().all(|m| m.role_origin.is_some());
-                            if !all_from_role {
-                                return Err(RuntimeError::new(format!(
-                                    "Package '{}' already has a method '{}' (did you mean to declare a multi method?)",
-                                    name, resolved_method_name
-                                )));
+                    // `my method` and `our method` are NOT part of the class
+                    // method table — they are only callable as functions.
+                    // Submethods (is_submethod=true) DO go in the table even
+                    // though they also have is_my=true from the parser.
+                    // `my method` and `our method` are NOT part of the class
+                    // method table — they are only callable as functions.
+                    // Submethods (is_submethod=true) DO go in the table even
+                    // though they also have is_my=true from the parser.
+                    // The `our &name = method name(...)` variable form
+                    // (our_variable_form=true) keeps the method in the table.
+                    let is_lexical_only = *is_my && !*is_submethod;
+                    let is_our_only = *is_our && !*our_variable_form;
+                    if !is_lexical_only && !is_our_only {
+                        if *multi {
+                            class_def
+                                .methods
+                                .entry(resolved_method_name.clone())
+                                .or_default()
+                                .push(def);
+                        } else {
+                            // Check for duplicate non-multi method definition.
+                            // Only error if the existing method was defined in
+                            // this class (not composed from a role).
+                            if let Some(existing) = class_def.methods.get(&resolved_method_name) {
+                                let all_from_role =
+                                    existing.iter().all(|m| m.role_origin.is_some());
+                                if !all_from_role {
+                                    return Err(RuntimeError::new(format!(
+                                        "Package '{}' already has a method '{}' (did you mean to declare a multi method?)",
+                                        name, resolved_method_name
+                                    )));
+                                }
                             }
+                            class_def
+                                .methods
+                                .insert(resolved_method_name.clone(), vec![def]);
                         }
-                        class_def
-                            .methods
-                            .insert(resolved_method_name.clone(), vec![def]);
                     }
                     // `our method` also registers as a package-scoped sub
                     if *is_our {
@@ -1542,6 +1563,86 @@ impl Interpreter {
                         };
                         self.functions
                             .insert(Symbol::intern(&qualified_name), func_def);
+                    }
+                    // `my method` registers as a lexically-scoped function
+                    // (callable as `name(invocant)` inside the class body)
+                    if *is_my {
+                        let has_explicit_invocant = effective_param_defs
+                            .iter()
+                            .any(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"));
+                        let (my_params, my_param_defs) = if has_explicit_invocant {
+                            (
+                                effective_params.clone(),
+                                effective_param_defs
+                                    .iter()
+                                    .filter(|p| p.name.as_str() != "self")
+                                    .cloned()
+                                    .collect(),
+                            )
+                        } else {
+                            let mut my_params = vec!["self".to_string()];
+                            my_params.extend(
+                                effective_params
+                                    .iter()
+                                    .filter(|p| p.as_str() != "self")
+                                    .cloned(),
+                            );
+                            let self_param = crate::ast::ParamDef {
+                                name: "self".to_string(),
+                                default: None,
+                                multi_invocant: true,
+                                required: false,
+                                named: false,
+                                slurpy: false,
+                                double_slurpy: false,
+                                onearg: false,
+                                sigilless: false,
+                                type_constraint: None,
+                                literal_value: None,
+                                sub_signature: None,
+                                where_constraint: None,
+                                traits: Vec::new(),
+                                optional_marker: false,
+                                outer_sub_signature: None,
+                                code_signature: None,
+                                is_invocant: false,
+                                shape_constraints: None,
+                            };
+                            let mut my_param_defs = vec![self_param];
+                            my_param_defs.extend(
+                                effective_param_defs
+                                    .iter()
+                                    .filter(|p| {
+                                        !(p.is_invocant || p.traits.iter().any(|t| t == "invocant"))
+                                    })
+                                    .cloned(),
+                            );
+                            (my_params, my_param_defs)
+                        };
+                        let func_def = crate::ast::FunctionDef {
+                            package: Symbol::intern(name),
+                            name: Symbol::intern(&resolved_method_name),
+                            params: my_params,
+                            param_defs: my_param_defs,
+                            body: method_body.clone(),
+                            is_test_assertion: false,
+                            is_rw: *is_rw,
+                            is_raw: false,
+                            is_method: true,
+                            empty_sig: false,
+                            return_type: None,
+                            is_default: *is_default_candidate,
+                            deprecated_message: None,
+                        };
+                        // Register under the short name (lexical scope)
+                        self.functions
+                            .insert(Symbol::intern(&resolved_method_name), func_def.clone());
+                        // Also register under the qualified name for consistency
+                        let qualified_name = format!("{}::{}", name, resolved_method_name);
+                        self.functions
+                            .insert(Symbol::intern(&qualified_name), func_def);
+                        // Mark as my-scoped so it doesn't appear in the package stash
+                        self.mark_my_scoped_package_item(qualified_name);
                     }
                 }
                 Stmt::DoesDecl { name: role_name } => {
@@ -2227,6 +2328,8 @@ impl Interpreter {
                     is_private,
                     is_our: _,
                     is_my,
+                    is_submethod,
+                    our_variable_form: _,
                     return_type,
                     is_default_candidate,
                     deprecated_message: _,
@@ -2306,7 +2409,7 @@ impl Interpreter {
                         is_rw: *is_rw,
                         is_private: *is_private,
                         is_multi: *multi,
-                        is_my: *is_my,
+                        is_my: *is_submethod,
                         role_origin: None,
                         original_role: None,
                         return_type: return_type.clone(),
@@ -2315,14 +2418,20 @@ impl Interpreter {
                         is_default: *is_default_candidate,
                         deprecated_message: None,
                     };
-                    if *multi {
-                        role_def
-                            .methods
-                            .entry(resolved_method_name)
-                            .or_default()
-                            .push(def);
-                    } else {
-                        role_def.methods.insert(resolved_method_name, vec![def]);
+                    // `my method` in roles are role-private, skip method table.
+                    // Submethods (is_submethod) DO get composed even though
+                    // is_my is true.
+                    let is_role_private = *is_my && !*is_submethod;
+                    if !is_role_private {
+                        if *multi {
+                            role_def
+                                .methods
+                                .entry(resolved_method_name)
+                                .or_default()
+                                .push(def);
+                        } else {
+                            role_def.methods.insert(resolved_method_name, vec![def]);
+                        }
                     }
                 }
                 Stmt::Expr(Expr::Call { name, .. })

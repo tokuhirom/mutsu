@@ -1561,15 +1561,15 @@ pub(super) fn method_decl(input: &str) -> PResult<'_, Stmt> {
 pub(super) fn submethod_decl(input: &str) -> PResult<'_, Stmt> {
     let r = keyword("submethod", input).ok_or_else(|| PError::expected("submethod declaration"))?;
     let (r, _) = ws1(r)?;
-    method_decl_body_with_my(r, false, false, true)
+    method_decl_body_with_my(r, false, false, true, true)
 }
 
 pub(super) fn method_decl_body(input: &str, multi: bool, is_our: bool) -> PResult<'_, Stmt> {
-    method_decl_body_with_my(input, multi, is_our, false)
+    method_decl_body_with_my(input, multi, is_our, false, false)
 }
 
 pub(super) fn method_decl_body_my(input: &str, multi: bool, is_our: bool) -> PResult<'_, Stmt> {
-    method_decl_body_with_my(input, multi, is_our, true)
+    method_decl_body_with_my(input, multi, is_our, true, false)
 }
 
 fn method_decl_body_with_my(
@@ -1577,6 +1577,7 @@ fn method_decl_body_with_my(
     multi: bool,
     is_our: bool,
     is_my: bool,
+    is_submethod: bool,
 ) -> PResult<'_, Stmt> {
     let (rest, is_private) = if let Some(rest) = input.strip_prefix('!') {
         (rest, true)
@@ -1639,6 +1640,8 @@ fn method_decl_body_with_my(
             is_private,
             is_our,
             is_my,
+            is_submethod,
+            our_variable_form: false,
             return_type,
             is_default_candidate: traits.custom_traits.contains(&"default".to_string()),
             deprecated_message: traits.custom_traits.iter().find_map(|t| {

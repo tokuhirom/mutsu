@@ -536,6 +536,7 @@ roast/S12-meta/primitives.t
 roast/S12-methods/attribute-params.t
 roast/S12-methods/calling_syntax.t
 roast/S12-methods/chaining.t
+roast/S12-methods/class-and-instance.t
 roast/S12-methods/default-trait.t
 roast/S12-methods/defer-call.t
 roast/S12-methods/fallback.t
