@@ -491,7 +491,9 @@ impl Interpreter {
                                     self.resolve_token_patterns_with_args_in_pkg(n, pkg, &[]);
                                 for (sub_pat, sub_pkg, _sym_key) in &candidates {
                                     if self
-                                        .regex_match_len_at_start_in_pkg(sub_pat, &char_str, sub_pkg)
+                                        .regex_match_len_at_start_in_pkg(
+                                            sub_pat, &char_str, sub_pkg,
+                                        )
                                         .is_some_and(|len| len > 0)
                                     {
                                         return true;
