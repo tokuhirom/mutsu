@@ -475,46 +475,54 @@ impl Interpreter {
                 } else {
                     vec![effective_c]
                 };
-                let pos_match = positive.iter().any(|item| match item {
-                    ClassItem::NamedBuiltin(n) => chars_to_check
-                        .iter()
-                        .any(|ch| matches_named_builtin(n, *ch)),
-                    ClassItem::UnicodePropItem { name, negated } => {
-                        let m = chars_to_check
-                            .iter()
-                            .any(|ch| check_unicode_property(name, *ch));
-                        if *negated { !m } else { m }
+                let match_class_item = |item: &ClassItem, chars_to_check: &[char]| -> bool {
+                    match item {
+                        ClassItem::NamedBuiltin(n) => {
+                            let builtin_match = chars_to_check
+                                .iter()
+                                .any(|ch| matches_named_builtin(n, *ch));
+                            if builtin_match {
+                                return true;
+                            }
+                            // Fallback: try resolving as a grammar token in the current package
+                            if !pkg.is_empty() {
+                                let char_str = effective_c.to_string();
+                                let candidates =
+                                    self.resolve_token_patterns_with_args_in_pkg(n, pkg, &[]);
+                                for (sub_pat, sub_pkg, _sym_key) in &candidates {
+                                    if self
+                                        .regex_match_len_at_start_in_pkg(sub_pat, &char_str, sub_pkg)
+                                        .is_some_and(|len| len > 0)
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                            false
+                        }
+                        ClassItem::UnicodePropItem { name, negated } => {
+                            let m = chars_to_check
+                                .iter()
+                                .any(|ch| check_unicode_property(name, *ch));
+                            if *negated { !m } else { m }
+                        }
+                        _ => {
+                            let class = CharClass {
+                                items: vec![item.clone()],
+                                negated: false,
+                            };
+                            chars_to_check
+                                .iter()
+                                .any(|ch| self.regex_match_class(&class, *ch))
+                        }
                     }
-                    _ => {
-                        let class = CharClass {
-                            items: vec![item.clone()],
-                            negated: false,
-                        };
-                        chars_to_check
-                            .iter()
-                            .any(|ch| self.regex_match_class(&class, *ch))
-                    }
-                });
-                let neg_match = negative.iter().any(|item| match item {
-                    ClassItem::NamedBuiltin(n) => chars_to_check
-                        .iter()
-                        .any(|ch| matches_named_builtin(n, *ch)),
-                    ClassItem::UnicodePropItem { name, negated } => {
-                        let m = chars_to_check
-                            .iter()
-                            .any(|ch| check_unicode_property(name, *ch));
-                        if *negated { !m } else { m }
-                    }
-                    _ => {
-                        let class = CharClass {
-                            items: vec![item.clone()],
-                            negated: false,
-                        };
-                        chars_to_check
-                            .iter()
-                            .any(|ch| self.regex_match_class(&class, *ch))
-                    }
-                });
+                };
+                let pos_match = positive
+                    .iter()
+                    .any(|item| match_class_item(item, &chars_to_check));
+                let neg_match = negative
+                    .iter()
+                    .any(|item| match_class_item(item, &chars_to_check));
                 let _ = check_char;
                 pos_match && !neg_match
             }
