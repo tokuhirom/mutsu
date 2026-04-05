@@ -565,7 +565,6 @@ roast/S13-type-casting/methods.t
 roast/S14-roles/anonymous.t
 roast/S14-roles/bool.t
 roast/S14-roles/composition.t
-roast/S14-roles/composition.t
 roast/S14-roles/conflicts.t
 roast/S14-roles/crony.t
 roast/S14-roles/generic-subtyping.t
@@ -577,6 +576,7 @@ roast/S14-roles/parameterized-basic.t
 roast/S14-roles/parameterized-type.t
 roast/S14-roles/rw.t
 roast/S14-roles/stubs.t
+roast/S14-roles/submethods-6e.t
 roast/S14-roles/typecheck.t
 roast/S14-traits/variables.t
 roast/S15-literals/identifiers.t
