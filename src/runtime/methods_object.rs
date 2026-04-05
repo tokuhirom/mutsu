@@ -733,6 +733,39 @@ impl Interpreter {
                             }
                         }
                     }
+                    // Type check for typed hashes (e.g. Hash[Int].new("a","b") should die)
+                    if let Some(ref ta) = type_args
+                        && let Some(constraint) = ta.first()
+                        && !constraint.is_empty()
+                        && constraint.starts_with(char::is_uppercase)
+                    {
+                        for value in map.values() {
+                            if !self.type_matches_value(constraint, value) {
+                                let got_type = crate::value::what_type_name(value);
+                                let got_repr = value.to_string_value();
+                                let msg = format!(
+                                    "Type check failed in assignment to ; expected {} but got {} (\"{}\")",
+                                    constraint, got_type, got_repr,
+                                );
+                                let mut attrs = std::collections::HashMap::new();
+                                attrs.insert("message".to_string(), Value::str(msg.clone()));
+                                attrs
+                                    .insert("operation".to_string(), Value::str_from("assignment"));
+                                attrs.insert("got".to_string(), value.clone());
+                                attrs.insert(
+                                    "expected".to_string(),
+                                    Value::Package(Symbol::intern(constraint)),
+                                );
+                                let ex = Value::make_instance(
+                                    Symbol::intern("X::TypeCheck::Assignment"),
+                                    attrs,
+                                );
+                                let mut err = RuntimeError::new(msg);
+                                err.exception = Some(Box::new(ex));
+                                return Err(err);
+                            }
+                        }
+                    }
                     let result = Value::hash(map);
                     // Register type metadata for typed hashes (e.g. Hash[Int].new)
                     // or Map.new (always register Map declared_type)

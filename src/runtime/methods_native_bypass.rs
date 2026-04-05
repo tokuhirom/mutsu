@@ -192,23 +192,32 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let mut sorted_keys: Vec<&String> = map.keys().collect();
         sorted_keys.sort();
+        // When key type is non-string (e.g. Int), use `key => value` format
+        // instead of colonpair `:key(value)` format.
+        let use_arrow = info.key_type.is_some()
+            && info.key_type.as_deref() != Some("Str")
+            && info.key_type.as_deref() != Some("Str(Any)");
         let parts: Vec<String> = sorted_keys
             .iter()
             .map(|k| {
                 let v = &map[*k];
-                if let Value::Bool(true) = v {
-                    format!(":{}", k)
-                } else if let Value::Bool(false) = v {
-                    format!(":!{}", k)
-                } else {
-                    let repr = if matches!(v, Value::Nil) {
+                let mut value_repr = || {
+                    if matches!(v, Value::Nil) {
                         "Any".to_string()
                     } else {
                         self.call_method_with_values(v.clone(), "raku", vec![])
                             .map(|r| r.to_string_value())
                             .unwrap_or_else(|_| format!("{:?}", v))
-                    };
-                    format!(":{}({})", k, repr)
+                    }
+                };
+                if use_arrow {
+                    format!("{} => {}", k, value_repr())
+                } else if let Value::Bool(true) = v {
+                    format!(":{}", k)
+                } else if let Value::Bool(false) = v {
+                    format!(":!{}", k)
+                } else {
+                    format!(":{}({})", k, value_repr())
                 }
             })
             .collect();
