@@ -796,6 +796,15 @@ impl VM {
     /// VM-native `does` check. Inlines the pure `does_check` path and
     /// only falls back to the interpreter for actual role composition.
     fn vm_does_values(&mut self, left: Value, right: Value) -> Result<Value, RuntimeError> {
+        // Handle array of roles: `$obj does (RoleA, RoleB)`
+        if let Value::Array(ref items, ..) = right {
+            let all_roles = items
+                .iter()
+                .all(|item| self.interpreter.is_role_application(item));
+            if all_roles && !items.is_empty() {
+                return self.interpreter.eval_does_values_list(left, items.as_ref());
+            }
+        }
         // Check if the RHS is a role that needs to be composed onto the value.
         // If so, delegate to the interpreter which manages role state.
         if self.interpreter.is_role_application(&right) {
@@ -829,10 +838,15 @@ impl VM {
         Ok(Value::Bool(left.does_check(&role_name)))
     }
 
-    pub(super) fn exec_does_op(&mut self) -> Result<(), RuntimeError> {
+    pub(super) fn exec_does_op(&mut self, code: &CompiledCode) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // Sync VM locals to interpreter env so BUILD submethods can access
+        // and modify closure variables from the enclosing scope.
+        self.sync_env_from_locals(code);
         let result = self.vm_does_values(left, right)?;
+        // Sync back: BUILD submethods may have modified closure variables.
+        self.sync_locals_from_env(code);
         self.stack.push(result);
         Ok(())
     }
@@ -844,7 +858,12 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // Sync VM locals to interpreter env so BUILD submethods can access
+        // and modify closure variables from the enclosing scope.
+        self.sync_env_from_locals(code);
         let updated = self.vm_does_values(left, right)?;
+        // Sync back: BUILD submethods may have modified closure variables.
+        self.sync_locals_from_env(code);
         let name = Self::const_str(code, name_idx).to_string();
         self.interpreter
             .env_mut()

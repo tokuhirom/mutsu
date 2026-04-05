@@ -151,6 +151,8 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         if let Some((role_name, args)) = self.extract_role_application(&right) {
             let result = self.compose_role_on_value(left.clone(), &role_name, &args)?;
+            // Call BUILD submethods from the composed role
+            let result = self.call_role_build_submethods(result, &role_name)?;
             if let Some(target_name) = Self::var_target_name_from_value(&left) {
                 self.set_var_meta_value(&target_name, result.clone());
             }
@@ -158,6 +160,30 @@ impl Interpreter {
         }
         let role_name = right.to_string_value();
         Ok(Value::Bool(left.does_check(&role_name)))
+    }
+
+    /// Apply multiple roles at once: `$obj does (RoleA, RoleB)`
+    pub(crate) fn eval_does_values_list(
+        &mut self,
+        left: Value,
+        roles: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let mut result = left.clone();
+        let mut composed_role_names = Vec::new();
+        for role_value in roles {
+            if let Some((role_name, args)) = self.extract_role_application(role_value) {
+                result = self.compose_role_on_value(result, &role_name, &args)?;
+                composed_role_names.push(role_name);
+            }
+        }
+        // Call BUILD submethods for all composed roles
+        for role_name in &composed_role_names {
+            result = self.call_role_build_submethods(result, role_name)?;
+        }
+        if let Some(target_name) = Self::var_target_name_from_value(&left) {
+            self.set_var_meta_value(&target_name, result.clone());
+        }
+        Ok(result)
     }
 
     fn var_target_name_from_value(value: &Value) -> Option<String> {
@@ -267,5 +293,51 @@ impl Interpreter {
         }
 
         Ok(Value::mixin(inner, mixins))
+    }
+
+    /// Call BUILD submethods from a role after mixin composition.
+    /// In Raku 6.e, when `$obj does Role`, the BUILD submethods of the role
+    /// are invoked on the resulting object.
+    fn call_role_build_submethods(
+        &mut self,
+        target: Value,
+        role_name: &str,
+    ) -> Result<Value, RuntimeError> {
+        let role = match self.roles.get(role_name).cloned() {
+            Some(r) => r,
+            None => return Ok(target),
+        };
+        let build_methods = role.methods.get("BUILD").cloned();
+        if let Some(overloads) = build_methods {
+            for def in overloads {
+                // is_my is set to true for submethods in role method registration
+                if def.is_my {
+                    // Temporarily merge the role's captured environment so that
+                    // closure variables from the role definition scope are accessible
+                    // and modifications propagate back to the original scope.
+                    if let Some(captured) = &role.captured_env {
+                        for (k, v) in captured {
+                            if !self.env.contains_key(k) {
+                                self.env.insert(k.clone(), v.clone());
+                            }
+                        }
+                    }
+                    // Set self for the BUILD body
+                    let saved_self = self.env.get("self").cloned();
+                    self.env.insert("self".to_string(), target.clone());
+                    // Execute BUILD body directly in current scope so closure
+                    // variable mutations propagate to the outer scope.
+                    let _result = self.eval_block_value(&def.body)?;
+                    // Restore self
+                    if let Some(prev) = saved_self {
+                        self.env.insert("self".to_string(), prev);
+                    } else {
+                        self.env.remove("self");
+                    }
+                    break;
+                }
+            }
+        }
+        Ok(target)
     }
 }
