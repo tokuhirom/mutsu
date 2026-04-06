@@ -85,7 +85,8 @@ impl Interpreter {
             }
             "pred" => {
                 if *index == 0 {
-                    return Some(Ok(Value::Nil));
+                    // .pred on first element returns itself
+                    return Some(Ok(target.clone()));
                 }
                 if let Some(variants) = self.enum_types.get(&enum_type.resolve())
                     && let Some((prev_key, prev_val)) = variants.get(index - 1)
@@ -97,20 +98,24 @@ impl Interpreter {
                         index: index - 1,
                     }));
                 }
-                Some(Ok(Value::Nil))
+                // Fallback: return self if variants not found
+                Some(Ok(target.clone()))
             }
             "succ" => {
-                if let Some(variants) = self.enum_types.get(&enum_type.resolve())
-                    && let Some((next_key, next_val)) = variants.get(index + 1)
-                {
-                    return Some(Ok(Value::Enum {
-                        enum_type: *enum_type,
-                        key: Symbol::intern(next_key),
-                        value: next_val.clone(),
-                        index: index + 1,
-                    }));
+                if let Some(variants) = self.enum_types.get(&enum_type.resolve()) {
+                    if let Some((next_key, next_val)) = variants.get(index + 1) {
+                        return Some(Ok(Value::Enum {
+                            enum_type: *enum_type,
+                            key: Symbol::intern(next_key),
+                            value: next_val.clone(),
+                            index: index + 1,
+                        }));
+                    }
+                    // .succ on last element returns itself
+                    return Some(Ok(target.clone()));
                 }
-                Some(Ok(Value::Nil))
+                // Fallback: return self if variants not found
+                Some(Ok(target.clone()))
             }
             _ => None,
         }

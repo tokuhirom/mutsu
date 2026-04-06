@@ -168,6 +168,27 @@ fn parse_double_angle_enum_variants(input: &str) -> PResult<'_, Vec<(String, Opt
     }
 }
 
+/// Try to parse all enum variants as static entries inside `(...)`.
+fn parse_static_enum_variants(input: &str) -> PResult<'_, Vec<(String, Option<Expr>)>> {
+    let mut variants = Vec::new();
+    let mut r = input;
+    loop {
+        let (r2, _) = ws(r)?;
+        if let Some(r2) = r2.strip_prefix(')') {
+            return Ok((r2, variants));
+        }
+        let (r2, variant) = parse_enum_variant_entry(r)?;
+        variants.push(variant);
+        let (r2, _) = ws(r2)?;
+        if let Some(stripped) = r2.strip_prefix(',') {
+            let (r2, _) = ws(stripped)?;
+            r = r2;
+        } else {
+            r = r2;
+        }
+    }
+}
+
 fn parse_enum_variant_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
     let (rest, expr) = expression(input)?;
     match expr {
@@ -186,6 +207,24 @@ fn parse_enum_variant_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> 
                 Ok((rest, (name.to_string(), value_expr)))
             }
             _ => Err(PError::expected("enum variant name")),
+        },
+        // Handle PositionalPair wrapping a Pair (e.g., from `"foo" => -42`)
+        Expr::PositionalPair(inner) => match *inner {
+            Expr::Binary {
+                left,
+                op: crate::token_kind::TokenKind::FatArrow,
+                right,
+            } => match *left {
+                Expr::Literal(Value::Str(name)) => {
+                    let value_expr = match *right {
+                        Expr::Literal(Value::Bool(true)) => None,
+                        other => Some(other),
+                    };
+                    Ok((rest, (name.to_string(), value_expr)))
+                }
+                _ => Err(PError::expected("enum variant name")),
+            },
+            _ => Err(PError::expected("enum variant")),
         },
         _ => Err(PError::expected("enum variant")),
     }
@@ -238,47 +277,60 @@ pub(super) fn parse_enum_decl_body_with_type(
     } else if rest.starts_with('(') {
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
-        // Handle `(@variable)` — dynamic enum body from a variable
-        if r.starts_with('@') {
+        // Try static variant parsing first; if any entry is not a simple
+        // identifier/string/pair, fall back to treating the whole body as
+        // a dynamic expression.
+        if let Ok(static_result) = parse_static_enum_variants(r) {
+            let (r, variants) = static_result;
+            (r, variants)
+        } else {
+            // Dynamic: parse as expression list (may use operators like X~, Z=>, |, etc.)
             let (r2, expr) = expression(r)?;
             let (r2, _) = ws(r2)?;
-            if let Some(r2) = r2.strip_prefix(')') {
-                return Ok((
-                    r2,
-                    Stmt::EnumDecl {
-                        name,
-                        variants: vec![("__DYNAMIC__".to_string(), Some(expr))],
-                        is_export,
-                        base_type: base_type.clone(),
-                        language_version: super::super::simple::current_language_version(),
-                    },
-                ));
-            }
-        }
-        let mut variants = Vec::new();
-        let mut r = r;
-        loop {
-            if let Some(r) = r.strip_prefix(')') {
+            if let Some(r3) = r2.strip_prefix(',') {
+                let mut items = vec![expr];
+                let (mut r, _) = ws(r3)?;
+                loop {
+                    let (r2, _) = ws(r)?;
+                    if let Some(r2) = r2.strip_prefix(')') {
+                        r = r2;
+                        break;
+                    }
+                    let (r2, item_expr) = expression(r)?;
+                    items.push(item_expr);
+                    let (r2, _) = ws(r2)?;
+                    if let Some(stripped) = r2.strip_prefix(',') {
+                        let (r2, _) = ws(stripped)?;
+                        r = r2;
+                    } else {
+                        r = r2;
+                    }
+                }
+                let combined = Expr::ArrayLiteral(items);
                 return Ok((
                     r,
                     Stmt::EnumDecl {
                         name,
-                        variants,
+                        variants: vec![("__DYNAMIC__".to_string(), Some(combined))],
                         is_export,
                         base_type: base_type.clone(),
                         language_version: super::super::simple::current_language_version(),
                     },
                 ));
             }
-            let (r2, variant) = parse_enum_variant_entry(r)?;
-            variants.push(variant);
-            let (r2, _) = ws(r2)?;
-            if let Some(stripped) = r2.strip_prefix(',') {
-                let (r2, _) = ws(stripped)?;
-                r = r2;
-            } else {
-                r = r2;
-            }
+            let r2 = r2
+                .strip_prefix(')')
+                .ok_or_else(|| PError::expected("closing ')' for enum body"))?;
+            return Ok((
+                r2,
+                Stmt::EnumDecl {
+                    name,
+                    variants: vec![("__DYNAMIC__".to_string(), Some(expr))],
+                    is_export,
+                    base_type: base_type.clone(),
+                    language_version: super::super::simple::current_language_version(),
+                },
+            ));
         }
     } else {
         (rest, Vec::new())
