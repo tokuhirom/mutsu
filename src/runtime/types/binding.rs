@@ -117,7 +117,8 @@ impl Interpreter {
                     .or_else(|| param.strip_prefix("@:"))
                     .or_else(|| param.strip_prefix("%:"));
                 if let Some(key) = named_key {
-                    if let Some((_, val)) = named_args.iter().find(|(k, _)| k == key) {
+                    // Use rfind so the rightmost named argument wins
+                    if let Some((_, val)) = named_args.iter().rfind(|(k, _)| k == key) {
                         self.bind_param_value(param, val.clone());
                         // Also bind the bare :key for GetArrayVar/GetHashVar fallback
                         self.env.insert(format!(":{}", key), val.clone());
@@ -411,7 +412,9 @@ impl Interpreter {
                     &pd.name
                 };
                 let mut found = false;
-                for arg in args {
+                // Iterate in reverse so that the rightmost named argument wins
+                // when the same key is provided multiple times.
+                for arg in args.iter().rev() {
                     let arg = unwrap_varref_value(arg.clone());
                     if let Value::Pair(key, val) = arg
                         && key == match_key
@@ -452,7 +455,7 @@ impl Interpreter {
                             continue;
                         }
                         let inner_key = sub_pd.name.strip_prefix(':').unwrap_or(&sub_pd.name);
-                        for arg in args.iter() {
+                        for arg in args.iter().rev() {
                             let arg = unwrap_varref_value(arg.clone());
                             if let Value::Pair(key, inner_val) = arg
                                 && key == inner_key
