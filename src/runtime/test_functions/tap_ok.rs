@@ -400,7 +400,7 @@ impl Interpreter {
             _ => expected_expanded.clone(),
         };
 
-        let ok = collected_val == expected_for_compare;
+        let ok = Self::cmp_eqv_bool(&collected_val, &expected_for_compare);
         self.test_ok(ok, &desc, false)?;
 
         self.finish_subtest(ctx, &desc, Ok(()))?;
