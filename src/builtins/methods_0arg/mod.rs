@@ -1277,24 +1277,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
     // .int-bounds on Range values
+    // Note: i64 Range variants always have concrete integer bounds (even when
+    // i64::MIN/MAX are used as sentinel for -Inf/Inf), so we always return them.
+    // Only GenericRange can have true Inf/NaN endpoints that need to throw.
     if method == "int-bounds" {
-        // Helper: i64::MIN and i64::MAX are sentinel values for -Inf and Inf
-        let is_inf_sentinel = |v: i64| v == i64::MIN || v == i64::MAX;
         match target {
-            Value::Range(start, end) if is_inf_sentinel(*start) || is_inf_sentinel(*end) => {
-                let range_repr = crate::runtime::utils::gist_value(target);
-                return Some(Err(crate::value::RuntimeError::new(format!(
-                    "Cannot determine integer bounds of {range_repr}"
-                ))));
-            }
             Value::Range(start, end) => {
                 return Some(Ok(Value::array(vec![Value::Int(*start), Value::Int(*end)])));
-            }
-            Value::RangeExcl(start, end) if is_inf_sentinel(*start) || is_inf_sentinel(*end) => {
-                let range_repr = crate::runtime::utils::gist_value(target);
-                return Some(Err(crate::value::RuntimeError::new(format!(
-                    "Cannot determine integer bounds of {range_repr}"
-                ))));
             }
             Value::RangeExcl(start, end) => {
                 return Some(Ok(Value::array(vec![
@@ -1302,27 +1291,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     Value::Int(*end - 1),
                 ])));
             }
-            Value::RangeExclStart(start, end)
-                if is_inf_sentinel(*start) || is_inf_sentinel(*end) =>
-            {
-                let range_repr = crate::runtime::utils::gist_value(target);
-                return Some(Err(crate::value::RuntimeError::new(format!(
-                    "Cannot determine integer bounds of {range_repr}"
-                ))));
-            }
             Value::RangeExclStart(start, end) => {
                 return Some(Ok(Value::array(vec![
                     Value::Int(*start + 1),
                     Value::Int(*end),
                 ])));
-            }
-            Value::RangeExclBoth(start, end)
-                if is_inf_sentinel(*start) || is_inf_sentinel(*end) =>
-            {
-                let range_repr = crate::runtime::utils::gist_value(target);
-                return Some(Err(crate::value::RuntimeError::new(format!(
-                    "Cannot determine integer bounds of {range_repr}"
-                ))));
             }
             Value::RangeExclBoth(start, end) => {
                 return Some(Ok(Value::array(vec![
