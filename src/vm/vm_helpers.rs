@@ -444,7 +444,7 @@ impl VM {
                 // For regex smartmatch, return the Match object (from $/) or Nil
                 Ok(slash)
             } else {
-                Ok(Value::Nil)
+                Ok(slash)
             }
         } else {
             Ok(Value::Bool(matched))

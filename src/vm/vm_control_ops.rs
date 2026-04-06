@@ -680,6 +680,7 @@ impl VM {
             .then(|| self.interpreter.env().get("_").cloned())
             .flatten();
         let saved_topic_source = self.topic_source_var.take();
+        let was_topic_readonly = self.interpreter.readonly_vars().contains("_");
 
         self.env_dirty = true;
         let mut i = start;
@@ -712,10 +713,12 @@ impl VM {
             if let Some(slot) = spec.param_local {
                 self.locals[slot as usize] = item.clone();
             }
-            if !spec.is_rw
-                && let Some(ref name) = param_name
-            {
-                self.interpreter.mark_readonly(name);
+            if !spec.is_rw {
+                if let Some(ref name) = param_name {
+                    self.interpreter.mark_readonly(name);
+                } else {
+                    self.interpreter.mark_readonly("_");
+                }
             }
             'body_redo: loop {
                 match self.run_range(code, body_start, loop_end, compiled_fns) {
@@ -776,6 +779,9 @@ impl VM {
                         {
                             self.interpreter.readonly_vars_mut().remove(name);
                         }
+                        if !was_topic_readonly {
+                            self.interpreter.unmark_readonly("_");
+                        }
                         if spec.restore_topic {
                             match saved_topic.clone() {
                                 Some(v) => {
@@ -804,6 +810,9 @@ impl VM {
             && let Some(ref name) = param_name
         {
             self.interpreter.readonly_vars_mut().remove(name);
+        }
+        if !was_topic_readonly {
+            self.interpreter.unmark_readonly("_");
         }
         self.topic_source_var = saved_topic_source;
         if spec.restore_topic {
