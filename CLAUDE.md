@@ -291,6 +291,14 @@ git worktree prune
 
 Before cleanup, check which agents are still running and exclude their worktrees. After cleanup, verify disk usage with `du -sh .claude/worktrees/`.
 
+## LXC container environment
+
+This development environment runs inside a dedicated mutsu LXC container. The container may be destroyed at any time — always commit important changes and push PRs promptly.
+
+- **codex can run in YOLO mode** (`codex exec --dangerously-bypass-approvals-and-sandbox`) since the container itself provides isolation. No bwrap sandbox is needed.
+- **`pick-next-roast-easy.sh`** — Picks easy (fail-only, short) roast tests suitable for codex. Used by codex workers to avoid timeout/parse-error tests that are too hard.
+- **codex worker**: Run via `tmp/codex-loop.sh` which uses `pick-next-roast-easy.sh` + codex YOLO mode.
+
 ## AI fleet operations
 
 Roast test fixing is automated via a fleet of sandboxed AI agents. The parent AI (or human) launches workers and a supervisor, then monitors their progress.
