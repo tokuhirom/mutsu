@@ -737,7 +737,12 @@ impl Interpreter {
                             value = self
                                 .try_coerce_value_for_constraint(&resolved_constraint, value)
                                 .map_err(Self::normalize_coercion_binding_error)?;
-                            if !self.type_matches_value(target, &value) {
+                            // A Failure from coercion is passed through as-is
+                            // (it will throw when sunk or used). Only check
+                            // type match for non-Failure results.
+                            if !matches!(&value, Value::Instance { class_name, .. } if class_name.resolve() == "Failure")
+                                && !self.type_matches_value(target, &value)
+                            {
                                 return Err(coerce_impossible_error(
                                     &resolved_constraint,
                                     &original,

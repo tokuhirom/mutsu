@@ -1,8 +1,34 @@
 use crate::value::{ArrayKind, RuntimeError, Value};
-use num_traits::Signed;
+use num_traits::{Signed, Zero};
 use std::sync::Arc;
 
 use super::range_endpoint_display;
+
+/// Format a BigRat with a terminating decimal as an exact decimal string.
+/// Assumes denominator is a power of 2 and 5 (verified by caller).
+fn format_bigrat_decimal_exact(n: &num_bigint::BigInt, d: &num_bigint::BigInt) -> String {
+    let negative = n.is_negative() ^ d.is_negative();
+    let n_abs = n.abs();
+    let d_abs = d.abs();
+    let quotient = &n_abs / &d_abs;
+    let remainder = &n_abs % &d_abs;
+    if remainder.is_zero() {
+        let prefix = if negative { "-" } else { "" };
+        return format!("{}{}.0", prefix, quotient);
+    }
+    // Compute fractional digits by multiplying remainder by 10 repeatedly
+    let mut frac_digits = String::new();
+    let mut rem = remainder;
+    let ten = num_bigint::BigInt::from(10u8);
+    while !rem.is_zero() {
+        rem *= &ten;
+        let digit = &rem / &d_abs;
+        rem %= &d_abs;
+        frac_digits.push_str(&digit.to_string());
+    }
+    let prefix = if negative { "-" } else { "" };
+    format!("{}{}.{}", prefix, quotient, frac_digits)
+}
 
 /// Format a finite f64 in Raku's Num.raku style: always includes 'e'.
 /// Raku's approach: use the shortest natural string representation,
@@ -321,6 +347,14 @@ pub fn raku_value(v: &Value) -> String {
             } else if (n % d) == num_bigint::BigInt::from(0) {
                 format!("{}.0", n / d)
             } else {
+                // If denominator doesn't fit in i64, use fraction notation
+                // (matches Raku behavior: standard Rats with uint64 denominator
+                // get decimal form, but larger denominators get fraction form).
+                use num_traits::ToPrimitive;
+                if d.abs().to_i64().is_none() {
+                    return format!("<{}/{}>", n, d);
+                }
+                // Check if denominator is a power of 2 and 5 (terminating decimal)
                 let mut dd = d.abs();
                 while (&dd % 2u8) == num_bigint::BigInt::from(0) {
                     dd /= 2u8;
@@ -329,7 +363,8 @@ pub fn raku_value(v: &Value) -> String {
                     dd /= 5u8;
                 }
                 if dd == num_bigint::BigInt::from(1u8) {
-                    v.to_string_value()
+                    // Terminating decimal: compute exact representation using BigInt
+                    format_bigrat_decimal_exact(n, d)
                 } else {
                     format!("<{}/{}>", n, d)
                 }

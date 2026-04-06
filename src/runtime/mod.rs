@@ -2449,6 +2449,33 @@ impl Interpreter {
                     "CompUnit::Repository::FileSystem".to_string(),
                     vec!["CompUnit::Repository".to_string()],
                 );
+                // Built-in type role composition
+                ccr.insert(
+                    "Int".to_string(),
+                    vec!["Real".to_string(), "Numeric".to_string()],
+                );
+                ccr.insert(
+                    "Num".to_string(),
+                    vec!["Real".to_string(), "Numeric".to_string()],
+                );
+                ccr.insert(
+                    "Rat".to_string(),
+                    vec![
+                        "Rational[Int,Int]".to_string(),
+                        "Real".to_string(),
+                        "Numeric".to_string(),
+                    ],
+                );
+                ccr.insert(
+                    "FatRat".to_string(),
+                    vec![
+                        "Rational[Int,Int]".to_string(),
+                        "Real".to_string(),
+                        "Numeric".to_string(),
+                    ],
+                );
+                ccr.insert("Complex".to_string(), vec!["Numeric".to_string()]);
+                ccr.insert("Str".to_string(), vec!["Stringy".to_string()]);
                 ccr
             },
             class_enum_roles: HashMap::new(),
