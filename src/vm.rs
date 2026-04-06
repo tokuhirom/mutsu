@@ -92,6 +92,9 @@ pub(crate) struct VM {
     constant_context: bool,
     /// When true, the next SetLocal came from an explicit initializer (`= expr`).
     explicit_initializer_context: bool,
+    /// When true, the next SetLocal is from a `my` VarDecl (not a plain assignment).
+    /// Used to allow overwriting immutable Blob containers in loop redeclarations.
+    vardecl_context: bool,
     // TODO: local slot aliases for `:=` binding - needs careful implementation
     // to avoid S12-class/mro-6e.t regression
     /// Cache for on-the-fly compiled functions, keyed by fingerprint.
@@ -254,6 +257,7 @@ impl VM {
             bind_context: false,
             constant_context: false,
             explicit_initializer_context: false,
+            vardecl_context: false,
             otf_compile_cache: HashMap::new(),
             state_scope_id: None,
             fn_resolve_cache: HashMap::new(),
@@ -1103,6 +1107,10 @@ impl VM {
             }
             OpCode::MarkExplicitInitializerContext => {
                 self.explicit_initializer_context = true;
+                *ip += 1;
+            }
+            OpCode::MarkVarDeclContext => {
+                self.vardecl_context = true;
                 *ip += 1;
             }
 

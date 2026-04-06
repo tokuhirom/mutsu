@@ -1473,22 +1473,31 @@ impl Interpreter {
                                     Vec::new()
                                 }
                             }
+                            Value::BigInt(_) => vec![a.clone()],
                             other => vec![Value::Int(to_int(other))],
                         })
                         .collect();
-                    // Mask values to unsigned range based on element size
+                    // Mask values to unsigned range based on element size.
+                    // For uint64, use BigInt-aware conversion to preserve
+                    // values > i64::MAX (e.g. 18446744073709551615).
                     let byte_vals: Vec<Value> = raw_vals
                         .into_iter()
                         .map(|v| {
-                            let i = to_int(&v);
                             if cn.contains("64") {
-                                Value::Int(i as u64 as i64)
+                                let u = match &v {
+                                    Value::BigInt(n) => {
+                                        use num_traits::ToPrimitive;
+                                        n.as_ref().to_u64().unwrap_or(to_int(&v) as u64)
+                                    }
+                                    _ => to_int(&v) as u64,
+                                };
+                                Value::Int(u as i64)
                             } else if cn.contains("32") {
-                                Value::Int(i as u32 as i64)
+                                Value::Int(to_int(&v) as u32 as i64)
                             } else if cn.contains("16") {
-                                Value::Int(i as u16 as i64)
+                                Value::Int(to_int(&v) as u16 as i64)
                             } else {
-                                Value::Int(i as u8 as i64)
+                                Value::Int(to_int(&v) as u8 as i64)
                             }
                         })
                         .collect();

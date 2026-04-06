@@ -680,13 +680,27 @@ impl VM {
                     }
                     _ => Value::Package(crate::symbol::Symbol::intern(&trait_name)),
                 };
-                // Get current value, convert to buf
+                // Get current value, convert to buf.
+                // The value might be an Array (from the initializer) or already
+                // a Buf/Blob Instance (if SetLocal coerced through an old Buf
+                // container in the same slot, e.g. in a loop redeclaration).
                 let current = self.locals_get_by_name(code, name).unwrap_or(Value::Nil);
                 let items = match &current {
                     Value::Array(items, ..) => items
                         .iter()
                         .map(|v| Value::Int(crate::runtime::to_int(v)))
                         .collect(),
+                    Value::Instance { attributes, .. } => {
+                        // Extract items from an existing Buf/Blob instance
+                        if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                            items
+                                .iter()
+                                .map(|v| Value::Int(crate::runtime::to_int(v)))
+                                .collect()
+                        } else {
+                            Vec::new()
+                        }
+                    }
                     _ => Vec::new(),
                 };
                 let buf = self.try_compiled_method_or_interpret(buf_type, "new", items)?;

@@ -30,6 +30,9 @@ pub(crate) enum OpCode {
     MarkConstantContext,
     /// Mark that the next SetLocal came from an explicit initializer (`= expr`).
     MarkExplicitInitializerContext,
+    /// Mark that the next SetLocal is from a `my` VarDecl (allows overwriting
+    /// immutable Blob containers when the local slot is reused in a loop).
+    MarkVarDeclContext,
     SetVarType {
         name_idx: u32,
         tc_idx: u32,

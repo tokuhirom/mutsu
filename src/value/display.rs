@@ -639,11 +639,32 @@ impl Value {
                     if bytes.is_empty() {
                         format!("{}()", class_name)
                     } else {
+                        // Determine hex width from element size in the class name
+                        let cn = class_name.resolve();
+                        let hex_width = if cn.contains("64") {
+                            16 // 64-bit = 8 bytes = 16 hex chars
+                        } else if cn.contains("32") {
+                            8
+                        } else if cn.contains("16") {
+                            4
+                        } else {
+                            2 // 8-bit (default)
+                        };
                         let hex: Vec<String> = bytes
                             .iter()
                             .map(|b| match b {
-                                Value::Int(i) => format!("{:02X}", *i as u8),
-                                _ => "00".to_string(),
+                                Value::Int(i) => {
+                                    if hex_width == 16 {
+                                        format!("{:016X}", *i as u64)
+                                    } else if hex_width == 8 {
+                                        format!("{:08X}", *i as u32)
+                                    } else if hex_width == 4 {
+                                        format!("{:04X}", *i as u16)
+                                    } else {
+                                        format!("{:02X}", *i as u8)
+                                    }
+                                }
+                                _ => "0".repeat(hex_width),
                             })
                             .collect();
                         format!("{}:0x<{}>", class_name, hex.join(" "))
