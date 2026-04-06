@@ -273,6 +273,9 @@ impl Interpreter {
         } else {
             "Perl6::Metamodel::ClassHOW"
         };
+        if let Some(mixed_how) = self.how_mixins.get(&type_name) {
+            return Ok(mixed_how.clone());
+        }
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), Value::str(type_name));
         Ok(Value::make_instance(Symbol::intern(how_name), attrs))

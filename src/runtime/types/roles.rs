@@ -153,6 +153,9 @@ impl Interpreter {
             let result = self.compose_role_on_value(left.clone(), &role_name, &args)?;
             // Call BUILD submethods from the composed role
             let result = self.call_role_build_submethods(result, &role_name)?;
+            if let Some(type_name) = Self::how_target_name_from_value(&left) {
+                self.how_mixins.insert(type_name, result.clone());
+            }
             if let Some(target_name) = Self::var_target_name_from_value(&left) {
                 self.set_var_meta_value(&target_name, result.clone());
             }
@@ -184,6 +187,31 @@ impl Interpreter {
             self.set_var_meta_value(&target_name, result.clone());
         }
         Ok(result)
+    }
+
+    fn how_target_name_from_value(value: &Value) -> Option<String> {
+        match value {
+            Value::Mixin(inner, _) => Self::how_target_name_from_value(inner),
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if matches!(
+                class_name.resolve().as_str(),
+                "Perl6::Metamodel::ClassHOW"
+                    | "Perl6::Metamodel::ParametricRoleGroupHOW"
+                    | "Perl6::Metamodel::CurriedRoleHOW"
+                    | "Perl6::Metamodel::EnumHOW"
+                    | "Perl6::Metamodel::SubsetHOW"
+            ) =>
+            {
+                match attributes.get("name") {
+                    Some(Value::Str(name)) => Some(name.to_string()),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
     }
 
     fn var_target_name_from_value(value: &Value) -> Option<String> {

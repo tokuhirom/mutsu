@@ -135,6 +135,39 @@ fn meta_setter_stmt(type_name: &str, key: &str, value: Value) -> Stmt {
     })
 }
 
+fn parse_optional_trait_arg(input: &str) -> PResult<'_, Option<Expr>> {
+    let (rest, _) = ws(input)?;
+    if !rest.starts_with('(') {
+        return Ok((rest, None));
+    }
+    let after = skip_balanced_parens(rest);
+    let body = &rest[1..rest.len() - after.len() - 1];
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return Ok((after, None));
+    }
+    let (expr_rest, expr) = expression(trimmed)?;
+    if !expr_rest.trim().is_empty() {
+        return Err(PError::expected("trait argument"));
+    }
+    Ok((after, Some(expr)))
+}
+
+fn package_trait_stmt(type_name: &str, trait_name: &str, trait_arg: Option<Expr>) -> Stmt {
+    let trait_value = trait_arg.unwrap_or(Expr::Literal(Value::Bool(true)));
+    Stmt::Expr(Expr::Call {
+        name: Symbol::intern("trait_mod:<is>"),
+        args: vec![
+            Expr::BareWord(type_name.to_string()),
+            Expr::Binary {
+                left: Box::new(Expr::Literal(Value::str(trait_name.to_string()))),
+                op: TokenKind::FatArrow,
+                right: Box::new(trait_value),
+            },
+        ],
+    })
+}
+
 fn expr_uses_attr_twigil(expr: &Expr) -> bool {
     match expr {
         Expr::Var(name) | Expr::ArrayVar(name) | Expr::HashVar(name) => {
@@ -749,24 +782,28 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
     let mut parents = Vec::new();
     let mut does_parents = Vec::new();
     let mut is_repr: Option<String> = None;
+    let mut custom_traits: Vec<(String, Option<Expr>)> = Vec::new();
     let mut r = rest;
     loop {
         if let Some(r2) = keyword("is", r) {
             let (r2, _) = ws1(r2)?;
-            // Handle `is ::Foo` (indirect name lookup) — treat the
-            // `::Ident` as a parent name so that validation later
-            // produces X::Inheritance::UnknownParent.
-            let (r2, parent) = if let Some(stripped) = r2.strip_prefix("::") {
+            let (r2, trait_name) = if let Some(stripped) = r2.strip_prefix("::") {
                 let (r3, ident_part) = qualified_ident(stripped)?;
                 (r3, format!("::{}", ident_part))
             } else {
-                qualified_ident(r2)?
+                parse_sub_name(r2)?
             };
-            if parent == "hidden" {
+            if trait_name == "hidden" {
                 is_hidden = true;
-            } else if parent == "rw" {
+                let (r2, _) = ws(r2)?;
+                r = r2;
+                continue;
+            } else if trait_name == "rw" {
                 class_is_rw = true;
-            } else if parent == "repr" {
+                let (r2, _) = ws(r2)?;
+                r = r2;
+                continue;
+            } else if trait_name == "repr" {
                 // Extract repr value from `is repr('CUnion')` etc.
                 if let Some(inner) = r2.strip_prefix('(') {
                     // Find the content between parens, stripping quotes
@@ -778,23 +815,25 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
                 let (r2, _) = ws(r2)?;
                 r = r2;
                 continue;
-            } else if parent == "DEPRECATED" {
+            } else if trait_name == "DEPRECATED" {
                 // `is DEPRECATED` on a class — skip optional parenthesized arg
                 let r2 = skip_balanced_parens(r2);
                 let (r2, _) = ws(r2)?;
                 r = r2;
                 continue;
-            } else if parent.starts_with(|c: char| c.is_ascii_uppercase())
-                || parent.starts_with("::")
+            } else if trait_name.starts_with(|c: char| c.is_ascii_uppercase())
+                || trait_name.starts_with("::")
             {
                 let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
-                parents.push(format!("{}{}", parent, bracket_suffix));
+                parents.push(format!("{}{}", trait_name, bracket_suffix));
                 r = r2;
                 let (r2, _) = ws(r)?;
                 r = r2;
                 continue;
             }
+            let (r2, trait_arg) = parse_optional_trait_arg(r2)?;
             let (r2, _) = ws(r2)?;
+            custom_traits.push((trait_name, trait_arg));
             r = r2;
             continue;
         }
@@ -890,10 +929,21 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
         }
     }
     if stmts.is_empty() {
-        return Ok((rest, class_stmt));
+        if custom_traits.is_empty() {
+            return Ok((rest, class_stmt));
+        }
+        let mut extra_stmts = vec![class_stmt];
+        for (trait_name, trait_arg) in custom_traits {
+            extra_stmts.push(package_trait_stmt(&name, &trait_name, trait_arg));
+        }
+        return Ok((rest, Stmt::Block(extra_stmts)));
     }
-    stmts.push(class_stmt);
-    Ok((rest, Stmt::Block(stmts)))
+    let mut all_stmts = vec![class_stmt];
+    all_stmts.extend(stmts);
+    for (trait_name, trait_arg) in custom_traits {
+        all_stmts.push(package_trait_stmt(&name, &trait_name, trait_arg));
+    }
+    Ok((rest, Stmt::Block(all_stmts)))
 }
 
 /// Parse `also is <trait>;` statement.
@@ -1163,6 +1213,7 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
     let mut role_is_rw = false;
     let mut is_export = false;
     let mut export_tags: Vec<String> = Vec::new();
+    let mut custom_traits: Vec<(String, Option<Expr>)> = Vec::new();
 
     // Optional parent/trait clauses in any order.
     loop {
@@ -1184,8 +1235,7 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
         }
         if let Some(r) = keyword("is", rest) {
             let (r, _) = ws1(r)?;
-            let (r, trait_name) = ident(r)?;
-            let r = skip_balanced_parens(r);
+            let (r, trait_name) = parse_sub_name(r)?;
             let (r, _) = ws(r)?;
             if trait_name == "hidden" {
                 is_hidden_role = true;
@@ -1196,6 +1246,16 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
                 if !export_tags.iter().any(|t| t == "DEFAULT") {
                     export_tags.push("DEFAULT".to_string());
                 }
+            } else if r.starts_with('(')
+                || trait_name
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c == '_' || c == '-')
+            {
+                let (r, trait_arg) = parse_optional_trait_arg(r)?;
+                let (r, _) = ws(r)?;
+                custom_traits.push((trait_name, trait_arg));
+                rest = r;
+                continue;
             } else if !matches!(
                 trait_name.as_str(),
                 "ok" | "required"
@@ -1209,11 +1269,9 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
                     | "nodal"
                     | "pure"
             ) {
-                // Known lowercase trait keywords are skipped;
-                // everything else (including lowercase class/role names like irA)
-                // is treated as a parent.
                 parent_roles.push(trait_name);
             }
+            let r = skip_balanced_parens(r);
             rest = r;
             continue;
         }
@@ -1262,19 +1320,24 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
     }
     super::simple::register_user_type(&name);
 
-    Ok((
-        rest,
-        Stmt::RoleDecl {
-            name: Symbol::intern(&name),
-            type_params,
-            type_param_defs,
-            is_export,
-            export_tags,
-            body,
-            is_rw: role_is_rw,
-            language_version: super::simple::current_language_version(),
-        },
-    ))
+    let role_stmt = Stmt::RoleDecl {
+        name: Symbol::intern(&name),
+        type_params,
+        type_param_defs,
+        is_export,
+        export_tags,
+        body,
+        is_rw: role_is_rw,
+        language_version: super::simple::current_language_version(),
+    };
+    if custom_traits.is_empty() {
+        return Ok((rest, role_stmt));
+    }
+    let mut stmts = vec![role_stmt];
+    for (trait_name, trait_arg) in custom_traits {
+        stmts.push(package_trait_stmt(&name, &trait_name, trait_arg));
+    }
+    Ok((rest, Stmt::Block(stmts)))
 }
 
 /// Parse `does` declaration.

@@ -882,6 +882,9 @@ pub struct Interpreter {
     /// Rebless mapping: instance_id -> new HOW value.
     /// Used by Metamodel::Primitives.rebless to track reblessed objects.
     pub(crate) rebless_map: HashMap<u64, Value>,
+    /// Persistent metamodel mixins keyed by target type name.
+    /// Used for package traits that compose roles onto `.HOW`.
+    pub(crate) how_mixins: HashMap<String, Value>,
     /// Value set by `make()` inside grammar action methods.
     /// Persists across env save/restore in method dispatch.
     pub(crate) action_made: Option<Value>,
@@ -2662,6 +2665,7 @@ impl Interpreter {
             squish_iterator_meta: HashMap::new(),
             custom_type_data: HashMap::new(),
             rebless_map: HashMap::new(),
+            how_mixins: HashMap::new(),
             action_made: None,
             pending_regex_error: None,
             precomp_enabled: true,
@@ -4144,6 +4148,7 @@ impl Interpreter {
             squish_iterator_meta: HashMap::new(),
             custom_type_data: self.custom_type_data.clone(),
             rebless_map: self.rebless_map.clone(),
+            how_mixins: self.how_mixins.clone(),
             action_made: None,
             pending_regex_error: None,
             precomp_enabled: self.precomp_enabled,
