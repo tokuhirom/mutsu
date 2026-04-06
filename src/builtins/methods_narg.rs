@@ -1153,31 +1153,47 @@ pub(crate) fn native_method_1arg(
             }
             None
         }
-        "head" => match target {
-            Value::Array(items, ..) => {
-                let n = match arg {
-                    Value::Int(i) => *i as usize,
-                    _ => return None,
-                };
-                Some(Ok(Value::array(items[..n.min(items.len())].to_vec())))
+        "head" => {
+            let n: i64 = match arg {
+                Value::Int(i) => *i,
+                Value::Rat(num, den) => {
+                    if *den == 0 {
+                        0
+                    } else {
+                        *num / *den
+                    }
+                }
+                Value::Num(f) => *f as i64,
+                Value::BigInt(bi) => {
+                    // For very large BigInts that don't fit in i64:
+                    // negative => treat as negative (returns empty), positive => clamp to MAX
+                    bi.to_i64()
+                        .unwrap_or(if bi.sign() == num_bigint::Sign::Minus {
+                            -1
+                        } else {
+                            i64::MAX
+                        })
+                }
+                _ => return None,
+            };
+            if n <= 0 {
+                return Some(Ok(Value::array(vec![])));
             }
-            Value::Range(a, b) => {
-                let n = match arg {
-                    Value::Int(i) => *i as usize,
-                    _ => return None,
-                };
-                let items: Vec<Value> = (*a..=*b).take(n).map(Value::Int).collect();
-                Some(Ok(Value::array(items)))
+            let n = n as usize;
+            match target {
+                Value::Array(items, ..) => {
+                    Some(Ok(Value::array(items[..n.min(items.len())].to_vec())))
+                }
+                Value::Range(a, b) => {
+                    let items: Vec<Value> = (*a..=*b).take(n).map(Value::Int).collect();
+                    Some(Ok(Value::array(items)))
+                }
+                _ => {
+                    let items = runtime::value_to_list(target);
+                    Some(Ok(Value::array(items[..n.min(items.len())].to_vec())))
+                }
             }
-            _ => {
-                let n = match arg {
-                    Value::Int(i) => *i as usize,
-                    _ => return None,
-                };
-                let items = runtime::value_to_list(target);
-                Some(Ok(Value::array(items[..n.min(items.len())].to_vec())))
-            }
-        },
+        }
         "tail" => match target {
             Value::Array(items, ..) => {
                 let n = match arg {
