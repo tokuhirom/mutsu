@@ -38,6 +38,15 @@ pub(super) fn dispatch(
                     Some(Some(Ok(Value::Array(Arc::new(items.to_vec()), *kind))))
                 }
                 Value::Hash(map) => Some(Some(Ok(Value::Hash(Arc::new((**map).clone()))))),
+                Value::Set(data, mutable) => {
+                    Some(Some(Ok(Value::Set(Arc::new((**data).clone()), *mutable))))
+                }
+                Value::Bag(data, mutable) => {
+                    Some(Some(Ok(Value::Bag(Arc::new((**data).clone()), *mutable))))
+                }
+                Value::Mix(data, mutable) => {
+                    Some(Some(Ok(Value::Mix(Arc::new((**data).clone()), *mutable))))
+                }
                 Value::Sub(data) => {
                     // Clone the sub with a new id so state variables are independent
                     let mut new_data = (**data).clone();

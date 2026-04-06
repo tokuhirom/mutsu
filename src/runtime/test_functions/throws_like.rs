@@ -175,6 +175,8 @@ impl Interpreter {
                         || err.message.contains("X::Obsolete")
                         || err.message.contains("X::Redeclaration")
                         || err.message.contains("parse error")
+                        // Any error with a parse error code is a compile-time error
+                        || err.code.is_some_and(|c| c.is_parse())
                 } else if expected_normalized == "X::AdHoc" {
                     // X::AdHoc matches any ad-hoc error
                     true
