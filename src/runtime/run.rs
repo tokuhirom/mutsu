@@ -606,7 +606,7 @@ impl Interpreter {
                 .insert("*PROGRAM".to_string(), Value::str(String::new()));
         }
         self.collect_doc_comments(&preprocessed);
-        self.collect_pod_blocks(&preprocessed);
+        let _ = self.collect_pod_blocks(&preprocessed);
         self.add_declarator_pod_entries();
         let file_name = self
             .program_path

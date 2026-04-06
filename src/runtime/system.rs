@@ -595,7 +595,7 @@ impl Interpreter {
         let saved_in_eval = self.env.get("__mutsu_in_eval").cloned();
         self.env
             .insert("__mutsu_in_eval".to_string(), Value::Bool(true));
-        self.collect_pod_blocks(trimmed);
+        self.collect_pod_blocks(trimmed)?;
         // Collect operator sub names so the parser recognizes them in EVAL context
         let op_names = self.collect_operator_sub_names();
         let op_assoc = self.collect_operator_assoc_map();

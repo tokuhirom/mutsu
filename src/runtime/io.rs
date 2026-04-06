@@ -103,34 +103,145 @@ impl Interpreter {
     fn is_pod_table_separator(line: &str) -> bool {
         let trimmed = line.trim();
         !trimmed.is_empty()
-            && trimmed.contains('-')
             && trimmed
                 .chars()
-                .all(|c| matches!(c, '-' | '+' | '|' | ':' | ' ' | '\t'))
+                .all(|c| matches!(c, '_' | '-' | '+' | '|' | ':' | '=' | ' ' | '\t'))
     }
 
-    fn collect_table_rows(lines: &[&str], mut idx: usize) -> (Vec<Vec<String>>, usize) {
-        let mut rows = Vec::new();
+    fn pod_table_error(message: &str) -> RuntimeError {
+        RuntimeError::new(format!("Malformed Pod table: {}", message))
+    }
+
+    fn is_visible_pod_table_separator(chars: &[char], idx: usize) -> bool {
+        matches!(chars[idx], '|' | '+')
+            && (idx == 0 || chars[idx - 1].is_whitespace())
+            && (idx + 1 == chars.len() || chars[idx + 1].is_whitespace())
+    }
+
+    fn pod_table_has_visible_separator(line: &str) -> bool {
+        let chars: Vec<char> = line.chars().collect();
+        chars
+            .iter()
+            .enumerate()
+            .any(|(idx, _)| Self::is_visible_pod_table_separator(&chars, idx))
+    }
+
+    fn split_visible_pod_table_row(line: &str) -> Vec<String> {
+        let chars: Vec<char> = line.chars().collect();
+        let mut current = String::new();
+        let mut cells = Vec::new();
+
+        for (idx, ch) in chars.iter().enumerate() {
+            let is_separator = Self::is_visible_pod_table_separator(&chars, idx);
+            if is_separator {
+                cells.push(current.trim().to_string());
+                current.clear();
+            } else {
+                current.push(*ch);
+            }
+        }
+
+        cells.push(current.trim().to_string());
+        cells
+    }
+
+    fn split_invisible_pod_table_row(line: &str) -> Vec<String> {
+        let mut cells = Vec::new();
+        let mut current = String::new();
+        let chars: Vec<char> = line.chars().collect();
+        let mut idx = 0usize;
+
+        while idx < chars.len() {
+            if chars[idx].is_whitespace() {
+                let start = idx;
+                while idx < chars.len() && chars[idx].is_whitespace() {
+                    idx += 1;
+                }
+                if idx - start >= 2 {
+                    cells.push(current.trim().to_string());
+                    current.clear();
+                } else if let Some(ch) = chars.get(start) {
+                    current.push(*ch);
+                }
+            } else {
+                current.push(chars[idx]);
+                idx += 1;
+            }
+        }
+
+        cells.push(current.trim().to_string());
+        cells
+    }
+
+    fn collect_table_rows(
+        lines: &[&str],
+        mut idx: usize,
+        end_target: Option<&str>,
+    ) -> Result<(Vec<Vec<String>>, usize), RuntimeError> {
+        let start_idx = idx;
+        let mut content_lines = Vec::new();
         while idx < lines.len() {
             let trimmed = lines[idx].trim_start();
-            if trimmed.is_empty() || trimmed.starts_with('=') {
+            if trimmed.is_empty() || Self::active_pod_directive(lines[idx], end_target).is_some() {
                 break;
             }
-            if Self::is_pod_table_separator(trimmed) {
-                idx += 1;
-                continue;
-            }
-            if !trimmed.contains('|') {
-                break;
-            }
-            let row = trimmed
-                .split('|')
-                .map(|cell| cell.trim().to_string())
-                .collect::<Vec<_>>();
-            rows.push(row);
+            content_lines.push(trimmed);
             idx += 1;
         }
-        (rows, idx)
+
+        let non_separator_lines: Vec<&str> = content_lines
+            .iter()
+            .copied()
+            .filter(|line| !Self::is_pod_table_separator(line))
+            .collect();
+        if non_separator_lines.is_empty() {
+            return Err(Self::pod_table_error("table has no data"));
+        }
+
+        let has_visible = non_separator_lines
+            .iter()
+            .any(|line| Self::pod_table_has_visible_separator(line));
+        let has_invisible = non_separator_lines.iter().any(|line| {
+            !Self::pod_table_has_visible_separator(line)
+                && Self::split_invisible_pod_table_row(line).len() > 1
+        });
+        if has_visible && has_invisible {
+            return Err(Self::pod_table_error(
+                "table mixes visible and invisible column separators",
+            ));
+        }
+
+        let mut rows = Vec::new();
+        let mut previous_was_separator = false;
+        let style_is_visible = has_visible;
+        for (line_idx, trimmed) in content_lines.iter().enumerate() {
+            if Self::is_pod_table_separator(trimmed) {
+                let has_later_row = content_lines[line_idx + 1..]
+                    .iter()
+                    .any(|line| !Self::is_pod_table_separator(line));
+                if previous_was_separator && has_later_row {
+                    return Err(Self::pod_table_error(
+                        "table has consecutive interior row separators",
+                    ));
+                }
+                previous_was_separator = true;
+                continue;
+            }
+
+            let row = if style_is_visible {
+                Self::split_visible_pod_table_row(trimmed)
+            } else {
+                Self::split_invisible_pod_table_row(trimmed)
+            };
+            rows.push(row);
+            previous_was_separator = false;
+        }
+
+        if rows.is_empty() {
+            return Err(Self::pod_table_error("table has no data"));
+        }
+
+        Ok((rows, idx.max(start_idx)))
     }
 
     fn collect_paragraph(lines: &[&str], mut idx: usize) -> (String, usize) {
@@ -295,7 +406,7 @@ impl Interpreter {
         lines: &[&str],
         mut idx: usize,
         end_target: Option<&str>,
-    ) -> (Vec<Value>, usize) {
+    ) -> Result<(Vec<Value>, usize), RuntimeError> {
         let mut entries = Vec::new();
         while idx < lines.len() {
             let trimmed = lines[idx].trim_start();
@@ -307,7 +418,7 @@ impl Interpreter {
                 if directive == "end" {
                     let target = rest.split_whitespace().next().unwrap_or_default();
                     if end_target.is_some_and(|expected| expected == target) {
-                        return (entries, idx + 1);
+                        return Ok((entries, idx + 1));
                     }
                     idx += 1;
                     continue;
@@ -319,10 +430,8 @@ impl Interpreter {
                     continue;
                 }
                 if directive == "table" {
-                    let (rows, next_idx) = Self::collect_table_rows(lines, idx + 1);
-                    if !rows.is_empty() {
-                        entries.push(Self::make_pod_table(rows));
-                    }
+                    let (rows, next_idx) = Self::collect_table_rows(lines, idx + 1, end_target)?;
+                    entries.push(Self::make_pod_table(rows));
                     idx = next_idx.max(idx + 1);
                     continue;
                 }
@@ -390,13 +499,20 @@ impl Interpreter {
                     }
                     if let Some(level) = Self::parse_item_level(target) {
                         let (item_contents, next_idx) =
-                            Self::collect_pod_entries(lines, idx + 1, Some(target));
+                            Self::collect_pod_entries(lines, idx + 1, Some(target))?;
                         entries.push(Self::make_pod_item(level, item_contents));
                         idx = next_idx.max(idx + 1);
                         continue;
                     }
+                    if target == "table" {
+                        let (rows, next_idx) =
+                            Self::collect_table_rows(lines, idx + 1, Some(target))?;
+                        entries.push(Self::make_pod_table(rows));
+                        idx = next_idx.max(idx + 1);
+                        continue;
+                    }
                     let (contents, next_idx) =
-                        Self::collect_pod_entries(lines, idx + 1, Some(target));
+                        Self::collect_pod_entries(lines, idx + 1, Some(target))?;
                     if target == "pod" {
                         entries.push(Self::make_pod_block(contents));
                     } else if let Some(level) = Self::parse_heading_level(target) {
@@ -438,7 +554,7 @@ impl Interpreter {
             entries.push(para);
             idx = next_idx.max(idx + 1);
         }
-        (entries, idx)
+        Ok((entries, idx))
     }
 
     fn parse_item_level(token: &str) -> Option<i64> {
@@ -469,7 +585,7 @@ impl Interpreter {
         Some((level, after.trim_start()))
     }
 
-    pub(super) fn collect_pod_blocks(&mut self, input: &str) {
+    pub(super) fn collect_pod_blocks(&mut self, input: &str) -> Result<(), RuntimeError> {
         let lines: Vec<&str> = input.lines().collect();
         let mut entries = Vec::new();
         let mut idx = 0usize;
@@ -487,10 +603,8 @@ impl Interpreter {
                     continue;
                 }
                 if directive == "table" {
-                    let (rows, next_idx) = Self::collect_table_rows(&lines, idx + 1);
-                    if !rows.is_empty() {
-                        entries.push(Self::make_pod_table(rows));
-                    }
+                    let (rows, next_idx) = Self::collect_table_rows(&lines, idx + 1, None)?;
+                    entries.push(Self::make_pod_table(rows));
                     idx = next_idx.max(idx + 1);
                     continue;
                 }
@@ -558,13 +672,20 @@ impl Interpreter {
                     }
                     if let Some(level) = Self::parse_item_level(target) {
                         let (item_contents, next_idx) =
-                            Self::collect_pod_entries(&lines, idx + 1, Some(target));
+                            Self::collect_pod_entries(&lines, idx + 1, Some(target))?;
                         entries.push(Self::make_pod_item(level, item_contents));
                         idx = next_idx.max(idx + 1);
                         continue;
                     }
+                    if target == "table" {
+                        let (rows, next_idx) =
+                            Self::collect_table_rows(&lines, idx + 1, Some(target))?;
+                        entries.push(Self::make_pod_table(rows));
+                        idx = next_idx.max(idx + 1);
+                        continue;
+                    }
                     let (contents, next_idx) =
-                        Self::collect_pod_entries(&lines, idx + 1, Some(target));
+                        Self::collect_pod_entries(&lines, idx + 1, Some(target))?;
                     if target == "pod" {
                         entries.push(Self::make_pod_block(contents));
                     } else if let Some(level) = Self::parse_heading_level(target) {
@@ -604,6 +725,7 @@ impl Interpreter {
             idx += 1;
         }
         self.env.insert("=pod".to_string(), Value::array(entries));
+        Ok(())
     }
 
     pub(super) fn init_io_environment(&mut self) {
