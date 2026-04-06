@@ -122,6 +122,11 @@ impl Interpreter {
         self.readonly_vars.insert(name.to_string());
     }
 
+    /// Remove a variable from the readonly set.
+    pub(crate) fn unmark_readonly(&mut self, name: &str) {
+        self.readonly_vars.remove(name);
+    }
+
     /// Check if a variable is readonly and return an error if so.
     /// Returns Ok(()) if writable, Err with X::Multi::NoMatch for increment/decrement,
     /// or Err with a generic message for assignment.
