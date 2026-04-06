@@ -2,16 +2,25 @@ use super::super::*;
 
 impl Interpreter {
     pub(crate) fn test_fn_cmp_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let left = Self::positional_value(args, 0)
-            .cloned()
-            .unwrap_or(Value::Nil);
-        let op_val = Self::positional_value(args, 1)
-            .cloned()
-            .unwrap_or(Value::Nil);
-        let right = Self::positional_value(args, 2)
-            .cloned()
-            .unwrap_or(Value::Nil);
-        let desc = Self::positional_string(args, 3);
+        // Extract positionals keeping Pair values (only skip internal named pairs).
+        // This is needed because user-provided Pair values (e.g. `cmp-ok $pair, '===', $pair`)
+        // would otherwise be filtered out by positional_value which treats all Pairs as named args.
+        let mut positionals = Vec::new();
+        for arg in args {
+            if let Value::Pair(key, _) = arg
+                && (key == "__mutsu_test_callsite_line" || key == "todo")
+            {
+                continue;
+            }
+            positionals.push(arg.clone());
+        }
+        let left = positionals.first().cloned().unwrap_or(Value::Nil);
+        let op_val = positionals.get(1).cloned().unwrap_or(Value::Nil);
+        let right = positionals.get(2).cloned().unwrap_or(Value::Nil);
+        let desc = positionals
+            .get(3)
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
         let todo = Self::named_bool(args, "todo");
         // Clone values before they might be consumed by callable operator
         let left_diag = left.clone();
