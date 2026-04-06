@@ -1277,6 +1277,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
     // .int-bounds on Range values
+    // Note: i64 Range variants always have concrete integer bounds (even when
+    // i64::MIN/MAX are used as sentinel for -Inf/Inf), so we always return them.
+    // Only GenericRange can have true Inf/NaN endpoints that need to throw.
     if method == "int-bounds" {
         match target {
             Value::Range(start, end) => {
@@ -1306,23 +1309,56 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 excl_start,
                 excl_end,
             } => {
+                // Check if endpoints contain Inf, -Inf, or NaN — these cannot
+                // have integer bounds.
+                let has_non_int_endpoint = |v: &Value| -> bool {
+                    match v {
+                        Value::Num(f) => f.is_infinite() || f.is_nan(),
+                        Value::Str(_) => true,
+                        _ => false,
+                    }
+                };
+                if has_non_int_endpoint(start.as_ref()) || has_non_int_endpoint(end.as_ref()) {
+                    let range_repr = crate::runtime::utils::gist_value(target);
+                    return Some(Err(crate::value::RuntimeError::new(format!(
+                        "Cannot determine integer bounds of {range_repr}"
+                    ))));
+                }
                 let s = if *excl_start {
                     match start.as_ref() {
                         Value::Int(n) => Value::Int(n + 1),
                         Value::BigInt(n) => Value::bigint(n.as_ref() + 1),
+                        Value::Rat(n, d) => {
+                            Value::Int(((*n as f64 / *d as f64).floor() as i64) + 1)
+                        }
                         other => Value::Int(other.to_f64() as i64 + 1),
                     }
                 } else {
-                    start.as_ref().clone()
+                    match start.as_ref() {
+                        Value::Int(_) | Value::BigInt(_) => start.as_ref().clone(),
+                        Value::Rat(n, d) => {
+                            let f = *n as f64 / *d as f64;
+                            Value::Int(f.ceil() as i64)
+                        }
+                        other => Value::Int(other.to_f64().ceil() as i64),
+                    }
                 };
                 let e = if *excl_end {
                     match end.as_ref() {
                         Value::Int(n) => Value::Int(n - 1),
                         Value::BigInt(n) => Value::bigint(n.as_ref() - 1),
+                        Value::Rat(n, d) => Value::Int(((*n as f64 / *d as f64).ceil() as i64) - 1),
                         other => Value::Int(other.to_f64() as i64 - 1),
                     }
                 } else {
-                    end.as_ref().clone()
+                    match end.as_ref() {
+                        Value::Int(_) | Value::BigInt(_) => end.as_ref().clone(),
+                        Value::Rat(n, d) => {
+                            let f = *n as f64 / *d as f64;
+                            Value::Int(f.floor() as i64)
+                        }
+                        other => Value::Int(other.to_f64().floor() as i64),
+                    }
                 };
                 return Some(Ok(Value::array(vec![s, e])));
             }

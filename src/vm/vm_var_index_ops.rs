@@ -677,11 +677,17 @@ impl VM {
             }
             // Range indexing (supports infinite ranges)
             (ref range, Value::Int(i)) if range.is_range() => {
-                if let Some((start, _end, _excl_start, _excl_end)) = range_params(range) {
+                if let Some((start, end, _excl_start, excl_end)) = range_params(range) {
                     if i < 0 {
                         Value::Nil
                     } else {
-                        Value::Int(start + i)
+                        let actual_end = if excl_end { end - 1 } else { end };
+                        let val = start + i;
+                        if start > actual_end || val > actual_end {
+                            Value::Nil
+                        } else {
+                            Value::Int(val)
+                        }
                     }
                 } else {
                     let items = crate::runtime::utils::value_to_list(range);
@@ -734,14 +740,22 @@ impl VM {
                     let actual_end = if excl_end { end - 1 } else { end };
                     let mut result = Vec::new();
                     for i in a..b {
+                        if i < 0 {
+                            result.push(Value::Nil);
+                            continue;
+                        }
                         let val = match start.checked_add(i) {
                             Some(v) => v,
-                            None => break,
+                            None => {
+                                result.push(Value::Nil);
+                                continue;
+                            }
                         };
-                        if val > actual_end {
-                            break;
+                        if start > actual_end || val > actual_end {
+                            result.push(Value::Nil);
+                        } else {
+                            result.push(Value::Int(val));
                         }
-                        result.push(Value::Int(val));
                     }
                     Value::array(result)
                 } else {
@@ -785,11 +799,19 @@ impl VM {
                 }
             }
             (ref range, Value::Array(indices, ..)) if range.is_range() => {
-                if let Some((start, _end, _excl_start, _excl_end)) = range_params(range) {
+                if let Some((start, end, _excl_start, excl_end)) = range_params(range) {
+                    let actual_end = if excl_end { end - 1 } else { end };
                     let result: Vec<Value> = indices
                         .iter()
                         .map(|idx| match idx {
-                            Value::Int(i) => Value::Int(start + i),
+                            Value::Int(i) if *i >= 0 => {
+                                let val = start + i;
+                                if start > actual_end || val > actual_end {
+                                    Value::Nil
+                                } else {
+                                    Value::Int(val)
+                                }
+                            }
                             _ => Value::Nil,
                         })
                         .collect();

@@ -160,6 +160,20 @@ impl Interpreter {
             return min_ok && max_ok;
         }
 
+        // Handle Complex values: if imaginary part is negligible, use real part
+        if let Value::Complex(re, im) = val {
+            // Raku converts Complex to Real only if imaginary part is zero
+            // (or very close to zero due to floating point)
+            if *im == 0.0 || im.abs() < f64::EPSILON {
+                let v = *re;
+                let min_ok = if r_es { v > r_min } else { v >= r_min };
+                let max_ok = if r_ee { v < r_max } else { v <= r_max };
+                return min_ok && max_ok;
+            } else {
+                return false;
+            }
+        }
+
         let v = val.to_f64();
         let min_ok = if r_es { v > r_min } else { v >= r_min };
         let max_ok = if r_ee { v < r_max } else { v <= r_max };

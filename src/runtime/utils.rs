@@ -1607,17 +1607,53 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                     current = crate::runtime::Interpreter::string_succ(&current);
                 }
                 result
+            } else if let Value::Str(a) = start.as_ref() {
+                // Start is a Str — iterate as strings (preserving type).
+                // In Raku, "1"..9 produces ("1", "2", ..., "9").
+                // When end is numeric, compare numerically to determine bounds.
+                let end_is_numeric = end.as_ref().is_numeric()
+                    || matches!(end.as_ref(), Value::Whatever | Value::HyperWhatever);
+                let end_str = match end.as_ref() {
+                    Value::Str(s) => (**s).clone(),
+                    other => other.to_string_value(),
+                };
+                let end_f64 = end.as_ref().to_f64();
+                let mut result = Vec::new();
+                let mut current = if *excl_start {
+                    crate::runtime::Interpreter::string_succ(a)
+                } else {
+                    a.to_string()
+                };
+                let limit = MAX_RANGE_EXPAND as usize;
+                while result.len() < limit {
+                    let in_range = if end_is_numeric {
+                        // Compare current string numerically against end
+                        let cur_numeric = coerce_to_numeric(Value::str(current.clone()));
+                        let cur_f64 = cur_numeric.to_f64();
+                        if *excl_end {
+                            cur_f64 < end_f64
+                        } else {
+                            cur_f64 <= end_f64
+                        }
+                    } else {
+                        // String comparison
+                        if *excl_end {
+                            current.as_str() < end_str.as_str()
+                        } else {
+                            current.as_str() <= end_str.as_str()
+                        }
+                    };
+                    if !in_range {
+                        break;
+                    }
+                    result.push(Value::str(current.clone()));
+                    current = crate::runtime::Interpreter::string_succ(&current);
+                }
+                result
             } else {
                 // Numeric GenericRange: expand using .succ semantics to preserve endpoint type.
                 let start_num = if start.is_numeric() {
                     Some(start.as_ref().clone())
-                } else if let Value::Str(s) = start.as_ref() {
-                    let coerced = coerce_to_numeric(Value::str((**s).clone()));
-                    if coerced.is_numeric() {
-                        Some(coerced)
-                    } else {
-                        None
-                    }
                 } else {
                     None
                 };
