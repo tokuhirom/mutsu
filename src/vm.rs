@@ -2552,6 +2552,9 @@ impl VM {
                         Value::array(items)
                     }
                     Value::Seq(items) => Value::array(items.to_vec()),
+                    ref other if other.is_range() => {
+                        Value::array(crate::runtime::utils::value_to_list(&val))
+                    }
                     other => other,
                 };
                 self.stack.push(result);
