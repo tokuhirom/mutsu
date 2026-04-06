@@ -6,6 +6,7 @@ use super::handles::parse_handle_specs;
 use super::helpers::{
     parse_array_shape_suffix, shaped_array_new_expr, shaped_array_new_with_data_expr,
 };
+use super::method_decl_body;
 use super::parse_colon_method_arg;
 use super::parse_decl_type_constraint;
 use crate::ast::{Expr, Stmt};
@@ -122,6 +123,9 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         let saved = rest;
         if let Some((r, tc)) = parse_decl_type_constraint(rest) {
             let (r2, _) = ws(r)?;
+            if r2.starts_with("method") || r2.starts_with("submethod") {
+                return has_type_method_decl(r2, &tc);
+            }
             if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
                 // Extract smiley suffix and strip it for the type_constraint name
                 let (base, smiley) = if let Some(b) = tc.strip_suffix(":D") {
@@ -495,4 +499,40 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             is_type,
         },
     ))
+}
+
+fn has_type_method_decl<'a>(input: &'a str, has_type: &str) -> PResult<'a, Stmt> {
+    let is_submethod_kw = input.starts_with("submethod");
+    let kw = if is_submethod_kw {
+        "submethod"
+    } else {
+        "method"
+    };
+    let rest = keyword(kw, input).ok_or_else(|| PError::expected("method or submethod"))?;
+    let (rest, _) = ws1(rest)?;
+    let (rest, mut stmt) = method_decl_body(rest, false, false)?;
+    if let Stmt::MethodDecl {
+        ref name,
+        ref mut return_type,
+        ref mut is_submethod,
+        ..
+    } = stmt
+    {
+        if let Some(existing_rt) = return_type {
+            let msg = format!(
+                "X::Redeclaration: Redeclaration of return type for '{}' (previous return type was {}).",
+                name, existing_rt
+            );
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("symbol".to_string(), Value::str(name.to_string()));
+            attrs.insert("what".to_string(), Value::str("return type".to_string()));
+            let ex = Value::make_instance(Symbol::intern("X::Redeclaration"), attrs);
+            return Err(PError::fatal_with_exception(msg, Box::new(ex)));
+        }
+        *return_type = Some(has_type.to_string());
+        if is_submethod_kw {
+            *is_submethod = true;
+        }
+    }
+    Ok((rest, stmt))
 }
