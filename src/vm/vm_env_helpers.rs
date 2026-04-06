@@ -266,6 +266,14 @@ impl VM {
             {
                 continue;
             }
+            // Only sync locals that already exist in the env.  This prevents
+            // compile-time-allocated but not-yet-declared locals (from later
+            // block scopes) from being prematurely introduced into the env,
+            // which would cause bare-word class name resolution to fail when
+            // a later block declares `my $x` and the class is named `x`.
+            if !self.interpreter.env().contains_key(name) {
+                continue;
+            }
             self.set_env_with_main_alias(name, self.locals[i].clone());
         }
     }
