@@ -706,6 +706,11 @@ impl Compiler {
                     }
                     return;
                 }
+                // `self` is immutable — reject assignments at compile time
+                if name == "self" {
+                    self.code.emit(OpCode::AssignReadOnly);
+                    return;
+                }
                 if name.starts_with('&')
                     && !name.contains("::")
                     && !self.local_map.contains_key(name.as_str())
