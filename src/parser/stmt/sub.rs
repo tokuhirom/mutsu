@@ -242,7 +242,21 @@ pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
                 take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
             {
                 let mut r2 = r;
-                if r2.starts_with('<')
+                if r2.starts_with("<<") {
+                    // <<...>> delimiter (ASCII double-angle quotes)
+                    let after_open = &r2[2..];
+                    if let Some(end) = after_open.find(">>") {
+                        // Store as «...» internally for consistency
+                        name.push(':');
+                        name.push_str(part);
+                        name.push('\u{ab}');
+                        name.push_str(&after_open[..end]);
+                        name.push('\u{bb}');
+                        r2 = &after_open[end + 2..];
+                        rest = r2;
+                        continue;
+                    }
+                } else if r2.starts_with('<')
                     && let Some(end) = r2.find('>')
                 {
                     name.push(':');
