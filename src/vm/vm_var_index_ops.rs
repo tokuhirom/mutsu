@@ -843,22 +843,39 @@ impl VM {
                     .eval_block_value(&data.body)
                     .unwrap_or(Value::Nil);
                 *self.interpreter.env_mut() = saved_env;
-                let i = match &idx {
-                    Value::Int(i) => Some(*i),
-                    Value::Num(n) => Some(*n as i64),
-                    Value::Rat(n, d) => {
-                        if *d != 0 {
-                            Some((*n as f64 / *d as f64).floor() as i64)
-                        } else {
-                            None
+                // If the WhateverCode returned a Range, use it to slice the array
+                if idx.is_range() {
+                    let indices = crate::runtime::utils::value_to_list(&idx);
+                    let result: Vec<Value> = indices
+                        .iter()
+                        .filter_map(|v| {
+                            let i = crate::runtime::utils::to_int(v);
+                            if i >= 0 && (i as usize) < items.len() {
+                                Some(items[i as usize].clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    Value::array(result)
+                } else {
+                    let i = match &idx {
+                        Value::Int(i) => Some(*i),
+                        Value::Num(n) => Some(*n as i64),
+                        Value::Rat(n, d) => {
+                            if *d != 0 {
+                                Some((*n as f64 / *d as f64).floor() as i64)
+                            } else {
+                                None
+                            }
                         }
+                        _ => None,
+                    };
+                    match i {
+                        Some(i) if i >= 0 => items.get(i as usize).cloned().unwrap_or(Value::Nil),
+                        Some(i) if i < 0 => Self::make_out_of_range_failure(i),
+                        _ => Value::Nil,
                     }
-                    _ => None,
-                };
-                match i {
-                    Some(i) if i >= 0 => items.get(i as usize).cloned().unwrap_or(Value::Nil),
-                    Some(i) if i < 0 => Self::make_out_of_range_failure(i),
-                    _ => Value::Nil,
                 }
             }
             // WhateverCode index on Instance (e.g. Buf): $buf[*-1]
