@@ -290,6 +290,23 @@ impl Interpreter {
             }
         }
 
+        // Supply.produce produces a derived Supply that carries reducer metadata
+        // for live sources. Reconstruct the running scan over collected tap values.
+        if let Value::Instance { ref attributes, .. } = supply
+            && let Some(produce_callable) = attributes.get("produce_callable").cloned()
+            && !tap_values.is_empty()
+        {
+            let mut produced = Vec::with_capacity(tap_values.len());
+            let mut acc = tap_values[0].clone();
+            produced.push(acc.clone());
+            for value in tap_values.iter().skip(1) {
+                acc =
+                    self.call_sub_value(produce_callable.clone(), vec![acc, value.clone()], false)?;
+                produced.push(acc.clone());
+            }
+            tap_values = produced;
+        }
+
         // Supply.reduce produces a derived Supply that carries reducer metadata
         // for live sources. Apply the same reduction over collected tap values.
         if let Value::Instance { ref attributes, .. } = supply
