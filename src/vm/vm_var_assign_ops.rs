@@ -2125,9 +2125,11 @@ impl VM {
         let is_bind = self.bind_context || bind_source.is_some();
         let is_constant = self.constant_context;
         let has_explicit_initializer = self.explicit_initializer_context;
+        let is_vardecl = self.vardecl_context;
         self.bind_context = false;
         self.constant_context = false;
         self.explicit_initializer_context = false;
+        self.vardecl_context = false;
 
         // Fast path for simple scalar variables — skip all metadata checks
         if code.simple_locals[idx] && bind_source.is_none() && !is_bind {
@@ -2331,12 +2333,19 @@ impl VM {
                 Value::Package(class_name) => Some(*class_name),
                 _ => None,
             };
-            if let Some(class_name) = class_name {
+            // When the old local slot holds a Buf/Blob (e.g. from a
+            // previous loop iteration or redeclaration), VarDecl (`my @a`)
+            // must be allowed to overwrite it. Plain assignments (`@a = ...`)
+            // also come through SetLocal; for those, Blob is immutable and
+            // Buf coerces through Buf.new to preserve the container type.
+            if let Some(class_name) = class_name
+                && !is_vardecl
+            {
                 let class = class_name.resolve();
-                if class == "Blob" || class.starts_with("blob") {
+                if class == "Blob" || class.starts_with("blob") || class.starts_with("Blob[") {
                     return Err(RuntimeError::assignment_ro(None));
                 }
-                if class == "Buf" || class.starts_with("buf") {
+                if class == "Buf" || class.starts_with("buf") || class.starts_with("Buf[") {
                     let items = runtime::value_to_list(&assigned)
                         .into_iter()
                         .map(|v| Value::Int(runtime::to_int(&v)))
@@ -2716,10 +2725,10 @@ impl VM {
             };
             if let Some(class_name) = class_name {
                 let class = class_name.resolve();
-                if class == "Blob" || class.starts_with("blob") {
+                if class == "Blob" || class.starts_with("blob") || class.starts_with("Blob[") {
                     return Err(RuntimeError::assignment_ro(None));
                 }
-                if class == "Buf" || class.starts_with("buf") {
+                if class == "Buf" || class.starts_with("buf") || class.starts_with("Buf[") {
                     let items = runtime::value_to_list(&assigned)
                         .into_iter()
                         .map(|v| Value::Int(runtime::to_int(&v)))

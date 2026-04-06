@@ -581,6 +581,10 @@ impl Compiler {
                     if has_explicit_initializer {
                         self.code.emit(OpCode::MarkExplicitInitializerContext);
                     }
+                    // Mark this SetLocal as coming from a VarDecl so the VM
+                    // can allow overwriting immutable containers (e.g. Blob)
+                    // when the local slot is reused across loop iterations.
+                    self.code.emit(OpCode::MarkVarDeclContext);
                     // For % variables with QuantHash `is` traits, skip hash coercion
                     // so the trait handler gets the raw array/list value.
                     let has_quant_hash_trait = name.starts_with('%')

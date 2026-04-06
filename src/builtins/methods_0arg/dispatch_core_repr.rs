@@ -209,11 +209,26 @@ pub(super) fn dispatch(
                     if bytes.is_empty() {
                         Some(Ok(Value::str(format!("{}()", class_name))))
                     } else {
+                        let cn = class_name.resolve();
+                        let hex_width = if cn.contains("64") {
+                            16
+                        } else if cn.contains("32") {
+                            8
+                        } else if cn.contains("16") {
+                            4
+                        } else {
+                            2
+                        };
                         let hex: Vec<String> = bytes
                             .iter()
                             .map(|b| match b {
-                                Value::Int(i) => format!("{:02X}", *i as u8),
-                                _ => "00".to_string(),
+                                Value::Int(i) => match hex_width {
+                                    16 => format!("{:016X}", *i as u64),
+                                    8 => format!("{:08X}", *i as u32),
+                                    4 => format!("{:04X}", *i as u16),
+                                    _ => format!("{:02X}", *i as u8),
+                                },
+                                _ => "0".repeat(hex_width),
                             })
                             .collect();
                         Some(Ok(Value::str(format!(
