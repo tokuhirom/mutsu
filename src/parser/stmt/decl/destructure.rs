@@ -258,6 +258,10 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
             dvar.default.clone().unwrap_or_else(|| def_expr.clone())
         } else if let Some(ref default) = dvar.default {
             default.clone()
+        } else if dvar.name.starts_with('@') {
+            Expr::Literal(Value::real_array(Vec::new()))
+        } else if dvar.name.starts_with('%') {
+            Expr::Hash(Vec::new())
         } else {
             native_type_default(&effective_tc)
         };
