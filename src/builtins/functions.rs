@@ -12,6 +12,14 @@ use super::unicode::{titlecase_string, unicode_char_name};
 
 use std::collections::HashMap;
 
+fn bigint_factorial(n: i64) -> NumBigInt {
+    let mut acc = NumBigInt::from(1u8);
+    for value in 2..=n {
+        acc *= value;
+    }
+    acc
+}
+
 /// Implementation of `uniparse` / `parse-names`: takes a comma-separated list
 /// of Unicode character names and returns the corresponding string.
 /// Returns a Failure wrapping X::Str::InvalidCharName for unknown names.
@@ -187,10 +195,14 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                         return Some(Ok(Value::Seq(vec![Value::array(Vec::new())].into())));
                     }
                     if *n > 20 {
-                        return Some(Err(RuntimeError::new(format!(
-                            "Cowardly refusing to permutate more than 20 elements, tried {}",
-                            n
-                        ))));
+                        let mut attrs = HashMap::new();
+                        attrs.insert(
+                            "count_only".to_string(),
+                            Value::BigInt(std::sync::Arc::new(bigint_factorial(*n))),
+                        );
+                        attrs.insert("bool_only".to_string(), Value::Bool(true));
+                        attrs.insert("permutations_size".to_string(), Value::Int(*n));
+                        return Some(Ok(Value::make_instance(Symbol::intern("Iterator"), attrs)));
                     }
                     let items: Vec<Value> = (0..*n).map(Value::Int).collect();
                     return Some(Ok(Value::Seq(

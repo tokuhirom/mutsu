@@ -1,6 +1,6 @@
 use Test;
 
-plan 10;
+plan 14;
 
 # permutations function (sub form) with Int argument
 is-deeply permutations(3),
@@ -34,3 +34,14 @@ is-deeply +permutations(0), 1, '+permutations(0) is 1';
 # permutations function with iterable argument
 is-deeply permutations(<a b>).sort, <a b>.permutations.sort,
     'permutations with iterable matches method form';
+
+# declaration binding in expression position
+is-deeply +(my @i := <a b c>), 3,
+    '+my @i := ... returns the declared array size';
+is-deeply @i.permutations.sort, permutations(@i).sort,
+    'bound array from expression position works with permutations';
+
+is-deeply +permutations(30), 265252859812191058636308480000000,
+    '+permutations(30) reports the total without materializing';
+ok ?permutations(30),
+    '?permutations(30) stays truthy without materializing';

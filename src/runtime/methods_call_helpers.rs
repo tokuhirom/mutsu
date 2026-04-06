@@ -120,6 +120,9 @@ impl Interpreter {
         &mut self,
         attributes: &HashMap<String, Value>,
     ) -> Result<Option<Value>, RuntimeError> {
+        if let Some(value) = attributes.get("count_only") {
+            return Ok(Some(value.clone()));
+        }
         if let Some(Value::Array(items, ..)) = attributes.get("items") {
             let index = match attributes.get("index") {
                 Some(Value::Int(i)) if *i >= 0 => *i as usize,
@@ -195,6 +198,9 @@ impl Interpreter {
         &mut self,
         attributes: &HashMap<String, Value>,
     ) -> Result<Option<Value>, RuntimeError> {
+        if let Some(Value::Bool(value)) = attributes.get("bool_only") {
+            return Ok(Some(Value::Bool(*value)));
+        }
         let Some(count) = self.iterator_count_only_from_attrs(attributes)? else {
             return Ok(None);
         };

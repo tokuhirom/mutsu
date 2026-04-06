@@ -174,6 +174,16 @@ impl Interpreter {
                         return Ok(value);
                     }
                 }
+                "Numeric" | "Int" if args.is_empty() => {
+                    if let Some(value) = self.iterator_count_only_from_attrs(attributes.as_ref())? {
+                        return Ok(value);
+                    }
+                }
+                "Bool" if args.is_empty() => {
+                    if let Some(value) = self.iterator_bool_only_from_attrs(attributes.as_ref())? {
+                        return Ok(value);
+                    }
+                }
                 "can"
                     if args.len() == 1
                         && Self::iterator_supports_predictive_methods(attributes.as_ref()) =>

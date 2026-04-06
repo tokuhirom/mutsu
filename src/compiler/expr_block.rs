@@ -1,6 +1,16 @@
 use super::*;
 
 impl Compiler {
+    fn compile_decl_expr_result(&mut self, name: &str) {
+        if let Some(rest) = name.strip_prefix('@') {
+            self.compile_expr(&Expr::ArrayVar(rest.to_string()));
+        } else if let Some(rest) = name.strip_prefix('%') {
+            self.compile_expr(&Expr::HashVar(rest.to_string()));
+        } else {
+            self.compile_expr(&Expr::Var(name.to_string()));
+        }
+    }
+
     /// Compile DoStmt expression (do { ... }, do if, do for, etc.).
     pub(super) fn compile_expr_do_stmt(&mut self, stmt: &Stmt) {
         match stmt {
@@ -189,20 +199,20 @@ impl Compiler {
                 }
             }
             Stmt::Block(inner) => {
-                self.compile_do_block_expr_scoped(inner, &None);
-            }
-            Stmt::SyntheticBlock(inner)
-                if inner
-                    .last()
-                    .is_some_and(|s| matches!(s, Stmt::MarkSigillessReadonly(_))) =>
-            {
-                self.compile_block_inline(inner);
-            }
-            Stmt::SyntheticBlock(inner) if inner.iter().any(|s| matches!(s, Stmt::MarkBind)) => {
-                self.compile_block_inline(inner);
+                if let Some(name) = Self::extract_varname_from_stmt(stmt) {
+                    self.compile_stmt(stmt);
+                    self.compile_decl_expr_result(&name);
+                } else {
+                    self.compile_do_block_expr_scoped(inner, &None);
+                }
             }
             Stmt::SyntheticBlock(inner) => {
-                self.compile_do_block_expr_scoped(inner, &None);
+                if let Some(name) = Self::extract_varname_from_stmt(stmt) {
+                    self.compile_stmt(stmt);
+                    self.compile_decl_expr_result(&name);
+                } else {
+                    self.compile_do_block_expr_scoped(inner, &None);
+                }
             }
             _ => {
                 self.compile_stmt(stmt);

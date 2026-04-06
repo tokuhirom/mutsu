@@ -205,6 +205,14 @@ impl Compiler {
     fn extract_varname_from_stmt(stmt: &Stmt) -> Option<String> {
         match stmt {
             Stmt::VarDecl { name, .. } | Stmt::Assign { name, .. } => Some(name.clone()),
+            Stmt::Block(stmts) => {
+                for s in stmts {
+                    if let Some(name) = Self::extract_varname_from_stmt(s) {
+                        return Some(name);
+                    }
+                }
+                None
+            }
             Stmt::SyntheticBlock(stmts) => {
                 for s in stmts {
                     if let Some(name) = Self::extract_varname_from_stmt(s) {
