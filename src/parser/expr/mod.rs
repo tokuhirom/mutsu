@@ -605,14 +605,31 @@ fn count_whatever(expr: &Expr) -> usize {
             }
             count_whatever(left) + count_whatever(right)
         }
+        // For range operators: count Whatever in endpoints only when
+        // the endpoint contains compound Whatever (not bare *).
         Expr::Binary {
             op:
                 TokenKind::DotDot
                 | TokenKind::DotDotCaret
                 | TokenKind::CaretDotDot
-                | TokenKind::CaretDotDotCaret
-                | TokenKind::DotDotDot
-                | TokenKind::DotDotDotCaret,
+                | TokenKind::CaretDotDotCaret,
+            left,
+            right,
+        } => {
+            let lc = if contains_whatever(left) && !is_whatever(left) {
+                count_whatever(left)
+            } else {
+                0
+            };
+            let rc = if contains_whatever(right) && !is_whatever(right) {
+                count_whatever(right)
+            } else {
+                0
+            };
+            lc + rc
+        }
+        Expr::Binary {
+            op: TokenKind::DotDotDot | TokenKind::DotDotDotCaret,
             ..
         } => 0,
         // SmartMatch/BangTilde: Whatever on RHS is handled at runtime; only count LHS.

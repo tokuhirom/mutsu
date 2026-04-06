@@ -1,0 +1,1 @@
+- [Worktree build lock fix](feedback_worktree_build_lock.md) — Ensure Cargo.toml exists in worktrees to avoid shared target/ dir contention

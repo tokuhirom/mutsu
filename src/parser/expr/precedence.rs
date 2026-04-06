@@ -2512,16 +2512,6 @@ pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, left) = structural_expr(input)?;
     let (r, _) = ws(rest)?;
 
-    // Helper: wrap WhateverCode expressions in range endpoints.
-    // `*-2` should become a WhateverCode lambda, but bare `*` should stay as Whatever.
-    fn maybe_wrap_range_endpoint(expr: Expr) -> Expr {
-        if contains_whatever(&expr) && !matches!(&expr, Expr::Whatever) {
-            wrap_whatevercode(&expr)
-        } else {
-            expr
-        }
-    }
-
     if let Some(stripped) = r.strip_prefix("^..^") {
         let (r, _) = ws(stripped)?;
         let (r, right) = structural_expr(r).map_err(|err| {
@@ -2532,7 +2522,7 @@ pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Binary {
                 left: Box::new(left),
                 op: TokenKind::CaretDotDotCaret,
-                right: Box::new(maybe_wrap_range_endpoint(right)),
+                right: Box::new(right),
             },
         ));
     }
@@ -2545,7 +2535,7 @@ pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Binary {
                 left: Box::new(left),
                 op: TokenKind::CaretDotDot,
-                right: Box::new(maybe_wrap_range_endpoint(right)),
+                right: Box::new(right),
             },
         ));
     }
@@ -2558,7 +2548,7 @@ pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Binary {
                 left: Box::new(left),
                 op: TokenKind::DotDotCaret,
-                right: Box::new(maybe_wrap_range_endpoint(right)),
+                right: Box::new(right),
             },
         ));
     }
@@ -2572,7 +2562,7 @@ pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Binary {
                 left: Box::new(left),
                 op: TokenKind::DotDot,
-                right: Box::new(maybe_wrap_range_endpoint(right)),
+                right: Box::new(right),
             },
         ));
     }
@@ -2582,6 +2572,17 @@ pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
 #[cfg(test)]
 mod tests {
     use crate::parser::expr::expression;
+
+    #[test]
+    fn range_with_whatevercode_endpoint() {
+        let (rest, expr) = expression("1..*-1").unwrap();
+        assert_eq!(rest, "");
+        // The whole expression should be a WhateverCode (Lambda), not a Range
+        assert!(
+            matches!(&expr, crate::ast::Expr::Lambda { .. }),
+            "Expected WhateverCode lambda"
+        );
+    }
 
     #[test]
     fn mixed_cross_and_sequence_are_non_list_associative() {
