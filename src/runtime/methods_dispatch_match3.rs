@@ -180,7 +180,12 @@ impl Interpreter {
                 {
                     return Some(self.dispatch_first(target, &args));
                 }
-                None
+                // For non-Array types (e.g., Int, Str), .first returns self
+                // (treating the scalar as a single-element list)
+                match &target {
+                    Value::Array(..) => None, // fall through to 0-arg builtin
+                    _ => Some(Ok(target)),
+                }
             }
             "tree" if !args.is_empty() => Some(self.dispatch_tree(target, &args)),
             "keys" if args.is_empty() => self.dispatch_keys_method(target),

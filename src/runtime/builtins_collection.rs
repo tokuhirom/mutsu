@@ -1730,6 +1730,36 @@ impl Interpreter {
             ));
         }
         let _ = has_v; // :v is the default behavior
+        // Check for conflicting adverbs (X::Adverb)
+        {
+            let adverb_count = has_k as u8 + has_kv as u8 + has_p as u8;
+            if adverb_count > 1 {
+                let mut names = Vec::new();
+                if has_k {
+                    names.push("k");
+                }
+                if has_kv {
+                    names.push("kv");
+                }
+                if has_p {
+                    names.push("p");
+                }
+                let adverb_list = names
+                    .iter()
+                    .map(|n| format!("'{}'", n))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let mut err = RuntimeError::new(format!(
+                    "Unsupported combination of adverbs ({}) passed to first on\n'List'.",
+                    adverb_list
+                ));
+                err.exception = Some(Box::new(Value::make_instance(
+                    crate::symbol::Symbol::intern("X::Adverb"),
+                    std::collections::HashMap::new(),
+                )));
+                return Err(err);
+            }
+        }
         // Check for Bool matcher (X::Match::Bool)
         if matches!(positional.first(), Some(Value::Bool(_))) {
             let mut err = RuntimeError::new("Cannot use Bool as a matcher");
