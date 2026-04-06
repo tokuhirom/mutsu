@@ -35,7 +35,14 @@ impl Compiler {
             quoted: _,
         } = expr
         {
-            if let Expr::Var(target_var) = target.as_ref() {
+            // Extract the variable name from Var, ArrayVar, or HashVar targets
+            let target_var_name = match target.as_ref() {
+                Expr::Var(name) => Some(name.clone()),
+                Expr::ArrayVar(name) => Some(format!("@{}", name)),
+                Expr::HashVar(name) => Some(format!("%{}", name)),
+                _ => None,
+            };
+            if let Some(target_var) = target_var_name {
                 let tmp_value_name =
                     format!("__mutsu_tmp_method_inc_{}", self.code.constants.len());
                 let tmp_result_name = format!(
@@ -106,7 +113,14 @@ impl Compiler {
             quoted: _,
         } = expr
         {
-            if let Expr::Var(target_var) = target.as_ref() {
+            // Extract the variable name from Var, ArrayVar, or HashVar targets
+            let target_var_name = match target.as_ref() {
+                Expr::Var(name) => Some(name.clone()),
+                Expr::ArrayVar(name) => Some(format!("@{}", name)),
+                Expr::HashVar(name) => Some(format!("%{}", name)),
+                _ => None,
+            };
+            if let Some(target_var) = target_var_name {
                 let tmp_value_name =
                     format!("__mutsu_tmp_method_dec_{}", self.code.constants.len());
                 let tmp_result_name = format!(

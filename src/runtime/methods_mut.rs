@@ -574,6 +574,26 @@ impl Interpreter {
                 class_name.resolve()
             )));
         }
+        // Handle .first rw write-back: @a.first(matcher).++ etc.
+        if method == "first"
+            && let Value::Array(ref items, ref kind) = target
+        {
+            // Re-run .first to find the matching index
+            let func = method_args.first().cloned();
+            if let Some((idx, _)) =
+                self.find_first_match_over_items(func, &items.to_vec(), false)?
+            {
+                let mut updated = items.to_vec();
+                if idx < updated.len() {
+                    updated[idx] = value.clone();
+                    let replacement = Value::Array(std::sync::Arc::new(updated), *kind);
+                    if let Some(var_name) = target_var {
+                        self.env.insert(var_name.to_string(), replacement);
+                    }
+                }
+            }
+            return Ok(value);
+        }
         // Handle class-level attribute assignment (our $.x / my $.x)
         {
             let class_name_for_lookup = match &target {

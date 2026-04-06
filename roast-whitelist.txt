@@ -886,6 +886,7 @@ roast/S32-list/first-k.t
 roast/S32-list/first-kv.t
 roast/S32-list/first-p.t
 roast/S32-list/first-v.t
+roast/S32-list/first.t
 roast/S32-list/flat.t
 roast/S32-list/grep-k.t
 roast/S32-list/grep-kv.t
