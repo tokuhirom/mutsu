@@ -83,23 +83,48 @@ pub(super) fn dispatch(
     match method {
         "head" => Some(match target {
             Value::Array(items, ..) => Some(Ok(items.first().cloned().unwrap_or(Value::Nil))),
-            Value::Range(start, _)
-            | Value::RangeExcl(start, _)
-            | Value::RangeExclBoth(start, _) => Some(Ok(Value::Int(*start))),
-            Value::RangeExclStart(start, _) => Some(Ok(Value::Int(*start + 1))),
+            Value::Range(start, end) => {
+                if start > end {
+                    Some(Ok(Value::Nil))
+                } else {
+                    Some(Ok(Value::Int(*start)))
+                }
+            }
+            Value::RangeExcl(start, end) => {
+                if start >= end {
+                    Some(Ok(Value::Nil))
+                } else {
+                    Some(Ok(Value::Int(*start)))
+                }
+            }
+            Value::RangeExclBoth(start, end) => {
+                if start + 1 >= *end {
+                    Some(Ok(Value::Nil))
+                } else {
+                    Some(Ok(Value::Int(*start + 1)))
+                }
+            }
+            Value::RangeExclStart(start, end) => {
+                if start >= end {
+                    Some(Ok(Value::Nil))
+                } else {
+                    Some(Ok(Value::Int(*start + 1)))
+                }
+            }
             Value::GenericRange {
                 start, excl_start, ..
             } => {
-                let s = (**start).clone();
-                if *excl_start {
-                    if let Value::Int(n) = &s {
+                let items = runtime::value_to_list(target);
+                if items.is_empty() {
+                    Some(Ok(Value::Nil))
+                } else if *excl_start {
+                    if let Value::Int(n) = &**start {
                         Some(Ok(Value::Int(n + 1)))
                     } else {
-                        let items = runtime::value_to_list(target);
                         Some(Ok(items.first().cloned().unwrap_or(Value::Nil)))
                     }
                 } else {
-                    Some(Ok(s))
+                    Some(Ok((**start).clone()))
                 }
             }
             _ => {
