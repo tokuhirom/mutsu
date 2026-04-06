@@ -10,12 +10,14 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "numerator" => match target {
             Value::Rat(n, _) => Some(Ok(Value::Int(*n))),
             Value::FatRat(n, _) => Some(Ok(Value::Int(*n))),
+            Value::BigRat(n, _) => Some(Ok(Value::BigInt(std::sync::Arc::new(n.clone())))),
             Value::Int(i) => Some(Ok(Value::Int(*i))),
             _ => Some(Ok(Value::Int(0))),
         },
         "denominator" => match target {
             Value::Rat(_, d) => Some(Ok(Value::Int(*d))),
             Value::FatRat(_, d) => Some(Ok(Value::Int(*d))),
+            Value::BigRat(_, d) => Some(Ok(Value::BigInt(std::sync::Arc::new(d.clone())))),
             Value::Int(_) => Some(Ok(Value::Int(1))),
             _ => Some(Ok(Value::Int(1))),
         },
@@ -28,6 +30,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "nude" => match target {
             Value::Rat(n, d) => Some(Ok(Value::array(vec![Value::Int(*n), Value::Int(*d)]))),
             Value::FatRat(n, d) => Some(Ok(Value::array(vec![Value::Int(*n), Value::Int(*d)]))),
+            Value::BigRat(n, d) => Some(Ok(Value::array(vec![
+                Value::BigInt(std::sync::Arc::new(n.clone())),
+                Value::BigInt(std::sync::Arc::new(d.clone())),
+            ]))),
             Value::Int(i) => Some(Ok(Value::array(vec![Value::Int(*i), Value::Int(1)]))),
             _ => Some(Ok(Value::array(vec![Value::Int(0), Value::Int(1)]))),
         },

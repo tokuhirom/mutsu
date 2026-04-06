@@ -296,6 +296,7 @@ impl VM {
                 | "Cool"
                 | "Real"
                 | "Numeric"
+                | "Rational"
                 | "Stringy"
                 | "Positional"
                 | "Associative"

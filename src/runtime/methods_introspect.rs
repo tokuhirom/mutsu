@@ -232,6 +232,9 @@ impl Interpreter {
                     Value::Num(_) => "Num",
                     Value::Str(_) => "Str",
                     Value::Bool(_) => "Bool",
+                    Value::Rat(_, _) | Value::BigRat(_, _) => "Rat",
+                    Value::FatRat(_, _) => "FatRat",
+                    Value::Complex(_, _) => "Complex",
                     Value::Hash(_) => "Hash",
                     Value::Array(_, kind) if kind.is_real_array() => "Array",
                     Value::Array(_, _) => "List",
@@ -247,6 +250,7 @@ impl Interpreter {
                 type_name.as_str(),
                 "Numeric"
                     | "Real"
+                    | "Rational"
                     | "Stringy"
                     | "Positional"
                     | "Associative"
