@@ -379,6 +379,7 @@ roast/S06-advanced/callframe.t
 roast/S06-advanced/callsame.t
 roast/S06-advanced/dispatching.t
 roast/S06-advanced/recurse.t
+roast/S06-advanced/return.t
 roast/S06-advanced/stub.t
 roast/S06-currying/assuming-and-mmd.t
 roast/S06-currying/misc.t
