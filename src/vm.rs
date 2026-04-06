@@ -113,6 +113,8 @@ pub(crate) struct VM {
     /// each active BlockScope. Used during BlockScope restoration to avoid
     /// propagating block-local variable values to the outer scope.
     block_declared_vars: Vec<std::collections::HashSet<String>>,
+    /// Depth counter for active CONTROL handlers in try-catch.
+    control_handler_depth: u32,
 }
 
 impl VM {
@@ -258,6 +260,7 @@ impl VM {
             fn_resolve_gen: 0,
             fn_resolve_cache_gen: 0,
             block_declared_vars: Vec::new(),
+            control_handler_depth: 0,
         }
     }
 
@@ -294,6 +297,9 @@ impl VM {
                 if e.is_warn {
                     if !self.interpreter.warning_suppressed() {
                         self.interpreter.write_warn_to_stderr(&e.message);
+                    }
+                    if let Some(v) = e.return_value {
+                        self.stack.push(v);
                     }
                     ip += 1;
                     continue;
@@ -363,6 +369,9 @@ impl VM {
                 if e.is_warn {
                     if !self.interpreter.warning_suppressed() {
                         self.interpreter.write_warn_to_stderr(&e.message);
+                    }
+                    if let Some(v) = e.return_value {
+                        self.stack.push(v);
                     }
                     ip += 1;
                     continue;
@@ -486,11 +495,13 @@ impl VM {
                     ip = target_ip;
                     continue;
                 }
-                // Handle warn signals inline — print to stderr and continue,
-                // just like the top-level run() method does.
-                if e.is_warn {
+                // Handle warn signals inline when no CONTROL handler is active.
+                if e.is_warn && self.control_handler_depth == 0 {
                     if !self.interpreter.warning_suppressed() {
                         self.interpreter.write_warn_to_stderr(&e.message);
+                    }
+                    if let Some(v) = e.return_value {
+                        self.stack.push(v);
                     }
                     ip += 1;
                     continue;

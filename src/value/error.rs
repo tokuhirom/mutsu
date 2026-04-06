@@ -226,6 +226,16 @@ impl RuntimeError {
         }
     }
 
+    /// Warn signal with a resume value stored in return_value.
+    pub(crate) fn warn_signal_with_resume(message: impl Into<String>, resume_value: Value) -> Self {
+        Self {
+            message: message.into(),
+            is_warn: true,
+            return_value: Some(resume_value),
+            ..Self::new("")
+        }
+    }
+
     pub(crate) fn illegal_on_fixed_dimension_array(operation: &str) -> Self {
         let mut attrs = HashMap::new();
         attrs.insert("operation".to_string(), Value::str(operation.to_string()));

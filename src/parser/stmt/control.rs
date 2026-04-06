@@ -1887,7 +1887,26 @@ pub(super) fn given_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, topic) = expression(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, body) = block(rest)?;
+    // Check for pointy block: given EXPR -> $param { ... }
+    let (rest, pointy_param) = if let Some(r) = rest.strip_prefix("->") {
+        let (r, _) = ws(r)?;
+        let (r, pd) = parse_pointy_param(r)?;
+        let (r, _) = ws(r)?;
+        (r, Some(pd.name.clone()))
+    } else {
+        (rest, None)
+    };
+    let (rest, mut body) = block(rest)?;
+    if let Some(param_name) = pointy_param {
+        body.insert(
+            0,
+            Stmt::Assign {
+                name: param_name,
+                op: AssignOp::Bind,
+                expr: Expr::Var("_".to_string()),
+            },
+        );
+    }
     Ok((rest, Stmt::Given { topic, body }))
 }
 
