@@ -969,8 +969,13 @@ impl VM {
                 "_".to_string(),
                 Value::Package(Symbol::intern(&qualified_name)),
             );
-            env.entry(qualified_name.clone())
-                .or_insert(Value::Package(Symbol::intern(&qualified_name)));
+            // Always insert the class type object so that class names take
+            // precedence over same-named `$`-sigiled variables (whose stripped
+            // name may already be in the env).
+            env.insert(
+                qualified_name.clone(),
+                Value::Package(Symbol::intern(&qualified_name)),
+            );
             // When a nested class is registered inside another class (e.g. class B inside class A
             // becomes A::B), suppress the short name (B) so it cannot be used outside.
             // Only suppress when the parent package is itself a class, not a module.
