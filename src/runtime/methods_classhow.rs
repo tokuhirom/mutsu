@@ -484,6 +484,25 @@ impl Interpreter {
                     is_default: false,
                     deprecated_message: None,
                 };
+                // If the class doesn't exist yet (e.g. built-in types like Rat, Int, Str),
+                // create a stub ClassDef so methods can be added dynamically.
+                if !self.classes.contains_key(&class_name) {
+                    self.classes.insert(
+                        class_name.clone(),
+                        ClassDef {
+                            parents: vec![],
+                            attributes: vec![],
+                            attribute_types: HashMap::new(),
+                            attribute_smileys: HashMap::new(),
+                            alias_attributes: HashSet::new(),
+                            methods: HashMap::new(),
+                            native_methods: HashSet::new(),
+                            mro: vec![class_name.clone()],
+                            wildcard_handles: vec![],
+                            class_level_attrs: HashMap::new(),
+                        },
+                    );
+                }
                 if let Some(class_def) = self.classes.get_mut(&class_name) {
                     class_def.methods.insert(method_name, vec![def]);
                 }
