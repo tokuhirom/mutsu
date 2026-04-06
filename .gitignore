@@ -28,3 +28,4 @@ tempfile*
 wip.txt
 
 target-local/
+.claude/worktrees/
