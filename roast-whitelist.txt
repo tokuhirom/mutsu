@@ -304,6 +304,7 @@ roast/S05-capture/dot.t
 roast/S05-capture/match-object.t
 roast/S05-capture/named.t
 roast/S05-capture/subrule.t
+roast/S05-grammar/action-stubs.t
 roast/S05-grammar/example.t
 roast/S05-grammar/inheritance.t
 roast/S05-grammar/namespace-6e.t

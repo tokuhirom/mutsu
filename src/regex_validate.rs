@@ -10,6 +10,12 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
     let source = pattern.trim();
     // Skip leading inline adverbs (:i, :s, :m, :ignorecase, etc.)
     let source = skip_inline_adverbs(source);
+
+    // <sym> / <.sym> can only be used in a proto regex with :sym<> adverb.
+    // Token/rule bodies don't pass through this validation, so if we see
+    // <sym> here it's always invalid (not inside a :sym token).
+    check_bare_sym_usage(source)?;
+
     let mut chars = source.chars().peekable();
     let mut prev_was_quantifier = false;
     let mut prev_was_tilde = false;
@@ -821,6 +827,67 @@ fn check_bracket_body_for_perl5_range(body: &str) -> Result<(), RuntimeError> {
             prev_was_alnum = false;
         } else {
             prev_was_alnum = c.is_alphanumeric();
+        }
+    }
+    Ok(())
+}
+
+/// Check if a regex pattern contains bare `<sym>` or `<.sym>` usage
+/// (which is only valid inside a proto regex with :sym<> adverb).
+#[allow(clippy::result_large_err)]
+fn check_bare_sym_usage(source: &str) -> Result<(), RuntimeError> {
+    let mut chars = source.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            // Skip quoted strings inside regex
+            '"' => {
+                while let Some(ch) = chars.next() {
+                    if ch == '\\' {
+                        chars.next(); // skip escaped char
+                    } else if ch == '"' {
+                        break;
+                    }
+                }
+            }
+            '\'' => {
+                while let Some(ch) = chars.next() {
+                    if ch == '\\' {
+                        chars.next();
+                    } else if ch == '\'' {
+                        break;
+                    }
+                }
+            }
+            '<' => {
+                // Read content up to matching >
+                let mut name = String::new();
+                let mut depth = 1usize;
+                for ch in chars.by_ref() {
+                    if ch == '<' {
+                        depth += 1;
+                        name.push(ch);
+                    } else if ch == '>' {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                        name.push(ch);
+                    } else {
+                        name.push(ch);
+                    }
+                }
+                let trimmed = name.trim();
+                if trimmed == "sym" || trimmed == ".sym" {
+                    let msg = "Can only use \"<sym>\" token in a proto regex";
+                    let mut attrs = HashMap::new();
+                    attrs.insert("message".to_string(), Value::str(msg.to_string()));
+                    let ex = Value::make_instance(Symbol::intern("X::Syntax::Regex::Proto"), attrs);
+                    let mut err = RuntimeError::new(msg);
+                    err.exception = Some(Box::new(ex));
+                    return Err(err);
+                }
+            }
+            _ => {}
         }
     }
     Ok(())

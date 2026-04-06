@@ -145,6 +145,10 @@ impl Interpreter {
             let pattern = match self.eval_token_call_values(&start_rule, &rule_args) {
                 Ok(Some(pattern)) => pattern,
                 Ok(None) => {
+                    // Check for pending regex error (e.g., <sym> used outside proto regex)
+                    if let Some(err) = Self::take_pending_regex_error() {
+                        return Err(err);
+                    }
                     self.env.insert("/".to_string(), Value::Nil);
                     return Ok(self.parse_failure_for_pattern(&text, None));
                 }
@@ -173,6 +177,10 @@ impl Interpreter {
             } else {
                 self.regex_match_with_captures(&pattern, &text)
             };
+            // Check for pending regex error (e.g., <sym> used outside proto regex)
+            if let Some(err) = Self::take_pending_regex_error() {
+                return Err(err);
+            }
             let Some(captures) = captures else {
                 let goal = Self::take_pending_goal_failure().or_else(|| {
                     self.parse_regex(&pattern)
@@ -360,7 +368,13 @@ impl Interpreter {
         // For protoregex :sym<> variants, try dispatching to the specific
         // action method (e.g., alt:sym<baz>) first.
         let sym_method_name = if let Some(Value::Str(sym_val)) = updated_attrs.get("sym_variant") {
-            Some(format!("{rule_name}:sym<{sym_val}>"))
+            // Use «» delimiters when the sym value contains '<' or '>'
+            // to match method names stored with French-quote delimiters
+            if sym_val.contains('<') || sym_val.contains('>') {
+                Some(format!("{rule_name}:sym\u{ab}{sym_val}\u{bb}"))
+            } else {
+                Some(format!("{rule_name}:sym<{sym_val}>"))
+            }
         } else {
             None
         };

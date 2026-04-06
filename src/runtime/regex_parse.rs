@@ -1761,6 +1761,21 @@ impl Interpreter {
                                             })
                                         }
                                         _ => {
+                                            // <sym> / <.sym> can only be used in a proto regex
+                                            // with :sym<> adverb — it should have been replaced
+                                            // by instantiate_token_pattern before reaching here
+                                            if class_name == "sym" {
+                                                PENDING_REGEX_ERROR.with(|e| {
+                                                    let msg = "Can only use \"<sym>\" token in a proto regex";
+                                                    let mut err = RuntimeError::new(msg);
+                                                    let mut attrs = std::collections::HashMap::new();
+                                                    attrs.insert("message".to_string(), Value::str(msg.to_string()));
+                                                    let ex = Value::make_instance(Symbol::intern("X::Syntax::Regex::Proto"), attrs);
+                                                    err.exception = Some(Box::new(ex));
+                                                    *e.borrow_mut() = Some(err);
+                                                });
+                                                return None;
+                                            }
                                             // Check for longname aliases
                                             if trimmed.contains("::") && trimmed.contains('=') {
                                                 PENDING_REGEX_ERROR.with(|e| {
