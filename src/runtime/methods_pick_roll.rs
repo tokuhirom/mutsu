@@ -89,7 +89,12 @@ impl Interpreter {
         let count = match &args[0] {
             Value::Int(i) if *i > 0 => Some(*i as usize),
             Value::Int(_) => Some(0),
+            Value::Num(f) if f.is_nan() => {
+                return Err(RuntimeError::new("Cannot convert NaN to Int"));
+            }
             Value::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
+            Value::Num(f) if *f < 0.0 => Some(0),
+            Value::Num(f) => Some(*f as usize),
             Value::Whatever => None,
             Value::Str(s) => s.trim().parse::<i64>().ok().map(|n| n.max(0) as usize),
             _ => None,

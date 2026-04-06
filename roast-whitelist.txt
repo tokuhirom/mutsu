@@ -1014,10 +1014,12 @@ roast/S32-trig/tanh.t
 roast/integration/advent2009-day01.t
 roast/integration/advent2009-day02.t
 roast/integration/advent2009-day03.t
+roast/integration/advent2009-day04.t
 roast/integration/advent2009-day07.t
 roast/integration/advent2009-day13.t
 roast/integration/advent2009-day14.t
 roast/integration/advent2009-day15.t
+roast/integration/advent2009-day17.t
 roast/integration/advent2009-day19.t
 roast/integration/advent2009-day22.t
 roast/integration/advent2010-day06.t
@@ -1028,9 +1030,13 @@ roast/integration/advent2011-day03.t
 roast/integration/advent2011-day16.t
 roast/integration/advent2011-day22.t
 roast/integration/advent2012-day02.t
+roast/integration/advent2012-day06.t
 roast/integration/advent2012-day16.t
+roast/integration/advent2012-day20.t
+roast/integration/advent2012-day24.t
 roast/integration/advent2013-day07.t
 roast/integration/advent2013-day22.t
+roast/integration/advent2013-day23.t
 roast/integration/eval-and-threads.t
 roast/integration/failure-and-callsame.t
 roast/integration/lexical-array-in-inner-block.t
