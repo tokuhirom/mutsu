@@ -450,22 +450,44 @@ impl Interpreter {
         None
     }
 
-    /// Dispatch .enums method
-    pub(super) fn dispatch_enums(&self, target: &Value) -> Option<Result<Value, RuntimeError>> {
+    /// Dispatch .enums method.
+    /// Returns a Map (immutable Hash) of variant-name => value pairs.
+    pub(super) fn dispatch_enums(&mut self, target: &Value) -> Option<Result<Value, RuntimeError>> {
         let type_name_owned = match target {
             Value::Package(name) => Some(name.resolve()),
             Value::Str(name) => Some(name.to_string()),
             _ => None,
         };
         let type_name = type_name_owned.as_deref();
-        if let Some(type_name) = type_name
-            && let Some(variants) = self.enum_types.get(type_name)
-        {
+        // Built-in Bool enum
+        let variants_owned;
+        let variants_ref = if type_name == Some("Bool") {
+            variants_owned = vec![
+                ("False".to_string(), EnumValue::Int(0)),
+                ("True".to_string(), EnumValue::Int(1)),
+            ];
+            Some(variants_owned.as_slice())
+        } else if let Some(type_name) = type_name {
+            self.enum_types.get(type_name).map(|v| v.as_slice())
+        } else {
+            None
+        };
+        if let Some(variants) = variants_ref {
             let mut map = HashMap::new();
             for (k, v) in variants {
                 map.insert(k.clone(), v.to_value());
             }
-            return Some(Ok(Value::hash(map)));
+            let result = Value::hash(map);
+            // Mark as Map (immutable hash)
+            self.register_container_type_metadata(
+                &result,
+                ContainerTypeInfo {
+                    value_type: String::new(),
+                    key_type: None,
+                    declared_type: Some("Map".to_string()),
+                },
+            );
+            return Some(Ok(result));
         }
         None
     }

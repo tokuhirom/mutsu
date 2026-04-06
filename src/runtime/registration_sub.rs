@@ -729,14 +729,32 @@ impl Interpreter {
             if variants.len() == 1 && variants[0].0 == "__DYNAMIC__" && variants[0].1.is_some() {
                 let expr = variants[0].1.as_ref().unwrap();
                 let v = self.eval_block_value(&[Stmt::Expr(expr.clone())])?;
-                let items: Vec<Value> = match &v {
+                let raw_items: Vec<Value> = match &v {
                     Value::Array(items, _) => items.as_ref().clone(),
                     Value::Slip(items) => items.as_ref().clone(),
+                    Value::Hash(map) => map
+                        .iter()
+                        .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                        .collect(),
                     _ => vec![v.clone()],
                 };
+                // Flatten any Slips in the list
+                let items: Vec<Value> = raw_items
+                    .into_iter()
+                    .flat_map(|item| match item {
+                        Value::Slip(inner) => inner.as_ref().clone(),
+                        other => vec![other],
+                    })
+                    .collect();
                 expanded = items
                     .iter()
-                    .map(|item| (item.to_str_context(), None::<Expr>))
+                    .map(|item| match item {
+                        Value::Pair(k, v) => (k.clone(), Some(Expr::Literal(v.as_ref().clone()))),
+                        Value::ValuePair(k, v) => {
+                            (k.to_str_context(), Some(Expr::Literal(v.as_ref().clone())))
+                        }
+                        _ => (item.to_str_context(), None::<Expr>),
+                    })
                     .collect::<Vec<_>>();
                 &expanded[..]
             } else {
