@@ -130,6 +130,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "Pair" => match target {
             Value::Pair(_, _) | Value::ValuePair(_, _) => Some(Ok(target.clone())),
             Value::Instance { class_name, .. } if class_name == "Pair" => Some(Ok(target.clone())),
+            // Type object: Pair.Pair returns Pair (identity)
+            Value::Package(name) if name.resolve() == "Pair" => Some(Ok(target.clone())),
             _ => None,
         },
         "key" => match target {

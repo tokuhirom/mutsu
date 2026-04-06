@@ -1555,9 +1555,28 @@ impl Interpreter {
                     });
                 }
                 "Pair" => {
-                    // Pair.new(key, value)
-                    let key = args.first().cloned().unwrap_or(Value::Nil);
-                    let value = args.get(1).cloned().unwrap_or(Value::Nil);
+                    // Pair.new(:key<foo>, :value<bar>) or Pair.new(key, value)
+                    let mut named_key: Option<Value> = None;
+                    let mut named_value: Option<Value> = None;
+                    let mut positional = Vec::new();
+                    for a in args.iter() {
+                        match a {
+                            Value::Pair(k, v) if k == "key" => {
+                                named_key = Some((**v).clone());
+                            }
+                            Value::Pair(k, v) if k == "value" => {
+                                named_value = Some((**v).clone());
+                            }
+                            _ => positional.push(a.clone()),
+                        }
+                    }
+                    if named_key.is_some() || named_value.is_some() {
+                        let key = named_key.unwrap_or(Value::Nil);
+                        let value = named_value.unwrap_or(Value::Nil);
+                        return Ok(Value::Pair(key.to_string_value(), Box::new(value)));
+                    }
+                    let key = positional.first().cloned().unwrap_or(Value::Nil);
+                    let value = positional.get(1).cloned().unwrap_or(Value::Nil);
                     return Ok(Value::ValuePair(Box::new(key), Box::new(value)));
                 }
                 "Set" | "SetHash" => {

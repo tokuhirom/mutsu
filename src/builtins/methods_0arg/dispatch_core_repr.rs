@@ -432,6 +432,8 @@ pub(super) fn dispatch(
                             .collect();
                         format!("{{{}}}", parts.join(" "))
                     }
+                    Value::Pair(k, v) => format!("{} => {}", k, gist_item(v)),
+                    Value::ValuePair(k, v) => format!("{} => {}", gist_item(k), gist_item(v)),
                     other if other.is_range() => range_gist_string(other),
                     other => other.to_string_value(),
                 }
@@ -468,6 +470,8 @@ pub(super) fn dispatch(
                             .collect();
                         format!("{{{}}}", parts.join(" "))
                     }
+                    Value::Pair(k, v) => format!("{} => {}", k, gist_item(v)),
+                    Value::ValuePair(k, v) => format!("{} => {}", gist_item(k), gist_item(v)),
                     other if other.is_range() => range_gist_string(other),
                     other => other.to_string_value(),
                 }
