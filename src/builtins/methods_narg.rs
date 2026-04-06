@@ -1374,6 +1374,12 @@ pub(crate) fn native_method_1arg(
             let rendered = runtime::format_sprintf(&fmt, Some(arg));
             Some(Ok(Value::str(rendered)))
         }
+        "zprintf" => {
+            // Method form: '%f'.zprintf(value) — like sprintf but with zprintf semantics
+            let fmt = target.to_string_value();
+            let rendered = runtime::format_zprintf(&fmt, Some(arg));
+            Some(Ok(Value::str(rendered)))
+        }
         "parse-base" => {
             let radix = match arg {
                 Value::Int(n) => *n as u32,

@@ -1752,6 +1752,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
 
 pub(crate) use super::sprintf::format_sprintf;
 pub(crate) use super::sprintf::format_sprintf_args;
+pub(crate) use super::sprintf::format_zprintf;
 
 fn parse_unicode_decimal_digits(input: &str) -> Option<(&str, String)> {
     let mut end = 0;

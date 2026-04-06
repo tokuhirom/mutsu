@@ -592,7 +592,7 @@ impl Interpreter {
                     }
                     Ok(Value::str(content))
                 } else {
-                    self.builtin_sprintf(&args)
+                    self.builtin_sprintf(&args, name == "zprintf")
                 }
             }
             "printf" => {
@@ -606,7 +606,7 @@ impl Interpreter {
                     self.write_to_named_handle("$*OUT", &content, false)?;
                     Ok(Value::Bool(true))
                 } else {
-                    let formatted = self.builtin_sprintf(&args)?;
+                    let formatted = self.builtin_sprintf(&args, false)?;
                     self.write_to_named_handle("$*OUT", &formatted.to_string_value(), false)?;
                     Ok(Value::Bool(true))
                 }
