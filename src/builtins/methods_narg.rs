@@ -1694,6 +1694,11 @@ pub(crate) fn native_method_1arg(
             }
             // For Set, pick returns keys (strings) without replacement
             if let Value::Set(set, _) = target {
+                if let Value::Num(f) = arg
+                    && f.is_nan()
+                {
+                    return Some(Err(RuntimeError::new("Cannot convert NaN to Int")));
+                }
                 let mut keys: Vec<String> = set.iter().cloned().collect();
                 let count: usize = match arg {
                     Value::Whatever => keys.len(),
@@ -1712,7 +1717,9 @@ pub(crate) fn native_method_1arg(
                     keys.swap(i, j);
                 }
                 keys.truncate(pick_count);
-                return Some(Ok(Value::array(keys.into_iter().map(Value::str).collect())));
+                return Some(Ok(Value::Seq(Arc::new(
+                    keys.into_iter().map(Value::str).collect(),
+                ))));
             }
             // Fast path for integer ranges — avoid materializing
             if let Some(result) = range_pick_n_fast(target, arg) {
@@ -1872,7 +1879,12 @@ pub(crate) fn native_method_1arg(
             let count = match arg {
                 Value::Int(i) if *i > 0 => Some(*i as usize),
                 Value::Int(_) => Some(0),
+                Value::Num(f) if f.is_nan() => {
+                    return Some(Err(RuntimeError::new("Cannot convert NaN to Int")));
+                }
                 Value::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
+                Value::Num(f) if *f < 0.0 => Some(0),
+                Value::Num(f) => Some(*f as usize),
                 Value::Whatever => None,
                 Value::Str(s) => {
                     let parsed = s.trim().parse::<i64>().ok()?;
