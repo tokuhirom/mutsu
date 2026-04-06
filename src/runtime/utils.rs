@@ -598,7 +598,7 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
                 Value::Array(items, ArrayKind::Array)
             }
         }
-        Value::Nil => Value::real_array(Vec::new()),
+        Value::Nil => Value::real_array(vec![Value::Package(crate::symbol::Symbol::intern("Any"))]),
         Value::Range(a, b) => {
             if b == i64::MAX {
                 // Infinite range — mark as lazy
