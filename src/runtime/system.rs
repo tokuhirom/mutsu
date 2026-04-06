@@ -14,6 +14,9 @@ impl Interpreter {
                 self.check_eval_class_redeclarations(&stmts)?;
                 self.check_eval_undeclared_vars(&stmts)?;
                 self.check_eval_undeclared_names(&stmts)?;
+                // When EVAL is called inside a class body, MethodDecl statements
+                // should be added to the enclosing class rather than lowered to subs.
+                let stmts = self.inject_eval_methods_into_class(stmts);
                 let value = self.eval_block_value(&stmts)?;
                 if self.eval_result_is_unresolved_bareword(&stmts, &value) {
                     return Err(RuntimeError::undeclared_symbols("Undeclared name"));
@@ -50,6 +53,73 @@ impl Interpreter {
                 Err(parse_err)
             }
         }
+    }
+
+    /// When EVAL is called inside a class body, method declarations should be
+    /// added to the enclosing class rather than lowered to subs. This method
+    /// extracts MethodDecl statements and injects them into the current class,
+    /// returning the remaining statements for normal evaluation.
+    fn inject_eval_methods_into_class(&mut self, stmts: Vec<Stmt>) -> Vec<Stmt> {
+        // Only applies when current_package is a class being defined
+        let class_name = self.current_package.clone();
+        if !self.classes.contains_key(&class_name) {
+            return stmts;
+        }
+        let mut remaining = Vec::new();
+        for stmt in stmts {
+            if let Stmt::MethodDecl {
+                name: method_name,
+                name_expr: _,
+                param_defs,
+                body: method_body,
+                multi,
+                is_rw,
+                is_private,
+                is_my,
+                return_type,
+                is_default_candidate,
+                deprecated_message,
+                ..
+            } = &stmt
+            {
+                let resolved_method_name = method_name.resolve();
+                let effective_param_defs = Self::effective_method_param_defs(param_defs, false);
+                let effective_params: Vec<String> = effective_param_defs
+                    .iter()
+                    .map(|p| p.name.clone())
+                    .collect();
+                let def = MethodDef {
+                    params: effective_params,
+                    param_defs: effective_param_defs,
+                    body: std::sync::Arc::new(method_body.clone()),
+                    is_rw: *is_rw,
+                    is_private: *is_private,
+                    is_multi: *multi,
+                    is_my: *is_my,
+                    role_origin: None,
+                    original_role: None,
+                    return_type: return_type.clone(),
+                    compiled_code: None,
+                    delegation: None,
+                    is_default: *is_default_candidate,
+                    deprecated_message: deprecated_message.clone(),
+                };
+                if let Some(class_def) = self.classes.get_mut(&class_name) {
+                    if *multi {
+                        class_def
+                            .methods
+                            .entry(resolved_method_name)
+                            .or_default()
+                            .push(def);
+                    } else {
+                        class_def.methods.insert(resolved_method_name, vec![def]);
+                    }
+                }
+            } else {
+                remaining.push(stmt);
+            }
+        }
+        remaining
     }
 
     /// Execute BEGIN phasers found in a list of statements (used for partial

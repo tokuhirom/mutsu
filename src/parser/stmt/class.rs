@@ -857,6 +857,19 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
     // from regex/substitution operators (e.g. `S` vs `S///`).
     super::simple::register_user_type(&name);
 
+    // Validate declarator traits: only 'ver', 'auth', and 'api' are allowed on class names
+    for (trait_name, _) in &traits {
+        if trait_name != "ver" && trait_name != "auth" && trait_name != "api" {
+            let msg = format!(
+                "Cannot use adverb {} on a type name (only 'ver', 'auth' and 'api' are understood)",
+                trait_name
+            );
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), Value::str(msg.clone()));
+            let ex = Value::make_instance(Symbol::intern("X::Syntax::Type::Adverb"), attrs);
+            return Err(PError::fatal_with_exception(msg, Box::new(ex)));
+        }
+    }
     let class_stmt = Stmt::ClassDecl {
         name: Symbol::intern(&name),
         name_expr,
