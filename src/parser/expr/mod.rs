@@ -274,10 +274,19 @@ pub(in crate::parser) fn should_wrap_whatevercode(expr: &Expr) -> bool {
         return false;
     }
     match expr {
+        // SmartMatch: Whatever on RHS is handled at runtime. LHS bare * and
+        // compound expressions are handled at runtime too — don't curry.
         Expr::Binary {
-            op: TokenKind::SmartMatch | TokenKind::BangTilde,
+            op: TokenKind::SmartMatch,
             ..
         } => false,
+        // BangTilde (!~~): bare * on LHS SHOULD curry (e.g. `* !~~ Int`), because
+        // `!~~` is not Whatever-aware in Raku.
+        Expr::Binary {
+            op: TokenKind::BangTilde,
+            left,
+            ..
+        } => contains_whatever(left),
         Expr::Binary {
             op: TokenKind::Ident(name),
             ..
@@ -521,15 +530,26 @@ fn is_whatever(expr: &Expr) -> bool {
 fn contains_whatever(expr: &Expr) -> bool {
     match expr {
         e if is_whatever(e) => true,
-        // Don't treat * inside range/sequence operators as WhateverCode
+        // Don't treat bare * inside range/sequence operators as WhateverCode.
+        // `1..*` is a Range, but `1..*-1` is a WhateverCode.
+        // If an endpoint contains a non-bare Whatever (e.g. `*-1`), the whole
+        // range should become a WhateverCode.
         Expr::Binary {
             op:
                 TokenKind::DotDot
                 | TokenKind::DotDotCaret
                 | TokenKind::CaretDotDot
-                | TokenKind::CaretDotDotCaret
-                | TokenKind::DotDotDot
-                | TokenKind::DotDotDotCaret,
+                | TokenKind::CaretDotDotCaret,
+            left,
+            right,
+        } => {
+            fn endpoint_has_compound_whatever(e: &Expr) -> bool {
+                contains_whatever(e) && !is_whatever(e)
+            }
+            endpoint_has_compound_whatever(left) || endpoint_has_compound_whatever(right)
+        }
+        Expr::Binary {
+            op: TokenKind::DotDotDot | TokenKind::DotDotDotCaret,
             ..
         } => false,
         // SmartMatch/BangTilde: Whatever on the RHS is handled at runtime
@@ -551,7 +571,9 @@ fn contains_whatever(expr: &Expr) -> bool {
         {
             false
         }
-        Expr::MethodCall { target, .. } => contains_whatever(target),
+        Expr::MethodCall { target, .. } | Expr::DynamicMethodCall { target, .. } => {
+            contains_whatever(target)
+        }
         Expr::CallOn { target, args } => {
             contains_whatever(target) || args.iter().any(contains_whatever)
         }
@@ -573,6 +595,12 @@ fn contains_whatever(expr: &Expr) -> bool {
             }
             contains_whatever(left) || right.iter().any(contains_whatever)
         }
+        // R meta-operators with Whatever: `5 R- *` should curry.
+        // X/Z meta-operators with bare * in list contexts mean "extend" rather
+        // than WhateverCode, so only enable for R (reverse) meta-ops.
+        Expr::MetaOp {
+            meta, left, right, ..
+        } if meta == "R" => contains_whatever(left) || contains_whatever(right),
         _ => false,
     }
 }
@@ -605,14 +633,31 @@ fn count_whatever(expr: &Expr) -> usize {
             }
             count_whatever(left) + count_whatever(right)
         }
+        // For range operators: count Whatever in endpoints only when
+        // the endpoint contains compound Whatever (not bare *).
         Expr::Binary {
             op:
                 TokenKind::DotDot
                 | TokenKind::DotDotCaret
                 | TokenKind::CaretDotDot
-                | TokenKind::CaretDotDotCaret
-                | TokenKind::DotDotDot
-                | TokenKind::DotDotDotCaret,
+                | TokenKind::CaretDotDotCaret,
+            left,
+            right,
+        } => {
+            let lc = if contains_whatever(left) && !is_whatever(left) {
+                count_whatever(left)
+            } else {
+                0
+            };
+            let rc = if contains_whatever(right) && !is_whatever(right) {
+                count_whatever(right)
+            } else {
+                0
+            };
+            lc + rc
+        }
+        Expr::Binary {
+            op: TokenKind::DotDotDot | TokenKind::DotDotDotCaret,
             ..
         } => 0,
         // SmartMatch/BangTilde: Whatever on RHS is handled at runtime; only count LHS.
@@ -623,7 +668,9 @@ fn count_whatever(expr: &Expr) -> usize {
         } => count_whatever(left),
         Expr::Binary { left, right, .. } => count_whatever(left) + count_whatever(right),
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => count_whatever(expr),
-        Expr::MethodCall { target, .. } => count_whatever(target),
+        Expr::MethodCall { target, .. } | Expr::DynamicMethodCall { target, .. } => {
+            count_whatever(target)
+        }
         Expr::CallOn { target, args } => {
             count_whatever(target) + args.iter().map(count_whatever).sum::<usize>()
         }
@@ -633,6 +680,10 @@ fn count_whatever(expr: &Expr) -> usize {
         Expr::InfixFunc { left, right, .. } => {
             count_whatever(left) + right.iter().map(count_whatever).sum::<usize>()
         }
+        // R meta-operators
+        Expr::MetaOp {
+            meta, left, right, ..
+        } if meta == "R" => count_whatever(left) + count_whatever(right),
         _ => 0,
     }
 }
@@ -745,6 +796,15 @@ fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Expr {
             modifier: *modifier,
             quoted: *quoted,
         },
+        Expr::DynamicMethodCall {
+            target,
+            name_expr,
+            args,
+        } => Expr::DynamicMethodCall {
+            target: Box::new(replace_whatever_numbered(target, counter)),
+            name_expr: name_expr.clone(),
+            args: args.clone(),
+        },
         Expr::CallOn { target, args } => Expr::CallOn {
             target: Box::new(replace_whatever_numbered(target, counter)),
             args: args
@@ -769,6 +829,17 @@ fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Expr {
                 .map(|a| replace_whatever_numbered(a, counter))
                 .collect(),
             modifier: modifier.clone(),
+        },
+        Expr::MetaOp {
+            meta,
+            op,
+            left,
+            right,
+        } => Expr::MetaOp {
+            meta: meta.clone(),
+            op: op.clone(),
+            left: Box::new(replace_whatever_numbered(left, counter)),
+            right: Box::new(replace_whatever_numbered(right, counter)),
         },
         _ => expr.clone(),
     }
@@ -836,13 +907,47 @@ pub(in crate::parser) fn wrap_whatevercode(expr: &Expr) -> Expr {
 
     let wc_count = count_whatever(expr);
 
-    if wc_count <= 1 {
+    if wc_count <= 1 && !expr_contains_topic(expr) {
         // Single-arg: use Lambda with param "_" for backward compat
         // Use a special single-arg replacer that maps * and nested single-arg WC to $_
         let body_expr = replace_whatever_single(expr);
         Expr::Lambda {
             param: "_".to_string(),
             body: vec![Stmt::Expr(body_expr)],
+            is_whatever_code: true,
+        }
+    } else if wc_count <= 1 {
+        // Single-arg, but expression already contains $_ — use a numbered param
+        // to avoid shadowing the outer $_.
+        let mut counter = 0;
+        let body_expr = replace_whatever_numbered(expr, &mut counter);
+        let param_name = "__wc_0".to_string();
+        Expr::AnonSubParams {
+            params: vec![param_name.clone()],
+            param_defs: vec![crate::ast::ParamDef {
+                name: param_name,
+                default: None,
+                multi_invocant: true,
+                required: false,
+                named: false,
+                slurpy: false,
+                sigilless: false,
+                type_constraint: None,
+                literal_value: None,
+                sub_signature: None,
+                where_constraint: None,
+                traits: Vec::new(),
+                double_slurpy: false,
+                onearg: false,
+                optional_marker: false,
+                outer_sub_signature: None,
+                code_signature: None,
+                is_invocant: false,
+                shape_constraints: None,
+            }],
+            return_type: None,
+            body: vec![Stmt::Expr(body_expr)],
+            is_rw: false,
             is_whatever_code: true,
         }
     } else {
@@ -884,6 +989,29 @@ pub(in crate::parser) fn wrap_whatevercode(expr: &Expr) -> Expr {
     }
 }
 
+/// Check if an expression contains a reference to $_ (the topic variable).
+/// Used to determine whether a WhateverCode lambda should avoid using $_ as its param.
+fn expr_contains_topic(expr: &Expr) -> bool {
+    match expr {
+        Expr::Var(name) if name == "_" => true,
+        Expr::Whatever => false,
+        Expr::Binary { left, right, .. } => expr_contains_topic(left) || expr_contains_topic(right),
+        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => expr_contains_topic(expr),
+        Expr::MethodCall { target, args, .. } => {
+            expr_contains_topic(target) || args.iter().any(expr_contains_topic)
+        }
+        Expr::CallOn { target, args } => {
+            expr_contains_topic(target) || args.iter().any(expr_contains_topic)
+        }
+        Expr::Index { target, index } => expr_contains_topic(target) || expr_contains_topic(index),
+        Expr::InfixFunc { left, right, .. } => {
+            expr_contains_topic(left) || right.iter().any(expr_contains_topic)
+        }
+        Expr::MetaOp { left, right, .. } => expr_contains_topic(left) || expr_contains_topic(right),
+        _ => false,
+    }
+}
+
 /// Replace Whatever and nested single-arg WhateverCode with $_ (for single-arg wrapping).
 fn replace_whatever_single(expr: &Expr) -> Expr {
     match expr {
@@ -922,6 +1050,15 @@ fn replace_whatever_single(expr: &Expr) -> Expr {
             modifier: *modifier,
             quoted: *quoted,
         },
+        Expr::DynamicMethodCall {
+            target,
+            name_expr,
+            args,
+        } => Expr::DynamicMethodCall {
+            target: Box::new(replace_whatever_single(target)),
+            name_expr: name_expr.clone(),
+            args: args.clone(),
+        },
         Expr::CallOn { target, args } => Expr::CallOn {
             target: Box::new(replace_whatever_single(target)),
             args: args.iter().map(replace_whatever_single).collect(),
@@ -940,6 +1077,17 @@ fn replace_whatever_single(expr: &Expr) -> Expr {
             left: Box::new(replace_whatever_single(left)),
             right: right.iter().map(replace_whatever_single).collect(),
             modifier: modifier.clone(),
+        },
+        Expr::MetaOp {
+            meta,
+            op,
+            left,
+            right,
+        } => Expr::MetaOp {
+            meta: meta.clone(),
+            op: op.clone(),
+            left: Box::new(replace_whatever_single(left)),
+            right: Box::new(replace_whatever_single(right)),
         },
         _ => expr.clone(),
     }
