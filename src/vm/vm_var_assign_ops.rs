@@ -869,30 +869,7 @@ impl VM {
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
-        let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-        let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
-            if let Value::Str(name) = v {
-                Some(name.to_string())
-            } else {
-                None
-            }
-        });
-        let mut seen_aliases = std::collections::HashSet::new();
-        while let Some(current_alias) = alias_name {
-            if !seen_aliases.insert(current_alias.clone()) {
-                break;
-            }
-            self.set_env_with_main_alias(&current_alias, new_val.clone());
-            self.update_local_if_exists(code, &current_alias, &new_val);
-            let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
-            alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
-                if let Value::Str(name) = v {
-                    Some(name.to_string())
-                } else {
-                    None
-                }
-            });
-        }
+        self.propagate_sigilless_alias_writes(code, name, &new_val);
         // Write back to source variable when incrementing $_ bound to a container
         if name == "_"
             && let Some(ref source_var) = self.topic_source_var
@@ -924,30 +901,7 @@ impl VM {
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
-        let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-        let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
-            if let Value::Str(name) = v {
-                Some(name.to_string())
-            } else {
-                None
-            }
-        });
-        let mut seen_aliases = std::collections::HashSet::new();
-        while let Some(current_alias) = alias_name {
-            if !seen_aliases.insert(current_alias.clone()) {
-                break;
-            }
-            self.set_env_with_main_alias(&current_alias, new_val.clone());
-            self.update_local_if_exists(code, &current_alias, &new_val);
-            let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
-            alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
-                if let Value::Str(name) = v {
-                    Some(name.to_string())
-                } else {
-                    None
-                }
-            });
-        }
+        self.propagate_sigilless_alias_writes(code, name, &new_val);
         self.stack.push(val);
         Ok(())
     }
@@ -2207,6 +2161,7 @@ impl VM {
             // from firing).
             self.interpreter
                 .set_shared_var(name, self.locals[idx].clone());
+            self.propagate_sigilless_alias_writes(code, name, &self.locals[idx].clone());
             // Track topic mutations for map rw writeback
             if name == "_" {
                 self.interpreter.env_mut().insert(
@@ -2523,31 +2478,7 @@ impl VM {
                     .insert(format!("{pkg}::term:<{symbol}>"), val.clone());
             }
         }
-        let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
-            if let Value::Str(name) = v {
-                Some(name.to_string())
-            } else {
-                None
-            }
-        });
-        let mut seen_aliases = std::collections::HashSet::new();
-        while let Some(current_alias) = alias_name {
-            if !seen_aliases.insert(current_alias.clone()) {
-                break;
-            }
-            self.update_local_if_exists(code, &current_alias, &val);
-            self.interpreter
-                .env_mut()
-                .insert(current_alias.clone(), val.clone());
-            let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
-            alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
-                if let Value::Str(name) = v {
-                    Some(name.to_string())
-                } else {
-                    None
-                }
-            });
-        }
+        self.propagate_sigilless_alias_writes(code, name, &val);
         if let Some(attr) = name.strip_prefix('.') {
             self.interpreter
                 .env_mut()
@@ -2694,6 +2625,7 @@ impl VM {
             // from firing).
             self.interpreter
                 .set_shared_var(name, self.locals[idx].clone());
+            self.propagate_sigilless_alias_writes(code, name, &self.locals[idx].clone());
             // Track topic mutations for map rw writeback
             if name == "_" {
                 self.interpreter.env_mut().insert(

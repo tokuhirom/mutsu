@@ -1224,31 +1224,7 @@ impl VM {
                 .env_mut()
                 .insert("__mutsu_rw_map_topic__".to_string(), val.clone());
         }
-        let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
-            if let Value::Str(name) = v {
-                Some(name.to_string())
-            } else {
-                None
-            }
-        });
-        let mut seen_aliases = std::collections::HashSet::new();
-        while let Some(current_alias) = alias_name {
-            if !seen_aliases.insert(current_alias.clone()) {
-                break;
-            }
-            self.update_local_if_exists(code, &current_alias, &val);
-            self.interpreter
-                .env_mut()
-                .insert(current_alias.clone(), val.clone());
-            let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
-            alias_name = self.interpreter.env().get(&next_key).and_then(|v| {
-                if let Value::Str(name) = v {
-                    Some(name.to_string())
-                } else {
-                    None
-                }
-            });
-        }
+        self.propagate_sigilless_alias_writes(code, &name, &val);
         if let Some(attr) = name.strip_prefix('.') {
             self.interpreter
                 .env_mut()

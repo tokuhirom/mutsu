@@ -293,6 +293,53 @@ impl VM {
         }
     }
 
+    pub(super) fn propagate_sigilless_alias_writes(
+        &mut self,
+        code: &CompiledCode,
+        name: &str,
+        val: &Value,
+    ) {
+        use std::collections::{HashSet, VecDeque};
+
+        let mut seen = HashSet::new();
+        let mut queue = VecDeque::from([name.to_string()]);
+
+        while let Some(current) = queue.pop_front() {
+            if !seen.insert(current.clone()) {
+                continue;
+            }
+
+            let forward_key = format!("__mutsu_sigilless_alias::{}", current);
+            if let Some(Value::Str(target)) = self.interpreter.env().get(&forward_key).cloned() {
+                let target = target.to_string();
+                self.set_env_with_main_alias(&target, val.clone());
+                self.update_local_if_exists(code, &target, val);
+                queue.push_back(target);
+            }
+
+            let reverse_aliases: Vec<String> = self
+                .interpreter
+                .env()
+                .iter()
+                .filter_map(|(key, alias_target)| {
+                    let alias_name = key.strip_prefix("__mutsu_sigilless_alias::")?;
+                    match alias_target {
+                        Value::Str(target) if target.resolve() == current => {
+                            Some(alias_name.to_string())
+                        }
+                        _ => None,
+                    }
+                })
+                .collect();
+
+            for alias_name in reverse_aliases {
+                self.set_env_with_main_alias(&alias_name, val.clone());
+                self.update_local_if_exists(code, &alias_name, val);
+                queue.push_back(alias_name);
+            }
+        }
+    }
+
     pub(super) fn locals_get_by_name(&self, code: &CompiledCode, name: &str) -> Option<Value> {
         self.find_local_slot(code, name)
             .map(|slot| self.locals[slot].clone())
