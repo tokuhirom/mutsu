@@ -9,12 +9,27 @@ pub(crate) use super::sprintf_validate::{validate_sprintf_arg_types, validate_sp
 
 pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
     match arg {
-        Some(value) => format_sprintf_args(fmt, std::slice::from_ref(value)),
-        None => format_sprintf_args(fmt, &[]),
+        Some(value) => format_sprintf_impl(fmt, std::slice::from_ref(value), false),
+        None => format_sprintf_impl(fmt, &[], false),
+    }
+}
+
+pub(crate) fn format_zprintf(fmt: &str, arg: Option<&Value>) -> String {
+    match arg {
+        Some(value) => format_sprintf_impl(fmt, std::slice::from_ref(value), true),
+        None => format_sprintf_impl(fmt, &[], true),
     }
 }
 
 pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
+    format_sprintf_impl(fmt, args, false)
+}
+
+pub(crate) fn format_zprintf_args(fmt: &str, args: &[Value]) -> String {
+    format_sprintf_impl(fmt, args, true)
+}
+
+fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
     let bytes = fmt.as_bytes();
     let len = bytes.len();
     let mut out = String::new();
@@ -356,6 +371,38 @@ pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
                 let f = float_val();
                 if f.is_infinite() || f.is_nan() {
                     format_inf_nan(f, plus_sign, space_flag)
+                } else if z_mode {
+                    // zprintf %g/%G: precision means decimal places (like %f),
+                    // uses e/E notation for large/small numbers.
+                    // Switching threshold matches standard %g: exp < -4 or exp >= prec.
+                    let p = prec_num.unwrap_or(6);
+                    let is_neg = f.is_sign_negative() && (f != 0.0 || f.is_sign_negative());
+                    let prefix = sign_prefix(is_neg, plus_sign, space_flag);
+                    let abs = f.abs();
+                    let exp = if abs == 0.0 {
+                        0i32
+                    } else {
+                        abs.log10().floor() as i32
+                    };
+                    let use_sci = exp < -4 || exp >= p.max(1) as i32;
+                    if use_sci {
+                        // Scientific notation: format mantissa with p decimal places
+                        let mantissa = abs / 10f64.powi(exp);
+                        let formatted_mantissa = format!("{:.*}", p, mantissa);
+                        let e_char = if spec == 'G' { 'E' } else { 'e' };
+                        let exp_sign = if exp >= 0 { '+' } else { '-' };
+                        format!(
+                            "{}{}{}{}{:02}",
+                            prefix,
+                            formatted_mantissa,
+                            e_char,
+                            exp_sign,
+                            exp.unsigned_abs()
+                        )
+                    } else {
+                        // Fixed notation: same as %f with p decimal places
+                        format!("{}{:.*}", prefix, p, abs)
+                    }
                 } else {
                     let is_neg = f.is_sign_negative() && (f != 0.0 || f.is_sign_negative());
                     let prefix = sign_prefix(is_neg, plus_sign, space_flag);

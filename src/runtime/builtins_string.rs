@@ -193,7 +193,11 @@ impl Interpreter {
         })
     }
 
-    pub(super) fn builtin_sprintf(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_sprintf(
+        &self,
+        args: &[Value],
+        z_mode: bool,
+    ) -> Result<Value, RuntimeError> {
         let fmt = match args.first() {
             Some(Value::Str(s)) => s.to_string(),
             _ => String::new(),
@@ -213,7 +217,11 @@ impl Interpreter {
         };
         super::sprintf::validate_sprintf_directives(&fmt, actual_args.len())?;
         super::sprintf::validate_sprintf_arg_types(&fmt, actual_args)?;
-        let rendered = super::sprintf::format_sprintf_args(&fmt, actual_args);
+        let rendered = if z_mode {
+            super::sprintf::format_zprintf_args(&fmt, actual_args)
+        } else {
+            super::sprintf::format_sprintf_args(&fmt, actual_args)
+        };
         Ok(Value::str(rendered))
     }
 
