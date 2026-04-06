@@ -104,7 +104,8 @@ fn allomorph_value_to_f64(v: &Value) -> Option<f64> {
 
 /// Raku's Str.indent($steps) method implementation.
 /// $?TABSTOP is hardcoded to 8.
-fn str_indent(s: &str, arg: &Value) -> String {
+/// Returns (result_string, optional_warning_message).
+fn str_indent(s: &str, arg: &Value) -> (String, Option<String>) {
     const TABSTOP: usize = 8;
 
     // Determine the indent amount
@@ -138,7 +139,7 @@ fn str_indent(s: &str, arg: &Value) -> String {
     };
 
     if s.is_empty() {
-        return String::new();
+        return (String::new(), None);
     }
 
     // Split into lines, preserving trailing newline
@@ -158,7 +159,7 @@ fn str_indent(s: &str, arg: &Value) -> String {
             .min()
             .unwrap_or(0);
         if min_indent == 0 {
-            return s.to_string();
+            return (s.to_string(), None);
         }
         let result_lines: Vec<String> = lines
             .iter()
@@ -174,12 +175,33 @@ fn str_indent(s: &str, arg: &Value) -> String {
         if has_trailing_newline {
             result.push('\n');
         }
-        return result;
+        return (result, None);
     }
 
     if steps == 0 {
-        return s.to_string();
+        return (s.to_string(), None);
     }
+
+    // Check for excess outdent warning
+    let warning = if steps < 0 {
+        let outdent = -steps as usize;
+        let min_indent = lines
+            .iter()
+            .filter(|line| !line.is_empty())
+            .map(|line| visual_indent_width(line, TABSTOP))
+            .min()
+            .unwrap_or(0);
+        if outdent > min_indent {
+            Some(format!(
+                "Asked to remove {} spaces, but the shortest indent is {} spaces",
+                outdent, min_indent
+            ))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     let result_lines: Vec<String> = lines
         .iter()
@@ -198,7 +220,7 @@ fn str_indent(s: &str, arg: &Value) -> String {
     if has_trailing_newline {
         result.push('\n');
     }
-    result
+    (result, warning)
 }
 
 /// Calculate the visual width of the leading whitespace of a line.
@@ -931,7 +953,13 @@ pub(crate) fn native_method_1arg(
         }
         "indent" => {
             let s = target.to_string_value();
-            let result = str_indent(&s, arg);
+            let (result, warning) = str_indent(&s, arg);
+            if let Some(warn_msg) = warning {
+                return Some(Err(crate::value::RuntimeError::warn_signal_with_resume(
+                    warn_msg,
+                    Value::str(result),
+                )));
+            }
             Some(Ok(Value::str(result)))
         }
         "AT-POS" => {

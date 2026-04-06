@@ -1608,7 +1608,15 @@ impl VM {
         let catch_begin = catch_start as usize;
         let control_begin = control_start as usize;
         let end = body_end as usize;
-        match self.run_range(code, body_start, catch_begin, compiled_fns) {
+        let has_control = control_begin < end;
+        if has_control {
+            self.control_handler_depth += 1;
+        }
+        let body_result = self.run_range(code, body_start, catch_begin, compiled_fns);
+        if has_control {
+            self.control_handler_depth -= 1;
+        }
+        match body_result {
             Ok(()) => {
                 // Successful try resets $! to Nil
                 self.interpreter
@@ -1653,7 +1661,7 @@ impl VM {
                     Err(e)
                 }
             }
-            Err(e) if e.return_value.is_some() && !e.is_succeed => {
+            Err(e) if e.return_value.is_some() && !e.is_succeed && !e.is_warn => {
                 self.interpreter.discard_let_saves(let_mark);
                 Err(e)
             }

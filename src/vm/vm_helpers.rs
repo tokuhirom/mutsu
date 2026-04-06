@@ -163,6 +163,9 @@ impl VM {
                     if !self.interpreter.warning_suppressed() {
                         self.interpreter.write_warn_to_stderr(&e.message);
                     }
+                    if let Some(v) = e.return_value {
+                        self.stack.push(v);
+                    }
                     ip += 1;
                     continue;
                 }
