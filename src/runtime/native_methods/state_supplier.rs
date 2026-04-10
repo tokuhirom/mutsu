@@ -43,12 +43,22 @@ struct SupplierTapSubscription {
     head_count: usize,
     /// Produce (scan/fold) state: callable and running accumulator
     produce_state: Option<ProduceState>,
+    /// Start transform state: callable and output supplier_id
+    start_state: Option<StartState>,
 }
 
 #[derive(Clone)]
 struct ProduceState {
     callable: Value,
     accumulator: Option<Value>,
+}
+
+#[derive(Clone)]
+struct StartState {
+    /// The user's block to run for each emitted value
+    callable: Value,
+    /// The output supplier_id where wrapped Supply values are emitted
+    output_supplier_id: u64,
 }
 
 #[derive(Clone, Default)]
@@ -82,6 +92,7 @@ pub(in crate::runtime) fn register_supplier_tap(supplier_id: u64, tap: Value, de
                 head_limit: None,
                 head_count: 0,
                 produce_state: None,
+                start_state: None,
             });
     }
 }
@@ -108,6 +119,7 @@ pub(in crate::runtime) fn register_supplier_tap_with_head_limit(
                 head_limit: Some(limit),
                 head_count: 0,
                 produce_state: None,
+                start_state: None,
             });
     }
 }
@@ -134,6 +146,7 @@ pub(in crate::runtime) fn register_supplier_lines_tap(
                 head_limit: None,
                 head_count: 0,
                 produce_state: None,
+                start_state: None,
             });
     }
 }
@@ -166,6 +179,7 @@ pub(in crate::runtime) fn register_supplier_elems_tap(
                 head_limit: None,
                 head_count: 0,
                 produce_state: None,
+                start_state: None,
             });
     }
 }
@@ -199,6 +213,12 @@ pub(in crate::runtime) enum SupplierEmitAction {
         accumulator: Option<Value>,
         delay_seconds: f64,
         tap_index: usize,
+    },
+    /// Start transform: run callable, wrap result in Supply, emit to output supplier
+    StartCall {
+        callable: Value,
+        value: Value,
+        output_supplier_id: u64,
     },
 }
 
@@ -295,6 +315,12 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
                     delay_seconds: tap.delay_seconds,
                     tap_index: idx,
                 });
+            } else if let Some(ref ss) = tap.start_state {
+                actions.push(SupplierEmitAction::StartCall {
+                    callable: ss.callable.clone(),
+                    value: emitted_value.clone(),
+                    output_supplier_id: ss.output_supplier_id,
+                });
             } else {
                 actions.push(SupplierEmitAction::Call(
                     tap.callback.clone(),
@@ -376,6 +402,7 @@ pub(in crate::runtime) fn register_supplier_unique_tap(
                 head_limit: None,
                 head_count: 0,
                 produce_state: None,
+                start_state: None,
             });
     }
 }
@@ -405,8 +432,56 @@ pub(in crate::runtime) fn register_supplier_produce_tap(
                     callable,
                     accumulator: None,
                 }),
+                start_state: None,
             });
     }
+}
+
+/// Register a start-transform tap on a supplier.
+/// When the source emits a value, the callable runs and the result is wrapped
+/// in a single-value Supply and emitted to the output supplier.
+pub(in crate::runtime) fn register_supplier_start_tap(
+    supplier_id: u64,
+    callable: Value,
+    output_supplier_id: u64,
+) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        map.entry(supplier_id)
+            .or_default()
+            .taps
+            .push(SupplierTapSubscription {
+                callback: Value::Nil,
+                line_mode: false,
+                line_chomp: true,
+                line_buffer: String::new(),
+                delay_seconds: 0.0,
+                unique_filter: None,
+                classify_state: None,
+                elems_trace: None,
+                head_limit: None,
+                head_count: 0,
+                produce_state: None,
+                start_state: Some(StartState {
+                    callable,
+                    output_supplier_id,
+                }),
+            });
+    }
+}
+
+/// Get output supplier IDs from start-transform taps, for done propagation.
+pub(in crate::runtime) fn get_start_output_supplier_ids(supplier_id: u64) -> Vec<u64> {
+    let mut ids = Vec::new();
+    if let Ok(map) = supplier_subscriptions_map().lock()
+        && let Some(subs) = map.get(&supplier_id)
+    {
+        for tap in &subs.taps {
+            if let Some(ref ss) = tap.start_state {
+                ids.push(ss.output_supplier_id);
+            }
+        }
+    }
+    ids
 }
 
 /// Update the accumulator for a produce tap after the interpreter has computed the new value.
@@ -461,6 +536,7 @@ pub(in crate::runtime) fn register_supplier_classify_tap(
                 head_limit: None,
                 head_count: 0,
                 produce_state: None,
+                start_state: None,
             });
     }
 }
