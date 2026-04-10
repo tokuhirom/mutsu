@@ -1456,6 +1456,13 @@ impl Interpreter {
                 Value::Package(Symbol::intern("Any"))
             };
             attributes.insert("default".to_string(), default_val);
+            // Add .of: type constraint of the variable (Mu for unconstrained)
+            let of_val = if let Some(tc) = self.var_type_constraint(target_var) {
+                Value::Package(Symbol::intern(&tc))
+            } else {
+                Value::Package(Symbol::intern("Mu"))
+            };
+            attributes.insert("of".to_string(), of_val);
             let meta = Value::make_instance(Symbol::intern(class_name), attributes);
             self.set_var_meta_value(target_var, meta.clone());
             return Ok(meta);

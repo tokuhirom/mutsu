@@ -946,6 +946,7 @@ roast/S32-num/stress.t
 roast/S32-num/stringify.t
 roast/S32-num/unpolar.t
 roast/S32-scalar/defined.t
+roast/S32-scalar/perl.t
 roast/S32-str/Collation.t
 roast/S32-str/append.t
 roast/S32-str/bool.t
