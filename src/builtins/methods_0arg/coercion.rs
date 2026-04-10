@@ -187,6 +187,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "Slip" => match target {
             Value::Array(items, ..) | Value::Seq(items) => Some(Ok(Value::Slip(items.clone()))),
             Value::Slip(_) => Some(Ok(target.clone())),
+            Value::LazyList(ll) => {
+                let items = ll.cache.lock().unwrap().clone().unwrap_or_default();
+                Some(Ok(Value::Slip(std::sync::Arc::new(items))))
+            }
             Value::Range(..)
             | Value::RangeExcl(..)
             | Value::RangeExclStart(..)

@@ -47,10 +47,49 @@ impl Interpreter {
                 "?" => Ok(Value::Bool(arg.truthy())),
                 "so" => Ok(Value::Bool(arg.truthy())),
                 "not" => Ok(Value::Bool(!arg.truthy())),
-                _ => Err(RuntimeError::new(format!(
-                    "Unknown prefix operator: {}",
-                    normalized
-                ))),
+                _ => {
+                    // Auto-generated reduction prefix: prefix:<[op]>
+                    // e.g. prefix:<[**]>(2,3,4) is equivalent to [**] 2,3,4
+                    if let Some(reduce_op) = normalized
+                        .strip_prefix('[')
+                        .and_then(|s| s.strip_suffix(']'))
+                    {
+                        let (actual_op, reversed) = if let Some(inner) = reduce_op.strip_prefix('R')
+                        {
+                            (inner, true)
+                        } else {
+                            (reduce_op, false)
+                        };
+                        let mut items: Vec<Value> = args.to_vec();
+                        if reversed {
+                            items.reverse();
+                        }
+                        if items.is_empty() {
+                            return Ok(crate::runtime::reduction_identity(actual_op));
+                        }
+                        if items.len() == 1 {
+                            return Ok(items.into_iter().next().unwrap());
+                        }
+                        // Check associativity: right-associative ops fold from right
+                        let is_right = matches!(actual_op, "**" | "=" | ":=" | "=>" | "x" | "xx");
+                        if is_right {
+                            let mut acc = items.last().unwrap().clone();
+                            for item in items[..items.len() - 1].iter().rev() {
+                                acc = Self::apply_reduction_op(actual_op, item, &acc)?;
+                            }
+                            return Ok(acc);
+                        }
+                        let mut acc = items[0].clone();
+                        for item in &items[1..] {
+                            acc = Self::apply_reduction_op(actual_op, &acc, item)?;
+                        }
+                        return Ok(acc);
+                    }
+                    Err(RuntimeError::new(format!(
+                        "Unknown prefix operator: {}",
+                        normalized
+                    )))
+                }
             };
         }
         if let Some(op) = name
