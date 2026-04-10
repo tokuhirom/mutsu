@@ -1261,6 +1261,10 @@ impl Interpreter {
                 Value::Array(elems, ..) => items.extend(elems.iter().cloned()),
                 Value::Seq(elems) => items.extend(elems.iter().cloned()),
                 Value::Slip(elems) => items.extend(elems.iter().cloned()),
+                Value::LazyList(ll) => {
+                    let cached = ll.cache.lock().unwrap().clone().unwrap_or_default();
+                    items.extend(cached);
+                }
                 other => items.push(other.clone()),
             }
         }

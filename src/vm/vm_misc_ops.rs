@@ -1356,6 +1356,12 @@ impl VM {
             base_op
         };
         let list_value = self.stack.pop().unwrap_or(Value::Nil);
+        let input_is_lazy = crate::builtins::methods_0arg::is_value_lazy(&list_value);
+        // For scan (triangle reduce) on infinite/lazy inputs, handle lazily
+        // to avoid materializing the entire infinite range.
+        if scan && input_is_lazy {
+            return self.exec_lazy_scan_reduction(&base_op, negate, &list_value);
+        }
         let mut list = if let Value::LazyList(ref ll) = list_value {
             self.force_lazy_list_vm(ll)?
         } else {
@@ -1423,8 +1429,13 @@ impl VM {
                 return Ok(());
             }
             if list.len() == 1 {
-                self.stack
-                    .push(Value::Seq(std::sync::Arc::new(vec![list[0].clone()])));
+                let is_chain = runtime::is_chain_comparison_op(&base_op);
+                let val = if is_chain {
+                    Value::Bool(true)
+                } else {
+                    list[0].clone()
+                };
+                self.stack.push(Value::Seq(std::sync::Arc::new(vec![val])));
                 return Ok(());
             }
             let out = match assoc {
@@ -1446,23 +1457,104 @@ impl VM {
                     out
                 }
                 _ => {
+                    let is_chain = runtime::is_chain_comparison_op(&base_op);
+                    let is_xor = matches!(base_op.as_str(), "^^" | "xor");
                     let mut out = Vec::new();
-                    let mut acc = list[0].clone();
-                    out.push(acc.clone());
-                    let mut idx = 1usize;
-                    while idx + step <= list.len() {
-                        let mut call_args = vec![acc];
-                        call_args.extend(list[idx..idx + step].iter().cloned());
-                        let v =
-                            self.reduction_step_with_args(&base_op, callable.as_ref(), call_args)?;
-                        acc = if negate { Value::Bool(!v.truthy()) } else { v };
+                    if is_chain {
+                        // Chain comparison scan: first element is always True
+                        // (vacuously true), then each subsequent element is the
+                        // AND of all pairwise comparisons so far.
+                        out.push(Value::Bool(true));
+                        let mut all_true = true;
+                        for i in 0..list.len() - 1 {
+                            if all_true {
+                                let v = self.eval_reduction_operator_values(
+                                    &base_op,
+                                    &list[i],
+                                    &list[i + 1],
+                                )?;
+                                let truthy = if negate { !v.truthy() } else { v.truthy() };
+                                all_true = truthy;
+                            }
+                            out.push(Value::Bool(all_true));
+                        }
+                    } else if is_xor {
+                        // [\^^] and [\xor] scan: each element is the xor-reduce
+                        // of the prefix up to that point.
+                        let mut found: Option<Value> = None;
+                        let mut multiple = false;
+                        for item in &list {
+                            if item.truthy() {
+                                if found.is_some() {
+                                    multiple = true;
+                                }
+                                if !multiple {
+                                    found = Some(item.clone());
+                                }
+                            }
+                            let result = if multiple {
+                                Value::Nil
+                            } else if let Some(ref v) = found {
+                                v.clone()
+                            } else {
+                                item.clone()
+                            };
+                            out.push(result);
+                        }
+                    } else {
+                        let mut acc = list[0].clone();
                         out.push(acc.clone());
-                        idx += step;
+                        let mut idx = 1usize;
+                        while idx + step <= list.len() {
+                            let mut call_args = vec![acc];
+                            call_args.extend(list[idx..idx + step].iter().cloned());
+                            let v = self.reduction_step_with_args(
+                                &base_op,
+                                callable.as_ref(),
+                                call_args,
+                            )?;
+                            acc = if negate { Value::Bool(!v.truthy()) } else { v };
+                            out.push(acc.clone());
+                            idx += step;
+                        }
                     }
                     out
                 }
             };
             self.stack.push(Value::Seq(std::sync::Arc::new(out)));
+            return Ok(());
+        }
+        // [^^] and [xor] are list-associative: they check that exactly one element
+        // is truthy.  Returns:
+        //   - the truthy value if exactly one is truthy
+        //   - Nil if more than one is truthy (short-circuits)
+        //   - the last element if all are falsy
+        if matches!(base_op.as_str(), "^^" | "xor") {
+            if list.is_empty() {
+                self.stack.push(runtime::reduction_identity(&base_op));
+                return Ok(());
+            }
+            let mut found: Option<Value> = None;
+            let mut multiple = false;
+            let mut last = Value::Nil;
+            for item in &list {
+                last = item.clone();
+                if item.truthy() {
+                    if found.is_some() {
+                        multiple = true;
+                        break;
+                    }
+                    found = Some(item.clone());
+                }
+            }
+            let result = if multiple {
+                Value::Nil
+            } else if let Some(v) = found {
+                v
+            } else {
+                last
+            };
+            self.stack.push(result);
             return Ok(());
         }
         // For set operators, promote all elements to the highest set type before reducing.
@@ -1567,6 +1659,153 @@ impl VM {
                 self.stack.push(acc);
             }
         }
+        Ok(())
+    }
+
+    /// Lazily evaluate a triangle (scan) reduction on an infinite/lazy range.
+    /// Produces a `LazyList` so that `.is-lazy` returns True and only the
+    /// needed prefix is materialized when indexed.
+    fn exec_lazy_scan_reduction(
+        &mut self,
+        base_op: &str,
+        negate: bool,
+        list_value: &Value,
+    ) -> Result<(), RuntimeError> {
+        const LAZY_SCAN_CAP: usize = 200_000;
+
+        let callable = self.reduction_callable_for_op(base_op);
+        let mut out = Vec::new();
+        let mut acc: Option<Value> = None;
+        #[allow(unused_assignments)]
+        let mut count = 0usize;
+
+        // Macro-like helper for processing a single element in the scan.
+        macro_rules! scan_step {
+            ($val:expr) => {
+                #[allow(unused_assignments)]
+                {
+                    acc = Some(match acc.take() {
+                        None => {
+                            out.push($val.clone());
+                            $val
+                        }
+                        Some(prev) => {
+                            let call_args = vec![prev, $val];
+                            let v = self.reduction_step_with_args(
+                                base_op,
+                                callable.as_ref(),
+                                call_args,
+                            )?;
+                            let v = if negate { Value::Bool(!v.truthy()) } else { v };
+                            out.push(v.clone());
+                            v
+                        }
+                    });
+                    count += 1;
+                }
+            };
+        }
+
+        match list_value {
+            Value::Range(a, b) => {
+                let end = if *b == i64::MAX {
+                    *a + LAZY_SCAN_CAP as i64
+                } else {
+                    *b
+                };
+                for i in *a..=end {
+                    if count >= LAZY_SCAN_CAP {
+                        break;
+                    }
+                    let val = Value::Int(i);
+                    scan_step!(val);
+                }
+            }
+            Value::RangeExcl(a, b) => {
+                let end = if *b == i64::MAX {
+                    *a + LAZY_SCAN_CAP as i64
+                } else {
+                    *b
+                };
+                for i in *a..end {
+                    if count >= LAZY_SCAN_CAP {
+                        break;
+                    }
+                    let val = Value::Int(i);
+                    scan_step!(val);
+                }
+            }
+            Value::RangeExclStart(a, b) => {
+                let start = *a + 1;
+                let end = if *b == i64::MAX {
+                    start + LAZY_SCAN_CAP as i64
+                } else {
+                    *b
+                };
+                for i in start..=end {
+                    if count >= LAZY_SCAN_CAP {
+                        break;
+                    }
+                    let val = Value::Int(i);
+                    scan_step!(val);
+                }
+            }
+            Value::RangeExclBoth(a, b) => {
+                let start = *a + 1;
+                let end = if *b == i64::MAX {
+                    start + LAZY_SCAN_CAP as i64
+                } else {
+                    *b
+                };
+                for i in start..end {
+                    if count >= LAZY_SCAN_CAP {
+                        break;
+                    }
+                    let val = Value::Int(i);
+                    scan_step!(val);
+                }
+            }
+            Value::GenericRange {
+                start,
+                end,
+                excl_start,
+                excl_end,
+            } => {
+                let end_f = end.to_f64();
+                let is_infinite = end_f.is_infinite() && end_f.is_sign_positive();
+                let start_i = start.as_ref().to_f64() as i64;
+                let first_i = if *excl_start { start_i + 1 } else { start_i };
+                // Use integer iteration when both endpoints are integer-like
+                for idx in 0..LAZY_SCAN_CAP {
+                    let i = first_i + idx as i64;
+                    if !is_infinite {
+                        if *excl_end && i as f64 >= end_f {
+                            break;
+                        }
+                        if !*excl_end && i as f64 > end_f {
+                            break;
+                        }
+                    }
+                    let val = Value::Int(i);
+                    scan_step!(val);
+                }
+            }
+            Value::LazyList(ll) => {
+                let items = self.force_lazy_list_vm(ll)?;
+                for val in items.into_iter().take(LAZY_SCAN_CAP) {
+                    scan_step!(val);
+                }
+            }
+            _ => {
+                let items = runtime::value_to_list(list_value);
+                for val in items.into_iter().take(LAZY_SCAN_CAP) {
+                    scan_step!(val);
+                }
+            }
+        }
+
+        let ll = crate::value::LazyList::new_cached(out);
+        self.stack.push(Value::LazyList(std::sync::Arc::new(ll)));
         Ok(())
     }
 

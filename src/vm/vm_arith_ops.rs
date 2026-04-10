@@ -320,6 +320,7 @@ impl VM {
                 .iter()
                 .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
                 .collect(),
+            Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
             Value::Range(..)
             | Value::RangeExcl(..)
             | Value::RangeExclStart(..)
