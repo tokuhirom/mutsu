@@ -195,6 +195,7 @@ impl Compiler {
                     || name == "roll"
                     || name == "take"
                     || name == "readchars"
+                    || name == "receive"
                     || (name == "new" && matches!(target.as_ref(), Expr::BareWord(n) if n == "Promise"))
                     || Self::xx_lhs_needs_reeval(target)
         ) || matches!(

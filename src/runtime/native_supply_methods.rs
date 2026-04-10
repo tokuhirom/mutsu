@@ -1062,13 +1062,31 @@ impl Interpreter {
                 Ok(self.make_supply_from_values(zipped, attributes))
             }
             "start" => {
-                // Supply.start: map each value through a block, emitting the result as a Supply
+                // Supply.start: for each emitted value, run the block and wrap
+                // the result in a single-value Supply, emitting that Supply downstream.
                 let block = args.first().cloned().unwrap_or(Value::Nil);
+
+                // For live (Supplier-backed) supplies, create a derived supplier
+                // and register a start-transform tap on the source.
+                if let Some(source_supplier_id) = supplier_id_from_attrs(attributes) {
+                    let output_supplier_id = next_supplier_id();
+                    register_supplier_start_tap(source_supplier_id, block, output_supplier_id);
+                    let mut new_attrs = HashMap::new();
+                    new_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    new_attrs.insert(
+                        "supplier_id".to_string(),
+                        Value::Int(output_supplier_id as i64),
+                    );
+                    new_attrs.insert("live".to_string(), Value::Bool(true));
+                    return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
+                }
+
+                // For non-live supplies, process all values eagerly
                 let source_values = self.supply_get_values(attributes)?;
                 let mut results = Vec::new();
                 for val in source_values {
                     let result = self.call_sub_value(block.clone(), vec![val], true)?;
-                    // Each result is wrapped in a one-element Supply
                     let mut inner_attrs = HashMap::new();
                     inner_attrs.insert("values".to_string(), Value::array(vec![result]));
                     inner_attrs.insert("taps".to_string(), Value::array(Vec::new()));
@@ -1200,6 +1218,13 @@ impl Interpreter {
                                 Self::sleep_for_supply_delay(delay_seconds);
                                 let _ = self.call_sub_value(callback, vec![new_acc], true);
                             }
+                            SupplierEmitAction::StartCall {
+                                callable,
+                                value: val,
+                                output_supplier_id,
+                            } => {
+                                self.run_start_call_in_thread(callable, val, output_supplier_id);
+                            }
                         }
                     }
                 }
@@ -1213,6 +1238,13 @@ impl Interpreter {
                     }
                     for done_cb in take_supplier_done_callbacks(supplier_id) {
                         let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                    }
+                    // Propagate done to start-transform output suppliers
+                    for out_sid in get_start_output_supplier_ids(supplier_id) {
+                        supplier_done(out_sid);
+                        for done_cb in take_supplier_done_callbacks(out_sid) {
+                            let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                        }
                     }
                 }
                 Ok(Value::Nil)
@@ -1342,6 +1374,13 @@ impl Interpreter {
                                 Self::sleep_for_supply_delay(delay_seconds);
                                 self.call_sub_value(callback, vec![new_acc], true)?;
                             }
+                            SupplierEmitAction::StartCall {
+                                callable,
+                                value: val,
+                                output_supplier_id,
+                            } => {
+                                self.run_start_call_in_thread(callable, val, output_supplier_id);
+                            }
                         }
                     }
                 }
@@ -1367,6 +1406,13 @@ impl Interpreter {
                     }
                     for done_cb in take_supplier_done_callbacks(sid) {
                         self.call_sub_value(done_cb, Vec::new(), true)?;
+                    }
+                    // Propagate done to start-transform output suppliers
+                    for out_sid in get_start_output_supplier_ids(sid) {
+                        supplier_done(out_sid);
+                        for done_cb in take_supplier_done_callbacks(out_sid) {
+                            let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                        }
                     }
                 }
                 Ok((Value::Nil, attrs))
@@ -2129,5 +2175,60 @@ impl Interpreter {
             }
         }
         Ok(false)
+    }
+
+    /// Run a Supply.start block in a background thread.
+    /// Immediately emits a live inner Supply to the output supplier's taps,
+    /// then spawns a thread that runs the block. When the block completes,
+    /// the result is emitted into the inner Supply.
+    pub(crate) fn run_start_call_in_thread(
+        &mut self,
+        callable: Value,
+        value: Value,
+        output_supplier_id: u64,
+    ) {
+        // Create a live inner Supply immediately
+        let inner_supplier_id = next_supplier_id();
+        let mut inner_attrs = HashMap::new();
+        inner_attrs.insert("values".to_string(), Value::array(Vec::new()));
+        inner_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+        inner_attrs.insert(
+            "supplier_id".to_string(),
+            Value::Int(inner_supplier_id as i64),
+        );
+        inner_attrs.insert("live".to_string(), Value::Bool(true));
+        let supply_val = Value::make_instance(Symbol::intern("Supply"), inner_attrs);
+
+        // Emit the inner Supply to the output supplier synchronously
+        supplier_emit(output_supplier_id, supply_val.clone());
+        let out_actions = supplier_emit_callbacks(output_supplier_id, &supply_val);
+        for out_action in out_actions {
+            if let SupplierEmitAction::Call(tap, emitted, delay) = out_action {
+                Self::sleep_for_supply_delay(delay);
+                let _ = self.call_sub_value(tap, vec![emitted], true);
+            }
+        }
+
+        // Spawn a thread to run the block asynchronously
+        let mut thread_interp = self.clone_for_thread();
+        std::thread::spawn(move || {
+            let result_val = thread_interp
+                .call_sub_value(callable, vec![value], true)
+                .unwrap_or(Value::Nil);
+            // Emit the result into the inner Supply
+            supplier_emit(inner_supplier_id, result_val.clone());
+            let inner_actions = supplier_emit_callbacks(inner_supplier_id, &result_val);
+            for action in inner_actions {
+                if let SupplierEmitAction::Call(tap, emitted, delay) = action {
+                    Self::sleep_for_supply_delay(delay);
+                    let _ = thread_interp.call_sub_value(tap, vec![emitted], true);
+                }
+            }
+            // Mark the inner supply as done
+            supplier_done(inner_supplier_id);
+            for done_cb in take_supplier_done_callbacks(inner_supplier_id) {
+                let _ = thread_interp.call_sub_value(done_cb, Vec::new(), true);
+            }
+        });
     }
 }

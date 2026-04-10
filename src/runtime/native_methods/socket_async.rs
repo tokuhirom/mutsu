@@ -76,6 +76,13 @@ impl Interpreter {
                     Self::sleep_for_supply_delay(delay_seconds);
                     let _ = self.call_sub_value(callback, vec![new_acc], true);
                 }
+                SupplierEmitAction::StartCall {
+                    callable,
+                    value: val,
+                    output_supplier_id,
+                } => {
+                    self.run_start_call_in_thread(callable, val, output_supplier_id);
+                }
             }
         }
         Ok(())
