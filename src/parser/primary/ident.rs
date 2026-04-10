@@ -622,8 +622,9 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             ));
         }
     }
-    // INIT/CHECK/END/ENTER/LEAVE as expression prefix phasers
+    // BEGIN/INIT/CHECK/END/ENTER/LEAVE as expression prefix phasers
     for (kw, kw_len, phaser_kind) in [
+        ("BEGIN", 5, crate::ast::PhaserKind::Begin),
         ("INIT", 4, crate::ast::PhaserKind::Init),
         ("CHECK", 5, crate::ast::PhaserKind::Check),
         ("ENTER", 5, crate::ast::PhaserKind::Enter),
