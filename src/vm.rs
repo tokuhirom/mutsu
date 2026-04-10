@@ -112,12 +112,19 @@ pub(crate) struct VM {
     fn_resolve_gen: u64,
     /// The generation at which fn_resolve_cache was last populated.
     fn_resolve_cache_gen: u64,
+    /// Cache for has_multi_candidates results, invalidated by fn_resolve_gen.
+    multi_candidates_cache: HashMap<Symbol, bool>,
+    /// The generation at which multi_candidates_cache was last valid.
+    multi_candidates_cache_gen: u64,
     /// Stack of sets tracking variable names declared (via SetVarDynamic) within
     /// each active BlockScope. Used during BlockScope restoration to avoid
     /// propagating block-local variable values to the outer scope.
     block_declared_vars: Vec<std::collections::HashSet<String>>,
     /// Depth counter for active CONTROL handlers in try-catch.
     control_handler_depth: u32,
+    /// When > 0, we're inside a fast-call context. StateVarInit should skip
+    /// env inserts since the fast path manages state vars directly.
+    fast_call_depth: u32,
 }
 
 impl VM {
@@ -263,6 +270,9 @@ impl VM {
             fn_resolve_cache: HashMap::new(),
             fn_resolve_gen: 0,
             fn_resolve_cache_gen: 0,
+            multi_candidates_cache: HashMap::new(),
+            multi_candidates_cache_gen: 0,
+            fast_call_depth: 0,
             block_declared_vars: Vec::new(),
             control_handler_depth: 0,
         }

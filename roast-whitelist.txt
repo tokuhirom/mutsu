@@ -244,6 +244,7 @@ roast/S04-blocks-and-statements/pointy-rw.t
 roast/S04-blocks-and-statements/pointy.t
 roast/S04-declarations/implicit-parameter.t
 roast/S04-declarations/smiley.t
+roast/S04-declarations/state.t
 roast/S04-exception-handlers/top-level.t
 roast/S04-exceptions/control_across_runloop.t
 roast/S04-exceptions/fail-6e.t

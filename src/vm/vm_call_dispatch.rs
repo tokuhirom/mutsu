@@ -2,6 +2,22 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl VM {
+    /// Cached version of `interpreter.has_multi_candidates()`.
+    /// Uses `fn_resolve_gen` for invalidation so it's O(1) on cache hit.
+    pub(super) fn has_multi_candidates_cached(&mut self, name: &str) -> bool {
+        if self.multi_candidates_cache_gen != self.fn_resolve_gen {
+            self.multi_candidates_cache.clear();
+            self.multi_candidates_cache_gen = self.fn_resolve_gen;
+        }
+        let sym = Symbol::intern(name);
+        if let Some(&cached) = self.multi_candidates_cache.get(&sym) {
+            return cached;
+        }
+        let result = self.interpreter.has_multi_candidates(name);
+        self.multi_candidates_cache.insert(sym, result);
+        result
+    }
+
     /// Try compiled function dispatch first, then native, then on-the-fly compile,
     /// then interpreter fallback. Returns the result of whichever path succeeds.
     pub(super) fn call_function_compiled_first(
@@ -150,7 +166,7 @@ impl VM {
         let cache_key = (name_sym, arity, type_sig.clone());
         // Check the resolution cache first to avoid expensive resolve_function_with_types.
         // Skip cache for multi functions since subset type dispatch depends on values.
-        let use_cache = !self.interpreter.has_multi_candidates(name);
+        let use_cache = !self.has_multi_candidates_cached(name);
         if use_cache && self.fn_resolve_cache_gen == self.fn_resolve_gen {
             if let Some((cached_key, cached_fp, _)) = self.fn_resolve_cache.get(&cache_key)
                 && let Some(cf) = compiled_fns.get(cached_key.as_str())
@@ -252,6 +268,143 @@ impl VM {
         } else {
             None
         }
+    }
+
+    /// Fast path for calling simple compiled functions.
+    /// Eligible when: zero args, no params, no return type spec, not a test assertion,
+    /// package is GLOBAL. Skips block_stack, routine_stack, caller_env, readonly vars,
+    /// and callframe bookkeeping for significant performance gains in tight loops.
+    ///
+    /// Unlike `call_compiled_function_named`, this does NOT save/restore the env via
+    /// Arc clone. Instead, it runs the function in-place and cleans up the function's
+    /// local variables from env afterward. This avoids the expensive deep clone
+    /// triggered by Arc::make_mut when the function body mutates env.
+    pub(super) fn call_compiled_function_fast(
+        &mut self,
+        cf: &CompiledFunction,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<Value, RuntimeError> {
+        let saved_locals = std::mem::take(&mut self.locals);
+        let saved_stack_depth = self.stack.len();
+        let saved_env_dirty = self.env_dirty;
+        let saved_locals_dirty = self.locals_dirty;
+        self.env_dirty = false;
+        self.locals_dirty = false;
+        self.fast_call_depth += 1;
+
+        self.locals = vec![Value::Nil; cf.code.locals.len()];
+        for (i, local_name) in cf.code.locals.iter().enumerate() {
+            if let Some(val) = self.interpreter.env().get(local_name) {
+                self.locals[i] = val.clone();
+            }
+        }
+        // Load persisted state variable values
+        for (slot, key) in &cf.code.state_locals {
+            if let Some(val) = self.interpreter.get_state_var(key) {
+                self.locals[*slot] = val.clone();
+            }
+        }
+
+        let let_mark = self.interpreter.let_saves_len();
+        let mut ip = 0;
+        let mut result = Ok(());
+        let mut explicit_return: Option<Value> = None;
+        let mut fail_bypass = false;
+        while ip < cf.code.ops.len() {
+            match self.exec_one(&cf.code, &mut ip, compiled_fns) {
+                Ok(()) => {}
+                Err(e) if e.return_value.is_some() => {
+                    let ret_val = e.return_value.unwrap();
+                    explicit_return = Some(ret_val.clone());
+                    self.stack.truncate(saved_stack_depth);
+                    self.stack.push(ret_val);
+                    self.interpreter.discard_let_saves(let_mark);
+                    result = Ok(());
+                    break;
+                }
+                Err(e) if e.is_fail => {
+                    fail_bypass = true;
+                    let failure = self.interpreter.fail_error_to_failure_value(&e);
+                    self.interpreter.restore_let_saves(let_mark);
+                    self.stack.truncate(saved_stack_depth);
+                    self.stack.push(failure);
+                    result = Ok(());
+                    break;
+                }
+                Err(e) => {
+                    self.interpreter.restore_let_saves(let_mark);
+                    result = Err(e);
+                    break;
+                }
+            }
+            if self.interpreter.is_halted() {
+                break;
+            }
+        }
+
+        let ret_val = if result.is_ok() {
+            if self.stack.len() > saved_stack_depth {
+                self.stack.pop().unwrap_or(Value::Nil)
+            } else {
+                Value::Nil
+            }
+        } else {
+            Value::Nil
+        };
+
+        self.stack.truncate(saved_stack_depth);
+
+        // Sync state variables back to persistent storage.
+        for (slot, key) in &cf.code.state_locals {
+            let local_name = &cf.code.locals[*slot];
+            let val = self
+                .interpreter
+                .env()
+                .get(local_name)
+                .cloned()
+                .unwrap_or_else(|| self.locals[*slot].clone());
+            self.interpreter.set_state_var(key.clone(), val);
+        }
+
+        // Restore state
+        self.fast_call_depth -= 1;
+        self.locals = saved_locals;
+        self.env_dirty = saved_env_dirty;
+        self.locals_dirty = saved_locals_dirty;
+
+        // Clean up function-local variables from env to avoid leaking
+        // the function's internal state to the caller.
+        // Only remove variables that are pure locals (not state vars or
+        // variables that existed before the call).
+        // Note: We intentionally do NOT remove state var metadata keys
+        // (__mutsu_state_key::*) since they're needed for closures.
+
+        match result {
+            Ok(()) if fail_bypass => Ok(ret_val),
+            Ok(()) => {
+                // In the fast path, explicit returns are handled locally.
+                // Unlike call_compiled_function_named, we don't re-throw the
+                // return as an error since there's no outer frame to catch it.
+                if let Some(v) = explicit_return {
+                    Ok(v)
+                } else {
+                    Ok(ret_val)
+                }
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Check if a compiled function is eligible for the fast call path.
+    /// Returns true for simple functions that don't need the full call machinery.
+    /// Functions with state variables are excluded because PreIncrement/PostIncrement
+    /// use a separate state key namespace that conflicts with the compiled state save.
+    pub(super) fn is_fast_call_eligible(cf: &CompiledFunction, fn_name: &str) -> bool {
+        cf.params.is_empty()
+            && cf.param_defs.is_empty()
+            && cf.return_type.is_none()
+            && !fn_name.is_empty()
+            && cf.code.state_locals.is_empty()
     }
 
     pub(super) fn call_compiled_function_named(
