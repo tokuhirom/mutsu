@@ -353,20 +353,6 @@ impl VM {
             };
             self.interpreter.set_pending_call_arg_sources(None);
             if let Some(cf) = compiled {
-                // Fast path for simple zero-arg compiled functions.
-                // Skips samewith context, multi dispatch frame, package resolution,
-                // block stack push, routine stack push, readonly vars save, and more.
-                if args.is_empty()
-                    && Self::is_fast_call_eligible(cf, name)
-                    && !cf.is_raw
-                    && call_me_override.is_none()
-                    && !self
-                        .interpreter
-                        .routine_is_test_assertion_by_name(name, &[])
-                {
-                    let result = self.call_compiled_function_fast(cf, compiled_fns)?;
-                    return Ok(result);
-                }
                 self.interpreter
                     .set_pending_call_arg_sources(arg_sources.clone());
                 let pushed_dispatch = self.interpreter.push_multi_dispatch_frame(name, &args);
