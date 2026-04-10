@@ -194,7 +194,7 @@ impl VM {
             .map(|v| runtime::value_type_name(v).to_string())
             .collect();
         // Try all key patterns and remember which one matched for caching
-        let found_key: Option<String>;
+        let mut found_key: Option<String>;
         if name.contains("::") {
             let key_typed = format!("{name}/{arity}:{}", type_sig.join(","));
             if compiled_fns.get(&key_typed).is_some_and(&matches_resolved) {
@@ -230,7 +230,27 @@ impl VM {
                         let key_simple = format!("{}::{}", pkg, name);
                         if compiled_fns.get(&key_simple).is_some_and(&matches_resolved) {
                             found_key = Some(key_simple);
-                        } else if pkg != "GLOBAL" {
+                        } else {
+                            // Try with positional-only arity (excluding Pair named args)
+                            let pos_arity = args
+                                .iter()
+                                .filter(|a| !matches!(a, Value::Pair(..)))
+                                .count();
+                            if pos_arity != arity {
+                                let key_pos_fp = format!(
+                                    "{}::{}/{}#{:x}",
+                                    pkg, name, pos_arity, expected_fingerprint
+                                );
+                                if compiled_fns.get(&key_pos_fp).is_some_and(&matches_resolved) {
+                                    found_key = Some(key_pos_fp);
+                                } else {
+                                    found_key = None;
+                                }
+                            } else {
+                                found_key = None;
+                            }
+                        }
+                        if found_key.is_none() && pkg != "GLOBAL" {
                             let key_fp_global =
                                 format!("GLOBAL::{}/{}#{:x}", name, arity, expected_fingerprint);
                             if compiled_fns
@@ -243,7 +263,25 @@ impl VM {
                                 if compiled_fns.get(&key_global).is_some_and(&matches_resolved) {
                                     found_key = Some(key_global);
                                 } else {
-                                    found_key = None;
+                                    // Try with positional-only arity (excluding Pair named args)
+                                    let pos_arity = args
+                                        .iter()
+                                        .filter(|a| !matches!(a, Value::Pair(..)))
+                                        .count();
+                                    if pos_arity != arity {
+                                        let key_pos = format!(
+                                            "GLOBAL::{}/{}#{:x}",
+                                            name, pos_arity, expected_fingerprint
+                                        );
+                                        if compiled_fns.get(&key_pos).is_some_and(&matches_resolved)
+                                        {
+                                            found_key = Some(key_pos);
+                                        } else {
+                                            found_key = None;
+                                        }
+                                    } else {
+                                        found_key = None;
+                                    }
                                 }
                             }
                         } else {
