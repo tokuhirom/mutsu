@@ -10,6 +10,38 @@ impl VM {
         arg_sources_idx: Option<u32>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
+        // Early fast path: for cached zero-arg compiled functions, skip ALL the
+        // expensive arg processing, CALL-ME check, wrap chain check, autothread, etc.
+        // Only the callsite line pair (if present) needs to be popped from the stack.
+        if arity <= 1 {
+            let name_str = Self::const_str(code, name_idx);
+            let name_sym = Symbol::intern(name_str);
+            let cache_key = (name_sym, 0usize, Vec::<String>::new());
+            let use_cache = !self.has_multi_candidates_cached(name_str);
+            if use_cache
+                && self.fn_resolve_cache_gen == self.fn_resolve_gen
+                && self.interpreter.wrap_sub_id_for_name(name_str).is_none()
+                && !self
+                    .interpreter
+                    .routine_is_test_assertion_by_name(name_str, &[])
+                && let Some((cached_key, cached_fp, _)) = self.fn_resolve_cache.get(&cache_key)
+                && let Some(cf) = compiled_fns.get(cached_key.as_str())
+                && cf.fingerprint == *cached_fp
+                && Self::is_fast_call_eligible(cf, name_str)
+                && !cf.is_raw
+            {
+                // Pop the callsite pair arg(s) from the stack without processing
+                let arity = arity as usize;
+                if self.stack.len() >= arity {
+                    self.stack.truncate(self.stack.len() - arity);
+                }
+                self.ensure_env_synced(code);
+                let result = self.call_compiled_function_fast(cf, compiled_fns)?;
+                self.stack.push(result);
+                self.env_dirty = true;
+                return Ok(());
+            }
+        }
         self.ensure_env_synced(code);
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
@@ -347,9 +379,7 @@ impl VM {
                 }
                 self.interpreter
                     .maybe_fetch_rw_proxy(result?, cf_auto_fetch)
-            } else if self.interpreter.has_multi_candidates(name)
-                && !self.interpreter.has_proto(name)
-            {
+            } else if self.has_multi_candidates_cached(name) && !self.interpreter.has_proto(name) {
                 // User-defined multi candidates take priority over builtins.
                 // Call call_function_fallback directly to bypass the builtin match
                 // in call_function, which would shadow user-defined multi subs.
