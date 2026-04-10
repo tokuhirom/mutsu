@@ -45,6 +45,8 @@ struct SupplierTapSubscription {
     produce_state: Option<ProduceState>,
     /// Start transform state: callable and output supplier_id
     start_state: Option<StartState>,
+    /// Batch state: buffer values and emit as batched lists
+    batch_state: Option<BatchState>,
 }
 
 #[derive(Clone)]
@@ -59,6 +61,20 @@ struct StartState {
     callable: Value,
     /// The output supplier_id where wrapped Supply values are emitted
     output_supplier_id: u64,
+}
+
+#[derive(Clone)]
+struct BatchState {
+    /// Maximum number of elements per batch (from :elems)
+    elems: Option<usize>,
+    /// Time window in seconds (from :seconds)
+    seconds: Option<f64>,
+    /// Buffer of values accumulated so far
+    buffer: Vec<Value>,
+    /// The downstream supplier_id to emit batched lists into
+    downstream_supplier_id: u64,
+    /// Timestamp of last flush (for timer-based batching)
+    last_flush: std::time::Instant,
 }
 
 #[derive(Clone, Default)]
@@ -93,6 +109,7 @@ pub(in crate::runtime) fn register_supplier_tap(supplier_id: u64, tap: Value, de
                 head_count: 0,
                 produce_state: None,
                 start_state: None,
+                batch_state: None,
             });
     }
 }
@@ -120,6 +137,7 @@ pub(in crate::runtime) fn register_supplier_tap_with_head_limit(
                 head_count: 0,
                 produce_state: None,
                 start_state: None,
+                batch_state: None,
             });
     }
 }
@@ -147,6 +165,7 @@ pub(in crate::runtime) fn register_supplier_lines_tap(
                 head_count: 0,
                 produce_state: None,
                 start_state: None,
+                batch_state: None,
             });
     }
 }
@@ -180,6 +199,7 @@ pub(in crate::runtime) fn register_supplier_elems_tap(
                 head_count: 0,
                 produce_state: None,
                 start_state: None,
+                batch_state: None,
             });
     }
 }
@@ -219,6 +239,11 @@ pub(in crate::runtime) enum SupplierEmitAction {
         callable: Value,
         value: Value,
         output_supplier_id: u64,
+    },
+    /// Batch emit: a full batch is ready to be emitted to the downstream supplier
+    BatchEmit {
+        downstream_supplier_id: u64,
+        batch: Vec<Value>,
     },
 }
 
@@ -305,6 +330,33 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
                         Value::Int(elems.emitted_count),
                         tap.delay_seconds,
                     ));
+                }
+            } else if let Some(ref mut bs) = tap.batch_state {
+                // Check if we should flush the existing buffer based on time
+                if let Some(seconds) = bs.seconds
+                    && bs.last_flush.elapsed().as_secs_f64() >= seconds
+                    && !bs.buffer.is_empty()
+                {
+                    let batch = std::mem::take(&mut bs.buffer);
+                    let dsid = bs.downstream_supplier_id;
+                    bs.last_flush = std::time::Instant::now();
+                    actions.push(SupplierEmitAction::BatchEmit {
+                        downstream_supplier_id: dsid,
+                        batch,
+                    });
+                }
+                bs.buffer.push(emitted_value.clone());
+                // Check if we should flush based on elems count
+                if let Some(elems) = bs.elems
+                    && bs.buffer.len() >= elems
+                {
+                    let batch = std::mem::take(&mut bs.buffer);
+                    let dsid = bs.downstream_supplier_id;
+                    bs.last_flush = std::time::Instant::now();
+                    actions.push(SupplierEmitAction::BatchEmit {
+                        downstream_supplier_id: dsid,
+                        batch,
+                    });
                 }
             } else if let Some(ref ps) = tap.produce_state {
                 actions.push(SupplierEmitAction::ProduceCall {
@@ -403,6 +455,7 @@ pub(in crate::runtime) fn register_supplier_unique_tap(
                 head_count: 0,
                 produce_state: None,
                 start_state: None,
+                batch_state: None,
             });
     }
 }
@@ -433,6 +486,7 @@ pub(in crate::runtime) fn register_supplier_produce_tap(
                     accumulator: None,
                 }),
                 start_state: None,
+                batch_state: None,
             });
     }
 }
@@ -465,6 +519,7 @@ pub(in crate::runtime) fn register_supplier_start_tap(
                     callable,
                     output_supplier_id,
                 }),
+                batch_state: None,
             });
     }
 }
@@ -537,6 +592,7 @@ pub(in crate::runtime) fn register_supplier_classify_tap(
                 head_count: 0,
                 produce_state: None,
                 start_state: None,
+                batch_state: None,
             });
     }
 }
@@ -657,4 +713,59 @@ pub(in crate::runtime) fn register_supplier_quit_callback(supplier_id: u64, quit
             .quit_callbacks
             .push(quit_cb);
     }
+}
+
+/// Register a batch tap on a supplier. Values are buffered and emitted as
+/// batched lists to the downstream supplier when `:elems` count is reached.
+pub(in crate::runtime) fn register_supplier_batch_tap(
+    supplier_id: u64,
+    downstream_supplier_id: u64,
+    elems: Option<usize>,
+    seconds: Option<f64>,
+) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        map.entry(supplier_id)
+            .or_default()
+            .taps
+            .push(SupplierTapSubscription {
+                callback: Value::Nil,
+                line_mode: false,
+                line_chomp: true,
+                line_buffer: String::new(),
+                delay_seconds: 0.0,
+                unique_filter: None,
+                classify_state: None,
+                elems_trace: None,
+                head_limit: None,
+                head_count: 0,
+                produce_state: None,
+                start_state: None,
+                batch_state: Some(BatchState {
+                    elems,
+                    seconds,
+                    buffer: Vec::new(),
+                    downstream_supplier_id,
+                    last_flush: std::time::Instant::now(),
+                }),
+            });
+    }
+}
+
+/// Flush any remaining values in batch tap buffers when the supplier is done.
+/// Returns (downstream_supplier_id, batched_values) pairs.
+pub(in crate::runtime) fn flush_supplier_batch_taps(supplier_id: u64) -> Vec<(u64, Vec<Value>)> {
+    let mut result = Vec::new();
+    if let Ok(mut map) = supplier_subscriptions_map().lock()
+        && let Some(subs) = map.get_mut(&supplier_id)
+    {
+        for tap in subs.taps.iter_mut() {
+            if let Some(ref mut bs) = tap.batch_state
+                && !bs.buffer.is_empty()
+            {
+                let batch = std::mem::take(&mut bs.buffer);
+                result.push((bs.downstream_supplier_id, batch));
+            }
+        }
+    }
+    result
 }
