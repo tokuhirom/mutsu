@@ -83,6 +83,20 @@ impl Interpreter {
                 } => {
                     self.run_start_call_in_thread(callable, val, output_supplier_id);
                 }
+                SupplierEmitAction::BatchEmit {
+                    downstream_supplier_id,
+                    batch,
+                } => {
+                    let batch_value = Value::array(batch);
+                    supplier_emit(downstream_supplier_id, batch_value.clone());
+                    let ds_actions = supplier_emit_callbacks(downstream_supplier_id, &batch_value);
+                    for ds_action in ds_actions {
+                        if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = ds_action {
+                            Self::sleep_for_supply_delay(delay_seconds);
+                            let _ = self.call_sub_value(tap, vec![emitted], true);
+                        }
+                    }
+                }
             }
         }
         Ok(())

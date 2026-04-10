@@ -36,14 +36,14 @@ pub(in crate::runtime) use state_scheduler::{
     fake_scheduler_cue_counter, fake_scheduler_init, next_fake_scheduler_id,
 };
 pub(in crate::runtime) use state_supplier::{
-    SupplierEmitAction, flush_supplier_line_taps, get_classify_state,
-    get_classify_sub_supplier_ids, get_start_output_supplier_ids, register_supplier_classify_tap,
-    register_supplier_done_callback, register_supplier_elems_tap, register_supplier_lines_tap,
-    register_supplier_produce_tap, register_supplier_quit_callback, register_supplier_start_tap,
-    register_supplier_tap, register_supplier_tap_with_head_limit, register_supplier_unique_tap,
-    supplier_emit_callbacks, supplier_produce_update_acc, supplier_tap_count,
-    supplier_unique_get_seen, supplier_unique_mark_seen, take_supplier_done_callbacks,
-    take_supplier_quit_callbacks, update_classify_state,
+    SupplierEmitAction, flush_supplier_batch_taps, flush_supplier_line_taps, get_classify_state,
+    get_classify_sub_supplier_ids, get_start_output_supplier_ids, register_supplier_batch_tap,
+    register_supplier_classify_tap, register_supplier_done_callback, register_supplier_elems_tap,
+    register_supplier_lines_tap, register_supplier_produce_tap, register_supplier_quit_callback,
+    register_supplier_start_tap, register_supplier_tap, register_supplier_tap_with_head_limit,
+    register_supplier_unique_tap, supplier_emit_callbacks, supplier_produce_update_acc,
+    supplier_tap_count, supplier_unique_get_seen, supplier_unique_mark_seen,
+    take_supplier_done_callbacks, take_supplier_quit_callbacks, update_classify_state,
 };
 
 use super::*;

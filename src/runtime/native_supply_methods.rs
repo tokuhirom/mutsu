@@ -872,18 +872,43 @@ impl Interpreter {
                 Ok(self.make_supply_from_values(produced, attributes))
             }
             "batch" => {
-                let source_values = self.supply_get_values(attributes)?;
-                let mut batch_size: Option<usize> = None;
+                let mut batch_elems: Option<usize> = None;
+                let mut batch_seconds: Option<f64> = None;
                 for arg in &args {
                     if let Value::Pair(key, value) = arg {
-                        if key == "elems" {
-                            batch_size = Some(value.to_f64() as usize);
+                        match key.as_str() {
+                            "elems" => batch_elems = Some(value.to_f64() as usize),
+                            "seconds" => batch_seconds = Some(value.to_f64()),
+                            _ => {}
                         }
                     } else {
-                        batch_size = Some(arg.to_f64() as usize);
+                        batch_elems = Some(arg.to_f64() as usize);
                     }
                 }
-                let size = batch_size.unwrap_or(source_values.len().max(1));
+
+                // For supplier-backed (live) supplies, set up a batch tap chain
+                if let Some(Value::Int(source_supplier_id)) = attributes.get("supplier_id") {
+                    let source_sid = *source_supplier_id as u64;
+                    let downstream_sid = next_supplier_id();
+
+                    register_supplier_batch_tap(
+                        source_sid,
+                        downstream_sid,
+                        batch_elems,
+                        batch_seconds,
+                    );
+
+                    let mut new_attrs = HashMap::new();
+                    new_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    new_attrs.insert("supplier_id".to_string(), Value::Int(downstream_sid as i64));
+                    new_attrs.insert("live".to_string(), Value::Bool(false));
+                    return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
+                }
+
+                // Non-live supply: batch eagerly
+                let source_values = self.supply_get_values(attributes)?;
+                let size = batch_elems.unwrap_or(source_values.len().max(1));
                 let mut batched = Vec::new();
                 for chunk in source_values.chunks(size) {
                     batched.push(Value::array(chunk.to_vec()));
@@ -1225,6 +1250,23 @@ impl Interpreter {
                             } => {
                                 self.run_start_call_in_thread(callable, val, output_supplier_id);
                             }
+                            SupplierEmitAction::BatchEmit {
+                                downstream_supplier_id,
+                                batch,
+                            } => {
+                                let batch_value = Value::array(batch);
+                                supplier_emit(downstream_supplier_id, batch_value.clone());
+                                let ds_actions =
+                                    supplier_emit_callbacks(downstream_supplier_id, &batch_value);
+                                for ds_action in ds_actions {
+                                    if let SupplierEmitAction::Call(tap, emitted, delay_seconds) =
+                                        ds_action
+                                    {
+                                        Self::sleep_for_supply_delay(delay_seconds);
+                                        let _ = self.call_sub_value(tap, vec![emitted], true);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1233,6 +1275,23 @@ impl Interpreter {
             "done" => {
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
                     supplier_done(supplier_id);
+                    // Flush batch buffers before done
+                    for (dsid, batch) in flush_supplier_batch_taps(supplier_id) {
+                        let batch_value = Value::array(batch);
+                        supplier_emit(dsid, batch_value.clone());
+                        let ds_actions = supplier_emit_callbacks(dsid, &batch_value);
+                        for ds_action in ds_actions {
+                            if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = ds_action
+                            {
+                                Self::sleep_for_supply_delay(delay_seconds);
+                                let _ = self.call_sub_value(tap, vec![emitted], true);
+                            }
+                        }
+                        supplier_done(dsid);
+                        for done_cb in take_supplier_done_callbacks(dsid) {
+                            let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                        }
+                    }
                     for (tap, emitted) in flush_supplier_line_taps(supplier_id) {
                         let _ = self.call_sub_value(tap, vec![emitted], true);
                     }
@@ -1381,6 +1440,23 @@ impl Interpreter {
                             } => {
                                 self.run_start_call_in_thread(callable, val, output_supplier_id);
                             }
+                            SupplierEmitAction::BatchEmit {
+                                downstream_supplier_id,
+                                batch,
+                            } => {
+                                let batch_value = Value::array(batch);
+                                supplier_emit(downstream_supplier_id, batch_value.clone());
+                                let ds_actions =
+                                    supplier_emit_callbacks(downstream_supplier_id, &batch_value);
+                                for ds_action in ds_actions {
+                                    if let SupplierEmitAction::Call(tap, emitted, delay_seconds) =
+                                        ds_action
+                                    {
+                                        Self::sleep_for_supply_delay(delay_seconds);
+                                        self.call_sub_value(tap, vec![emitted], true)?;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1393,6 +1469,24 @@ impl Interpreter {
                 }
                 if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
                     let sid = *supplier_id as u64;
+                    // Flush batch buffers before done
+                    for (dsid, batch) in flush_supplier_batch_taps(sid) {
+                        let batch_value = Value::array(batch);
+                        supplier_emit(dsid, batch_value.clone());
+                        let ds_actions = supplier_emit_callbacks(dsid, &batch_value);
+                        for ds_action in ds_actions {
+                            if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = ds_action
+                            {
+                                Self::sleep_for_supply_delay(delay_seconds);
+                                self.call_sub_value(tap, vec![emitted], true)?;
+                            }
+                        }
+                        // Propagate done to downstream batch suppliers
+                        supplier_done(dsid);
+                        for done_cb in take_supplier_done_callbacks(dsid) {
+                            let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                        }
+                    }
                     // Propagate done to classify sub-suppliers
                     let classify_subs = get_classify_sub_supplier_ids(sid);
                     for sub_sid in classify_subs {
