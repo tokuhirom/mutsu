@@ -297,7 +297,7 @@ fn lift_phasers_from_expr(
     if matches!(
         expr,
         Expr::PhaserExpr {
-            kind: PhaserKind::Check | PhaserKind::Init,
+            kind: PhaserKind::Begin | PhaserKind::Check | PhaserKind::Init,
             ..
         }
     ) {
@@ -322,6 +322,10 @@ fn lift_phasers_from_expr(
                 op: AssignOp::Assign,
             };
             match kind {
+                PhaserKind::Begin => {
+                    begin.push(var_decl);
+                    begin.push(assign);
+                }
                 PhaserKind::Check => {
                     check.push(var_decl);
                     check.push(assign);
@@ -448,7 +452,7 @@ fn lift_phasers_from_expr(
             }
         }
         Expr::PhaserExpr { body, .. } => {
-            // BEGIN PhaserExpr — don't extract, just recurse
+            // Non-BEGIN/CHECK/INIT PhaserExpr (e.g. END) — don't extract, just recurse
             lift_phasers_from_closure_stmts(body, begin, check, init);
         }
         Expr::DoStmt(inner_stmt) => {
