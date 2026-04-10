@@ -284,13 +284,16 @@ impl VM {
         cf: &CompiledFunction,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
+        let saved_env = self.interpreter.clone_env();
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_stack_depth = self.stack.len();
         let saved_env_dirty = self.env_dirty;
         let saved_locals_dirty = self.locals_dirty;
         self.env_dirty = false;
         self.locals_dirty = false;
-        self.fast_call_depth += 1;
+
+        // Push caller env for callframe() introspection.
+        self.interpreter.push_caller_env();
 
         self.locals = vec![Value::Nil; cf.code.locals.len()];
         for (i, local_name) in cf.code.locals.iter().enumerate() {
@@ -367,17 +370,24 @@ impl VM {
         }
 
         // Restore state
-        self.fast_call_depth -= 1;
+        self.interpreter.pop_caller_env();
         self.locals = saved_locals;
         self.env_dirty = saved_env_dirty;
         self.locals_dirty = saved_locals_dirty;
 
-        // Clean up function-local variables from env to avoid leaking
-        // the function's internal state to the caller.
-        // Only remove variables that are pure locals (not state vars or
-        // variables that existed before the call).
-        // Note: We intentionally do NOT remove state var metadata keys
-        // (__mutsu_state_key::*) since they're needed for closures.
+        // Restore env: if env was mutated, merge non-local changes back
+        if saved_env.ptr_eq(self.interpreter.env()) {
+            // No env changes, nothing to merge
+        } else {
+            let local_names: std::collections::HashSet<&String> = cf.code.locals.iter().collect();
+            let mut restored_env = saved_env;
+            for (k, v) in self.interpreter.env().iter() {
+                if !local_names.contains(k) {
+                    restored_env.insert(k.clone(), v.clone());
+                }
+            }
+            *self.interpreter.env_mut() = restored_env;
+        }
 
         match result {
             Ok(()) if fail_bypass => Ok(ret_val),

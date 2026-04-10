@@ -1878,7 +1878,6 @@ impl VM {
         let scoped_key = self.scoped_state_key(base_key);
         let slot_idx = slot as usize;
         let name = &code.locals[slot_idx];
-        let already_initialized = self.interpreter.get_state_var(&scoped_key).is_some();
         let val = if let Some(stored) = self.interpreter.get_state_var(&scoped_key) {
             stored.clone()
         } else {
@@ -1896,12 +1895,6 @@ impl VM {
             coerced
         };
         self.locals[slot_idx] = val.clone();
-        // In fast-call context with already-initialized state vars, skip the
-        // env insert to avoid triggering expensive Arc::make_mut deep clone.
-        // The fast path manages state vars via locals + persistent storage.
-        if self.fast_call_depth > 0 && already_initialized {
-            return;
-        }
         let name = name.to_string();
         self.interpreter.env_mut().insert(name.clone(), val);
         // Store metadata mapping variable name to its state storage key.

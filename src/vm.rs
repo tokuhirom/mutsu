@@ -122,9 +122,6 @@ pub(crate) struct VM {
     block_declared_vars: Vec<std::collections::HashSet<String>>,
     /// Depth counter for active CONTROL handlers in try-catch.
     control_handler_depth: u32,
-    /// When > 0, we're inside a fast-call context. StateVarInit should skip
-    /// env inserts since the fast path manages state vars directly.
-    fast_call_depth: u32,
 }
 
 impl VM {
@@ -272,7 +269,6 @@ impl VM {
             fn_resolve_cache_gen: 0,
             multi_candidates_cache: HashMap::new(),
             multi_candidates_cache_gen: 0,
-            fast_call_depth: 0,
             block_declared_vars: Vec::new(),
             control_handler_depth: 0,
         }
