@@ -2667,13 +2667,19 @@ impl VM {
             && let Some(value_type) = self.interpreter.var_type_constraint(name)
         {
             let info = crate::runtime::ContainerTypeInfo {
+                declared_type: if name.starts_with('@')
+                    && crate::runtime::native_types::is_native_array_element_type(&value_type)
+                {
+                    Some(format!("array[{value_type}]"))
+                } else {
+                    None
+                },
                 value_type,
                 key_type: if name.starts_with('%') {
                     self.interpreter.var_hash_key_constraint(name)
                 } else {
                     None
                 },
-                declared_type: None,
             };
             self.interpreter
                 .register_container_type_metadata(&val, info);
@@ -2915,13 +2921,19 @@ impl VM {
             && let Some(value_type) = self.interpreter.var_type_constraint(name)
         {
             let info = crate::runtime::ContainerTypeInfo {
+                declared_type: if name.starts_with('@')
+                    && crate::runtime::native_types::is_native_array_element_type(&value_type)
+                {
+                    Some(format!("array[{value_type}]"))
+                } else {
+                    None
+                },
                 value_type,
                 key_type: if name.starts_with('%') {
                     self.interpreter.var_hash_key_constraint(name)
                 } else {
                     None
                 },
-                declared_type: None,
             };
             self.interpreter
                 .register_container_type_metadata(&val, info);

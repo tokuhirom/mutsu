@@ -53,6 +53,7 @@ roast/S02-literals/listquote.t
 roast/S02-literals/misc-interpolation.t
 roast/S02-literals/numeric.t
 roast/S02-literals/pair-boolean.t
+roast/S02-literals/pod.t
 roast/S02-literals/quoting-unicode.t
 roast/S02-literals/quoting.t
 roast/S02-literals/radix.t
@@ -469,6 +470,7 @@ roast/S09-multidim/indexing.t
 roast/S09-multidim/methods.t
 roast/S09-multidim/subs.t
 roast/S09-subscript/multidim-assignment.t
+roast/S09-typed-arrays/native-decl.t
 roast/S10-packages/export.t
 roast/S10-packages/joined-namespaces.t
 roast/S10-packages/precompilation.t

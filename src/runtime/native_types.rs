@@ -14,6 +14,11 @@ pub(crate) fn is_native_int_type(name: &str) -> bool {
     NATIVE_INT_TYPES.contains(&name)
 }
 
+/// Returns true if `name` is a native array element type.
+pub(crate) fn is_native_array_element_type(name: &str) -> bool {
+    is_native_int_type(name) || matches!(name, "num" | "num32" | "num64" | "str")
+}
+
 /// Returns (min, max) bounds for a native integer type as BigInt values.
 /// `byte` is an alias for `uint8`.
 /// `int` is an alias for `int64`, `uint` is an alias for `uint64`.
