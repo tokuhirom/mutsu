@@ -1892,7 +1892,7 @@ pub(super) fn lift_meta_ops_in_list(items: Vec<Expr>) -> Vec<Expr> {
     items
 }
 
-pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
+pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     let sigil = input.as_bytes().first().copied().unwrap_or(0);
     let is_sigiled = sigil == b'$' || sigil == b'@' || sigil == b'%' || sigil == b'&';
 

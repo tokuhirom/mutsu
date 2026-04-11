@@ -1969,7 +1969,7 @@ impl VM {
             }
         }
 
-        // Hash-in-Hash auto-vivification (original behavior)
+        // Hash-based nested assignment (Hash-in-Hash or Hash-containing-Array)
         // Drop the locals copy first so the Arc refcount is 1.
         // This avoids unnecessary cloning in Arc::make_mut which would
         // change the pointer and break .WHICH identity stability.
@@ -1978,11 +1978,25 @@ impl VM {
         }
         if let Some(Value::Hash(outer_hash)) = self.interpreter.env_mut().get_mut(&var_name) {
             let oh = Arc::make_mut(outer_hash);
-            let inner_hash = oh
+            let inner_val = oh
                 .entry(inner_key)
                 .or_insert_with(|| Value::hash(std::collections::HashMap::new()));
-            if let Value::Hash(ref mut h) = *inner_hash {
-                Arc::make_mut(h).insert(outer_key, val.clone());
+            match inner_val {
+                Value::Array(arr, _) => {
+                    // Hash-containing-Array: $hash<key>[idx] = val
+                    if let Ok(i) = outer_key.parse::<usize>() {
+                        let a = Arc::make_mut(arr);
+                        if i >= a.len() {
+                            a.resize(i + 1, Value::Nil);
+                        }
+                        a[i] = val.clone();
+                    }
+                }
+                Value::Hash(h) => {
+                    // Hash-in-Hash: $hash<key1><key2> = val
+                    Arc::make_mut(h).insert(outer_key, val.clone());
+                }
+                _ => {}
             }
         }
         if let Some(updated) = self.get_env_with_main_alias(&var_name) {

@@ -23,7 +23,8 @@ use super::helpers::{
 
 // Re-export submodule items used across submodules
 use args::{parse_stmt_call_args, parse_stmt_call_args_no_paren};
-use assign::{assign_stmt, parse_assign_expr_or_comma, parse_comma_or_expr, try_parse_assign_expr};
+pub(in crate::parser) use assign::assign_stmt;
+use assign::{parse_assign_expr_or_comma, parse_comma_or_expr, try_parse_assign_expr};
 use class::class_decl_body;
 use modifier::{is_stmt_modifier_keyword, parse_statement_modifier};
 use sub::{
