@@ -163,6 +163,38 @@ pub(crate) fn split_supply_chunks_into_lines(chunks: &[Value], chomp: bool) -> V
         .collect()
 }
 
+/// Split supply chunks into words, buffering across chunk boundaries.
+pub(crate) fn split_supply_chunks_into_words(chunks: &[Value]) -> Vec<Value> {
+    let mut words = Vec::new();
+    let mut buffer = String::new();
+    for chunk in chunks {
+        buffer.push_str(&chunk.to_string_value());
+        loop {
+            let trimmed = buffer.trim_start();
+            if trimmed.is_empty() {
+                buffer.clear();
+                break;
+            }
+            if let Some(ws_pos) = trimmed.find(char::is_whitespace) {
+                let word = trimmed[..ws_pos].to_string();
+                let consumed = buffer.len() - trimmed.len() + ws_pos;
+                buffer = buffer[consumed..].to_string();
+                words.push(Value::str(word));
+            } else {
+                let leading_ws = buffer.len() - trimmed.len();
+                buffer = buffer[leading_ws..].to_string();
+                break;
+            }
+        }
+    }
+    // Flush any remaining buffered word
+    let remaining = buffer.trim();
+    if !remaining.is_empty() {
+        words.push(Value::str(remaining.to_string()));
+    }
+    words
+}
+
 pub(super) fn take_complete_lines_from_buffer(
     buffer: &mut String,
     chomp: bool,

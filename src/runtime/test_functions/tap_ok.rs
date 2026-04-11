@@ -1,4 +1,5 @@
 use super::super::*;
+use crate::runtime::native_methods::split_supply_chunks_into_words;
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -272,6 +273,8 @@ impl Interpreter {
                 {
                     let is_lines = class_name == "Supply"
                         && matches!(attributes.get("is_lines"), Some(Value::Bool(true)));
+                    let is_words = class_name == "Supply"
+                        && matches!(attributes.get("is_words"), Some(Value::Bool(true)));
                     if is_lines {
                         let chomp = attributes
                             .get("line_chomp")
@@ -280,6 +283,8 @@ impl Interpreter {
                         crate::runtime::native_methods::split_supply_chunks_into_lines(
                             &emitted, chomp,
                         )
+                    } else if is_words {
+                        split_supply_chunks_into_words(&emitted)
                     } else {
                         emitted
                     }

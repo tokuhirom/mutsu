@@ -47,6 +47,10 @@ struct SupplierTapSubscription {
     start_state: Option<StartState>,
     /// Batch state: buffer values and emit as batched lists
     batch_state: Option<BatchState>,
+    /// Words mode: split incoming text into words across chunk boundaries
+    words_mode: bool,
+    /// Buffer for partial words across chunk boundaries
+    words_buffer: String,
 }
 
 #[derive(Clone)]
@@ -110,6 +114,8 @@ pub(in crate::runtime) fn register_supplier_tap(supplier_id: u64, tap: Value, de
                 produce_state: None,
                 start_state: None,
                 batch_state: None,
+                words_mode: false,
+                words_buffer: String::new(),
             });
     }
 }
@@ -138,6 +144,8 @@ pub(in crate::runtime) fn register_supplier_tap_with_head_limit(
                 produce_state: None,
                 start_state: None,
                 batch_state: None,
+                words_mode: false,
+                words_buffer: String::new(),
             });
     }
 }
@@ -166,6 +174,37 @@ pub(in crate::runtime) fn register_supplier_lines_tap(
                 produce_state: None,
                 start_state: None,
                 batch_state: None,
+                words_mode: false,
+                words_buffer: String::new(),
+            });
+    }
+}
+
+pub(in crate::runtime) fn register_supplier_words_tap(
+    supplier_id: u64,
+    tap: Value,
+    delay_seconds: f64,
+) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        map.entry(supplier_id)
+            .or_default()
+            .taps
+            .push(SupplierTapSubscription {
+                callback: tap,
+                line_mode: false,
+                line_chomp: true,
+                line_buffer: String::new(),
+                delay_seconds,
+                unique_filter: None,
+                classify_state: None,
+                elems_trace: None,
+                head_limit: None,
+                head_count: 0,
+                produce_state: None,
+                start_state: None,
+                batch_state: None,
+                words_mode: true,
+                words_buffer: String::new(),
             });
     }
 }
@@ -200,6 +239,8 @@ pub(in crate::runtime) fn register_supplier_elems_tap(
                 produce_state: None,
                 start_state: None,
                 batch_state: None,
+                words_mode: false,
+                words_buffer: String::new(),
             });
     }
 }
@@ -272,6 +313,31 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
                         Value::str(line),
                         tap.delay_seconds,
                     ));
+                }
+            } else if tap.words_mode {
+                tap.words_buffer.push_str(&emitted_value.to_string_value());
+                // Extract complete words (followed by whitespace) from the buffer
+                loop {
+                    let trimmed = tap.words_buffer.trim_start();
+                    if trimmed.is_empty() {
+                        tap.words_buffer.clear();
+                        break;
+                    }
+                    if let Some(ws_pos) = trimmed.find(char::is_whitespace) {
+                        let word = trimmed[..ws_pos].to_string();
+                        let consumed = tap.words_buffer.len() - trimmed.len() + ws_pos;
+                        tap.words_buffer = tap.words_buffer[consumed..].to_string();
+                        actions.push(SupplierEmitAction::Call(
+                            tap.callback.clone(),
+                            Value::str(word),
+                            tap.delay_seconds,
+                        ));
+                    } else {
+                        // No whitespace after word -- may be partial, keep in buffer
+                        let leading_ws = tap.words_buffer.len() - trimmed.len();
+                        tap.words_buffer = tap.words_buffer[leading_ws..].to_string();
+                        break;
+                    }
                 }
             } else if let Some(ref mut uf) = tap.unique_filter {
                 // Expire old seen values if :expires is set
@@ -456,6 +522,8 @@ pub(in crate::runtime) fn register_supplier_unique_tap(
                 produce_state: None,
                 start_state: None,
                 batch_state: None,
+                words_mode: false,
+                words_buffer: String::new(),
             });
     }
 }
@@ -487,6 +555,8 @@ pub(in crate::runtime) fn register_supplier_produce_tap(
                 }),
                 start_state: None,
                 batch_state: None,
+                words_mode: false,
+                words_buffer: String::new(),
             });
     }
 }
@@ -520,6 +590,8 @@ pub(in crate::runtime) fn register_supplier_start_tap(
                     output_supplier_id,
                 }),
                 batch_state: None,
+                words_mode: false,
+                words_buffer: String::new(),
             });
     }
 }
@@ -593,6 +665,8 @@ pub(in crate::runtime) fn register_supplier_classify_tap(
                 produce_state: None,
                 start_state: None,
                 batch_state: None,
+                words_mode: false,
+                words_buffer: String::new(),
             });
     }
 }
@@ -673,6 +747,24 @@ pub(in crate::runtime) fn flush_supplier_line_taps(supplier_id: u64) -> Vec<(Val
     callbacks
 }
 
+pub(in crate::runtime) fn flush_supplier_words_taps(supplier_id: u64) -> Vec<(Value, Value)> {
+    let mut callbacks = Vec::new();
+    if let Ok(mut map) = supplier_subscriptions_map().lock()
+        && let Some(subs) = map.get_mut(&supplier_id)
+    {
+        for tap in &mut subs.taps {
+            if tap.words_mode {
+                let remaining = tap.words_buffer.trim();
+                if !remaining.is_empty() {
+                    callbacks.push((tap.callback.clone(), Value::str(remaining.to_string())));
+                }
+                tap.words_buffer.clear();
+            }
+        }
+    }
+    callbacks
+}
+
 pub(in crate::runtime) fn take_supplier_done_callbacks(supplier_id: u64) -> Vec<Value> {
     if let Ok(mut map) = supplier_subscriptions_map().lock() {
         if let Some(subs) = map.get_mut(&supplier_id) {
@@ -747,6 +839,8 @@ pub(in crate::runtime) fn register_supplier_batch_tap(
                     downstream_supplier_id,
                     last_flush: std::time::Instant::now(),
                 }),
+                words_mode: false,
+                words_buffer: String::new(),
             });
     }
 }
