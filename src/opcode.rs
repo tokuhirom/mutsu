@@ -658,6 +658,11 @@ pub(crate) enum OpCode {
     ClearPackageStub {
         name_idx: u32,
     },
+    /// Set the interpreter's current package for the remainder of the current
+    /// compilation unit (used by `unit module` / `unit package`).
+    SetCurrentPackage {
+        name_idx: u32,
+    },
 
     // -- Phaser --
     PhaserEnd(u32),
