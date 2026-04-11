@@ -592,6 +592,38 @@ impl Interpreter {
                 continue;
             }
 
+            // #?v6.0.0+ skip 'reason' — version-based skip directive.
+            // mutsu is v6+, so these skips apply. Handle like #?rakudo skip.
+            if trimmed.starts_with("#?v6") && trimmed.contains("skip") {
+                // Extract the part after the version marker (e.g., "#?v6.0.0+ skip 'reason'")
+                let after_version = if let Some(pos) = trimmed.find("skip") {
+                    trimmed[pos..]
+                        .strip_prefix("skip")
+                        .unwrap_or("")
+                        .trim_start()
+                } else {
+                    ""
+                };
+                skip_reason = if let Some(start) = after_version.find('\'') {
+                    if let Some(end) = after_version[start + 1..].find('\'') {
+                        after_version[start + 1..start + 1 + end].to_string()
+                    } else {
+                        "skip".to_string()
+                    }
+                } else if let Some(start) = after_version.find('"') {
+                    if let Some(end) = after_version[start + 1..].find('"') {
+                        after_version[start + 1..start + 1 + end].to_string()
+                    } else {
+                        "skip".to_string()
+                    }
+                } else {
+                    "skip".to_string()
+                };
+                skip_block_pending = Some(skip_reason.clone());
+                output.push('\n');
+                continue;
+            }
+
             output.push_str(line);
             output.push('\n');
         }
