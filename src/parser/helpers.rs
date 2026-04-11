@@ -182,6 +182,9 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
     if keyword == "begin" {
         // =begin IDENTIFIER ... =end IDENTIFIER
         // Match the identifier and ignore nested matching begin/end blocks.
+        // TODO: validate =begin table content (empty tables, consecutive row
+        // separators, mixed column separators) once BEGIN block timing is fixed
+        // so that tests generating tables at runtime don't regress.
         let begin_line_end = rest.find('\n').unwrap_or(rest.len());
         let begin_line = &rest[..begin_line_end];
         let target = begin_line.split_whitespace().next().unwrap_or("");
@@ -210,8 +213,10 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
         Ok(("", ""))
     } else {
         // =for, =head1, =item, =comment, etc. — skip to end of paragraph (blank line)
+        let is_table = keyword == "table";
         let end = rest.find('\n').unwrap_or(rest.len());
         let mut rest = &rest[end..];
+        let mut content_lines: Vec<&str> = Vec::new();
         loop {
             if rest.is_empty() {
                 break;
@@ -226,16 +231,77 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
             if rest.is_empty() || rest.starts_with('\n') || rest.starts_with('=') {
                 break;
             }
-            // Skip continuation line
+            // Collect and skip continuation line
             if let Some(nl) = rest.find('\n') {
+                content_lines.push(&rest[..nl]);
                 rest = &rest[nl..];
             } else {
+                content_lines.push(rest);
                 rest = "";
                 break;
             }
         }
+        if is_table {
+            validate_pod_table(&content_lines)?;
+        }
         Ok((rest, ""))
     }
+}
+
+/// Validate Pod table content lines.
+/// Checks for: empty tables, consecutive row separators, mixed column separator types.
+fn validate_pod_table(lines: &[&str]) -> PResult<'static, ()> {
+    // Filter out blank lines
+    let data_lines: Vec<&str> = lines
+        .iter()
+        .copied()
+        .filter(|l| !l.trim().is_empty())
+        .collect();
+
+    if data_lines.is_empty() {
+        return Err(PError::expected("Pod table has no data"));
+    }
+
+    // Check for consecutive row separators and mixed column separator types
+    let mut prev_was_separator = false;
+    let mut has_visible_sep = false;
+    let mut has_ws_sep = false;
+
+    for line in &data_lines {
+        let trimmed = line.trim();
+        // A row separator is a line of only `=`, `-`, `_`, `+`, `|`, or whitespace
+        // that contains at least one separator character
+        let is_sep = !trimmed.is_empty()
+            && trimmed
+                .chars()
+                .all(|c| c == '=' || c == '-' || c == '_' || c == '+' || c == ' ');
+
+        if is_sep {
+            if prev_was_separator {
+                return Err(PError::expected(
+                    "Pod table has multiple interior row separator lines",
+                ));
+            }
+            prev_was_separator = true;
+        } else {
+            prev_was_separator = false;
+            // Check column separator type: visible (`|`) vs whitespace-only
+            if trimmed.contains('|') {
+                has_visible_sep = true;
+            } else if trimmed.contains("  ") {
+                // Two or more consecutive spaces indicate whitespace column separator
+                has_ws_sep = true;
+            }
+        }
+    }
+
+    if has_visible_sep && has_ws_sep {
+        return Err(PError::expected(
+            "Pod table has a mixture of visible and invisible column-separator types",
+        ));
+    }
+
+    Ok(("", ()))
 }
 
 fn parse_pod_directive_line(line: &str) -> Option<(&str, &str)> {
