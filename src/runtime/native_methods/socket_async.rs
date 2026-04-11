@@ -107,6 +107,9 @@ impl Interpreter {
         for (tap, emitted) in flush_supplier_line_taps(supplier_id) {
             let _ = self.call_sub_value(tap, vec![emitted], true);
         }
+        for (tap, emitted) in flush_supplier_words_taps(supplier_id) {
+            let _ = self.call_sub_value(tap, vec![emitted], true);
+        }
         for done_cb in take_supplier_done_callbacks(supplier_id) {
             let _ = self.call_sub_value(done_cb, Vec::new(), true);
         }
@@ -115,6 +118,9 @@ impl Interpreter {
     fn async_supplier_quit_value(&mut self, supplier_id: u64, reason: Value) {
         supplier_quit(supplier_id, reason.clone());
         for (tap, emitted) in flush_supplier_line_taps(supplier_id) {
+            let _ = self.call_sub_value(tap, vec![emitted], true);
+        }
+        for (tap, emitted) in flush_supplier_words_taps(supplier_id) {
             let _ = self.call_sub_value(tap, vec![emitted], true);
         }
         for quit_cb in take_supplier_quit_callbacks(supplier_id) {

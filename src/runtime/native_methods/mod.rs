@@ -17,7 +17,8 @@ mod system;
 
 // Re-export pub(crate) items accessed from outside `runtime` module
 pub(crate) use state::{
-    AsyncSocketConnState, SupplyEvent, split_supply_chunks_into_lines, take_supply_channel,
+    AsyncSocketConnState, SupplyEvent, split_supply_chunks_into_lines,
+    split_supply_chunks_into_words, take_supply_channel,
 };
 pub(crate) use state_lock::{acquire_lock, current_thread_id, lock_runtime_by_id, release_lock};
 
@@ -36,12 +37,13 @@ pub(in crate::runtime) use state_scheduler::{
     fake_scheduler_cue_counter, fake_scheduler_init, next_fake_scheduler_id,
 };
 pub(in crate::runtime) use state_supplier::{
-    SupplierEmitAction, flush_supplier_batch_taps, flush_supplier_line_taps, get_classify_state,
-    get_classify_sub_supplier_ids, get_start_output_supplier_ids, register_supplier_batch_tap,
-    register_supplier_classify_tap, register_supplier_done_callback, register_supplier_elems_tap,
-    register_supplier_lines_tap, register_supplier_produce_tap, register_supplier_quit_callback,
-    register_supplier_start_tap, register_supplier_tap, register_supplier_tap_with_head_limit,
-    register_supplier_unique_tap, supplier_emit_callbacks, supplier_produce_update_acc,
+    SupplierEmitAction, flush_supplier_batch_taps, flush_supplier_line_taps,
+    flush_supplier_words_taps, get_classify_state, get_classify_sub_supplier_ids,
+    get_start_output_supplier_ids, register_supplier_batch_tap, register_supplier_classify_tap,
+    register_supplier_done_callback, register_supplier_elems_tap, register_supplier_lines_tap,
+    register_supplier_produce_tap, register_supplier_quit_callback, register_supplier_start_tap,
+    register_supplier_tap, register_supplier_tap_with_head_limit, register_supplier_unique_tap,
+    register_supplier_words_tap, supplier_emit_callbacks, supplier_produce_update_acc,
     supplier_tap_count, supplier_unique_get_seen, supplier_unique_mark_seen,
     take_supplier_done_callbacks, take_supplier_quit_callbacks, update_classify_state,
 };

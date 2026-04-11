@@ -388,6 +388,7 @@ impl Interpreter {
                     let has_unique =
                         matches!(attributes.get("unique_filter"), Some(Value::Bool(true)));
                     let is_lines = matches!(attributes.get("is_lines"), Some(Value::Bool(true)));
+                    let is_words = matches!(attributes.get("is_words"), Some(Value::Bool(true)));
                     let is_elems =
                         matches!(attributes.get("elems_filter"), Some(Value::Bool(true)));
                     if !Self::supply_has_active_callback(&tap_cb) {
@@ -401,6 +402,12 @@ impl Interpreter {
                             *supplier_id as u64,
                             tap_cb.clone(),
                             chomp,
+                            delay_seconds,
+                        );
+                    } else if is_words {
+                        register_supplier_words_tap(
+                            *supplier_id as u64,
+                            tap_cb.clone(),
                             delay_seconds,
                         );
                     } else if has_unique {
@@ -951,41 +958,57 @@ impl Interpreter {
                 Ok(self.make_supply_from_values(combed, attributes))
             }
             "words" => {
-                let source_values = self.supply_get_values(attributes)?;
+                let source_values = match attributes.get("values") {
+                    Some(Value::Array(items, ..)) => items.to_vec(),
+                    _ => Vec::new(),
+                };
                 let mut words = Vec::new();
                 let mut buffer = String::new();
                 for val in source_values {
                     let s = val.to_string_value();
                     buffer.push_str(&s);
-                    // Extract complete words from the buffer, keeping any
-                    // trailing partial word (text not followed by whitespace)
-                    // in the buffer for the next iteration.
                     loop {
                         let trimmed = buffer.trim_start();
                         if trimmed.is_empty() {
                             buffer.clear();
                             break;
                         }
-                        // Find end of word
                         if let Some(ws_pos) = trimmed.find(char::is_whitespace) {
                             let word = &trimmed[..ws_pos];
                             words.push(Value::str(word.to_string()));
                             let consumed = buffer.len() - trimmed.len() + ws_pos;
                             buffer = buffer[consumed..].to_string();
                         } else {
-                            // No whitespace found after word - it may be partial
                             let leading_ws = buffer.len() - trimmed.len();
                             buffer = buffer[leading_ws..].to_string();
                             break;
                         }
                     }
                 }
-                // Flush any remaining buffered word
                 let remaining = buffer.trim();
                 if !remaining.is_empty() {
                     words.push(Value::str(remaining.to_string()));
                 }
-                Ok(self.make_supply_from_values(words, attributes))
+                let new_id = next_supply_id();
+                let mut new_attrs = HashMap::new();
+                new_attrs.insert("values".to_string(), Value::array(words));
+                new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                new_attrs.insert("supply_id".to_string(), Value::Int(new_id as i64));
+                new_attrs.insert("is_words".to_string(), Value::Bool(true));
+                new_attrs.insert("live".to_string(), Value::Bool(false));
+                if let Some(parent_id) = attributes.get("supply_id") {
+                    new_attrs.insert("parent_supply_id".to_string(), parent_id.clone());
+                }
+                if let Some(supplier_id) = attributes.get("supplier_id") {
+                    new_attrs.insert("supplier_id".to_string(), supplier_id.clone());
+                }
+                if let Some(done) = attributes.get("supplier_done") {
+                    new_attrs.insert("supplier_done".to_string(), done.clone());
+                }
+                if let Some(reason) = attributes.get("quit_reason") {
+                    new_attrs.insert("quit_reason".to_string(), reason.clone());
+                }
+                Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "snip" => {
                 let source_values = self.supply_get_values(attributes)?;
@@ -1295,6 +1318,9 @@ impl Interpreter {
                     for (tap, emitted) in flush_supplier_line_taps(supplier_id) {
                         let _ = self.call_sub_value(tap, vec![emitted], true);
                     }
+                    for (tap, emitted) in flush_supplier_words_taps(supplier_id) {
+                        let _ = self.call_sub_value(tap, vec![emitted], true);
+                    }
                     for done_cb in take_supplier_done_callbacks(supplier_id) {
                         let _ = self.call_sub_value(done_cb, Vec::new(), true);
                     }
@@ -1316,6 +1342,9 @@ impl Interpreter {
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
                     supplier_quit(supplier_id, reason.clone());
                     for (tap, emitted) in flush_supplier_line_taps(supplier_id) {
+                        self.call_sub_value(tap, vec![emitted], true)?;
+                    }
+                    for (tap, emitted) in flush_supplier_words_taps(supplier_id) {
                         self.call_sub_value(tap, vec![emitted], true)?;
                     }
                     let (_, _, quit_reason) = supplier_snapshot(supplier_id);
@@ -1498,6 +1527,9 @@ impl Interpreter {
                     for (tap, emitted) in flush_supplier_line_taps(sid) {
                         self.call_sub_value(tap, vec![emitted], true)?;
                     }
+                    for (tap, emitted) in flush_supplier_words_taps(sid) {
+                        self.call_sub_value(tap, vec![emitted], true)?;
+                    }
                     for done_cb in take_supplier_done_callbacks(sid) {
                         self.call_sub_value(done_cb, Vec::new(), true)?;
                     }
@@ -1524,6 +1556,9 @@ impl Interpreter {
                 if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
                     let sid = *supplier_id as u64;
                     for (tap, emitted) in flush_supplier_line_taps(sid) {
+                        self.call_sub_value(tap, vec![emitted], true)?;
+                    }
+                    for (tap, emitted) in flush_supplier_words_taps(sid) {
                         self.call_sub_value(tap, vec![emitted], true)?;
                     }
                     for quit_cb in take_supplier_quit_callbacks(sid) {
@@ -1578,6 +1613,7 @@ impl Interpreter {
                 if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
                     let has_unique = matches!(attrs.get("unique_filter"), Some(Value::Bool(true)));
                     let is_lines = matches!(attrs.get("is_lines"), Some(Value::Bool(true)));
+                    let is_words = matches!(attrs.get("is_words"), Some(Value::Bool(true)));
                     let is_elems = matches!(attrs.get("elems_filter"), Some(Value::Bool(true)));
                     if !Self::supply_has_active_callback(&tap_cb) {
                         // done/quit-only taps do not register a value callback
@@ -1587,6 +1623,12 @@ impl Interpreter {
                             *supplier_id as u64,
                             tap_cb.clone(),
                             chomp,
+                            delay_seconds,
+                        );
+                    } else if is_words {
+                        register_supplier_words_tap(
+                            *supplier_id as u64,
+                            tap_cb.clone(),
                             delay_seconds,
                         );
                     } else if has_unique {
