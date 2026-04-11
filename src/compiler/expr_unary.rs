@@ -47,12 +47,8 @@ impl Compiler {
                         let name_idx = self.code.add_constant(Value::str(name));
                         self.code.emit(OpCode::PreIncrementIndex(name_idx));
                     } else {
-                        let temp_name = format!("__mutsu_tmp_preinc_{}", self.code.constants.len());
-                        let temp_name_idx = self.code.add_constant(Value::str(temp_name.clone()));
-                        self.compile_expr(target);
-                        self.code.emit(OpCode::SetGlobal(temp_name_idx));
-                        self.compile_expr(index);
-                        self.code.emit(OpCode::PreIncrementIndex(temp_name_idx));
+                        // Nested index (e.g. ++$foo[0][0])
+                        self.compile_nested_prefix_incdec(expr, true);
                     }
                 } else {
                     self.compile_expr(&Expr::Call {
@@ -76,12 +72,8 @@ impl Compiler {
                         let name_idx = self.code.add_constant(Value::str(name));
                         self.code.emit(OpCode::PreDecrementIndex(name_idx));
                     } else {
-                        let temp_name = format!("__mutsu_tmp_predec_{}", self.code.constants.len());
-                        let temp_name_idx = self.code.add_constant(Value::str(temp_name.clone()));
-                        self.compile_expr(target);
-                        self.code.emit(OpCode::SetGlobal(temp_name_idx));
-                        self.compile_expr(index);
-                        self.code.emit(OpCode::PreDecrementIndex(temp_name_idx));
+                        // Nested index (e.g. --$foo[0][0])
+                        self.compile_nested_prefix_incdec(expr, false);
                     }
                 } else {
                     self.compile_expr(&Expr::Call {

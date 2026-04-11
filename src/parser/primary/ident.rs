@@ -697,6 +697,24 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
 }
 
 /// Check if the input starts with a term keyword (like `i`, `e`, `pi`, etc.)
+/// Check if input looks like it contains a binding operator `:=` or `::=`
+/// before a statement terminator. Used to decide whether `try STMT` should
+/// attempt parsing as an assignment/binding statement.
+fn looks_like_binding(input: &str) -> bool {
+    // Scan for `:=` before `;`, `}`, or end of input
+    let search_len = input.len().min(200);
+    let search = &input[..search_len];
+    for (i, c) in search.char_indices() {
+        if c == ';' || c == '}' {
+            return false;
+        }
+        if c == ':' && search[i + 1..].starts_with('=') {
+            return true;
+        }
+    }
+    false
+}
+
 /// that can appear as a listop argument without parentheses.
 fn starts_with_term_keyword(input: &str) -> bool {
     let first = input.chars().next().unwrap_or('\0');
@@ -1301,7 +1319,21 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 let (r, body) = parse_block_body(r)?;
                 return Ok((r, Expr::Try { body, catch: None }));
             }
-            // try EXPR — wrap the following expression in try.
+            // try STMT — wrap the following statement in try.
+            // Check if it's a binding statement ($a := expr) which the
+            // expression parser can't handle. Only try assign_stmt when
+            // the input looks like a binding (contains := before ;).
+            if looks_like_binding(r)
+                && let Ok((r, stmt)) = super::super::stmt::assign_stmt(r)
+            {
+                return Ok((
+                    r,
+                    Expr::Try {
+                        body: vec![stmt],
+                        catch: None,
+                    },
+                ));
+            }
             // Statement modifiers (for, if, etc.) bind outside try,
             // so we parse an expression, not a full statement.
             let (r, expr) = expression(r)?;
