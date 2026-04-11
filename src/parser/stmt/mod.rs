@@ -1530,6 +1530,14 @@ mod tests {
     }
 
     #[test]
+    fn parse_unit_role_decl() {
+        let (rest, stmts) = program("unit role RoleB;").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::RoleDecl { name, .. } if name == "RoleB"));
+    }
+
+    #[test]
     fn parse_class_decl() {
         let (rest, stmts) = program("class Foo { has $.x; method bar { 42 } }").unwrap();
         assert_eq!(rest, "");

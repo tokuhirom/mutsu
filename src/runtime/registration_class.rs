@@ -2138,6 +2138,22 @@ impl Interpreter {
             }
         }
 
+        let is_stub_decl = check_body.len() == 1
+            && matches!(
+                check_body[0],
+                Stmt::Expr(Expr::Call { name, .. })
+                    if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
+            );
+        if is_stub_decl
+            && type_params.is_empty()
+            && self
+                .roles
+                .get(name)
+                .is_some_and(|existing| !existing.is_stub_role)
+        {
+            return Ok(());
+        }
+
         for param_def in type_param_defs {
             if param_def.name == "__type_only__"
                 && let Some(type_name) = param_def.type_constraint.as_deref()
@@ -2549,15 +2565,24 @@ impl Interpreter {
         // Capture the parents that were added during this registration
         // (these are the parents specific to this candidate).
         let candidate_parents = self.role_parents.get(name).cloned().unwrap_or_default();
-        self.role_candidates
-            .entry(name.to_string())
-            .or_default()
-            .push(RoleCandidateDef {
-                type_params: type_params.to_vec(),
-                type_param_defs: type_param_defs.to_vec(),
-                role_def: role_def.clone(),
-                parents: candidate_parents,
-            });
+        let candidate = RoleCandidateDef {
+            type_params: type_params.to_vec(),
+            type_param_defs: type_param_defs.to_vec(),
+            role_def: role_def.clone(),
+            parents: candidate_parents,
+        };
+        if type_params.is_empty() {
+            // A later non-parametric `role Name { ... }` should shadow any
+            // previously loaded role group with the same name instead of
+            // continuing to participate in parametric candidate selection.
+            self.role_candidates
+                .insert(name.to_string(), vec![candidate]);
+        } else {
+            self.role_candidates
+                .entry(name.to_string())
+                .or_default()
+                .push(candidate);
+        }
         if self
             .roles
             .get(name)

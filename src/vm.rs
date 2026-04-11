@@ -2355,6 +2355,11 @@ impl VM {
                 self.interpreter.package_stubs.remove(&name);
                 *ip += 1;
             }
+            OpCode::SetCurrentPackage { name_idx } => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                self.interpreter.set_current_package(name);
+                *ip += 1;
+            }
 
             // -- Phaser END --
             OpCode::PhaserEnd(idx) => {

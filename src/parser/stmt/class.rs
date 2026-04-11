@@ -1491,7 +1491,7 @@ fn extract_exported_subs(stmts: &[Stmt]) -> Vec<super::simple::InlineModuleExpor
     names
 }
 
-/// Parse `unit module` or `unit class` statement.
+/// Parse `unit module`, `unit class`, or `unit role` statement.
 pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("unit", input).ok_or_else(|| PError::expected("unit statement"))?;
     let (rest, _) = ws1(rest)?;
@@ -1562,6 +1562,87 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 does_parents,
                 repr: None,
                 body: Vec::new(),
+                language_version: super::simple::current_language_version(),
+            },
+        ));
+    }
+    // unit role Name;
+    if let Some(r) = keyword("role", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, name) = qualified_ident(r)?;
+        let (mut r, (type_params, type_param_defs)) = parse_optional_role_type_params(r)?;
+        let mut parent_roles = Vec::new();
+        let mut role_is_rw = false;
+        let mut is_hidden_role = false;
+        loop {
+            if let Some(r2) = keyword("does", r) {
+                let (r2, _) = ws1(r2)?;
+                let (r2, role_name) = qualified_ident(r2)?;
+                parent_roles.push(role_name);
+                let (r2, _) = ws(r2)?;
+                r = r2;
+                continue;
+            }
+            if let Some(r2) = keyword("is", r) {
+                let (r2, _) = ws1(r2)?;
+                let (r2, trait_name) = qualified_ident(r2)?;
+                let (r2, _) = ws(r2)?;
+                if trait_name == "hidden" {
+                    is_hidden_role = true;
+                } else if trait_name == "rw" {
+                    role_is_rw = true;
+                } else if !matches!(
+                    trait_name.as_str(),
+                    "ok" | "required"
+                        | "readonly"
+                        | "repr"
+                        | "default"
+                        | "raw"
+                        | "built"
+                        | "copy"
+                        | "DEPRECATED"
+                        | "nodal"
+                        | "pure"
+                ) {
+                    parent_roles.push(trait_name);
+                }
+                r = r2;
+                continue;
+            }
+            if let Some(r2) = keyword("hides", r) {
+                let (r2, _) = ws1(r2)?;
+                let (r2, hidden_name) = qualified_ident(r2)?;
+                let (r2, _) = ws(r2)?;
+                parent_roles.push(hidden_name.clone());
+                parent_roles.push(format!("__mutsu_role_hides__{}", hidden_name));
+                r = r2;
+                continue;
+            }
+            break;
+        }
+        let (r, _) = opt_char(r, ';');
+        let mut body = Vec::new();
+        if is_hidden_role {
+            body.push(Stmt::DoesDecl {
+                name: Symbol::intern("__mutsu_role_hidden__"),
+            });
+        }
+        for role_name in parent_roles {
+            body.push(Stmt::DoesDecl {
+                name: Symbol::intern(&role_name),
+            });
+        }
+        super::simple::register_user_type(&name);
+        return Ok((
+            r,
+            Stmt::RoleDecl {
+                name: Symbol::intern(&name),
+                type_params,
+                type_param_defs,
+                is_export: false,
+                export_tags: vec![],
+                body,
+                is_rw: role_is_rw,
                 language_version: super::simple::current_language_version(),
             },
         ));
