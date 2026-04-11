@@ -248,6 +248,45 @@ impl VM {
         }
     }
 
+    /// Fix up circular references in array assignment.
+    /// When `@a = 42, @a`, the RHS contains a reference to the old array.
+    /// Replace that reference with the new array to create a circular structure.
+    pub(super) fn fixup_circular_array_refs(new_val: &mut Value, old_ptr: &Option<usize>) {
+        let Some(old_ptr) = old_ptr else { return };
+        if let Value::Array(new_arc, kind) = new_val {
+            let has_old_ref = new_arc.iter().any(|v| match v {
+                Value::Array(inner_arc, _) => Arc::as_ptr(inner_arc) as usize == *old_ptr,
+                _ => false,
+            });
+            if !has_old_ref {
+                return;
+            }
+            // Build a new items list, replacing old-array references with Nil placeholders
+            let mut new_items: Vec<Value> = Vec::with_capacity(new_arc.len());
+            let mut circular_indices = Vec::new();
+            for (i, v) in new_arc.iter().enumerate() {
+                if let Value::Array(inner_arc, _) = v
+                    && Arc::as_ptr(inner_arc) as usize == *old_ptr
+                {
+                    circular_indices.push(i);
+                    new_items.push(Value::Nil); // placeholder
+                } else {
+                    new_items.push(v.clone());
+                }
+            }
+            let result_arc = Arc::new(new_items);
+            let items_ptr = Arc::as_ptr(&result_arc) as *mut Vec<Value>;
+            for idx in &circular_indices {
+                // SAFETY: We just created result_arc and hold the only reference,
+                // so no other thread can access it.
+                unsafe {
+                    (&mut *items_ptr)[*idx] = Value::Array(result_arc.clone(), *kind);
+                }
+            }
+            *new_arc = result_arc;
+        }
+    }
+
     fn coerce_hash_var_value(&mut self, name: &str, value: Value) -> Result<Value, RuntimeError> {
         if let Some(constraint) = self.interpreter.var_type_constraint_fast(name).cloned()
             && let Some(trait_name) = Self::quant_hash_trait_from_constraint(&constraint)
@@ -2229,6 +2268,16 @@ impl VM {
         } else {
             None
         };
+        // Capture the old array Arc before assignment for circular reference fixup.
+        let old_array_arc = if name.starts_with('@') {
+            if let Value::Array(arc, _) = &self.locals[idx] {
+                Some(Arc::as_ptr(arc) as usize)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let mut val = if name.starts_with('%') {
             if has_explicit_initializer
                 && !is_constant
@@ -2496,6 +2545,13 @@ impl VM {
         // a true circular reference (matching Raku container semantics).
         if name.starts_with('%') && !is_bind && !is_constant {
             Self::fixup_circular_hash_refs(&mut self.locals[idx], &old_hash_arc);
+        }
+        // Circular array reference fixup: when assigning to an array variable,
+        // if any elements in the new array reference the old array (captured on the
+        // RHS before assignment), replace them with the new array's Arc to create
+        // a true circular reference (matching Raku container semantics).
+        if name.starts_with('@') && !is_bind && !is_constant {
+            Self::fixup_circular_array_refs(&mut self.locals[idx], &old_array_arc);
         }
         // Use the potentially fixed-up value for env/shared_vars.
         let val = self.locals[idx].clone();
