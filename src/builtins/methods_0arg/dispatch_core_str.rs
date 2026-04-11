@@ -105,6 +105,7 @@ pub(super) fn dispatch(
                             cache: std::sync::Mutex::new(cache),
                             compiled_code: list.compiled_code.clone(),
                             compiled_fns: list.compiled_fns.clone(),
+                            elems_count: list.elems_count.clone(),
                         },
                     )))));
                 }
@@ -144,6 +145,7 @@ pub(super) fn dispatch(
                     cache: std::sync::Mutex::new(Some(items)),
                     compiled_code: None,
                     compiled_fns: None,
+                    elems_count: None,
                 },
             )))))
         }

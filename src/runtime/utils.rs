@@ -1956,7 +1956,9 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
             }
         }
         Value::LazyList(ll) => {
-            if let Some(cached) = ll.cache.lock().unwrap().as_ref() {
+            if let Some(count) = &ll.elems_count {
+                count.clone()
+            } else if let Some(cached) = ll.cache.lock().unwrap().as_ref() {
                 Value::Int(cached.len() as i64)
             } else {
                 Value::Int(0)

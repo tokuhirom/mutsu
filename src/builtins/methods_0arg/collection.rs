@@ -949,10 +949,18 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     .unwrap_or_else(|| runtime::value_to_list(target))
             };
             if items.len() > 20 {
-                return Some(Err(RuntimeError::new(format!(
-                    "Cowardly refusing to permutate more than 20 elements, tried {}",
-                    items.len()
-                ))));
+                // For large lists, return a lazy list that knows its count (n!)
+                // without actually generating all permutations.
+                let factorial = crate::builtins::functions::factorial_bigint(items.len() as u64);
+                let ll = crate::value::LazyList {
+                    body: Vec::new(),
+                    env: crate::env::Env::new(),
+                    cache: std::sync::Mutex::new(None),
+                    compiled_code: None,
+                    compiled_fns: None,
+                    elems_count: Some(Value::BigInt(factorial)),
+                };
+                return Some(Ok(Value::LazyList(std::sync::Arc::new(ll))));
             }
             Some(Ok(Value::Seq(all_permutations(&items).into())))
         }

@@ -608,8 +608,14 @@ impl VM {
             self.stack.push(result);
             return Ok(());
         }
-        // Force LazyList before numeric coercion so we can count elements
+        // Force LazyList before numeric coercion so we can count elements.
+        // If the lazy list has a known element count (e.g. n! for permutations),
+        // use that directly without materializing.
         let val = if let Value::LazyList(ll) = &val {
+            if let Some(count) = &ll.elems_count {
+                self.stack.push(count.clone());
+                return Ok(());
+            }
             let items = self.force_lazy_list_vm(ll)?;
             Value::Seq(std::sync::Arc::new(items))
         } else {
