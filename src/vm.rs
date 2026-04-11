@@ -1871,8 +1871,8 @@ impl VM {
             }
 
             // -- Indexing --
-            OpCode::Index => {
-                self.exec_index_op()?;
+            OpCode::Index { is_positional } => {
+                self.exec_index_op_with_positional(*is_positional)?;
                 *ip += 1;
             }
             OpCode::DeleteIndexNamed(name_idx) => {

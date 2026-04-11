@@ -13,7 +13,7 @@ impl Compiler {
             self.code.emit(OpCode::Pop);
             let name_idx = self.code.add_constant(Value::str(var_name));
             self.code.emit(OpCode::PostIncrement(name_idx));
-        } else if let Expr::Index { target, index } = expr {
+        } else if let Expr::Index { target, index, .. } = expr {
             if let Some(name) = Self::postfix_index_name(target) {
                 self.compile_expr(index);
                 let name_idx = self.code.add_constant(Value::str(name));
@@ -88,7 +88,7 @@ impl Compiler {
             self.code.emit(OpCode::Pop);
             let name_idx = self.code.add_constant(Value::str(var_name));
             self.code.emit(OpCode::PostDecrement(name_idx));
-        } else if let Expr::Index { target, index } = expr {
+        } else if let Expr::Index { target, index, .. } = expr {
             if let Some(name) = Self::postfix_index_name(target) {
                 self.compile_expr(index);
                 let name_idx = self.code.add_constant(Value::str(name));

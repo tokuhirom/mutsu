@@ -7,6 +7,7 @@ impl Compiler {
         if let Expr::Index {
             target: index_target,
             index,
+            ..
         } = target
             && let Some(source_name) = Self::index_assign_target_name(index_target)
         {
@@ -98,6 +99,7 @@ impl Compiler {
         if let Expr::Index {
             target: idx_target,
             index: idx_key,
+            ..
         } = target
         {
             let var_name = Self::postfix_index_name(idx_target).unwrap_or_default();
@@ -176,6 +178,7 @@ impl Compiler {
             && let Expr::Index {
                 target: delete_target,
                 index: delete_index,
+                ..
             } = target
         {
             if let Some(var_name) = Self::postfix_index_name(delete_target) {

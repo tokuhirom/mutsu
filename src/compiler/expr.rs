@@ -206,14 +206,21 @@ impl Compiler {
                 self.compile_expr_hyper_method_dynamic(target, name_expr, args, modifier);
             }
             // Indexing
-            Expr::Index { target, index } => {
-                self.compile_expr_index(target, index);
+            Expr::Index {
+                target,
+                index,
+                is_positional,
+                ..
+            } => {
+                self.compile_expr_index(target, index, *is_positional);
             }
             // Multi-dimensional indexing: @a[$x;$y;$z]
             Expr::MultiDimIndex { target, dimensions } => {
                 self.compile_expr(target);
                 self.compile_expr(&Expr::ArrayLiteral(dimensions.clone()));
-                self.code.emit(OpCode::Index);
+                self.code.emit(OpCode::Index {
+                    is_positional: false,
+                });
             }
             // Hash hyperslice: %hash{**}:adverb
             Expr::HyperSlice { target, adverb } => {

@@ -2899,7 +2899,7 @@ impl Interpreter {
                 Self::validate_attr_in_expr(class_own_attrs, then_expr)?;
                 Self::validate_attr_in_expr(class_own_attrs, else_expr)?;
             }
-            Expr::Index { target, index } => {
+            Expr::Index { target, index, .. } => {
                 Self::validate_attr_in_expr(class_own_attrs, target)?;
                 Self::validate_attr_in_expr(class_own_attrs, index)?;
             }

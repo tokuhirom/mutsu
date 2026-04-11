@@ -128,6 +128,7 @@ impl Compiler {
         if let Expr::Index {
             target: inner_target,
             index: inner_index,
+            ..
         } = target
             && let Some(name) = Self::index_assign_target_name(inner_target)
         {

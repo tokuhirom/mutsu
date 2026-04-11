@@ -173,7 +173,9 @@ impl Compiler {
             Expr::ZenSlice(inner) => {
                 self.compile_expr(inner);
             }
-            Expr::Index { target: t, index } => {
+            Expr::Index {
+                target: t, index, ..
+            } => {
                 self.compile_expr(t);
                 self.compile_expr(index);
             }
@@ -190,6 +192,7 @@ impl Compiler {
             && let Expr::Index {
                 target: delete_target,
                 index: delete_index,
+                ..
             } = target
         {
             if let Some(var_name) = Self::postfix_index_name(delete_target) {
@@ -267,8 +270,8 @@ impl Compiler {
         }
     }
 
-    /// Compile Index expression (target[index]).
-    pub(super) fn compile_expr_index(&mut self, target: &Expr, index: &Expr) {
+    /// Compile Index expression (target[index] or target{index}).
+    pub(super) fn compile_expr_index(&mut self, target: &Expr, index: &Expr, is_positional: bool) {
         // Special case: %*ENV<key> compiles to GetEnvIndex
         if let Expr::HashVar(name) = target {
             if name == "*ENV" {
@@ -278,17 +281,17 @@ impl Compiler {
                 } else {
                     self.compile_expr(target);
                     self.compile_expr(index);
-                    self.code.emit(OpCode::Index);
+                    self.code.emit(OpCode::Index { is_positional });
                 }
             } else {
                 self.compile_expr(target);
                 self.compile_expr(index);
-                self.code.emit(OpCode::Index);
+                self.code.emit(OpCode::Index { is_positional });
             }
         } else {
             self.compile_expr(target);
             self.compile_expr(index);
-            self.code.emit(OpCode::Index);
+            self.code.emit(OpCode::Index { is_positional });
         }
     }
 

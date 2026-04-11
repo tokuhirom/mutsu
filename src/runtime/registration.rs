@@ -428,7 +428,7 @@ impl Interpreter {
                 self.validate_private_access_in_expr(caller_class, then_expr)?;
                 self.validate_private_access_in_expr(caller_class, else_expr)?;
             }
-            Expr::Index { target, index } => {
+            Expr::Index { target, index, .. } => {
                 self.validate_private_access_in_expr(caller_class, target)?;
                 self.validate_private_access_in_expr(caller_class, index)?;
             }
@@ -625,7 +625,7 @@ impl Interpreter {
                 self.check_private_calls_exist_expr(class_name, class_def, then_expr)?;
                 self.check_private_calls_exist_expr(class_name, class_def, else_expr)?;
             }
-            Expr::Index { target, index } => {
+            Expr::Index { target, index, .. } => {
                 self.check_private_calls_exist_expr(class_name, class_def, target)?;
                 self.check_private_calls_exist_expr(class_name, class_def, index)?;
             }

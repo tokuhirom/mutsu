@@ -358,11 +358,13 @@ fn parse_destructuring_with_rhs(
                     op: TokenKind::DotDot,
                     right: Box::new(Expr::Whatever),
                 }),
+                is_positional: true,
             }
         } else {
             Expr::Index {
                 target: Box::new(Expr::ArrayVar(array_bare.clone())),
                 index: Box::new(Expr::Literal(Value::Int(i as i64))),
+                is_positional: true,
             }
         };
         let effective_tc = dvar
@@ -441,6 +443,7 @@ fn parse_named_destructuring(
             expr: Expr::Index {
                 target: Box::new(Expr::HashVar(hash_bare.clone())),
                 index: Box::new(Expr::Literal(Value::str(bare_name.to_string()))),
+                is_positional: false,
             },
             type_constraint: type_constraint.clone(),
             is_state,

@@ -36,7 +36,15 @@ impl VM {
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
+    /// Backward-compatible wrapper: defaults to associative indexing.
     pub(super) fn exec_index_op(&mut self) -> Result<(), RuntimeError> {
+        self.exec_index_op_with_positional(false)
+    }
+
+    pub(super) fn exec_index_op_with_positional(
+        &mut self,
+        is_positional: bool,
+    ) -> Result<(), RuntimeError> {
         let index = self.stack.pop().unwrap();
         let mut target = self.stack.pop().unwrap();
         if let Value::Junction { kind, values } = &target {
@@ -44,7 +52,7 @@ impl VM {
             for value in values.iter() {
                 self.stack.push(value.clone());
                 self.stack.push(index.clone());
-                self.exec_index_op()?;
+                self.exec_index_op_with_positional(is_positional)?;
                 results.push(self.stack.pop().unwrap_or(Value::Nil));
             }
             self.stack.push(Value::junction(kind.clone(), results));
@@ -55,7 +63,7 @@ impl VM {
             for value in values.iter() {
                 self.stack.push(target.clone());
                 self.stack.push(value.clone());
-                self.exec_index_op()?;
+                self.exec_index_op_with_positional(is_positional)?;
                 results.push(self.stack.pop().unwrap_or(Value::Nil));
             }
             self.stack.push(Value::junction(kind.clone(), results));
@@ -68,7 +76,7 @@ impl VM {
             // This supports chained autovivification (e.g. %h<a><b><c>).
             self.stack.push(resolved);
             self.stack.push(index);
-            return self.exec_index_op();
+            return self.exec_index_op_with_positional(is_positional);
         }
         // If target is a Failure, propagate it (// will catch it as undefined)
         if matches!(&target, Value::Instance { class_name, .. } if class_name == "Failure") {
@@ -339,6 +347,22 @@ impl VM {
                     Some(i) if i >= 0 => items.get(i as usize).cloned().unwrap_or(Value::Nil),
                     Some(i) if i < 0 => Self::make_out_of_range_failure(i),
                     _ => Value::Nil,
+                }
+            }
+            // Positional indexing on Hash: Hash is not Positional, so treat as
+            // single-item list. $hash[0] returns the hash itself, $hash[n>0] returns Nil.
+            (hash @ Value::Hash(_), Value::Int(i)) if is_positional => {
+                if i == 0 {
+                    hash
+                } else {
+                    Value::Nil
+                }
+            }
+            (hash @ Value::Hash(_), Value::Num(n)) if is_positional => {
+                if n == 0.0 {
+                    hash
+                } else {
+                    Value::Nil
                 }
             }
             (Value::Hash(items), Value::Whatever) => {
@@ -1103,8 +1127,10 @@ impl VM {
                     Value::Nil
                 }
             }
-            // Array + Str: coerce numeric string to Int for positional indexing
-            (Value::Array(items, is_arr), Value::Str(ref s)) => {
+            // Array + Str: when positional, coerce numeric string to Int for
+            // positional indexing; when associative, always fail (Array does not
+            // support associative indexing).
+            (Value::Array(items, is_arr), Value::Str(ref s)) if is_positional => {
                 if let Ok(i) = s.trim().parse::<i64>() {
                     if i < 0 {
                         Self::make_out_of_range_failure(i)
@@ -1116,6 +1142,11 @@ impl VM {
                 } else {
                     Self::make_assoc_indexing_failure("Array")
                 }
+            }
+            (Value::Array(..), Value::Str(_)) => {
+                return Err(RuntimeError::new(
+                    "Type Array does not support associative indexing.".to_string(),
+                ));
             }
             // Associative indexing on non-hash types returns a Failure
             (ref target, Value::Str(_))

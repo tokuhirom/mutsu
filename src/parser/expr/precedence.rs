@@ -446,7 +446,7 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 expr: Box::new(rhs),
             },
         )),
-        Expr::Index { target, index } => {
+        Expr::Index { target, index, .. } => {
             if let Expr::Call { name, args } = target.as_ref()
                 && name == "__mutsu_subscript_adverb"
                 && args.len() >= 3
@@ -561,7 +561,7 @@ fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             name: format!("%{}", name),
             expr: Box::new(value),
         },
-        Expr::Index { target, index } => Expr::IndexAssign {
+        Expr::Index { target, index, .. } => Expr::IndexAssign {
             target,
             index,
             value: Box::new(value),
@@ -651,10 +651,16 @@ fn build_compound_assign_target_expr(target: Expr, op_name: &str, value: Expr) -
             name: format!("%{}", name.clone()),
             expr: Box::new(compound_assigned_value_expr(Expr::HashVar(name), op, value)),
         },
-        Expr::Index { target, index } => {
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+            ..
+        } => {
             let lhs_expr = Expr::Index {
                 target: target.clone(),
                 index: index.clone(),
+                is_positional,
             };
             Expr::IndexAssign {
                 target,
@@ -704,6 +710,7 @@ fn build_compound_assign_target_expr(target: Expr, op_name: &str, value: Expr) -
                 Expr::Index {
                     target,
                     index: Box::new(index),
+                    is_positional: true,
                 },
                 op_name,
                 value,
@@ -739,7 +746,7 @@ fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Expr> {
             name: format!("%{}", name),
             expr: Box::new(rhs),
         }),
-        Expr::Index { target, index } => Some(Expr::IndexAssign {
+        Expr::Index { target, index, .. } => Some(Expr::IndexAssign {
             target,
             index,
             value: Box::new(rhs),
@@ -1651,7 +1658,7 @@ fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
             name: format!("&{}", name),
             expr: Box::new(source),
         },
-        Expr::Index { target, index } => Expr::IndexAssign {
+        Expr::Index { target, index, .. } => Expr::IndexAssign {
             target,
             index,
             value: Box::new(source),
@@ -1707,10 +1714,16 @@ fn build_append_feed_expr(source: Expr, sink: Expr) -> Expr {
                 args: vec![Expr::HashVar(name), source],
             }),
         },
-        Expr::Index { target, index } => {
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+            ..
+        } => {
             let current = Expr::Index {
                 target: target.clone(),
                 index: index.clone(),
+                is_positional,
             };
             Expr::IndexAssign {
                 target,
