@@ -2,7 +2,7 @@ use super::super::expr::expression;
 use super::super::helpers::{ws, ws1};
 use super::super::parse_result::{PError, PResult, parse_char};
 
-use crate::ast::{Expr, ParamDef, Stmt};
+use crate::ast::{Expr, ParamDef, Stmt, collect_placeholders_shallow};
 use crate::symbol::Symbol;
 use crate::value::Value;
 use std::collections::HashMap;
@@ -1627,6 +1627,18 @@ fn method_decl_body_with_my(
     let (rest, traits) = parse_sub_traits(rest)?;
     let return_type = traits.return_type.or(param_return_type);
     let (rest, body) = block(rest)?;
+    // When no explicit signature is given, collect placeholder variables
+    // (@_, $^a, $^b, etc.) from the body as implicit parameters.
+    let (params, param_defs) = if params.is_empty() && param_defs.is_empty() {
+        let placeholders = collect_placeholders_shallow(&body);
+        if placeholders.is_empty() {
+            (params, param_defs)
+        } else {
+            (placeholders, Vec::new())
+        }
+    } else {
+        (params, param_defs)
+    };
     Ok((
         rest,
         Stmt::MethodDecl {

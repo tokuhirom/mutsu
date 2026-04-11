@@ -781,6 +781,7 @@ impl Interpreter {
             let mut attrs = HashMap::new();
             attrs.insert("line".to_string(), Value::Int(line));
             attrs.insert("file".to_string(), Value::str(file));
+            Self::insert_callframe_code_attrs(&mut attrs, &code);
             attrs.insert("code".to_string(), code);
             attrs.insert("my".to_string(), my_hash);
             attrs.insert("inline".to_string(), Value::Bool(false));
@@ -800,12 +801,34 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert("line".to_string(), Value::Int(entry.line));
         attrs.insert("file".to_string(), Value::str(entry.file.clone()));
+        Self::insert_callframe_code_attrs(&mut attrs, &code);
         attrs.insert("code".to_string(), code);
         attrs.insert("my".to_string(), my_hash);
         attrs.insert("inline".to_string(), Value::Bool(false));
         attrs.insert("__depth".to_string(), Value::Int(depth as i64));
         attrs.insert("annotations".to_string(), self.build_annotations(&attrs));
         Some(Value::make_instance(Symbol::intern("CallFrame"), attrs))
+    }
+
+    /// Extract subname, package, subtype, and sub attributes from a code value
+    /// and insert them into the CallFrame attributes map.
+    fn insert_callframe_code_attrs(attrs: &mut HashMap<String, Value>, code: &Value) {
+        match code {
+            Value::Sub(sd) => {
+                let name = sd.name.resolve();
+                attrs.insert("subname".to_string(), Value::str(name.to_string()));
+                let pkg = sd.package.resolve();
+                attrs.insert("package".to_string(), Value::str(pkg.to_string()));
+                attrs.insert("subtype".to_string(), Value::str("SubRoutine".to_string()));
+                attrs.insert("sub".to_string(), code.clone());
+            }
+            _ => {
+                attrs.insert("subname".to_string(), Value::str(String::new()));
+                attrs.insert("package".to_string(), Value::str(String::new()));
+                attrs.insert("subtype".to_string(), Value::str(String::new()));
+                attrs.insert("sub".to_string(), Value::Nil);
+            }
+        }
     }
 
     fn current_routine_sub_value(&self) -> Value {
