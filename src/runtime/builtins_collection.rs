@@ -2438,6 +2438,11 @@ impl Interpreter {
                 let mut result = std::collections::HashMap::new();
                 for (k, v) in map.iter() {
                     match self.deepmap_iterate_inner(block, v, true) {
+                        Ok(Value::Slip(items)) if items.is_empty() => {
+                            // Empty slip means the block returned Empty;
+                            // drop the key from the result hash.
+                            continue;
+                        }
                         Ok(val) => {
                             result.insert(k.clone(), val);
                         }
