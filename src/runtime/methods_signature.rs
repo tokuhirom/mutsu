@@ -352,7 +352,7 @@ impl Interpreter {
                         scan_expr(a, positional, named);
                     }
                 }
-                Expr::Index { target, index } => {
+                Expr::Index { target, index, .. } => {
                     scan_expr(target, positional, named);
                     scan_expr(index, positional, named);
                 }

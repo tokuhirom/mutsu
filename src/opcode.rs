@@ -381,7 +381,11 @@ pub(crate) enum OpCode {
     MakeLambda(u32, Option<u32>, bool),
     MakeBlockClosure(u32, Option<u32>),
     // -- Indexing --
-    Index,
+    /// `is_positional` is true when the subscript was `[...]` (positional),
+    /// false when `{...}` or `<...>` (associative).
+    Index {
+        is_positional: bool,
+    },
     DeleteIndexNamed(u32),
     DeleteIndexExpr,
     /// Multi-dimensional indexing: @a[$x;$y;$z]

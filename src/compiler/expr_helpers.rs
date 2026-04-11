@@ -35,7 +35,7 @@ impl Compiler {
             Expr::ArrayVar(name) => Some(format!("@{}", name)),
             Expr::HashVar(name) => Some(format!("%{}", name)),
             Expr::CodeVar(name) => Some(format!("&{}", name)),
-            Expr::Index { target, index }
+            Expr::Index { target, index, .. }
                 if matches!(target.as_ref(), Expr::PseudoStash(_))
                     && matches!(index.as_ref(), Expr::Literal(Value::Str(_))) =>
             {

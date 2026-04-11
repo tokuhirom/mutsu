@@ -2005,6 +2005,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                         let idx_expr = Expr::Index {
                             target: Box::new(Expr::Var(pname.clone())),
                             index: Box::new(Expr::Literal(Value::Int(positional_index as i64))),
+                            is_positional: true,
                         };
                         positional_index += 1;
                         idx_expr

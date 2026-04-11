@@ -317,7 +317,7 @@ fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
             contains_xx_with_bare_whatever(target)
                 || args.iter().any(contains_xx_with_bare_whatever)
         }
-        Expr::Index { target, index } => {
+        Expr::Index { target, index, .. } => {
             contains_xx_with_bare_whatever(target) || contains_xx_with_bare_whatever(index)
         }
         Expr::Call { args, .. } => args.iter().any(contains_xx_with_bare_whatever),
@@ -434,9 +434,15 @@ fn wrap_composition_operands(expr: Expr) -> Expr {
             target: Box::new(wrap_composition_operands(*target)),
             args: args.into_iter().map(wrap_composition_operands).collect(),
         },
-        Expr::Index { target, index } => Expr::Index {
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+            ..
+        } => Expr::Index {
             target: Box::new(wrap_composition_operands(*target)),
             index: Box::new(wrap_composition_operands(*index)),
+            is_positional,
         },
         other => other,
     }
@@ -812,9 +818,15 @@ fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Expr {
                 .map(|a| replace_whatever_numbered(a, counter))
                 .collect(),
         },
-        Expr::Index { target, index } => Expr::Index {
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+            ..
+        } => Expr::Index {
             target: Box::new(replace_whatever_numbered(target, counter)),
             index: index.clone(),
+            is_positional: *is_positional,
         },
         Expr::InfixFunc {
             name,
@@ -885,9 +897,15 @@ fn rename_var(expr: &Expr, old_name: &str, new_name: &str) -> Expr {
                 .map(|a| rename_var(a, old_name, new_name))
                 .collect(),
         },
-        Expr::Index { target, index } => Expr::Index {
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+            ..
+        } => Expr::Index {
             target: Box::new(rename_var(target, old_name, new_name)),
             index: Box::new(rename_var(index, old_name, new_name)),
+            is_positional: *is_positional,
         },
         _ => expr.clone(),
     }
@@ -1003,7 +1021,9 @@ fn expr_contains_topic(expr: &Expr) -> bool {
         Expr::CallOn { target, args } => {
             expr_contains_topic(target) || args.iter().any(expr_contains_topic)
         }
-        Expr::Index { target, index } => expr_contains_topic(target) || expr_contains_topic(index),
+        Expr::Index { target, index, .. } => {
+            expr_contains_topic(target) || expr_contains_topic(index)
+        }
         Expr::InfixFunc { left, right, .. } => {
             expr_contains_topic(left) || right.iter().any(expr_contains_topic)
         }
@@ -1063,9 +1083,15 @@ fn replace_whatever_single(expr: &Expr) -> Expr {
             target: Box::new(replace_whatever_single(target)),
             args: args.iter().map(replace_whatever_single).collect(),
         },
-        Expr::Index { target, index } => Expr::Index {
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+            ..
+        } => Expr::Index {
             target: Box::new(replace_whatever_single(target)),
             index: index.clone(),
+            is_positional: *is_positional,
         },
         Expr::InfixFunc {
             name,
@@ -1524,7 +1550,7 @@ mod tests {
         assert_eq!(rest, "");
         assert!(matches!(
             expr,
-            Expr::Index { target, index }
+            Expr::Index { target, index, .. }
                 if matches!(target.as_ref(), Expr::PseudoStash(s) if s.as_str() == "DYNAMIC::")
                 && matches!(index.as_ref(), Expr::Literal(Value::Str(s)) if s.as_str() == "$*x80")
         ));

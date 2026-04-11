@@ -251,6 +251,9 @@ pub(crate) enum Expr {
     Index {
         target: Box<Expr>,
         index: Box<Expr>,
+        /// true when this index was written with `[...]` (positional subscript);
+        /// false when written with `{...}` or `<...>` (associative subscript).
+        is_positional: bool,
     },
     /// Multi-dimensional indexing with semicolons: @a[$x;$y;$z]
     MultiDimIndex {
@@ -999,7 +1002,7 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
                 collect_ph_expr(a, out);
             }
         }
-        Expr::Index { target, index } => {
+        Expr::Index { target, index, .. } => {
             collect_ph_expr(target, out);
             collect_ph_expr(index, out);
         }
@@ -1289,7 +1292,7 @@ fn collect_ph_expr_shallow(expr: &Expr, out: &mut Vec<String>) {
                 collect_ph_expr_shallow(a, out);
             }
         }
-        Expr::Index { target, index } => {
+        Expr::Index { target, index, .. } => {
             collect_ph_expr_shallow(target, out);
             collect_ph_expr_shallow(index, out);
         }

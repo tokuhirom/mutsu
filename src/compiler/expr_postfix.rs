@@ -13,7 +13,7 @@ impl Compiler {
             self.code.emit(OpCode::Pop);
             let name_idx = self.code.add_constant(Value::str(var_name));
             self.code.emit(OpCode::PostIncrement(name_idx));
-        } else if let Expr::Index { target, index } = expr {
+        } else if let Expr::Index { target, index, .. } = expr {
             if let Some(name) = Self::postfix_index_name(target) {
                 self.compile_expr(index);
                 let name_idx = self.code.add_constant(Value::str(name));
@@ -88,7 +88,7 @@ impl Compiler {
             self.code.emit(OpCode::Pop);
             let name_idx = self.code.add_constant(Value::str(var_name));
             self.code.emit(OpCode::PostDecrement(name_idx));
-        } else if let Expr::Index { target, index } = expr {
+        } else if let Expr::Index { target, index, .. } = expr {
             if let Some(name) = Self::postfix_index_name(target) {
                 self.compile_expr(index);
                 let name_idx = self.code.add_constant(Value::str(name));
@@ -164,7 +164,7 @@ impl Compiler {
     /// 4. Write back tmp_val (which now has new value) via IndexAssign
     /// 5. Return tmp_old (the old value before increment)
     fn compile_nested_postfix_incdec(&mut self, expr: &Expr, increment: bool) {
-        if let Expr::Index { target, index } = expr {
+        if let Expr::Index { target, index, .. } = expr {
             let tmp_val = format!("__mutsu_nested_incdec_val_{}", self.code.constants.len());
             let tmp_val_idx = self.code.add_constant(Value::str(tmp_val.clone()));
             let tmp_old = format!("__mutsu_nested_incdec_old_{}", self.code.constants.len());
@@ -211,7 +211,7 @@ impl Compiler {
     /// 3. Write back tmp_val via IndexAssign
     /// 4. Return the new value
     pub(super) fn compile_nested_prefix_incdec(&mut self, expr: &Expr, increment: bool) {
-        if let Expr::Index { target, index } = expr {
+        if let Expr::Index { target, index, .. } = expr {
             let tmp_val = format!("__mutsu_nested_preincdec_val_{}", self.code.constants.len());
             let tmp_val_idx = self.code.add_constant(Value::str(tmp_val.clone()));
 

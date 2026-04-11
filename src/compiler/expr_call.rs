@@ -44,7 +44,9 @@ impl Compiler {
                     self.code.emit(OpCode::GetGlobal(tmp_idx));
                     let idx = self.code.add_constant(Value::Int(i as i64));
                     self.code.emit(OpCode::LoadConst(idx));
-                    self.code.emit(OpCode::Index);
+                    self.code.emit(OpCode::Index {
+                        is_positional: true,
+                    });
                     let name_idx = self.code.add_constant(Value::str(var_name.clone()));
                     self.code.emit(OpCode::AssignExpr(name_idx));
                 }
@@ -57,6 +59,7 @@ impl Compiler {
             && let Expr::Index {
                 target: index_target,
                 index: index_key,
+                ..
             } = &args[0]
             && let Some(var_name) = Self::postfix_index_name(index_target)
         {
@@ -181,7 +184,7 @@ impl Compiler {
             } else if matches!(&args[0], Expr::Index { target, .. } if matches!(**target, Expr::HashVar(_) | Expr::ArrayVar(_) | Expr::Var(_)))
             {
                 // undefine %hash<key> or undefine @arr[idx] -> target[index] = Nil
-                if let Expr::Index { target, index } = &args[0] {
+                if let Expr::Index { target, index, .. } = &args[0] {
                     let assign_expr = Expr::IndexAssign {
                         target: target.clone(),
                         index: index.clone(),
@@ -287,7 +290,7 @@ impl Compiler {
             // For array element CAS: cas(@arr[idx], $expected, $new)
             // Emit __mutsu_cas_array_elem("@arr_name", idx, expected, new)
             // Single-dim array element CAS: cas(@arr[idx], $expected, $new)
-            if let Expr::Index { target, index } = &args[0]
+            if let Expr::Index { target, index, .. } = &args[0]
                 && let Some(arr_name) = match target.as_ref() {
                     Expr::ArrayVar(n) => Some(format!("@{}", n)),
                     Expr::Var(n) if n.starts_with('@') => Some(n.clone()),
@@ -342,7 +345,7 @@ impl Compiler {
                         expr: args[2].clone(),
                         op: AssignOp::Assign,
                     }),
-                    Expr::Index { target, index } => Some(Stmt::Expr(Expr::IndexAssign {
+                    Expr::Index { target, index, .. } => Some(Stmt::Expr(Expr::IndexAssign {
                         target: target.clone(),
                         index: index.clone(),
                         value: Box::new(args[2].clone()),

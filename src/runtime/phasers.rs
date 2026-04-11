@@ -385,7 +385,7 @@ fn lift_phasers_from_expr(
                 lift_phasers_from_expr(a, begin, check, init);
             }
         }
-        Expr::Index { target, index } => {
+        Expr::Index { target, index, .. } => {
             lift_phasers_from_expr(target, begin, check, init);
             lift_phasers_from_expr(index, begin, check, init);
         }

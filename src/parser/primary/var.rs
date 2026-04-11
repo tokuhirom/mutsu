@@ -235,6 +235,7 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
             Expr::Index {
                 target: Box::new(Expr::PseudoStash("::".to_string())),
                 index: Box::new(key_expr),
+                is_positional: false,
             },
         ));
     }
@@ -248,6 +249,7 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
                 Expr::Index {
                     target: Box::new(Expr::PseudoStash("::".to_string())),
                     index: Box::new(Expr::Literal(Value::str(symbol.to_string()))),
+                    is_positional: false,
                 },
             ));
         }

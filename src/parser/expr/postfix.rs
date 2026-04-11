@@ -284,7 +284,7 @@ fn subscript_adverb_expr_with_cond(expr: Expr, adverb: &'static str, cond: Optio
             args,
         };
     }
-    let Expr::Index { target, index } = expr else {
+    let Expr::Index { target, index, .. } = expr else {
         return expr;
     };
     let var_name = match target.as_ref() {
@@ -726,6 +726,7 @@ fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) -> Expr) -> E
         Expr::Index {
             target: idx_target,
             index,
+            ..
         } => {
             use std::sync::atomic::Ordering;
             let tmp_idx = format!(
@@ -736,6 +737,7 @@ fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) -> Expr) -> E
             let lhs_expr = Expr::Index {
                 target: idx_target.clone(),
                 index: Box::new(tmp_idx_expr.clone()),
+                is_positional: false,
             };
             let assigned_value = method_call_fn(lhs_expr);
             Expr::DoBlock {
@@ -1315,6 +1317,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 expr = Expr::Index {
                     target: Box::new(expr),
                     index: Box::new(index),
+                    is_positional: true,
                 };
                 rest = r_inner;
                 continue;
@@ -1328,6 +1331,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 expr = Expr::Index {
                     target: Box::new(expr),
                     index: Box::new(index),
+                    is_positional: false,
                 };
                 rest = r;
                 continue;
@@ -1360,6 +1364,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         expr = Expr::Index {
                             target: Box::new(expr),
                             index: Box::new(index_expr),
+                            is_positional: false,
                         };
                         rest = r2;
                         continue;
@@ -1871,6 +1876,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             expr = Expr::Index {
                 target: Box::new(who),
                 index: Box::new(key_expr),
+                is_positional: false,
             };
             rest = r;
             continue;
@@ -1950,6 +1956,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     expr = Expr::Index {
                         target: Box::new(expr),
                         index: Box::new(index),
+                        is_positional: true,
                     };
                 }
                 ParsedBracketIndex::MultiDim(dimensions) => {
@@ -2009,6 +2016,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 Expr::Index {
                     target: Box::new(expr),
                     index: Box::new(index_expr),
+                    is_positional: false,
                 }
             };
             if is_zen_angle && r.starts_with(":v") && !is_ident_char(r.as_bytes().get(2).copied()) {
@@ -2054,6 +2062,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 expr = Expr::Index {
                     target: Box::new(expr),
                     index: Box::new(index_expr),
+                    is_positional: false,
                 };
                 rest = r;
                 continue;
@@ -2198,6 +2207,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     expr = Expr::Index {
                         target: Box::new(expr),
                         index: Box::new(Expr::Whatever),
+                        is_positional: false,
                     };
                     rest = r;
                     continue;
@@ -2228,6 +2238,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     let indexed = Expr::Index {
                         target: Box::new(expr.clone()),
                         index: Box::new(index.clone()),
+                        is_positional: false,
                     };
                     if let Some((r_after, exists_expr)) = try_parse_exists_adverb(r_adv, indexed) {
                         expr = exists_expr;
@@ -2239,6 +2250,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         let indexed_expr = Expr::Index {
                             target: Box::new(expr.clone()),
                             index: Box::new(index.clone()),
+                            is_positional: false,
                         };
                         if let Some((r_after, mut exists_expr)) =
                             try_parse_exists_adverb(r_after_delete, indexed_expr.clone())
@@ -2284,6 +2296,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     expr = Expr::Index {
                         target: Box::new(expr),
                         index: Box::new(index),
+                        is_positional: false,
                     };
                 }
             }

@@ -429,7 +429,7 @@ mod tests {
         let (rest, expr) = primary(".<path>").unwrap();
         assert_eq!(rest, "");
         match expr {
-            Expr::Index { target, index } => {
+            Expr::Index { target, index, .. } => {
                 assert!(matches!(*target, Expr::Var(ref n) if n.as_str() == "_"));
                 assert!(matches!(*index, Expr::Literal(Value::Str(ref s)) if s.as_str() == "path"));
             }
@@ -442,7 +442,7 @@ mod tests {
         let (rest, expr) = primary(".{'path'}").unwrap();
         assert_eq!(rest, "");
         match expr {
-            Expr::Index { target, index } => {
+            Expr::Index { target, index, .. } => {
                 assert!(matches!(*target, Expr::Var(ref n) if n.as_str() == "_"));
                 assert!(matches!(*index, Expr::Literal(Value::Str(ref s)) if s.as_str() == "path"));
             }
@@ -690,7 +690,7 @@ mod tests {
         assert_eq!(rest, "");
         assert!(matches!(
             expr,
-            Expr::Index { target, index }
+            Expr::Index { target, index, .. }
                 if matches!(target.as_ref(), Expr::PseudoStash(s) if s.as_str() == "::")
                 && matches!(index.as_ref(), Expr::Literal(Value::Str(s)) if s.as_str() == "$x")
         ));
@@ -702,7 +702,7 @@ mod tests {
         assert_eq!(rest, "");
         assert!(matches!(
             expr,
-            Expr::Index { target, index }
+            Expr::Index { target, index, .. }
                 if matches!(target.as_ref(), Expr::PseudoStash(s) if s.as_str() == "::")
                 && matches!(index.as_ref(), Expr::Literal(Value::Str(s)) if s.as_str() == "$x")
         ));
@@ -721,7 +721,7 @@ mod tests {
         assert_eq!(rest, "");
         assert!(matches!(
             expr,
-            Expr::Index { target, index }
+            Expr::Index { target, index, .. }
                 if matches!(target.as_ref(), Expr::PseudoStash(s) if s.as_str() == "::")
                 && matches!(index.as_ref(), Expr::Literal(Value::Str(s)) if s.as_str() == "bear")
         ));

@@ -309,6 +309,7 @@ impl Compiler {
                             op: crate::token_kind::TokenKind::DotDot,
                             right: Box::new(Expr::Whatever),
                         }),
+                        is_positional: true,
                     };
                     let capture_expr = Expr::CaptureLiteral(vec![Expr::Unary {
                         op: crate::token_kind::TokenKind::Pipe,
@@ -322,6 +323,7 @@ impl Compiler {
                         Expr::Index {
                             target: Box::new(Expr::Var(target_name.clone())),
                             index: Box::new(Expr::Literal(Value::Int(positional_index as i64))),
+                            is_positional: false,
                         },
                     ));
                     positional_index += 1;
@@ -338,6 +340,7 @@ impl Compiler {
                 Expr::Index {
                     target: Box::new(Expr::Var("_".to_string())),
                     index: Box::new(Expr::Literal(Value::Int(i as i64))),
+                    is_positional: false,
                 },
             );
             if p == "_" {

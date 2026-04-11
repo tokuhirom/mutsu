@@ -332,6 +332,7 @@ pub(super) fn class_literal(input: &str) -> PResult<'_, Expr> {
                 Expr::Index {
                     target: Box::new(Expr::PseudoStash("::".to_string())),
                     index: Box::new(Expr::Literal(Value::str(symbol.to_string()))),
+                    is_positional: false,
                 },
             ));
         }
@@ -346,6 +347,7 @@ pub(super) fn class_literal(input: &str) -> PResult<'_, Expr> {
             Expr::Index {
                 target: Box::new(Expr::PseudoStash("::".to_string())),
                 index: Box::new(key_expr),
+                is_positional: false,
             },
         ));
     }
@@ -1862,6 +1864,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     Expr::Index {
                         target: Box::new(Expr::PseudoStash(stash_name)),
                         index: Box::new(key_expr),
+                        is_positional: false,
                     },
                 ));
             }
@@ -1877,6 +1880,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         Expr::Index {
                             target: Box::new(Expr::PseudoStash(stash_name)),
                             index: Box::new(Expr::Literal(Value::str(symbol.to_string()))),
+                            is_positional: false,
                         },
                     ));
                 }
