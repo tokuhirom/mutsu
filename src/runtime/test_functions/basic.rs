@@ -134,6 +134,16 @@ impl Interpreter {
 
     pub(crate) fn test_fn_plan(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if let Some(reason) = Self::named_value(args, "skip-all") {
+            // `plan skip-all` inside a subtest requires a Sub (not a Block) so that
+            // `return` can exit the subtest callable.  Die with an error matching
+            // Rakudo's message when the callable is a Block.
+            if self.subtest_depth > 0 && self.subtest_callable_is_block {
+                let msg = "Must give `subtest` a (Sub) or a (Method) to be able to use \
+                           `skip-all` plan inside, but you gave a (Block)";
+                self.stderr_output.push_str(msg);
+                self.stderr_output.push('\n');
+                return Err(RuntimeError::new(msg));
+            }
             self.test_state.get_or_insert_with(TestState::new).planned = Some(0);
             let reason_str = reason.to_string_value();
             if reason_str.is_empty() || reason_str == "True" {

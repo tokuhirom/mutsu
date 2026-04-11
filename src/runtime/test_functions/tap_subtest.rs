@@ -30,7 +30,23 @@ impl Interpreter {
                 .unwrap_or(Value::Nil);
             (label, block)
         };
+        // Detect whether the callable is a bare block (not a sub/method).
+        // `plan skip-all` inside a Block subtest is an error in Raku because
+        // `return` cannot be used from a Block.
+        let callable_is_block = match &block {
+            Value::Sub(data) => {
+                if let Some(cc) = &data.compiled_code {
+                    // Compiled path: check is_routine flag set by the compiler
+                    !cc.is_routine
+                } else {
+                    // Interpreter path: check is_bare_block on the SubData
+                    data.is_bare_block
+                }
+            }
+            _ => false,
+        };
         let ctx = self.begin_subtest();
+        self.subtest_callable_is_block = callable_is_block;
         let saved_env = self.env.clone();
         let saved_functions = self.functions.clone();
         let saved_proto_functions = self.proto_functions.clone();
@@ -44,6 +60,31 @@ impl Interpreter {
         let saved_type_metadata = self.type_metadata.clone();
         let saved_var_type_constraints = self.snapshot_var_type_constraints();
         let run_result = self.call_sub_value(block, vec![], true);
+        // If the error is a "skip-all inside Block" error, propagate it
+        // through the subtest rather than absorbing it as a test failure.
+        if let Err(ref e) = run_result
+            && e.message.contains("Must give `subtest` a (Sub)")
+        {
+            // Restore state and propagate the error
+            self.env = saved_env;
+            self.functions = saved_functions;
+            self.proto_functions = saved_proto_functions;
+            self.token_defs = saved_token_defs;
+            self.proto_subs = saved_proto_subs;
+            self.proto_tokens = saved_proto_tokens;
+            self.classes = saved_classes;
+            self.class_trusts = saved_class_trusts;
+            self.roles = saved_roles;
+            self.subsets = saved_subsets;
+            self.type_metadata = saved_type_metadata;
+            self.restore_var_type_constraints(saved_var_type_constraints);
+            self.finish_subtest(ctx, &label, run_result.map(|_| ()))?;
+            // finish_subtest absorbs the error, so re-raise it
+            return Err(RuntimeError::new(
+                "Must give `subtest` a (Sub) or a (Method) to be able to use \
+                 `skip-all` plan inside, but you gave a (Block)",
+            ));
+        }
         let mut merged_env = saved_env.clone();
         for (k, v) in &self.env {
             if k == "_" || k == "$_" {

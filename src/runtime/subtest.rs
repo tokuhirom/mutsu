@@ -52,13 +52,16 @@ impl Interpreter {
         let parent_test_state = self.test_state.take();
         let parent_output = std::mem::take(&mut self.output);
         let parent_halted = self.halted;
+        let parent_subtest_callable_is_block = self.subtest_callable_is_block;
         self.test_state = Some(TestState::new());
         self.halted = false;
+        self.subtest_callable_is_block = false;
         self.subtest_depth += 1;
         SubtestContext {
             parent_test_state,
             parent_output,
             parent_halted,
+            parent_subtest_callable_is_block,
         }
     }
 
@@ -77,6 +80,7 @@ impl Interpreter {
         self.test_state = ctx.parent_test_state;
         self.output = ctx.parent_output;
         self.halted = ctx.parent_halted;
+        self.subtest_callable_is_block = ctx.parent_subtest_callable_is_block;
         self.subtest_depth = self.subtest_depth.saturating_sub(1);
         let parent_forced_todo_reason = self.test_state.as_ref().and_then(|state| {
             let next = state.ran + 1;

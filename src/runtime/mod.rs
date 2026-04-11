@@ -675,6 +675,9 @@ pub struct Interpreter {
     warn_suppression_depth: usize,
     test_state: Option<TestState>,
     subtest_depth: usize,
+    /// When true, the current subtest callable is a bare block (not a sub).
+    /// Used to detect invalid `plan skip-all` inside a Block subtest.
+    subtest_callable_is_block: bool,
     halted: bool,
     exit_code: i64,
     /// When true, `exit` sets the `halted` flag instead of calling
@@ -951,6 +954,7 @@ pub(crate) struct SubtestContext {
     parent_test_state: Option<TestState>,
     parent_output: String,
     parent_halted: bool,
+    parent_subtest_callable_is_block: bool,
 }
 
 pub(crate) type RoutineRegistrySnapshot = (
@@ -2408,6 +2412,7 @@ impl Interpreter {
             warn_suppression_depth: 0,
             test_state: None,
             subtest_depth: 0,
+            subtest_callable_is_block: false,
             halted: false,
             exit_code: 0,
             nested_mode: false,
@@ -4030,6 +4035,7 @@ impl Interpreter {
                 }
             },
             subtest_depth: 0,
+            subtest_callable_is_block: false,
             halted: false,
             exit_code: 0,
             nested_mode: self.nested_mode,
