@@ -39,7 +39,7 @@ const CACHE_MAGIC: &[u8; 4] = b"MTSU";
 /// bumped whenever the AST enum layout changes (adding/removing/reordering variants).
 fn interpreter_version() -> String {
     // Bump CACHE_FORMAT_VERSION when Stmt/Expr/Value enum variants change
-    const CACHE_FORMAT_VERSION: u32 = 4;
+    const CACHE_FORMAT_VERSION: u32 = 5;
     format!("{}+cf{}", env!("CARGO_PKG_VERSION"), CACHE_FORMAT_VERSION)
 }
 

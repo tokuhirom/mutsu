@@ -1496,22 +1496,70 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("unit", input).ok_or_else(|| PError::expected("unit statement"))?;
     let (rest, _) = ws1(rest)?;
     // unit class Name;
+    // unit class Name is Parent does Role;
     if let Some(r) = keyword("class", rest) {
         let (r, _) = ws1(r)?;
         let (r, name) = qualified_ident(r)?;
         let (r, _) = ws(r)?;
+        // Parse `is Parent` and `does Role` clauses before the semicolon
+        let mut parents = Vec::new();
+        let mut does_parents = Vec::new();
+        let mut class_is_rw = false;
+        let mut is_hidden = false;
+        let mut hidden_parents = Vec::new();
+        let mut r = r;
+        loop {
+            if let Some(r2) = keyword("is", r) {
+                let (r2, _) = ws1(r2)?;
+                let (r2, parent) = if let Some(stripped) = r2.strip_prefix("::") {
+                    let (r3, ident_part) = qualified_ident(stripped)?;
+                    (r3, format!("::{}", ident_part))
+                } else {
+                    qualified_ident(r2)?
+                };
+                if parent == "rw" {
+                    class_is_rw = true;
+                } else if parent == "hidden" {
+                    is_hidden = true;
+                } else {
+                    parents.push(parent);
+                }
+                let (r2, _) = ws(r2)?;
+                r = r2;
+                continue;
+            }
+            if let Some(r2) = keyword("does", r) {
+                let (r2, _) = ws1(r2)?;
+                let (r2, role_name) = qualified_ident(r2)?;
+                parents.push(role_name.clone());
+                does_parents.push(role_name);
+                let (r2, _) = ws(r2)?;
+                r = r2;
+                continue;
+            }
+            if let Some(r2) = keyword("hides", r) {
+                let (r2, _) = ws1(r2)?;
+                let (r2, parent) = qualified_ident(r2)?;
+                parents.push(parent.clone());
+                hidden_parents.push(parent);
+                let (r2, _) = ws(r2)?;
+                r = r2;
+                continue;
+            }
+            break;
+        }
         let (r, _) = opt_char(r, ';');
         return Ok((
             r,
             Stmt::ClassDecl {
                 name: Symbol::intern(&name),
                 name_expr: None,
-                parents: Vec::new(),
-                class_is_rw: false,
-                is_hidden: false,
+                parents,
+                class_is_rw,
+                is_hidden,
                 is_lexical: false,
-                hidden_parents: Vec::new(),
-                does_parents: Vec::new(),
+                hidden_parents,
+                does_parents,
                 repr: None,
                 body: Vec::new(),
                 language_version: super::simple::current_language_version(),

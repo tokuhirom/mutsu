@@ -575,6 +575,15 @@ impl Interpreter {
             hidden_parents,
             does_parents,
         } = modifiers;
+        // Normalize parent names: strip leading `::` (indirect name lookup syntax).
+        // `is ::Foo` means the same as `is Foo` in Raku.
+        let strip_colons = |s: &str| s.strip_prefix("::").unwrap_or(s).to_string();
+        let parents: Vec<String> = parents.iter().map(|p| strip_colons(p)).collect();
+        let parents = parents.as_slice();
+        let does_parents: Vec<String> = does_parents.iter().map(|p| strip_colons(p)).collect();
+        let does_parents = does_parents.as_slice();
+        let hidden_parents: Vec<String> = hidden_parents.iter().map(|p| strip_colons(p)).collect();
+        let hidden_parents = hidden_parents.as_slice();
         let prev_class = self.classes.get(name).cloned();
         let prev_hidden = self.hidden_classes.contains(name);
         let prev_hidden_defer = self.hidden_defer_parents.get(name).cloned();
