@@ -2247,19 +2247,13 @@ impl VM {
             self.interpreter
                 .set_shared_var(name, self.locals[idx].clone());
             // Propagate value to variables bound to this one via `:=` binding.
-            // When `my $y := $x`, alias `y -> x` is stored. If `$x` is updated,
-            // find any local slots whose alias points to `x` and update them too.
+            // Uses local_bind_pairs recorded at binding time to avoid
+            // cross-scope name collisions.
             {
                 let new_val = self.locals[idx].clone();
-                for (target_idx, target_name) in code.locals.iter().enumerate() {
-                    if target_idx == idx {
-                        continue;
-                    }
-                    let alias_key = format!("__mutsu_sigilless_alias::{}", target_name);
-                    if let Some(Value::Str(alias_source)) = self.interpreter.env().get(&alias_key)
-                        && alias_source.as_ref() == name
-                    {
-                        self.locals[target_idx] = new_val.clone();
+                for &(source, target) in &self.local_bind_pairs {
+                    if source == idx {
+                        self.locals[target] = new_val.clone();
                     }
                 }
             }
@@ -2498,16 +2492,21 @@ impl VM {
         }
         if let Some(source_name) = bind_source {
             let resolved_source = self.resolve_sigilless_alias_source_name(&source_name);
-            // TODO: compile to bytecode - implement local slot aliasing for `:=` binding
-            // so that `my $y := $x; my $x = 3; say $y` correctly prints 3.
-            // The write propagation approach needs careful handling to avoid
-            // breaking S12-class/mro-6e.t's role concretization tests.
             self.interpreter
                 .env_mut()
-                .insert(alias_key.clone(), Value::str(resolved_source));
+                .insert(alias_key.clone(), Value::str(resolved_source.clone()));
             self.interpreter
                 .env_mut()
                 .insert(readonly_key, Value::Bool(false));
+            // Record local-slot binding pair for write propagation.
+            // Only record if the source is also a local in the same code unit,
+            // so cross-scope name collisions do not cause spurious propagation.
+            if is_vardecl
+                && let Some(source_idx) = code.locals.iter().position(|n| n == &resolved_source)
+                && source_idx != idx
+            {
+                self.local_bind_pairs.push((source_idx, idx));
+            }
         }
         // If the current value is a Proxy, invoke STORE instead of overwriting
         if let Value::Proxy { storer, .. } = &self.locals[idx]
@@ -2625,15 +2624,11 @@ impl VM {
         // of another variable's `:=` binding, update the bound variable's
         // local slot too.  For example, `my $y := $x; my $x = 3;` must
         // update $y's slot so it reads 3.
-        for (target_idx, target_name) in code.locals.iter().enumerate() {
-            if target_idx == idx {
-                continue;
-            }
-            let target_alias_key = format!("__mutsu_sigilless_alias::{}", target_name);
-            if let Some(Value::Str(alias_source)) = self.interpreter.env().get(&target_alias_key)
-                && alias_source.as_ref() == name
-            {
-                self.locals[target_idx] = val.clone();
+        // Uses local_bind_pairs recorded at binding time to avoid
+        // cross-scope name collisions.
+        for &(source, target) in &self.local_bind_pairs {
+            if source == idx {
+                self.locals[target] = val.clone();
             }
         }
         if let Some(attr) = name.strip_prefix('.') {

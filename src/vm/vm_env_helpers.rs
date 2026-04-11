@@ -24,6 +24,7 @@ impl VM {
             saved_stack_depth: self.stack.len(),
             saved_env_dirty: self.env_dirty,
             saved_locals_dirty: self.locals_dirty,
+            saved_local_bind_pairs: std::mem::take(&mut self.local_bind_pairs),
         };
         self.env_dirty = false;
         self.locals_dirty = false;
@@ -38,6 +39,7 @@ impl VM {
             .pop()
             .expect("pop_call_frame: no frame to pop");
         self.locals = std::mem::take(&mut frame.saved_locals);
+        self.local_bind_pairs = std::mem::take(&mut frame.saved_local_bind_pairs);
         self.interpreter
             .restore_readonly_vars(std::mem::take(&mut frame.saved_readonly));
         self.env_dirty = frame.saved_env_dirty;
