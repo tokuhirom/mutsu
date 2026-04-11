@@ -56,6 +56,7 @@ pub(super) struct VmCallFrame {
     pub saved_readonly: HashSet<String>,
     pub saved_env_dirty: bool,
     pub saved_locals_dirty: bool,
+    pub saved_local_bind_pairs: Vec<(usize, usize)>,
 }
 
 pub(crate) struct VM {
@@ -95,8 +96,10 @@ pub(crate) struct VM {
     /// When true, the next SetLocal is from a `my` VarDecl (not a plain assignment).
     /// Used to allow overwriting immutable Blob containers in loop redeclarations.
     vardecl_context: bool,
-    // TODO: local slot aliases for `:=` binding - needs careful implementation
-    // to avoid S12-class/mro-6e.t regression
+    /// Local-slot binding pairs created by `:=` VarDecl in the current scope.
+    /// Each entry is (source_slot, target_slot): writing to source_slot should
+    /// propagate the value to target_slot.
+    local_bind_pairs: Vec<(usize, usize)>,
     /// Cache for on-the-fly compiled functions, keyed by fingerprint.
     /// Prevents re-compilation which would break state variables.
     otf_compile_cache: HashMap<u64, CompiledFunction>,
@@ -262,6 +265,7 @@ impl VM {
             constant_context: false,
             explicit_initializer_context: false,
             vardecl_context: false,
+            local_bind_pairs: Vec::new(),
             otf_compile_cache: HashMap::new(),
             state_scope_id: None,
             fn_resolve_cache: HashMap::new(),
