@@ -46,6 +46,64 @@ fn print_help(program: &str) {
     println!("                 (added before -I paths, so -I takes priority)");
 }
 
+fn print_negation_error(option: &str) -> ! {
+    println!("SORRY! Option '{}' cannot be negated", option);
+    std::process::exit(1);
+}
+
+fn handle_negated_short_option(
+    arg: &str,
+    auto_print: &mut bool,
+    auto_loop: &mut bool,
+) -> Option<Result<(), ()>> {
+    let name = arg.strip_prefix("-/")?;
+    if name.len() != 1 {
+        print_negation_error(arg);
+    }
+    Some(match name {
+        "h" | "v" => Ok(()),
+        "n" => {
+            *auto_loop = false;
+            Ok(())
+        }
+        "p" => {
+            *auto_print = false;
+            Ok(())
+        }
+        _ => Err(()),
+    })
+}
+
+fn handle_negated_long_option(
+    arg: &str,
+    dump_ast: &mut bool,
+    doc_mode: &mut bool,
+    repl_flag: &mut bool,
+    no_precomp: &mut bool,
+) -> Option<Result<(), ()>> {
+    let name = arg.strip_prefix("--/")?;
+    Some(match name {
+        "help" | "version" => Ok(()),
+        "dump-ast" => {
+            *dump_ast = false;
+            Ok(())
+        }
+        "doc" => {
+            *doc_mode = false;
+            Ok(())
+        }
+        "repl" => {
+            *repl_flag = false;
+            Ok(())
+        }
+        "no-precomp" => {
+            *no_precomp = false;
+            Ok(())
+        }
+        _ => Err(()),
+    })
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -66,6 +124,24 @@ fn main() {
         if seen_source {
             filtered_args.push(arg.clone());
             continue;
+        }
+        if let Some(result) = handle_negated_short_option(arg, &mut auto_print, &mut auto_loop) {
+            if result.is_ok() {
+                continue;
+            }
+            print_negation_error(arg);
+        }
+        if let Some(result) = handle_negated_long_option(
+            arg,
+            &mut dump_ast,
+            &mut doc_mode,
+            &mut repl_flag,
+            &mut no_precomp,
+        ) {
+            if result.is_ok() {
+                continue;
+            }
+            print_negation_error(arg);
         }
         if arg == "--help" || arg == "-h" {
             print_help(&args[0]);
