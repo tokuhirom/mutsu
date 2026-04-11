@@ -2033,6 +2033,13 @@ impl Interpreter {
 
         // BagHash.grab / BagHash.grabpairs: remove random elements, mutating the Bag
         if matches!(&target, Value::Bag(_, true)) && matches!(method, "grab" | "grabpairs") {
+            // NaN check for grab/grabpairs count
+            if !args.is_empty()
+                && let Value::Num(f) = &args[0]
+                && f.is_nan()
+            {
+                return Err(RuntimeError::new("Cannot convert NaN to Int"));
+            }
             let bag = match &target {
                 Value::Bag(b, _) => b.counts.clone(),
                 _ => unreachable!(),

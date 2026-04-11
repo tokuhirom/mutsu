@@ -166,6 +166,13 @@ fn invert_value(target: &Value) -> Option<Value> {
                 result.push(make_inverted_pair(weight_val, Value::str(k.clone())));
             }
         }
+        // Instance types that compose Baggy: delegate to internal bag data
+        Value::Instance { attributes, .. } => {
+            if let Some(bag_data) = attributes.get("__baggy_data__") {
+                return invert_value(bag_data);
+            }
+            return None;
+        }
         Value::Pair(key, value) => {
             extend_inverted_pairs(&mut result, Value::str(key.clone()), value);
         }
@@ -308,6 +315,15 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 // Instance types should fall through to accessor dispatch,
                 // not be coerced via .hash builtin
                 None
+            }
+            // Type objects for setty/baggy types: .hash returns empty hash
+            Value::Package(name)
+                if matches!(
+                    name.resolve().as_str(),
+                    "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash"
+                ) =>
+            {
+                Some(Ok(Value::hash(std::collections::HashMap::new())))
             }
             _ => {
                 let items = crate::runtime::utils::value_to_list(target);

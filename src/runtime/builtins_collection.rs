@@ -80,6 +80,12 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_set(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // Check for lazy inputs
+        for arg in args {
+            if Self::is_lazy_for_coerce(arg) {
+                return Err(RuntimeError::cannot_lazy_what("set"));
+            }
+        }
         let mut elems = HashSet::new();
         let mut original_keys = HashMap::new();
         let mut has_typed_keys = false;
@@ -131,6 +137,12 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_bag(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // Check for lazy inputs
+        for arg in args {
+            if Self::is_lazy_for_coerce(arg) {
+                return Err(RuntimeError::cannot_lazy_what("bag"));
+            }
+        }
         // The `bag` function counts occurrences of each element.
         // Unlike .Bag coercion, `bag` does NOT decompose pairs into key=>count.
         // Each element (including pairs) is treated as an opaque value to count.
@@ -200,6 +212,12 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_mix(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // Check for lazy inputs
+        for arg in args {
+            if Self::is_lazy_for_coerce(arg) {
+                return Err(RuntimeError::cannot_lazy_what("mix"));
+            }
+        }
         let mut weights: HashMap<String, f64> = HashMap::new();
         let mut original_keys: HashMap<String, Value> = HashMap::new();
         let mut has_typed_keys = false;

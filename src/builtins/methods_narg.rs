@@ -1642,8 +1642,13 @@ pub(crate) fn native_method_1arg(
             if matches!(arg, Value::Sub(_) | Value::WeakSub(_)) {
                 return None;
             }
-            // For Bag, use weighted picking without expanding to a flat list
+            // For Bag/BagHash, use weighted picking without expanding to a flat list
             if let Value::Bag(bag, _) = target {
+                if let Value::Num(f) = arg
+                    && f.is_nan()
+                {
+                    return Some(Err(RuntimeError::new("Cannot convert NaN to Int")));
+                }
                 let total_items: i128 = bag.values().map(|c| *c as i128).sum();
                 let count: i128 = match arg {
                     Value::Whatever => total_items,
@@ -1747,6 +1752,12 @@ pub(crate) fn native_method_1arg(
                 return Some(Ok(Value::LazyList(Arc::new(
                     crate::value::LazyList::new_cached(cached),
                 ))));
+            }
+            // NaN check for general .pick path
+            if let Value::Num(f) = arg
+                && f.is_nan()
+            {
+                return Some(Err(RuntimeError::new("Cannot convert NaN to Int")));
             }
             let mut items = runtime::value_to_list(target);
             Some(Ok(match arg {
@@ -1870,6 +1881,10 @@ pub(crate) fn native_method_1arg(
             Value::Set(_, false) => Some(Err(RuntimeError::immutable("Set", method))),
             Value::Set(_, true) => Some(Err(RuntimeError::immutable("SetHash", method))),
             Value::Mix(_, false) => Some(Err(RuntimeError::immutable("Mix", method))),
+            // NaN check for grab/grabpairs on mutable types
+            Value::Bag(_, true) | Value::Mix(_, true) if matches!(arg, Value::Num(f) if f.is_nan()) => {
+                Some(Err(RuntimeError::new("Cannot convert NaN to Int")))
+            }
             _ => None,
         },
         "roll" => {
