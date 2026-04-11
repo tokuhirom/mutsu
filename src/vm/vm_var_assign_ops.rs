@@ -2246,6 +2246,23 @@ impl VM {
             // from firing).
             self.interpreter
                 .set_shared_var(name, self.locals[idx].clone());
+            // Propagate value to variables bound to this one via `:=` binding.
+            // When `my $y := $x`, alias `y -> x` is stored. If `$x` is updated,
+            // find any local slots whose alias points to `x` and update them too.
+            {
+                let new_val = self.locals[idx].clone();
+                for (target_idx, target_name) in code.locals.iter().enumerate() {
+                    if target_idx == idx {
+                        continue;
+                    }
+                    let alias_key = format!("__mutsu_sigilless_alias::{}", target_name);
+                    if let Some(Value::Str(alias_source)) = self.interpreter.env().get(&alias_key)
+                        && alias_source.as_ref() == name
+                    {
+                        self.locals[target_idx] = new_val.clone();
+                    }
+                }
+            }
             // Track topic mutations for map rw writeback
             if name == "_" {
                 self.interpreter.env_mut().insert(
@@ -2603,6 +2620,21 @@ impl VM {
                     None
                 }
             });
+        }
+        // Reverse propagation: when writing to a variable that is the source
+        // of another variable's `:=` binding, update the bound variable's
+        // local slot too.  For example, `my $y := $x; my $x = 3;` must
+        // update $y's slot so it reads 3.
+        for (target_idx, target_name) in code.locals.iter().enumerate() {
+            if target_idx == idx {
+                continue;
+            }
+            let target_alias_key = format!("__mutsu_sigilless_alias::{}", target_name);
+            if let Some(Value::Str(alias_source)) = self.interpreter.env().get(&target_alias_key)
+                && alias_source.as_ref() == name
+            {
+                self.locals[target_idx] = val.clone();
+            }
         }
         if let Some(attr) = name.strip_prefix('.') {
             self.interpreter
