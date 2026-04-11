@@ -51,6 +51,11 @@ impl Interpreter {
                     elems.insert(k.to_string_value());
                 }
             }
+            // Instance types composing Baggy: delegate to internal bag data
+            Value::Instance { ref attributes, .. } if attributes.contains_key("__baggy_data__") => {
+                let bag_data = attributes.get("__baggy_data__").unwrap().clone();
+                return self.dispatch_to_set(bag_data);
+            }
             other if other.is_range() => {
                 for item in Self::value_to_list(&other) {
                     elems.insert(item.to_string_value());
@@ -83,7 +88,7 @@ impl Interpreter {
         match v {
             Value::Num(n) => n.is_infinite(),
             Value::Rat(_, d) | Value::FatRat(_, d) => *d == 0,
-            Value::HyperWhatever => true,
+            Value::Whatever | Value::HyperWhatever => true,
             _ => false,
         }
     }

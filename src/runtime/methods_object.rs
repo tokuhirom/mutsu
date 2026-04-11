@@ -1601,6 +1601,12 @@ impl Interpreter {
                     return Ok(Value::ValuePair(Box::new(key), Box::new(value)));
                 }
                 "Set" | "SetHash" => {
+                    // Check for lazy inputs
+                    for a in &args {
+                        if Self::is_lazy_for_coerce(a) {
+                            return Err(RuntimeError::cannot_lazy_what(base_class_name));
+                        }
+                    }
                     // Set/SetHash.new treats each element as an opaque value
                     // (does NOT decompose Pairs like the .Set/.SetHash coercion does).
                     // Single arg: if QuantHash, treat as single element; otherwise iterate.
@@ -2216,6 +2222,12 @@ impl Interpreter {
                                 .iter()
                                 .any(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)));
                             if has_positional {
+                                // Check if this class composes Baggy/Setty role;
+                                // if so, redirect to Bag-like construction
+                                let cn = class_name.resolve();
+                                if self.class_does_baggy_or_setty(&cn) {
+                                    return self.construct_baggy_instance(&cn, &args);
+                                }
                                 return Err(RuntimeError::new(format!(
                                     "Default constructor for '{}' only takes named arguments",
                                     class_name.resolve()
@@ -2314,6 +2326,12 @@ impl Interpreter {
                 // Mu.new only accepts named arguments. If positional args
                 // were passed and this is not a subclass that accepts them, reject.
                 if !positional_ctor_args.is_empty() {
+                    // Check if this class composes Baggy/Setty role;
+                    // if so, redirect to Bag-like construction
+                    let cn = class_name.resolve();
+                    if self.class_does_baggy_or_setty(&cn) {
+                        return self.construct_baggy_instance(&cn, &args);
+                    }
                     let accepts_positional = class_mro
                         .iter()
                         .any(|n| n == "Array" || n == "Int" || n == "Num" || n == "Hash");
@@ -3233,5 +3251,69 @@ impl Interpreter {
         attrs.insert("tertiary".to_string(), Value::Int(tertiary));
         attrs.insert("quaternary".to_string(), Value::Int(quaternary));
         Value::make_instance(Symbol::intern("Collation"), attrs)
+    }
+
+    /// Check if a class composes the Baggy or Setty role (directly or transitively).
+    fn class_does_baggy_or_setty(&self, class_name: &str) -> bool {
+        // Check the class definition's parents and MRO for Baggy/Setty
+        if let Some(class_def) = self.classes.get(class_name) {
+            if class_def
+                .parents
+                .iter()
+                .any(|p| p == "Baggy" || p == "Setty" || p == "QuantHash")
+            {
+                return true;
+            }
+            if class_def
+                .mro
+                .iter()
+                .any(|p| p == "Baggy" || p == "Setty" || p == "QuantHash")
+            {
+                return true;
+            }
+        }
+        // Also check composed roles
+        if let Some(roles) = self.class_composed_roles.get(class_name)
+            && roles
+                .iter()
+                .any(|r| r == "Baggy" || r == "Setty" || r == "QuantHash")
+        {
+            return true;
+        }
+        false
+    }
+
+    /// Construct an instance for a class that does Baggy.
+    /// Positional args are counted like a Bag, and the result is stored as
+    /// an Instance with internal Bag-like storage.
+    fn construct_baggy_instance(
+        &mut self,
+        class_name: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        // Flatten positional args into a list of elements to count
+        let mut items = Vec::new();
+        for arg in args {
+            match arg {
+                Value::Array(elems, _) => {
+                    items.extend(elems.iter().cloned());
+                }
+                other => items.push(other.clone()),
+            }
+        }
+        // Count occurrences (like Bag.new)
+        let mut counts: HashMap<String, i64> = HashMap::new();
+        for item in &items {
+            let key = item.to_string_value();
+            *counts.entry(key).or_insert(0) += 1;
+        }
+        // Build an Instance with bag-like attributes
+        let mut attrs = HashMap::new();
+        // Store the bag data as a Bag value in a special attribute
+        attrs.insert(
+            "__baggy_data__".to_string(),
+            Value::bag_typed(counts.clone(), HashMap::new()),
+        );
+        Ok(Value::make_instance(Symbol::intern(class_name), attrs))
     }
 }
