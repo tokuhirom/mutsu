@@ -187,10 +187,18 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                         return Some(Ok(Value::Seq(vec![Value::array(Vec::new())].into())));
                     }
                     if *n > 20 {
-                        return Some(Err(RuntimeError::new(format!(
-                            "Cowardly refusing to permutate more than 20 elements, tried {}",
-                            n
-                        ))));
+                        // For large n, return a lazy list that knows its count (n!)
+                        // without actually generating all permutations.
+                        let factorial = factorial_bigint(*n as u64);
+                        let ll = crate::value::LazyList {
+                            body: Vec::new(),
+                            env: crate::env::Env::new(),
+                            cache: std::sync::Mutex::new(None),
+                            compiled_code: None,
+                            compiled_fns: None,
+                            elems_count: Some(Value::BigInt(factorial)),
+                        };
+                        return Some(Ok(Value::LazyList(std::sync::Arc::new(ll))));
                     }
                     let items: Vec<Value> = (0..*n).map(Value::Int).collect();
                     return Some(Ok(Value::Seq(
@@ -200,10 +208,17 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 _ => runtime::value_to_list(arg),
             };
             if items.len() > 20 {
-                return Some(Err(RuntimeError::new(format!(
-                    "Cowardly refusing to permutate more than 20 elements, tried {}",
-                    items.len()
-                ))));
+                // For large iterables, return a lazy list that knows its count
+                let factorial = factorial_bigint(items.len() as u64);
+                let ll = crate::value::LazyList {
+                    body: Vec::new(),
+                    env: crate::env::Env::new(),
+                    cache: std::sync::Mutex::new(None),
+                    compiled_code: None,
+                    compiled_fns: None,
+                    elems_count: Some(Value::BigInt(factorial)),
+                };
+                return Some(Ok(Value::LazyList(std::sync::Arc::new(ll))));
             }
             Some(Ok(Value::Seq(
                 super::methods_0arg::collection::all_permutations(&items).into(),
@@ -1344,6 +1359,15 @@ fn gcd_u64(mut a: u64, mut b: u64) -> u64 {
         a = t;
     }
     a
+}
+
+/// Compute n! as a BigInt.
+pub(crate) fn factorial_bigint(n: u64) -> std::sync::Arc<NumBigInt> {
+    let mut result = NumBigInt::from(1u64);
+    for i in 2..=n {
+        result *= NumBigInt::from(i);
+    }
+    std::sync::Arc::new(result)
 }
 
 /// If the value represents an integer (even as Num, Rat, Str, or BigInt), return as BigInt.

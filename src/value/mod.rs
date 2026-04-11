@@ -785,6 +785,9 @@ pub(crate) struct LazyList {
     pub(crate) compiled_code: Option<Arc<CompiledCode>>,
     /// Compiled functions associated with the compiled code.
     pub(crate) compiled_fns: Option<Arc<HashMap<String, CompiledFunction>>>,
+    /// Known element count for combinatorial lazy sequences (e.g. n! for permutations).
+    /// When set, numeric coercion uses this value instead of materializing all elements.
+    pub(crate) elems_count: Option<Value>,
 }
 
 impl Clone for LazyList {
@@ -795,6 +798,7 @@ impl Clone for LazyList {
             cache: Mutex::new(self.cache.lock().unwrap().clone()),
             compiled_code: self.compiled_code.clone(),
             compiled_fns: self.compiled_fns.clone(),
+            elems_count: self.elems_count.clone(),
         }
     }
 }
@@ -808,6 +812,7 @@ impl LazyList {
             cache: Mutex::new(Some(items)),
             compiled_code: None,
             compiled_fns: None,
+            elems_count: None,
         }
     }
 }
