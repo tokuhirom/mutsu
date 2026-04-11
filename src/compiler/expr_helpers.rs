@@ -403,6 +403,8 @@ impl Compiler {
             rhs_end: 0,
             negate: false,
             lhs_var,
+            // m// standalone (not in ~~ context) behaves like m// for result purposes
+            rhs_is_match_regex: true,
         });
         // RHS: load the regex constant
         let idx = self.code.add_constant(v.clone());

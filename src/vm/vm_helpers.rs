@@ -322,15 +322,30 @@ impl VM {
     /// For `!~~` (negate=true), we compute `~~` first and then negate the
     /// collapsed result.  Raku defines `$x !~~ $y` as `not ($x ~~ $y)`,
     /// where `not` collapses junctions before negating.
+    #[allow(dead_code)]
     pub(super) fn eval_smartmatch_with_junctions(
         &mut self,
         left: Value,
         right: Value,
         negate: bool,
     ) -> Result<Value, RuntimeError> {
+        self.eval_smartmatch_with_junctions_ex(left, right, negate, false)
+    }
+
+    /// Extended smartmatch with junction threading.
+    /// `rhs_is_match_regex` indicates the RHS was originally `m//`, which
+    /// changes the failure return from Nil to False.
+    pub(super) fn eval_smartmatch_with_junctions_ex(
+        &mut self,
+        left: Value,
+        right: Value,
+        negate: bool,
+        rhs_is_match_regex: bool,
+    ) -> Result<Value, RuntimeError> {
         // For !~~, compute ~~ first, then negate the collapsed boolean.
         if negate {
-            let match_result = self.eval_smartmatch_with_junctions(left, right, false)?;
+            let match_result =
+                self.eval_smartmatch_with_junctions_ex(left, right, false, rhs_is_match_regex)?;
             let bool_val = match_result.truthy();
             return Ok(Value::Bool(!bool_val));
         }
@@ -340,8 +355,17 @@ impl VM {
         if matches!(&right, Value::Package(name) if matches!(name.resolve().as_str(), "Junction" | "Mu"))
             && matches!(&left, Value::Junction { .. })
         {
-            return self.smart_match_op(left, right);
+            return self.smart_match_op(left, right, rhs_is_match_regex);
         }
+        // Helper: check if a value is a regex (for junction collapse decisions)
+        let is_regex_value = |v: &Value| {
+            matches!(
+                v,
+                Value::Regex(_)
+                    | Value::RegexWithAdverbs { .. }
+                    | Value::Routine { is_regex: true, .. }
+            )
+        };
         if let (
             Value::Junction {
                 kind: left_kind,
@@ -357,33 +381,67 @@ impl VM {
             let results: Result<Vec<Value>, RuntimeError> = right_values
                 .iter()
                 .cloned()
-                .map(|v| self.eval_smartmatch_with_junctions(left.clone(), v, false))
+                .map(|v| {
+                    self.eval_smartmatch_with_junctions_ex(
+                        left.clone(),
+                        v,
+                        false,
+                        rhs_is_match_regex,
+                    )
+                })
                 .collect();
-            return Ok(Value::junction(right_kind.clone(), results?));
+            // Smartmatch collapses junctions to Bool
+            let junction = Value::junction(right_kind.clone(), results?);
+            return Ok(Value::Bool(junction.truthy()));
         }
         if let Value::Junction { kind, values } = left {
+            // When RHS is a non-junction regex and LHS is a junction,
+            // return the Junction of Match/Nil results without collapsing.
+            // For all other cases, collapse to Bool.
+            let keep_junction = is_regex_value(&right);
             let results: Result<Vec<Value>, RuntimeError> = values
                 .iter()
                 .cloned()
-                .map(|v| self.eval_smartmatch_with_junctions(v, right.clone(), false))
+                .map(|v| {
+                    self.eval_smartmatch_with_junctions_ex(
+                        v,
+                        right.clone(),
+                        false,
+                        rhs_is_match_regex,
+                    )
+                })
                 .collect();
-            return Ok(Value::junction(kind, results?));
+            let junction = Value::junction(kind, results?);
+            if keep_junction {
+                return Ok(junction);
+            }
+            return Ok(Value::Bool(junction.truthy()));
         }
         if let Value::Junction { kind, values } = right {
             let results: Result<Vec<Value>, RuntimeError> = values
                 .iter()
                 .cloned()
-                .map(|v| self.eval_smartmatch_with_junctions(left.clone(), v, false))
+                .map(|v| {
+                    self.eval_smartmatch_with_junctions_ex(
+                        left.clone(),
+                        v,
+                        false,
+                        rhs_is_match_regex,
+                    )
+                })
                 .collect();
-            return Ok(Value::junction(kind, results?));
+            // Smartmatch collapses junctions to Bool
+            let junction = Value::junction(kind, results?);
+            return Ok(Value::Bool(junction.truthy()));
         }
-        self.smart_match_op(left, right)
+        self.smart_match_op(left, right, rhs_is_match_regex)
     }
 
     pub(super) fn smart_match_op(
         &mut self,
         left: Value,
         right: Value,
+        rhs_is_match_regex: bool,
     ) -> Result<Value, RuntimeError> {
         // When RHS is Whatever, autoprime: return a WhateverCode that takes
         // one argument and smartmatches LHS against it.
@@ -443,7 +501,13 @@ impl VM {
             } else if matched {
                 // For regex smartmatch, return the Match object (from $/) or Nil
                 Ok(slash)
+            } else if rhs_is_match_regex && matches!(&slash, Value::Nil) {
+                // Failed m// (non-global) returns False, not Nil.
+                // But m:g// returns an empty list from $/, so we check that
+                // $/ is Nil before returning False.
+                Ok(Value::Bool(false))
             } else {
+                // Failed bare // returns Nil; m:g// returns $/ (empty list)
                 Ok(slash)
             }
         } else {
