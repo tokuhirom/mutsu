@@ -792,6 +792,23 @@ impl Interpreter {
             };
             return Ok(Value::str(result));
         }
+        // .raku/.perl on constrained regular Array (e.g. Array[Int])
+        if matches!(method, "raku" | "perl")
+            && args.is_empty()
+            && matches!(&target, Value::Array(_, kind) if *kind != crate::value::ArrayKind::Shaped)
+            && let Some(info) = self.container_type_metadata(&target)
+            && info.value_type != "Any"
+            && info.value_type != "Mu"
+            && let Value::Array(items, _) = &target
+        {
+            let inner = items
+                .iter()
+                .map(crate::builtins::methods_0arg::raku_repr::raku_value)
+                .collect::<Vec<_>>()
+                .join(", ");
+            let type_name = &info.value_type;
+            return Ok(Value::str(format!("Array[{}].new({})", type_name, inner)));
+        }
 
         // ACCEPTS for allomorphic types with Instance arguments
         // This handles custom classes with .Numeric/.Str methods that the

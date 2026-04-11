@@ -1003,6 +1003,25 @@ impl VM {
         } else {
             None
         };
+        // Capture old array Arc pointer for circular reference fixup.
+        let old_array_arc = if name.starts_with('@') {
+            let current = self.get_env_with_main_alias(&name).or_else(|| {
+                code.locals.iter().position(|n| n == &name).and_then(|idx| {
+                    if idx < self.locals.len() {
+                        Some(self.locals[idx].clone())
+                    } else {
+                        None
+                    }
+                })
+            });
+            if let Some(Value::Array(arc, _)) = current {
+                Some(Arc::as_ptr(&arc) as usize)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let mut val = if name.starts_with('%') {
             let hash_val = runtime::coerce_to_hash(raw_val);
             // Resolve hash sentinel entries (bound variable refs) when assigning
@@ -1204,6 +1223,25 @@ impl VM {
             {
                 let has_old_ref = stack_arc.values().any(|v| {
                     if let Value::Hash(inner_arc) = v {
+                        Arc::as_ptr(inner_arc) as usize == old_ptr
+                    } else {
+                        false
+                    }
+                });
+                if has_old_ref {
+                    *stack_top = val.clone();
+                }
+            }
+        }
+        // Circular array reference fixup
+        if name.starts_with('@') {
+            Self::fixup_circular_array_refs(&mut val, &old_array_arc);
+            if let Some(old_ptr) = old_array_arc
+                && let Some(stack_top) = self.stack.last_mut()
+                && let Value::Array(stack_arc, _) = stack_top
+            {
+                let has_old_ref = stack_arc.iter().any(|v| {
+                    if let Value::Array(inner_arc, _) = v {
                         Arc::as_ptr(inner_arc) as usize == old_ptr
                     } else {
                         false

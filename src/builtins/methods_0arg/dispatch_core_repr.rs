@@ -420,8 +420,12 @@ pub(super) fn dispatch(
                 Some(Ok(Value::Str(s.clone())))
             }
         }
-        Value::Array(_, _) if method == "raku" || method == "perl" => {
-            Some(Ok(Value::str(raku_value(target))))
+        Value::Array(_, kind) if method == "raku" || method == "perl" => {
+            if *kind == crate::value::ArrayKind::Lazy {
+                Some(Ok(Value::str_from("[...]")))
+            } else {
+                Some(Ok(Value::str(raku_value(target))))
+            }
         }
         Value::Seq(_) if method == "raku" || method == "perl" => {
             Some(Ok(Value::str(raku_value(target))))

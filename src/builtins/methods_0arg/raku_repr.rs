@@ -259,24 +259,46 @@ pub fn raku_value(v: &Value) -> String {
     // that we're currently rendering. If we encounter the same pointer
     // again, emit a placeholder instead of recursing infinitely.
     thread_local! {
-        static SEEN_PTRS: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
+        static SEEN_PTRS: std::cell::RefCell<Vec<(usize, String)>> = const { std::cell::RefCell::new(Vec::new()) };
+        static ARRAY_CYCLE_FOUND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     }
     match v {
         Value::Array(items, kind) => {
-            let ptr = Arc::as_ptr(items) as usize;
-            let is_cycle = SEEN_PTRS.with(|seen| seen.borrow().contains(&ptr));
-            if is_cycle {
-                return raku_array_wrap("...", *kind);
+            // Lazy arrays should not be materialized
+            if *kind == crate::value::ArrayKind::Lazy {
+                return "[...]".to_string();
             }
-            SEEN_PTRS.with(|seen| seen.borrow_mut().push(ptr));
+            let ptr = Arc::as_ptr(items) as usize;
+            let var_name = format!("@Array_{}", ptr);
+            // Check for cycle
+            let cycle_var = SEEN_PTRS.with(|seen| {
+                seen.borrow()
+                    .iter()
+                    .find(|(p, _)| *p == ptr)
+                    .map(|(_, name)| name.clone())
+            });
+            if let Some(name) = cycle_var {
+                ARRAY_CYCLE_FOUND.with(|f| f.set(true));
+                return name;
+            }
+            let is_top = SEEN_PTRS.with(|seen| seen.borrow().is_empty());
+            SEEN_PTRS.with(|seen| seen.borrow_mut().push((ptr, var_name.clone())));
+            if is_top {
+                ARRAY_CYCLE_FOUND.with(|f| f.set(false));
+            }
             let result = raku_value_array(items, *kind, v);
+            let had_cycle = ARRAY_CYCLE_FOUND.with(|f| f.get());
             SEEN_PTRS.with(|seen| {
                 let mut s = seen.borrow_mut();
-                if let Some(pos) = s.iter().rposition(|p| *p == ptr) {
+                if let Some(pos) = s.iter().rposition(|(p, _)| *p == ptr) {
                     s.remove(pos);
                 }
             });
-            result
+            if is_top && had_cycle {
+                format!("((my {}) = {})", var_name, result)
+            } else {
+                result
+            }
         }
         Value::Seq(items) => {
             let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
