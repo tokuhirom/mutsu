@@ -628,6 +628,12 @@ impl Interpreter {
             return self.call_method_with_values(target, "comb", method_args);
         }
 
+        // Try stripping package prefix (e.g., "Main::foo" -> "foo")
+        if let Some(pos) = name.rfind("::") {
+            let short_name = &name[pos + 2..];
+            return self.call_function(short_name, args.to_vec());
+        }
+
         Err(RuntimeError::new(format!(
             "X::Undeclared::Symbols: Unknown function: {}",
             name

@@ -494,6 +494,18 @@ impl Interpreter {
         if let Some(callable) = self.env.get(&env_name).cloned() {
             return self.eval_call_on_value(callable, args);
         }
+        // Try stripping package prefix (e.g., "Main::foo" -> "foo")
+        // when the function is in the current or GLOBAL package.
+        if let Some(pos) = full_name.rfind("::") {
+            let short_name = &full_name[pos + 2..];
+            if let Some(def) = self.resolve_function_with_alias(short_name, &args) {
+                return self.call_function_def(&def, &args);
+            }
+            let env_short = format!("&{}", short_name);
+            if let Some(callable) = self.env.get(&env_short).cloned() {
+                return self.eval_call_on_value(callable, args);
+            }
+        }
         Err(RuntimeError::new(format!(
             "X::Undeclared::Symbols: Unknown function: {}",
             full_name

@@ -1425,8 +1425,44 @@ impl Interpreter {
                     } else {
                         method_name.resolve()
                     };
-                    let effective_param_defs =
+                    let mut effective_param_defs =
                         Self::effective_method_param_defs(param_defs, is_hidden);
+                    // Auto-detect @_ usage in methods without explicit signatures
+                    if param_defs.is_empty() {
+                        let (use_positional, _) = Self::auto_signature_uses(method_body);
+                        if use_positional && !effective_param_defs.iter().any(|pd| pd.name == "@_")
+                        {
+                            // Insert @_ slurpy before the named %_ slurpy (if any)
+                            let insert_pos = effective_param_defs
+                                .iter()
+                                .position(|pd| pd.name.starts_with('%') && pd.slurpy)
+                                .unwrap_or(effective_param_defs.len());
+                            effective_param_defs.insert(
+                                insert_pos,
+                                ParamDef {
+                                    name: "@_".to_string(),
+                                    default: None,
+                                    multi_invocant: true,
+                                    required: false,
+                                    named: false,
+                                    slurpy: true,
+                                    double_slurpy: false,
+                                    onearg: false,
+                                    sigilless: false,
+                                    type_constraint: None,
+                                    literal_value: None,
+                                    sub_signature: None,
+                                    where_constraint: None,
+                                    traits: Vec::new(),
+                                    optional_marker: false,
+                                    outer_sub_signature: None,
+                                    code_signature: None,
+                                    is_invocant: false,
+                                    shape_constraints: None,
+                                },
+                            );
+                        }
+                    }
                     let effective_params: Vec<String> = effective_param_defs
                         .iter()
                         .map(|p| p.name.clone())
@@ -1890,7 +1926,43 @@ impl Interpreter {
                     } else {
                         method_name.resolve()
                     };
-                    let effective_param_defs = Self::effective_method_param_defs(param_defs, false);
+                    let mut effective_param_defs =
+                        Self::effective_method_param_defs(param_defs, false);
+                    // Auto-detect @_ usage in methods without explicit signatures
+                    if param_defs.is_empty() {
+                        let (use_positional, _) = Self::auto_signature_uses(method_body);
+                        if use_positional && !effective_param_defs.iter().any(|pd| pd.name == "@_")
+                        {
+                            let insert_pos = effective_param_defs
+                                .iter()
+                                .position(|pd| pd.name.starts_with('%') && pd.slurpy)
+                                .unwrap_or(effective_param_defs.len());
+                            effective_param_defs.insert(
+                                insert_pos,
+                                ParamDef {
+                                    name: "@_".to_string(),
+                                    default: None,
+                                    multi_invocant: true,
+                                    required: false,
+                                    named: false,
+                                    slurpy: true,
+                                    double_slurpy: false,
+                                    onearg: false,
+                                    sigilless: false,
+                                    type_constraint: None,
+                                    literal_value: None,
+                                    sub_signature: None,
+                                    where_constraint: None,
+                                    traits: Vec::new(),
+                                    optional_marker: false,
+                                    outer_sub_signature: None,
+                                    code_signature: None,
+                                    is_invocant: false,
+                                    shape_constraints: None,
+                                },
+                            );
+                        }
+                    }
                     let effective_params: Vec<String> = effective_param_defs
                         .iter()
                         .map(|p| p.name.clone())
