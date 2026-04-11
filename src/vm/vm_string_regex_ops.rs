@@ -310,6 +310,23 @@ impl VM {
         )
     }
 
+    /// Create a Match object for a substitution match.
+    fn make_subst_match(text: &str, start: usize, end: usize) -> Value {
+        let chars: Vec<char> = text.chars().collect();
+        let matched: String = chars[start..end].iter().collect();
+        Value::make_match_object_full(
+            matched,
+            start as i64,
+            end as i64,
+            &[],
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+            &[],
+            &[],
+            Some(text),
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_subst_op(
@@ -363,9 +380,19 @@ impl VM {
                     self.interpreter
                         .env_mut()
                         .insert("__mutsu_rw_map_topic__".to_string(), result);
-                    self.stack.push(Value::Bool(true));
+                    // Create Match object and set $/
+                    let match_obj = Self::make_subst_match(&text, start, end);
+                    self.interpreter
+                        .env_mut()
+                        .insert("/".to_string(), match_obj.clone());
+                    self.substitution_in_smartmatch = self.in_smartmatch_rhs;
+                    self.stack.push(match_obj);
                 } else {
-                    self.stack.push(Value::Nil);
+                    self.interpreter
+                        .env_mut()
+                        .insert("/".to_string(), Value::Nil);
+                    self.substitution_in_smartmatch = self.in_smartmatch_rhs;
+                    self.stack.push(Value::Bool(false));
                 }
             } else {
                 let found = self
@@ -393,9 +420,19 @@ impl VM {
                     self.interpreter
                         .env_mut()
                         .insert("__mutsu_rw_map_topic__".to_string(), result);
-                    self.stack.push(Value::Bool(true));
+                    // Create Match object and set $/
+                    let match_obj = Self::make_subst_match(&text, start, end);
+                    self.interpreter
+                        .env_mut()
+                        .insert("/".to_string(), match_obj.clone());
+                    self.substitution_in_smartmatch = self.in_smartmatch_rhs;
+                    self.stack.push(match_obj);
                 } else {
-                    self.stack.push(Value::Nil);
+                    self.interpreter
+                        .env_mut()
+                        .insert("/".to_string(), Value::Nil);
+                    self.substitution_in_smartmatch = self.in_smartmatch_rhs;
+                    self.stack.push(Value::Bool(false));
                 }
             }
             return Ok(());
@@ -442,7 +479,11 @@ impl VM {
             (selected, captures)
         };
         if ranges.is_empty() {
-            self.stack.push(Value::Nil);
+            self.interpreter
+                .env_mut()
+                .insert("/".to_string(), Value::Nil);
+            self.substitution_in_smartmatch = self.in_smartmatch_rhs;
+            self.stack.push(Value::Bool(false));
             return Ok(());
         }
 
@@ -480,8 +521,14 @@ impl VM {
         self.interpreter
             .env_mut()
             .insert("__mutsu_rw_map_topic__".to_string(), result);
-        // Push Bool::True so `$x ~~ s///` returns True on match
-        self.stack.push(Value::Bool(true));
+        // Create Match object from first match range and set $/
+        let (first_start, first_end) = ranges[0];
+        let match_obj = Self::make_subst_match(&text, first_start, first_end);
+        self.interpreter
+            .env_mut()
+            .insert("/".to_string(), match_obj.clone());
+        self.substitution_in_smartmatch = self.in_smartmatch_rhs;
+        self.stack.push(match_obj);
         Ok(())
     }
 

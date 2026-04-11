@@ -221,6 +221,7 @@ roast/S03-sequence/exhaustive.t
 roast/S03-sequence/limit-arity-2-or-more.t
 roast/S03-sequence/misc.t
 roast/S03-sequence/nonnumeric.t
+roast/S03-smartmatch/00-sanity.t
 roast/S03-smartmatch/any-any.t
 roast/S03-smartmatch/any-bool.t
 roast/S03-smartmatch/any-callable.t

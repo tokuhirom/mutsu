@@ -127,6 +127,9 @@ pub(crate) enum OpCode {
         negate: bool,
         /// Variable name for LHS (to write back after s/// substitution)
         lhs_var: Option<String>,
+        /// True when RHS was originally `m//` (MatchRegex), which affects
+        /// failure return value: `m//` failure returns False, bare `//` returns Nil.
+        rhs_is_match_regex: bool,
     },
     /// Scalarize a multi-match regex result: Nil -> 0, Positional -> elems, Match -> 1.
     ScalarizeRegexMatchResult,

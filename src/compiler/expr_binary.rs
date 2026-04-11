@@ -241,11 +241,13 @@ impl Compiler {
                     Expr::Var(name) => Some(name.clone()),
                     _ => None,
                 };
+                let rhs_is_match_regex = matches!(right, Expr::MatchRegex(_));
                 self.compile_expr(left);
                 let sm_idx = self.code.emit(OpCode::SmartMatchExpr {
                     rhs_end: 0,
                     negate: matches!(op, TokenKind::BangTilde),
                     lhs_var,
+                    rhs_is_match_regex,
                 });
                 // When RHS is m/regex/, unwrap to the regex value since
                 // SmartMatchExpr already handles the matching against LHS

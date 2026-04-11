@@ -68,6 +68,9 @@ pub(crate) struct VM {
     /// The smartmatch handler uses this to return the transliterate result
     /// as a StrDistance-like value instead of performing eq comparison.
     transliterate_in_smartmatch: bool,
+    /// Set by substitution op when executed inside smartmatch RHS.
+    /// The smartmatch handler returns `$/` (Match) on success or False on failure.
+    substitution_in_smartmatch: bool,
     /// Tracks the last value passed to SetTopic, used as the REPL display value.
     last_topic_value: Option<Value>,
     /// Container name from when/default body (for Scalar container binding)
@@ -253,6 +256,7 @@ impl VM {
             locals: Vec::new(),
             in_smartmatch_rhs: false,
             transliterate_in_smartmatch: false,
+            substitution_in_smartmatch: false,
             last_topic_value: None,
             container_ref_var: None,
             container_ref_reversed: false,
@@ -1238,8 +1242,17 @@ impl VM {
                 rhs_end,
                 negate,
                 lhs_var,
+                rhs_is_match_regex,
             } => {
-                self.exec_smart_match_expr_op(code, ip, *rhs_end, *negate, lhs_var, compiled_fns)?;
+                self.exec_smart_match_expr_op(
+                    code,
+                    ip,
+                    *rhs_end,
+                    *negate,
+                    lhs_var,
+                    *rhs_is_match_regex,
+                    compiled_fns,
+                )?;
             }
             OpCode::ScalarizeRegexMatchResult => {
                 self.exec_scalarize_regex_match_result_op()?;

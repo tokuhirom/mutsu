@@ -990,6 +990,7 @@ impl VM {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_smart_match_expr_op(
         &mut self,
         code: &CompiledCode,
@@ -997,6 +998,7 @@ impl VM {
         rhs_end: u32,
         negate: bool,
         lhs_var: &Option<String>,
+        rhs_is_match_regex: bool,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let left = self.stack.pop().unwrap();
@@ -1017,10 +1019,13 @@ impl VM {
         let saved_in_smartmatch_rhs = self.in_smartmatch_rhs;
         self.in_smartmatch_rhs = true;
         self.transliterate_in_smartmatch = false;
+        self.substitution_in_smartmatch = false;
         let rhs_run = self.run_range(code, rhs_start, rhs_end, compiled_fns);
         self.in_smartmatch_rhs = saved_in_smartmatch_rhs;
         let was_transliterate = self.transliterate_in_smartmatch;
+        let was_substitution = self.substitution_in_smartmatch;
         self.transliterate_in_smartmatch = false;
+        self.substitution_in_smartmatch = false;
         rhs_run?;
         let right = self.stack.pop().unwrap_or(Value::Nil);
         if let Some(var_name) = lhs_var {
@@ -1048,11 +1053,19 @@ impl VM {
             } else {
                 right
             }
+        } else if was_substitution {
+            // s/// returns Match on success, False on failure.
+            // For !~~, negate the boolean result.
+            if negate {
+                Value::Bool(!right.truthy())
+            } else {
+                right
+            }
         } else if negate {
             // Smartmatch must NOT force lazy values (lazy ~~ anything → False)
-            self.eval_smartmatch_with_junctions(left, right, true)?
+            self.eval_smartmatch_with_junctions_ex(left, right, true, rhs_is_match_regex)?
         } else {
-            self.eval_smartmatch_with_junctions(left, right, false)?
+            self.eval_smartmatch_with_junctions_ex(left, right, false, rhs_is_match_regex)?
         };
         self.stack.push(out);
         self.env_dirty = true;
