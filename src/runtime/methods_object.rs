@@ -633,7 +633,11 @@ impl Interpreter {
                                     let info = crate::runtime::ContainerTypeInfo {
                                         value_type: constraint.clone(),
                                         key_type: None,
-                                        declared_type: Some(class_name.resolve()),
+                                        declared_type: Some(if base_class_name == "array" {
+                                            format!("array[{constraint}]")
+                                        } else {
+                                            class_name.resolve()
+                                        }),
                                     };
                                     self.register_container_type_metadata(&result, info);
                                 }
@@ -647,7 +651,11 @@ impl Interpreter {
                             let info = crate::runtime::ContainerTypeInfo {
                                 value_type: constraint.clone(),
                                 key_type: None,
-                                declared_type: Some(class_name.resolve()),
+                                declared_type: Some(if base_class_name == "array" {
+                                    format!("array[{constraint}]")
+                                } else {
+                                    class_name.resolve()
+                                }),
                             };
                             self.register_container_type_metadata(&shaped, info);
                         }
@@ -705,7 +713,11 @@ impl Interpreter {
                         let info = crate::runtime::ContainerTypeInfo {
                             value_type: constraint.clone(),
                             key_type: None,
-                            declared_type: Some(class_name.resolve()),
+                            declared_type: Some(if base_class_name == "array" {
+                                format!("array[{constraint}]")
+                            } else {
+                                class_name.resolve()
+                            }),
                         };
                         self.register_container_type_metadata(&result, info);
                     }
@@ -2004,7 +2016,11 @@ impl Interpreter {
                             crate::runtime::ContainerTypeInfo {
                                 value_type,
                                 key_type: None,
-                                declared_type: Some(class_name.resolve()),
+                                declared_type: Some(if base_class_name == "array" {
+                                    format!("array[{}]", type_args[0])
+                                } else {
+                                    class_name.resolve()
+                                }),
                             },
                         );
                         return Ok(result);
@@ -2030,7 +2046,11 @@ impl Interpreter {
                         crate::runtime::ContainerTypeInfo {
                             value_type,
                             key_type: None,
-                            declared_type: Some(class_name.resolve()),
+                            declared_type: Some(if base_class_name == "array" {
+                                format!("array[{}]", type_args[0])
+                            } else {
+                                class_name.resolve()
+                            }),
                         },
                     );
                     return Ok(result);

@@ -3672,6 +3672,7 @@ impl Interpreter {
     }
 
     fn parse_container_constraint(name: &str, raw: &str) -> ContainerTypeInfo {
+        let raw = raw.trim();
         // Note: For %-sigil variables, Hash[X] means "elements are Hash[X]",
         // NOT "elements are X". We do NOT unwrap Hash[...] here.
         // The only special case for % is the `TypeName{KeyType}` syntax
@@ -3692,7 +3693,13 @@ impl Interpreter {
         ContainerTypeInfo {
             value_type: raw.to_string(),
             key_type: None,
-            declared_type: None,
+            declared_type: if name.starts_with('@')
+                && crate::runtime::native_types::is_native_array_element_type(raw)
+            {
+                Some(format!("array[{raw}]"))
+            } else {
+                None
+            },
         }
     }
 

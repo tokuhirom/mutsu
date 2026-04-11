@@ -303,6 +303,21 @@ impl Interpreter {
         }
         if let Some((base, inner)) = Self::parse_generic_constraint(constraint) {
             match base {
+                "array" => {
+                    if let Value::Array(..) = value
+                        && let Some(metadata) = self.container_type_metadata(value)
+                        && metadata
+                            .declared_type
+                            .as_deref()
+                            .is_some_and(|declared| declared.starts_with("array["))
+                    {
+                        return self.type_matches_value(
+                            inner,
+                            &Value::Package(Symbol::intern(&metadata.value_type)),
+                        );
+                    }
+                    return false;
+                }
                 "Array" | "List" | "Positional" => {
                     if let Value::Array(items, ..) = value {
                         return items.iter().all(|v| self.type_matches_value(inner, v));

@@ -806,8 +806,10 @@ impl Interpreter {
                 .map(crate::builtins::methods_0arg::raku_repr::raku_value)
                 .collect::<Vec<_>>()
                 .join(", ");
-            let type_name = &info.value_type;
-            return Ok(Value::str(format!("Array[{}].new({})", type_name, inner)));
+            let type_name = info
+                .declared_type
+                .unwrap_or_else(|| format!("Array[{}]", info.value_type));
+            return Ok(Value::str(format!("{type_name}.new({inner})")));
         }
 
         // ACCEPTS for allomorphic types with Instance arguments
