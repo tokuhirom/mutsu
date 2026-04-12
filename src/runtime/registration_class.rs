@@ -2571,10 +2571,16 @@ impl Interpreter {
             role_def: role_def.clone(),
             parents: candidate_parents,
         };
-        if type_params.is_empty() {
-            // A later non-parametric `role Name { ... }` should shadow any
-            // previously loaded role group with the same name instead of
-            // continuing to participate in parametric candidate selection.
+        if type_params.is_empty()
+            && self
+                .role_candidates
+                .get(name)
+                .is_some_and(|cands| cands.iter().all(|c| c.role_def.is_stub_role))
+        {
+            // Only shadow previously loaded role candidates if they were all
+            // stubs (e.g. from a precompiled module placeholder). Do not
+            // discard real parametric candidates, since a parametric and a
+            // non-parametric role with the same name form a role group.
             self.role_candidates
                 .insert(name.to_string(), vec![candidate]);
         } else {
