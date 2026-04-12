@@ -245,14 +245,19 @@ impl Interpreter {
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
         let dispatch_class = if matches!(
             class_name,
-            "Promise" | "Channel" | "Supply" | "Supplier" | "Proc::Async"
+            "Promise" | "Channel" | "Supply" | "Supplier" | "Proc::Async" | "Encoding::Decoder"
         ) {
             Some(class_name.to_string())
         } else {
             self.class_mro(class_name).into_iter().find(|candidate| {
                 matches!(
                     candidate.as_str(),
-                    "Promise" | "Channel" | "Supply" | "Supplier" | "Proc::Async"
+                    "Promise"
+                        | "Channel"
+                        | "Supply"
+                        | "Supplier"
+                        | "Proc::Async"
+                        | "Encoding::Decoder"
                 )
             })
         };
@@ -264,6 +269,7 @@ impl Interpreter {
                 self.native_supplier_mut(attributes, method, args)
             }
             "Proc::Async" => self.native_proc_async_mut(attributes, method, args),
+            "Encoding::Decoder" => Self::native_encoding_decoder_mut(attributes, method, args),
             _ => Err(RuntimeError::new(format!(
                 "No native mutable method '{}' on '{}'",
                 method, class_name
