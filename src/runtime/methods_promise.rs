@@ -272,8 +272,35 @@ impl Interpreter {
         };
         match method {
             "keep" | "break" => {
-                let target = Value::Promise(shared.clone());
-                self.dispatch_promise_method(&shared, method, args, &target)
+                let value = if method == "keep" {
+                    args.into_iter().next().unwrap_or(Value::Bool(true))
+                } else {
+                    args.into_iter()
+                        .next()
+                        .unwrap_or_else(|| Value::str_from("Died"))
+                };
+                let res = if method == "keep" {
+                    shared.try_keep(value)
+                } else {
+                    shared.try_break(value)
+                };
+                match res {
+                    Ok(()) => Ok(Value::Nil),
+                    Err(status) => {
+                        let msg = format!(
+                            "Cannot keep/break a Promise more than once (status: {})",
+                            status
+                        );
+                        let mut attrs = HashMap::new();
+                        attrs.insert("message".to_string(), Value::str(msg.clone()));
+                        attrs.insert("promise".to_string(), Value::Promise(shared.clone()));
+                        let ex =
+                            Value::make_instance(Symbol::intern("X::Promise::Resolved"), attrs);
+                        let mut err = RuntimeError::new(msg);
+                        err.exception = Some(Box::new(ex));
+                        Err(err)
+                    }
+                }
             }
             "WHAT" => Ok(Value::Package(Symbol::intern("Promise::Vow"))),
             "Str" | "gist" => Ok(Value::str("(Vow)".to_string())),

@@ -157,13 +157,10 @@ fn invert_value(target: &Value) -> Option<Value> {
         }
         Value::Mix(items, _) => {
             for (k, weight) in items.iter() {
-                let (n, d) = f64_to_rat(*weight);
-                let weight_val = if d == 1 {
-                    Value::Int(n)
-                } else {
-                    Value::Rat(n, d)
-                };
-                result.push(make_inverted_pair(weight_val, Value::str(k.clone())));
+                result.push(make_inverted_pair(
+                    Value::Num(*weight),
+                    Value::str(k.clone()),
+                ));
             }
         }
         // Instance types that compose Baggy: delegate to internal bag data
@@ -620,15 +617,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     items
                         .iter()
                         .map(|(k, v)| {
-                            let weight =
-                                crate::value::make_rat((*v * 1_000_000.0) as i64, 1_000_000);
-                            // Simplify to Int if the weight is a whole number
-                            let weight_val = if v.fract() == 0.0 {
-                                Value::Int(*v as i64)
-                            } else {
-                                weight
-                            };
-                            Value::ValuePair(Box::new(weight_val), Box::new(Value::str(k.clone())))
+                            Value::ValuePair(
+                                Box::new(Value::Num(*v)),
+                                Box::new(Value::str(k.clone())),
+                            )
                         })
                         .collect(),
                 ))),
