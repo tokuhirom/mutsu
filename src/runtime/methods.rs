@@ -136,6 +136,97 @@ impl Interpreter {
             return Ok(Value::array(Vec::new()));
         }
 
+        // Buf/Blob write-num32 / write-num64 — non-mut entry point.
+        // Handles both type object (e.g. `buf8.write-num32(0, 42e0)`) and
+        // instance form (e.g. `(my $b := buf8.new).write-num32(0, 42e0)`).
+        // For instances we mutate the underlying instance id so that any
+        // bindings observing the same instance see the change.
+        if super::buf_write_num::write_num_size(method).is_some() {
+            let (is_inst, cn_opt, base_bytes, class_sym_opt, id_opt, attrs_opt) = match &target {
+                Value::Package(name) => {
+                    let cn = name.resolve();
+                    if crate::runtime::utils::is_buf_or_blob_class(&cn) {
+                        (false, Some(cn), Vec::new(), None, None, None)
+                    } else {
+                        (false, None, Vec::new(), None, None, None)
+                    }
+                }
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    id,
+                } => {
+                    let cn = class_name.resolve();
+                    if crate::runtime::utils::is_buf_or_blob_class(&cn) {
+                        let mut v: Vec<u8> = Vec::new();
+                        if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                            v.reserve(items.len());
+                            for it in items.iter() {
+                                v.push(match it {
+                                    Value::Int(i) => (*i).clamp(0, 255) as u8,
+                                    Value::Num(f) => (*f as i64).clamp(0, 255) as u8,
+                                    _ => 0,
+                                });
+                            }
+                        }
+                        (
+                            true,
+                            Some(cn),
+                            v,
+                            Some(*class_name),
+                            Some(*id),
+                            Some(attributes.as_ref().clone()),
+                        )
+                    } else {
+                        (false, None, Vec::new(), None, None, None)
+                    }
+                }
+                _ => (false, None, Vec::new(), None, None, None),
+            };
+            if let Some(cn) = cn_opt {
+                if is_inst && (cn == "Blob" || cn.starts_with("Blob[") || cn.starts_with("blob")) {
+                    return Err(RuntimeError::new(format!(
+                        "Cannot modify immutable {} with {}",
+                        cn, method
+                    )));
+                }
+                if args.len() < 2 || args.len() > 3 {
+                    return Err(RuntimeError::new(format!(
+                        "{} expects 2 or 3 arguments, got {}",
+                        method,
+                        args.len()
+                    )));
+                }
+                let offset_i64 = match &args[0] {
+                    Value::Int(i) => *i,
+                    Value::Num(f) => *f as i64,
+                    _ => 0,
+                };
+                let endian_val = if args.len() == 3 {
+                    super::buf_write_num::decode_endian(&args[2])
+                } else {
+                    0
+                };
+                let mut bytes = base_bytes;
+                super::buf_write_num::apply_write_num(
+                    &mut bytes, method, offset_i64, &args[1], endian_val,
+                )?;
+                if is_inst {
+                    let class_sym = class_sym_opt.unwrap();
+                    let id = id_opt.unwrap();
+                    let mut updated_attrs = attrs_opt.unwrap();
+                    updated_attrs.insert(
+                        "bytes".to_string(),
+                        Value::array(bytes.into_iter().map(|b| Value::Int(b as i64)).collect()),
+                    );
+                    self.overwrite_instance_bindings_by_identity(&cn, id, updated_attrs.clone());
+                    return Ok(Value::make_instance_with_id(class_sym, updated_attrs, id));
+                }
+                let normalized = crate::runtime::utils::normalize_buf_type_name(&cn);
+                return Ok(super::buf_write_num::make_buf_value(&normalized, bytes));
+            }
+        }
+
         // IterationBuffer dispatch
         if matches!(&target, Value::Instance { class_name, .. } if class_name == "IterationBuffer")
             && matches!(
