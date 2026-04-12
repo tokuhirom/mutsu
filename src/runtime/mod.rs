@@ -2397,6 +2397,13 @@ impl Interpreter {
         // X::UnitScope::Invalid
         register_x("X::UnitScope::Invalid", "Exception");
 
+        // X::Promise / X::Channel exceptions
+        register_x("X::Promise::Vowed", "Exception");
+        register_x("X::Promise::Resolved", "Exception");
+        register_x("X::Promise::CauseOnlyValidOnBroken", "Exception");
+        register_x("X::Channel::SendOnClosed", "Exception");
+        register_x("X::Channel::ReceiveOnClosed", "Exception");
+
         let mut interpreter = Self {
             env: Env::from(env),
             output: String::new(),

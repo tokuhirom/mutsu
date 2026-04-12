@@ -724,6 +724,7 @@ roast/S17-promise/basic.t
 roast/S17-promise/in.t
 roast/S17-promise/lock-async-stress.t
 roast/S17-promise/lock-async-stress2.t
+roast/S17-promise/single-assignment.t
 roast/S17-promise/stress.t
 roast/S17-scheduler/at.t
 roast/S17-scheduler/every.t

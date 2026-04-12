@@ -131,18 +131,16 @@ impl Interpreter {
             }
             "keep" => {
                 let value = args.into_iter().next().unwrap_or(Value::Bool(true));
-                if let Err(_status) = shared.try_keep(value) {
+                if let Err(status) = shared.try_keep(value) {
+                    let msg = format!(
+                        "Cannot keep/break a Promise more than once (status: {})",
+                        status
+                    );
                     let mut attrs = HashMap::new();
-                    attrs.insert(
-                        "message".to_string(),
-                        Value::str(
-                            "Access denied to keep/break this Promise; already vowed".to_string(),
-                        ),
-                    );
-                    let ex = Value::make_instance(Symbol::intern("X::Promise::Vowed"), attrs);
-                    let mut err = RuntimeError::new(
-                        "Access denied to keep/break this Promise; already vowed".to_string(),
-                    );
+                    attrs.insert("message".to_string(), Value::str(msg.clone()));
+                    attrs.insert("promise".to_string(), target.clone());
+                    let ex = Value::make_instance(Symbol::intern("X::Promise::Resolved"), attrs);
+                    let mut err = RuntimeError::new(msg);
                     err.exception = Some(Box::new(ex));
                     Err(err)
                 } else {
@@ -154,18 +152,16 @@ impl Interpreter {
                     .into_iter()
                     .next()
                     .unwrap_or_else(|| Value::str_from("Died"));
-                if let Err(_status) = shared.try_break(reason_val) {
+                if let Err(status) = shared.try_break(reason_val) {
+                    let msg = format!(
+                        "Cannot keep/break a Promise more than once (status: {})",
+                        status
+                    );
                     let mut attrs = HashMap::new();
-                    attrs.insert(
-                        "message".to_string(),
-                        Value::str(
-                            "Access denied to keep/break this Promise; already vowed".to_string(),
-                        ),
-                    );
-                    let ex = Value::make_instance(Symbol::intern("X::Promise::Vowed"), attrs);
-                    let mut err = RuntimeError::new(
-                        "Access denied to keep/break this Promise; already vowed".to_string(),
-                    );
+                    attrs.insert("message".to_string(), Value::str(msg.clone()));
+                    attrs.insert("promise".to_string(), target.clone());
+                    let ex = Value::make_instance(Symbol::intern("X::Promise::Resolved"), attrs);
+                    let mut err = RuntimeError::new(msg);
                     err.exception = Some(Box::new(ex));
                     Err(err)
                 } else {
