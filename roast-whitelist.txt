@@ -140,6 +140,7 @@ roast/S03-binding/ro.t
 roast/S03-buf/read-int.t
 roast/S03-buf/read-num.t
 roast/S03-buf/read-write-bits.t
+roast/S03-buf/write-num.t
 roast/S03-feeds/basic.t
 roast/S03-junctions/associative.t
 roast/S03-junctions/autothreading.t

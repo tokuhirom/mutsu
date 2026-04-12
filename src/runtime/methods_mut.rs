@@ -1572,6 +1572,105 @@ impl Interpreter {
             }
         }
 
+        // Buf/Blob write-num32 / write-num64 — mutate an existing instance.
+        if super::buf_write_num::write_num_size(method).is_some()
+            && let Value::Instance {
+                class_name,
+                attributes,
+                id,
+            } = &target
+            && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
+        {
+            let cn = class_name.resolve();
+            if cn == "Blob" || cn.starts_with("Blob[") || cn.starts_with("blob") {
+                return Err(RuntimeError::new(format!(
+                    "Cannot modify immutable {} with {}",
+                    cn, method
+                )));
+            }
+            if args.len() < 2 || args.len() > 3 {
+                return Err(RuntimeError::new(format!(
+                    "{} expects 2 or 3 arguments, got {}",
+                    method,
+                    args.len()
+                )));
+            }
+            let offset_val = &args[0];
+            let value_val = &args[1];
+            let endian_val = if args.len() == 3 {
+                super::buf_write_num::decode_endian(&args[2])
+            } else {
+                0
+            };
+            let offset_i64 = match offset_val {
+                Value::Int(i) => *i,
+                Value::Num(f) => *f as i64,
+                _ => 0,
+            };
+            let mut bytes = {
+                let mut v: Vec<u8> = Vec::new();
+                if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                    v.reserve(items.len());
+                    for it in items.iter() {
+                        v.push(match it {
+                            Value::Int(i) => (*i).clamp(0, 255) as u8,
+                            Value::Num(f) => (*f as i64).clamp(0, 255) as u8,
+                            _ => 0,
+                        });
+                    }
+                }
+                v
+            };
+            super::buf_write_num::apply_write_num(
+                &mut bytes, method, offset_i64, value_val, endian_val,
+            )?;
+            let mut updated_attrs = attributes.as_ref().clone();
+            updated_attrs.insert(
+                "bytes".to_string(),
+                Value::array(bytes.into_iter().map(|b| Value::Int(b as i64)).collect()),
+            );
+            self.overwrite_instance_bindings_by_identity(
+                &class_name.resolve(),
+                *id,
+                updated_attrs.clone(),
+            );
+            let updated = Value::make_instance_with_id(*class_name, updated_attrs, *id);
+            self.env.insert(target_var.to_string(), updated.clone());
+            return Ok(updated);
+        }
+
+        // Buf/Blob write-num on type object: returns a fresh buf.
+        if super::buf_write_num::write_num_size(method).is_some()
+            && let Value::Package(name) = &target
+        {
+            let cn = name.resolve();
+            if crate::runtime::utils::is_buf_or_blob_class(&cn) {
+                if args.len() < 2 || args.len() > 3 {
+                    return Err(RuntimeError::new(format!(
+                        "{} expects 2 or 3 arguments, got {}",
+                        method,
+                        args.len()
+                    )));
+                }
+                let offset_i64 = match &args[0] {
+                    Value::Int(i) => *i,
+                    Value::Num(f) => *f as i64,
+                    _ => 0,
+                };
+                let endian_val = if args.len() == 3 {
+                    super::buf_write_num::decode_endian(&args[2])
+                } else {
+                    0
+                };
+                let mut bytes: Vec<u8> = Vec::new();
+                super::buf_write_num::apply_write_num(
+                    &mut bytes, method, offset_i64, &args[1], endian_val,
+                )?;
+                let normalized = crate::runtime::utils::normalize_buf_type_name(&cn);
+                return Ok(super::buf_write_num::make_buf_value(&normalized, bytes));
+            }
+        }
+
         // Buf/Blob mutating methods: append, push, prepend, unshift, reallocate
         if matches!(
             method,
