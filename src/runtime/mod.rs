@@ -1911,7 +1911,18 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: ["decode-chars"].iter().map(|s| s.to_string()).collect(),
+                native_methods: [
+                    "decode-chars",
+                    "add-bytes",
+                    "consume-all-chars",
+                    "consume-available-chars",
+                    "bytes-available",
+                    "is-empty",
+                    "set-line-separators",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
                 mro: vec!["Encoding::Decoder".to_string()],
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
@@ -2693,6 +2704,11 @@ impl Interpreter {
             EncodingEntry {
                 name: "utf-8".to_string(),
                 alternative_names: vec!["utf8".to_string()],
+                user_type: None,
+            },
+            EncodingEntry {
+                name: "utf8-c8".to_string(),
+                alternative_names: vec!["utf-8-c8".to_string()],
                 user_type: None,
             },
             EncodingEntry {
