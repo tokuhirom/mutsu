@@ -164,8 +164,16 @@ impl Interpreter {
         method: &str,
     ) -> Result<Value, RuntimeError> {
         match method {
-            "name" | "auth" | "version" | "precomp-ext" | "precomp-target" => {
+            "name" | "auth" | "version" | "precomp-ext" | "precomp-target" | "prefix" | "desc"
+            | "signature" | "config" | "properties" => {
                 Ok(attributes.get(method).cloned().unwrap_or(Value::Nil))
+            }
+            "raku" => {
+                let name = attributes
+                    .get("name")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                Ok(Value::str(format!("{}.new(...)", name)))
             }
             "request-garbage-collection" => {
                 // Clear persisted closure environments to release stale Instance

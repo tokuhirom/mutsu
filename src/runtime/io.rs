@@ -697,7 +697,8 @@ impl Interpreter {
         self.env.insert("?RAKU".to_string(), raku);
         let vm = Self::make_vm_instance();
         self.env.insert("$*VM".to_string(), vm.clone());
-        self.env.insert("*VM".to_string(), vm);
+        self.env.insert("*VM".to_string(), vm.clone());
+        self.env.insert("?VM".to_string(), vm);
         let kernel = Self::make_kernel_instance();
         self.env.insert("*KERNEL".to_string(), kernel.clone());
         self.env.insert("?KERNEL".to_string(), kernel);
@@ -982,6 +983,15 @@ impl Interpreter {
             ]),
         );
         attrs.insert(
+            "VMnames".to_string(),
+            Value::array(vec![
+                Value::str_from("mutsu"),
+                Value::str_from("moar"),
+                Value::str_from("jvm"),
+                Value::str_from("js"),
+            ]),
+        );
+        attrs.insert(
             "KERNELnames".to_string(),
             Value::array(vec![
                 Value::str_from("darwin"),
@@ -1014,8 +1024,26 @@ impl Interpreter {
                 minus: false,
             },
         );
+        attrs.insert(
+            "signature".to_string(),
+            Value::make_instance(Symbol::intern("Blob"), {
+                let mut a = HashMap::new();
+                a.insert("values".to_string(), Value::array(vec![Value::Int(0)]));
+                a
+            }),
+        );
+        attrs.insert("desc".to_string(), Value::str_from("mutsu virtual machine"));
         attrs.insert("precomp-ext".to_string(), Value::str_from("mutsu"));
         attrs.insert("precomp-target".to_string(), Value::str_from("mutsu"));
+        attrs.insert("prefix".to_string(), Value::str_from("mutsu"));
+        // properties: a non-empty hash so the value is truthy.
+        let mut props = HashMap::new();
+        props.insert("name".to_string(), Value::str_from("mutsu"));
+        attrs.insert("properties".to_string(), Value::Hash(props.into()));
+        // config: a non-empty hash so the value is truthy.
+        let mut config = HashMap::new();
+        config.insert("name".to_string(), Value::str_from("mutsu"));
+        attrs.insert("config".to_string(), Value::Hash(config.into()));
         Value::make_instance(Symbol::intern("VM"), attrs)
     }
 
