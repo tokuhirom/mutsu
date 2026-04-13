@@ -1,4 +1,5 @@
 roast/S02-types/generics.t
+roast/S02-types/multi_dimensional_array.t
 roast/S03-sequence/misc.t
 roast/S04-exceptions/exceptions-alternatives.t
 roast/S05-mass/recursive.t
