@@ -72,6 +72,11 @@ thread_local! {
         RefCell::new(HashMap::new());
     /// Imported function names to pre-register after scope reset (for EVAL).
     static EVAL_IMPORTED_FUNCTION_PRESEED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// User-declared sub names to pre-register after scope reset (for EVAL).
+    /// These are subs defined in the outer runtime scope that EVAL'd code
+    /// should see as declared (so e.g. `first.uc` can parse as
+    /// `first().uc` when a user sub `first` shadows the `first` listop).
+    static EVAL_USER_SUB_PRESEED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     static CURRENT_LANGUAGE_VERSION: RefCell<String> = RefCell::new("6.e".to_string());
     /// `use attributes :D/:U/:_` pragma — tracks the smiley to apply to unsmileyed attribute types.
     /// Empty string means no pragma active.
@@ -447,6 +452,17 @@ pub(in crate::parser) fn reset_user_subs() {
             }
         });
     });
+    EVAL_USER_SUB_PRESEED.with(|preseed| {
+        let names = preseed.borrow();
+        SCOPES.with(|s| {
+            let mut scopes = s.borrow_mut();
+            if let Some(scope) = scopes.last_mut() {
+                for name in names.iter() {
+                    scope.user_subs.insert(name.clone());
+                }
+            }
+        });
+    });
     CURRENT_LANGUAGE_VERSION.with(|v| {
         *v.borrow_mut() = "6.e".to_string();
     });
@@ -487,6 +503,12 @@ pub(in crate::parser) fn set_eval_operator_assoc_preseed(assoc: HashMap<String, 
 
 pub(in crate::parser) fn set_eval_imported_function_preseed(names: Vec<String>) {
     EVAL_IMPORTED_FUNCTION_PRESEED.with(|preseed| {
+        *preseed.borrow_mut() = names;
+    });
+}
+
+pub(in crate::parser) fn set_eval_user_sub_preseed(names: Vec<String>) {
+    EVAL_USER_SUB_PRESEED.with(|preseed| {
         *preseed.borrow_mut() = names;
     });
 }

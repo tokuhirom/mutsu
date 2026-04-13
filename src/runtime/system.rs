@@ -9,7 +9,14 @@ impl Interpreter {
         op_assoc: &HashMap<String, String>,
         imported_names: &[String],
     ) -> Result<Value, RuntimeError> {
-        match crate::parser::parse_program_with_operators(src, op_names, op_assoc, imported_names) {
+        let user_sub_names = self.collect_eval_user_sub_names();
+        match crate::parser::parse_program_with_operators_and_user_subs(
+            src,
+            op_names,
+            op_assoc,
+            imported_names,
+            &user_sub_names,
+        ) {
             Ok((stmts, _)) => {
                 self.check_eval_class_redeclarations(&stmts)?;
                 self.check_eval_undeclared_vars(&stmts)?;
@@ -576,6 +583,29 @@ impl Interpreter {
             .iter()
             .map(|name| (*name).to_string())
             .collect()
+    }
+
+    /// Collect user-declared subroutine names from the current runtime so
+    /// EVAL'd code can see them as declared at parse time. This allows
+    /// constructs like `first.uc` (where `first` is a user sub shadowing
+    /// the `first` listop builtin) to parse correctly as `first().uc`.
+    pub(crate) fn collect_eval_user_sub_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = Vec::new();
+        for key in self.functions.keys() {
+            let key_s = key.resolve();
+            let short = if let Some(pos) = key_s.rfind("::") {
+                &key_s[pos + 2..]
+            } else {
+                key_s.as_str()
+            };
+            // Skip empty/meta-named entries. Operator subs are handled by
+            // collect_operator_sub_names.
+            if short.is_empty() || short.contains(':') {
+                continue;
+            }
+            names.push(short.to_string());
+        }
+        names
     }
 
     pub(super) fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
