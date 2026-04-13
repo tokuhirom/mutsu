@@ -1798,12 +1798,15 @@ impl Compiler {
             Stmt::Use { module, arg, .. } if module == "Test::More" => {
                 self.compile_test_more_use(arg);
             }
-            Stmt::Use { module, .. } if module == "Test" || module.starts_with("Test::") => {
+            Stmt::Use { module, tags, .. } if module == "Test" || module.starts_with("Test::") => {
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
-                self.code.emit(OpCode::UseModule {
-                    name_idx,
-                    tags_idx: None,
-                });
+                let tags_idx = if tags.is_empty() {
+                    None
+                } else {
+                    let entries = tags.iter().cloned().map(Value::str).collect::<Vec<Value>>();
+                    Some(self.code.add_constant(Value::array(entries)))
+                };
+                self.code.emit(OpCode::UseModule { name_idx, tags_idx });
             }
             Stmt::Use { module, tags, .. } => {
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
