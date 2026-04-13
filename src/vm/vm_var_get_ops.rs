@@ -167,6 +167,7 @@ impl VM {
             || name == "callwith"
             || name == "nextwith"
             || name == "nextcallee"
+            || name == "lastcall"
         {
             let result = self.interpreter.call_function(name, Vec::new())?;
             self.env_dirty = true;
