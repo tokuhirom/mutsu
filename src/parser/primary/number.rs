@@ -25,6 +25,17 @@ fn make_radix_digit_error(base: u32, body: &str, pos: usize) -> PError {
     PError::fatal_with_exception(message, Box::new(exception))
 }
 
+/// Build a fatal parse error with X::Syntax::Confused exception.
+fn make_confused_error(reason: &str) -> PError {
+    let message = format!("Confused: {}", reason);
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message.clone()));
+    attrs.insert("reason".to_string(), Value::str(reason.to_string()));
+    let exception =
+        Value::make_instance(crate::symbol::Symbol::intern("X::Syntax::Confused"), attrs);
+    PError::fatal_with_exception(message, Box::new(exception))
+}
+
 fn hex_alpha_value(c: char) -> Option<u32> {
     match c {
         'a'..='f' => Some(10 + (c as u32 - 'a' as u32)),
@@ -50,24 +61,47 @@ fn starts_with_decimal_digit(input: &str) -> bool {
 }
 
 fn scan_decimal_digits(input: &str) -> Option<(&str, String)> {
+    // Per Raku spec, a single underscore is allowed only between two digits
+    // within a numeric literal. Underscores cannot appear at the start, end,
+    // or adjacent to non-digit positions, and consecutive underscores are
+    // disallowed.
     let mut end = 0;
     let mut clean = String::new();
     let mut saw_digit = false;
-    for c in input.chars() {
+    let mut last_end_before_underscore: Option<usize> = None;
+    let mut chars = input.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
         if c == '_' {
-            end += c.len_utf8();
+            // Underscore is only valid if the previous char was a digit and
+            // the next char is also a digit. Otherwise stop here and roll
+            // back to before the underscore.
+            if !saw_digit {
+                break;
+            }
+            // Peek at next char.
+            let next_is_digit = chars
+                .peek()
+                .map(|(_, nc)| decimal_digit_value(*nc).is_some())
+                .unwrap_or(false);
+            if !next_is_digit {
+                // Don't consume this underscore; stop scanning.
+                last_end_before_underscore = Some(i);
+                break;
+            }
+            end = i + c.len_utf8();
             continue;
         }
         if let Some(dv) = decimal_digit_value(c) {
             clean.push(char::from_digit(dv, 10).unwrap());
             saw_digit = true;
-            end += c.len_utf8();
+            end = i + c.len_utf8();
             continue;
         }
         break;
     }
     if saw_digit {
-        Some((&input[end..], clean))
+        let stop = last_end_before_underscore.unwrap_or(end);
+        Some((&input[stop..], clean))
     } else {
         None
     }
@@ -207,6 +241,11 @@ pub(super) fn integer(input: &str) -> PResult<'_, Expr> {
         if r.starts_with('+') || r.starts_with('-') {
             exp_part.push_str(&r[..1]);
             r = &r[1..];
+        }
+        // An underscore immediately after `e`/`E` (or its sign) is a hard
+        // syntax error per Raku spec — emit X::Syntax::Confused.
+        if r.starts_with('_') {
+            return Err(make_confused_error("two terms in a row"));
         }
         if let Some((r2, exp_digits)) = scan_decimal_digits(r) {
             exp_part.push_str(&exp_digits);
