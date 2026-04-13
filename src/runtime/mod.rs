@@ -698,6 +698,11 @@ pub struct Interpreter {
     /// Functions declared with `our` scope that should persist across block boundaries.
     our_scoped_functions: HashMap<Symbol, FunctionDef>,
     operator_assoc: HashMap<String, String>,
+    /// Operator sub names (infix:<..>, prefix:<..>, etc.) that have been
+    /// imported into the current lexical scope via `use Module`. Used to
+    /// preseed the parser when EVAL is called so that imported operators
+    /// remain visible, but non-exported operators from loaded modules do not.
+    pub(crate) imported_operator_names: HashSet<String>,
     proto_functions: HashMap<Symbol, FunctionDef>,
     token_defs: HashMap<Symbol, Vec<FunctionDef>>,
     lib_paths: Vec<String>,
@@ -2457,6 +2462,7 @@ impl Interpreter {
             functions: HashMap::new(),
             our_scoped_functions: HashMap::new(),
             operator_assoc: HashMap::new(),
+            imported_operator_names: HashSet::new(),
             proto_functions: HashMap::new(),
             token_defs: HashMap::new(),
             lib_paths: Vec::new(),
@@ -4095,6 +4101,7 @@ impl Interpreter {
             functions: self.functions.clone(),
             our_scoped_functions: self.our_scoped_functions.clone(),
             operator_assoc: self.operator_assoc.clone(),
+            imported_operator_names: self.imported_operator_names.clone(),
             proto_functions: self.proto_functions.clone(),
             token_defs: self.token_defs.clone(),
             lib_paths: self.lib_paths.clone(),

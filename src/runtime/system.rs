@@ -492,25 +492,33 @@ impl Interpreter {
     /// to recognize their delimiter syntax. Other operator categories (prefix, postfix,
     /// infix, term) work through runtime dispatch without parser pre-registration.
     pub(crate) fn collect_operator_sub_names(&self) -> Vec<String> {
-        let mut names = Vec::new();
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        // Include circumfix/postcircumfix operators defined in any loaded
+        // module so EVAL parser can still recognize their delimiter syntax.
         for key in self.functions.keys() {
             let key_s = key.resolve();
-            // Strip package prefix if present (e.g. "GLOBAL::circumfix:<⌊ ⌋>")
             let name = if let Some(pos) = key_s.rfind("::") {
                 &key_s[pos + 2..]
             } else {
                 key_s.as_str()
             };
             if name.starts_with("circumfix:") || name.starts_with("postcircumfix:") {
-                names.push(name.to_string());
+                seen.insert(name.to_string());
             }
         }
-        // Also check env for operator subs stored as variables
         for key in self.env.keys() {
             if key.starts_with("circumfix:") || key.starts_with("postcircumfix:") {
-                names.push(key.clone());
+                seen.insert(key.clone());
             }
         }
+        // Also include operators imported via `use Module` at runtime. This
+        // captures prefix/infix/postfix operators declared with `is export`
+        // in loaded modules, without exposing non-exported subs.
+        for name in &self.imported_operator_names {
+            seen.insert(name.clone());
+        }
+        let mut names: Vec<String> = seen.into_iter().collect();
+        names.sort();
         names
     }
 

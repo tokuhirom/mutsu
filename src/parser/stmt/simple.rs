@@ -983,8 +983,15 @@ pub(crate) fn is_imported_function(name: &str) -> bool {
 /// For `Test`, uses a hardcoded list (Test functions are implemented natively in Rust).
 /// For all other modules, dynamically scans the module file to extract `is export` subs.
 pub(in crate::parser) fn register_module_exports(module: &str) {
-    let exports: Vec<String> = if module == "Test" {
-        TEST_EXPORTS.iter().map(|s| (*s).to_string()).collect()
+    let exports: Vec<InlineModuleExport> = if module == "Test" {
+        TEST_EXPORTS
+            .iter()
+            .map(|s| InlineModuleExport {
+                name: (*s).to_string(),
+                precedence: None,
+                associativity: None,
+            })
+            .collect()
     } else {
         // Check for infinite recursion
         let already_loading = LOADING_MODULES.with(|m| m.borrow().contains(module));
@@ -1003,15 +1010,37 @@ pub(in crate::parser) fn register_module_exports(module: &str) {
     if exports.is_empty() {
         return;
     }
+    for export in &exports {
+        // Register operator subs into user_subs so that the parser's
+        // prefix/infix/postfix/circumfix matchers pick them up.
+        if is_operator_sub_name(&export.name) {
+            register_user_sub(&export.name);
+            register_user_callable_term_symbol(&export.name);
+            if let Some(prec) = export.precedence {
+                register_op_precedence(&export.name, prec);
+            }
+            if let Some(assoc) = export.associativity.as_deref() {
+                register_user_infix_assoc(&export.name, assoc);
+            }
+        }
+    }
     SCOPES.with(|s| {
         let mut scopes = s.borrow_mut();
         let current = scopes
             .last_mut()
             .expect("scope stack should never be empty");
-        for name in &exports {
-            current.imported_functions.insert(name.clone());
+        for export in &exports {
+            current.imported_functions.insert(export.name.clone());
         }
     });
+}
+
+fn is_operator_sub_name(name: &str) -> bool {
+    name.starts_with("infix:<")
+        || name.starts_with("prefix:<")
+        || name.starts_with("postfix:<")
+        || name.starts_with("circumfix:<")
+        || name.starts_with("postcircumfix:<")
 }
 
 /// Record exported subs from an inline `module Name { ... }` block.
@@ -1074,7 +1103,7 @@ pub(in crate::parser) fn import_inline_module_exports(module: &str) {
 }
 
 /// Find a module file and extract its exported function names.
-fn find_and_extract_exports(module: &str) -> Vec<String> {
+fn find_and_extract_exports(module: &str) -> Vec<InlineModuleExport> {
     let path = find_module_file(module);
     match path {
         Some(p) => {
@@ -1133,7 +1162,7 @@ fn find_module_file(module: &str) -> Option<String> {
 
 /// Parse module source and extract names of `is export` sub/proto declarations.
 /// Saves and restores the parser's scope state to avoid clobbering the caller's scopes.
-fn extract_exported_names(source: &str) -> Vec<String> {
+fn extract_exported_names(source: &str) -> Vec<InlineModuleExport> {
     // Save current scopes — parse_program_partial calls reset_user_subs which clears them
     let saved_scopes = SCOPES.with(|s| s.borrow().clone());
     // Save the language version — parsing the module may change it via `use v6.*`
@@ -1144,13 +1173,15 @@ fn extract_exported_names(source: &str) -> Vec<String> {
         *s.borrow_mut() = saved_scopes;
     });
     set_current_language_version(&saved_language_version);
-    let mut names = HashSet::new();
+    let mut exports: HashMap<String, InlineModuleExport> = HashMap::new();
     for stmt in &stmts {
         match stmt {
             Stmt::SubDecl {
                 name,
                 is_export,
                 export_tags,
+                associativity,
+                precedence_trait,
                 ..
             } if *is_export => {
                 // Only include subs that are in the DEFAULT or MANDATORY export tags.
@@ -1160,7 +1191,22 @@ fn extract_exported_names(source: &str) -> Vec<String> {
                     .iter()
                     .any(|t| t == "DEFAULT" || t == "MANDATORY")
                 {
-                    names.insert(name.resolve());
+                    let precedence = precedence_trait.as_ref().and_then(|(trait_name, ref_op)| {
+                        resolve_op_precedence(ref_op).map(|ref_level| match trait_name.as_str() {
+                            "tighter" => ref_level + 5,
+                            "looser" => ref_level - 5,
+                            _ => ref_level,
+                        })
+                    });
+                    let resolved = name.resolve();
+                    exports.insert(
+                        resolved.clone(),
+                        InlineModuleExport {
+                            name: resolved,
+                            precedence,
+                            associativity: associativity.clone(),
+                        },
+                    );
                 }
             }
             Stmt::ProtoDecl {
@@ -1168,7 +1214,14 @@ fn extract_exported_names(source: &str) -> Vec<String> {
             } if *is_export => {
                 // ProtoDecl doesn't carry export_tags; proto declarations with
                 // `is export` default to DEFAULT so always include them.
-                names.insert(name.resolve());
+                let resolved = name.resolve();
+                exports
+                    .entry(resolved.clone())
+                    .or_insert(InlineModuleExport {
+                        name: resolved,
+                        precedence: None,
+                        associativity: None,
+                    });
             }
             _ => {}
         }
@@ -1176,12 +1229,16 @@ fn extract_exported_names(source: &str) -> Vec<String> {
     // Fallback scan for modules that use syntax not yet fully covered by parse_program_partial.
     // This keeps imported exported-callables discoverable for statement-call parsing.
     for name in extract_exported_names_fallback(source) {
-        names.insert(name);
+        exports.entry(name.clone()).or_insert(InlineModuleExport {
+            name,
+            precedence: None,
+            associativity: None,
+        });
     }
 
-    let mut names: Vec<String> = names.into_iter().collect();
-    names.sort();
-    names
+    let mut result: Vec<InlineModuleExport> = exports.into_values().collect();
+    result.sort_by(|a, b| a.name.cmp(&b.name));
+    result
 }
 
 fn extract_exported_names_fallback(source: &str) -> Vec<String> {
@@ -1350,7 +1407,8 @@ sub get_out(Str $code, :@compiler-args) is export { }
 proto doesn't-hang(|) is export {*}
 sub helper() { }
 "#;
-        let names = extract_exported_names(source);
+        let exports = extract_exported_names(source);
+        let names: Vec<String> = exports.iter().map(|e| e.name.clone()).collect();
         assert!(names.contains(&"is_run".to_string()));
         assert!(names.contains(&"get_out".to_string()));
         assert!(names.contains(&"doesn't-hang".to_string()));
