@@ -412,6 +412,14 @@ impl Interpreter {
                     let _ = self.call_sub_value(cb, Vec::new(), true);
                 }
                 if !counter_values.is_empty() {
+                    // Push counter values into the active supply emit buffer
+                    // so tap-ok (with :virtual-time scheduler-driven supplies)
+                    // can collect them.
+                    if let Some(buf) = self.supply_emit_buffer.last_mut() {
+                        for v in &counter_values {
+                            buf.push(Value::Int(*v));
+                        }
+                    }
                     return Ok(Value::array(
                         counter_values.into_iter().map(Value::Int).collect(),
                     ));

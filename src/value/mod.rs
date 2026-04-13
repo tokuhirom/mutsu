@@ -2127,7 +2127,7 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Instant" => {
+            } if class_name == "Instant" || class_name == "Duration" => {
                 attributes.get("value").map(|v| v.to_f64()).unwrap_or(0.0)
             }
             // Match coerces to Numeric via its matched string
