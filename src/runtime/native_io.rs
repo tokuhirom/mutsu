@@ -2263,6 +2263,73 @@ impl Interpreter {
                 _ => {}
             }
         }
+        // Look up persistent per-pipe cursor state (if any). Repeated calls
+        // on the same logical IO::Pipe share this so `.get` / `.lines` can
+        // advance through buffered content line by line.
+        let pipe_id = attributes.get("pipe-id").and_then(|v| {
+            if let Value::Int(i) = v {
+                Some(*i)
+            } else {
+                None
+            }
+        });
+        if let Some(id) = pipe_id {
+            match method {
+                "get" => {
+                    if let Ok(mut map) = super::builtins_system::io_pipe_state_map().lock()
+                        && let Some(state) = map.get_mut(&id)
+                    {
+                        if state.closed {
+                            return Err(RuntimeError::io_closed("get"));
+                        }
+                        if state.cursor >= state.content.len() {
+                            return Ok(Value::Nil);
+                        }
+                        let rest = &state.content[state.cursor..];
+                        let (line, advance) = if let Some(pos) = rest.find('\n') {
+                            let line = rest[..pos].trim_end_matches('\r').to_string();
+                            (line, pos + 1)
+                        } else {
+                            (rest.to_string(), rest.len())
+                        };
+                        state.cursor += advance;
+                        return Ok(Value::str(line));
+                    }
+                    return Ok(Value::Nil);
+                }
+                "lines" => {
+                    if let Ok(mut map) = super::builtins_system::io_pipe_state_map().lock()
+                        && let Some(state) = map.get_mut(&id)
+                    {
+                        if state.closed {
+                            return Err(RuntimeError::io_closed("lines"));
+                        }
+                        let rest = state.content[state.cursor..].to_string();
+                        state.cursor = state.content.len();
+                        let trimmed = rest.strip_suffix('\n').unwrap_or(&rest);
+                        let lines: Vec<Value> = if trimmed.is_empty() {
+                            Vec::new()
+                        } else {
+                            trimmed
+                                .split('\n')
+                                .map(|s| Value::str(s.trim_end_matches('\r').to_string()))
+                                .collect()
+                        };
+                        return Ok(Value::array(lines));
+                    }
+                    return Ok(Value::array(vec![]));
+                }
+                "eof" => {
+                    if let Ok(map) = super::builtins_system::io_pipe_state_map().lock()
+                        && let Some(state) = map.get(&id)
+                    {
+                        return Ok(Value::Bool(state.cursor >= state.content.len()));
+                    }
+                    return Ok(Value::Bool(true));
+                }
+                _ => {}
+            }
+        }
         let content = attributes
             .get("content")
             .map(|v| v.to_string_value())
@@ -2271,6 +2338,12 @@ impl Interpreter {
             "slurp" | "Str" | "gist" => Ok(Value::str(content)),
             "encoding" => Ok(Value::str("utf8".to_string())),
             "close" => {
+                if let Some(id) = pipe_id
+                    && let Ok(mut map) = super::builtins_system::io_pipe_state_map().lock()
+                    && let Some(state) = map.get_mut(&id)
+                {
+                    state.closed = true;
+                }
                 // TODO: should return the parent Proc object for identity
                 Ok(Value::Bool(true))
             }

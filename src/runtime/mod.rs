@@ -458,8 +458,16 @@ impl SocketListener {
     }
 }
 
+/// Opaque payload attached to a `SharedPromise` so that a worker thread
+/// can hand newly-opened IO handles back to the awaiting interpreter.
 #[derive(Debug)]
-struct IoHandleState {
+pub(crate) struct ThreadPromisePayload {
+    pub(crate) new_handles: Vec<(usize, IoHandleState)>,
+    pub(crate) next_handle_id: usize,
+}
+
+#[derive(Debug)]
+pub(crate) struct IoHandleState {
     target: IoHandleTarget,
     mode: IoHandleMode,
     path: Option<String>,
