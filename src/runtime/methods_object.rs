@@ -2195,6 +2195,26 @@ impl Interpreter {
                         return self.construct_proxy_subclass(class_key, &args);
                     }
                 }
+                // Semaphore takes a positional permits argument; build the
+                // instance directly using the semaphore registry.
+                if class_key == "Semaphore" {
+                    let permits = args
+                        .first()
+                        .map(|v| match v {
+                            Value::Int(i) => *i,
+                            Value::Num(f) => *f as i64,
+                            other => other.to_string_value().parse::<i64>().unwrap_or(1),
+                        })
+                        .unwrap_or(1)
+                        .max(0);
+                    let mut attrs = HashMap::new();
+                    attrs.insert("permits".to_string(), Value::Int(permits));
+                    attrs.insert(
+                        "semaphore-id".to_string(),
+                        Value::Int(super::native_methods::next_semaphore_id(permits) as i64),
+                    );
+                    return Ok(Value::make_instance(*class_name, attrs));
+                }
                 // Check for user-defined .new method first
                 if self.has_user_method(class_key, "new") {
                     let empty_attrs = HashMap::new();
@@ -2884,8 +2904,8 @@ impl Interpreter {
                         let mut attrs = HashMap::new();
                         attrs.insert("permits".to_string(), Value::Int(permits));
                         attrs.insert(
-                            "lock-id".to_string(),
-                            Value::Int(super::native_methods::next_lock_id() as i64),
+                            "semaphore-id".to_string(),
+                            Value::Int(super::native_methods::next_semaphore_id(permits) as i64),
                         );
                         Ok(Value::make_instance(name, attrs))
                     }

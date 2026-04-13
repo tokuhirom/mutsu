@@ -33,6 +33,7 @@ pub(in crate::runtime) use state::{
     update_async_connection,
 };
 pub(in crate::runtime) use state_lock::next_lock_id;
+pub(in crate::runtime) use state_lock::next_semaphore_id;
 pub(in crate::runtime) use state_scheduler::{
     fake_scheduler_cue_counter, fake_scheduler_init, next_fake_scheduler_id,
 };
@@ -297,6 +298,7 @@ impl Interpreter {
                 | "Lock"
                 | "Lock::Async"
                 | "Lock::ConditionVariable"
+                | "Semaphore"
                 | "Distro"
                 | "Kernel"
                 | "Perl"
@@ -369,6 +371,7 @@ impl Interpreter {
             }
             "IO::Pipe" => self.native_io_pipe(attributes, method, &args),
             "Lock" | "Lock::Async" => self.native_lock(attributes, method, args),
+            "Semaphore" => self.native_semaphore(attributes, method, args),
             "Lock::ConditionVariable" => self.native_condition_variable(attributes, method, args),
             "Distro" => self.native_distro(attributes, method),
             "Kernel" => self.native_kernel(attributes, method, args),
