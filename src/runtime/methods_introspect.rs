@@ -195,6 +195,17 @@ impl Interpreter {
         if let Value::CustomType { how, .. } | Value::CustomTypeInstance { how, .. } = target {
             return Ok(*how.clone());
         }
+        // Check for class HOW overrides set by `Type.HOW does Role`.
+        let override_key = match target {
+            Value::Package(name) => Some(name.resolve()),
+            Value::Instance { class_name, .. } => Some(class_name.resolve()),
+            _ => None,
+        };
+        if let Some(key) = override_key
+            && let Some(overridden) = self.class_how_overrides.get(&key)
+        {
+            return Ok(overridden.clone());
+        }
         // Return CurriedRoleHOW for parameterized roles
         if let Value::ParametricRole {
             base_name,

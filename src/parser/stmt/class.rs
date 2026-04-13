@@ -3,7 +3,7 @@ use super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::parse_result::{PError, PResult, opt_char, parse_char, take_while1};
 use super::super::primary::regex::scan_to_delim;
 
-use crate::ast::{Expr, ParamDef, Stmt};
+use crate::ast::{CallArg, Expr, ParamDef, Stmt};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
@@ -759,6 +759,7 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
     let mut parents = Vec::new();
     let mut does_parents = Vec::new();
     let mut is_repr: Option<String> = None;
+    let mut custom_class_traits: Vec<(String, Option<Expr>)> = Vec::new();
     let mut r = rest;
     loop {
         if let Some(r2) = keyword("is", r) {
@@ -774,8 +775,14 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
             };
             if parent == "hidden" {
                 is_hidden = true;
+                let (r2, _) = ws(r2)?;
+                r = r2;
+                continue;
             } else if parent == "rw" {
                 class_is_rw = true;
+                let (r2, _) = ws(r2)?;
+                r = r2;
+                continue;
             } else if parent == "repr" {
                 // Extract repr value from `is repr('CUnion')` etc.
                 if let Some(inner) = r2.strip_prefix('(') {
@@ -804,6 +811,24 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
                 r = r2;
                 continue;
             }
+            // Lowercase non-builtin trait — treat as custom trait_mod:<is>.
+            // Optionally parse a parenthesized argument expression.
+            let (r2, _) = ws(r2)?;
+            let (r2, arg_expr) = if let Some(inner) = r2.strip_prefix('(') {
+                let after = skip_balanced_parens(r2);
+                let body_len = r2.len() - after.len() - 2;
+                let body = &inner[..body_len];
+                let trimmed = body.trim();
+                if trimmed.is_empty() {
+                    (after, None)
+                } else {
+                    let (_leftover, e) = expression(trimmed)?;
+                    (after, Some(e))
+                }
+            } else {
+                (r2, None)
+            };
+            custom_class_traits.push((parent, arg_expr));
             let (r2, _) = ws(r2)?;
             r = r2;
             continue;
@@ -899,10 +924,24 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
             stmts.push(meta_setter_stmt(&name, &trait_name, trait_value));
         }
     }
-    if stmts.is_empty() {
+    let trait_calls: Vec<Stmt> = custom_class_traits
+        .into_iter()
+        .map(|(tname, arg)| Stmt::Call {
+            name: Symbol::intern("trait_mod:<is>"),
+            args: vec![
+                CallArg::Positional(Expr::BareWord(name.clone())),
+                CallArg::Named {
+                    name: tname,
+                    value: arg,
+                },
+            ],
+        })
+        .collect();
+    if stmts.is_empty() && trait_calls.is_empty() {
         return Ok((rest, class_stmt));
     }
     stmts.push(class_stmt);
+    stmts.extend(trait_calls);
     Ok((rest, Stmt::Block(stmts)))
 }
 
@@ -1173,6 +1212,7 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
     let mut role_is_rw = false;
     let mut is_export = false;
     let mut export_tags: Vec<String> = Vec::new();
+    let mut custom_role_traits: Vec<(String, Option<Expr>)> = Vec::new();
 
     // Optional parent/trait clauses in any order.
     loop {
@@ -1195,7 +1235,23 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
         if let Some(r) = keyword("is", rest) {
             let (r, _) = ws1(r)?;
             let (r, trait_name) = ident(r)?;
-            let r = skip_balanced_parens(r);
+            // Try to parse an optional parenthesized argument expression.
+            let (r, arg_expr) = if let Some(inner) = r.strip_prefix('(') {
+                let after = skip_balanced_parens(r);
+                let body_len = r.len() - after.len() - 2;
+                let body = &inner[..body_len];
+                let trimmed = body.trim();
+                if trimmed.is_empty() {
+                    (after, None)
+                } else {
+                    match expression(trimmed) {
+                        Ok((_leftover, e)) => (after, Some(e)),
+                        Err(_) => (after, None),
+                    }
+                }
+            } else {
+                (r, None)
+            };
             let (r, _) = ws(r)?;
             if trait_name == "hidden" {
                 is_hidden_role = true;
@@ -1219,10 +1275,17 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
                     | "nodal"
                     | "pure"
             ) {
-                // Known lowercase trait keywords are skipped;
-                // everything else (including lowercase class/role names like irA)
-                // is treated as a parent.
-                parent_roles.push(trait_name);
+                // Uppercase identifiers are treated as parent roles/classes.
+                // Lowercase non-builtin trait names go through trait_mod:<is>.
+                if trait_name
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_uppercase())
+                {
+                    parent_roles.push(trait_name);
+                } else {
+                    custom_role_traits.push((trait_name, arg_expr));
+                }
             }
             rest = r;
             continue;
@@ -1272,19 +1335,33 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
     }
     super::simple::register_user_type(&name);
 
-    Ok((
-        rest,
-        Stmt::RoleDecl {
-            name: Symbol::intern(&name),
-            type_params,
-            type_param_defs,
-            is_export,
-            export_tags,
-            body,
-            is_rw: role_is_rw,
-            language_version: super::simple::current_language_version(),
-        },
-    ))
+    let role_stmt = Stmt::RoleDecl {
+        name: Symbol::intern(&name),
+        type_params,
+        type_param_defs,
+        is_export,
+        export_tags,
+        body,
+        is_rw: role_is_rw,
+        language_version: super::simple::current_language_version(),
+    };
+    if custom_role_traits.is_empty() {
+        return Ok((rest, role_stmt));
+    }
+    let mut stmts = vec![role_stmt];
+    for (tname, arg) in custom_role_traits {
+        stmts.push(Stmt::Call {
+            name: Symbol::intern("trait_mod:<is>"),
+            args: vec![
+                CallArg::Positional(Expr::BareWord(name.clone())),
+                CallArg::Named {
+                    name: tname,
+                    value: arg,
+                },
+            ],
+        });
+    }
+    Ok((rest, Stmt::Block(stmts)))
 }
 
 /// Parse `does` declaration.

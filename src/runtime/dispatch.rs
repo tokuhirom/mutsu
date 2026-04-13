@@ -168,8 +168,20 @@ impl Interpreter {
                 })
                 .collect();
             ranked.sort_by(|a, b| {
-                // Higher rank first, then lower distance
-                b.1.0.cmp(&a.1.0).then(a.1.1.cmp(&b.1.1))
+                // Compare primary specificity (literal/where/subset/typed/subsig/named
+                // counts) first, then prefer smaller type-hierarchy distance, then
+                // fall back to required-named/trait counts as a final tiebreak so
+                // type narrowness wins over required-vs-optional.
+                let ar = &a.1.0;
+                let br = &b.1.0;
+                let a_primary = (ar.0, ar.1, ar.2, ar.3, ar.4, ar.5);
+                let b_primary = (br.0, br.1, br.2, br.3, br.4, br.5);
+                let a_tail = (ar.6, ar.7);
+                let b_tail = (br.6, br.7);
+                b_primary
+                    .cmp(&a_primary)
+                    .then(a.1.1.cmp(&b.1.1))
+                    .then(b_tail.cmp(&a_tail))
             });
             let sorted_matches: Vec<FunctionDef> =
                 ranked.iter().map(|(i, _)| matches[*i].clone()).collect();
@@ -284,7 +296,36 @@ impl Interpreter {
     fn candidate_type_distance(&self, args: &[Value], def: &FunctionDef) -> usize {
         let mut total = 0usize;
         let params: Vec<&ParamDef> = Self::dispatch_visible_params(def).collect();
+        // Index named args by name from Value::Pair entries.
+        let mut named_args: std::collections::HashMap<String, &Value> =
+            std::collections::HashMap::new();
+        for v in args.iter() {
+            if let Value::Pair(name, boxed) = v {
+                named_args.insert(name.clone(), boxed.as_ref());
+            }
+        }
+        // Compare named params against named arg type distance.
+        for pd in params.iter() {
+            if !pd.named {
+                continue;
+            }
+            let Some(constraint) = &pd.type_constraint else {
+                total += 1000;
+                continue;
+            };
+            // Look up arg by parameter sigilless name.
+            let lookup = pd.name.trim_start_matches(['$', '@', '%', '&']);
+            if let Some(arg) = named_args.get(lookup) {
+                let base = Self::constraint_base_name(constraint);
+                total += self.type_hierarchy_distance_with_var_type(base, arg, None);
+            } else if pd.required {
+                total += 1000;
+            }
+        }
         for (i, pd) in params.iter().enumerate() {
+            if pd.named {
+                continue;
+            }
             if let Some(constraint) = &pd.type_constraint {
                 let base = Self::constraint_base_name(constraint);
                 if i < args.len() {

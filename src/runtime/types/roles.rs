@@ -150,16 +150,46 @@ impl Interpreter {
         right: Value,
     ) -> Result<Value, RuntimeError> {
         if let Some((role_name, args)) = self.extract_role_application(&right) {
+            let how_target = Self::class_how_target_name(&left);
             let result = self.compose_role_on_value(left.clone(), &role_name, &args)?;
             // Call BUILD submethods from the composed role
             let result = self.call_role_build_submethods(result, &role_name)?;
             if let Some(target_name) = Self::var_target_name_from_value(&left) {
                 self.set_var_meta_value(&target_name, result.clone());
             }
+            // If `Type.HOW does Role` was used, persist the modified HOW so
+            // subsequent `Type.HOW` calls return the role-augmented metaclass.
+            if let Some(type_name) = how_target {
+                self.class_how_overrides.insert(type_name, result.clone());
+            }
             return Ok(result);
         }
         let role_name = right.to_string_value();
         Ok(Value::Bool(left.does_check(&role_name)))
+    }
+
+    /// If `value` is a metaclass HOW instance (e.g. ClassHOW), return the
+    /// owning type name from its `name` attribute.
+    fn class_how_target_name(value: &Value) -> Option<String> {
+        let inner = match value {
+            Value::Mixin(inner, _) => inner.as_ref(),
+            other => other,
+        };
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = inner
+        {
+            let cn = class_name.resolve();
+            if cn.starts_with("Perl6::Metamodel::")
+                && cn.ends_with("HOW")
+                && let Some(Value::Str(name)) = attributes.get("name")
+            {
+                return Some(name.to_string());
+            }
+        }
+        None
     }
 
     /// Apply multiple roles at once: `$obj does (RoleA, RoleB)`

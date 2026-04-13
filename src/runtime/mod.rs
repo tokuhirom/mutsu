@@ -883,6 +883,10 @@ pub struct Interpreter {
     /// Rebless mapping: instance_id -> new HOW value.
     /// Used by Metamodel::Primitives.rebless to track reblessed objects.
     pub(crate) rebless_map: HashMap<u64, Value>,
+    /// Override map for class HOW values: type_name -> modified HOW value.
+    /// Populated when `Type.HOW does Role` mutates the HOW so that
+    /// subsequent `Type.HOW` lookups return the modified meta-object.
+    pub(crate) class_how_overrides: HashMap<String, Value>,
     /// Value set by `make()` inside grammar action methods.
     /// Persists across env save/restore in method dispatch.
     pub(crate) action_made: Option<Value>,
@@ -2699,6 +2703,7 @@ impl Interpreter {
             squish_iterator_meta: HashMap::new(),
             custom_type_data: HashMap::new(),
             rebless_map: HashMap::new(),
+            class_how_overrides: HashMap::new(),
             action_made: None,
             pending_regex_error: None,
             precomp_enabled: true,
@@ -4193,6 +4198,7 @@ impl Interpreter {
             squish_iterator_meta: HashMap::new(),
             custom_type_data: self.custom_type_data.clone(),
             rebless_map: self.rebless_map.clone(),
+            class_how_overrides: self.class_how_overrides.clone(),
             action_made: None,
             pending_regex_error: None,
             precomp_enabled: self.precomp_enabled,
