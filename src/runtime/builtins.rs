@@ -684,6 +684,7 @@ impl Interpreter {
             }
             "prompt" => self.builtin_prompt(&args),
             "get" => self.builtin_get(&args),
+            "getc" => self.builtin_getc(&args),
             "lines" => self.builtin_lines(&args),
             "words" => self.builtin_words(&args),
             // System

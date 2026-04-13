@@ -186,7 +186,7 @@ impl Compiler {
     pub(super) fn xx_lhs_needs_reeval(expr: &Expr) -> bool {
         matches!(
             expr,
-            Expr::Call { name, .. } if name == "rand" || name == "pick" || name == "roll" || name == "start"
+            Expr::Call { name, .. } if name == "rand" || name == "pick" || name == "roll" || name == "start" || name == "getc" || name == "get"
         ) || matches!(
             expr,
             Expr::MethodCall { name, target, .. }
@@ -196,6 +196,8 @@ impl Compiler {
                     || name == "take"
                     || name == "readchars"
                     || name == "receive"
+                    || name == "getc"
+                    || name == "get"
                     || (name == "new" && matches!(target.as_ref(), Expr::BareWord(n) if n == "Promise"))
                     || Self::xx_lhs_needs_reeval(target)
         ) || matches!(
