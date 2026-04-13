@@ -1566,6 +1566,26 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
             },
         ));
     }
+    // unit role Name;  — declare a role at the file scope.
+    if let Some(r) = keyword("role", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, name) = qualified_ident(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = opt_char(r, ';');
+        return Ok((
+            r,
+            Stmt::RoleDecl {
+                name: Symbol::intern(&name),
+                type_params: Vec::new(),
+                type_param_defs: Vec::new(),
+                is_export: false,
+                export_tags: Vec::new(),
+                body: Vec::new(),
+                is_rw: false,
+                language_version: super::simple::current_language_version(),
+            },
+        ));
+    }
     let rest = keyword("module", rest).ok_or_else(|| PError::expected("'module' after 'unit'"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;

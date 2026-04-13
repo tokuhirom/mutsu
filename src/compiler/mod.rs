@@ -39,6 +39,11 @@ pub(crate) struct Compiler {
     local_types: HashMap<String, String>,
     compiled_functions: HashMap<String, CompiledFunction>,
     current_package: String,
+    /// True when compiling inside a `unit module`/`unit class`/`unit role`
+    /// body. Used to pre-qualify class/role declarations with the package
+    /// prefix at compile time, since the runtime does not get a
+    /// PackageScope opcode for unit declarations.
+    pub(crate) in_unit_package: bool,
     /// The enclosing package name before closure mangling. Used for `$?PACKAGE`
     /// so that methods inside a class report the class name, not the internal
     /// closure package name.
@@ -67,6 +72,7 @@ impl Compiler {
             local_types: HashMap::new(),
             compiled_functions: HashMap::new(),
             current_package: "GLOBAL".to_string(),
+            in_unit_package: false,
             enclosing_package: None,
             tmp_counter: 0,
             dynamic_scope_all: false,
