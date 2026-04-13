@@ -1,2 +1,6 @@
+roast/S02-types/generics.t
 roast/S03-sequence/misc.t
+roast/S04-exceptions/exceptions-alternatives.t
+roast/S14-traits/attributes.t
 roast/S17-lowlevel/semaphore.t
+roast/S32-array/perl.t
