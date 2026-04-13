@@ -1144,9 +1144,37 @@ impl Interpreter {
                 Ok(self.make_supply_from_values(results, attributes))
             }
             "wait" => {
-                // Supply.wait: collect all values and return a Seq
+                // Supply.wait: block until the underlying live supplier is done
+                // (or quit), then return the last emitted value. For non-live
+                // supplies this returns immediately with the last value.
+                if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
+                    use crate::value::SharedPromise;
+                    let promise = SharedPromise::new_with_class(Symbol::intern("Promise"));
+                    supplier_register_promise(supplier_id, promise.clone());
+                    let (result, output, stderr) = promise.wait();
+                    self.emit_output(&output);
+                    self.stderr_output.push_str(&stderr);
+                    self.sync_shared_vars_to_env();
+                    // Drain shared thread output buffers so output produced by
+                    // any background `start { }` thread that emitted into this
+                    // supplier reaches the main TAP stream in chronological
+                    // order.
+                    if let Some(ref shared) = self.shared_thread_output {
+                        let drained = std::mem::take(&mut *shared.lock().unwrap());
+                        if !drained.is_empty() {
+                            self.emit_output(&drained);
+                        }
+                    }
+                    if let Some(ref shared) = self.shared_thread_stderr {
+                        let drained = std::mem::take(&mut *shared.lock().unwrap());
+                        if !drained.is_empty() {
+                            self.stderr_output.push_str(&drained);
+                        }
+                    }
+                    return Ok(result);
+                }
                 let source_values = self.supply_get_values(attributes)?;
-                Ok(Value::Seq(std::sync::Arc::new(source_values)))
+                Ok(source_values.last().cloned().unwrap_or(Value::Nil))
             }
             "Channel" => {
                 // Supply.Channel: create a Channel, send all supply values into it, close it
