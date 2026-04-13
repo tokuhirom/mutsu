@@ -277,6 +277,21 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    // Listop-style reduction (`[+] @a`) requires whitespace between `]`
+    // and the operand for symbolic operators. `[+]@a` would be two terms
+    // in a row. Alphabetic operators like `[min]` are ambiguous with array
+    // literals like `[Exception]` and are not enforced here.
+    if is_symbol_op
+        && !(r.starts_with(' ')
+            || r.starts_with('\t')
+            || r.starts_with('\n')
+            || r.starts_with('\r')
+            || r.starts_with('#'))
+    {
+        return Err(PError::fatal(
+            "X::Syntax::Confused: Two terms in a row".to_string(),
+        ));
+    }
     let (r, _) = ws(r)?;
     // Parse comma-separated list as the operand
     let (r, first) = parse_reduction_operand(r)?;

@@ -1281,6 +1281,35 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         // Also handles: .^method (meta-method)
         // Also handles call-on: .(args)
         if rest.starts_with('.') && !rest.starts_with("..") {
+            // Whitespace immediately after dot has special rules:
+            // - If the target is a numeric literal, `<digit>. <non-digit>` is
+            //   a decimal-point error: "Decimal point must be followed by digit".
+            // - Otherwise `. ++` / `. --` is the obsolete Perl 5 postfix form.
+            let after_dot_raw = &rest[1..];
+            if after_dot_raw.starts_with(' ') || after_dot_raw.starts_with('\t') {
+                if matches!(
+                    expr,
+                    Expr::Literal(
+                        crate::value::Value::Int(_)
+                            | crate::value::Value::Num(_)
+                            | crate::value::Value::Rat(..)
+                            | crate::value::Value::Complex(..),
+                    )
+                ) {
+                    return Err(PError::fatal(
+                        "X::Syntax::Number::IllegalDecimal: Decimal point must be followed by digit"
+                            .to_string(),
+                    ));
+                }
+                let trimmed = after_dot_raw.trim_start_matches([' ', '\t']);
+                if trimmed.starts_with("++") || trimmed.starts_with("--") {
+                    return Err(PError::fatal(
+                        "X::Obsolete: Unsupported use of . postfix operator; \
+                         in Raku please use .++ or .-- without whitespace"
+                            .to_string(),
+                    ));
+                }
+            }
             expr = auto_invoke_bareword_method_target(expr);
             let r = &rest[1..];
             // Consume unspace after dot: `.\ method` or `.\ (args)`
