@@ -582,6 +582,7 @@ roast/S13-overloading/operators.t
 roast/S13-syntax/aliasing.t
 roast/S13-type-casting/methods.t
 roast/S14-roles/anonymous.t
+roast/S14-roles/attributes-6e.t
 roast/S14-roles/bool.t
 roast/S14-roles/composition.t
 roast/S14-roles/conflicts.t

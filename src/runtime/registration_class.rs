@@ -38,6 +38,7 @@ fn builtin_role_def() -> RoleDef {
         wildcard_handles: Vec::new(),
         role_id: 0,
         attribute_conflicts: Vec::new(),
+        own_attribute_names: HashSet::new(),
         deferred_body_stmts: Vec::new(),
     }
 }
@@ -2186,6 +2187,7 @@ impl Interpreter {
             wildcard_handles: Vec::new(),
             role_id: super::next_role_id(),
             attribute_conflicts: Vec::new(),
+            own_attribute_names: HashSet::new(),
             deferred_body_stmts: Vec::new(),
         };
         let is_parametric = !type_params.is_empty();
@@ -2227,6 +2229,7 @@ impl Interpreter {
                     is_type: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
+                    role_def.own_attribute_names.insert(attr_name_str.clone());
                     // Check if this attribute already exists from a composed role
                     if let Some(existing) = role_def
                         .attributes
@@ -2353,12 +2356,18 @@ impl Interpreter {
                     };
                     for attr in &role.attributes {
                         if role_def.attributes.iter().any(|(n, ..)| n == &attr.0) {
-                            // Attribute conflict: declared in both current role and parent role
-                            role_def.attribute_conflicts.push((
-                                attr.0.clone(),
-                                name.to_string(),
-                                base_role_name.to_string(),
-                            ));
+                            // Already present. Only a real conflict if both
+                            // sides declared it directly (vs. inherited from
+                            // a shared ancestor in a diamond). Skip otherwise.
+                            let parent_owns = role.own_attribute_names.contains(&attr.0);
+                            let current_owns = role_def.own_attribute_names.contains(&attr.0);
+                            if parent_owns && current_owns {
+                                role_def.attribute_conflicts.push((
+                                    attr.0.clone(),
+                                    name.to_string(),
+                                    base_role_name.to_string(),
+                                ));
+                            }
                         } else {
                             role_def.attributes.push(attr.clone());
                         }
