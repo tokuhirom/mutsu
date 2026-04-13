@@ -558,6 +558,27 @@ impl Interpreter {
         if let Some(Value::Package(pkg)) = self.env.get(lookup) {
             return format!("{}{}", pkg.resolve(), suffix);
         }
+        // Fallback: when a compile-time pre-qualified name like `M::C1` cannot
+        // be resolved (e.g. because `C1` lives outside module `M`), try the
+        // bare suffix (`C1`).  This handles cross-package parents in classes
+        // declared inside a `unit module`/`unit class` body.
+        if lookup.contains("::") {
+            let bare = lookup.rsplit_once("::").map(|(_, b)| b).unwrap_or(lookup);
+            if !self.classes.contains_key(lookup)
+                && !self.roles.contains_key(lookup)
+                && (self.classes.contains_key(bare) || self.roles.contains_key(bare))
+            {
+                return format!("{}{}", bare, suffix);
+            }
+            if let Value::Package(pkg) = self.resolve_indirect_type_name(bare) {
+                let resolved = pkg.resolve();
+                if self.classes.contains_key(resolved.as_str())
+                    || self.roles.contains_key(resolved.as_str())
+                {
+                    return format!("{}{}", resolved, suffix);
+                }
+            }
+        }
         name.to_string()
     }
 
@@ -2158,6 +2179,23 @@ impl Interpreter {
             }
         }
 
+        // If this is a stub declaration (body is `...`, `!!!`, or `???`)
+        // and a real (non-stub) role already exists under this name, treat
+        // the stub as a forward declaration / no-op — don't register a new
+        // stub candidate that would shadow the real one.
+        let is_stub_body = body.iter().any(|s| {
+            matches!(s, Stmt::Expr(Expr::Call { name, .. })
+                if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn")
+        });
+        if is_stub_body
+            && type_params.is_empty()
+            && self
+                .roles
+                .get(name)
+                .is_some_and(|existing| !existing.is_stub_role)
+        {
+            return Ok(());
+        }
         // Clean up stale punned class entry for this role name.
         self.classes.remove(name);
         self.hidden_classes.remove(name);

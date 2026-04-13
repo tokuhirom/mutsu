@@ -1010,6 +1010,23 @@ impl VM {
                     Value::Package(Symbol::intern(&qualified_name)),
                 );
             }
+            // When a class is declared with an already-qualified name
+            // (e.g. the compiler pre-qualified `class C1` inside
+            // `unit module M` to `M::C1`), also register the short name
+            // `C1` in the env so that subsequent code inside the same
+            // module can refer to it bare. Skip this when the parent
+            // package is a class (where suppress_name semantics apply).
+            if qualified_name.contains("::") && !parent_is_class {
+                let short = qualified_name
+                    .rsplit_once("::")
+                    .map(|(_, s)| s.to_string())
+                    .unwrap_or_else(|| qualified_name.clone());
+                if !short.is_empty() && short != qualified_name {
+                    let env = self.interpreter.env_mut();
+                    env.entry(short)
+                        .or_insert_with(|| Value::Package(Symbol::intern(&qualified_name)));
+                }
+            }
             // When `my class` is used, register the class name as lexically scoped
             // so it gets suppressed when the enclosing block scope exits.
             if *is_lexical {
@@ -1095,9 +1112,19 @@ impl VM {
                 *is_rw,
             )?;
             if *is_export && !self.interpreter.suppress_exports {
+                // The compiler may have pre-qualified the role name
+                // (e.g. `R1` → `GH2613::R1`) when compiling under a
+                // `unit module`. Exports use the short bare name and
+                // the originating package, so split the qualified name.
+                let (export_pkg, export_short) =
+                    if let Some((pkg, short)) = name_str.rsplit_once("::") {
+                        (pkg.to_string(), short.to_string())
+                    } else {
+                        (current_package.clone(), name_str.clone())
+                    };
                 self.interpreter.register_exported_var(
-                    current_package.clone(),
-                    name_str.clone(),
+                    export_pkg,
+                    export_short,
                     export_tags.clone(),
                 );
             }
@@ -1115,9 +1142,27 @@ impl VM {
                 Value::Package(Symbol::intern(&qualified_name)),
             );
             if qualified_name != name_str && !name_str.contains("::") {
-                self.interpreter
-                    .env_mut()
-                    .insert(name_str, Value::Package(Symbol::intern(&qualified_name)));
+                self.interpreter.env_mut().insert(
+                    name_str.clone(),
+                    Value::Package(Symbol::intern(&qualified_name)),
+                );
+            }
+            // When a role is declared with an already-qualified name
+            // (e.g. the compiler pre-qualified `role R1` inside
+            // `unit module GH2613` to `GH2613::R1`), also register the
+            // short name `R1` in the env so subsequent code in the same
+            // module can refer to it bare.
+            if qualified_name.contains("::") && qualified_name == name_str {
+                let short = qualified_name
+                    .rsplit_once("::")
+                    .map(|(_, s)| s.to_string())
+                    .unwrap_or_else(|| qualified_name.clone());
+                if !short.is_empty() && short != qualified_name {
+                    self.interpreter
+                        .env_mut()
+                        .entry(short)
+                        .or_insert_with(|| Value::Package(Symbol::intern(&qualified_name)));
+                }
             }
             self.env_dirty = true;
             // Execute deferred non-declaration body statements now that the role

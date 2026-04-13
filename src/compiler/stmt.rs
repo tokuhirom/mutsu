@@ -2,6 +2,89 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Compiler {
+    /// Pre-qualify a class/role declaration's name with the compiler's
+    /// `current_package` when compiling inside a `unit module`/`unit class`/
+    /// `unit role` body. Bare names (no `::`) are rewritten to
+    /// `Pkg::Name`. Names that already contain `::` or are top-level
+    /// (current_package == "GLOBAL") are returned unchanged.
+    fn qualify_decl_name(&self, stmt: &Stmt) -> Stmt {
+        if !self.in_unit_package
+            || self.current_package == "GLOBAL"
+            || self.current_package.contains("::&")
+        {
+            return stmt.clone();
+        }
+        let bare = match stmt {
+            Stmt::ClassDecl { name, .. } | Stmt::RoleDecl { name, .. } => name.resolve(),
+            _ => return stmt.clone(),
+        };
+        if bare.contains("::") {
+            return stmt.clone();
+        }
+        let qualified = format!("{}::{}", self.current_package, bare);
+        let qualified_sym = Symbol::intern(&qualified);
+        let pkg = self.current_package.clone();
+        let qualify_parent = |p: &String| -> String {
+            if p.contains("::") || p.is_empty() {
+                p.clone()
+            } else {
+                format!("{}::{}", pkg, p)
+            }
+        };
+        match stmt {
+            Stmt::ClassDecl {
+                name_expr,
+                parents,
+                class_is_rw,
+                is_hidden,
+                is_lexical,
+                hidden_parents,
+                does_parents,
+                repr,
+                body,
+                language_version,
+                ..
+            } => {
+                let new_parents: Vec<String> = parents.iter().map(&qualify_parent).collect();
+                let new_does: Vec<String> = does_parents.iter().map(&qualify_parent).collect();
+                let new_hidden: Vec<String> = hidden_parents.iter().map(&qualify_parent).collect();
+                Stmt::ClassDecl {
+                    name: qualified_sym,
+                    name_expr: name_expr.clone(),
+                    parents: new_parents,
+                    class_is_rw: *class_is_rw,
+                    is_hidden: *is_hidden,
+                    is_lexical: *is_lexical,
+                    hidden_parents: new_hidden,
+                    does_parents: new_does,
+                    repr: repr.clone(),
+                    body: body.clone(),
+                    language_version: language_version.clone(),
+                }
+            }
+            Stmt::RoleDecl {
+                type_params,
+                type_param_defs,
+                is_export,
+                export_tags,
+                body,
+                is_rw,
+                language_version,
+                ..
+            } => Stmt::RoleDecl {
+                name: qualified_sym,
+                type_params: type_params.clone(),
+                type_param_defs: type_param_defs.clone(),
+                is_export: *is_export,
+                export_tags: export_tags.clone(),
+                body: body.clone(),
+                is_rw: *is_rw,
+                language_version: language_version.clone(),
+            },
+            _ => stmt.clone(),
+        }
+    }
+
     fn regex_match_returns_multiple(expr: &Expr) -> bool {
         let Expr::Binary { op, right, .. } = expr else {
             return false;
@@ -1404,6 +1487,7 @@ impl Compiler {
                 if *is_unit {
                     // unit module/package — set package for the rest of the scope
                     self.current_package = qualified_name.clone();
+                    self.in_unit_package = true;
                     // Register the package name so it's accessible as a value
                     let name_idx = self.code.add_constant(Value::str(qualified_name.clone()));
                     self.code.emit(OpCode::RegisterPackage { name_idx });
@@ -1423,11 +1507,17 @@ impl Compiler {
                         body_end: 0,
                     });
                     let saved_package = self.current_package.clone();
+                    let saved_in_unit = self.in_unit_package;
                     self.current_package = qualified_name;
+                    // Inside a non-unit `module Foo { ... }` block, runtime
+                    // PackageScope handles the package context, so we must
+                    // not pre-qualify nested class/role decls here.
+                    self.in_unit_package = false;
                     for s in body {
                         self.compile_stmt(s);
                     }
                     self.current_package = saved_package;
+                    self.in_unit_package = saved_in_unit;
                     self.code.patch_body_end(pkg_idx);
                 }
             }
@@ -1748,7 +1838,12 @@ impl Compiler {
                 self.code.emit(OpCode::RegisterEnum(idx));
             }
             Stmt::ClassDecl { .. } => {
-                let idx = self.code.add_stmt(stmt.clone());
+                // Pre-qualify the class name when compiling inside a
+                // `unit module`/`unit class` body so that the runtime
+                // registers it under the correct nested package
+                // (e.g. `class D` inside `unit module A::B` → `A::B::D`).
+                let stmt = self.qualify_decl_name(stmt);
+                let idx = self.code.add_stmt(stmt);
                 self.code.emit(OpCode::RegisterClass(idx));
             }
             Stmt::AugmentClass { .. } => {
@@ -1756,7 +1851,8 @@ impl Compiler {
                 self.code.emit(OpCode::AugmentClass(idx));
             }
             Stmt::RoleDecl { .. } => {
-                let idx = self.code.add_stmt(stmt.clone());
+                let stmt = self.qualify_decl_name(stmt);
+                let idx = self.code.add_stmt(stmt);
                 self.code.emit(OpCode::RegisterRole(idx));
             }
             Stmt::SubsetDecl { .. } => {
