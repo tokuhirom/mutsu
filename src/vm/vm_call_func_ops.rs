@@ -2,6 +2,20 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl VM {
+    /// Names of builtin listops/functions that a same-named user-defined
+    /// subroutine may shadow. When both exist, the user sub wins.
+    ///
+    /// This is intentionally narrow: most user subs don't conflict with a
+    /// builtin, and unconditionally routing every `has_function` name through
+    /// `call_function_fallback` changes dispatch in ways that affect things
+    /// like MAIN/GENERATE-USAGE handling.
+    pub(super) fn is_user_shadowable_builtin(name: &str) -> bool {
+        matches!(
+            name,
+            "first" | "grep" | "map" | "sort" | "reverse" | "unique" | "last" | "head" | "tail"
+        )
+    }
+
     pub(super) fn exec_call_func_op(
         &mut self,
         code: &CompiledCode,
@@ -188,6 +202,12 @@ impl VM {
             let result = self
                 .interpreter
                 .maybe_fetch_rw_proxy(result, cf_auto_fetch)?;
+            self.stack.push(result);
+            self.env_dirty = true;
+        } else if Self::is_user_shadowable_builtin(&name) && self.interpreter.has_function(&name) {
+            // A user-defined sub shadows a same-named builtin listop.
+            let result = self.interpreter.call_function_fallback(&name, &args)?;
+            let result = self.interpreter.maybe_fetch_rw_proxy(result, true)?;
             self.stack.push(result);
             self.env_dirty = true;
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
@@ -383,6 +403,15 @@ impl VM {
                 // User-defined multi candidates take priority over builtins.
                 // Call call_function_fallback directly to bypass the builtin match
                 // in call_function, which would shadow user-defined multi subs.
+                self.interpreter.set_pending_call_arg_sources(arg_sources);
+                let result = self.interpreter.call_function_fallback(name, &args);
+                self.interpreter.set_pending_call_arg_sources(None);
+                self.interpreter.maybe_fetch_rw_proxy(result?, true)
+            } else if Self::is_user_shadowable_builtin(name) && self.interpreter.has_function(name)
+            {
+                // A user-defined sub shadows a same-named builtin listop.
+                // Route through the interpreter fallback so the user sub is
+                // invoked rather than the builtin.
                 self.interpreter.set_pending_call_arg_sources(arg_sources);
                 let result = self.interpreter.call_function_fallback(name, &args);
                 self.interpreter.set_pending_call_arg_sources(None);

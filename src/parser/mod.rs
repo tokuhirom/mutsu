@@ -261,15 +261,34 @@ pub(crate) fn parse_program_with_operators(
     operator_assoc: &std::collections::HashMap<String, String>,
     imported_function_names: &[String],
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
+    parse_program_with_operators_and_user_subs(
+        input,
+        operator_names,
+        operator_assoc,
+        imported_function_names,
+        &[],
+    )
+}
+
+#[allow(clippy::result_large_err)]
+pub(crate) fn parse_program_with_operators_and_user_subs(
+    input: &str,
+    operator_names: &[String],
+    operator_assoc: &std::collections::HashMap<String, String>,
+    imported_function_names: &[String],
+    user_sub_names: &[String],
+) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     // Set pre-seed operators before calling parse_program.
     // parse_program will call reset_user_subs, then we re-register after.
     stmt::set_eval_operator_preseed(operator_names.to_vec());
     stmt::set_eval_operator_assoc_preseed(operator_assoc.clone());
     stmt::set_eval_imported_function_preseed(imported_function_names.to_vec());
+    stmt::set_eval_user_sub_preseed(user_sub_names.to_vec());
     let result = parse_program(input);
     stmt::set_eval_operator_preseed(Vec::new());
     stmt::set_eval_operator_assoc_preseed(std::collections::HashMap::new());
     stmt::set_eval_imported_function_preseed(Vec::new());
+    stmt::set_eval_user_sub_preseed(Vec::new());
     result
 }
 
@@ -285,10 +304,12 @@ pub(crate) fn parse_program_partial_with_operators(
     stmt::set_eval_operator_preseed(operator_names.to_vec());
     stmt::set_eval_operator_assoc_preseed(operator_assoc.clone());
     stmt::set_eval_imported_function_preseed(imported_function_names.to_vec());
+    stmt::set_eval_user_sub_preseed(Vec::new());
     let result = parse_program_partial(input);
     stmt::set_eval_operator_preseed(Vec::new());
     stmt::set_eval_operator_assoc_preseed(std::collections::HashMap::new());
     stmt::set_eval_imported_function_preseed(Vec::new());
+    stmt::set_eval_user_sub_preseed(Vec::new());
     result
 }
 
