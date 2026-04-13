@@ -991,6 +991,7 @@ roast/S32-str/pos.t
 roast/S32-str/rindex.t
 roast/S32-str/samecase.t
 roast/S32-str/samemark.t
+roast/S32-str/space-chars.t
 roast/S32-str/split-simple.t
 roast/S32-str/split.t
 roast/S32-str/sprintf-b.t
