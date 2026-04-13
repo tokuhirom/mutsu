@@ -376,16 +376,50 @@ impl Interpreter {
                 let is_win32 = cn == "IO::Spec::Win32";
                 match method {
                     "canonpath" => {
+                        // Separate positional and named args (e.g. `:parent`).
+                        let mut positional: Vec<&Value> = Vec::new();
+                        let mut parent = false;
+                        for a in &args {
+                            if let Value::Pair(k, v) = a {
+                                if k == "parent" {
+                                    parent = v.truthy();
+                                }
+                            } else {
+                                positional.push(a);
+                            }
+                        }
+                        let first = positional.first().copied();
+                        // Undefined invocant (Any / Nil / type object) -> ''
+                        let is_undef =
+                            matches!(first, None | Some(Value::Nil) | Some(Value::Package(_)));
+                        if is_undef {
+                            return Ok(Value::str_from(""));
+                        }
+                        let path = first.map(|v| v.to_string_value()).unwrap_or_default();
+                        let cleaned = if is_win32 {
+                            Self::cleanup_io_path_lexical_win32(&path)
+                        } else {
+                            Self::canonpath_unix(&path, parent)
+                        };
+                        return Ok(Value::str(cleaned));
+                    }
+                    "is-absolute" => {
                         let path = args
                             .first()
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
-                        let cleaned = if is_win32 {
-                            Self::cleanup_io_path_lexical_win32(&path)
+                        let abs = if is_win32 {
+                            // Drive-letter, UNC, or leading slash/backslash.
+                            let bytes = path.as_bytes();
+                            (bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic())
+                                || path.starts_with('/')
+                                || path.starts_with('\\')
                         } else {
-                            Self::cleanup_io_path_lexical(&path)
+                            // Unix: starts with '/'. Use chars().next() so that a
+                            // leading '/' followed by combining marks still counts.
+                            path.starts_with('/')
                         };
-                        return Ok(Value::str(cleaned));
+                        return Ok(Value::Bool(abs));
                     }
                     "dir-sep" => {
                         return Ok(Value::str_from(if is_win32 { "\\" } else { "/" }));
