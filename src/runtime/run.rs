@@ -977,6 +977,39 @@ impl Interpreter {
 
     /// Parse a module source file, using the precompilation cache when available.
     /// Returns (stmts, was_precompiled).
+    /// Extract operator sub names (infix:<..>, prefix:<..>, etc.) that a
+    /// module exports with `is export` (DEFAULT or MANDATORY tag). Used by
+    /// `load_module` to populate `imported_operator_names` so EVAL can see
+    /// operators from imported modules without seeing non-exported subs.
+    fn extract_module_exported_operator_names(source: &str) -> Vec<String> {
+        let (stmts, _) = crate::parser::parse_program_partial(source);
+        let mut out = Vec::new();
+        for stmt in &stmts {
+            if let crate::ast::Stmt::SubDecl {
+                name,
+                is_export,
+                export_tags,
+                ..
+            } = stmt
+                && *is_export
+                && export_tags
+                    .iter()
+                    .any(|t| t == "DEFAULT" || t == "MANDATORY")
+            {
+                let n = name.resolve();
+                if n.starts_with("infix:<")
+                    || n.starts_with("prefix:<")
+                    || n.starts_with("postfix:<")
+                    || n.starts_with("circumfix:<")
+                    || n.starts_with("postcircumfix:<")
+                {
+                    out.push(n);
+                }
+            }
+        }
+        out
+    }
+
     pub(super) fn parse_module_source(
         &mut self,
         module: &str,
@@ -1023,6 +1056,12 @@ impl Interpreter {
         let source_path = self
             .resolve_module_path(module)
             .ok_or_else(|| RuntimeError::new(format!("Module not found: {}", module)))?;
+        // Track operator subs exported by this module so EVAL can see them.
+        if let Ok(source) = fs::read_to_string(&source_path) {
+            for name in Self::extract_module_exported_operator_names(&source) {
+                self.imported_operator_names.insert(name);
+            }
+        }
         // Save and restore the language version around module loading.
         // Each module may set its own `use v6.*` which should not leak
         // into the caller's language version.
