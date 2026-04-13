@@ -427,6 +427,13 @@ impl Interpreter {
                     "devnull" => {
                         return Ok(Value::str_from(if is_win32 { "NUL" } else { "/dev/null" }));
                     }
+                    "tmpdir" => {
+                        #[cfg(not(target_arch = "wasm32"))]
+                        let tmpdir_str = std::env::temp_dir().to_string_lossy().to_string();
+                        #[cfg(target_arch = "wasm32")]
+                        let tmpdir_str = "/tmp".to_string();
+                        return Ok(self.make_io_path_instance(&tmpdir_str));
+                    }
                     _ => {}
                 }
             }
