@@ -31,6 +31,23 @@ pub(super) fn finalized_proc_map() -> &'static FinalizedProcMap {
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
+/// Per-pipe buffered-read state for IO::Pipe instances returned by
+/// `shell(..., :out)` / `run(..., :out)`. Keyed by the `pipe-id` attribute
+/// on the IO::Pipe instance so that repeated method calls on the same
+/// logical pipe share cursor state even after the instance value is cloned.
+pub(crate) struct IoPipeState {
+    pub(crate) content: String,
+    pub(crate) cursor: usize,
+    pub(crate) closed: bool,
+}
+
+type IoPipeStateMap = std::sync::Mutex<HashMap<i64, IoPipeState>>;
+
+pub(crate) fn io_pipe_state_map() -> &'static IoPipeStateMap {
+    static MAP: OnceLock<IoPipeStateMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
 /// Options extracted from named arguments for run/shell.
 struct ProcOptions {
     cwd: Option<String>,
@@ -48,10 +65,32 @@ impl Interpreter {
         let promise = SharedPromise::new_with_class(class_name);
         let ret = Value::Promise(promise.clone());
         let thread_interp = self.clone_for_thread();
+        let parent_handles_snapshot: std::collections::HashSet<usize> =
+            self.handles.keys().copied().collect();
 
         std::thread::spawn(move || {
             let vm = crate::vm::VM::new(thread_interp);
             let (mut thread_interp, result) = vm.call_value(block, vec![]);
+            // Transfer any handles opened by this thread back to the awaiter.
+            let mut new_handles: Vec<(usize, IoHandleState)> = Vec::new();
+            let new_ids: Vec<usize> = thread_interp
+                .handles
+                .keys()
+                .copied()
+                .filter(|id| !parent_handles_snapshot.contains(id))
+                .collect();
+            for id in new_ids {
+                if let Some(state) = thread_interp.handles.remove(&id) {
+                    new_handles.push((id, state));
+                }
+            }
+            let next_id = thread_interp.next_handle_id;
+            if !new_handles.is_empty() {
+                promise.set_thread_payload(Box::new(ThreadPromisePayload {
+                    new_handles,
+                    next_handle_id: next_id,
+                }));
+            }
             match result {
                 Ok(result) => {
                     let output = std::mem::take(&mut thread_interp.output);
@@ -542,10 +581,26 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Proc"), attrs)
     }
 
-    /// Create an IO::Pipe instance wrapping captured content.
+    /// Create an IO::Pipe instance wrapping captured content. Allocates
+    /// a persistent cursor id so repeated `.get` calls on the same pipe
+    /// advance through the buffered content.
     pub(super) fn make_io_pipe(content: String) -> Value {
+        use std::sync::atomic::{AtomicI64, Ordering};
+        static NEXT_PIPE_ID: AtomicI64 = AtomicI64::new(1);
+        let id = NEXT_PIPE_ID.fetch_add(1, Ordering::SeqCst);
+        if let Ok(mut map) = io_pipe_state_map().lock() {
+            map.insert(
+                id,
+                IoPipeState {
+                    content: content.clone(),
+                    cursor: 0,
+                    closed: false,
+                },
+            );
+        }
         let mut attrs = HashMap::new();
         attrs.insert("content".to_string(), Value::str(content));
+        attrs.insert("pipe-id".to_string(), Value::Int(id));
         Value::make_instance(Symbol::intern("IO::Pipe"), attrs)
     }
 
@@ -1208,6 +1263,20 @@ impl Interpreter {
                     let (result, output, stderr) = shared.wait();
                     self.emit_output(&output);
                     self.stderr_output.push_str(&stderr);
+                    if let Some(payload) = shared.take_thread_payload()
+                        && let Ok(payload) = payload.downcast::<ThreadPromisePayload>()
+                    {
+                        let ThreadPromisePayload {
+                            new_handles,
+                            next_handle_id,
+                        } = *payload;
+                        for (id, state) in new_handles {
+                            self.handles.entry(id).or_insert(state);
+                        }
+                        if next_handle_id > self.next_handle_id {
+                            self.next_handle_id = next_handle_id;
+                        }
+                    }
                     if shared.status() == "Broken" {
                         self.sync_shared_vars_to_env();
                         let msg = result.to_string_value();

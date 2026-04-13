@@ -317,6 +317,24 @@ impl Interpreter {
     }
 
     pub(crate) fn is_native_method(&mut self, class_name: &str, method_name: &str) -> bool {
+        // IO::Pipe has native methods handled by native_io_pipe
+        if class_name == "IO::Pipe"
+            && matches!(
+                method_name,
+                "slurp"
+                    | "Str"
+                    | "gist"
+                    | "encoding"
+                    | "close"
+                    | "split"
+                    | "print"
+                    | "get"
+                    | "lines"
+                    | "eof"
+            )
+        {
+            return true;
+        }
         // IO::Special has native methods handled by native_io_special
         if class_name == "IO::Special"
             && matches!(

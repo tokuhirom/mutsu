@@ -838,13 +838,28 @@ impl Clone for LazyThunkData {
 
 // --- SharedPromise: thread-safe promise state ---
 
-#[derive(Debug)]
 struct PromiseState {
     status: String, // "Planned", "Kept", "Broken"
     result: Value,
     output: String, // captured stdout from thread
     stderr_output: String,
     class_name: Symbol, // "Promise" or subclass name
+    /// Opaque payload transferred from the worker thread to the awaiting
+    /// thread. Used e.g. to hand off newly-opened IO handle state that
+    /// lives inside the per-thread Interpreter.
+    thread_payload: Option<Box<dyn std::any::Any + Send>>,
+}
+
+impl std::fmt::Debug for PromiseState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PromiseState")
+            .field("status", &self.status)
+            .field("result", &self.result)
+            .field("output", &self.output)
+            .field("stderr_output", &self.stderr_output)
+            .field("class_name", &self.class_name)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -871,6 +886,7 @@ impl SharedPromise {
                     output: String::new(),
                     stderr_output: String::new(),
                     class_name,
+                    thread_payload: None,
                 }),
                 Condvar::new(),
             )),
@@ -887,6 +903,7 @@ impl SharedPromise {
                     output: String::new(),
                     stderr_output: String::new(),
                     class_name: Symbol::intern("Promise"),
+                    thread_payload: None,
                 }),
                 Condvar::new(),
             )),
@@ -900,6 +917,21 @@ impl SharedPromise {
 
     pub(crate) fn id(&self) -> usize {
         Arc::as_ptr(&self.inner) as usize
+    }
+
+    /// Store an opaque payload to be handed off to whoever awaits the
+    /// promise. Must be called before `keep`/`break_with` so the awaiter
+    /// can observe it via `take_thread_payload`.
+    pub(crate) fn set_thread_payload(&self, payload: Box<dyn std::any::Any + Send>) {
+        let (lock, _) = &*self.inner;
+        let mut state = lock.lock().unwrap();
+        state.thread_payload = Some(payload);
+    }
+
+    pub(crate) fn take_thread_payload(&self) -> Option<Box<dyn std::any::Any + Send>> {
+        let (lock, _) = &*self.inner;
+        let mut state = lock.lock().unwrap();
+        state.thread_payload.take()
     }
 
     pub(crate) fn keep(&self, result: Value, output: String, stderr: String) {
