@@ -413,6 +413,27 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
         let (y, m, d) = temporal::epoch_days_to_civil(new_days);
         return Ok(temporal::make_date(y, m, d));
     }
+    // Instant + Instant is illegal
+    if instance_instant_value(&left).is_some() && instance_instant_value(&right).is_some() {
+        return Err(RuntimeError::new(
+            "Cannot add two Instants together".to_string(),
+        ));
+    }
+    // Instant + Duration => Instant
+    if let Some(tai) = instance_instant_value(&left)
+        && let Some(dur) = instance_duration_value(&right)
+    {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("value".to_string(), Value::Num(tai + dur));
+        return Ok(Value::make_instance(Symbol::intern("Instant"), attrs));
+    }
+    if let Some(tai) = instance_instant_value(&right)
+        && let Some(dur) = instance_duration_value(&left)
+    {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("value".to_string(), Value::Num(tai + dur));
+        return Ok(Value::make_instance(Symbol::intern("Instant"), attrs));
+    }
     // Instant + Numeric => Instant (add to TAI value)
     if let Some(tai) = instance_instant_value(&left)
         && right.is_numeric()
@@ -540,6 +561,14 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
     ) {
         // Instant - Instant returns a Duration
         return make_duration(a - b);
+    }
+    // Instant - Duration => Instant
+    if let Some(a) = instance_instant_value(&left)
+        && let Some(dur) = instance_duration_value(&right)
+    {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("value".to_string(), Value::Num(a - dur));
+        return Value::make_instance(Symbol::intern("Instant"), attrs);
     }
     if let Some(a) = instance_instant_value(&left)
         && right.is_numeric()

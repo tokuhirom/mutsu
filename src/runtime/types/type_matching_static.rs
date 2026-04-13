@@ -110,7 +110,7 @@ impl Interpreter {
         if constraint == "Real"
             && matches!(
                 value_type,
-                "Int" | "Num" | "Rat" | "FatRat" | "Bool" | "UInt"
+                "Int" | "Num" | "Rat" | "FatRat" | "Bool" | "UInt" | "Duration"
             )
         {
             return true;

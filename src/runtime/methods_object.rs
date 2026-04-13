@@ -1912,7 +1912,7 @@ impl Interpreter {
                     return Ok(Value::make_instance(Symbol::intern("Match"), attrs));
                 }
                 // Types that cannot be instantiated with .new
-                "HyperWhatever" | "Whatever" => {
+                "HyperWhatever" | "Whatever" | "Instant" => {
                     return Err(RuntimeError::new(format!(
                         "X::Cannot::New: Cannot create new object of type {}",
                         class_name
