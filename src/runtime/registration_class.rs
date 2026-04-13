@@ -1402,6 +1402,7 @@ impl Interpreter {
                     return_type,
                     is_default_candidate,
                     deprecated_message,
+                    handles: method_handles,
                 } => {
                     self.validate_private_access_in_stmts(name, method_body)?;
                     Self::validate_attr_declared_in_class(&class_own_attrs, method_body)?;
@@ -1554,6 +1555,47 @@ impl Interpreter {
                             class_def
                                 .methods
                                 .insert(resolved_method_name.clone(), vec![def]);
+                        }
+                    }
+                    // `handles` on a method: synthesize forwarder methods that
+                    // delegate to the return value of this method. E.g.
+                    //   method Str() handles 'uc' { 'x' }
+                    // registers a `uc` method that calls `self.Str.uc(|@_)`.
+                    if !method_handles.is_empty() {
+                        // Encode "method-based delegation" by prefixing the
+                        // source method name with `&`; the delegation dispatch
+                        // sites recognize this prefix and invoke the named
+                        // method on self to obtain the delegate.
+                        let source_attr_marker = format!("&{}", resolved_method_name);
+                        for spec in method_handles {
+                            match spec {
+                                HandleSpec::Name(target) => {
+                                    class_def
+                                        .methods
+                                        .entry(target.clone())
+                                        .or_default()
+                                        .push(make_delegation_method(&source_attr_marker, target));
+                                }
+                                HandleSpec::Rename { exposed, target } => {
+                                    class_def
+                                        .methods
+                                        .entry(exposed.clone())
+                                        .or_default()
+                                        .push(make_delegation_method(&source_attr_marker, target));
+                                }
+                                HandleSpec::Wildcard => {
+                                    class_def.wildcard_handles.push(source_attr_marker.clone());
+                                }
+                                HandleSpec::Regex(pattern) => {
+                                    class_def
+                                        .wildcard_handles
+                                        .push(format!("{}:regex:{}", source_attr_marker, pattern));
+                                }
+                                HandleSpec::Type(_) => {
+                                    // Method-based delegation via a type name
+                                    // is not yet supported; fall through.
+                                }
+                            }
                         }
                     }
                     // `our method` also registers as a package-scoped sub
@@ -2461,6 +2503,7 @@ impl Interpreter {
                     return_type,
                     is_default_candidate,
                     deprecated_message: _,
+                    handles: method_handles,
                 } => {
                     // Validate that $!attr references in the method body are declared
                     // in this role (same check as for class methods).
@@ -2554,11 +2597,44 @@ impl Interpreter {
                         if *multi {
                             role_def
                                 .methods
-                                .entry(resolved_method_name)
+                                .entry(resolved_method_name.clone())
                                 .or_default()
                                 .push(def);
                         } else {
-                            role_def.methods.insert(resolved_method_name, vec![def]);
+                            role_def
+                                .methods
+                                .insert(resolved_method_name.clone(), vec![def]);
+                        }
+                    }
+                    // `handles` on a role method: synthesize forwarder methods.
+                    if !is_role_private && !method_handles.is_empty() {
+                        let source_attr_marker = format!("&{}", resolved_method_name);
+                        for spec in method_handles {
+                            match spec {
+                                HandleSpec::Name(target) => {
+                                    role_def
+                                        .methods
+                                        .entry(target.clone())
+                                        .or_default()
+                                        .push(make_delegation_method(&source_attr_marker, target));
+                                }
+                                HandleSpec::Rename { exposed, target } => {
+                                    role_def
+                                        .methods
+                                        .entry(exposed.clone())
+                                        .or_default()
+                                        .push(make_delegation_method(&source_attr_marker, target));
+                                }
+                                HandleSpec::Wildcard => {
+                                    role_def.wildcard_handles.push(source_attr_marker.clone());
+                                }
+                                HandleSpec::Regex(pattern) => {
+                                    role_def
+                                        .wildcard_handles
+                                        .push(format!("{}:regex:{}", source_attr_marker, pattern));
+                                }
+                                HandleSpec::Type(_) => {}
+                            }
                         }
                     }
                 }

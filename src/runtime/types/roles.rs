@@ -135,6 +135,9 @@ impl Interpreter {
                 let Some((attr_var_name, target_method)) = &method_def.delegation else {
                     continue;
                 };
+                if attr_var_name.starts_with('&') {
+                    continue;
+                }
                 if target_method == method_name {
                     let attr_name = attr_var_name.trim_start_matches(['.', '!']);
                     return Some(format!("__mutsu_attr__{attr_name}"));

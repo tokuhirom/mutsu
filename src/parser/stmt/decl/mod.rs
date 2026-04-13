@@ -13,6 +13,7 @@ mod use_decl;
 // Re-export public items that were previously accessible from the flat `decl` module.
 pub(in crate::parser::stmt) use constant_subset::{constant_decl, subset_decl};
 pub(crate) use enum_decl::{anon_enum_decl, enum_decl};
+pub(in crate::parser::stmt) use handles::parse_handle_specs;
 pub(in crate::parser::stmt) use has_decl::has_decl;
 pub(in crate::parser::stmt) use helpers::parse_array_shape_suffix;
 pub(in crate::parser::stmt) use my_decl::{my_decl, my_decl_expr};

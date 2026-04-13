@@ -1011,6 +1011,9 @@ pub(crate) struct SubTraits {
     /// trait_name is one of "tighter", "looser", "equiv".
     /// reference_operator is the operator symbol or full name (e.g. "*", "+", "infix:<+>", "prefix:<foo>").
     pub precedence_trait: Option<(String, String)>,
+    /// `handles` specifications on a method declaration, e.g.
+    /// `method Str() handles 'uc' { ... }`.
+    pub handles: Vec<crate::ast::HandleSpec>,
 }
 
 /// Parse sub/method traits like `is test-assertion`, `is export`, `returns Str`, `of Num`, etc.
@@ -1026,6 +1029,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
     let mut custom_traits: Vec<String> = Vec::new();
     let mut seen_traits: Vec<String> = Vec::new();
     let mut precedence_trait: Option<(String, String)> = None;
+    let mut handles: Vec<crate::ast::HandleSpec> = Vec::new();
     loop {
         let (r, _) = ws(input)?;
         if r.starts_with('{') || r.is_empty() {
@@ -1041,8 +1045,16 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                     associativity,
                     custom_traits: custom_traits.clone(),
                     precedence_trait: precedence_trait.clone(),
+                    handles: handles.clone(),
                 },
             ));
+        }
+        if let Some(r_after) = keyword("handles", r) {
+            let (r_after, _) = ws1(r_after)?;
+            let mut rest_out = r_after;
+            super::decl::parse_handle_specs(r_after, &mut handles, &mut rest_out)?;
+            input = rest_out;
+            continue;
         }
         if let Some(r) = keyword("is", r) {
             let (r, _) = ws(r)?;
@@ -1180,6 +1192,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 associativity,
                 custom_traits: custom_traits.clone(),
                 precedence_trait: precedence_trait.clone(),
+                handles: handles.clone(),
             },
         ));
     }

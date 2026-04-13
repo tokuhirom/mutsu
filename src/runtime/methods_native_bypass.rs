@@ -182,6 +182,27 @@ impl Interpreter {
                 && matches!(target, Value::Package(class_name) if self.has_class_level_attr(&class_name.resolve(), method) && !self.has_public_accessor(&class_name.resolve(), method)))
             || (!is_pseudo_method
                 && matches!(target, Value::Instance { class_name, .. } if self.has_class_level_attr(&class_name.resolve(), method) && !self.has_public_accessor(&class_name.resolve(), method)))
+            || (!is_pseudo_method && self.mixin_role_has_method(target, method))
+    }
+
+    /// Check if a Mixin's role mixins define the given method.
+    /// Used so that role-method dispatch on punned role instances takes
+    /// precedence over the built-in Cool fallbacks (e.g. `.uc`).
+    pub(crate) fn mixin_role_has_method(&self, target: &Value, method: &str) -> bool {
+        let Value::Mixin(_, mixins) = target else {
+            return false;
+        };
+        for key in mixins.keys() {
+            let Some(role_name) = key.strip_prefix("__mutsu_role__") else {
+                continue;
+            };
+            if let Some(role) = self.roles.get(role_name)
+                && role.methods.contains_key(method)
+            {
+                return true;
+            }
+        }
+        false
     }
 
     /// Dispatch .raku/.perl on constrained Hash.

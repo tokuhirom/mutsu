@@ -1663,6 +1663,7 @@ fn method_decl_body_with_my(
                     t.strip_prefix("DEPRECATED:").map(|msg| msg.to_string())
                 }
             }),
+            handles: traits.handles.clone(),
         },
     ))
 }
