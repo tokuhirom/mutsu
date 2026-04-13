@@ -309,6 +309,24 @@ impl Interpreter {
             };
         }
 
+        // Supply.produce is a running scan: emit intermediate accumulator
+        // values computed by the produce_callable. For live sources, tap-ok
+        // snapshots raw emissions, so we must apply the scan here.
+        if let Value::Instance { ref attributes, .. } = supply
+            && let Some(produce_callable) = attributes.get("produce_callable").cloned()
+            && !tap_values.is_empty()
+        {
+            let mut scanned = Vec::with_capacity(tap_values.len());
+            let mut acc = tap_values[0].clone();
+            scanned.push(acc.clone());
+            for val in tap_values.iter().skip(1) {
+                acc =
+                    self.call_sub_value(produce_callable.clone(), vec![acc, val.clone()], false)?;
+                scanned.push(acc.clone());
+            }
+            tap_values = scanned;
+        }
+
         // 4. isa-ok on Tap return
         self.test_ok(true, &format!("{} got a tap", desc), false)?;
 
