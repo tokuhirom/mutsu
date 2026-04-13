@@ -767,6 +767,7 @@ roast/S17-supply/start.t
 roast/S17-supply/supplier-preserving.t
 roast/S17-supply/tail.t
 roast/S17-supply/unique.t
+roast/S17-supply/wait.t
 roast/S17-supply/watch-path.t
 roast/S17-supply/words.t
 roast/S19-command-line-options/02-dash-n.t
