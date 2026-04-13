@@ -81,6 +81,45 @@ impl Interpreter {
         }
     }
 
+    pub(in crate::runtime) fn native_semaphore(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        _args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let sem_id = match attributes.get("semaphore-id") {
+            Some(Value::Int(id)) if *id > 0 => *id as u64,
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "Semaphore.{} called on invalid Semaphore",
+                    method
+                )));
+            }
+        };
+        let rt = semaphore_runtime_by_id(sem_id)
+            .ok_or_else(|| RuntimeError::new("Semaphore state not found"))?;
+        match method {
+            "acquire" => {
+                semaphore_acquire(&rt)?;
+                Ok(Value::Nil)
+            }
+            "try_acquire" => {
+                let ok = semaphore_try_acquire(&rt)?;
+                Ok(Value::Bool(ok))
+            }
+            "release" => {
+                semaphore_release(&rt)?;
+                Ok(Value::Nil)
+            }
+            "WHAT" => Ok(Value::Package(Symbol::intern("Semaphore"))),
+            "Str" | "gist" => Ok(Value::str_from("Semaphore")),
+            _ => Err(RuntimeError::new(format!(
+                "No native method '{}' on Semaphore",
+                method
+            ))),
+        }
+    }
+
     pub(in crate::runtime) fn native_condition_variable(
         &mut self,
         attributes: &HashMap<String, Value>,

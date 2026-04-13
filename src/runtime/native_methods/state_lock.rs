@@ -134,3 +134,78 @@ pub(super) fn next_condition_id() -> u64 {
     static COUNTER: AtomicU64 = AtomicU64::new(1);
     COUNTER.fetch_add(1, Ordering::Relaxed)
 }
+
+// --- Counting semaphore registry ---
+
+#[derive(Debug)]
+pub(crate) struct SemaphoreRuntime {
+    pub(super) state: std::sync::Mutex<i64>,
+    pub(super) cv: std::sync::Condvar,
+}
+
+type SemaphoreMap = std::sync::RwLock<HashMap<u64, Arc<SemaphoreRuntime>>>;
+
+fn semaphore_map() -> &'static SemaphoreMap {
+    static MAP: OnceLock<SemaphoreMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::RwLock::new(HashMap::new()))
+}
+
+pub(in crate::runtime) fn next_semaphore_id(permits: i64) -> u64 {
+    static COUNTER: AtomicU64 = AtomicU64::new(1);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    if let Ok(mut map) = semaphore_map().write() {
+        map.entry(id).or_insert_with(|| {
+            Arc::new(SemaphoreRuntime {
+                state: std::sync::Mutex::new(permits),
+                cv: std::sync::Condvar::new(),
+            })
+        });
+    }
+    id
+}
+
+pub(crate) fn semaphore_runtime_by_id(id: u64) -> Option<Arc<SemaphoreRuntime>> {
+    semaphore_map()
+        .read()
+        .ok()
+        .and_then(|map| map.get(&id).cloned())
+}
+
+pub(crate) fn semaphore_acquire(rt: &SemaphoreRuntime) -> Result<(), RuntimeError> {
+    let mut state = rt
+        .state
+        .lock()
+        .map_err(|_| RuntimeError::new("Semaphore state poisoned"))?;
+    while *state <= 0 {
+        state = rt
+            .cv
+            .wait(state)
+            .map_err(|_| RuntimeError::new("Semaphore wait failed"))?;
+    }
+    *state -= 1;
+    Ok(())
+}
+
+pub(crate) fn semaphore_try_acquire(rt: &SemaphoreRuntime) -> Result<bool, RuntimeError> {
+    let mut state = rt
+        .state
+        .lock()
+        .map_err(|_| RuntimeError::new("Semaphore state poisoned"))?;
+    if *state > 0 {
+        *state -= 1;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+pub(crate) fn semaphore_release(rt: &SemaphoreRuntime) -> Result<(), RuntimeError> {
+    let mut state = rt
+        .state
+        .lock()
+        .map_err(|_| RuntimeError::new("Semaphore state poisoned"))?;
+    *state += 1;
+    drop(state);
+    rt.cv.notify_one();
+    Ok(())
+}

@@ -1472,6 +1472,24 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "Semaphore".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["acquire", "try_acquire", "release"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                mro: vec!["Semaphore".to_string()],
+                attribute_types: HashMap::new(),
+                attribute_smileys: HashMap::new(),
+                wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
+            },
+        );
+        classes.insert(
             "IO::Path".to_string(),
             ClassDef {
                 parents: Vec::new(),
