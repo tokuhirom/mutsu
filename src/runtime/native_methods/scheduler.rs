@@ -5,6 +5,7 @@ use std::sync::atomic::Ordering;
 use super::state::*;
 use super::state_lock::*;
 use super::state_scheduler::*;
+use super::state_supplier::close_supplier_tap;
 
 /// Parameters for a scheduled cue operation.
 struct CueParams {
@@ -126,6 +127,11 @@ impl Interpreter {
             "cancel" | "close" => {
                 if let Some(Value::Int(listener_id)) = attributes.get("listener-id") {
                     close_async_listener(*listener_id as u64);
+                }
+                if let (Some(Value::Int(supplier_id)), Some(Value::Int(tap_id))) =
+                    (attributes.get("supplier_id"), attributes.get("tap_id"))
+                {
+                    close_supplier_tap(*supplier_id as u64, *tap_id as u64);
                 }
                 Ok(Value::Nil)
             }

@@ -462,6 +462,21 @@ impl Interpreter {
                     }
                 }
 
+                // Build a Tap handle referencing the registered subscription so
+                // `.close` can stop it later.
+                let tap_handle_attrs =
+                    if let Some(Value::Int(supplier_id)) = attributes.get("supplier_id") {
+                        let sid = *supplier_id as u64;
+                        let mut h = HashMap::new();
+                        h.insert("supplier_id".to_string(), Value::Int(sid as i64));
+                        if let Some(tid) = last_supplier_tap_id(sid) {
+                            h.insert("tap_id".to_string(), Value::Int(tid as i64));
+                        }
+                        h
+                    } else {
+                        HashMap::new()
+                    };
+
                 // If this Supply has a supply_id, register the tap globally
                 // so that .start (Proc::Async) can find and call it later
                 if let Some(Value::Int(sid)) = attributes.get("supply_id")
@@ -518,14 +533,22 @@ impl Interpreter {
                     }
                     emitted
                 } else if let Some(Value::Int(sid)) = attributes.get("supplier_id") {
-                    // For supplier-backed supplies, get current values from supplier state
-                    let (snap_values, _, _) = supplier_snapshot(*sid as u64);
-                    if !snap_values.is_empty() {
-                        snap_values
-                    } else if let Some(Value::Array(v, ..)) = attributes.get("values") {
-                        v.to_vec()
-                    } else {
+                    // For live (hot) supplier-backed supplies, new taps should
+                    // only see future emits, not replayed past values. For
+                    // cold supplier-backed supplies, replay the captured
+                    // snapshot values so taps see them.
+                    let is_live = matches!(attributes.get("live"), Some(Value::Bool(true)));
+                    if is_live {
                         Vec::new()
+                    } else {
+                        let (snap_values, _, _) = supplier_snapshot(*sid as u64);
+                        if !snap_values.is_empty() {
+                            snap_values
+                        } else if let Some(Value::Array(v, ..)) = attributes.get("values") {
+                            v.to_vec()
+                        } else {
+                            Vec::new()
+                        }
                     }
                 } else if let Some(Value::Array(v, ..)) = attributes.get("values") {
                     v.to_vec()
@@ -587,7 +610,10 @@ impl Interpreter {
                         self.call_supply_quit_handler(quit_fn, reason)?;
                     }
                 }
-                Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()))
+                Ok(Value::make_instance(
+                    Symbol::intern("Tap"),
+                    tap_handle_attrs,
+                ))
             }
             "on-close" => {
                 let close_cb = args.first().cloned().unwrap_or(Value::Nil);
@@ -829,6 +855,21 @@ impl Interpreter {
                 }
             }
             "flat" => {
+                // For live (Supplier-backed) supplies, set up a flat tap chain:
+                // incoming values are flattened and each element is re-emitted
+                // to a new downstream supplier.
+                if let Some(Value::Int(source_supplier_id)) = attributes.get("supplier_id") {
+                    let source_sid = *source_supplier_id as u64;
+                    let downstream_sid = next_supplier_id();
+                    register_supplier_flat_tap(source_sid, downstream_sid);
+
+                    let mut new_attrs = HashMap::new();
+                    new_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    new_attrs.insert("supplier_id".to_string(), Value::Int(downstream_sid as i64));
+                    new_attrs.insert("live".to_string(), Value::Bool(true));
+                    return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
+                }
                 let source_values = self.supply_get_values(attributes)?;
                 let mut flattened = Vec::new();
                 for val in source_values {
@@ -1318,6 +1359,27 @@ impl Interpreter {
                                     }
                                 }
                             }
+                            SupplierEmitAction::FlatEmit {
+                                downstream_supplier_id,
+                                items,
+                            } => {
+                                for item in items {
+                                    supplier_emit(downstream_supplier_id, item.clone());
+                                    let ds_actions =
+                                        supplier_emit_callbacks(downstream_supplier_id, &item);
+                                    for ds_action in ds_actions {
+                                        if let SupplierEmitAction::Call(
+                                            tap,
+                                            emitted,
+                                            delay_seconds,
+                                        ) = ds_action
+                                        {
+                                            Self::sleep_for_supply_delay(delay_seconds);
+                                            let _ = self.call_sub_value(tap, vec![emitted], true);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1511,6 +1573,27 @@ impl Interpreter {
                                     {
                                         Self::sleep_for_supply_delay(delay_seconds);
                                         self.call_sub_value(tap, vec![emitted], true)?;
+                                    }
+                                }
+                            }
+                            SupplierEmitAction::FlatEmit {
+                                downstream_supplier_id,
+                                items,
+                            } => {
+                                for item in items {
+                                    supplier_emit(downstream_supplier_id, item.clone());
+                                    let ds_actions =
+                                        supplier_emit_callbacks(downstream_supplier_id, &item);
+                                    for ds_action in ds_actions {
+                                        if let SupplierEmitAction::Call(
+                                            tap,
+                                            emitted,
+                                            delay_seconds,
+                                        ) = ds_action
+                                        {
+                                            Self::sleep_for_supply_delay(delay_seconds);
+                                            self.call_sub_value(tap, vec![emitted], true)?;
+                                        }
                                     }
                                 }
                             }
@@ -1709,6 +1792,21 @@ impl Interpreter {
                     }
                 }
 
+                // Build a Tap handle referencing the registered subscription so
+                // `.close` can stop it later.
+                let tap_handle_attrs =
+                    if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
+                        let sid = *supplier_id as u64;
+                        let mut h = HashMap::new();
+                        h.insert("supplier_id".to_string(), Value::Int(sid as i64));
+                        if let Some(tid) = last_supplier_tap_id(sid) {
+                            h.insert("tap_id".to_string(), Value::Int(tid as i64));
+                        }
+                        h
+                    } else {
+                        HashMap::new()
+                    };
+
                 // If this Supply has a supply_id (belongs to Proc::Async),
                 // register tap in the global registry so .start can find it
                 if let Some(Value::Int(sid)) = attrs.get("supply_id")
@@ -1839,13 +1937,18 @@ impl Interpreter {
                         }
                     }
                     if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
-                        let (snap_values, _, _) = supplier_snapshot(*supplier_id as u64);
-                        if !snap_values.is_empty() {
-                            snap_values
-                        } else if let Some(Value::Array(values, ..)) = attrs.get("values") {
-                            values.to_vec()
-                        } else {
+                        let is_live = matches!(attrs.get("live"), Some(Value::Bool(true)));
+                        if is_live {
                             Vec::new()
+                        } else {
+                            let (snap_values, _, _) = supplier_snapshot(*supplier_id as u64);
+                            if !snap_values.is_empty() {
+                                snap_values
+                            } else if let Some(Value::Array(values, ..)) = attrs.get("values") {
+                                values.to_vec()
+                            } else {
+                                Vec::new()
+                            }
                         }
                     } else if let Some(Value::Array(values, ..)) = attrs.get("values") {
                         values.to_vec()
@@ -1917,7 +2020,7 @@ impl Interpreter {
                         self.call_supply_quit_handler(quit_fn, reason)?;
                     }
                 }
-                let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
+                let tap_instance = Value::make_instance(Symbol::intern("Tap"), tap_handle_attrs);
                 Ok((tap_instance, attrs))
             }
             "on-close" => {

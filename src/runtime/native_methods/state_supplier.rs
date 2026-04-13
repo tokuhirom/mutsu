@@ -51,6 +51,12 @@ struct SupplierTapSubscription {
     words_mode: bool,
     /// Buffer for partial words across chunk boundaries
     words_buffer: String,
+    /// Flat transform: re-emit flattened sub-elements to this downstream supplier
+    flat_downstream: Option<u64>,
+    /// Stable identifier so taps can be closed individually.
+    tap_id: u64,
+    /// When set, this tap is closed and should no longer receive emits.
+    closed: bool,
 }
 
 #[derive(Clone)]
@@ -95,6 +101,38 @@ fn supplier_subscriptions_map() -> &'static SupplierSubscriptionsMap {
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
+fn next_tap_id() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(1);
+    COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+/// Close the tap with the given id on the given supplier so it no longer
+/// receives emitted values.
+pub(in crate::runtime) fn close_supplier_tap(supplier_id: u64, tap_id: u64) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock()
+        && let Some(subs) = map.get_mut(&supplier_id)
+    {
+        for tap in subs.taps.iter_mut() {
+            if tap.tap_id == tap_id {
+                tap.closed = true;
+            }
+        }
+    }
+}
+
+/// Return the id of the most recently registered tap on the given supplier,
+/// if any. Used by `tap` to build a Tap handle that can be closed.
+pub(in crate::runtime) fn last_supplier_tap_id(supplier_id: u64) -> Option<u64> {
+    if let Ok(map) = supplier_subscriptions_map().lock()
+        && let Some(subs) = map.get(&supplier_id)
+    {
+        subs.taps.last().map(|t| t.tap_id)
+    } else {
+        None
+    }
+}
+
 pub(in crate::runtime) fn register_supplier_tap(supplier_id: u64, tap: Value, delay_seconds: f64) {
     if let Ok(mut map) = supplier_subscriptions_map().lock() {
         map.entry(supplier_id)
@@ -116,6 +154,9 @@ pub(in crate::runtime) fn register_supplier_tap(supplier_id: u64, tap: Value, de
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                flat_downstream: None,
+                tap_id: next_tap_id(),
+                closed: false,
             });
     }
 }
@@ -146,6 +187,9 @@ pub(in crate::runtime) fn register_supplier_tap_with_head_limit(
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                flat_downstream: None,
+                tap_id: next_tap_id(),
+                closed: false,
             });
     }
 }
@@ -176,6 +220,9 @@ pub(in crate::runtime) fn register_supplier_lines_tap(
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                flat_downstream: None,
+                tap_id: next_tap_id(),
+                closed: false,
             });
     }
 }
@@ -205,6 +252,9 @@ pub(in crate::runtime) fn register_supplier_words_tap(
                 batch_state: None,
                 words_mode: true,
                 words_buffer: String::new(),
+                flat_downstream: None,
+                tap_id: next_tap_id(),
+                closed: false,
             });
     }
 }
@@ -241,6 +291,9 @@ pub(in crate::runtime) fn register_supplier_elems_tap(
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                flat_downstream: None,
+                tap_id: next_tap_id(),
+                closed: false,
             });
     }
 }
@@ -286,6 +339,11 @@ pub(in crate::runtime) enum SupplierEmitAction {
         downstream_supplier_id: u64,
         batch: Vec<Value>,
     },
+    /// Flat emit: emit each flattened sub-element individually to the downstream supplier
+    FlatEmit {
+        downstream_supplier_id: u64,
+        items: Vec<Value>,
+    },
 }
 
 pub(in crate::runtime) fn supplier_emit_callbacks(
@@ -297,6 +355,9 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
         && let Some(subs) = map.get_mut(&supplier_id)
     {
         for (idx, tap) in subs.taps.iter_mut().enumerate() {
+            if tap.closed {
+                continue;
+            }
             // Check head_limit: skip emissions once the limit is reached
             if let Some(limit) = tap.head_limit
                 && tap.head_count >= limit
@@ -433,6 +494,18 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
                     delay_seconds: tap.delay_seconds,
                     tap_index: idx,
                 });
+            } else if let Some(downstream_sid) = tap.flat_downstream {
+                // Flatten the emitted value and emit each element individually
+                // to the downstream supplier.
+                let items: Vec<Value> = match emitted_value {
+                    Value::Array(arr, kind) if !kind.is_itemized() => arr.iter().cloned().collect(),
+                    Value::Slip(arr) | Value::Seq(arr) => arr.iter().cloned().collect(),
+                    other => vec![other.clone()],
+                };
+                actions.push(SupplierEmitAction::FlatEmit {
+                    downstream_supplier_id: downstream_sid,
+                    items,
+                });
             } else if let Some(ref ss) = tap.start_state {
                 actions.push(SupplierEmitAction::StartCall {
                     callable: ss.callable.clone(),
@@ -524,6 +597,9 @@ pub(in crate::runtime) fn register_supplier_unique_tap(
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                flat_downstream: None,
+                tap_id: next_tap_id(),
+                closed: false,
             });
     }
 }
@@ -557,6 +633,9 @@ pub(in crate::runtime) fn register_supplier_produce_tap(
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                flat_downstream: None,
+                tap_id: next_tap_id(),
+                closed: false,
             });
     }
 }
@@ -592,6 +671,9 @@ pub(in crate::runtime) fn register_supplier_start_tap(
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                flat_downstream: None,
+                tap_id: next_tap_id(),
+                closed: false,
             });
     }
 }
@@ -667,6 +749,9 @@ pub(in crate::runtime) fn register_supplier_classify_tap(
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                flat_downstream: None,
+                tap_id: next_tap_id(),
+                closed: false,
             });
     }
 }
@@ -841,6 +926,43 @@ pub(in crate::runtime) fn register_supplier_batch_tap(
                 }),
                 words_mode: false,
                 words_buffer: String::new(),
+                flat_downstream: None,
+                tap_id: next_tap_id(),
+                closed: false,
+            });
+    }
+}
+
+/// Register a flat tap on a supplier. Incoming values are flattened
+/// (arrays/lists expanded) and each element is re-emitted to the downstream
+/// supplier so downstream taps see the individual elements.
+pub(in crate::runtime) fn register_supplier_flat_tap(
+    supplier_id: u64,
+    downstream_supplier_id: u64,
+) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        map.entry(supplier_id)
+            .or_default()
+            .taps
+            .push(SupplierTapSubscription {
+                callback: Value::Nil,
+                line_mode: false,
+                line_chomp: true,
+                line_buffer: String::new(),
+                delay_seconds: 0.0,
+                unique_filter: None,
+                classify_state: None,
+                elems_trace: None,
+                head_limit: None,
+                head_count: 0,
+                produce_state: None,
+                start_state: None,
+                batch_state: None,
+                words_mode: false,
+                words_buffer: String::new(),
+                flat_downstream: Some(downstream_supplier_id),
+                tap_id: next_tap_id(),
+                closed: false,
             });
     }
 }
