@@ -154,6 +154,7 @@ mod methods_supply_dispatch;
 mod methods_temporal;
 mod methods_trans;
 mod methods_type_coerce;
+mod methods_walk;
 mod native_io;
 mod native_io_special;
 pub(crate) mod native_methods;
@@ -269,6 +270,11 @@ pub(crate) struct RoleDef {
     /// Attribute conflicts detected during role-to-role composition.
     /// Each entry is (attr_name, declaring_role, conflicting_role).
     pub(crate) attribute_conflicts: Vec<(String, String, String)>,
+    /// Attribute names declared directly in this role's body (not inherited
+    /// via `does`). Used to disambiguate diamond composition (where the same
+    /// attribute reaches via two paths from a shared ancestor) from a real
+    /// attribute conflict.
+    pub(crate) own_attribute_names: HashSet<String>,
     /// Body statements deferred until composition time (for parameterized roles).
     /// These are non-method/non-attribute statements that may reference type parameters
     /// and must be re-executed for each class composition with concrete type bindings.
@@ -2512,6 +2518,7 @@ impl Interpreter {
                         wildcard_handles: Vec::new(),
                         role_id: 0,
                         attribute_conflicts: Vec::new(),
+                        own_attribute_names: std::collections::HashSet::new(),
                         deferred_body_stmts: Vec::new(),
                     },
                 );
@@ -2527,6 +2534,7 @@ impl Interpreter {
                         wildcard_handles: Vec::new(),
                         role_id: 0,
                         attribute_conflicts: Vec::new(),
+                        own_attribute_names: std::collections::HashSet::new(),
                         deferred_body_stmts: Vec::new(),
                     },
                 );
@@ -2542,6 +2550,7 @@ impl Interpreter {
                         wildcard_handles: Vec::new(),
                         role_id: 0,
                         attribute_conflicts: Vec::new(),
+                        own_attribute_names: std::collections::HashSet::new(),
                         deferred_body_stmts: Vec::new(),
                     },
                 );
@@ -2557,6 +2566,7 @@ impl Interpreter {
                         wildcard_handles: Vec::new(),
                         role_id: 0,
                         attribute_conflicts: Vec::new(),
+                        own_attribute_names: std::collections::HashSet::new(),
                         deferred_body_stmts: Vec::new(),
                     },
                 );
@@ -2598,6 +2608,7 @@ impl Interpreter {
                             wildcard_handles: Vec::new(),
                             role_id: 0,
                             attribute_conflicts: Vec::new(),
+                            own_attribute_names: std::collections::HashSet::new(),
                             deferred_body_stmts: Vec::new(),
                         },
                     );

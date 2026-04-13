@@ -22,6 +22,14 @@ impl Interpreter {
             err.return_value = Some(target);
             return Err(err);
         }
+        // .WALK(name, :roles) — walk class+role chain calling the named
+        // submethod once per "own" definition. Returns a no-arg Sub that,
+        // when invoked, yields the list of results.
+        if method == "WALK"
+            && let Some(value) = self.try_walk_method(&target, &args)?
+        {
+            return Ok(value);
+        }
         // Unhandled Failure explosion
         if let Value::Instance { class_name, .. } = &target
             && class_name.resolve() == "Failure"
