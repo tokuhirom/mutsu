@@ -85,6 +85,10 @@ impl VM {
             && method_sym == "keyof"
             && !bypass_constrained_hash;
         // Proxy containers must auto-FETCH before dispatching methods (except meta-methods)
+        // Mixin with a role-defined method: bypass native so role-method
+        // dispatch (including `handles` delegation forwarders) takes precedence
+        // over the built-in Cool fallbacks like `.uc`/`.lc`/`.gist`.
+        let bypass_mixin_role_method = self.interpreter.mixin_role_has_method(target, &method_name);
         let bypass_proxy = matches!(target, Value::Proxy { .. })
             && !matches!(
                 method_sym.resolve().as_ref(),
@@ -102,6 +106,7 @@ impl VM {
             || bypass_constrained_hash
             || bypass_hash_keyof
             || bypass_typed_array_raku
+            || bypass_mixin_role_method
         {
             return None;
         }

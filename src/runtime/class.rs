@@ -787,12 +787,34 @@ impl Interpreter {
         args: Vec<Value>,
         invocant: Option<Value>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
-        // Fast path: delegation methods forward the call to the delegate object
         if let Some((ref attr_var_name, ref target_method)) = method_def.delegation {
+            // Clear skip_pseudo_method_native: the outer call set it for the
+            // delegator's own method name, but we're about to forward to a
+            // different name on a (possibly different) target, so the flag
+            // must not leak into the delegate dispatch.
+            let saved_skip_pseudo = self.skip_pseudo_method_native.take();
+            // Method-based delegation: attr_var_name starts with `&`, meaning
+            // the delegate is obtained by invoking the named method on self.
+            let delegate = if let Some(source_method) = attr_var_name.strip_prefix('&') {
+                let invocant_val = if let Some(ref inv) = invocant {
+                    inv.clone()
+                } else if attributes.is_empty() {
+                    Value::Package(Symbol::intern(receiver_class_name))
+                } else {
+                    Value::make_instance(Symbol::intern(receiver_class_name), attributes.clone())
+                };
+                self.call_method_with_values(invocant_val, source_method, Vec::new())?
+            } else {
+                let attr_key = attr_var_name
+                    .trim_start_matches('.')
+                    .trim_start_matches('!');
+                attributes.get(attr_key).cloned().unwrap_or(Value::Nil)
+            };
+            let is_method_based = attr_var_name.starts_with('&');
             let attr_key = attr_var_name
+                .trim_start_matches('&')
                 .trim_start_matches('.')
                 .trim_start_matches('!');
-            let delegate = attributes.get(attr_key).cloned().unwrap_or(Value::Nil);
             if delegate == Value::Nil {
                 return Err(RuntimeError::new(format!(
                     "No such method '{}' for invocant of type '{}'",
@@ -808,9 +830,11 @@ impl Interpreter {
                 _ => None,
             };
             let result = self.call_method_with_values(delegate, target_method, args)?;
+            // Restore the saved skip_pseudo flag so the outer caller is unaffected.
+            self.skip_pseudo_method_native = saved_skip_pseudo;
             // For Instance delegates, check if the delegate was mutated and update
             // the frontend's attribute with the updated delegate.
-            if let (Some(did), Some(dcn)) = (delegate_id, delegate_class) {
+            if !is_method_based && let (Some(did), Some(dcn)) = (delegate_id, delegate_class) {
                 // Look for the updated delegate in env bindings
                 let mut updated_delegate = None;
                 for val in self.env.values() {

@@ -684,6 +684,11 @@ pub(crate) enum Stmt {
         is_default_candidate: bool,
         /// `is DEPRECATED` message (None = not deprecated)
         deprecated_message: Option<String>,
+        /// `handles` specifications on this method: when set, this method acts
+        /// as a delegator source. For each spec, a forwarder method is
+        /// synthesized at class-registration time that calls
+        /// `self.<this-method>.<exposed>(|args)`.
+        handles: Vec<HandleSpec>,
     },
     RoleDecl {
         name: Symbol,

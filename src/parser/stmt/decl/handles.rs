@@ -50,7 +50,7 @@ fn parse_single_handle_spec<'a>(input: &'a str, specs: &mut Vec<HandleSpec>) -> 
 }
 
 /// Parse handle specifications after the `handles` keyword.
-pub(super) fn parse_handle_specs<'a>(
+pub(in crate::parser) fn parse_handle_specs<'a>(
     input: &'a str,
     specs: &mut Vec<HandleSpec>,
     rest_out: &mut &'a str,

@@ -1196,7 +1196,9 @@ impl Interpreter {
             return Err(super::methods_signature::make_multi_no_match_error(method));
         };
         // Delegation methods: forward assignment to the delegate
-        if let Some((attr_var_name, target_method)) = &method_def.delegation {
+        if let Some((attr_var_name, target_method)) = &method_def.delegation
+            && !attr_var_name.starts_with('&')
+        {
             let attr_key = attr_var_name
                 .trim_start_matches('.')
                 .trim_start_matches('!');
@@ -1286,7 +1288,9 @@ impl Interpreter {
         }
 
         // Check if this is a delegation method — forward assignment to delegate
-        if let Some((ref attr_var_name, ref target_method)) = method_def.delegation {
+        if let Some((ref attr_var_name, ref target_method)) = method_def.delegation
+            && !attr_var_name.starts_with('&')
+        {
             let attr_key = attr_var_name
                 .trim_start_matches('.')
                 .trim_start_matches('!');
@@ -2697,11 +2701,24 @@ impl Interpreter {
             if let Some(method_def) = self.resolve_method(&class_name.resolve(), method, &args)
                 && method_def.delegation.is_some()
             {
+                // Clear skip_pseudo_method_native so the inner delegate dispatch
+                // does not inherit the outer call's bypass flag (which was set
+                // for the delegator's own method name).
+                let saved_skip_pseudo = self.skip_pseudo_method_native.take();
                 let (attr_var_name, target_method) = method_def.delegation.as_ref().unwrap();
+                let is_method_based = attr_var_name.starts_with('&');
                 let attr_key = attr_var_name
+                    .trim_start_matches('&')
                     .trim_start_matches('.')
                     .trim_start_matches('!');
-                let delegate = attributes.get(attr_key).cloned().unwrap_or(Value::Nil);
+                let delegate = if is_method_based {
+                    let source_method = attr_var_name.trim_start_matches('&').to_string();
+                    let invocant_val =
+                        Value::make_instance_with_id(class_name, (*attributes).clone(), target_id);
+                    self.call_method_with_values(invocant_val, &source_method, Vec::new())?
+                } else {
+                    attributes.get(attr_key).cloned().unwrap_or(Value::Nil)
+                };
                 if delegate == Value::Nil {
                     return Err(RuntimeError::new(format!(
                         "No such method '{}' for invocant of type '{}'",
@@ -2722,18 +2739,22 @@ impl Interpreter {
                 // Read back the potentially-updated delegate
                 let updated_delegate = self.env.get(&temp_var).cloned().unwrap_or(Value::Nil);
                 self.env.remove(&temp_var);
-                // Write the updated delegate back into the frontend's attributes
-                let mut updated = (*attributes).clone();
-                updated.insert(attr_key.to_string(), updated_delegate);
-                self.overwrite_instance_bindings_by_identity(
-                    &class_name.resolve(),
-                    target_id,
-                    updated.clone(),
-                );
-                self.env.insert(
-                    target_var.to_string(),
-                    Value::make_instance_with_id(class_name, updated, target_id),
-                );
+                if !is_method_based {
+                    // Write the updated delegate back into the frontend's attributes
+                    let mut updated = (*attributes).clone();
+                    updated.insert(attr_key.to_string(), updated_delegate);
+                    self.overwrite_instance_bindings_by_identity(
+                        &class_name.resolve(),
+                        target_id,
+                        updated.clone(),
+                    );
+                    self.env.insert(
+                        target_var.to_string(),
+                        Value::make_instance_with_id(class_name, updated, target_id),
+                    );
+                }
+                // Restore skip_pseudo for the outer caller.
+                self.skip_pseudo_method_native = saved_skip_pseudo;
                 return Ok(result);
             }
 
