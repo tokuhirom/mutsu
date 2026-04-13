@@ -97,6 +97,22 @@ impl Interpreter {
                         }
                     }
                 }
+                SupplierEmitAction::FlatEmit {
+                    downstream_supplier_id,
+                    items,
+                } => {
+                    for item in items {
+                        supplier_emit(downstream_supplier_id, item.clone());
+                        let ds_actions = supplier_emit_callbacks(downstream_supplier_id, &item);
+                        for ds_action in ds_actions {
+                            if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = ds_action
+                            {
+                                Self::sleep_for_supply_delay(delay_seconds);
+                                let _ = self.call_sub_value(tap, vec![emitted], true);
+                            }
+                        }
+                    }
+                }
             }
         }
         Ok(())

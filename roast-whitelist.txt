@@ -746,6 +746,7 @@ roast/S17-supply/do.t
 roast/S17-supply/elems.t
 roast/S17-supply/encode.t
 roast/S17-supply/first.t
+roast/S17-supply/flat.t
 roast/S17-supply/from-list.t
 roast/S17-supply/grab.t
 roast/S17-supply/grep.t
