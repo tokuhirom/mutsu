@@ -782,6 +782,12 @@ fn format_temporal_num(f: f64) -> String {
             "-Inf".to_string()
         };
     }
+    // For values outside the safe i64 Rat range, emit scientific notation
+    // so that Str -> Num literal round-trips through the parser instead of
+    // overflowing the Rat literal parser.
+    if f.is_finite() && f.abs() >= 1e18 {
+        return format!("{:e}", f);
+    }
     let s = format!("{}", f);
     if s.contains('.') {
         s
