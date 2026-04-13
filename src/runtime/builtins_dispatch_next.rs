@@ -18,6 +18,29 @@ impl Interpreter {
         }
     }
 
+    /// Trim the candidate list so that the current call is the final candidate.
+    /// After lastcall, callsame/nextsame from the same dispatch context return Nil.
+    pub(super) fn builtin_lastcall(&mut self) -> Result<Value, RuntimeError> {
+        // Clear remaining candidates of the topmost dispatch frame.
+        // Try wrap dispatch stack first.
+        if let Some(frame) = self.wrap_dispatch_stack.last_mut() {
+            frame.remaining.clear();
+            return Ok(Value::Bool(true));
+        }
+        // Try method dispatch stack.
+        if let Some(frame) = self.method_dispatch_stack.last_mut() {
+            frame.remaining.clear();
+            return Ok(Value::Bool(true));
+        }
+        // Try multi dispatch stack.
+        if let Some(top) = self.multi_dispatch_stack.last_mut() {
+            top.1.clear();
+            return Ok(Value::Bool(true));
+        }
+        // Outside a dispatch context: no-op (return False).
+        Ok(Value::Bool(false))
+    }
+
     /// Call next method/multi candidate with the original args; returns the result.
     pub(super) fn builtin_callsame(&mut self) -> Result<Value, RuntimeError> {
         self.dispatch_next_candidate("callsame", None, false)
@@ -110,6 +133,12 @@ impl Interpreter {
             let (receiver_class, invocant, call_args, owner_class, method_def) = {
                 let frame = &mut self.method_dispatch_stack[frame_idx];
                 let Some((owner_class, method_def)) = frame.remaining.first().cloned() else {
+                    if tail_call {
+                        return Err(RuntimeError {
+                            return_value: Some(Value::Nil),
+                            ..RuntimeError::new("")
+                        });
+                    }
                     return Ok(Value::Nil);
                 };
                 frame.remaining.remove(0);
@@ -203,6 +232,12 @@ impl Interpreter {
             }
             let Some(idx) = matched_idx else {
                 // No candidate matches — return Nil (nowhere to defer to)
+                if tail_call {
+                    return Err(RuntimeError {
+                        return_value: Some(Value::Nil),
+                        ..RuntimeError::new("")
+                    });
+                }
                 return Ok(Value::Nil);
             };
             let next_def = candidates[idx].clone();

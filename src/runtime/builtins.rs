@@ -245,6 +245,7 @@ impl Interpreter {
             // Multi dispatch control flow
             "callsame" => self.builtin_callsame(),
             "nextsame" => self.builtin_nextsame(),
+            "lastcall" => self.builtin_lastcall(),
             "callwith" => self.builtin_callwith(&args),
             "nextwith" => self.builtin_nextwith(&args),
             "samewith" => self.builtin_samewith(&args),
