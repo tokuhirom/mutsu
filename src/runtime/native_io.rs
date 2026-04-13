@@ -1158,6 +1158,76 @@ impl Interpreter {
         basename.chars().filter(|&c| c == '.').count() as i64
     }
 
+    /// Strict Unix `IO::Spec::Unix.canonpath` implementation used by
+    /// `IO::Spec::Unix` / `IO::Spec::QNX` etc. When `parent` is true, `..`
+    /// segments are resolved lexically. Returns `''` for empty input.
+    /// Preserves a leading `//` (POSIX implementation-defined) but collapses
+    /// three or more leading slashes to a single `/`.
+    pub fn canonpath_unix(path: &str, parent: bool) -> String {
+        if path.is_empty() {
+            return String::new();
+        }
+        let bytes = path.as_bytes();
+        let mut leading = 0usize;
+        while leading < bytes.len() && bytes[leading] == b'/' {
+            leading += 1;
+        }
+        let prefix = if leading == 0 {
+            ""
+        } else if leading == 2 {
+            "//"
+        } else {
+            "/"
+        };
+        let is_absolute = leading > 0;
+        let rest = &path[leading..];
+        let segments: Vec<&str> = rest
+            .split('/')
+            .filter(|s| !s.is_empty() && *s != ".")
+            .collect();
+        // For "//"-prefixed paths, do not collapse leading `..` — POSIX leaves
+        // `//` implementation-defined and Rakudo's IO::Spec::Unix preserves it.
+        let collapse_leading_dotdot = is_absolute && prefix == "/";
+        let mut stack: Vec<&str> = Vec::new();
+        if parent {
+            for seg in segments {
+                if seg == ".." {
+                    if let Some(top) = stack.last() {
+                        if *top == ".." {
+                            stack.push(seg);
+                        } else {
+                            stack.pop();
+                        }
+                    } else if collapse_leading_dotdot {
+                        // can't go above root, drop
+                    } else {
+                        stack.push(seg);
+                    }
+                } else {
+                    stack.push(seg);
+                }
+            }
+        } else {
+            for seg in segments {
+                if seg == ".." && collapse_leading_dotdot && stack.is_empty() {
+                    continue;
+                }
+                stack.push(seg);
+            }
+        }
+        let joined = stack.join("/");
+        let mut out = String::new();
+        out.push_str(prefix);
+        if !joined.is_empty() {
+            out.push_str(&joined);
+        }
+        if out.is_empty() {
+            // Non-empty input that reduced to nothing (e.g. "foo/.." with :parent)
+            return ".".to_string();
+        }
+        out
+    }
+
     pub fn cleanup_io_path_lexical(path: &str) -> String {
         if path.is_empty() {
             return ".".to_string();
