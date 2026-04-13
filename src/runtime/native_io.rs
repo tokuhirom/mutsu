@@ -1807,15 +1807,19 @@ impl Interpreter {
                     // For single-byte encodings, read 1 byte and decode
                     let bytes = self.read_bytes_from_handle_value(&target_val, 1)?;
                     if bytes.is_empty() {
-                        Ok(Value::str(String::new()))
+                        Ok(Value::Nil)
                     } else {
                         let decoded = self.decode_with_encoding(&bytes, &encoding)?;
                         Ok(Value::str(decoded))
                     }
                 } else {
-                    // UTF-8: may need multiple bytes for one character
-                    let bytes = self.read_bytes_from_handle_value(&target_val, 1)?;
-                    Ok(Value::str(String::from_utf8_lossy(&bytes).to_string()))
+                    // UTF-8: read one character, possibly multi-byte.
+                    let s = self.read_chars_from_handle_value(&target_val, Some(1))?;
+                    if s.is_empty() {
+                        Ok(Value::Nil)
+                    } else {
+                        Ok(Value::str(s))
+                    }
                 }
             }
             "readchars" => {

@@ -692,6 +692,7 @@ roast/S16-io/bare-say.t
 roast/S16-io/basic-open.t
 roast/S16-io/bom.t
 roast/S16-io/cwd.t
+roast/S16-io/getc.t
 roast/S16-io/handles-between-threads.t
 roast/S16-io/home.t
 roast/S16-io/newline.t

@@ -930,6 +930,21 @@ impl Interpreter {
         Ok(Value::Nil)
     }
 
+    pub(super) fn builtin_getc(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let handle = args
+            .first()
+            .cloned()
+            .or_else(|| self.default_input_handle());
+        if let Some(handle) = handle {
+            let s = self.read_chars_from_handle_value(&handle, Some(1))?;
+            if s.is_empty() {
+                return Ok(Value::Nil);
+            }
+            return Ok(Value::str(s));
+        }
+        Ok(Value::Nil)
+    }
+
     pub(super) fn builtin_lines(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if let Some(first) = args.first()
             && Self::handle_id_from_value(first).is_none()
