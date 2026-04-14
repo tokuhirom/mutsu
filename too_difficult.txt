@@ -28,3 +28,4 @@ roast/S32-io/io-path-cygwin.t
 roast/S32-list/categorize.t
 roast/S32-io/socket-recv-vs-read.t
 roast/S32-temporal/local.t
+roast/S32-basics/xxPOS.t (raku itself fails at test 53: BIND-POS on Any:U)
