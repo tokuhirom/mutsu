@@ -322,6 +322,7 @@ roast/S05-grammar/namespace.t
 roast/S05-grammar/parse_and_parsefile-6e.t
 roast/S05-grammar/protoregex.t
 roast/S05-grammar/protos.t
+roast/S05-grammar/signatures.t
 roast/S05-grammar/ws.t
 roast/S05-interpolation/lexicals.t
 roast/S05-interpolation/regex-in-variable.t

@@ -154,13 +154,9 @@ impl Interpreter {
             let arg_values = if spec.arg_exprs.is_empty() {
                 Vec::new()
             } else {
-                let mut values = Vec::new();
-                for arg in &spec.arg_exprs {
-                    let Some(v) = self.eval_regex_expr_value(arg, current_caps) else {
-                        return Vec::new();
-                    };
-                    values.push(v);
-                }
+                let Some(values) = self.eval_regex_arg_list(&spec.arg_exprs, current_caps) else {
+                    return Vec::new();
+                };
                 values
             };
             let candidates = self.resolve_named_regex_candidates_in_pkg(&spec, pkg, &arg_values);

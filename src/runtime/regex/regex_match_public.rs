@@ -220,12 +220,7 @@ impl Interpreter {
                 Vec::new()
             } else {
                 let default_caps = RegexCaptures::default();
-                let mut values = Vec::new();
-                for arg in &spec.arg_exprs {
-                    let v = self.eval_regex_expr_value(arg, &default_caps)?;
-                    values.push(v);
-                }
-                values
+                self.eval_regex_arg_list(&spec.arg_exprs, &default_caps)?
             };
             let candidates = self.resolve_named_regex_candidates_in_pkg(
                 &spec,

@@ -382,6 +382,38 @@ impl Interpreter {
         env
     }
 
+    /// Evaluate a list of regex argument expressions, flattening any Slip
+    /// values produced by the `|` prefix. Returns `None` if any argument
+    /// fails to evaluate.
+    pub(in crate::runtime) fn eval_regex_arg_list(
+        &self,
+        exprs: &[String],
+        caps: &RegexCaptures,
+    ) -> Option<Vec<Value>> {
+        let mut out = Vec::new();
+        for arg in exprs {
+            let v = self.eval_regex_expr_value(arg, caps)?;
+            match v {
+                Value::Slip(items) => {
+                    for item in items.iter() {
+                        out.push(Self::normalize_pair_for_binding(item.clone()));
+                    }
+                }
+                other => out.push(Self::normalize_pair_for_binding(other)),
+            }
+        }
+        Some(out)
+    }
+
+    fn normalize_pair_for_binding(v: Value) -> Value {
+        if let Value::ValuePair(key, val) = &v
+            && let Value::Str(name) = key.as_ref()
+        {
+            return Value::Pair(name.to_string(), val.clone());
+        }
+        v
+    }
+
     pub(in crate::runtime) fn eval_regex_expr_value(
         &self,
         expr_src: &str,

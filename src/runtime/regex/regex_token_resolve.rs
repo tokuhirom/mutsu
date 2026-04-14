@@ -94,6 +94,22 @@ impl Interpreter {
                         Value::Nil => String::new(),
                         other => other.to_string_value(),
                     };
+                    // Bake the bound parameter values into any `{ ... }` code
+                    // blocks of the pattern. This is needed because regex code
+                    // blocks execute in the outer interpreter env (which does
+                    // not contain the subrule's bound params).
+                    let param_names: Vec<String> = def
+                        .param_defs
+                        .iter()
+                        .filter(|pd| !pd.name.is_empty() && !pd.slurpy)
+                        .map(|pd| {
+                            pd.name
+                                .trim_start_matches([':', '@', '%', '&', '!', '.'])
+                                .to_string()
+                        })
+                        .collect();
+                    let pattern =
+                        interp.bake_bound_params_into_regex_code_blocks(&pattern, &param_names);
                     let pattern = interp.interpolate_bound_regex_scalars(&pattern);
                     if let Ok(instantiated) = interp.instantiate_named_regex_arg_calls(&pattern) {
                         let sym_val = Self::extract_sym_adverb(&def.name.resolve());
