@@ -126,8 +126,6 @@ pub(crate) struct VM {
     /// each active BlockScope. Used during BlockScope restoration to avoid
     /// propagating block-local variable values to the outer scope.
     block_declared_vars: Vec<std::collections::HashSet<String>>,
-    /// Depth counter for active CONTROL handlers in try-catch.
-    control_handler_depth: u32,
 }
 
 impl VM {
@@ -278,7 +276,6 @@ impl VM {
             multi_candidates_cache: HashMap::new(),
             multi_candidates_cache_gen: 0,
             block_declared_vars: Vec::new(),
-            control_handler_depth: 0,
         }
     }
 
@@ -312,7 +309,7 @@ impl VM {
                     ip = target_ip;
                     continue;
                 }
-                if e.is_warn {
+                if e.is_warn && self.interpreter.control_handler_depth == 0 {
                     if !self.interpreter.warning_suppressed() {
                         self.interpreter.write_warn_to_stderr(&e.message);
                     }
@@ -398,7 +395,7 @@ impl VM {
                     ip = target_ip;
                     continue;
                 }
-                if e.is_warn {
+                if e.is_warn && self.interpreter.control_handler_depth == 0 {
                     if !self.interpreter.warning_suppressed() {
                         self.interpreter.write_warn_to_stderr(&e.message);
                     }
@@ -528,7 +525,7 @@ impl VM {
                     continue;
                 }
                 // Handle warn signals inline when no CONTROL handler is active.
-                if e.is_warn && self.control_handler_depth == 0 {
+                if e.is_warn && self.interpreter.control_handler_depth == 0 {
                     if !self.interpreter.warning_suppressed() {
                         self.interpreter.write_warn_to_stderr(&e.message);
                     }

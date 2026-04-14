@@ -272,6 +272,18 @@ impl Interpreter {
         for arg in args {
             message.push_str(&arg.to_string_value());
         }
+        if message.is_empty() {
+            message = "Warning: something's wrong".to_string();
+        }
+        // Append a Raku-style source location annotation so that the
+        // stderr output includes a file/line reference. The callsite line
+        // was set by the VM right before dispatching this builtin.
+        let file = self
+            .program_path
+            .clone()
+            .unwrap_or_else(|| "-e".to_string());
+        let line = self.test_pending_callsite_line.unwrap_or(1);
+        message.push_str(&format!("\n  in block <unit> at {} line {}", file, line));
         Err(RuntimeError::warn_signal(message))
     }
 
@@ -294,6 +306,9 @@ impl Interpreter {
         let mut message = String::new();
         for arg in args {
             message.push_str(&arg.to_string_value());
+        }
+        if message.is_empty() {
+            message = "Warning: something's wrong".to_string();
         }
         Err(RuntimeError::warn_signal(message))
     }

@@ -723,6 +723,11 @@ pub struct Interpreter {
     method_class_stack: Vec<String>,
     pending_call_arg_sources: Option<Vec<Option<String>>>,
     test_pending_callsite_line: Option<i64>,
+    /// Number of active CONTROL handlers in the current VM stack. Tracked
+    /// on the interpreter (rather than per-VM) so that nested VMs (e.g.
+    /// EVAL) can observe handlers installed by the outer VM and propagate
+    /// warn/control signals appropriately.
+    pub(crate) control_handler_depth: u32,
     test_assertion_line_stack: Vec<i64>,
     block_stack: Vec<Value>,
     doc_comments: HashMap<String, DocComment>,
@@ -2494,6 +2499,7 @@ impl Interpreter {
             method_class_stack: Vec::new(),
             pending_call_arg_sources: None,
             test_pending_callsite_line: None,
+            control_handler_depth: 0,
             test_assertion_line_stack: Vec::new(),
             block_stack: Vec::new(),
             doc_comments: HashMap::new(),
@@ -3571,9 +3577,16 @@ impl Interpreter {
             self.warn_output.push_str(&msg);
             return;
         }
-        self.stderr_output.push_str(&msg);
         self.warn_output.push_str(&msg);
-        eprint!("{}", msg);
+        // In nested mode (e.g. in-process `is_run`), buffer to
+        // `stderr_output` so the caller can inspect captured stderr.
+        // Otherwise emit directly to the real stderr; if we also pushed
+        // into `stderr_output`, the final flush would duplicate it.
+        if self.nested_mode {
+            self.stderr_output.push_str(&msg);
+        } else {
+            eprint!("{}", msg);
+        }
     }
 
     pub(crate) fn push_warn_suppression(&mut self) {
@@ -4172,6 +4185,7 @@ impl Interpreter {
             method_class_stack: Vec::new(),
             pending_call_arg_sources: None,
             test_pending_callsite_line: None,
+            control_handler_depth: 0,
             test_assertion_line_stack: Vec::new(),
             block_stack: Vec::new(),
             doc_comments: HashMap::new(),

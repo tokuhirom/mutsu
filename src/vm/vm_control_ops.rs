@@ -1637,11 +1637,11 @@ impl VM {
         let end = body_end as usize;
         let has_control = control_begin < end;
         if has_control {
-            self.control_handler_depth += 1;
+            self.interpreter.control_handler_depth += 1;
         }
         let body_result = self.run_range(code, body_start, catch_begin, compiled_fns);
         if has_control {
-            self.control_handler_depth -= 1;
+            self.interpreter.control_handler_depth -= 1;
         }
         match body_result {
             Ok(()) => {
@@ -1689,6 +1689,20 @@ impl VM {
                 }
             }
             Err(e) if e.return_value.is_some() && !e.is_succeed && !e.is_warn => {
+                self.interpreter.discard_let_saves(let_mark);
+                Err(e)
+            }
+            // Control signals (warn, last, next, redo, etc.) without a CONTROL
+            // block must propagate up — `try` alone does not catch them.
+            Err(e)
+                if (e.is_last
+                    || e.is_next
+                    || e.is_redo
+                    || e.is_proceed
+                    || e.is_succeed
+                    || e.is_warn)
+                    && control_begin >= end =>
+            {
                 self.interpreter.discard_let_saves(let_mark);
                 Err(e)
             }
