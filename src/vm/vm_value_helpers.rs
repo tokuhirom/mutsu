@@ -399,6 +399,10 @@ impl VM {
                 | "Cursor"
                 | "Deprecation"
                 | "X"
+                | "Channel"
+                | "Supply"
+                | "Supplier"
+                | "Promise"
         ) || {
             // Handle parameterized types like Buf[uint8], Array[Int], etc.
             if let Some(open) = name.find('[')
