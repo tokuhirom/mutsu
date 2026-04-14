@@ -2390,11 +2390,32 @@ impl VM {
                 self.locals[idx] = val;
             }
         }
+        // For `our`-scoped locals declared inside this block (or in the outer
+        // scope but reassigned inside via `our $x = ...`), the persistent
+        // package value in `our_vars` may have been updated. Refresh the
+        // lexical alias from the package store so the outer scope sees the
+        // new value (Raku semantics: `our` is an alias for a package var).
+        for (slot, qualified) in &code.our_locals {
+            let Some(local_name) = code.locals.get(*slot) else {
+                continue;
+            };
+            // Only refresh slots whose lexical alias existed in the outer
+            // scope (i.e., the outer scope also declared `our $x`). For
+            // `our` declarations made only inside the block, the lexical
+            // alias is block-scoped and must not leak to the outer scope.
+            if !saved_env.contains_key(local_name) {
+                continue;
+            }
+            if let Some(val) = self.interpreter.get_our_var(qualified).cloned() {
+                if *slot < self.locals.len() {
+                    self.locals[*slot] = val.clone();
+                }
+                restored_env.insert(local_name.clone(), val);
+            }
+        }
         *self.interpreter.env_mut() = restored_env;
         // Note: `our`-scoped variables persist in our_vars and are accessible
         // via package-qualified names (e.g., $Pkg::var) after block exit.
-        // The lexical alias is block-scoped and restored through normal
-        // env propagation (existing keys in saved_env get updated).
         self.interpreter.pop_lexical_class_scope();
         self.interpreter.pop_block_scope_depth();
         self.interpreter.pop_once_scope();

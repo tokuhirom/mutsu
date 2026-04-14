@@ -701,9 +701,94 @@ impl VM {
                                 .get_our_var(name)
                                 .cloned()
                                 .or_else(|| self.our_var_pseudo_unqualified(name))
+                                .or_else(|| {
+                                    // Nested package shorthand: when looking up
+                                    // `$D2::d3` from inside package `D1::D2` (or any
+                                    // ancestor of it), also try the fully-qualified
+                                    // forms by prepending each ancestor prefix.
+                                    let cur = self.interpreter.current_package().to_string();
+                                    if cur.is_empty() || cur == "GLOBAL" {
+                                        return None;
+                                    }
+                                    let (sigil, bare) = if let Some(rest) = name.strip_prefix('$') {
+                                        ("$", rest)
+                                    } else if let Some(rest) = name.strip_prefix('@') {
+                                        ("@", rest)
+                                    } else if let Some(rest) = name.strip_prefix('%') {
+                                        ("%", rest)
+                                    } else if let Some(rest) = name.strip_prefix('&') {
+                                        ("&", rest)
+                                    } else {
+                                        ("", name)
+                                    };
+                                    // Walk up the current package, trying each prefix
+                                    // joined with the requested name.
+                                    let parts: Vec<&str> = cur.split("::").collect();
+                                    for i in (0..=parts.len()).rev() {
+                                        let prefix = parts[..i].join("::");
+                                        let candidate = if prefix.is_empty() {
+                                            format!("{sigil}{bare}")
+                                        } else {
+                                            format!("{sigil}{prefix}::{bare}")
+                                        };
+                                        if candidate == name {
+                                            continue;
+                                        }
+                                        if let Some(v) =
+                                            self.interpreter.get_our_var(&candidate).cloned()
+                                        {
+                                            return Some(v);
+                                        }
+                                        if let Some(v) = self.get_env_with_main_alias(&candidate) {
+                                            return Some(v);
+                                        }
+                                    }
+                                    None
+                                })
                         } else {
                             None
                         }
+                    })
+                    .or_else(|| {
+                        // Bare-name fallback: when looking up an unqualified
+                        // name (e.g. `msg` or `$msg`) inside a routine whose
+                        // current_package is a real package (e.g. `Gee`), try
+                        // resolving via the package's `our` store. This makes
+                        // `our $msg` accessible from `our sub talk { $msg }`
+                        // when `talk` is invoked from outside the package.
+                        if name.contains("::") {
+                            return None;
+                        }
+                        let cur = self.interpreter.current_package().to_string();
+                        if cur.is_empty() || cur == "GLOBAL" || cur.contains("::&") {
+                            return None;
+                        }
+                        // Skip special names that shouldn't be package-qualified.
+                        let bare_first = name.trim_start_matches(['$', '@', '%', '&']);
+                        if bare_first.is_empty() {
+                            return None;
+                        }
+                        let first_ch = bare_first.chars().next().unwrap();
+                        if matches!(first_ch, '_' | '/' | '!' | '?' | '*' | '.' | '=')
+                            || first_ch.is_ascii_digit()
+                        {
+                            return None;
+                        }
+                        let candidate = if let Some(rest) = name.strip_prefix('$') {
+                            format!("${cur}::{rest}")
+                        } else if let Some(rest) = name.strip_prefix('@') {
+                            format!("@{cur}::{rest}")
+                        } else if let Some(rest) = name.strip_prefix('%') {
+                            format!("%{cur}::{rest}")
+                        } else if let Some(rest) = name.strip_prefix('&') {
+                            format!("&{cur}::{rest}")
+                        } else {
+                            format!("{cur}::{name}")
+                        };
+                        self.interpreter
+                            .get_our_var(&candidate)
+                            .cloned()
+                            .or_else(|| self.get_env_with_main_alias(&candidate))
                     })
                     .unwrap_or_else(|| {
                         if name.starts_with('^') {

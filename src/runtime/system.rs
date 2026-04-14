@@ -404,7 +404,9 @@ impl Interpreter {
     /// and aren't known types, classes, or packages. This mirrors Raku's
     /// compile-time check for undeclared symbols.
     pub(crate) fn check_eval_undeclared_names(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
-        // Collect class/role names declared within this EVAL code
+        // Collect class/role names and locally-declared variables/subs from
+        // this EVAL code. Both are valid references so they should not be
+        // flagged as undeclared bareword names.
         let mut local_classes: HashSet<String> = HashSet::new();
         for stmt in stmts {
             if let Stmt::ClassDecl { name, .. } = stmt {
@@ -414,8 +416,25 @@ impl Interpreter {
                 local_classes.insert(name.resolve());
             }
         }
+        let mut declared: HashSet<String> = HashSet::new();
         for stmt in stmts {
-            if let Some(name) = self.find_undeclared_name_in_stmt(stmt, &local_classes) {
+            Self::collect_declared_vars(stmt, &mut declared);
+        }
+        // Normalize collected names: strip leading sigils so bareword lookups
+        // (e.g. `foo` after `my &foo := ...`) resolve correctly.
+        let bare: Vec<String> = declared
+            .iter()
+            .filter_map(|n| n.strip_prefix(['$', '@', '%', '&']).map(|s| s.to_string()))
+            .collect();
+        for n in bare {
+            declared.insert(n);
+        }
+        // Also include any sub/method/grammar/enum names defined at top-level.
+        for stmt in stmts {
+            Self::collect_declared_routine_names(stmt, &mut declared);
+        }
+        for stmt in stmts {
+            if let Some(name) = self.find_undeclared_name_in_stmt(stmt, &local_classes, &declared) {
                 return Err(RuntimeError::undeclared_symbols(format!(
                     "Undeclared name:\n    {} used at line 1",
                     name
@@ -425,35 +444,140 @@ impl Interpreter {
         Ok(())
     }
 
+    fn collect_declared_routine_names(stmt: &Stmt, out: &mut HashSet<String>) {
+        match stmt {
+            Stmt::SubDecl { name, .. } | Stmt::MethodDecl { name, .. } => {
+                out.insert(name.resolve());
+            }
+            Stmt::EnumDecl { name, variants, .. } => {
+                out.insert(name.resolve());
+                for (vname, _) in variants {
+                    out.insert(vname.clone());
+                }
+            }
+            Stmt::SyntheticBlock(body) => {
+                for s in body {
+                    Self::collect_declared_routine_names(s, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// Find an undeclared type name (BareWord starting with uppercase) in a statement.
     fn find_undeclared_name_in_stmt(
         &self,
         stmt: &Stmt,
         local_classes: &HashSet<String>,
+        declared: &HashSet<String>,
     ) -> Option<String> {
         match stmt {
-            Stmt::Expr(expr) => self.find_undeclared_name_in_expr(expr, local_classes),
+            Stmt::Expr(expr) => self.find_undeclared_name_in_expr(expr, local_classes, declared),
             _ => None,
         }
     }
 
-    /// Find an undeclared type name in an expression.
-    /// Only checks BareWord nodes that start with uppercase and are not known types.
+    /// Find an undeclared bareword name in an expression.
+    /// Checks BareWord nodes that are not known types, classes, functions, or
+    /// declared in the current EVAL scope.
     fn find_undeclared_name_in_expr(
         &self,
         expr: &Expr,
         local_classes: &HashSet<String>,
+        declared: &HashSet<String>,
     ) -> Option<String> {
         match expr {
             Expr::BareWord(name) => {
-                // Only check uppercase-starting names (type name convention)
-                if !name.chars().next().is_some_and(|c| c.is_uppercase()) {
-                    return None;
-                }
                 // Skip well-known constants and special names
                 if matches!(
                     name.as_str(),
                     "NaN" | "Inf" | "Empty" | "True" | "False" | "Nil" | "Any" | "Mu"
+                ) {
+                    return None;
+                }
+                // Skip Raku keywords / special syntactic words that are
+                // legitimately parsed as BareWord but should not be treated
+                // as undeclared names.
+                if matches!(
+                    name.as_str(),
+                    "self"
+                        | "given"
+                        | "when"
+                        | "default"
+                        | "if"
+                        | "elsif"
+                        | "else"
+                        | "unless"
+                        | "with"
+                        | "without"
+                        | "orwith"
+                        | "for"
+                        | "while"
+                        | "until"
+                        | "loop"
+                        | "repeat"
+                        | "do"
+                        | "try"
+                        | "anon"
+                        | "my"
+                        | "our"
+                        | "has"
+                        | "state"
+                        | "sub"
+                        | "method"
+                        | "submethod"
+                        | "multi"
+                        | "proto"
+                        | "only"
+                        | "class"
+                        | "role"
+                        | "grammar"
+                        | "token"
+                        | "rule"
+                        | "regex"
+                        | "module"
+                        | "package"
+                        | "enum"
+                        | "subset"
+                        | "constant"
+                        | "return"
+                        | "leave"
+                        | "last"
+                        | "next"
+                        | "redo"
+                        | "succeed"
+                        | "proceed"
+                        | "die"
+                        | "fail"
+                        | "is"
+                        | "does"
+                        | "of"
+                        | "where"
+                        | "but"
+                        | "use"
+                        | "no"
+                        | "need"
+                        | "require"
+                        | "import"
+                        | "lazy"
+                        | "eager"
+                        | "hyper"
+                        | "race"
+                        | "sink"
+                        | "react"
+                        | "supply"
+                        | "whenever"
+                        | "start"
+                        | "gather"
+                        | "take"
+                        | "quietly"
+                        | "now"
+                        | "time"
+                        | "rand"
+                        | "pi"
+                        | "e"
+                        | "tau"
+                        | "i"
                 ) {
                     return None;
                 }
@@ -468,16 +592,20 @@ impl Interpreter {
                     || self.has_multi_function(name)
                     || self.env().contains_key(name)
                     || local_classes.contains(name.as_str())
+                    || declared.contains(name.as_str())
                     || crate::vm::VM::is_builtin_type(name)
+                    || crate::runtime::Interpreter::is_implicit_zero_arg_builtin(name)
                 {
                     return None;
                 }
                 Some(name.clone())
             }
             Expr::Binary { left, right, .. } => self
-                .find_undeclared_name_in_expr(left, local_classes)
-                .or_else(|| self.find_undeclared_name_in_expr(right, local_classes)),
-            Expr::Unary { expr, .. } => self.find_undeclared_name_in_expr(expr, local_classes),
+                .find_undeclared_name_in_expr(left, local_classes, declared)
+                .or_else(|| self.find_undeclared_name_in_expr(right, local_classes, declared)),
+            Expr::Unary { expr, .. } => {
+                self.find_undeclared_name_in_expr(expr, local_classes, declared)
+            }
             _ => None,
         }
     }
