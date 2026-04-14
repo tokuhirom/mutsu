@@ -658,14 +658,30 @@ impl VM {
         let val = self.stack.pop().unwrap();
         // Auto-FETCH Proxy containers
         let val = self.interpreter.auto_fetch_proxy(&val)?;
-        // Type objects (Mu, Any, etc.) cannot be string-coerced
+        // Mu itself has no Str candidate — stringifying it is a hard
+        // error (Rakudo dies with `Cannot resolve caller prefix:<~>(Mu:U)`).
         if let Value::Package(name) = &val
-            && matches!(name.resolve().as_str(), "Mu" | "Any")
+            && name.resolve() == "Mu"
         {
             return Err(RuntimeError::new(format!(
                 "Cannot resolve caller prefix:<~>({}:U); none of these signatures matches:\n    (\\a)",
                 name.resolve()
             )));
+        }
+        // Any and other Cool-descended type objects stringify to the empty
+        // string with a warning (Rakudo emits `Use of uninitialized value
+        // of type Any in string context.`).
+        if let Value::Package(name) = &val
+            && name.resolve() == "Any"
+        {
+            let msg = format!(
+                "Use of uninitialized value of type {} in string context.\nMethods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.",
+                name.resolve()
+            );
+            return Err(RuntimeError::warn_signal_with_resume(
+                msg,
+                Value::str(String::new()),
+            ));
         }
         // Stringifying an unhandled Failure throws
         if let Some(err) = self.interpreter.failure_to_runtime_error_if_unhandled(&val) {
