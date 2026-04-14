@@ -766,6 +766,7 @@ roast/S17-supply/map.t
 roast/S17-supply/max.t
 roast/S17-supply/merge.t
 roast/S17-supply/min.t
+roast/S17-supply/minmax.t
 roast/S17-supply/on-demand.t
 roast/S17-supply/produce.t
 roast/S17-supply/reduce.t

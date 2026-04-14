@@ -1115,7 +1115,11 @@ impl Interpreter {
                         changed = true;
                     }
                     if changed && let (Some(mn), Some(mx)) = (&cur_min, &cur_max) {
-                        results.push(Value::generic_range(mn.clone(), mx.clone(), false, false));
+                        let range = match (mn, mx) {
+                            (Value::Int(a), Value::Int(b)) => Value::Range(*a, *b),
+                            _ => Value::generic_range(mn.clone(), mx.clone(), false, false),
+                        };
+                        results.push(range);
                     }
                 }
                 Ok(self.make_supply_from_values(results, attributes))
