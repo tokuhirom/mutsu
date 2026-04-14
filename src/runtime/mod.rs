@@ -985,6 +985,7 @@ pub(crate) type RoutineRegistrySnapshot = (
     HashMap<Symbol, Vec<FunctionDef>>,
     HashSet<String>,
     HashSet<String>,
+    HashSet<Symbol>,
 );
 
 pub(crate) type ImportScopeSnapshot = (HashSet<Symbol>, HashSet<String>, NewlineMode, bool, bool);

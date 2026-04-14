@@ -99,6 +99,16 @@ impl Compiler {
         } else {
             format!("{}::&{}/{}", self.current_package, name, arity)
         };
+        // Preserve the enclosing package for $?PACKAGE resolution.
+        // The state_scope assigned to current_package below is a mangled name
+        // (e.g. `Test2::&pkg/0`) used to scope state variables; it is not the
+        // package the sub was declared in. `$?PACKAGE` must resolve to the
+        // declaring package, so capture that here before overwriting.
+        sub_compiler.enclosing_package = Some(
+            self.enclosing_package
+                .clone()
+                .unwrap_or_else(|| self.current_package.clone()),
+        );
         sub_compiler.set_current_package(state_scope);
         // Pre-allocate locals for parameters
         for param in params {
