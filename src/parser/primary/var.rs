@@ -363,7 +363,7 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
 /// Parse identifier allowing kebab-case hyphens and apostrophes (e.g., `my-var`, `same'proto`).
 /// A hyphen/apostrophe is only part of the name if followed by an alphabetic char or `_`,
 /// so `$pd--` parses as `$pd` + postfix `--`.
-pub(super) fn parse_ident_with_hyphens<'a>(input: &'a str) -> PResult<'a, &'a str> {
+pub(crate) fn parse_ident_with_hyphens<'a>(input: &'a str) -> PResult<'a, &'a str> {
     let first = input
         .chars()
         .next()

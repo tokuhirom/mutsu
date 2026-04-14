@@ -1067,7 +1067,16 @@ impl Interpreter {
                             "DateTime.new cannot mix positional and component named arguments",
                         ));
                     }
-                    if let Some(v) = positional.first() {
+                    if positional.len() >= 6 {
+                        // DateTime.new($y, $mo, $d, $h, $mi, $s, :$timezone = 0)
+                        year = to_int(positional[0]);
+                        month = to_int(positional[1]);
+                        day = to_int(positional[2]);
+                        hour = to_int(positional[3]);
+                        minute = to_int(positional[4]);
+                        second = to_float_value(positional[5]).unwrap_or(0.0);
+                        has_named = true;
+                    } else if let Some(v) = positional.first() {
                         match v {
                             Value::Str(s) => {
                                 let (y, mo, d, h, mi, sec, tz) =
