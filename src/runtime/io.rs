@@ -87,6 +87,204 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Pod::Item"), attrs)
     }
 
+    fn make_pod_defn(term: String, contents: Vec<Value>, config: HashMap<String, Value>) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("term".to_string(), Value::str(term));
+        attrs.insert("contents".to_string(), Value::array(contents));
+        attrs.insert("config".to_string(), Value::hash(config));
+        Value::make_instance(Symbol::intern("Pod::Defn"), attrs)
+    }
+
+    /// Build a Pod::Defn from a single paragraph (used by `=for defn` and abbreviated `=defn`).
+    /// `inline` is the text appearing on the directive line after the directive token
+    /// (and after stripping config adverbs). For `=defn`, it may begin with `# ` to
+    /// request `:numbered`. The first non-blank line of the paragraph is the term;
+    /// remaining lines form a single Pod::Block::Para.
+    fn build_pod_defn_paragraph(
+        lines: &[&str],
+        start_idx: usize,
+        inline: &str,
+        mut config: HashMap<String, Value>,
+        end_target: Option<&str>,
+    ) -> (Value, usize) {
+        // Collect the paragraph lines (until blank line / pod directive).
+        let mut all_lines: Vec<String> = Vec::new();
+        let inline_trimmed = inline.trim();
+        if !inline_trimmed.is_empty() {
+            all_lines.push(inline_trimmed.to_string());
+        }
+        let mut idx = start_idx;
+        while idx < lines.len() {
+            let trimmed = lines[idx].trim_start();
+            if trimmed.is_empty() || Self::active_pod_directive(lines[idx], end_target).is_some() {
+                break;
+            }
+            all_lines.push(lines[idx].trim().to_string());
+            idx += 1;
+        }
+        // First non-empty line is the term; if it begins with `# `, set :numbered.
+        let mut term = String::new();
+        let mut term_idx = None;
+        for (i, line) in all_lines.iter().enumerate() {
+            if !line.is_empty() {
+                term = line.clone();
+                term_idx = Some(i);
+                break;
+            }
+        }
+        if let Some(rest) = term.strip_prefix('#') {
+            let rest = rest.trim_start();
+            term = rest.to_string();
+            config
+                .entry("numbered".to_string())
+                .or_insert(Value::Bool(true));
+        }
+        let body_lines: Vec<String> = match term_idx {
+            Some(i) => all_lines[i + 1..].to_vec(),
+            None => Vec::new(),
+        };
+        let mut contents: Vec<Value> = Vec::new();
+        if !body_lines.is_empty() {
+            let text = Self::normalize_pod_text(&body_lines);
+            let payload = if text.is_empty() {
+                Vec::new()
+            } else {
+                vec![text]
+            };
+            contents.push(Self::make_pod_para(payload));
+        }
+        (Self::make_pod_defn(term, contents, config), idx)
+    }
+
+    /// Build a Pod::Defn from a `=begin defn ... =end defn` block.
+    /// First non-blank line of the first paragraph is the term; the remainder of
+    /// that paragraph (and each subsequent paragraph separated by blank lines)
+    /// becomes a Pod::Block::Para in `contents`.
+    fn build_pod_defn_delimited(
+        lines: &[&str],
+        start_idx: usize,
+        config: HashMap<String, Value>,
+    ) -> (Value, usize) {
+        let mut idx = start_idx;
+        // Collect paragraphs until `=end defn`.
+        let mut paragraphs: Vec<Vec<String>> = Vec::new();
+        let mut current: Vec<String> = Vec::new();
+        while idx < lines.len() {
+            let line = lines[idx];
+            if let Some((directive, rest)) = Self::active_pod_directive(line, Some("defn")) {
+                if directive == "end"
+                    && rest.split_whitespace().next().unwrap_or_default() == "defn"
+                {
+                    idx += 1;
+                    break;
+                }
+                // Other directives inside a defn block: stop collecting (paragraph break).
+                if !current.is_empty() {
+                    paragraphs.push(std::mem::take(&mut current));
+                }
+                idx += 1;
+                continue;
+            }
+            if line.trim().is_empty() {
+                if !current.is_empty() {
+                    paragraphs.push(std::mem::take(&mut current));
+                }
+                idx += 1;
+                continue;
+            }
+            current.push(line.trim().to_string());
+            idx += 1;
+        }
+        if !current.is_empty() {
+            paragraphs.push(current);
+        }
+        let mut term = String::new();
+        let mut contents: Vec<Value> = Vec::new();
+        let mut first = true;
+        for para in paragraphs {
+            if first {
+                first = false;
+                if para.is_empty() {
+                    continue;
+                }
+                term = para[0].clone();
+                let rest = &para[1..];
+                if !rest.is_empty() {
+                    let text = Self::normalize_pod_text(rest);
+                    let payload = if text.is_empty() {
+                        Vec::new()
+                    } else {
+                        vec![text]
+                    };
+                    contents.push(Self::make_pod_para(payload));
+                }
+            } else {
+                let text = Self::normalize_pod_text(&para);
+                let payload = if text.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![text]
+                };
+                contents.push(Self::make_pod_para(payload));
+            }
+        }
+        (Self::make_pod_defn(term, contents, config), idx)
+    }
+
+    /// Parse Pod config adverbs from a directive tail (e.g. `:numbered :foo(0)`).
+    /// Returns (config_map, leftover_text_after_adverbs).
+    /// Supported forms: `:key`, `:!key`, `:key(value)` where value is an integer
+    /// or bareword (true/false treated as Bool).
+    fn parse_pod_config(input: &str) -> (HashMap<String, Value>, &str) {
+        let mut config: HashMap<String, Value> = HashMap::new();
+        let mut s = input.trim_start();
+        loop {
+            if !s.starts_with(':') {
+                break;
+            }
+            let rest = &s[1..];
+            let (negated, rest) = if let Some(r) = rest.strip_prefix('!') {
+                (true, r)
+            } else {
+                (false, rest)
+            };
+            // Read identifier
+            let name_len = rest
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+                .map(char::len_utf8)
+                .sum::<usize>();
+            if name_len == 0 {
+                break;
+            }
+            let name = &rest[..name_len];
+            let after_name = &rest[name_len..];
+            let (value, after_val) = if let Some(after_paren) = after_name.strip_prefix('(') {
+                // Read until matching ')'
+                if let Some(close_idx) = after_paren.find(')') {
+                    let raw = after_paren[..close_idx].trim();
+                    let v = if let Ok(n) = raw.parse::<i64>() {
+                        Value::Int(n)
+                    } else if raw == "True" {
+                        Value::Bool(true)
+                    } else if raw == "False" {
+                        Value::Bool(false)
+                    } else {
+                        Value::str(raw.to_string())
+                    };
+                    (v, &after_paren[close_idx + 1..])
+                } else {
+                    break;
+                }
+            } else {
+                (Value::Bool(!negated), after_name)
+            };
+            config.insert(name.to_string(), value);
+            s = after_val.trim_start();
+        }
+        (config, s)
+    }
+
     fn make_pod_table(rows: Vec<Vec<String>>) -> Value {
         let mut attrs = HashMap::new();
         let contents = rows
@@ -348,6 +546,19 @@ impl Interpreter {
                         idx = next_idx.max(idx + 1);
                         continue;
                     }
+                    if target == "defn" {
+                        let (config, leftover) = Self::parse_pod_config(inline);
+                        let (defn, next_idx) = Self::build_pod_defn_paragraph(
+                            lines,
+                            idx + 1,
+                            leftover,
+                            config,
+                            end_target,
+                        );
+                        entries.push(defn);
+                        idx = next_idx.max(idx + 1);
+                        continue;
+                    }
                     let (para, next_idx) =
                         Self::collect_pod_para_with_inline(lines, idx + 1, inline, end_target);
                     let mut contents = Vec::new();
@@ -388,6 +599,15 @@ impl Interpreter {
                         entries.push(Self::make_pod_block(vec![Value::str(raw)]));
                         continue;
                     }
+                    if target == "defn" {
+                        let after_target = rest.strip_prefix(target).unwrap_or("");
+                        let (config, _) = Self::parse_pod_config(after_target);
+                        let (defn, next_idx) =
+                            Self::build_pod_defn_delimited(lines, idx + 1, config);
+                        entries.push(defn);
+                        idx = next_idx.max(idx + 1);
+                        continue;
+                    }
                     if let Some(level) = Self::parse_item_level(target) {
                         let (item_contents, next_idx) =
                             Self::collect_pod_entries(lines, idx + 1, Some(target));
@@ -415,6 +635,19 @@ impl Interpreter {
                         item_contents.push(para);
                     }
                     entries.push(Self::make_pod_item(level, item_contents));
+                    idx = next_idx.max(idx + 1);
+                    continue;
+                }
+                if directive == "defn" {
+                    let (config, leftover) = Self::parse_pod_config(rest);
+                    let (defn, next_idx) = Self::build_pod_defn_paragraph(
+                        lines,
+                        idx + 1,
+                        leftover,
+                        config,
+                        end_target,
+                    );
+                    entries.push(defn);
                     idx = next_idx.max(idx + 1);
                     continue;
                 }
@@ -516,6 +749,14 @@ impl Interpreter {
                         idx = next_idx.max(idx + 1);
                         continue;
                     }
+                    if target == "defn" {
+                        let (config, leftover) = Self::parse_pod_config(inline);
+                        let (defn, next_idx) =
+                            Self::build_pod_defn_paragraph(&lines, idx + 1, leftover, config, None);
+                        entries.push(defn);
+                        idx = next_idx.max(idx + 1);
+                        continue;
+                    }
                     let (para, next_idx) =
                         Self::collect_pod_para_with_inline(&lines, idx + 1, inline, None);
                     let mut contents = Vec::new();
@@ -556,6 +797,15 @@ impl Interpreter {
                         entries.push(Self::make_pod_block(vec![Value::str(raw)]));
                         continue;
                     }
+                    if target == "defn" {
+                        let after_target = rest.strip_prefix(target).unwrap_or("");
+                        let (config, _) = Self::parse_pod_config(after_target);
+                        let (defn, next_idx) =
+                            Self::build_pod_defn_delimited(&lines, idx + 1, config);
+                        entries.push(defn);
+                        idx = next_idx.max(idx + 1);
+                        continue;
+                    }
                     if let Some(level) = Self::parse_item_level(target) {
                         let (item_contents, next_idx) =
                             Self::collect_pod_entries(&lines, idx + 1, Some(target));
@@ -583,6 +833,14 @@ impl Interpreter {
                         item_contents.push(para);
                     }
                     entries.push(Self::make_pod_item(level, item_contents));
+                    idx = next_idx.max(idx + 1);
+                    continue;
+                }
+                if directive == "defn" {
+                    let (config, leftover) = Self::parse_pod_config(rest);
+                    let (defn, next_idx) =
+                        Self::build_pod_defn_paragraph(&lines, idx + 1, leftover, config, None);
+                    entries.push(defn);
                     idx = next_idx.max(idx + 1);
                     continue;
                 }
