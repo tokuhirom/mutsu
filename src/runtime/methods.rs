@@ -5,6 +5,194 @@ use super::*;
 use crate::symbol::Symbol;
 use crate::value::signature::extract_sig_info;
 
+/// Parse a non-negative integer index, returning None for negative or non-numeric.
+fn pos_index(v: &Value) -> Option<usize> {
+    match v {
+        Value::Int(i) if *i >= 0 => Some(*i as usize),
+        Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+        _ => None,
+    }
+}
+
+fn make_nonneg_failure() -> Value {
+    let mut ex_attrs = std::collections::HashMap::new();
+    ex_attrs.insert(
+        "message".to_string(),
+        Value::str("Index out of range. Is: negative, should be in 0..^Inf".to_string()),
+    );
+    let exception = Value::make_instance(Symbol::intern("X::OutOfRange"), ex_attrs);
+    let mut failure_attrs = std::collections::HashMap::new();
+    failure_attrs.insert("exception".to_string(), exception);
+    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+    Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+}
+
+/// Recursively fetch @target[indices...]; returns Failure for any negative index,
+/// or Nil if the chain runs out of elements.
+pub(super) fn multidim_at_pos(target: &Value, indices: &[Value]) -> Value {
+    let mut cur = target.clone();
+    for idx in indices {
+        // Transparently unwrap Scalar containers (used as "bound" markers for BIND-POS).
+        while let Value::Scalar(inner) = &cur {
+            cur = (**inner).clone();
+        }
+        let Some(i) = pos_index(idx) else {
+            return make_nonneg_failure();
+        };
+        let Some(items) = cur.as_list_items() else {
+            return Value::Nil;
+        };
+        cur = items.get(i).cloned().unwrap_or(Value::Nil);
+    }
+    while let Value::Scalar(inner) = &cur {
+        cur = (**inner).clone();
+    }
+    cur
+}
+
+pub(super) fn multidim_exists_pos(target: &Value, indices: &[Value]) -> bool {
+    let mut cur = target.clone();
+    for idx in indices {
+        while let Value::Scalar(inner) = &cur {
+            cur = (**inner).clone();
+        }
+        let Some(i) = pos_index(idx) else {
+            return false;
+        };
+        let Some(items) = cur.as_list_items() else {
+            return false;
+        };
+        if i >= items.len() {
+            return false;
+        }
+        cur = items[i].clone();
+    }
+    true
+}
+
+/// Recursively assign value at indices, rebuilding the array chain.
+/// If the innermost slot is currently a Scalar (BIND-POS marker), returns an error.
+pub(super) fn multidim_assign_pos(
+    target: &Value,
+    indices: &[Value],
+    value: Value,
+) -> Result<Value, RuntimeError> {
+    assert!(!indices.is_empty());
+    // Unwrap any outer Scalar wrapper.
+    if let Value::Scalar(_) = target {
+        return Err(RuntimeError::new("Cannot modify an immutable value"));
+    }
+    let Value::Array(items, arr_kind) = target else {
+        return Err(RuntimeError::new(
+            "Cannot use multi-dimensional ASSIGN-POS on non-Array",
+        ));
+    };
+    let Some(i) = pos_index(&indices[0]) else {
+        return Err(RuntimeError::new("Cannot ASSIGN-POS with a negative index"));
+    };
+    let mut updated = items.to_vec();
+    if indices.len() == 1 {
+        // Check for bound slot (Scalar wrapper)
+        if let Some(Value::Scalar(_)) = updated.get(i) {
+            return Err(RuntimeError::new("Cannot modify an immutable value"));
+        }
+        if i >= updated.len() {
+            updated.resize(i + 1, Value::Package(Symbol::intern("Any")));
+        }
+        updated[i] = value;
+    } else {
+        let child = updated
+            .get(i)
+            .cloned()
+            .unwrap_or_else(|| Value::real_array(vec![]));
+        let new_child = multidim_assign_pos(&child, &indices[1..], value)?;
+        if i >= updated.len() {
+            updated.resize(i + 1, Value::real_array(vec![]));
+        }
+        updated[i] = new_child;
+    }
+    Ok(Value::Array(std::sync::Arc::new(updated), *arr_kind))
+}
+
+/// Recursively bind value at indices. The innermost slot is stored as
+/// Value::Scalar(value) to mark it as bound (immutable).
+pub(super) fn multidim_bind_pos(
+    target: &Value,
+    indices: &[Value],
+    value: Value,
+) -> Result<Value, RuntimeError> {
+    assert!(!indices.is_empty());
+    let Value::Array(items, arr_kind) = target else {
+        return Err(RuntimeError::new(
+            "Cannot use multi-dimensional BIND-POS on non-Array",
+        ));
+    };
+    let Some(i) = pos_index(&indices[0]) else {
+        return Err(RuntimeError::new("Cannot BIND-POS with a negative index"));
+    };
+    let mut updated = items.to_vec();
+    if indices.len() == 1 {
+        if i >= updated.len() {
+            updated.resize(i + 1, Value::Package(Symbol::intern("Any")));
+        }
+        updated[i] = Value::Scalar(Box::new(value));
+    } else {
+        let child = updated
+            .get(i)
+            .cloned()
+            .unwrap_or_else(|| Value::real_array(vec![]));
+        let new_child = multidim_bind_pos(&child, &indices[1..], value)?;
+        if i >= updated.len() {
+            updated.resize(i + 1, Value::real_array(vec![]));
+        }
+        updated[i] = new_child;
+    }
+    Ok(Value::Array(std::sync::Arc::new(updated), *arr_kind))
+}
+
+/// Recursively delete the innermost slot. Returns (deleted_value, updated_outer_array).
+pub(super) fn multidim_delete_pos(
+    target: &Value,
+    indices: &[Value],
+) -> Result<(Value, Value), RuntimeError> {
+    assert!(!indices.is_empty());
+    let Value::Array(items, arr_kind) = target else {
+        return Err(RuntimeError::new(
+            "Cannot use multi-dimensional DELETE-POS on non-Array",
+        ));
+    };
+    let Some(i) = pos_index(&indices[0]) else {
+        return Err(RuntimeError::new("Cannot DELETE-POS with a negative index"));
+    };
+    let mut updated = items.to_vec();
+    let deleted;
+    if indices.len() == 1 {
+        if i < updated.len() {
+            let old = std::mem::replace(&mut updated[i], Value::Nil);
+            deleted = match old {
+                Value::Scalar(inner) => *inner,
+                v => v,
+            };
+        } else {
+            deleted = Value::Nil;
+        }
+    } else {
+        let child = updated
+            .get(i)
+            .cloned()
+            .unwrap_or_else(|| Value::real_array(vec![]));
+        let (d, new_child) = multidim_delete_pos(&child, &indices[1..])?;
+        if i < updated.len() {
+            updated[i] = new_child;
+        }
+        deleted = d;
+    }
+    Ok((
+        deleted,
+        Value::Array(std::sync::Arc::new(updated), *arr_kind),
+    ))
+}
+
 impl Interpreter {
     pub(crate) fn call_method_with_values(
         &mut self,
@@ -745,6 +933,43 @@ impl Interpreter {
         }
         // Array-specific methods: EXISTS-POS, ASSIGN-POS, BIND-POS, DELETE-POS, clone
         if let Value::Array(items, arr_kind) = &target {
+            // Multi-arg *-POS methods on undimensioned arrays: dig into nested arrays.
+            // See S09-multidim/XX-POS-on-undimensioned.t for semantics.
+            if args.len() >= 2
+                && matches!(
+                    method,
+                    "AT-POS" | "EXISTS-POS" | "ASSIGN-POS" | "BIND-POS" | "DELETE-POS"
+                )
+            {
+                match method {
+                    "AT-POS" => {
+                        return Ok(multidim_at_pos(&target, &args));
+                    }
+                    "EXISTS-POS" => {
+                        return Ok(Value::Bool(multidim_exists_pos(&target, &args)));
+                    }
+                    "ASSIGN-POS" if args.len() >= 3 => {
+                        let (indices, value) = args.split_at(args.len() - 1);
+                        let value = value[0].clone();
+                        let updated = multidim_assign_pos(&target, indices, value.clone())?;
+                        self.overwrite_array_bindings_by_identity(items, updated);
+                        return Ok(value);
+                    }
+                    "BIND-POS" if args.len() >= 3 => {
+                        let (indices, value) = args.split_at(args.len() - 1);
+                        let value = value[0].clone();
+                        let updated = multidim_bind_pos(&target, indices, value.clone())?;
+                        self.overwrite_array_bindings_by_identity(items, updated);
+                        return Ok(value);
+                    }
+                    "DELETE-POS" => {
+                        let (deleted, updated) = multidim_delete_pos(&target, &args)?;
+                        self.overwrite_array_bindings_by_identity(items, updated);
+                        return Ok(deleted);
+                    }
+                    _ => {}
+                }
+            }
             match (method, args.as_slice()) {
                 ("EXISTS-POS", [idx]) => {
                     let index = match idx {
@@ -787,6 +1012,9 @@ impl Interpreter {
                     }
 
                     let mut updated = items.to_vec();
+                    if index < updated.len() && matches!(updated[index], Value::Scalar(_)) {
+                        return Err(RuntimeError::new("Cannot modify an immutable value"));
+                    }
                     if index >= updated.len() {
                         updated.resize(index + 1, Value::Package(Symbol::intern("Any")));
                     }
