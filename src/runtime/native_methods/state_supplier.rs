@@ -53,6 +53,10 @@ struct SupplierTapSubscription {
     words_buffer: String,
     /// Flat transform: re-emit flattened sub-elements to this downstream supplier
     flat_downstream: Option<u64>,
+    /// Channel sink: when set, emitted values are pushed directly into this
+    /// SharedChannel instead of being delivered to a callback. Used by
+    /// `Supply.Channel` to bridge a live supplier into a Channel.
+    channel_sink: Option<crate::value::SharedChannel>,
     /// Stable identifier so taps can be closed individually.
     tap_id: u64,
     /// When set, this tap is closed and should no longer receive emits.
@@ -133,6 +137,60 @@ pub(in crate::runtime) fn last_supplier_tap_id(supplier_id: u64) -> Option<u64> 
     }
 }
 
+/// Register a channel sink tap on a supplier. Each emitted value is pushed
+/// into the channel; on done/quit the channel is closed (or failed).
+pub(in crate::runtime) fn register_supplier_channel_tap(
+    supplier_id: u64,
+    channel: crate::value::SharedChannel,
+) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        map.entry(supplier_id)
+            .or_default()
+            .taps
+            .push(SupplierTapSubscription {
+                callback: Value::Nil,
+                line_mode: false,
+                line_chomp: true,
+                line_buffer: String::new(),
+                delay_seconds: 0.0,
+                unique_filter: None,
+                classify_state: None,
+                elems_trace: None,
+                head_limit: None,
+                head_count: 0,
+                produce_state: None,
+                start_state: None,
+                batch_state: None,
+                words_mode: false,
+                words_buffer: String::new(),
+                flat_downstream: None,
+                channel_sink: Some(channel),
+                tap_id: next_tap_id(),
+                closed: false,
+            });
+    }
+}
+
+/// Close (or fail) all channel-sink taps registered on the given supplier.
+/// If `failure` is Some, the channel is failed with that value, otherwise
+/// it is closed cleanly.
+pub(in crate::runtime) fn close_supplier_channel_taps(supplier_id: u64, failure: Option<Value>) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock()
+        && let Some(subs) = map.get_mut(&supplier_id)
+    {
+        for tap in subs.taps.iter_mut() {
+            if let Some(ch) = tap.channel_sink.take() {
+                if let Some(ref err) = failure {
+                    ch.fail(err.clone());
+                } else {
+                    ch.close();
+                }
+                tap.closed = true;
+            }
+        }
+    }
+}
+
 pub(in crate::runtime) fn register_supplier_tap(supplier_id: u64, tap: Value, delay_seconds: f64) {
     if let Ok(mut map) = supplier_subscriptions_map().lock() {
         map.entry(supplier_id)
@@ -155,6 +213,7 @@ pub(in crate::runtime) fn register_supplier_tap(supplier_id: u64, tap: Value, de
                 words_mode: false,
                 words_buffer: String::new(),
                 flat_downstream: None,
+                channel_sink: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -188,6 +247,7 @@ pub(in crate::runtime) fn register_supplier_tap_with_head_limit(
                 words_mode: false,
                 words_buffer: String::new(),
                 flat_downstream: None,
+                channel_sink: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -221,6 +281,7 @@ pub(in crate::runtime) fn register_supplier_lines_tap(
                 words_mode: false,
                 words_buffer: String::new(),
                 flat_downstream: None,
+                channel_sink: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -253,6 +314,7 @@ pub(in crate::runtime) fn register_supplier_words_tap(
                 words_mode: true,
                 words_buffer: String::new(),
                 flat_downstream: None,
+                channel_sink: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -292,6 +354,7 @@ pub(in crate::runtime) fn register_supplier_elems_tap(
                 words_mode: false,
                 words_buffer: String::new(),
                 flat_downstream: None,
+                channel_sink: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -362,6 +425,10 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
             if let Some(limit) = tap.head_limit
                 && tap.head_count >= limit
             {
+                continue;
+            }
+            if let Some(ref ch) = tap.channel_sink {
+                ch.send(emitted_value.clone());
                 continue;
             }
             if tap.line_mode {
@@ -598,6 +665,7 @@ pub(in crate::runtime) fn register_supplier_unique_tap(
                 words_mode: false,
                 words_buffer: String::new(),
                 flat_downstream: None,
+                channel_sink: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -634,6 +702,7 @@ pub(in crate::runtime) fn register_supplier_produce_tap(
                 words_mode: false,
                 words_buffer: String::new(),
                 flat_downstream: None,
+                channel_sink: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -672,6 +741,7 @@ pub(in crate::runtime) fn register_supplier_start_tap(
                 words_mode: false,
                 words_buffer: String::new(),
                 flat_downstream: None,
+                channel_sink: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -750,6 +820,7 @@ pub(in crate::runtime) fn register_supplier_classify_tap(
                 words_mode: false,
                 words_buffer: String::new(),
                 flat_downstream: None,
+                channel_sink: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -927,6 +998,7 @@ pub(in crate::runtime) fn register_supplier_batch_tap(
                 words_mode: false,
                 words_buffer: String::new(),
                 flat_downstream: None,
+                channel_sink: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });
@@ -961,6 +1033,7 @@ pub(in crate::runtime) fn register_supplier_flat_tap(
                 words_mode: false,
                 words_buffer: String::new(),
                 flat_downstream: Some(downstream_supplier_id),
+                channel_sink: None,
                 tap_id: next_tap_id(),
                 closed: false,
             });

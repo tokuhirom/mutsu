@@ -251,6 +251,24 @@ impl VM {
 
         let raw_items = if let Value::LazyList(ref ll) = iterable {
             self.force_lazy_list_vm(ll)?
+        } else if let Value::Channel(ref ch) = iterable {
+            // Drain the channel synchronously, blocking on receive until the
+            // channel is closed. Propagate any failure as an exception so the
+            // surrounding `start { }` / `try` can observe it.
+            let mut items = Vec::new();
+            loop {
+                match ch.receive_result() {
+                    Ok(Value::Nil) => break,
+                    Ok(v) => items.push(v),
+                    Err(cause) => {
+                        let ex = crate::runtime::Interpreter::as_exception_value(cause);
+                        let mut err = RuntimeError::new(ex.to_string_value());
+                        err.exception = Some(Box::new(ex));
+                        return Err(err);
+                    }
+                }
+            }
+            items
         } else {
             runtime::value_to_list(&iterable)
         };

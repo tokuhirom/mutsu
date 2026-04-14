@@ -1218,13 +1218,28 @@ impl Interpreter {
                 Ok(source_values.last().cloned().unwrap_or(Value::Nil))
             }
             "Channel" => {
-                // Supply.Channel: create a Channel, send all supply values into it, close it
+                // Supply.Channel: create a Channel that receives all values
+                // emitted by the underlying supplier. Existing snapshot values
+                // are pushed first, then a live tap forwards future emits.
+                // The channel is closed when the supplier is done, or failed
+                // when the supplier quits.
                 let source_values = self.supply_get_values(attributes)?;
                 let ch = SharedChannel::new();
                 for v in source_values {
                     ch.send(v);
                 }
-                ch.close();
+                if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
+                    let (_, done, quit_reason) = supplier_snapshot(supplier_id);
+                    if let Some(reason) = quit_reason {
+                        ch.fail(reason);
+                    } else if done {
+                        ch.close();
+                    } else {
+                        register_supplier_channel_tap(supplier_id, ch.clone());
+                    }
+                } else {
+                    ch.close();
+                }
                 Ok(Value::Channel(ch))
             }
             "Supply" | "supply" => {
@@ -1388,6 +1403,7 @@ impl Interpreter {
             "done" => {
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
                     supplier_done(supplier_id);
+                    close_supplier_channel_taps(supplier_id, None);
                     // Flush batch buffers before done
                     for (dsid, batch) in flush_supplier_batch_taps(supplier_id) {
                         let batch_value = Value::array(batch);
@@ -1431,6 +1447,7 @@ impl Interpreter {
                     .unwrap_or_else(|| Value::str_from("Died"));
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
                     supplier_quit(supplier_id, reason.clone());
+                    close_supplier_channel_taps(supplier_id, Some(reason.clone()));
                     for (tap, emitted) in flush_supplier_line_taps(supplier_id) {
                         self.call_sub_value(tap, vec![emitted], true)?;
                     }
@@ -1609,6 +1626,7 @@ impl Interpreter {
                 }
                 if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
                     let sid = *supplier_id as u64;
+                    close_supplier_channel_taps(sid, None);
                     // Flush batch buffers before done
                     for (dsid, batch) in flush_supplier_batch_taps(sid) {
                         let batch_value = Value::array(batch);
@@ -1666,6 +1684,7 @@ impl Interpreter {
                 }
                 if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
                     let sid = *supplier_id as u64;
+                    close_supplier_channel_taps(sid, Some(reason.clone()));
                     for (tap, emitted) in flush_supplier_line_taps(sid) {
                         self.call_sub_value(tap, vec![emitted], true)?;
                     }

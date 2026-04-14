@@ -2,7 +2,7 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
-    fn as_exception_value(value: Value) -> Value {
+    pub(crate) fn as_exception_value(value: Value) -> Value {
         match value {
             Value::Instance { class_name, .. }
                 if class_name.resolve().contains("Exception")
