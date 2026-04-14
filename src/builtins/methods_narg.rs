@@ -1382,17 +1382,11 @@ pub(crate) fn native_method_1arg(
         }
         "parse-base" => {
             let radix = match arg {
-                Value::Int(n) => *n as u32,
+                Value::Int(n) => *n,
                 _ => return None,
             };
             let s = target.to_string_value();
-            match i64::from_str_radix(&s, radix) {
-                Ok(n) => Some(Ok(Value::Int(n))),
-                Err(_) => Some(Err(RuntimeError::new(format!(
-                    "Cannot parse '{}' as base {}",
-                    s, radix
-                )))),
-            }
+            Some(crate::builtins::parse_base::parse_base(&s, radix))
         }
         "base" => match target {
             Value::Int(i) => {

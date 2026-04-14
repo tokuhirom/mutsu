@@ -5,6 +5,7 @@ pub(crate) mod collation;
 mod functions;
 pub(crate) mod methods_0arg;
 mod methods_narg;
+pub(crate) mod parse_base;
 pub(crate) mod primality;
 pub(crate) mod rng;
 pub(crate) mod split;
