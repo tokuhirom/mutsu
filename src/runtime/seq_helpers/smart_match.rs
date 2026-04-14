@@ -633,6 +633,16 @@ impl Interpreter {
                 let text = left.to_string_value();
                 let pat = pat.to_string();
                 if let Some(captures) = self.regex_match_with_captures(&pat, &text) {
+                    // Reset stale numeric capture vars from any previous match.
+                    let stale_numeric: Vec<String> = self
+                        .env
+                        .keys()
+                        .filter(|k| !k.is_empty() && k.chars().all(|c| c.is_ascii_digit()))
+                        .cloned()
+                        .collect();
+                    for key in stale_numeric {
+                        self.env.insert(key, Value::Nil);
+                    }
                     // Set positional captures as strings first (needed by code blocks)
                     for (i, v) in captures.positional.iter().enumerate() {
                         self.env.insert(i.to_string(), Value::str(v.clone()));

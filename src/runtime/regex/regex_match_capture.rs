@@ -435,7 +435,7 @@ impl Interpreter {
                 && spec
                     .lookup_name
                     .chars()
-                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == ':')
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == ':' || c == '.')
             {
                 super::super::regex_parse::PENDING_REGEX_ERROR.with(|e| {
                     *e.borrow_mut() = Some(RuntimeError::new(format!(

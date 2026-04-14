@@ -320,6 +320,7 @@ roast/S05-grammar/inheritance.t
 roast/S05-grammar/namespace-6e.t
 roast/S05-grammar/namespace.t
 roast/S05-grammar/parse_and_parsefile-6e.t
+roast/S05-grammar/polymorphism.t
 roast/S05-grammar/protoregex.t
 roast/S05-grammar/protos.t
 roast/S05-grammar/signatures.t
