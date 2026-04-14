@@ -202,6 +202,12 @@ impl Interpreter {
                     }
                     self.collect_token_patterns_for_scope(&ancestor, token_name, &mut out);
                     if !out.is_empty() {
+                        // Rewrite the dispatch package to the original qualified
+                        // package so nested subrule lookups dispatch virtually
+                        // through the receiver's MRO (Liskov substitution).
+                        for entry in out.iter_mut() {
+                            entry.1 = qual_pkg.to_string();
+                        }
                         break;
                     }
                 }
