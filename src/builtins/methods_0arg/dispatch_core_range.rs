@@ -82,6 +82,10 @@ pub(super) fn dispatch(
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     match method {
         "head" => Some(match target {
+            // User-defined class instances may have a `head` attribute or
+            // method — defer to runtime dispatch so the user accessor wins
+            // over the list-like fallback.
+            Value::Instance { .. } => return None,
             Value::Array(items, ..) => Some(Ok(items.first().cloned().unwrap_or(Value::Nil))),
             Value::Range(start, end) => {
                 if start > end {
@@ -133,8 +137,11 @@ pub(super) fn dispatch(
             }
         }),
         "tail" => Some(match target {
+            // User-defined class instances may have a `tail` attribute or
+            // method — defer to runtime dispatch so the user accessor wins
+            // over the list-like fallback.
+            Value::Instance { .. } => return None,
             Value::Array(items, ..) => Some(Ok(items.last().cloned().unwrap_or(Value::Nil))),
-            Value::Instance { class_name, .. } if class_name == "Supply" => None,
             _ => {
                 let items = runtime::value_to_list(target);
                 Some(Ok(items.last().cloned().unwrap_or(Value::Nil)))

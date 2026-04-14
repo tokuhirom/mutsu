@@ -2701,6 +2701,12 @@ impl VM {
         if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
             self.interpreter.reset_atomic_var_key_decl(name);
         }
+        // A fresh @-variable declaration must clear any CAS atomic array
+        // state left over from a previous lexical with the same name
+        // (e.g. when `my @arr[N]` is declared inside a loop body).
+        if name.starts_with('@') {
+            self.interpreter.clear_atomic_array_state(name);
+        }
         // Pre-initialize the variable in the env with a default value so that
         // closures created during the RHS expression can capture it.
         // This enables capture-by-reference patterns like:
