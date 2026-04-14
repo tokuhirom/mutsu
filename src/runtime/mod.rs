@@ -3652,7 +3652,14 @@ impl Interpreter {
                 self.var_hash_key_constraints.remove(&key);
                 self.env.remove(&hash_key_meta_key);
             }
-            self.register_var_container_type_metadata(&key, &info);
+            // Only register container type metadata for container-sigil variables
+            // (`@a`, `%h`). For scalar parameters (e.g. `Mu $a`) the bound value
+            // may share an `Arc` with a caller's container, and tagging that Arc
+            // would corrupt the caller's container type metadata via Arc pointer
+            // keying (and Arc pointer reuse after drop).
+            if name.starts_with('@') || name.starts_with('%') {
+                self.register_var_container_type_metadata(&key, &info);
+            }
         } else {
             self.var_type_constraints.remove(&key);
             self.var_hash_key_constraints.remove(&key);

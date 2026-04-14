@@ -855,7 +855,30 @@ impl Interpreter {
         let mut mro = if self.classes.contains_key(&class_name) {
             self.class_mro(&class_name)
         } else {
-            vec![class_name.clone()]
+            // Built-in type hierarchies for types that are not user-defined classes.
+            // Any/Mu are appended unconditionally below, so we only list the chain
+            // up to (but not including) Any here.
+            let builtin: &[&str] = match class_name.as_str() {
+                "Int" => &["Int", "Cool"],
+                "Num" => &["Num", "Cool"],
+                "Rat" | "FatRat" => &["Rat", "Cool"],
+                "Complex" => &["Complex", "Cool"],
+                "Str" => &["Str", "Cool"],
+                "Bool" => &["Bool", "Int", "Cool"],
+                "Array" => &["Array", "List", "Cool"],
+                "List" => &["List", "Cool"],
+                "Hash" => &["Hash", "Map", "Cool"],
+                "Map" => &["Map", "Cool"],
+                "Range" => &["Range", "Cool"],
+                "Seq" => &["Seq", "Cool"],
+                "Pair" => &["Pair"],
+                _ => &[],
+            };
+            if builtin.is_empty() {
+                vec![class_name.clone()]
+            } else {
+                builtin.iter().map(|s| s.to_string()).collect()
+            }
         };
         if self.package_looks_like_grammar(&class_name) {
             for parent in ["Grammar", "Match", "Capture", "Cool", "Any", "Mu"] {
@@ -1900,7 +1923,7 @@ impl Interpreter {
         };
         if tree {
             let result = self.parents_tree(&class_name);
-            return Ok(Value::array(result));
+            return Ok(Value::real_array(result));
         }
         let mro = self.classhow_mro_names(&args[0]);
         let parents_iter = mro.into_iter().skip(1);
@@ -1922,7 +1945,7 @@ impl Interpreter {
                 .map(|p| Value::Package(Symbol::intern(&p)))
                 .collect()
         };
-        Ok(Value::array(parents))
+        Ok(Value::real_array(parents))
     }
 
     fn parents_tree(&mut self, class_name: &str) -> Vec<Value> {
@@ -1947,11 +1970,13 @@ impl Interpreter {
                     if !any_subtree.is_empty() {
                         any_entry.extend(any_subtree);
                     } else {
-                        any_entry.push(Value::array(vec![Value::Package(Symbol::intern("Mu"))]));
+                        any_entry.push(Value::real_array(vec![Value::Package(Symbol::intern(
+                            "Mu",
+                        ))]));
                     }
-                    entry.push(Value::array(any_entry));
+                    entry.push(Value::real_array(any_entry));
                 }
-                Value::array(entry)
+                Value::real_array(entry)
             })
             .collect()
     }
