@@ -688,8 +688,15 @@ pub(crate) enum OpCode {
 
     // -- Functions --
     Return,
-    /// Return used outside a routine — throws X::ControlFlow::Return exception.
-    ReturnFromNonRoutine,
+    /// Return used outside a routine.
+    /// The `bool` payload is `true` if the op is lexically nested inside a
+    /// routine (a closure/block in a sub) — in that case `return` should
+    /// perform a non-local return up to the enclosing routine, and only
+    /// become an `X::ControlFlow::Return` exception when no enclosing routine
+    /// is on the dynamic call stack (out-of-dynamic-scope).
+    /// When `false`, the op is at top level with no lexical routine and
+    /// throws `X::ControlFlow::Return` directly.
+    ReturnFromNonRoutine(bool),
     RegisterSub(u32),
     RegisterToken(u32),
     RegisterProtoSub(u32),

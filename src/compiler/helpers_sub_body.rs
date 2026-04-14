@@ -71,6 +71,7 @@ impl Compiler {
             .unwrap_or(false);
         let mut sub_compiler = Compiler::new();
         sub_compiler.is_routine = true;
+        sub_compiler.lexically_in_routine = true;
         let arity = param_defs
             .iter()
             .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))
@@ -406,6 +407,10 @@ impl Compiler {
     ) -> CompiledCode {
         let mut sub_compiler = Compiler::new();
         sub_compiler.is_routine = is_routine;
+        // A closure body is lexically inside a routine if either the parent
+        // already is, or the parent itself is a routine.
+        sub_compiler.lexically_in_routine =
+            is_routine || self.is_routine || self.lexically_in_routine;
         // Propagate last_source_line so closures inside blocks that
         // lack their own SetLine can still inherit the line from the
         // enclosing statement.

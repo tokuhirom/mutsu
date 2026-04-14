@@ -1358,6 +1358,7 @@ impl Interpreter {
             .collect();
         let mut compiler = crate::compiler::Compiler::new();
         compiler.is_routine = !self.routine_stack.is_empty();
+        compiler.lexically_in_routine = !self.routine_stack.is_empty();
         let scope = if let Some((pkg, routine)) = self.routine_stack.last() {
             format!("{}::&{}", pkg, routine)
         } else {
@@ -1663,8 +1664,13 @@ impl Interpreter {
                 }
             }
 
-            // Compile once, reuse VM for every iteration
-            let compiler = crate::compiler::Compiler::new();
+            // Compile once, reuse VM for every iteration.
+            // `return` inside this block should propagate up to the
+            // lexically enclosing routine (if any), so mark the fresh
+            // compiler as being lexically nested inside a routine whenever
+            // a routine is currently on the dynamic call stack.
+            let mut compiler = crate::compiler::Compiler::new();
+            compiler.lexically_in_routine = !self.routine_stack.is_empty();
             let (code, compiled_fns) = compiler.compile(&data.body);
 
             let underscore = "_".to_string();
@@ -2078,8 +2084,13 @@ impl Interpreter {
                 return Ok((Value::array(result), list_items));
             }
 
-            // Compile once, reuse VM for every iteration
-            let compiler = crate::compiler::Compiler::new();
+            // Compile once, reuse VM for every iteration.
+            // `return` inside this block should propagate up to the
+            // lexically enclosing routine (if any), so mark the fresh
+            // compiler as being lexically nested inside a routine whenever
+            // a routine is currently on the dynamic call stack.
+            let mut compiler = crate::compiler::Compiler::new();
+            compiler.lexically_in_routine = !self.routine_stack.is_empty();
             let (code, compiled_fns) = compiler.compile(&data.body);
 
             let underscore = "_".to_string();

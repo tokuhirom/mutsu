@@ -324,6 +324,20 @@ impl VM {
                 }
                 self.sync_state_locals(code);
                 self.interpreter.pop_once_scope();
+                // An uncaught CX::Return signal that escapes the top-level
+                // VM loop means the lexical target routine was not on the
+                // dynamic call stack when `return` executed, so it surfaces
+                // as `X::ControlFlow::Return` with out-of-dynamic-scope set.
+                // Only perform this conversion when the current dynamic call
+                // stack contains no routine — otherwise the return is meant
+                // for an enclosing routine that will catch it via its own
+                // call-frame handling further up the stack.
+                if e.is_return && self.interpreter.routine_stack().is_empty() {
+                    return (
+                        self.interpreter,
+                        Err(RuntimeError::controlflow_return(true)),
+                    );
+                }
                 return (self.interpreter, Err(e));
             }
             if self.interpreter.is_halted() {
@@ -2228,12 +2242,21 @@ impl VM {
                 }
                 return Err(RuntimeError::return_signal(val));
             }
-            OpCode::ReturnFromNonRoutine => {
+            OpCode::ReturnFromNonRoutine(lexically_in_routine) => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
-                // In a non-routine closure (pointy block, bare block),
-                // `return` propagates as a CX::Return signal up to the
-                // enclosing routine boundary.
-                return Err(RuntimeError::return_signal(val));
+                if *lexically_in_routine {
+                    // Closure/block lexically inside a routine: propagate a
+                    // CX::Return signal up to the enclosing routine boundary.
+                    // If the signal escapes all frames up to the VM top-level,
+                    // the lexical target routine is no longer on the dynamic
+                    // call stack, so it will surface as
+                    // `X::ControlFlow::Return` with `out-of-dynamic-scope`.
+                    return Err(RuntimeError::return_signal(val));
+                }
+                // No lexical routine at all (e.g. top-level `return`): throw
+                // X::ControlFlow::Return directly.
+                let _ = val;
+                return Err(RuntimeError::controlflow_return(false));
             }
 
             // -- Environment variable access --
