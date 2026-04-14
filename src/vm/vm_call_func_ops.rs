@@ -9,6 +9,22 @@ impl VM {
     /// builtin, and unconditionally routing every `has_function` name through
     /// `call_function_fallback` changes dispatch in ways that affect things
     /// like MAIN/GENERATE-USAGE handling.
+    /// True if the `&name` value in env comes from a lexical override
+    /// (e.g. `sub callit(&foo) { ... }`) rather than the normal package
+    /// binding for the named sub. A lexical override has a different
+    /// identity (its stored `SubData.name` does not match `name`) — either
+    /// because it's an anonymous block passed as `&foo`, or because it's a
+    /// different sub with the same parameter name.
+    pub(super) fn env_callable_is_lexical_override(val: &Value, name: &str) -> bool {
+        if let Value::Sub(sub) = val {
+            let stored = sub.name.resolve();
+            // Anonymous block or mismatched name => lexical override.
+            stored.is_empty() || stored != name
+        } else {
+            false
+        }
+    }
+
     pub(super) fn is_user_shadowable_builtin(name: &str) -> bool {
         matches!(
             name,
@@ -24,10 +40,39 @@ impl VM {
         arg_sources_idx: Option<u32>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
+        // If there's a lexical `&name` override — either as a compiled local
+        // slot (e.g. from a `&foo` parameter binding) or in the env — it
+        // shadows package-level subs. Skip the fast path and dispatch via
+        // the lexical callable below.
+        self.ensure_env_synced(code);
+        let lexical_override: Option<Value> = {
+            let name_str = Self::const_str(code, name_idx);
+            // Only look for a lexical override when there is actually a
+            // same-named package sub to shadow. When no package sub exists,
+            // the normal dispatch path already handles lexical `&name`
+            // bindings correctly (via its own env lookup), and avoiding
+            // this branch prevents regressions where dispatching through
+            // `call_sub_value` behaves differently (e.g. dynamic `$*ERR`
+            // handling for `note` inside a caller-provided block).
+            if self.interpreter.has_proto(name_str)
+                || self.interpreter.has_multi_candidates(name_str)
+                || !self.interpreter.has_function(name_str)
+            {
+                None
+            } else {
+                let ampname = format!("&{}", name_str);
+                // First check local slots (parameter bindings live here).
+                let from_local = self.locals_get_by_name(code, &ampname);
+                let candidate =
+                    from_local.or_else(|| self.interpreter.env().get(&ampname).cloned());
+                candidate.filter(|v| Self::env_callable_is_lexical_override(v, name_str))
+            }
+        };
+        let has_lexical_override = lexical_override.is_some();
         // Early fast path: for cached zero-arg compiled functions, skip ALL the
         // expensive arg processing, CALL-ME check, wrap chain check, autothread, etc.
         // Only the callsite line pair (if present) needs to be popped from the stack.
-        if arity <= 1 {
+        if !has_lexical_override && arity <= 1 {
             let name_str = Self::const_str(code, name_idx);
             let name_sym = Symbol::intern(name_str);
             let cache_key = (name_sym, 0usize, Vec::<String>::new());
@@ -136,6 +181,15 @@ impl VM {
             && let Some(sub_val) = self.interpreter.get_wrapped_sub(&name)
         {
             let result = self.interpreter.call_sub_value(sub_val, args, false)?;
+            self.stack.push(result);
+            self.env_dirty = true;
+            return Ok(());
+        }
+
+        // Lexical `&name` binding (e.g. from `sub callit(&foo) { foo(1) }`)
+        // takes precedence over package-level compiled subs.
+        if let Some(callable) = lexical_override {
+            let result = self.interpreter.call_sub_value(callable, args, false)?;
             self.stack.push(result);
             self.env_dirty = true;
             return Ok(());

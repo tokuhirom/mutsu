@@ -6,6 +6,7 @@ roast/S03-sequence/misc.t
 roast/S04-exceptions/exceptions-alternatives.t
 roast/S05-capture/alias.t
 roast/S05-mass/recursive.t
+roast/S06-advanced/lexical-subs.t
 roast/S11-modules/versioning.t
 roast/S11-repository/curli-install.t
 roast/S12-meta/exporthow.t
