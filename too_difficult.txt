@@ -2,6 +2,7 @@ roast/S02-magicals/sub.t
 roast/S02-types/generics.t
 roast/S02-types/multi_dimensional_array.t
 roast/S03-binding/attributes.t
+roast/S03-operators/context.t (17 failures across many unrelated features: @(multi,arg)/$(multi,arg)/item(multi,arg) multi-arg context coercions, %(...) hash builder with odd-item X::Hash::Store::OddNumber detection, parse-time X::Obsolete detection for P5 ${..}/@{..}/%{..}/"${..}"/"@{..}" deref forms, anonymous @/% variables typed as Array/Hash instead of Any, %$var coercion from pair-list, item @a/%b non-flattening)
 roast/S03-sequence/misc.t
 roast/S04-exceptions/exceptions-alternatives.t
 roast/S04-statements/return.t
