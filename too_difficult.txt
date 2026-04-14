@@ -17,6 +17,7 @@ roast/S17-procasync/encoding.t
 roast/S17-supply/categorize.t
 roast/S17-supply/migrate.t
 roast/S32-array/perl.t
+roast/S32-hash/perl.t
 roast/S32-io/child-secure.t
 roast/S32-io/io-path-cygwin.t
 roast/S32-list/categorize.t
