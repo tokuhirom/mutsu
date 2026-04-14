@@ -5,6 +5,7 @@ roast/S03-binding/attributes.t
 roast/S03-operators/context.t (17 failures across many unrelated features: @(multi,arg)/$(multi,arg)/item(multi,arg) multi-arg context coercions, %(...) hash builder with odd-item X::Hash::Store::OddNumber detection, parse-time X::Obsolete detection for P5 ${..}/@{..}/%{..}/"${..}"/"@{..}" deref forms, anonymous @/% variables typed as Array/Hash instead of Any, %$var coercion from pair-list, item @a/%b non-flattening)
 roast/S03-sequence/misc.t
 roast/S04-exceptions/exceptions-alternatives.t
+roast/S04-phasers/in-eval.t (test 13 "INIT did not run at compile time" is marked `#?rakudo todo` in the source and fails on raku itself when run directly via prove without roast fudging — cannot pass through our test infrastructure regardless of mutsu changes)
 roast/S04-statements/return.t
 roast/S05-capture/alias.t
 roast/S05-capture/array-alias.t
