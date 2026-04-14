@@ -2115,6 +2115,32 @@ impl Interpreter {
                     Ok(Value::str(String::from_utf8_lossy(&all_bytes).to_string()))
                 }
             }
+            "split" => {
+                // Slurp the handle, optionally close it, then delegate to the
+                // generic Str.split implementation.
+                let close = args
+                    .iter()
+                    .any(|a| matches!(a, Value::Pair(k, v) if k == "close" && v.truthy()));
+                // Filter out :close from args before delegating to split.
+                let split_args: Vec<Value> = args
+                    .iter()
+                    .filter(|a| !matches!(a, Value::Pair(k, _) if k == "close"))
+                    .cloned()
+                    .collect();
+                let mut all_bytes = Vec::new();
+                loop {
+                    let chunk = self.read_bytes_from_handle_value(&target_val, 8192)?;
+                    if chunk.is_empty() {
+                        break;
+                    }
+                    all_bytes.extend(chunk);
+                }
+                let text = String::from_utf8_lossy(&all_bytes).to_string();
+                if close {
+                    let _ = self.close_handle_value(&target_val)?;
+                }
+                self.handle_split_method(Value::str(text), split_args)
+            }
             "Supply" => self.handle_supply(target, &args),
             "native-descriptor" => {
                 let state = self.handle_state_mut(&target_val)?;
