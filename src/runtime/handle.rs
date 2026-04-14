@@ -777,18 +777,6 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn metadata_is_executable(metadata: &fs::Metadata) -> bool {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            metadata.permissions().mode() & 0o111 != 0
-        }
-        #[cfg(not(unix))]
-        {
-            metadata.is_file()
-        }
-    }
-
     pub(super) fn system_time_to_int(time: SystemTime) -> i64 {
         match time.duration_since(UNIX_EPOCH) {
             Ok(duration) => duration.as_secs() as i64,
