@@ -1052,6 +1052,23 @@ impl Interpreter {
         Ok((stmts, precomp_eligible))
     }
 
+    /// Return the name of a top-level `unit module/package/class` statement
+    /// in `stmts`, if any. Used by `load_module` to track which unit module
+    /// is currently loading so exports can be mirrored under the module name.
+    fn detect_unit_package_name(stmts: &[crate::ast::Stmt]) -> Option<String> {
+        for s in stmts {
+            if let crate::ast::Stmt::Package {
+                name,
+                is_unit: true,
+                ..
+            } = s
+            {
+                return Some(name.resolve().to_string());
+            }
+        }
+        None
+    }
+
     pub(super) fn load_module(&mut self, module: &str) -> Result<(), RuntimeError> {
         let source_path = self
             .resolve_module_path(module)
@@ -1075,7 +1092,20 @@ impl Interpreter {
             // instead of `Export_PackA::foo`).
             let saved_package = self.current_package.clone();
             self.current_package = "GLOBAL".to_string();
+            // If the module file is a `unit module X` (or unit package/class),
+            // record X so that `register_exported_sub` can mirror exports into
+            // `unit_module_exported_subs` for tag validation.
+            let unit_name = Self::detect_unit_package_name(&stmts);
+            let pushed_unit = if let Some(name) = unit_name {
+                self.unit_module_loading_stack.push(name);
+                true
+            } else {
+                false
+            };
             let result = self.run_block(&stmts);
+            if pushed_unit {
+                self.unit_module_loading_stack.pop();
+            }
             self.current_package = saved_package;
             result?;
         }
