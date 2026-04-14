@@ -763,6 +763,14 @@ impl Value {
                 .get("contents")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_default(),
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "StrDistance" => attributes
+                .get("after")
+                .map(|v: &Value| v.to_string_value())
+                .unwrap_or_default(),
             Value::Instance { class_name, .. } => format!("{}()", class_name),
             Value::Junction { kind, values } => {
                 let kind_str = match kind {

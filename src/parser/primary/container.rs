@@ -1037,11 +1037,21 @@ fn find_quote_word_close(input: &str, close: &str) -> Option<usize> {
 
 /// Find the closing `>` for `<...>`, handling nested `<>` pairs
 /// (e.g. `<:13<01>/:13<07>>`).
+pub(super) fn find_nested_angle_close_pub(input: &str) -> Option<usize> {
+    find_nested_angle_close(input)
+}
+
 fn find_nested_angle_close(input: &str) -> Option<usize> {
     let mut depth: usize = 0;
     let mut i = 0usize;
-    while i < input.len() {
-        let b = input.as_bytes()[i];
+    let bytes = input.as_bytes();
+    while i < bytes.len() {
+        let b = bytes[i];
+        // Backslash escapes the next byte (allows `\<`, `\>`, `\\` etc.)
+        if b == b'\\' && i + 1 < bytes.len() {
+            i += 2;
+            continue;
+        }
         if b == b'<' {
             depth += 1;
         } else if b == b'>' {
@@ -1224,6 +1234,36 @@ pub(crate) fn angle_word_expr(word: &str) -> Expr {
     Expr::Literal(angle_word_value(word))
 }
 
+/// Unescape backslash sequences in a `<...>` word.
+/// Per Raku spec, `<...>` is `q:w` quoting which only processes a small set of
+/// backslash escapes: `\\` → `\`, `\<` → `<`, `\>` → `>`, `\ ` → space (allows
+/// embedded spaces in a word), `\#` → `#`. Other backslash sequences (e.g. `\n`)
+/// are kept literally.
+fn unescape_angle_word(word: &str) -> String {
+    let mut out = String::with_capacity(word.len());
+    let mut chars = word.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\\'
+            && let Some(next) = chars.next()
+        {
+            match next {
+                '\\' => out.push('\\'),
+                '<' => out.push('<'),
+                '>' => out.push('>'),
+                ' ' => out.push(' '),
+                '#' => out.push('#'),
+                other => {
+                    out.push('\\');
+                    out.push(other);
+                }
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
 pub(crate) fn angle_word_value(word: &str) -> Value {
     angle_word_value_impl(word, false)
 }
@@ -1241,6 +1281,16 @@ fn angle_word_value_impl(word: &str, fraction_allomorphic: bool) -> Value {
     // We represent allomorphs as Mixin(numeric_value, {"Str": Str(word)}).
     // For single-element <2/3>, fraction notation produces a plain Rat, not RatStr.
     // For multi-element lists, fractions produce RatStr.
+
+    // Process backslash escapes within the word: `\\` → `\`, `\<`/`\>` → `<`/`>`,
+    // `\ ` → space (allows embedded spaces in a word).
+    let unescaped_storage;
+    let word: &str = if word.contains('\\') {
+        unescaped_storage = unescape_angle_word(word);
+        unescaped_storage.as_str()
+    } else {
+        word
+    };
 
     // Normalize U+2212 MINUS SIGN to ASCII minus for numeric parsing.
     // The allomorphic Str part retains the original word spelling.

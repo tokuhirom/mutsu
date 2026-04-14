@@ -188,6 +188,31 @@ impl Value {
                 let (by, bm, bd) = crate::builtins::methods_0arg::temporal::date_attrs(b_attrs);
                 ay == by && am == bm && ad == bd
             }
+            // StrDistance instances: structural equality on before/after
+            (
+                Value::Instance {
+                    class_name: cn_a,
+                    attributes: a_attrs,
+                    ..
+                },
+                Value::Instance {
+                    class_name: cn_b,
+                    attributes: b_attrs,
+                    ..
+                },
+            ) if cn_a == "StrDistance" && cn_b == "StrDistance" => {
+                let before_eq = match (a_attrs.get("before"), b_attrs.get("before")) {
+                    (Some(a), Some(b)) => a.eqv(b),
+                    (None, None) => true,
+                    _ => false,
+                };
+                let after_eq = match (a_attrs.get("after"), b_attrs.get("after")) {
+                    (Some(a), Some(b)) => a.eqv(b),
+                    (None, None) => true,
+                    _ => false,
+                };
+                before_eq && after_eq
+            }
             // Other Instance types: use identity comparison
             (Value::Instance { .. }, Value::Instance { .. }) => self == other,
             // Nil and Package("Any") are eqv: both represent the undefined type object Any.
@@ -211,6 +236,18 @@ impl Value {
             | (Value::Promise(_), Value::Promise(_))
             | (Value::Channel(_), Value::Channel(_))
             | (Value::Uni { .. }, Value::Uni { .. }) => self == other,
+            // Mixin with only the read-only topic marker is transparent
+            // (used by `with literal { ... }` to flag immutable $_).
+            (Value::Mixin(inner, mix), other)
+                if mix.len() == 1 && mix.contains_key("__mutsu_topic_ro__") =>
+            {
+                inner.eqv(other)
+            }
+            (other, Value::Mixin(inner, mix))
+                if mix.len() == 1 && mix.contains_key("__mutsu_topic_ro__") =>
+            {
+                other.eqv(inner)
+            }
             // Mixin (allomorphs): compare both base values and mixin maps with eqv
             (Value::Mixin(a, a_mix), Value::Mixin(b, b_mix)) => {
                 if !a.eqv(b) {

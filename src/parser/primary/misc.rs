@@ -951,18 +951,18 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
     // :name<value> (angle-bracket colonpair, equivalent to :name("value"))
     if rest.starts_with('<') && !rest.starts_with("<<") && !rest.starts_with("<=") {
         let inner = &rest[1..];
-        if let Some(close) = inner.find('>') {
+        if let Some(close) = super::container::find_nested_angle_close_pub(inner) {
             let content = &inner[..close];
             let r = &inner[close + 1..];
             let words = split_angle_words(content);
             if !words.is_empty() {
                 let val_expr = if words.len() == 1 {
-                    Expr::Literal(Value::str(words[0].to_string()))
+                    Expr::Literal(super::container::angle_word_value(words[0]))
                 } else {
                     Expr::ArrayLiteral(
                         words
                             .into_iter()
-                            .map(|w| Expr::Literal(Value::str(w.to_string())))
+                            .map(|w| Expr::Literal(super::container::angle_word_value(w)))
                             .collect(),
                     )
                 };

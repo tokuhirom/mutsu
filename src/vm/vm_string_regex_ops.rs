@@ -822,25 +822,55 @@ impl VM {
             .get("_")
             .cloned()
             .unwrap_or(Value::Nil);
+        // If $_ is bound to a read-only topic (e.g. `with 'literal' { ... }`),
+        // tr/// must throw X::Assignment::RO. The `with` desugaring marks the
+        // topic value with a Mixin override `__mutsu_topic_ro__` when the
+        // condition expression is a literal.
+        if !non_destructive
+            && let Value::Mixin(_, overrides) = &target
+            && overrides.contains_key("__mutsu_topic_ro__")
+        {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert(
+                "message".to_string(),
+                Value::str(format!(
+                    "Cannot modify an immutable Str ({})",
+                    target.to_string_value()
+                )),
+            );
+            attrs.insert("value".to_string(), target);
+            return Err(RuntimeError::typed("X::Assignment::RO", attrs));
+        }
         let text = target.to_string_value();
 
         let translated = crate::builtins::transliterate::transliterate(
             &text, from, to, delete, squash, complement,
         );
-        let result = Value::str(translated);
+        let translated_value = Value::str(translated.clone());
 
         // tr/// (lowercase) always modifies $_; TR/// (uppercase) only modifies
         // $_ in smartmatch context (so that $var ~~ TR/// writes back to $var).
         if !non_destructive || self.in_smartmatch_rhs {
             self.interpreter
                 .env_mut()
-                .insert("_".to_string(), result.clone());
+                .insert("_".to_string(), translated_value);
         }
         // Signal to the smartmatch handler that this is a transliterate result
         // so it returns the result directly (as StrDistance) instead of comparing.
         if self.in_smartmatch_rhs {
             self.transliterate_in_smartmatch = true;
         }
+        // tr/// (destructive) returns a StrDistance object holding both the
+        // original and the transliterated string; it stringifies to `after`.
+        // TR/// (non-destructive) returns a plain Str with the translated text.
+        let result = if non_destructive {
+            Value::str(translated)
+        } else {
+            let mut sd_attrs = std::collections::HashMap::new();
+            sd_attrs.insert("before".to_string(), Value::str(text));
+            sd_attrs.insert("after".to_string(), Value::str(translated));
+            Value::make_instance(Symbol::intern("StrDistance"), sd_attrs)
+        };
         self.stack.push(result);
         Ok(())
     }

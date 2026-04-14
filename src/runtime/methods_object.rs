@@ -895,6 +895,23 @@ impl Interpreter {
                     attrs.insert("value".to_string(), Value::Num(secs));
                     return Ok(Value::make_instance(Symbol::intern("Duration"), attrs));
                 }
+                "StrDistance" => {
+                    let mut before = String::new();
+                    let mut after = String::new();
+                    for arg in &args {
+                        if let Value::Pair(key, value) = arg {
+                            match key.as_str() {
+                                "before" => before = value.to_string_value(),
+                                "after" => after = value.to_string_value(),
+                                _ => {}
+                            }
+                        }
+                    }
+                    let mut attrs = HashMap::new();
+                    attrs.insert("before".to_string(), Value::str(before));
+                    attrs.insert("after".to_string(), Value::str(after));
+                    return Ok(Value::make_instance(Symbol::intern("StrDistance"), attrs));
+                }
                 "Date" => {
                     use crate::builtins::methods_0arg::temporal;
                     let mut year: i64 = 1970;

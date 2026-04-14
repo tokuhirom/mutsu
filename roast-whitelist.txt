@@ -387,6 +387,7 @@ roast/S05-substitution/match.t
 roast/S05-syntactic-categories/new-symbols.t
 roast/S05-transliteration/79778.t
 roast/S05-transliteration/trans-TR-operator.t
+roast/S05-transliteration/trans-tr-lowercase-operator.t
 roast/S05-transliteration/trans.t
 roast/S05-transliteration/with-closure.t
 roast/S06-advanced/callframe.t
