@@ -336,8 +336,22 @@ impl Interpreter {
         }
 
         // 6. Compare collected values with expected using is-deeply
+        // If the collected values are themselves Range objects (e.g. from
+        // Supply.minmax), do not expand expected ranges — they should be
+        // compared element-by-element as ranges.
+        let collected_are_ranges = !tap_values.is_empty()
+            && tap_values.iter().all(|v| {
+                matches!(
+                    v,
+                    Value::Range(..)
+                        | Value::RangeExcl(..)
+                        | Value::RangeExclStart(..)
+                        | Value::RangeExclBoth(..)
+                        | Value::GenericRange { .. }
+                )
+            });
         let expected_expanded = match &expected {
-            Value::Array(items, ..) => {
+            Value::Array(items, ..) if !collected_are_ranges => {
                 let mut expanded = Vec::new();
                 for item in items.iter() {
                     match item {

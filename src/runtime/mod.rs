@@ -1175,6 +1175,7 @@ impl Interpreter {
                     "tail",
                     "delayed",
                     "min",
+                    "minmax",
                     "collate",
                     "lines",
                     "merge",
