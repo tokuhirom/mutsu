@@ -182,14 +182,13 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
     if keyword == "begin" {
         // =begin IDENTIFIER ... =end IDENTIFIER
         // Match the identifier and ignore nested matching begin/end blocks.
-        // TODO: validate =begin table content (empty tables, consecutive row
-        // separators, mixed column separators) once BEGIN block timing is fixed
-        // so that tests generating tables at runtime don't regress.
         let begin_line_end = rest.find('\n').unwrap_or(rest.len());
         let begin_line = &rest[..begin_line_end];
         let target = begin_line.split_whitespace().next().unwrap_or("");
         let mut remaining = rest.get(begin_line_end + 1..).unwrap_or_default();
         let mut depth = 1usize;
+        let is_table = target == "table";
+        let mut table_lines: Vec<&str> = Vec::new();
 
         while !remaining.is_empty() {
             let line_end = remaining.find('\n').unwrap_or(remaining.len());
@@ -202,14 +201,22 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
                 } else if directive == "end" && directive_target == target {
                     depth -= 1;
                     if depth == 0 {
+                        if is_table {
+                            validate_pod_table(&table_lines)?;
+                        }
                         return Ok((next, ""));
                     }
                 }
+            } else if is_table && depth == 1 {
+                table_lines.push(line);
             }
 
             remaining = next;
         }
 
+        if is_table {
+            validate_pod_table(&table_lines)?;
+        }
         Ok(("", ""))
     } else {
         // =for, =head1, =item, =comment, etc. — skip to end of paragraph (blank line)

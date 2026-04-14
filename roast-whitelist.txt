@@ -388,6 +388,7 @@ roast/S05-substitution/match.t
 roast/S05-syntactic-categories/new-symbols.t
 roast/S05-transliteration/79778.t
 roast/S05-transliteration/trans-TR-operator.t
+roast/S05-transliteration/trans-tr-lowercase-operator.t
 roast/S05-transliteration/trans.t
 roast/S05-transliteration/with-closure.t
 roast/S06-advanced/callframe.t
@@ -557,6 +558,7 @@ roast/S12-introspection/can.t
 roast/S12-introspection/definite.t
 roast/S12-introspection/meta-class.t
 roast/S12-introspection/methods.t
+roast/S12-introspection/parents.t
 roast/S12-introspection/roles.t
 roast/S12-meta/classhow.t
 roast/S12-meta/grammarhow.t
@@ -823,6 +825,7 @@ roast/S26-documentation/03-abbreviated.t
 roast/S26-documentation/04a-input-output.t
 roast/S26-documentation/05-comment.t
 roast/S26-documentation/06-lists.t
+roast/S26-documentation/07b-tables.t
 roast/S26-documentation/07c-tables.t
 roast/S26-documentation/10-doc-cli.t
 roast/S26-documentation/12-non-breaking-space.t
@@ -863,6 +866,7 @@ roast/S32-array/rotate.t
 roast/S32-array/shift.t
 roast/S32-array/unshift.t
 roast/S32-basics/pairup.t
+roast/S32-basics/warn.t
 roast/S32-basics/xxPOS-native.t
 roast/S32-container/cat.t
 roast/S32-container/roundrobin.t
