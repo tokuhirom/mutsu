@@ -1543,21 +1543,77 @@ impl Interpreter {
                                 }
                             }
                         } else {
-                            // Read content between < and >, handling nested <...>
+                            // Read content between < and >, handling nested <...>.
+                            // Also balance parens/brackets/braces and skip quoted
+                            // strings so `<.foo(a => 1)>` and `<.foo(|[3,4,5])>`
+                            // are not terminated by the inner `>` or by close
+                            // brackets that match opens inside the args list.
                             let mut name = String::new();
                             let mut angle_depth = 1usize;
+                            let mut paren_depth: usize = 0;
+                            let mut bracket_depth: usize = 0;
+                            let mut brace_depth: usize = 0;
+                            let mut quote: Option<char> = None;
+                            let mut escaped = false;
                             for ch in chars.by_ref() {
-                                if ch == '<' {
-                                    angle_depth += 1;
+                                if let Some(q) = quote {
                                     name.push(ch);
-                                } else if ch == '>' {
-                                    angle_depth -= 1;
-                                    if angle_depth == 0 {
-                                        break;
+                                    if escaped {
+                                        escaped = false;
+                                    } else if ch == '\\' {
+                                        escaped = true;
+                                    } else if ch == q {
+                                        quote = None;
                                     }
-                                    name.push(ch);
-                                } else {
-                                    name.push(ch);
+                                    continue;
+                                }
+                                match ch {
+                                    '\'' | '"' => {
+                                        quote = Some(ch);
+                                        name.push(ch);
+                                    }
+                                    '(' => {
+                                        paren_depth += 1;
+                                        name.push(ch);
+                                    }
+                                    ')' => {
+                                        paren_depth = paren_depth.saturating_sub(1);
+                                        name.push(ch);
+                                    }
+                                    '[' => {
+                                        bracket_depth += 1;
+                                        name.push(ch);
+                                    }
+                                    ']' => {
+                                        bracket_depth = bracket_depth.saturating_sub(1);
+                                        name.push(ch);
+                                    }
+                                    '{' => {
+                                        brace_depth += 1;
+                                        name.push(ch);
+                                    }
+                                    '}' => {
+                                        brace_depth = brace_depth.saturating_sub(1);
+                                        name.push(ch);
+                                    }
+                                    '<' if paren_depth == 0
+                                        && bracket_depth == 0
+                                        && brace_depth == 0 =>
+                                    {
+                                        angle_depth += 1;
+                                        name.push(ch);
+                                    }
+                                    '>' if paren_depth == 0
+                                        && bracket_depth == 0
+                                        && brace_depth == 0 =>
+                                    {
+                                        angle_depth -= 1;
+                                        if angle_depth == 0 {
+                                            break;
+                                        }
+                                        name.push(ch);
+                                    }
+                                    _ => name.push(ch),
                                 }
                             }
                             // Check for word alternation: < word1 word2 ... >
