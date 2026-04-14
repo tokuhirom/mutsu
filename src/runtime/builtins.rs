@@ -613,6 +613,18 @@ impl Interpreter {
                 }
             }
             "split" => self.handle_split_function(args),
+            "parse-base" => {
+                let s = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let radix = match args.get(1) {
+                    Some(Value::Int(n)) => *n,
+                    Some(Value::Str(s)) => s.parse::<i64>().unwrap_or(10),
+                    _ => 10,
+                };
+                crate::builtins::parse_base::parse_base(&s, radix)
+            }
             // File I/O
             "slurp" => self.builtin_slurp(&args),
             "spurt" => self.builtin_spurt(&args),
@@ -846,6 +858,7 @@ impl Interpreter {
                 | "unimatch"
                 | "uniparse"
                 | "parse-names"
+                | "parse-base"
                 | "symlink"
                 | "link"
                 | "spurt"

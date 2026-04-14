@@ -1177,6 +1177,7 @@ impl Interpreter {
                 "encode",
                 "uniparse",
                 "parse-names",
+                "parse-base",
                 "IO",
                 "Numeric",
                 "Int",
