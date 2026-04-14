@@ -1589,7 +1589,17 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
     } else {
         (after_sigil, "")
     };
-    let (rest, var_name) = super::ident(after_twigil)?;
+    let (mut rest, mut var_name) = super::ident(after_twigil)?;
+    // Support package-qualified names: `temp $Foo::Bar::scalar`. Consume any
+    // additional `::ident` segments and append them to var_name.
+    while let Some(after_sep) = rest.strip_prefix("::") {
+        if let Ok((after_seg, seg)) = super::ident_pub(after_sep) {
+            var_name = format!("{}::{}", var_name, seg);
+            rest = after_seg;
+        } else {
+            break;
+        }
+    }
     // Build full env key including twigil
     let full_name = if sigil == '$' {
         if twigil.is_empty() {

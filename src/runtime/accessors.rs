@@ -1682,6 +1682,7 @@ impl Interpreter {
             self.token_defs.clone(),
             self.proto_subs.clone(),
             self.proto_tokens.clone(),
+            self.our_scoped_functions.keys().copied().collect(),
         )
     }
 
@@ -1694,15 +1695,33 @@ impl Interpreter {
     }
 
     fn restore_routine_registry_impl(&mut self, snapshot: RoutineRegistrySnapshot, is_eval: bool) {
-        let (functions, proto_functions, token_defs, proto_subs, proto_tokens) = snapshot;
+        let (functions, proto_functions, token_defs, proto_subs, proto_tokens, our_scoped_keys) =
+            snapshot;
         // Collect our-scoped functions that were newly added during this block
         // (not present in the snapshot) that need to persist after scope restoration.
-        // Only preserve functions whose package matches the current package (i.e., not
-        // functions from loaded modules with different packages).
+        // Preserve functions defined in the current package (original behavior)
+        // OR functions newly registered during this block (so nested package
+        // declarations like `{ package Foo { our sub bar {} } }` survive). We
+        // distinguish "newly registered during this block" by tracking the set
+        // of our_scoped_functions keys that existed at snapshot time.
         let current_pkg = self.current_package.clone();
         let mut new_our: Vec<(Symbol, FunctionDef)> = Vec::new();
         for (key, def) in &self.our_scoped_functions {
-            if !functions.contains_key(key) && def.package.resolve() == current_pkg {
+            if functions.contains_key(key) {
+                continue;
+            }
+            let def_pkg = def.package.resolve();
+            // Always preserve same-package subs (original behavior).
+            if def_pkg == current_pkg {
+                new_our.push((*key, def.clone()));
+                continue;
+            }
+            // Also preserve subs that were newly added to our_scoped_functions
+            // during this block (i.e. their key was not in the snapshot). This
+            // covers nested `package Foo { our sub bar {} }` blocks. Subs from
+            // module loading (`use Foo`) are typically already in the snapshot
+            // by the time the block is restored, so they are not preserved here.
+            if !our_scoped_keys.contains(key) {
                 new_our.push((*key, def.clone()));
             }
         }

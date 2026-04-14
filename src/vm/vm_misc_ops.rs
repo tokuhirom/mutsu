@@ -2339,6 +2339,31 @@ impl VM {
         let current_env = self.interpreter.env().clone();
         let mut restored_env = saved_env.clone();
         for (k, v) in current_env {
+            // Package-qualified names (e.g. Test1::ns, Foo::Bar) are package-global
+            // and must propagate out of any block scope where they were declared.
+            // Sigils may appear before the qualifier (e.g. &Test1::ns, $Foo::var).
+            // Skip internal VM metadata keys (which contain `::` but are not
+            // user-visible package names, e.g. `__mutsu_var_meta::x`).
+            let stripped = k.trim_start_matches(['$', '@', '%', '&']);
+            let is_package_qualified = stripped.contains("::") && !stripped.starts_with("__mutsu_");
+            if is_package_qualified {
+                restored_env.insert(k, v);
+                continue;
+            }
+            // Package type objects declared inside a block (e.g.
+            // `{ package Foo { ... } }`) must remain visible outside the
+            // block as type objects, just like classes/roles. The
+            // `RegisterPackage` opcode stores them in env under the bare
+            // package name. Restrict this to keys that look like a real
+            // package identifier (uppercase ASCII start, not internal/
+            // special variables like `_` or `__mutsu_*`).
+            if matches!(&v, Value::Package(_))
+                && !saved_env.contains_key(&k)
+                && k.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+            {
+                restored_env.insert(k, v);
+                continue;
+            }
             if saved_env.contains_key(&k) {
                 // Lexical topic is block-scoped; don't write inner `$_` back
                 // to the outer scope on block exit.
