@@ -5,6 +5,7 @@ roast/S03-binding/attributes.t
 roast/S03-sequence/misc.t
 roast/S04-exceptions/exceptions-alternatives.t
 roast/S05-capture/alias.t
+roast/S05-capture/caps.t
 roast/S05-mass/recursive.t
 roast/S06-advanced/lexical-subs.t
 roast/S11-modules/versioning.t
