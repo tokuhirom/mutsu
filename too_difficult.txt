@@ -21,6 +21,7 @@ roast/S17-lowlevel/semaphore.t
 roast/S17-procasync/encoding.t
 roast/S17-supply/categorize.t
 roast/S17-supply/migrate.t
+roast/S26-documentation/07b-tables.t (requires parse-time validation of empty =begin table/=end table; that validation regresses 12-non-breaking-space.t which depends on mutsu's broken BEGIN-at-end-of-file phaser ordering producing an empty runtime EVAL'd table)
 roast/S32-array/perl.t
 roast/S32-hash/perl.t
 roast/S32-io/child-secure.t
