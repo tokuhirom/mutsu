@@ -535,9 +535,52 @@ pub fn modified_julian_date(
     dc + day_fraction
 }
 
-/// Day fraction for DateTime.
-pub fn day_fraction(hour: i64, minute: i64, second: f64) -> f64 {
-    (hour as f64 * 3600.0 + minute as f64 * 60.0 + second) / 86400.0
+/// Number of seconds in the given UTC date. Normally 86400, but 86401 on a
+/// day where a positive leap second was inserted (the leap second is the
+/// final 23:59:60 of that UTC day).
+pub fn seconds_in_day(year: i64, month: i64, day: i64) -> i64 {
+    // POSIX timestamp for 00:00:00 of the day AFTER (year, month, day).
+    let next_day_posix = (civil_to_epoch_days(year, month, day) + 1) * 86_400;
+    for &(threshold, _) in LEAP_SECONDS {
+        if threshold == next_day_posix {
+            return 86_401;
+        }
+    }
+    86_400
+}
+
+/// Day fraction returned as (numerator, denominator) so callers can build a
+/// Rat exactly as Rakudo does. Handles leap-second days where the divisor is
+/// 86401 instead of 86400.
+pub fn day_fraction_rational(
+    year: i64,
+    month: i64,
+    day: i64,
+    hour: i64,
+    minute: i64,
+    second: f64,
+) -> (i64, i64) {
+    let denom = seconds_in_day(year, month, day);
+    // Convert second to a rational with up to 6 decimal places (Raku stores
+    // fractional seconds as a Rat). For most cases second is an integer here
+    // when called from is-deeply tests, so we keep it simple.
+    // Use a 1/1_000_000 scale: numerator = (h*3600 + m*60)*1_000_000 + sec*1_000_000
+    let scale: i64 = 1_000_000;
+    let sec_scaled = (second * scale as f64).round() as i64;
+    let num_scaled = (hour * 3600 + minute * 60) * scale + sec_scaled;
+    let denom_scaled = denom * scale;
+    let g = gcd_i64(num_scaled.unsigned_abs() as i64, denom_scaled);
+    (num_scaled / g, denom_scaled / g)
+}
+
+fn gcd_i64(a: i64, b: i64) -> i64 {
+    let (mut a, mut b) = (a, b);
+    while b != 0 {
+        let t = b;
+        b = a % b;
+        a = t;
+    }
+    if a == 0 { 1 } else { a }
 }
 
 /// Leap seconds table: (posix_timestamp_of_insertion, cumulative_leap_seconds).

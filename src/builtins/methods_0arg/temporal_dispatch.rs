@@ -221,7 +221,10 @@ pub fn datetime_method_0arg(
         "modified-julian-date" => Some(Ok(Value::Num(modified_julian_date(
             year, month, day, hour, minute, second,
         )))),
-        "day-fraction" => Some(Ok(Value::Num(day_fraction(hour, minute, second)))),
+        "day-fraction" => {
+            let (n, d) = day_fraction_rational(year, month, day, hour, minute, second);
+            Some(Ok(crate::value::make_rat(n, d)))
+        }
         "Instant" => {
             let posix = datetime_to_posix(year, month, day, hour, minute, second, timezone);
             let tai = posix_to_instant(posix);

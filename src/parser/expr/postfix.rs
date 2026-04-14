@@ -808,7 +808,7 @@ fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Expr> {
         return Ok((r_final, result));
     }
     // Parse regular method name
-    let (r, method_name) = take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+    let (r, method_name) = crate::parser::primary::var::parse_ident_with_hyphens(r)?;
     let (r, _) = ws(r)?;
     let (r_final, args) = if r.starts_with('(') {
         let (r2, _) = parse_char(r, '(')?;
@@ -1564,9 +1564,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             // Parse method name
             // Allow whitespace between dot and method name: `$x . abs` or `$x. abs`
             let r = ws(r).map_or(r, |(r_ws, _)| r_ws);
-            if let Ok((r, parsed_name)) =
-                take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
-            {
+            if let Ok((r, parsed_name)) = crate::parser::primary::var::parse_ident_with_hyphens(r) {
                 let mut method_name = parsed_name.to_string();
                 let mut trailing_postfix: Option<TokenKind> = None;
                 if !r.starts_with('(') {
@@ -1583,9 +1581,9 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     let mut qualified = method_name;
                     let mut r = r;
                     while let Some(after_colons) = r.strip_prefix("::") {
-                        if let Ok((r2, part)) = take_while1(after_colons, |c: char| {
-                            c.is_alphanumeric() || c == '_' || c == '-'
-                        }) {
+                        if let Ok((r2, part)) =
+                            crate::parser::primary::var::parse_ident_with_hyphens(after_colons)
+                        {
                             qualified.push_str("::");
                             qualified.push_str(part);
                             r = r2;
