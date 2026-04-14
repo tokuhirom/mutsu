@@ -14,5 +14,6 @@ roast/S17-lowlevel/semaphore.t
 roast/S17-supply/categorize.t
 roast/S17-supply/migrate.t
 roast/S32-array/perl.t
+roast/S32-list/categorize.t
 roast/S32-io/child-secure.t
 roast/S32-temporal/local.t
