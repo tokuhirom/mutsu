@@ -56,6 +56,10 @@ pub(crate) struct Compiler {
     /// Whether we are compiling inside a routine (sub/method). `return` outside
     /// a routine must throw X::ControlFlow::Return instead of normal return.
     pub(crate) is_routine: bool,
+    /// Whether the enclosing lexical scope contains a routine (sub/method).
+    /// Used to decide whether `return` in a non-routine block should perform
+    /// a non-local return (via CX::Return) or throw X::ControlFlow::Return.
+    pub(crate) lexically_in_routine: bool,
     /// When true, the current VarDecl is from a `:=` bind declaration.
     bind_vardecl: bool,
     /// Variables declared as `constant` (no Scalar container).
@@ -79,6 +83,7 @@ impl Compiler {
             dynamic_scope_names: None,
             accessed_dynamic_vars: std::collections::HashSet::new(),
             is_routine: false,
+            lexically_in_routine: false,
             bind_vardecl: false,
             constant_vars: std::collections::HashSet::new(),
             last_source_line: None,

@@ -780,6 +780,7 @@ impl Interpreter {
                     if !needs_full_binding {
                         let mut compiler = crate::compiler::Compiler::new();
                         compiler.is_routine = !self.routine_stack.is_empty();
+                        compiler.lexically_in_routine = !self.routine_stack.is_empty();
                         let scope = if let Some((pkg, routine)) = self.routine_stack.last() {
                             format!("{}::&{}", pkg, routine)
                         } else {

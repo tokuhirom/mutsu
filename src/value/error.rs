@@ -556,14 +556,13 @@ impl RuntimeError {
     }
 
     /// X::ControlFlow::Return - Return outside of routine
-    #[allow(dead_code)]
     pub(crate) fn controlflow_return(out_of_dynamic_scope: bool) -> Self {
         let msg = "Attempt to return outside of any Routine".to_string();
         let mut attrs = HashMap::new();
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         attrs.insert(
             "out-of-dynamic-scope".to_string(),
-            Value::Bool(!out_of_dynamic_scope),
+            Value::Bool(out_of_dynamic_scope),
         );
         Self::typed("X::ControlFlow::Return", attrs)
     }
