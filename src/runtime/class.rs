@@ -403,6 +403,7 @@ impl Interpreter {
                     | "spurt"
                     | "t"
                     | "printf"
+                    | "split"
             )
         {
             return true;

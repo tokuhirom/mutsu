@@ -1002,7 +1002,7 @@ pub(crate) fn native_method_1arg(
         }
         "split" => {
             if let Value::Instance { class_name, .. } = target
-                && class_name == "Supply"
+                && (class_name == "Supply" || class_name == "IO::Handle")
             {
                 return None;
             }
@@ -2635,7 +2635,7 @@ pub(crate) fn native_method_2arg(
 
     if method == "split" {
         if let Value::Instance { class_name, .. } = target
-            && class_name == "Supply"
+            && (class_name == "Supply" || class_name == "IO::Handle")
         {
             return None;
         }

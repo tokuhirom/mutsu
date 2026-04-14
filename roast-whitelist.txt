@@ -709,6 +709,7 @@ roast/S16-io/put.t
 roast/S16-io/readchars.t
 roast/S16-io/say-and-ref.t
 roast/S16-io/say.t
+roast/S16-io/split.t
 roast/S16-io/supply.t
 roast/S16-io/tmpdir.t
 roast/S16-io/watch.t
