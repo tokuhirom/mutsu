@@ -126,7 +126,13 @@ impl Interpreter {
             }
             "match" => Some(self.dispatch_match_method(target, &args)),
             "subst" => Some(self.dispatch_subst(target, &args)),
-            "comb" if !args.is_empty() => self.dispatch_comb_with_args(target, &args),
+            "comb" if !args.is_empty() => {
+                if matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply") {
+                    Some(self.dispatch_supply_transform(target, "comb", &args))
+                } else {
+                    self.dispatch_comb_with_args(target, &args)
+                }
+            }
             "IO" if args.is_empty() => {
                 let s = target.to_string_value();
                 if s.contains('\0') {
