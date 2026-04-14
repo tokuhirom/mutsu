@@ -236,6 +236,18 @@ impl Value {
             | (Value::Promise(_), Value::Promise(_))
             | (Value::Channel(_), Value::Channel(_))
             | (Value::Uni { .. }, Value::Uni { .. }) => self == other,
+            // Mixin with only the read-only topic marker is transparent
+            // (used by `with literal { ... }` to flag immutable $_).
+            (Value::Mixin(inner, mix), other)
+                if mix.len() == 1 && mix.contains_key("__mutsu_topic_ro__") =>
+            {
+                inner.eqv(other)
+            }
+            (other, Value::Mixin(inner, mix))
+                if mix.len() == 1 && mix.contains_key("__mutsu_topic_ro__") =>
+            {
+                other.eqv(inner)
+            }
             // Mixin (allomorphs): compare both base values and mixin maps with eqv
             (Value::Mixin(a, a_mix), Value::Mixin(b, b_mix)) => {
                 if !a.eqv(b) {

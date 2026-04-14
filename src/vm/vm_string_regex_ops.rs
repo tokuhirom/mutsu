@@ -860,13 +860,18 @@ impl VM {
         if self.in_smartmatch_rhs {
             self.transliterate_in_smartmatch = true;
         }
-        // tr/// returns a StrDistance object holding both the original and the
-        // transliterated string. It stringifies to the `after` value.
-        let mut sd_attrs = std::collections::HashMap::new();
-        sd_attrs.insert("before".to_string(), Value::str(text));
-        sd_attrs.insert("after".to_string(), Value::str(translated));
-        let sd = Value::make_instance(Symbol::intern("StrDistance"), sd_attrs);
-        self.stack.push(sd);
+        // tr/// (destructive) returns a StrDistance object holding both the
+        // original and the transliterated string; it stringifies to `after`.
+        // TR/// (non-destructive) returns a plain Str with the translated text.
+        let result = if non_destructive {
+            Value::str(translated)
+        } else {
+            let mut sd_attrs = std::collections::HashMap::new();
+            sd_attrs.insert("before".to_string(), Value::str(text));
+            sd_attrs.insert("after".to_string(), Value::str(translated));
+            Value::make_instance(Symbol::intern("StrDistance"), sd_attrs)
+        };
+        self.stack.push(result);
         Ok(())
     }
 
