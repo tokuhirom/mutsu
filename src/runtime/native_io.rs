@@ -26,6 +26,18 @@ enum IoPathExtensionPartsSpec {
     Range { low: i64, high: i64 },
 }
 
+fn io_path_missing_failure(path: &str, method: &str) -> Value {
+    let message = format!("Failed to find '{}' while trying to do '.{}'", path, method);
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message));
+    attrs.insert("path".to_string(), Value::str(path.to_string()));
+    attrs.insert("trying".to_string(), Value::str(method.to_string()));
+    let ex = Value::make_instance(Symbol::intern("X::IO::DoesNotExist"), attrs);
+    let mut failure_attrs = HashMap::new();
+    failure_attrs.insert("exception".to_string(), ex);
+    Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+}
+
 fn io_path_missing_error(path: &str, method: &str) -> RuntimeError {
     let message = format!("Failed to find '{}' while trying to do '.{}'", path, method);
     let mut attrs = HashMap::new();
@@ -49,23 +61,45 @@ fn io_path_metadata(
 }
 
 #[cfg(unix)]
-fn metadata_is_readable(metadata: &fs::Metadata) -> bool {
-    metadata.permissions().mode() & 0o444 != 0
-}
-
-#[cfg(not(unix))]
-fn metadata_is_readable(_metadata: &fs::Metadata) -> bool {
-    true
+fn path_access(path: &Path, mode: libc::c_int) -> bool {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(cpath) = CString::new(path.as_os_str().as_bytes()) else {
+        return false;
+    };
+    unsafe { libc::access(cpath.as_ptr(), mode) == 0 }
 }
 
 #[cfg(unix)]
-fn metadata_is_writable(metadata: &fs::Metadata) -> bool {
-    metadata.permissions().mode() & 0o222 != 0
+fn path_is_readable(path: &Path) -> bool {
+    path_access(path, libc::R_OK)
+}
+
+#[cfg(unix)]
+fn path_is_writable(path: &Path) -> bool {
+    path_access(path, libc::W_OK)
+}
+
+#[cfg(unix)]
+fn path_is_executable(path: &Path) -> bool {
+    path_access(path, libc::X_OK)
 }
 
 #[cfg(not(unix))]
-fn metadata_is_writable(metadata: &fs::Metadata) -> bool {
-    !metadata.permissions().readonly()
+fn path_is_readable(path: &Path) -> bool {
+    fs::metadata(path).is_ok()
+}
+
+#[cfg(not(unix))]
+fn path_is_writable(path: &Path) -> bool {
+    fs::metadata(path)
+        .map(|m| !m.permissions().readonly())
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn path_is_executable(path: &Path) -> bool {
+    fs::metadata(path).map(|m| m.is_file()).unwrap_or(false)
 }
 
 impl IoPathExtensionPartsSpec {
@@ -433,43 +467,44 @@ impl Interpreter {
                 Ok(Value::make_instance(Symbol::intern("IO::Path"), new_attrs))
             }
             "e" => Ok(Value::Bool(path_buf.exists())),
-            "f" => Ok(Value::Bool(
-                io_path_metadata(&path_buf, &p, method)?.is_file(),
-            )),
-            "d" => Ok(Value::Bool(
-                io_path_metadata(&path_buf, &p, method)?.is_dir(),
-            )),
-            "l" => {
-                let linked = fs::symlink_metadata(&path_buf)
-                    .map(|meta| meta.file_type().is_symlink())
-                    .map_err(|_| io_path_missing_error(&p, method))?;
-                Ok(Value::Bool(linked))
-            }
-            "r" => Ok(Value::Bool(metadata_is_readable(&io_path_metadata(
-                &path_buf, &p, method,
-            )?))),
-            "w" => Ok(Value::Bool(metadata_is_writable(&io_path_metadata(
-                &path_buf, &p, method,
-            )?))),
-            "x" => {
-                let executable =
-                    Self::metadata_is_executable(&io_path_metadata(&path_buf, &p, method)?);
-                Ok(Value::Bool(executable))
-            }
-            "rw" => {
-                let meta = io_path_metadata(&path_buf, &p, method)?;
-                Ok(Value::Bool(
-                    metadata_is_readable(&meta) && metadata_is_writable(&meta),
-                ))
-            }
-            "rwx" => {
-                let meta = io_path_metadata(&path_buf, &p, method)?;
-                Ok(Value::Bool(
-                    metadata_is_readable(&meta)
-                        && metadata_is_writable(&meta)
-                        && Self::metadata_is_executable(&meta),
-                ))
-            }
+            "f" => match fs::metadata(&path_buf) {
+                Ok(meta) => Ok(Value::Bool(meta.is_file())),
+                Err(_) => Ok(io_path_missing_failure(&p, method)),
+            },
+            "d" => match fs::metadata(&path_buf) {
+                Ok(meta) => Ok(Value::Bool(meta.is_dir())),
+                Err(_) => Ok(io_path_missing_failure(&p, method)),
+            },
+            "l" => match fs::symlink_metadata(&path_buf) {
+                Ok(meta) => Ok(Value::Bool(meta.file_type().is_symlink())),
+                Err(_) => Ok(io_path_missing_failure(&p, method)),
+            },
+            "r" => match fs::metadata(&path_buf) {
+                Ok(_) => Ok(Value::Bool(path_is_readable(&path_buf))),
+                Err(_) => Ok(io_path_missing_failure(&p, method)),
+            },
+            "w" => match fs::metadata(&path_buf) {
+                Ok(_) => Ok(Value::Bool(path_is_writable(&path_buf))),
+                Err(_) => Ok(io_path_missing_failure(&p, method)),
+            },
+            "x" => match fs::metadata(&path_buf) {
+                Ok(_) => Ok(Value::Bool(path_is_executable(&path_buf))),
+                Err(_) => Ok(io_path_missing_failure(&p, method)),
+            },
+            "rw" => match fs::metadata(&path_buf) {
+                Ok(_) => Ok(Value::Bool(
+                    path_is_readable(&path_buf) && path_is_writable(&path_buf),
+                )),
+                Err(_) => Ok(io_path_missing_failure(&p, method)),
+            },
+            "rwx" => match fs::metadata(&path_buf) {
+                Ok(_) => Ok(Value::Bool(
+                    path_is_readable(&path_buf)
+                        && path_is_writable(&path_buf)
+                        && path_is_executable(&path_buf),
+                )),
+                Err(_) => Ok(io_path_missing_failure(&p, method)),
+            },
             "mode" => {
                 let metadata = fs::metadata(&path_buf)
                     .map_err(|err| RuntimeError::new(format!("Failed to stat '{}': {}", p, err)))?;
