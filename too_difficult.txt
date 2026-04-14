@@ -10,6 +10,7 @@ roast/S05-capture/array-alias.t
 roast/S05-capture/caps.t
 roast/S05-mass/recursive.t
 roast/S06-advanced/lexical-subs.t
+roast/S06-advanced/return-prioritization.t
 roast/S11-modules/versioning.t
 roast/S11-repository/curli-install.t
 roast/S12-meta/exporthow.t
