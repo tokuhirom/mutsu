@@ -986,16 +986,26 @@ impl Interpreter {
             }
             "comb" => {
                 let source_values = self.supply_get_values(attributes)?;
-                let mut combed = Vec::new();
-                for val in source_values {
-                    let result = self.call_method_with_values(val, "comb", args.clone())?;
-                    match result {
-                        Value::Seq(items) | Value::Array(items, ..) => {
-                            combed.extend(items.iter().cloned());
-                        }
-                        other => combed.push(other),
-                    }
-                }
+                // Concatenate all source string values, then comb the whole thing.
+                // Supply.comb treats the stream as one logical string.
+                let joined: String = source_values
+                    .iter()
+                    .map(|v| v.to_string_value())
+                    .collect::<Vec<_>>()
+                    .join("");
+                let target = Value::str(joined);
+                // Supply.comb ignores the :match named option (always returns strings),
+                // matching Rakudo's behavior.
+                let positional_args: Vec<Value> = args
+                    .iter()
+                    .filter(|a| !matches!(a, Value::Pair(k, _) if k == "match"))
+                    .cloned()
+                    .collect();
+                let result = self.call_method_with_values(target, "comb", positional_args)?;
+                let combed: Vec<Value> = match result {
+                    Value::Seq(items) | Value::Array(items, ..) => items.iter().cloned().collect(),
+                    other => vec![other],
+                };
                 Ok(self.make_supply_from_values(combed, attributes))
             }
             "words" => {

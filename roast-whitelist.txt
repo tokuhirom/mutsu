@@ -749,6 +749,7 @@ roast/S17-supply/Seq.t
 roast/S17-supply/act.t
 roast/S17-supply/classify.t
 roast/S17-supply/collate.t
+roast/S17-supply/comb.t
 roast/S17-supply/construction-recursion.t
 roast/S17-supply/decode.t
 roast/S17-supply/delayed.t
