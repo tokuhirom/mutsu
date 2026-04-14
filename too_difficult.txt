@@ -6,6 +6,7 @@ roast/S04-exceptions/exceptions-alternatives.t
 roast/S05-capture/alias.t
 roast/S05-mass/recursive.t
 roast/S11-modules/versioning.t
+roast/S12-methods/accessors.t
 roast/S14-traits/attributes.t
 roast/S17-lowlevel/semaphore.t
 roast/S17-supply/categorize.t
