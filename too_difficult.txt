@@ -24,4 +24,5 @@ roast/S32-hash/perl.t
 roast/S32-io/child-secure.t
 roast/S32-io/io-path-cygwin.t
 roast/S32-list/categorize.t
+roast/S32-io/socket-recv-vs-read.t
 roast/S32-temporal/local.t
