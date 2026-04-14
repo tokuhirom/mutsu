@@ -334,6 +334,7 @@ impl VM {
                 | "WhateverCode"
                 | "HyperWhatever"
                 | "Stash"
+                | "StrDistance"
                 | "Scalar"
                 | "SetHash"
                 | "BagHash"

@@ -1968,7 +1968,23 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     // The body uses $_ which was set in the condition block.
     // We still prepend topicalize(&tmp_var) as a no-op marker so that
     // $_ is visible in the body scope (but it's already set by the condition).
-    let mut with_body = vec![topicalize(&tmp_var)];
+    // If the topic source is a literal value, wrap $_ in a Mixin marked as
+    // read-only so that mutating ops like tr/// throw X::Assignment::RO.
+    // Encoding the read-only flag in the value itself avoids leaking marker
+    // variables across exception boundaries.
+    let topic_assign = if let Expr::Literal(lit) = &cond_expr {
+        let mut overrides = std::collections::HashMap::new();
+        overrides.insert("__mutsu_topic_ro__".to_string(), Value::Bool(true));
+        let wrapped = Value::mixin(lit.clone(), overrides);
+        Stmt::Assign {
+            name: "_".to_string(),
+            op: AssignOp::Assign,
+            expr: Expr::Literal(wrapped),
+        }
+    } else {
+        topicalize(&tmp_var)
+    };
+    let mut with_body = vec![topic_assign];
     // If a named parameter was given (-> $param), also assign it
     if let Some(ref pname) = param_name {
         // Check if this is a sub-signature destructuring (e.g. -> ($x) or -> (Int() $x is copy))
