@@ -1093,6 +1093,13 @@ impl VM {
                     type_args,
                 }
             }
+            // Non-positional subscript (`<key>` / `{key}`) of the bare Any type
+            // object returns Any per Raku spec (S09/autovivification): reading a
+            // missing key does not autovivify and the result must be indistinct
+            // from Any so that `%h<missing><b> === Any` holds.
+            (Value::Package(name), _) if !is_positional && name.resolve() == "Any" => {
+                Value::Package(Symbol::intern("Any"))
+            }
             // Type parameterization: e.g. Array[Int] or Hash[Int,Str]
             (Value::Package(name), idx) => {
                 let type_args = match idx {
