@@ -778,6 +778,15 @@ pub struct Interpreter {
     exported_subs: HashMap<String, HashMap<String, HashSet<String>>>,
     /// Exported variable/constant symbols by package and export tag.
     exported_vars: HashMap<String, HashMap<String, HashSet<String>>>,
+    /// Mirrored export tables for modules declared with `unit module X`
+    /// when the actual runtime package registration used "GLOBAL".
+    /// Populated during `load_module` so that `import_module` can perform
+    /// tag validation and raise `X::Import::NoSuchTag` for bad tags.
+    unit_module_exported_subs: HashMap<String, HashMap<String, HashSet<String>>>,
+    /// Stack of unit-module names currently being loaded; used by
+    /// `register_exported_sub` to mirror GLOBAL registrations into
+    /// `unit_module_exported_subs`.
+    unit_module_loading_stack: Vec<String>,
     /// When true, `is export` trait is ignored (used by `need` to load without importing).
     pub(crate) suppress_exports: bool,
     /// When true, rw routine calls should not auto-FETCH Proxy return values.
@@ -2671,6 +2680,8 @@ impl Interpreter {
             module_load_stack: Vec::new(),
             exported_subs: HashMap::new(),
             exported_vars: HashMap::new(),
+            unit_module_exported_subs: HashMap::new(),
+            unit_module_loading_stack: Vec::new(),
             suppress_exports: false,
             in_lvalue_assignment: false,
             hash_autovivify: false,
@@ -3191,6 +3202,20 @@ impl Interpreter {
                     .or_insert_with(|| def);
             }
         }
+        // Mirror this export into the unit-module export table so that
+        // `import_module` can validate tags for `unit module X` files whose
+        // runtime package registration used "GLOBAL".
+        if let Some(unit_mod) = self.unit_module_loading_stack.last().cloned() {
+            let mirror = self
+                .unit_module_exported_subs
+                .entry(unit_mod)
+                .or_default()
+                .entry(name.clone())
+                .or_default();
+            for tag in &tags {
+                mirror.insert(tag.clone());
+            }
+        }
         let entry = self
             .exported_subs
             .entry(package)
@@ -3236,7 +3261,18 @@ impl Interpreter {
 
         let subs = self.exported_subs.get(module).cloned().unwrap_or_default();
         let vars = self.exported_vars.get(module).cloned().unwrap_or_default();
-        if subs.is_empty() && vars.is_empty() {
+        // For `unit module Foo`, sub registration at runtime may have used
+        // the default "GLOBAL" package (because the interpreter's runtime
+        // `current_package` is not switched by the compile-time unit
+        // declaration). When a module declared the `unit_module` marker,
+        // its exports are tracked separately so we can still validate tags
+        // and report X::Import::NoSuchTag correctly.
+        let unit_global_subs: HashMap<String, HashSet<String>> = self
+            .unit_module_exported_subs
+            .get(module)
+            .cloned()
+            .unwrap_or_default();
+        if subs.is_empty() && vars.is_empty() && unit_global_subs.is_empty() {
             return Err(RuntimeError::new(format!(
                 "No exports found for module: {}",
                 module
@@ -3256,6 +3292,11 @@ impl Interpreter {
                 }
             }
             for symbol_tags in vars.values() {
+                for tag in symbol_tags {
+                    known_tags.insert(tag.clone());
+                }
+            }
+            for symbol_tags in unit_global_subs.values() {
                 for tag in symbol_tags {
                     known_tags.insert(tag.clone());
                 }
@@ -4166,6 +4207,8 @@ impl Interpreter {
             module_load_stack: Vec::new(),
             exported_subs: self.exported_subs.clone(),
             exported_vars: self.exported_vars.clone(),
+            unit_module_exported_subs: self.unit_module_exported_subs.clone(),
+            unit_module_loading_stack: Vec::new(),
             suppress_exports: false,
             in_lvalue_assignment: false,
             hash_autovivify: false,
