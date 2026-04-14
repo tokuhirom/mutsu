@@ -44,19 +44,52 @@ impl Interpreter {
     }
 
     fn make_pod_named(name: &str, contents: Vec<Value>) -> Value {
+        Self::make_pod_named_with_config(name, contents, HashMap::new())
+    }
+
+    fn make_pod_named_with_config(
+        name: &str,
+        contents: Vec<Value>,
+        config: HashMap<String, Value>,
+    ) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), Value::str(name.to_string()));
         attrs.insert("contents".to_string(), Value::array(contents));
-        attrs.insert("config".to_string(), Value::hash(HashMap::new()));
+        attrs.insert("config".to_string(), Value::hash(config));
         Value::make_instance(Symbol::intern("Pod::Block::Named"), attrs)
     }
 
     fn make_pod_heading(level: &str, contents: Vec<Value>) -> Value {
+        Self::make_pod_heading_with_config(level, contents, HashMap::new())
+    }
+
+    fn make_pod_heading_with_config(
+        level: &str,
+        contents: Vec<Value>,
+        config: HashMap<String, Value>,
+    ) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("level".to_string(), Value::str(level.to_string()));
         attrs.insert("contents".to_string(), Value::array(contents));
-        attrs.insert("config".to_string(), Value::hash(HashMap::new()));
+        attrs.insert("config".to_string(), Value::hash(config));
         Value::make_instance(Symbol::intern("Pod::Heading"), attrs)
+    }
+
+    /// Strip the `# ` / `#` abbreviated-block alias for `:numbered` from the
+    /// start of a directive tail. Returns `(is_numbered, remainder)`.
+    fn extract_numbered_alias(rest: &str) -> (bool, &str) {
+        let trimmed = rest.trim_start();
+        if let Some(after) = trimmed.strip_prefix('#') {
+            // Must be followed by whitespace or end of line to count as alias.
+            if after.is_empty()
+                || after.starts_with(' ')
+                || after.starts_with('\t')
+                || after.starts_with('\n')
+            {
+                return (true, after.trim_start());
+            }
+        }
+        (false, rest)
     }
 
     fn make_pod_comment(content: String) -> Value {
@@ -285,7 +318,7 @@ impl Interpreter {
         (config, s)
     }
 
-    fn make_pod_table(rows: Vec<Vec<String>>) -> Value {
+    fn make_pod_table_with_config(rows: Vec<Vec<String>>, config: HashMap<String, Value>) -> Value {
         let mut attrs = HashMap::new();
         let contents = rows
             .into_iter()
@@ -294,7 +327,7 @@ impl Interpreter {
         attrs.insert("contents".to_string(), Value::array(contents));
         attrs.insert("headers".to_string(), Value::array(Vec::new()));
         attrs.insert("caption".to_string(), Value::str(String::new()));
-        attrs.insert("config".to_string(), Value::hash(HashMap::new()));
+        attrs.insert("config".to_string(), Value::hash(config));
         Value::make_instance(Symbol::intern("Pod::Block::Table"), attrs)
     }
 
@@ -517,9 +550,14 @@ impl Interpreter {
                     continue;
                 }
                 if directive == "table" {
+                    let (numbered, _) = Self::extract_numbered_alias(rest);
+                    let mut config = HashMap::new();
+                    if numbered {
+                        config.insert("numbered".to_string(), Value::Bool(true));
+                    }
                     let (rows, next_idx) = Self::collect_table_rows(lines, idx + 1);
-                    if !rows.is_empty() {
-                        entries.push(Self::make_pod_table(rows));
+                    if !rows.is_empty() || numbered {
+                        entries.push(Self::make_pod_table_with_config(rows, config));
                     }
                     idx = next_idx.max(idx + 1);
                     continue;
@@ -559,16 +597,25 @@ impl Interpreter {
                         idx = next_idx.max(idx + 1);
                         continue;
                     }
-                    let (para, next_idx) =
-                        Self::collect_pod_para_with_inline(lines, idx + 1, inline, end_target);
+                    let (numbered, inline_after) = Self::extract_numbered_alias(inline);
+                    let mut config = HashMap::new();
+                    if numbered {
+                        config.insert("numbered".to_string(), Value::Bool(true));
+                    }
+                    let (para, next_idx) = Self::collect_pod_para_with_inline(
+                        lines,
+                        idx + 1,
+                        inline_after,
+                        end_target,
+                    );
                     let mut contents = Vec::new();
                     if let Some(para) = para {
                         contents.push(para);
                     }
                     if let Some(level) = Self::parse_heading_level(target) {
-                        entries.push(Self::make_pod_heading(level, contents));
+                        entries.push(Self::make_pod_heading_with_config(level, contents, config));
                     } else {
-                        entries.push(Self::make_pod_named(target, contents));
+                        entries.push(Self::make_pod_named_with_config(target, contents, config));
                     }
                     idx = next_idx.max(idx + 1);
                     continue;
@@ -652,16 +699,23 @@ impl Interpreter {
                     continue;
                 }
 
+                let (numbered, rest_after) = Self::extract_numbered_alias(rest);
+                let mut config = HashMap::new();
+                if numbered {
+                    config.insert("numbered".to_string(), Value::Bool(true));
+                }
                 let (para, next_idx) =
-                    Self::collect_pod_para_with_inline(lines, idx + 1, rest, end_target);
+                    Self::collect_pod_para_with_inline(lines, idx + 1, rest_after, end_target);
                 let mut contents = Vec::new();
                 if let Some(para) = para {
                     contents.push(para);
                 }
                 if let Some(level) = Self::parse_heading_level(directive) {
-                    entries.push(Self::make_pod_heading(level, contents));
+                    entries.push(Self::make_pod_heading_with_config(level, contents, config));
                 } else {
-                    entries.push(Self::make_pod_named(directive, contents));
+                    entries.push(Self::make_pod_named_with_config(
+                        directive, contents, config,
+                    ));
                 }
                 idx = next_idx.max(idx + 1);
                 continue;
@@ -720,9 +774,14 @@ impl Interpreter {
                     continue;
                 }
                 if directive == "table" {
+                    let (numbered, _) = Self::extract_numbered_alias(rest);
+                    let mut config = HashMap::new();
+                    if numbered {
+                        config.insert("numbered".to_string(), Value::Bool(true));
+                    }
                     let (rows, next_idx) = Self::collect_table_rows(&lines, idx + 1);
-                    if !rows.is_empty() {
-                        entries.push(Self::make_pod_table(rows));
+                    if !rows.is_empty() || numbered {
+                        entries.push(Self::make_pod_table_with_config(rows, config));
                     }
                     idx = next_idx.max(idx + 1);
                     continue;
@@ -757,16 +816,21 @@ impl Interpreter {
                         idx = next_idx.max(idx + 1);
                         continue;
                     }
+                    let (numbered, inline_after) = Self::extract_numbered_alias(inline);
+                    let mut config = HashMap::new();
+                    if numbered {
+                        config.insert("numbered".to_string(), Value::Bool(true));
+                    }
                     let (para, next_idx) =
-                        Self::collect_pod_para_with_inline(&lines, idx + 1, inline, None);
+                        Self::collect_pod_para_with_inline(&lines, idx + 1, inline_after, None);
                     let mut contents = Vec::new();
                     if let Some(para) = para {
                         contents.push(para);
                     }
                     if let Some(level) = Self::parse_heading_level(target) {
-                        entries.push(Self::make_pod_heading(level, contents));
+                        entries.push(Self::make_pod_heading_with_config(level, contents, config));
                     } else {
-                        entries.push(Self::make_pod_named(target, contents));
+                        entries.push(Self::make_pod_named_with_config(target, contents, config));
                     }
                     idx = next_idx.max(idx + 1);
                     continue;
@@ -845,16 +909,23 @@ impl Interpreter {
                     continue;
                 }
 
+                let (numbered, rest_after) = Self::extract_numbered_alias(rest);
+                let mut config = HashMap::new();
+                if numbered {
+                    config.insert("numbered".to_string(), Value::Bool(true));
+                }
                 let (para, next_idx) =
-                    Self::collect_pod_para_with_inline(&lines, idx + 1, rest, None);
+                    Self::collect_pod_para_with_inline(&lines, idx + 1, rest_after, None);
                 let mut contents = Vec::new();
                 if let Some(para) = para {
                     contents.push(para);
                 }
                 if let Some(level) = Self::parse_heading_level(directive) {
-                    entries.push(Self::make_pod_heading(level, contents));
+                    entries.push(Self::make_pod_heading_with_config(level, contents, config));
                 } else {
-                    entries.push(Self::make_pod_named(directive, contents));
+                    entries.push(Self::make_pod_named_with_config(
+                        directive, contents, config,
+                    ));
                 }
                 idx = next_idx.max(idx + 1);
                 continue;
