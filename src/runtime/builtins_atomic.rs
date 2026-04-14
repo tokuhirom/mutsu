@@ -305,7 +305,7 @@ impl Interpreter {
             let current = {
                 let mut shared = self.shared_vars.write().unwrap();
                 let current = self.atomic_current_value(&shared, &name, &value_key);
-                if current == *expected {
+                if Self::cas_retry_matches(&current, expected) {
                     shared.insert(value_key.clone(), coerced.clone());
                     did_swap = true;
                 }
@@ -494,7 +494,7 @@ impl Interpreter {
                     index as usize
                 };
                 current = elements.get(idx).cloned().unwrap_or(Value::Int(0));
-                if current == *expected {
+                if Self::cas_retry_matches(&current, expected) {
                     let mut new_elements = (**elements).clone();
                     while new_elements.len() <= idx {
                         new_elements.push(Value::Int(0));
@@ -573,7 +573,7 @@ impl Interpreter {
             ));
             // Navigate to the element using the dimension indices
             current = Self::multidim_get(&arr, &dims);
-            if current == *expected {
+            if Self::cas_retry_matches(&current, expected) {
                 let updated = Self::multidim_set(&arr, &dims, new_val);
                 shared.insert(atomic_key.clone(), updated);
                 did_swap = true;
