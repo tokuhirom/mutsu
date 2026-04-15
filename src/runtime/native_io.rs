@@ -615,6 +615,21 @@ impl Interpreter {
                     .collect();
                 Ok(Value::array(parts))
             }
+            "comb" => {
+                let content = fs::read_to_string(&path_buf)
+                    .map_err(|err| RuntimeError::new(format!("Failed to read '{}': {}", p, err)))?;
+                let content = super::utils::strip_utf8_bom(content);
+                // Filter out :close (irrelevant for IO::Path) before delegating.
+                let comb_args: Vec<Value> = args
+                    .iter()
+                    .filter(|a| !matches!(a, Value::Pair(k, _) if k == "close"))
+                    .cloned()
+                    .collect();
+                match self.dispatch_comb_with_args(Value::str(content), &comb_args) {
+                    Some(res) => res,
+                    None => Ok(Value::Seq(std::sync::Arc::new(Vec::new()))),
+                }
+            }
             "slurp" => {
                 let (_, _, _, bin, _, _, _, _, enc, _) = self.parse_io_flags_values(&args);
                 if bin {
@@ -2175,6 +2190,35 @@ impl Interpreter {
                     let _ = self.close_handle_value(&target_val)?;
                 }
                 self.handle_split_method(Value::str(text), split_args)
+            }
+            "comb" => {
+                // Slurp the handle, optionally close it, then delegate to the
+                // generic Str.comb implementation.
+                let close = args
+                    .iter()
+                    .any(|a| matches!(a, Value::Pair(k, v) if k == "close" && v.truthy()));
+                // Filter out :close from args before delegating to comb.
+                let comb_args: Vec<Value> = args
+                    .iter()
+                    .filter(|a| !matches!(a, Value::Pair(k, _) if k == "close"))
+                    .cloned()
+                    .collect();
+                let mut all_bytes = Vec::new();
+                loop {
+                    let chunk = self.read_bytes_from_handle_value(&target_val, 8192)?;
+                    if chunk.is_empty() {
+                        break;
+                    }
+                    all_bytes.extend(chunk);
+                }
+                let text = String::from_utf8_lossy(&all_bytes).to_string();
+                if close {
+                    let _ = self.close_handle_value(&target_val)?;
+                }
+                match self.dispatch_comb_with_args(Value::str(text), &comb_args) {
+                    Some(res) => res,
+                    None => Ok(Value::Seq(std::sync::Arc::new(Vec::new()))),
+                }
             }
             "Supply" => self.handle_supply(target, &args),
             "native-descriptor" => {
