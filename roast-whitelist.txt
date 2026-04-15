@@ -254,6 +254,7 @@ roast/S04-declarations/implicit-parameter.t
 roast/S04-declarations/multiple.t
 roast/S04-declarations/our.t
 roast/S04-declarations/smiley.t
+roast/S04-exception-handlers/catch.t
 roast/S04-exception-handlers/top-level.t
 roast/S04-exceptions/control_across_runloop.t
 roast/S04-exceptions/fail-6e.t

@@ -210,6 +210,46 @@ impl Interpreter {
             err.return_value = Some(target);
             return Err(err);
         }
+        // .resume / .throw / .rethrow on instances of user-defined Exception
+        // subclasses (the builtin fast path only handles Exception/X::*/CX::*/
+        // Failure by name).
+        if matches!(method, "resume" | "throw" | "rethrow")
+            && args.is_empty()
+            && let Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } = &target
+        {
+            let cn = class_name.resolve();
+            let is_exception = cn == "Exception"
+                || cn == "Failure"
+                || cn.starts_with("X::")
+                || cn.starts_with("CX::")
+                || self
+                    .class_mro(&cn)
+                    .iter()
+                    .any(|p| p == "Exception" || p == "Failure");
+            if is_exception {
+                if method == "resume" {
+                    return Err(crate::value::RuntimeError::resume_signal());
+                }
+                // throw / rethrow: build a RuntimeError carrying this exception.
+                let msg = attributes
+                    .get("message")
+                    .map(|v| v.to_string_value())
+                    .or_else(|| {
+                        // Try calling .message if defined as a user method.
+                        self.call_method_with_values(target.clone(), "message", vec![])
+                            .ok()
+                            .map(|v| v.to_string_value())
+                    })
+                    .unwrap_or_else(|| target.to_string_value());
+                let mut err = crate::value::RuntimeError::new(&msg);
+                err.exception = Some(Box::new(target.clone()));
+                return Err(err);
+            }
+        }
         // .WALK(name, :roles) — walk class+role chain calling the named
         // submethod once per "own" definition. Returns a no-arg Sub that,
         // when invoked, yields the list of results.
