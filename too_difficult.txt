@@ -1,3 +1,4 @@
+roast/S02-magicals/dollar-underscore.t (17/23 pass; needs container-based `$_` semantics — `:=` vs `=` aliasing, fresh `$_` per sub call, empty pointy signature arity check, BlockScope must propagate plain assignment to `$_` while keeping `:=` block-local)
 roast/S02-magicals/sub.t
 roast/S02-types/generics.t
 roast/S02-types/multi_dimensional_array.t
