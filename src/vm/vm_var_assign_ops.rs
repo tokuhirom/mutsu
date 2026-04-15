@@ -287,7 +287,11 @@ impl VM {
         }
     }
 
-    fn coerce_hash_var_value(&mut self, name: &str, value: Value) -> Result<Value, RuntimeError> {
+    pub(super) fn coerce_hash_var_value(
+        &mut self,
+        name: &str,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
         if let Some(constraint) = self.interpreter.var_type_constraint_fast(name).cloned()
             && let Some(trait_name) = Self::quant_hash_trait_from_constraint(&constraint)
         {
@@ -1614,6 +1618,44 @@ impl VM {
                 // to allow in-place mutation (preserving shared identity).
                 let is_bound_hash_var = var_name.starts_with('%')
                     && self.interpreter.readonly_vars().contains(&var_name);
+                // Type check for parameterized SetHash[T] element binding.
+                // Only applies when the declared type is explicitly parameterized
+                // (e.g. SetHash[Str]), not when the constraint is just `is SetHash`.
+                if let Some(Value::Set(set, _)) = self.interpreter.env().get(&var_name) {
+                    let set_id = Arc::as_ptr(set) as usize;
+                    if let Some(info) = self.interpreter.set_type_metadata_get(set_id)
+                        && info
+                            .declared_type
+                            .as_deref()
+                            .is_some_and(|t| t.contains('['))
+                        && !info.value_type.is_empty()
+                        && info.value_type != "Any"
+                        && info.value_type != "Mu"
+                        && !self.interpreter.type_matches_value(&info.value_type, &idx)
+                    {
+                        let got_type = crate::value::what_type_name(&idx);
+                        let got_repr = idx.to_string_value();
+                        let msg = format!(
+                            "Type check failed in binding; expected {} but got {} (\"{}\")",
+                            info.value_type, got_type, got_repr,
+                        );
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("message".to_string(), Value::str(msg.clone()));
+                        attrs.insert("operation".to_string(), Value::str_from("bind"));
+                        attrs.insert("got".to_string(), idx.clone());
+                        attrs.insert(
+                            "expected".to_string(),
+                            Value::Package(crate::symbol::Symbol::intern(&info.value_type)),
+                        );
+                        let ex = Value::make_instance(
+                            crate::symbol::Symbol::intern("X::TypeCheck::Binding"),
+                            attrs,
+                        );
+                        let mut err = RuntimeError::new(msg);
+                        err.exception = Some(Box::new(ex));
+                        return Err(err);
+                    }
+                }
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
                     match *container {
                         Value::Hash(ref mut hash) => {

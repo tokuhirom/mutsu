@@ -409,6 +409,10 @@ impl Interpreter {
             Value::Seq(items) | Value::Slip(items) => {
                 self.eval_grep_with_adverb(args.first().cloned(), items.to_vec(), &grep_adverb)
             }
+            Value::Set(..) | Value::Bag(..) | Value::Mix(..) | Value::Hash(..) => {
+                let items = crate::runtime::utils::value_to_list(&target);
+                self.eval_grep_with_adverb(args.first().cloned(), items, &grep_adverb)
+            }
             other => {
                 // Treat any other value as a single-element list for grep
                 self.eval_grep_with_adverb(args.first().cloned(), vec![other], &grep_adverb)

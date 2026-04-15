@@ -950,7 +950,10 @@ impl VM {
                 } else if raw_mode {
                     raw_val
                 } else if name.starts_with('%') {
-                    runtime::coerce_to_hash(raw_val)
+                    // Apply quant-hash (SetHash/BagHash/MixHash) coercion first
+                    // so that typed container assignment sees a Set/Bag/Mix,
+                    // not a Hash with element-level type errors.
+                    self.coerce_hash_var_value(&name, raw_val)?
                 } else if name.starts_with('@') {
                     runtime::coerce_to_array(raw_val)
                 } else {

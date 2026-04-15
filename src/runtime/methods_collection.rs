@@ -6,7 +6,7 @@ impl Interpreter {
         match target {
             Value::Set(_, _) => return Ok(target),
             Value::Array(items, ..) => {
-                for item in items.iter() {
+                fn add_item(elems: &mut HashSet<String>, item: &Value) {
                     match item {
                         Value::Pair(k, v) => {
                             if v.truthy() {
@@ -18,10 +18,30 @@ impl Interpreter {
                                 elems.insert(k.to_string_value());
                             }
                         }
+                        Value::Hash(h) => {
+                            for (k, v) in h.iter() {
+                                if v.truthy() {
+                                    elems.insert(k.clone());
+                                }
+                            }
+                        }
+                        Value::Array(inner, kind) if !kind.is_itemized() => {
+                            for inner_item in inner.iter() {
+                                add_item(elems, inner_item);
+                            }
+                        }
+                        Value::Seq(inner) | Value::Slip(inner) => {
+                            for inner_item in inner.iter() {
+                                add_item(elems, inner_item);
+                            }
+                        }
                         _ => {
                             elems.insert(item.to_string_value());
                         }
                     }
+                }
+                for item in items.iter() {
+                    add_item(&mut elems, item);
                 }
             }
             Value::Hash(items) => {

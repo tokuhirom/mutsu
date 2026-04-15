@@ -228,6 +228,13 @@ impl Interpreter {
                                 elems.insert(k.to_string_value());
                             }
                         }
+                        Value::Hash(h) => {
+                            for (k, v) in h.iter() {
+                                if v.truthy() {
+                                    elems.insert(k.clone());
+                                }
+                            }
+                        }
                         other => {
                             elems.insert(other.to_string_value());
                         }

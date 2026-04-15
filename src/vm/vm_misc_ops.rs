@@ -2437,6 +2437,13 @@ impl VM {
             }
         }
         *self.interpreter.env_mut() = restored_env;
+        // Drop readonly flags for block-declared variables so a later outer
+        // `my` redeclaration of the same name is not marked as readonly by
+        // the now-gone binding (`my %h := SetHash.new(...)` inside a block
+        // must not leave `%h` readonly in the outer scope).
+        for name in &block_declared {
+            self.interpreter.readonly_vars_mut().remove(name);
+        }
         // Note: `our`-scoped variables persist in our_vars and are accessible
         // via package-qualified names (e.g., $Pkg::var) after block exit.
         self.interpreter.pop_lexical_class_scope();
