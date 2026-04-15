@@ -2134,6 +2134,62 @@ impl Interpreter {
             return Ok(result);
         }
 
+        // SetHash.grab / SetHash.grabpairs: remove random elements, mutating the Set
+        if matches!(&target, Value::Set(_, true)) && matches!(method, "grab" | "grabpairs") {
+            // NaN check for grab count
+            if !args.is_empty()
+                && let Value::Num(f) = &args[0]
+                && f.is_nan()
+            {
+                return Err(RuntimeError::new(
+                    "Cannot .grab from a SetHash with NaN elements",
+                ));
+            }
+            let set_data = match &target {
+                Value::Set(s, _) => (**s).clone(),
+                _ => unreachable!(),
+            };
+            let mut elements: Vec<String> = set_data.elements.iter().cloned().collect();
+            let count = if args.is_empty() {
+                1usize
+            } else {
+                match &args[0] {
+                    Value::Whatever => elements.len(),
+                    v => v.to_f64().max(0.0) as usize,
+                }
+            };
+            if elements.is_empty() || count == 0 {
+                if method == "grab" && args.is_empty() {
+                    return Ok(Value::Nil);
+                }
+                return Ok(Value::Seq(Arc::new(Vec::new())));
+            }
+            use crate::builtins::rng::builtin_rand;
+            let mut grabbed = Vec::new();
+            for _ in 0..count {
+                if elements.is_empty() {
+                    break;
+                }
+                let idx = (builtin_rand() * elements.len() as f64) as usize % elements.len();
+                let key = elements.remove(idx);
+                if method == "grabpairs" {
+                    grabbed.push(Value::Pair(key, Box::new(Value::Bool(true))));
+                } else {
+                    grabbed.push(Value::str(key));
+                }
+            }
+            let new_elements: std::collections::HashSet<String> = elements.into_iter().collect();
+            let new_set = Value::Set(Arc::new(crate::value::SetData::new(new_elements)), true);
+            self.env.insert(target_var.to_string(), new_set);
+            return Ok(
+                if grabbed.len() == 1 && args.is_empty() && method == "grab" {
+                    grabbed.into_iter().next().unwrap()
+                } else {
+                    Value::Seq(Arc::new(grabbed))
+                },
+            );
+        }
+
         // BagHash.grab / BagHash.grabpairs: remove random elements, mutating the Bag
         if matches!(&target, Value::Bag(_, true)) && matches!(method, "grab" | "grabpairs") {
             // NaN check for grab/grabpairs count

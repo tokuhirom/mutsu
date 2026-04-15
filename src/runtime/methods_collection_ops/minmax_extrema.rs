@@ -69,6 +69,19 @@ impl Interpreter {
         };
         Ok(match target {
             Value::Array(items, ..) => to_pairs(&items),
+            Value::Set(ref set, ..) => {
+                if set.elements.is_empty() {
+                    Value::Seq(Arc::new(Vec::new()))
+                } else {
+                    // All Set weights are True, so min == max == all elements
+                    let out: Vec<Value> = set
+                        .elements
+                        .iter()
+                        .map(|k| Value::Pair(k.clone(), Box::new(Value::Bool(true))))
+                        .collect();
+                    Value::Seq(Arc::new(out))
+                }
+            }
             Value::Bag(ref bag, ..) => {
                 if bag.is_empty() {
                     Value::Seq(Arc::new(Vec::new()))

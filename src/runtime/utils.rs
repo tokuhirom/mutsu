@@ -2140,6 +2140,13 @@ pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
                             set.insert(k.clone());
                         }
                     }
+                    Value::Hash(h) => {
+                        for (k, v) in h.iter() {
+                            if v.truthy() {
+                                set.insert(k.clone());
+                            }
+                        }
+                    }
                     other => {
                         set.insert(other.to_string_value());
                     }

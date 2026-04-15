@@ -1332,7 +1332,12 @@ pub(crate) fn native_method_1arg(
             } else if let Value::Set(items, _) = target {
                 let rendered = items
                     .iter()
-                    .map(|k| runtime::format_sprintf_args(&fmt, &[Value::str(k.clone())]))
+                    .map(|k| {
+                        runtime::format_sprintf_args(
+                            &fmt,
+                            &[Value::str(k.clone()), Value::Bool(true)],
+                        )
+                    })
                     .collect::<Vec<_>>()
                     .join("\n");
                 Some(Ok(Value::str(rendered)))
@@ -1873,10 +1878,9 @@ pub(crate) fn native_method_1arg(
         "grab" | "grabpairs" => match target {
             Value::Bag(_, false) => Some(Err(RuntimeError::immutable("Bag", method))),
             Value::Set(_, false) => Some(Err(RuntimeError::immutable("Set", method))),
-            Value::Set(_, true) => Some(Err(RuntimeError::immutable("SetHash", method))),
             Value::Mix(_, false) => Some(Err(RuntimeError::immutable("Mix", method))),
             // NaN check for grab/grabpairs on mutable types
-            Value::Bag(_, true) | Value::Mix(_, true) if matches!(arg, Value::Num(f) if f.is_nan()) => {
+            Value::Set(_, true) | Value::Bag(_, true) | Value::Mix(_, true) if matches!(arg, Value::Num(f) if f.is_nan()) => {
                 Some(Err(RuntimeError::new("Cannot convert NaN to Int")))
             }
             _ => None,
@@ -2702,7 +2706,12 @@ pub(crate) fn native_method_2arg(
             } else if let Value::Set(items, _) = target {
                 let rendered = items
                     .iter()
-                    .map(|k| runtime::format_sprintf_args(&fmt_str, &[Value::str(k.clone())]))
+                    .map(|k| {
+                        runtime::format_sprintf_args(
+                            &fmt_str,
+                            &[Value::str(k.clone()), Value::Bool(true)],
+                        )
+                    })
                     .collect::<Vec<_>>()
                     .join(&sep);
                 Some(Ok(Value::str(rendered)))

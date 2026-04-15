@@ -1673,8 +1673,57 @@ impl Interpreter {
                             add_item(&mut elems, &mut original_keys, &mut has_non_str_keys, arg);
                         }
                     }
+                    // Type check for parameterized Set/SetHash (e.g. SetHash[Int].new(<a b c>))
+                    if let Some(ref ta) = type_args
+                        && let Some(constraint) = ta.first()
+                        && constraint.starts_with(char::is_uppercase)
+                        && constraint != "Any"
+                        && constraint != "Mu"
+                    {
+                        // Collect the items that will actually be added, for type checking
+                        let items_to_check: Vec<Value> = if args.len() == 1 {
+                            let arg = &args[0];
+                            if matches!(arg, Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _))
+                            {
+                                vec![arg.clone()]
+                            } else {
+                                Self::value_to_list(arg)
+                            }
+                        } else {
+                            args.clone()
+                        };
+                        for item in &items_to_check {
+                            let check_val = match item {
+                                Value::Pair(_, v) => v.as_ref(),
+                                other => other,
+                            };
+                            if !self.type_matches_value(constraint, check_val) {
+                                let got_type = crate::value::what_type_name(check_val);
+                                let got_repr = check_val.to_string_value();
+                                let msg = format!(
+                                    "Type check failed in binding; expected {} but got {} (\"{}\")",
+                                    constraint, got_type, got_repr,
+                                );
+                                let mut attrs = std::collections::HashMap::new();
+                                attrs.insert("message".to_string(), Value::str(msg.clone()));
+                                attrs.insert("operation".to_string(), Value::str_from("bind"));
+                                attrs.insert("got".to_string(), check_val.clone());
+                                attrs.insert(
+                                    "expected".to_string(),
+                                    Value::Package(Symbol::intern(constraint)),
+                                );
+                                let ex = Value::make_instance(
+                                    Symbol::intern("X::TypeCheck::Binding"),
+                                    attrs,
+                                );
+                                let mut err = RuntimeError::new(msg);
+                                err.exception = Some(Box::new(ex));
+                                return Err(err);
+                            }
+                        }
+                    }
                     let is_mutable = base_class_name == "SetHash";
-                    return Ok(if has_non_str_keys {
+                    let result = if has_non_str_keys {
                         if is_mutable {
                             Value::set_hash_typed(elems, original_keys)
                         } else {
@@ -1684,7 +1733,19 @@ impl Interpreter {
                         Value::set_hash(elems)
                     } else {
                         Value::set(elems)
-                    });
+                    };
+                    // Register type metadata for parameterized SetHash[T]
+                    if let Some(ref ta) = type_args
+                        && let Some(constraint) = ta.first()
+                    {
+                        let info = crate::runtime::ContainerTypeInfo {
+                            value_type: constraint.clone(),
+                            key_type: Some(constraint.clone()),
+                            declared_type: Some(class_name.resolve()),
+                        };
+                        self.register_container_type_metadata(&result, info);
+                    }
+                    return Ok(result);
                 }
                 "Bag" | "BagHash" => {
                     // Check for lazy inputs
