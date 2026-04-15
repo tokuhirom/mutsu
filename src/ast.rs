@@ -4,6 +4,13 @@ use crate::value::Value;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
+/// Default value for `IndexAssign.is_positional` when the field is missing
+/// from a serialized AST. Most legacy IndexAssign nodes were created from
+/// positional subscripts, so `true` is the safe default.
+fn default_is_positional() -> bool {
+    true
+}
+
 /// Specifies how delegation (`handles`) should forward methods.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) enum HandleSpec {
@@ -270,6 +277,13 @@ pub(crate) enum Expr {
         target: Box<Expr>,
         index: Box<Expr>,
         value: Box<Expr>,
+        /// true when the assigned subscript was `[...]` (positional);
+        /// false when `{...}` / `<...>` (associative). Used to choose
+        /// the autovivification kind (Array vs Hash) for missing
+        /// intermediate containers in nested writes like
+        /// `%h<key>[42] = 17`.
+        #[serde(default = "default_is_positional")]
+        is_positional: bool,
     },
     Ternary {
         cond: Box<Expr>,

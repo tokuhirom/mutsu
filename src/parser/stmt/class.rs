@@ -182,6 +182,7 @@ fn expr_uses_attr_twigil(expr: &Expr) -> bool {
             target,
             index,
             value,
+            ..
         } => {
             expr_uses_attr_twigil(target)
                 || expr_uses_attr_twigil(index)

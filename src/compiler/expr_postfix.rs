@@ -192,6 +192,7 @@ impl Compiler {
                 target: target.clone(),
                 index: index.clone(),
                 value: Box::new(Expr::Var(tmp_val)),
+                is_positional: true,
             };
             self.compile_expr(&assign_expr);
             self.code.emit(OpCode::Pop);
@@ -240,6 +241,7 @@ impl Compiler {
                 target: target.clone(),
                 index: index.clone(),
                 value: Box::new(Expr::Var(tmp_val)),
+                is_positional: true,
             };
             self.compile_expr(&assign_expr);
             self.code.emit(OpCode::Pop);

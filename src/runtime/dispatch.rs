@@ -1468,10 +1468,12 @@ impl Interpreter {
                 target,
                 index,
                 value,
+                is_positional,
             } => Expr::IndexAssign {
                 target: Box::new(Self::rewrite_proto_dispatch_expr(target)),
                 index: Box::new(Self::rewrite_proto_dispatch_expr(index)),
                 value: Box::new(Self::rewrite_proto_dispatch_expr(value)),
+                is_positional: *is_positional,
             },
             Expr::AssignExpr { name, expr } => Expr::AssignExpr {
                 name: name.clone(),

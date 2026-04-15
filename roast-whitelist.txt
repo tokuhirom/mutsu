@@ -476,6 +476,7 @@ roast/S07-iterationbuffer/iterationbuffer.t
 roast/S07-iterators/range-iterator.t
 roast/S07-slip/slip.t
 roast/S09-autovivification/autoincrement.t
+roast/S09-autovivification/autovivification.t
 roast/S09-multidim/XX-POS-on-undimensioned.t
 roast/S09-multidim/assign.t
 roast/S09-multidim/decl.t

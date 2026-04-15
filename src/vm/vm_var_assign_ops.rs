@@ -1157,6 +1157,7 @@ impl VM {
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        is_positional: bool,
     ) -> Result<(), RuntimeError> {
         let original_var_name = Self::const_str(code, name_idx).to_string();
         // Resolve sigilless alias: if `h` is a sigilless alias for `%a`,
@@ -1750,17 +1751,42 @@ impl VM {
                             }
                         }
                         _ => {
-                            let mut hash = std::collections::HashMap::new();
-                            hash.insert(key.clone(), val.clone());
-                            *container = Value::hash(hash);
+                            // Autovivify Nil/uninitialized container: pick
+                            // Array if subscript was positional, else Hash.
+                            if (var_name.starts_with('@')
+                                || (is_positional && !var_name.starts_with('%')))
+                                && let Some(i) = Self::index_to_usize(&idx)
+                            {
+                                let mut arr = vec![Value::Package(Symbol::intern("Any")); i + 1];
+                                arr[i] = val.clone();
+                                *container = Value::real_array(arr);
+                            } else {
+                                let mut hash = std::collections::HashMap::new();
+                                hash.insert(key.clone(), val.clone());
+                                *container = Value::hash(hash);
+                            }
                         }
                     }
                 } else {
-                    let mut hash = std::collections::HashMap::new();
-                    hash.insert(key.clone(), val.clone());
-                    self.interpreter
-                        .env_mut()
-                        .insert(var_name.clone(), Value::hash(hash));
+                    // Autovivify the missing variable: Array if the subscript
+                    // was positional `[...]` (and the var is not %-sigiled),
+                    // otherwise Hash. Sigil-bearing variables (`@x`, `%h`)
+                    // always honour their sigil.
+                    if (var_name.starts_with('@') || (is_positional && !var_name.starts_with('%')))
+                        && let Some(i) = Self::index_to_usize(&idx)
+                    {
+                        let mut arr = vec![Value::Package(Symbol::intern("Any")); i + 1];
+                        arr[i] = val.clone();
+                        self.interpreter
+                            .env_mut()
+                            .insert(var_name.clone(), Value::real_array(arr));
+                    } else {
+                        let mut hash = std::collections::HashMap::new();
+                        hash.insert(key.clone(), val.clone());
+                        self.interpreter
+                            .env_mut()
+                            .insert(var_name.clone(), Value::hash(hash));
+                    }
                 }
                 if let Some((source_name, source_value)) = pending_source_update {
                     self.interpreter.env_mut().insert(source_name, source_value);
@@ -1901,6 +1927,8 @@ impl VM {
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        outer_positional: bool,
+        inner_positional: bool,
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
         let inner_idx = self.stack.pop().unwrap_or(Value::Nil);
@@ -1939,34 +1967,64 @@ impl VM {
         }
 
         if !self.interpreter.env().contains_key(&var_name) {
-            self.interpreter.env_mut().insert(
-                var_name.clone(),
-                Value::hash(std::collections::HashMap::new()),
-            );
+            // Autovivify the variable as Array if the inner subscript was
+            // positional (`[...]`), otherwise as Hash. For sigiled vars
+            // (`@x`, `%h`) the sigil already constrains the kind, so this
+            // mainly matters for scalar `$x` autoviv.
+            let init = if var_name.starts_with('@') {
+                Value::real_array(Vec::new())
+            } else if var_name.starts_with('%') {
+                Value::hash(std::collections::HashMap::new())
+            } else if inner_positional {
+                Value::real_array(Vec::new())
+            } else {
+                Value::hash(std::collections::HashMap::new())
+            };
+            self.interpreter.env_mut().insert(var_name.clone(), init);
         }
 
-        // Handle Array-in-Array: $a[outer][inner] = val
+        // Handle Array-as-outer-container (e.g. `@array[42][23] = 17`,
+        // `@array[42]<key> = 17`). `inner_key` is the first/closer subscript
+        // value (here "42"). `outer_key` is the outermost subscript value
+        // (here "23" or "key"). We autovivify the missing entry at
+        // `inner_i` based on `outer_positional`.
         if let Some(Value::Array(outer_arr, _kind)) = self.interpreter.env_mut().get_mut(&var_name)
-            && let Ok(outer_i) = outer_key.parse::<usize>()
+            && let Ok(inner_i) = inner_key.parse::<usize>()
         {
             let arr = Arc::make_mut(outer_arr);
-            if outer_i < arr.len()
-                && let Value::Array(ref mut inner_arr, _) = arr[outer_i]
-                && let Ok(inner_i) = inner_key.parse::<usize>()
-            {
-                let inner = Arc::make_mut(inner_arr);
-                if inner_i < inner.len() {
-                    inner[inner_i] = val.clone();
-                } else {
-                    inner.resize(inner_i + 1, Value::Nil);
-                    inner[inner_i] = val.clone();
-                }
-                if let Some(updated) = self.get_env_with_main_alias(&var_name) {
-                    self.update_local_if_exists(code, &var_name, &updated);
-                }
-                self.stack.push(val);
-                return Ok(());
+            if inner_i >= arr.len() {
+                arr.resize(inner_i + 1, Value::Package(Symbol::intern("Any")));
             }
+            // Autovivify the slot if it's not already a container.
+            let needs_viv = !matches!(&arr[inner_i], Value::Array(..) | Value::Hash(..));
+            if needs_viv {
+                arr[inner_i] = if outer_positional {
+                    Value::real_array(Vec::new())
+                } else {
+                    Value::hash(std::collections::HashMap::new())
+                };
+            }
+            match &mut arr[inner_i] {
+                Value::Array(inner_arr, _) => {
+                    if let Ok(j) = outer_key.parse::<usize>() {
+                        let inner = Arc::make_mut(inner_arr);
+                        if j >= inner.len() {
+                            inner.resize(j + 1, Value::Package(Symbol::intern("Any")));
+                        }
+                        inner[j] = val.clone();
+                    }
+                }
+                Value::Hash(inner_hash) => {
+                    let h = Arc::make_mut(inner_hash);
+                    h.insert(outer_key.clone(), val.clone());
+                }
+                _ => {}
+            }
+            if let Some(updated) = self.get_env_with_main_alias(&var_name) {
+                self.update_local_if_exists(code, &var_name, &updated);
+            }
+            self.stack.push(val);
+            return Ok(());
         }
 
         // Hash-based nested assignment (Hash-in-Hash or Hash-containing-Array)
@@ -1978,9 +2036,15 @@ impl VM {
         }
         if let Some(Value::Hash(outer_hash)) = self.interpreter.env_mut().get_mut(&var_name) {
             let oh = Arc::make_mut(outer_hash);
-            let inner_val = oh
-                .entry(inner_key)
-                .or_insert_with(|| Value::hash(std::collections::HashMap::new()));
+            // Vivify the missing entry as Array if the OUTER (second) subscript
+            // is positional (e.g. `%h<key>[42] = ...`), otherwise as Hash.
+            let inner_val = oh.entry(inner_key).or_insert_with(|| {
+                if outer_positional {
+                    Value::real_array(Vec::new())
+                } else {
+                    Value::hash(std::collections::HashMap::new())
+                }
+            });
             match inner_val {
                 Value::Array(arr, _) => {
                     // Hash-containing-Array: $hash<key>[idx] = val

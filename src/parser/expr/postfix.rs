@@ -768,7 +768,7 @@ fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) -> Expr) -> E
         Expr::Index {
             target: idx_target,
             index,
-            ..
+            is_positional,
         } => {
             use std::sync::atomic::Ordering;
             let tmp_idx = format!(
@@ -779,7 +779,7 @@ fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) -> Expr) -> E
             let lhs_expr = Expr::Index {
                 target: idx_target.clone(),
                 index: Box::new(tmp_idx_expr.clone()),
-                is_positional: false,
+                is_positional: *is_positional,
             };
             let assigned_value = method_call_fn(lhs_expr);
             Expr::DoBlock {
@@ -800,6 +800,7 @@ fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) -> Expr) -> E
                         target: idx_target.clone(),
                         index: Box::new(tmp_idx_expr),
                         value: Box::new(assigned_value),
+                        is_positional: *is_positional,
                     }),
                 ],
                 label: None,

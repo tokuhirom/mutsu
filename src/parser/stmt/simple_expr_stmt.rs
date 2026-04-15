@@ -313,10 +313,15 @@ fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stmt> {
             expr: extracted_rhs,
             op: AssignOp::Assign,
         },
-        Expr::Index { target, index, .. } => Stmt::Expr(Expr::IndexAssign {
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+        } => Stmt::Expr(Expr::IndexAssign {
             target,
             index,
             value: Box::new(extracted_rhs),
+            is_positional,
         }),
         _ => return None,
     })
@@ -549,6 +554,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                             target,
                             index: Box::new(tmp_idx_expr),
                             value: Box::new(assigned_value),
+                            is_positional: true,
                         }),
                     ],
                     label: None,
@@ -648,6 +654,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                             target,
                             index: Box::new(tmp_idx_expr),
                             value: Box::new(assigned_value),
+                            is_positional: true,
                         }),
                     ],
                     label: None,
@@ -698,7 +705,12 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             });
             return parse_statement_modifier(rest, stmt);
         }
-        if let Expr::Index { target, index, .. } = expr {
+        if let Expr::Index {
+            target,
+            index,
+            is_positional,
+        } = expr
+        {
             if let Expr::Call { name, args } = target.as_ref()
                 && name == "__mutsu_subscript_adverb"
                 && args.len() >= 3
@@ -709,6 +721,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     target: Box::new(args[0].clone()),
                     index: Box::new(args[1].clone()),
                     value: Box::new(value),
+                    is_positional,
                 });
                 return parse_statement_modifier(rest, stmt);
             }
@@ -716,11 +729,16 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 target,
                 index,
                 value: Box::new(value),
+                is_positional,
             });
             return parse_statement_modifier(rest, stmt);
         }
     }
-    if let Expr::Index { target, index, .. } = expr.clone()
+    if let Expr::Index {
+        target,
+        index,
+        is_positional,
+    } = expr.clone()
         && let Some(rest) = parse_hyper_assign_op(rest)
     {
         let (rest, _) = ws(rest)?;
@@ -736,6 +754,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             target,
             index,
             value: Box::new(value),
+            is_positional,
         });
         return parse_statement_modifier(rest, stmt);
     }
@@ -756,11 +775,16 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             args: vec![value, source_meta],
         };
         match expr {
-            Expr::Index { target, index, .. } => {
+            Expr::Index {
+                target,
+                index,
+                is_positional,
+            } => {
                 let stmt = Stmt::Expr(Expr::IndexAssign {
                     target,
                     index,
                     value: Box::new(bind_value),
+                    is_positional,
                 });
                 return parse_statement_modifier(rest, stmt);
             }
@@ -771,6 +795,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     target,
                     index: Box::new(Expr::ArrayLiteral(dimensions)),
                     value: Box::new(bind_value),
+                    is_positional: true,
                 });
                 return parse_statement_modifier(rest, stmt);
             }
@@ -942,6 +967,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     target: target.clone(),
                     index: Box::new(args[0].clone()),
                     value: Box::new(rhs),
+                    is_positional: true,
                 }
             } else {
                 let target_var_name = match target.as_ref() {
@@ -1267,6 +1293,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                         target: target.clone(),
                         index: Box::new(tmp_idx_expr),
                         value: Box::new(assigned_value),
+                        is_positional: true,
                     }),
                 ],
                 label: None,

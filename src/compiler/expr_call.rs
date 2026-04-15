@@ -93,7 +93,10 @@ impl Compiler {
 
             self.code.emit(OpCode::GetGlobal(tmp_target_idx));
             self.compile_expr(index_key);
-            self.code.emit(OpCode::IndexAssignExprNamed(var_name_idx));
+            self.code.emit(OpCode::IndexAssignExprNamed {
+                name_idx: var_name_idx,
+                is_positional: true,
+            });
             self.code.emit(OpCode::Pop);
             self.code.emit(OpCode::GetGlobal(tmp_result_idx));
             return;
@@ -189,6 +192,7 @@ impl Compiler {
                         target: target.clone(),
                         index: index.clone(),
                         value: Box::new(Expr::Literal(Value::Nil)),
+                        is_positional: true,
                     };
                     self.compile_expr(&assign_expr);
                 }
@@ -234,14 +238,58 @@ impl Compiler {
             ) && args.len() >= 2
                 || name.resolve().as_str() == "splice")
         {
-            let method_call = Expr::MethodCall {
-                target: Box::new(args[0].clone()),
-                name: *name,
-                args: args[1..].to_vec(),
-                modifier: None,
-                quoted: false,
-            };
-            self.compile_expr(&method_call);
+            // Autovivification: when the first arg is an `Expr::Index` referring
+            // to a missing slot (e.g. `push @array[2], ...` / `push %h<key>, ...`),
+            // we must create an Array in that slot before the method call.
+            // Rewrite as `<slot> = <slot> // []; <slot>.method(args)`.
+            if let Expr::Index { .. } = &args[0]
+                && matches!(
+                    name.resolve().as_str(),
+                    "push" | "unshift" | "append" | "prepend"
+                )
+            {
+                let slot = args[0].clone();
+                let viv_assign = Expr::IndexAssign {
+                    target: match &slot {
+                        Expr::Index { target, .. } => target.clone(),
+                        _ => unreachable!(),
+                    },
+                    index: match &slot {
+                        Expr::Index { index, .. } => index.clone(),
+                        _ => unreachable!(),
+                    },
+                    value: Box::new(Expr::Binary {
+                        left: Box::new(slot.clone()),
+                        op: TokenKind::SlashSlash,
+                        right: Box::new(Expr::BracketArray(Vec::new(), false)),
+                    }),
+                    is_positional: match &slot {
+                        Expr::Index { is_positional, .. } => *is_positional,
+                        _ => true,
+                    },
+                };
+                let method_call = Expr::MethodCall {
+                    target: Box::new(slot),
+                    name: *name,
+                    args: args[1..].to_vec(),
+                    modifier: None,
+                    quoted: false,
+                };
+                let do_block = Expr::DoBlock {
+                    body: vec![Stmt::Expr(viv_assign), Stmt::Expr(method_call)],
+                    label: None,
+                };
+                self.compile_expr(&do_block);
+            } else {
+                let method_call = Expr::MethodCall {
+                    target: Box::new(args[0].clone()),
+                    name: *name,
+                    args: args[1..].to_vec(),
+                    modifier: None,
+                    quoted: false,
+                };
+                self.compile_expr(&method_call);
+            }
         }
         // sink: evaluate the expression (including calling blocks), discard result, push Nil
         else if name == "sink" && args.len() == 1 {
@@ -349,6 +397,7 @@ impl Compiler {
                         target: target.clone(),
                         index: index.clone(),
                         value: Box::new(args[2].clone()),
+                        is_positional: true,
                     })),
                     _ => None,
                 };

@@ -151,6 +151,7 @@ impl Interpreter {
                     target,
                     index,
                     value,
+                    ..
                 } => {
                     expr_contains_last(target)
                         || expr_contains_last(index)

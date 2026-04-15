@@ -3111,6 +3111,7 @@ impl Interpreter {
                 target,
                 index,
                 value,
+                ..
             } => {
                 Self::validate_attr_in_expr(class_own_attrs, target)?;
                 Self::validate_attr_in_expr(class_own_attrs, index)?;

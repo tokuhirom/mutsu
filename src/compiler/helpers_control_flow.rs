@@ -151,6 +151,7 @@ impl Compiler {
                     target,
                     index,
                     value,
+                    ..
                 } => {
                     expr_mutates_topic(target)
                         || expr_mutates_topic(index)

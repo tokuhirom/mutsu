@@ -626,6 +626,7 @@ fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Option<Expr> {
                     target: Box::new(base_target),
                     index: Box::new(base_index),
                     value: Box::new(rhs),
+                    is_positional: true,
                 });
             }
             None
@@ -642,6 +643,7 @@ fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Option<Expr> {
                 target: Box::new(base_target),
                 index: Box::new(base_index),
                 value: Box::new(rhs),
+                is_positional: true,
             })
         }
         _ => None,
@@ -679,10 +681,15 @@ fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Expr> {
             name: format!("%{}", name),
             expr: Box::new(rhs),
         }),
-        Expr::Index { target, index, .. } => Some(Expr::IndexAssign {
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+        } => Some(Expr::IndexAssign {
             target,
             index,
             value: Box::new(rhs),
+            is_positional,
         }),
         _ => None,
     }
@@ -761,6 +768,7 @@ where
                 target: Box::new(target),
                 index: Box::new(tmp_idx_expr.clone()),
                 value: Box::new(assigned_value),
+                is_positional: true,
             }),
         ],
         label: None,
@@ -1005,6 +1013,7 @@ fn build_meta_assign_expr(lhs: Expr, meta: String, op: String, rhs: Expr) -> Res
                     left: Box::new(lhs_expr),
                     right: Box::new(rhs),
                 }),
+                is_positional: true,
             }
         }
         _ => return Err(PError::expected("assignment expression")),
@@ -1027,6 +1036,7 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                 target,
                 index,
                 value,
+                is_positional,
             } = inner_assign
             {
                 let mut items = vec![*value];
@@ -1050,6 +1060,7 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                         target,
                         index,
                         value: Box::new(Expr::ArrayLiteral(items)),
+                        is_positional,
                     },
                 ));
             } else if let Expr::AssignExpr { name, expr } = inner_assign {
@@ -1173,10 +1184,15 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                 name: format!("%{}", name),
                 expr: Box::new(rhs),
             },
-            Expr::Index { target, index, .. } => Expr::IndexAssign {
+            Expr::Index {
+                target,
+                index,
+                is_positional,
+            } => Expr::IndexAssign {
                 target,
                 index,
                 value: Box::new(rhs),
+                is_positional,
             },
             Expr::MultiDimIndex { target, dimensions } => Expr::MultiDimIndexAssign {
                 target,
@@ -1246,10 +1262,15 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
             name: format!("%{}", name),
             expr: Box::new(rhs),
         },
-        Expr::Index { target, index, .. } => Expr::IndexAssign {
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+        } => Expr::IndexAssign {
             target,
             index,
             value: Box::new(rhs),
+            is_positional,
         },
         Expr::MultiDimIndex { target, dimensions } => Expr::MultiDimIndexAssign {
             target,
@@ -1268,6 +1289,7 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                     target,
                     index: Box::new(args[0].clone()),
                     value: Box::new(rhs),
+                    is_positional: true,
                 }
             } else {
                 let target_var_name = match target.as_ref() {
@@ -1447,6 +1469,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     target: Box::new(target),
                     index: Box::new(index_expr),
                     value: Box::new(rhs),
+                    is_positional: true,
                 },
             ));
         }
@@ -1475,6 +1498,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     target: Box::new(target),
                     index: Box::new(index_expr),
                     value: Box::new(rhs),
+                    is_positional: true,
                 },
             ));
         }

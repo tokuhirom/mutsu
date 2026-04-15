@@ -436,6 +436,7 @@ impl Interpreter {
                 target,
                 index,
                 value,
+                ..
             } => {
                 self.validate_private_access_in_expr(caller_class, target)?;
                 self.validate_private_access_in_expr(caller_class, index)?;

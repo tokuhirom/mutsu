@@ -137,7 +137,10 @@ impl Compiler {
                 self.code.emit(OpCode::SetGlobal(tmp_result_idx));
                 self.code.emit(OpCode::GetGlobal(tmp_target_idx));
                 self.compile_expr(idx_key);
-                self.code.emit(OpCode::IndexAssignExprNamed(var_name_idx));
+                self.code.emit(OpCode::IndexAssignExprNamed {
+                    name_idx: var_name_idx,
+                    is_positional: true,
+                });
                 self.code.emit(OpCode::Pop);
                 self.code.emit(OpCode::GetGlobal(tmp_result_idx));
             } else {
@@ -155,7 +158,10 @@ impl Compiler {
                 });
                 self.compile_expr(idx_key);
                 let var_name_idx = self.code.add_constant(Value::str(var_name));
-                self.code.emit(OpCode::IndexAssignExprNamed(var_name_idx));
+                self.code.emit(OpCode::IndexAssignExprNamed {
+                    name_idx: var_name_idx,
+                    is_positional: true,
+                });
             }
         } else {
             unreachable!()
