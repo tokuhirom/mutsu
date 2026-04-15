@@ -201,7 +201,16 @@ impl Compiler {
     }
 
     /// Compile IndexAssign expression.
-    pub(super) fn compile_expr_index_assign(&mut self, target: &Expr, index: &Expr, value: &Expr) {
+    /// `outer_positional` is the `is_positional` flag of the outermost
+    /// subscript (i.e. `[...]` vs `{...}`/`<...>`), preserved from the
+    /// `IndexAssign` AST node.
+    pub(super) fn compile_expr_index_assign(
+        &mut self,
+        target: &Expr,
+        index: &Expr,
+        value: &Expr,
+        outer_positional: bool,
+    ) {
         if let Expr::BareWord(name) = target
             && name == "s"
             && let Some(pattern) = Self::topic_subst_pattern_from_index(index)
@@ -249,13 +258,25 @@ impl Compiler {
             self.compile_expr(value);
             self.compile_expr(index);
             let name_idx = self.code.add_constant(Value::str(name));
-            self.code.emit(OpCode::IndexAssignExprNamed(name_idx));
-        } else if let Some((name, inner_index)) = Self::index_assign_nested_target(target) {
+            self.code.emit(OpCode::IndexAssignExprNamed {
+                name_idx,
+                is_positional: outer_positional,
+            });
+        } else if let Some((name, inner_index, inner_positional)) =
+            Self::index_assign_nested_target(target)
+        {
+            // `outer_positional` (the outermost subscript flag) is passed in
+            // from the IndexAssign AST node. `inner_positional` is the inner
+            // Index node's flag (the subscript closer to the variable).
             self.compile_expr(value);
             self.compile_expr(index);
             self.compile_expr(inner_index);
             let name_idx = self.code.add_constant(Value::str(name));
-            self.code.emit(OpCode::IndexAssignExprNested(name_idx));
+            self.code.emit(OpCode::IndexAssignExprNested {
+                name_idx,
+                outer_positional,
+                inner_positional,
+            });
         } else if let Expr::MethodCall {
             target: method_target,
             name: method_name,
@@ -284,7 +305,10 @@ impl Compiler {
             self.compile_expr(value);
             self.compile_expr(index);
             let name_idx = self.code.add_constant(Value::str(arr_name));
-            self.code.emit(OpCode::IndexAssignExprNamed(name_idx));
+            self.code.emit(OpCode::IndexAssignExprNamed {
+                name_idx,
+                is_positional: outer_positional,
+            });
         } else {
             // Generic fallback: compile target, then index, then value
             // and emit IndexAssignGeneric to do runtime assignment.

@@ -386,8 +386,9 @@ impl Compiler {
                 target,
                 index,
                 value,
+                is_positional,
             } => {
-                self.compile_expr_index_assign(target, index, value);
+                self.compile_expr_index_assign(target, index, value, *is_positional);
             }
             // Multi-dimensional index assignment: @a[$x;$y;$z] = value
             Expr::MultiDimIndexAssign {

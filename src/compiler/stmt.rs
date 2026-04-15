@@ -1929,6 +1929,7 @@ impl Compiler {
                             target: Box::new(target_expr),
                             index: Box::new(index.as_ref().unwrap().as_ref().clone()),
                             value: Box::new(val_expr.as_ref().clone()),
+                            is_positional: true,
                         };
                         self.compile_expr(&assign_expr);
                         self.code.emit(OpCode::Pop);

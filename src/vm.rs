@@ -2136,8 +2136,11 @@ impl VM {
                 self.exec_post_decrement_index_op(code, *name_idx)?;
                 *ip += 1;
             }
-            OpCode::IndexAssignExprNamed(name_idx) => {
-                self.exec_index_assign_expr_named_op(code, *name_idx)?;
+            OpCode::IndexAssignExprNamed {
+                name_idx,
+                is_positional,
+            } => {
+                self.exec_index_assign_expr_named_op(code, *name_idx, *is_positional)?;
                 *ip += 1;
             }
             OpCode::IndexAssignPseudoStashNamed {
@@ -2147,8 +2150,17 @@ impl VM {
                 self.exec_index_assign_pseudo_stash_named_op(code, *stash_name_idx, *key_name_idx)?;
                 *ip += 1;
             }
-            OpCode::IndexAssignExprNested(name_idx) => {
-                self.exec_index_assign_expr_nested_op(code, *name_idx)?;
+            OpCode::IndexAssignExprNested {
+                name_idx,
+                outer_positional,
+                inner_positional,
+            } => {
+                self.exec_index_assign_expr_nested_op(
+                    code,
+                    *name_idx,
+                    *outer_positional,
+                    *inner_positional,
+                )?;
                 *ip += 1;
             }
 

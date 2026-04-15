@@ -377,6 +377,7 @@ fn expr_contains_whatever(expr: &Expr) -> bool {
             target,
             index,
             value,
+            ..
         } => {
             expr_contains_whatever(target)
                 || expr_contains_whatever(index)

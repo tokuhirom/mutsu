@@ -449,7 +449,14 @@ pub(crate) enum OpCode {
     PostDecrement(u32),
     PostIncrementIndex(u32),
     PostDecrementIndex(u32),
-    IndexAssignExprNamed(u32),
+    /// Named index assignment: `var[idx] = value` where `var` is a known
+    /// variable name. `is_positional` records whether the subscript was
+    /// `[...]` (positional) or `{...}`/`<...>` (associative); used to
+    /// choose Array vs Hash when autovivifying a missing variable.
+    IndexAssignExprNamed {
+        name_idx: u32,
+        is_positional: bool,
+    },
     IndexAssignPseudoStashNamed {
         stash_name_idx: u32,
         key_name_idx: u32,
@@ -459,7 +466,16 @@ pub(crate) enum OpCode {
     AssignExpr(u32),
     /// Assignment as expression for local variable (indexed slot)
     AssignExprLocal(u32),
-    IndexAssignExprNested(u32),
+    /// Nested index assignment: `var[outer][inner] = value` (sigil included in name).
+    /// `outer_positional` is true if the outer subscript was `[...]` (positional),
+    /// false if `{...}` / `<...>` (associative). `inner_positional` is the same
+    /// for the inner subscript. Used to decide autovivification kind
+    /// (Array vs Hash) for missing intermediate containers.
+    IndexAssignExprNested {
+        name_idx: u32,
+        outer_positional: bool,
+        inner_positional: bool,
+    },
     /// Generic index assignment on a stack-computed target.
     /// Stack: [target, index, value] → assigns value to target[index].
     /// Supports callframe .my hash writeback for dynamic variables.

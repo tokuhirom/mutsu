@@ -446,7 +446,11 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 expr: Box::new(rhs),
             },
         )),
-        Expr::Index { target, index, .. } => {
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+        } => {
             if let Expr::Call { name, args } = target.as_ref()
                 && name == "__mutsu_subscript_adverb"
                 && args.len() >= 3
@@ -459,6 +463,7 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                         target: Box::new(args[0].clone()),
                         index: Box::new(args[1].clone()),
                         value: Box::new(rhs),
+                        is_positional,
                     },
                 ));
             }
@@ -468,6 +473,7 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                     target,
                     index,
                     value: Box::new(rhs),
+                    is_positional,
                 },
             ))
         }
@@ -561,10 +567,15 @@ fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             name: format!("%{}", name),
             expr: Box::new(value),
         },
-        Expr::Index { target, index, .. } => Expr::IndexAssign {
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+        } => Expr::IndexAssign {
             target,
             index,
             value: Box::new(value),
+            is_positional,
         },
         Expr::MultiDimIndex { target, dimensions } => Expr::MultiDimIndexAssign {
             target,
@@ -666,6 +677,7 @@ fn build_compound_assign_target_expr(target: Expr, op_name: &str, value: Expr) -
                 target,
                 index,
                 value: Box::new(compound_assigned_value_expr(lhs_expr, op, value)),
+                is_positional: true,
             }
         }
         Expr::MultiDimIndex { target, dimensions } => {
@@ -746,10 +758,15 @@ fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Expr> {
             name: format!("%{}", name),
             expr: Box::new(rhs),
         }),
-        Expr::Index { target, index, .. } => Some(Expr::IndexAssign {
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+        } => Some(Expr::IndexAssign {
             target,
             index,
             value: Box::new(rhs),
+            is_positional,
         }),
         _ => None,
     }
@@ -1658,10 +1675,15 @@ fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
             name: format!("&{}", name),
             expr: Box::new(source),
         },
-        Expr::Index { target, index, .. } => Expr::IndexAssign {
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+        } => Expr::IndexAssign {
             target,
             index,
             value: Box::new(source),
+            is_positional,
         },
         Expr::MultiDimIndex { target, dimensions } => Expr::MultiDimIndexAssign {
             target,
@@ -1732,6 +1754,7 @@ fn build_append_feed_expr(source: Expr, sink: Expr) -> Expr {
                     name: Symbol::intern("__mutsu_feed_append"),
                     args: vec![current, source],
                 }),
+                is_positional: true,
             }
         }
         Expr::Whatever => Expr::Call {

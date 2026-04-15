@@ -124,15 +124,21 @@ impl Compiler {
         None
     }
 
-    pub(super) fn index_assign_nested_target(target: &Expr) -> Option<(String, &Expr)> {
+    /// Returns (var_name, inner_index_expr, inner_positional) for a nested
+    /// index target like `$x[outer][inner]` / `%h<outer>[inner]` etc.
+    /// `inner_positional` is the `is_positional` flag of the inner Index node
+    /// (the one closer to the variable), e.g. for `%h<key>[42]` it is false
+    /// (because `<key>` is associative).
+    pub(super) fn index_assign_nested_target(target: &Expr) -> Option<(String, &Expr, bool)> {
         if let Expr::Index {
             target: inner_target,
             index: inner_index,
+            is_positional: inner_is_positional,
             ..
         } = target
             && let Some(name) = Self::index_assign_target_name(inner_target)
         {
-            return Some((name, inner_index));
+            return Some((name, inner_index, *inner_is_positional));
         }
         None
     }
