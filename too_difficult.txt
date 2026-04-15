@@ -15,6 +15,7 @@ roast/S05-mass/recursive.t
 roast/S06-advanced/lexical-subs.t
 roast/S06-advanced/return-prioritization.t
 roast/S11-modules/versioning.t
+roast/S11-repository/cur-current-distribution.t (requires entire CompUnit::Repository::FileSystem and ::Installation subsystems, Distribution::Path, $?DISTRIBUTION variable, -M command-line module loading honoring META6.json provides, and make-temp-dir; spans modules/distribution/repository plumbing far beyond a single PR)
 roast/S11-repository/curli-install.t
 roast/S12-meta/exporthow.t
 roast/S12-methods/accessors.t
