@@ -1170,11 +1170,17 @@ impl VM {
             .env()
             .get(&save_var_name)
             .and_then(|v| self.interpreter.container_type_metadata(v));
-        let saved_default_outer = self
-            .interpreter
-            .env()
-            .get(&save_var_name)
-            .and_then(|v| self.interpreter.container_default(v).cloned());
+        // Guard against stale pointer-keyed defaults (Arc reuse across
+        // allocations): only trust the saved default when a name-based
+        // var_default is also registered.
+        let saved_default_outer = if self.interpreter.var_default(&save_var_name).is_some() {
+            self.interpreter
+                .env()
+                .get(&save_var_name)
+                .and_then(|v| self.interpreter.container_default(v).cloned())
+        } else {
+            None
+        };
         let result = self.exec_index_assign_expr_named_op_inner(code, name_idx, is_positional);
         // Restore metadata on the post-assignment container if the
         // identity-keyed map lost it.

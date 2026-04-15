@@ -152,15 +152,20 @@ impl VM {
             .env()
             .get(&var_name)
             .and_then(|v| self.interpreter.container_type_metadata(v));
-        // Save container default (pointer-keyed) before delete. Using
-        // container_default (not var_default) ensures we only apply the
-        // default that belongs to *this* container, not a leftover entry
-        // from a leaky `var_defaults` set by an earlier same-named var.
-        let saved_default = self
-            .interpreter
-            .env()
-            .get(&var_name)
-            .and_then(|v| self.interpreter.container_default(v).cloned());
+        // Save container default (pointer-keyed) before delete so we can
+        // re-apply it after `Arc::make_mut` changes the pointer. Only
+        // trust this when a name-based `var_default` is also registered
+        // for this variable: Arc pointers can be reused across
+        // allocations, so a stale pointer-keyed entry from a freed
+        // same-named container must not leak into the new container.
+        let saved_default = if self.interpreter.var_default(&var_name).is_some() {
+            self.interpreter
+                .env()
+                .get(&var_name)
+                .and_then(|v| self.interpreter.container_default(v).cloned())
+        } else {
+            None
+        };
         // Resolve WhateverCode indices (e.g. *-1) for array targets
         let idx = if let Some(container) = self.interpreter.env().get(&var_name).cloned() {
             self.resolve_delete_index_for_array(idx, &container)
