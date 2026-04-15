@@ -2619,6 +2619,22 @@ impl Interpreter {
                         deferred_body_stmts: Vec::new(),
                     },
                 );
+                roles.insert(
+                    "X::Control".to_string(),
+                    RoleDef {
+                        attributes: Vec::new(),
+                        methods: HashMap::new(),
+                        is_stub_role: false,
+                        is_hidden: false,
+                        is_rw: false,
+                        captured_env: None,
+                        wildcard_handles: Vec::new(),
+                        role_id: 0,
+                        attribute_conflicts: Vec::new(),
+                        own_attribute_names: std::collections::HashSet::new(),
+                        deferred_body_stmts: Vec::new(),
+                    },
+                );
                 // CompUnit::Repository role with required stub methods
                 {
                     let stub_body = vec![Stmt::Expr(Expr::Call {

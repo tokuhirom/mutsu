@@ -914,7 +914,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     .cloned()
                     .unwrap_or(Value::str(String::new()))));
             }
-            "resume" => return Some(Ok(Value::Nil)),
+            "resume" => return Some(Err(RuntimeError::resume_signal())),
             "gist" | "Str" => {
                 return Some(Ok(attributes
                     .get("message")
@@ -1016,7 +1016,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         } = target
     {
         let cn = class_name.resolve();
-        if cn == "Exception" || cn.starts_with("X::") || cn.starts_with("CX::") || cn == "Failure" {
+        // Only the core exception classes use the fast path. For CX::* we
+        // fall through to the slow path, which can inspect the class's
+        // composed roles (e.g. X::Control) to decide whether the throw
+        // should raise a control exception.
+        if cn == "Exception" || cn.starts_with("X::") || cn == "Failure" {
             let msg = attributes
                 .get("message")
                 .map(|v| v.to_string_value())

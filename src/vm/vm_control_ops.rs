@@ -43,6 +43,14 @@ impl VM {
     }
 
     fn control_signal_topic_value(signal: &RuntimeError) -> Option<Value> {
+        // User-defined classes doing X::Control carry their original
+        // exception instance. Surface it directly so CONTROL blocks see the
+        // real type rather than a generic CX::Done wrapper.
+        if signal.is_done
+            && let Some(ex) = signal.exception.as_ref()
+        {
+            return Some((**ex).clone());
+        }
         let class_name = if signal.is_last {
             Some("CX::Last")
         } else if signal.is_next {
@@ -55,6 +63,12 @@ impl VM {
             Some("CX::Succeed")
         } else if signal.is_warn {
             Some("CX::Warn")
+        } else if signal.is_take {
+            Some("CX::Take")
+        } else if signal.is_emit {
+            Some("CX::Emit")
+        } else if signal.is_done || signal.is_react_done {
+            Some("CX::Done")
         } else if signal.is_return {
             Some("CX::Return")
         } else {
@@ -62,14 +76,22 @@ impl VM {
         }?;
 
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert(
-            "message".to_string(),
-            Value::str(if signal.message.is_empty() {
-                class_name.to_string()
-            } else {
-                signal.message.clone()
-            }),
-        );
+        // `warn` appends a "\n  in block ..." location annotation to its
+        // message for the default uncaught-warn printer. When a CONTROL
+        // block observes the CX::Warn, `.message` should be just the user
+        // text without the location, so strip the appended suffix.
+        let message_text = if signal.message.is_empty() {
+            class_name.to_string()
+        } else if signal.is_warn {
+            signal
+                .message
+                .split_once("\n  in block ")
+                .map(|(user, _)| user.to_string())
+                .unwrap_or_else(|| signal.message.clone())
+        } else {
+            signal.message.clone()
+        };
+        attrs.insert("message".to_string(), Value::str(message_text));
         if let Some(label) = signal.label.as_ref() {
             attrs.insert("label".to_string(), Value::str(label.clone()));
         }
@@ -1641,8 +1663,13 @@ impl VM {
             ip,
             compiled_fns,
         );
-        // Restore the outer resume_ip so an outer .resume sees the right point.
-        self.resume_ip = saved_resume_ip;
+        // Restore the outer resume_ip so an outer .resume sees the right
+        // point. When the inner block escaped with an error (e.g. rethrow
+        // of CX::Warn), keep the inner resume_ip so an outer handler can
+        // resume at the original call site.
+        if result.is_ok() {
+            self.resume_ip = saved_resume_ip;
+        }
         result
     }
 
@@ -1716,7 +1743,13 @@ impl VM {
                     Err(e)
                 }
             }
-            Err(e) if e.return_value.is_some() && !e.is_succeed && !e.is_warn => {
+            Err(e)
+                if e.return_value.is_some()
+                    && !e.is_succeed
+                    && !e.is_warn
+                    && !e.is_take
+                    && !e.is_emit =>
+            {
                 self.interpreter.discard_let_saves(let_mark);
                 Err(e)
             }
@@ -1728,7 +1761,11 @@ impl VM {
                     || e.is_redo
                     || e.is_proceed
                     || e.is_succeed
-                    || e.is_warn)
+                    || e.is_warn
+                    || e.is_take
+                    || e.is_emit
+                    || e.is_done
+                    || e.is_react_done)
                     && control_begin >= end =>
             {
                 self.interpreter.discard_let_saves(let_mark);
@@ -1740,23 +1777,92 @@ impl VM {
                     || e.is_redo
                     || e.is_proceed
                     || e.is_succeed
-                    || e.is_warn)
+                    || e.is_warn
+                    || e.is_take
+                    || e.is_emit
+                    || e.is_done
+                    || e.is_react_done)
                     && control_begin < end =>
             {
                 self.interpreter.discard_let_saves(let_mark);
                 self.stack.truncate(saved_depth);
                 let saved_topic = self.interpreter.env().get("_").cloned();
-                if let Some(signal_topic) = Self::control_signal_topic_value(&e) {
-                    self.interpreter
-                        .env_mut()
-                        .insert("_".to_string(), signal_topic);
-                }
                 let saved_when = self.interpreter.when_matched();
-                self.interpreter.set_when_matched(false);
-                match self.run_range(code, control_begin, end, compiled_fns) {
-                    Ok(()) => {}
-                    Err(e) if e.is_succeed => {}
-                    Err(e) => return Err(e),
+                let mut pending_err = e;
+                loop {
+                    if let Some(signal_topic) = Self::control_signal_topic_value(&pending_err) {
+                        self.interpreter
+                            .env_mut()
+                            .insert("_".to_string(), signal_topic);
+                    }
+                    self.interpreter.set_when_matched(false);
+                    let control_result = self.run_range(code, control_begin, end, compiled_fns);
+                    let next_resume = match control_result {
+                        Ok(()) => None,
+                        Err(ref ce) if ce.is_succeed => None,
+                        // Re-throwing a CX::Warn from CONTROL acts like the
+                        // default warn handler: print to stderr and resume.
+                        Err(ce) if ce.is_warn => {
+                            if !self.interpreter.warning_suppressed() {
+                                self.interpreter.write_warn_to_stderr(&ce.message);
+                            }
+                            self.resume_ip.take()
+                        }
+                        Err(ce) if ce.is_resume => {
+                            let _ = ce;
+                            self.resume_ip.take()
+                        }
+                        Err(ce) => {
+                            self.interpreter.set_when_matched(saved_when);
+                            if let Some(v) = saved_topic {
+                                self.interpreter.env_mut().insert("_".to_string(), v);
+                            } else {
+                                self.interpreter.env_mut().remove("_");
+                            }
+                            return Err(ce);
+                        }
+                    };
+                    match next_resume {
+                        None => break,
+                        Some(resume_point) => {
+                            self.interpreter.set_when_matched(saved_when);
+                            if let Some(v) = saved_topic.clone() {
+                                self.interpreter.env_mut().insert("_".to_string(), v);
+                            } else {
+                                self.interpreter.env_mut().remove("_");
+                            }
+                            if has_control {
+                                self.interpreter.control_handler_depth += 1;
+                            }
+                            let body_result =
+                                self.run_range(code, resume_point, catch_begin, compiled_fns);
+                            if has_control {
+                                self.interpreter.control_handler_depth -= 1;
+                            }
+                            match body_result {
+                                Ok(()) => {
+                                    *ip = end;
+                                    return Ok(());
+                                }
+                                Err(new_err)
+                                    if new_err.is_last
+                                        || new_err.is_next
+                                        || new_err.is_redo
+                                        || new_err.is_proceed
+                                        || new_err.is_succeed
+                                        || new_err.is_warn
+                                        || new_err.is_take
+                                        || new_err.is_emit
+                                        || new_err.is_done
+                                        || new_err.is_react_done =>
+                                {
+                                    pending_err = new_err;
+                                    continue;
+                                }
+                                Err(new_err) => return Err(new_err),
+                            }
+                        }
+                    }
                 }
                 self.interpreter.set_when_matched(saved_when);
                 if let Some(v) = saved_topic {

@@ -1904,7 +1904,14 @@ impl VM {
 
     pub(super) fn exec_take_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap_or(Value::Nil);
-        self.interpreter.take_value(val)
+        if self.interpreter.gather_items_len() > 0 {
+            self.interpreter.take_value(val)
+        } else {
+            // No enclosing gather — raise a CX::Take control exception so a
+            // CONTROL block can observe it. Unhandled, this propagates up
+            // and becomes a runtime error.
+            Err(RuntimeError::take_signal(val))
+        }
     }
 
     pub(super) fn exec_package_scope_op(

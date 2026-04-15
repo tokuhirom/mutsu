@@ -453,8 +453,12 @@ impl Compiler {
             stmts
         };
         self.hoist_sub_decls(stmts, false);
-        // If the top-level body contains a CATCH block, wrap in implicit try.
-        let has_catch = stmts.iter().any(|s| matches!(s, Stmt::Catch(_)));
+        // If the top-level body contains a CATCH or CONTROL block, wrap in
+        // an implicit try so the phaser can observe exceptions / control
+        // signals from the surrounding statements.
+        let has_catch = stmts
+            .iter()
+            .any(|s| matches!(s, Stmt::Catch(_) | Stmt::Control(_)));
         if has_catch {
             self.compile_try(stmts, &None);
             self.code.emit(OpCode::Pop);

@@ -532,7 +532,15 @@ impl VM {
                     if let Some(v) = e.return_value {
                         self.stack.push(v);
                     }
-                    ip += 1;
+                    // If a resume point was recorded for the original warn
+                    // site (e.g., when a CONTROL block rethrew the CX::Warn),
+                    // resume there so execution continues after the warn
+                    // rather than past whatever op propagated the signal.
+                    if let Some(resume_point) = self.resume_ip.take() {
+                        ip = resume_point;
+                    } else {
+                        ip += 1;
+                    }
                     continue;
                 }
                 return Err(e);
@@ -1870,7 +1878,24 @@ impl VM {
                 arity,
                 arg_sources_idx,
             } => {
-                self.exec_call_func_op(code, *name_idx, *arity, *arg_sources_idx, compiled_fns)?;
+                match self.exec_call_func_op(
+                    code,
+                    *name_idx,
+                    *arity,
+                    *arg_sources_idx,
+                    compiled_fns,
+                ) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        // Record a resume point so a call that raises a
+                        // control signal (e.g. `warn`) can be resumed after
+                        // the call site by `.resume` in a CONTROL block.
+                        if !e.is_resume && self.resume_ip.is_none() {
+                            self.resume_ip = Some(*ip + 1);
+                        }
+                        return Err(e);
+                    }
+                }
                 *ip += 1;
             }
             OpCode::CallFuncSlip {
@@ -1908,7 +1933,13 @@ impl VM {
                     Err(e) => {
                         // Record a resume point so a method that throws can
                         // be resumed after the call site by .resume in CATCH.
-                        self.resume_ip = Some(*ip + 1);
+                        // Don't overwrite an existing resume_ip: when the
+                        // method call is itself a `.resume`/`.rethrow` that
+                        // re-raises a control signal, the original resume
+                        // point (e.g. after `warn`) must be preserved.
+                        if !e.is_resume && self.resume_ip.is_none() {
+                            self.resume_ip = Some(*ip + 1);
+                        }
                         return Err(e);
                     }
                 }
@@ -1970,7 +2001,21 @@ impl VM {
                 arity,
                 arg_sources_idx,
             } => {
-                self.exec_exec_call_op(code, *name_idx, *arity, *arg_sources_idx, compiled_fns)?;
+                match self.exec_exec_call_op(
+                    code,
+                    *name_idx,
+                    *arity,
+                    *arg_sources_idx,
+                    compiled_fns,
+                ) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        if !e.is_resume && self.resume_ip.is_none() {
+                            self.resume_ip = Some(*ip + 1);
+                        }
+                        return Err(e);
+                    }
+                }
                 *ip += 1;
             }
             OpCode::ExecCallPairs { name_idx, arity } => {
