@@ -223,6 +223,14 @@ impl VM {
                 Self::multi_dim_assign(container, &dims, value.clone())?;
             }
         }
+        // Also sync the updated container into the VM locals slot (if any)
+        // so that a later `ensure_env_synced` does not restore the stale
+        // pre-assignment copy from locals into env. Without this, shaped
+        // array element writes like `@a[i;j] = v` can be silently lost
+        // before a closure captures the env (e.g. `start { ... }`).
+        if let Some(updated) = self.interpreter.env().get(&var_name).cloned() {
+            self.update_local_if_exists(code, &var_name, &updated);
+        }
 
         // Re-register container type metadata if Arc pointer changed
         if let Some(info) = old_type_info
