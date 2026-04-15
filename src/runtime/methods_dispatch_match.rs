@@ -129,6 +129,12 @@ impl Interpreter {
             "comb" if !args.is_empty() => {
                 if matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply") {
                     Some(self.dispatch_supply_transform(target, "comb", &args))
+                } else if matches!(&target, Value::Instance { class_name, .. }
+                    if matches!(class_name.resolve().as_str(),
+                        "IO::Handle" | "IO::Path" | "IO::Pipe"))
+                {
+                    // Defer to native IO dispatch so file content is read first.
+                    None
                 } else {
                     self.dispatch_comb_with_args(target, &args)
                 }
@@ -157,7 +163,7 @@ impl Interpreter {
 
     /// Helper for .comb with arguments.
     /// Handles: .comb($matcher), .comb($matcher, $limit), .comb($matcher, :match)
-    fn dispatch_comb_with_args(
+    pub(super) fn dispatch_comb_with_args(
         &mut self,
         target: Value,
         args: &[Value],

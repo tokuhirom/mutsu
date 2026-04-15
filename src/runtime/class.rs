@@ -404,8 +404,13 @@ impl Interpreter {
                     | "t"
                     | "printf"
                     | "split"
+                    | "comb"
             )
         {
+            return true;
+        }
+        // IO::Path's comb reads file content and combs the result.
+        if class_name == "IO::Path" && method_name == "comb" {
             return true;
         }
         let mro = self.class_mro(class_name);
