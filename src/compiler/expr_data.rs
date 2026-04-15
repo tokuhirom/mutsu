@@ -186,7 +186,22 @@ impl Compiler {
         if let Some(a) = arg {
             self.compile_expr(a);
         }
-        self.code.emit(OpCode::ExistsIndexAdv(flags));
+        // Emit the named variant when the target is an identifiable array
+        // variable — this lets the VM consult the deleted-index tracker so
+        // `@a[i]:delete:exists` reports the slot as missing even though
+        // the slot still holds a type-object hole after deletion.
+        let array_var_name = match target {
+            Expr::Index { target: t, .. } => Self::postfix_index_name(t)
+                .and_then(|n| if n.starts_with('@') { Some(n) } else { None }),
+            _ => None,
+        };
+        if let Some(name) = array_var_name {
+            let name_idx = self.code.add_constant(Value::str(name));
+            self.code
+                .emit(OpCode::ExistsIndexNamedAdv { name_idx, flags });
+        } else {
+            self.code.emit(OpCode::ExistsIndexAdv(flags));
+        }
 
         if delete
             && let Expr::Index {

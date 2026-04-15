@@ -566,6 +566,14 @@ pub(crate) enum OpCode {
     ///        bits 4-7=adverb (0=None,1=Kv,2=NotKv,3=P,4=NotP,5=NotV,
     ///                         6=InvalidK,7=InvalidNotK,8=InvalidV)
     ExistsIndexAdv(u32),
+    /// Variant of ExistsIndexAdv that knows the array variable name and
+    /// consults the deleted-index tracker so `:delete` can report a slot
+    /// as missing even though the slot still holds a type-object hole.
+    /// Layout: (name_idx, flags) — same flag encoding as ExistsIndexAdv.
+    ExistsIndexNamedAdv {
+        name_idx: u32,
+        flags: u32,
+    },
 
     // -- Reduction ([+] @arr) --
     Reduction(u32),

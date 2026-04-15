@@ -3726,6 +3726,26 @@ impl Interpreter {
         self.var_defaults.get(name)
     }
 
+    /// Remove a variable's cached `is default(...)` value. Called on
+    /// variable redeclaration so a new `my @a` does not inherit the
+    /// default from an earlier same-named variable.
+    pub(crate) fn clear_var_default(&mut self, name: &str) {
+        self.var_defaults.remove(name);
+    }
+
+    /// Remove the pointer-keyed container default for the given value. Used
+    /// on variable redeclaration so a newly-allocated container whose Arc
+    /// pointer happens to collide with a previously-freed one does not
+    /// inherit the freed container's `is default(...)` value.
+    pub(crate) fn clear_container_default(&mut self, value: &Value) {
+        let id = match value {
+            Value::Array(items, ..) => Arc::as_ptr(items) as usize,
+            Value::Hash(map) => Arc::as_ptr(map) as usize,
+            _ => return,
+        };
+        self.container_defaults.remove(&id);
+    }
+
     /// Get the evaluated `is default(...)` value for a class attribute.
     pub(crate) fn class_attribute_default(
         &self,
