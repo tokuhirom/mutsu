@@ -8,6 +8,10 @@ use super::state::cancellation_map;
 pub(super) struct LockState {
     pub(super) owner: Option<std::thread::ThreadId>,
     pub(super) recursion: u64,
+    /// FIFO queue of async Promises waiting to acquire the lock
+    /// (Lock::Async.lock() returns a Promise that becomes Kept when the
+    /// waiter becomes the lock owner).
+    pub(super) async_waiters: std::collections::VecDeque<crate::value::SharedPromise>,
 }
 
 #[derive(Debug, Default)]
@@ -117,6 +121,72 @@ pub(crate) fn release_lock(
             "Cannot unlock a Lock not owned by current thread",
         )),
     }
+}
+
+/// Async-flavored lock acquisition used by Lock::Async.lock().
+/// Returns a Promise that is Kept immediately if the lock is free, or
+/// Planned and enqueued if another waiter holds it. The caller holding
+/// the lock must call `async_release_lock` to pass ownership to the
+/// next waiter (keeping their Promise).
+pub(crate) fn async_acquire_lock(
+    runtime: &LockRuntime,
+    me: std::thread::ThreadId,
+) -> Result<crate::value::SharedPromise, RuntimeError> {
+    let mut state = runtime
+        .state
+        .lock()
+        .map_err(|_| RuntimeError::new("Lock state is poisoned"))?;
+    let promise = crate::value::SharedPromise::new();
+    if state.owner.is_none() && state.async_waiters.is_empty() {
+        state.owner = Some(me);
+        state.recursion = 1;
+        // Promise resolves immediately.
+        let _ = promise.try_keep(crate::value::Value::Nil);
+    } else {
+        state.async_waiters.push_back(promise.clone());
+    }
+    Ok(promise)
+}
+
+/// Async-flavored unlock: if a waiter is queued, hand ownership to it
+/// and keep its Promise. Throws X::Lock::Async::NotLocked when the lock
+/// is not held.
+pub(crate) fn async_release_lock(runtime: &LockRuntime) -> Result<(), RuntimeError> {
+    let mut state = runtime
+        .state
+        .lock()
+        .map_err(|_| RuntimeError::new("Lock state is poisoned"))?;
+    if state.owner.is_none() {
+        let mut err = RuntimeError::new("Cannot unlock an unlocked lock");
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "message".to_string(),
+            crate::value::Value::str_from("Cannot unlock an unlocked lock"),
+        );
+        let ex = crate::value::Value::make_instance(
+            crate::symbol::Symbol::intern("X::Lock::Async::NotLocked"),
+            attrs,
+        );
+        err.exception = Some(Box::new(ex));
+        return Err(err);
+    }
+    if let Some(next) = state.async_waiters.pop_front() {
+        // Transfer ownership to the next waiter and keep their Promise.
+        // We use the current thread's id as the owner because async locks
+        // do not track per-thread ownership in a meaningful way in our
+        // single-threaded unit test model; cross-thread behavior still
+        // works because the queue ordering is preserved.
+        state.owner = Some(current_thread_id());
+        state.recursion = 1;
+        drop(state);
+        let _ = next.try_keep(crate::value::Value::Nil);
+    } else {
+        state.owner = None;
+        state.recursion = 0;
+        drop(state);
+        runtime.lock_cv.notify_one();
+    }
+    Ok(())
 }
 
 pub(super) fn ensure_condition(

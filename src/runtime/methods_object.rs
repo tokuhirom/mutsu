@@ -1888,6 +1888,9 @@ impl Interpreter {
                     let mut attrs = HashMap::new();
                     let lock_id = super::native_methods::next_lock_id() as i64;
                     attrs.insert("lock-id".to_string(), Value::Int(lock_id));
+                    if class_name.resolve() == "Lock::Async" {
+                        attrs.insert("async".to_string(), Value::Bool(true));
+                    }
                     return Ok(Value::make_instance(*class_name, attrs));
                 }
                 "Slip" => {

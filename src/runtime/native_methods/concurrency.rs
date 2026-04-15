@@ -39,8 +39,18 @@ impl Interpreter {
                 let lock = lock_runtime_by_id(lock_id)
                     .ok_or_else(|| RuntimeError::new("Lock.lock could not find lock state"))?;
                 let me = current_thread_id();
-                acquire_lock(&lock, me)?;
-                Ok(Value::Nil)
+                // Lock::Async.lock() returns a Promise; plain Lock.lock() returns Nil.
+                let is_async = attributes
+                    .get("async")
+                    .map(|v| matches!(v, Value::Bool(true)))
+                    .unwrap_or(false);
+                if is_async {
+                    let promise = async_acquire_lock(&lock, me)?;
+                    Ok(Value::Promise(promise))
+                } else {
+                    acquire_lock(&lock, me)?;
+                    Ok(Value::Nil)
+                }
             }
             "unlock" => {
                 let lock_id = match attributes.get("lock-id") {
@@ -51,8 +61,16 @@ impl Interpreter {
                 };
                 let lock = lock_runtime_by_id(lock_id)
                     .ok_or_else(|| RuntimeError::new("Lock.unlock could not find lock state"))?;
-                let me = current_thread_id();
-                release_lock(&lock, me)?;
+                let is_async = attributes
+                    .get("async")
+                    .map(|v| matches!(v, Value::Bool(true)))
+                    .unwrap_or(false);
+                if is_async {
+                    async_release_lock(&lock)?;
+                } else {
+                    let me = current_thread_id();
+                    release_lock(&lock, me)?;
+                }
                 Ok(Value::Nil)
             }
             "condition" => {
