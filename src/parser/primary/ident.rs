@@ -93,6 +93,23 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
             }
             Stmt::Expr(expr)
         }
+        Stmt::Call { name, args } if name.resolve().as_str() == "emit" => {
+            // Statement-form `emit ARGS;` becomes `$emitter.emit(ARGS)`.
+            let positional_args: Vec<Expr> = args
+                .into_iter()
+                .filter_map(|arg| match arg {
+                    crate::ast::CallArg::Positional(expr) => Some(expr),
+                    _ => None,
+                })
+                .collect();
+            Stmt::Expr(Expr::MethodCall {
+                target: Box::new(Expr::Var(emitter_name.to_string())),
+                name: Symbol::intern("emit"),
+                args: positional_args,
+                modifier: None,
+                quoted: false,
+            })
+        }
         Stmt::ReactDone => Stmt::SyntheticBlock(vec![
             Stmt::Expr(Expr::MethodCall {
                 target: Box::new(Expr::Var(emitter_name.to_string())),

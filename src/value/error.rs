@@ -51,6 +51,9 @@ pub struct RuntimeError {
     /// Set when UNDO phasers run in response to the fail.
     pub fail_handled: bool,
     pub is_warn: bool,
+    pub is_take: bool,
+    pub is_emit: bool,
+    pub is_done: bool,
     pub is_leave: bool,
     pub is_resume: bool,
     pub is_react_done: bool,
@@ -85,6 +88,9 @@ impl RuntimeError {
             is_fail: false,
             fail_handled: false,
             is_warn: false,
+            is_take: false,
+            is_emit: false,
+            is_done: false,
             is_leave: false,
             is_resume: false,
             is_react_done: false,
@@ -136,6 +142,9 @@ impl RuntimeError {
             is_fail: false,
             fail_handled: false,
             is_warn: false,
+            is_take: false,
+            is_emit: false,
+            is_done: false,
             is_leave: false,
             is_resume: false,
             is_react_done: false,
@@ -222,6 +231,24 @@ impl RuntimeError {
         Self {
             message: message.into(),
             is_warn: true,
+            ..Self::new("")
+        }
+    }
+
+    pub(crate) fn take_signal(value: Value) -> Self {
+        Self {
+            message: "CX::Take".to_string(),
+            is_take: true,
+            return_value: Some(value),
+            ..Self::new("")
+        }
+    }
+
+    pub(crate) fn emit_signal(value: Value) -> Self {
+        Self {
+            message: "CX::Emit".to_string(),
+            is_emit: true,
+            return_value: Some(value),
             ..Self::new("")
         }
     }

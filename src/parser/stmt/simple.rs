@@ -1911,8 +1911,8 @@ pub(super) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
 /// Test/Test::Util functions are NOT listed here — they are registered dynamically
 /// via `register_module_exports()` when `use Test` / `use Test::Util` is parsed.
 pub(super) const KNOWN_CALLS: &[&str] = &[
-    "dd", "exit", "proceed", "succeed", "done", "push", "pop", "shift", "unshift", "append",
-    "prepend", "elems", "chars", "defined", "warn", "leave", "EVAL", "EVALFILE",
+    "dd", "exit", "proceed", "succeed", "done", "emit", "push", "pop", "shift", "unshift",
+    "append", "prepend", "elems", "chars", "defined", "warn", "leave", "EVAL", "EVALFILE",
 ];
 
 /// Check if a name is a known statement-level function call.

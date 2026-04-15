@@ -222,15 +222,14 @@ impl Interpreter {
             } = &target
         {
             let cn = class_name.resolve();
+            let mro = self.class_mro(&cn);
+            let does_x_control = cn == "X::Control" || mro.iter().any(|p| p == "X::Control");
             let is_exception = cn == "Exception"
                 || cn == "Failure"
                 || cn.starts_with("X::")
                 || cn.starts_with("CX::")
-                || self
-                    .class_mro(&cn)
-                    .iter()
-                    .any(|p| p == "Exception" || p == "Failure");
-            if is_exception {
+                || mro.iter().any(|p| p == "Exception" || p == "Failure");
+            if is_exception || does_x_control {
                 if method == "resume" {
                     return Err(crate::value::RuntimeError::resume_signal());
                 }
@@ -246,6 +245,17 @@ impl Interpreter {
                     })
                     .unwrap_or_else(|| target.to_string_value());
                 let mut err = crate::value::RuntimeError::new(&msg);
+                // Classes doing X::Control throw as control exceptions so
+                // CONTROL blocks catch them instead of CATCH.
+                if does_x_control {
+                    err.is_done = true;
+                }
+                // Throwing/rethrowing a CX::Warn re-raises it as a warn
+                // signal so the default handler writes to stderr and
+                // execution continues.
+                if cn == "CX::Warn" {
+                    err.is_warn = true;
+                }
                 err.exception = Some(Box::new(target.clone()));
                 return Err(err);
             }

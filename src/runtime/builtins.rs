@@ -441,8 +441,18 @@ impl Interpreter {
                         crate::value::ArrayKind::List,
                     )
                 };
-                self.take_value(value.clone())?;
-                Ok(value)
+                if self.gather_items_len() > 0 {
+                    self.take_value(value.clone())?;
+                    Ok(value)
+                } else {
+                    Err(RuntimeError::take_signal(value))
+                }
+            }
+            "emit" => {
+                // Top-level `emit` outside a supply block raises a CX::Emit
+                // control exception that a CONTROL block can observe.
+                let value = args.first().cloned().unwrap_or(Value::Nil);
+                Err(RuntimeError::emit_signal(value))
             }
             "return" => {
                 let mut err = RuntimeError::new("return");
