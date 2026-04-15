@@ -263,11 +263,16 @@ impl Interpreter {
                 Ok(Value::str(value.to_string_value()))
             }
             "isa" if args.len() == 2 => {
-                let Value::Package(class_name) = &args[0] else {
-                    return Ok(Value::Bool(false));
+                // Allow calling .^isa on an instance: use the instance's class.
+                let class_name = match &args[0] {
+                    Value::Package(name) => *name,
+                    Value::Instance { class_name, .. } => *class_name,
+                    _ => return Ok(Value::Bool(false)),
                 };
-                let Value::Package(other_name) = &args[1] else {
-                    return Ok(Value::Bool(false));
+                let other_name = match &args[1] {
+                    Value::Package(name) => *name,
+                    Value::Instance { class_name, .. } => *class_name,
+                    _ => return Ok(Value::Bool(false)),
                 };
                 let is_same = class_name == other_name;
                 if is_same {

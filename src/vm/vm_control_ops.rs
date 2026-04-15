@@ -1629,6 +1629,34 @@ impl VM {
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
+        // Reset any leftover resume_ip from previous exception handling so a
+        // later .resume cannot accidentally jump into a sibling scope.
+        let saved_resume_ip = self.resume_ip.take();
+        let result = self.exec_try_catch_op_inner(
+            code,
+            catch_start,
+            control_start,
+            body_end,
+            explicit_catch,
+            ip,
+            compiled_fns,
+        );
+        // Restore the outer resume_ip so an outer .resume sees the right point.
+        self.resume_ip = saved_resume_ip;
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn exec_try_catch_op_inner(
+        &mut self,
+        code: &CompiledCode,
+        catch_start: u32,
+        control_start: u32,
+        body_end: u32,
+        explicit_catch: bool,
+        ip: &mut usize,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
         let saved_depth = self.stack.len();
         let let_mark = self.interpreter.let_saves_len();
         let body_start = *ip + 1;
@@ -1796,7 +1824,11 @@ impl VM {
                         }
                         Err(catch_err) => return Err(catch_err),
                     };
-                self.interpreter.set_when_matched(saved_when);
+                // Propagate when_handled upward so an enclosing CATCH region
+                // can detect that this nested CATCH (e.g., a CATCH inside a
+                // CATCH) handled the exception.
+                self.interpreter
+                    .set_when_matched(saved_when || when_handled);
                 if let Some(v) = saved_topic {
                     self.interpreter.env_mut().insert("_".to_string(), v);
                 } else {

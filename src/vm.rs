@@ -1896,14 +1896,22 @@ impl VM {
                 quoted,
                 arg_sources_idx,
             } => {
-                self.exec_call_method_op(
+                match self.exec_call_method_op(
                     code,
                     *name_idx,
                     *arity,
                     *modifier_idx,
                     *quoted,
                     *arg_sources_idx,
-                )?;
+                ) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        // Record a resume point so a method that throws can
+                        // be resumed after the call site by .resume in CATCH.
+                        self.resume_ip = Some(*ip + 1);
+                        return Err(e);
+                    }
+                }
                 *ip += 1;
             }
             OpCode::CallMethodDynamic { arity } => {

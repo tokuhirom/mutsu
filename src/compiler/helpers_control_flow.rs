@@ -207,6 +207,27 @@ impl Compiler {
     /// Compile Expr::Try { body, catch } to TryCatch opcode.
     pub(super) fn compile_try(&mut self, body: &[Stmt], catch: &Option<Vec<Stmt>>) {
         let saved = self.push_dynamic_scope_lexical();
+        // Detect duplicate CATCH/CONTROL phasers in the same block: Raku
+        // requires at most one of each per block (X::Phaser::Multiple).
+        let catch_count = body.iter().filter(|s| matches!(s, Stmt::Catch(_))).count();
+        let control_count = body
+            .iter()
+            .filter(|s| matches!(s, Stmt::Control(_)))
+            .count();
+        if catch_count > 1 || control_count > 1 {
+            let kind = if catch_count > 1 { "CATCH" } else { "CONTROL" };
+            let msg = format!("Only one {} block is allowed per block", kind);
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), Value::str(msg));
+            attrs.insert("block".to_string(), Value::str(kind.to_string()));
+            let exc =
+                Value::make_instance(crate::symbol::Symbol::intern("X::Phaser::Multiple"), attrs);
+            let idx = self.code.add_constant(exc);
+            self.code.emit(OpCode::LoadConst(idx));
+            self.code.emit(OpCode::Die);
+            self.pop_dynamic_scope_lexical(saved);
+            return;
+        }
         // Separate CATCH/CONTROL blocks from body.
         let mut main_stmts = Vec::new();
         let mut catch_stmts = catch.clone();
@@ -370,8 +391,16 @@ impl Compiler {
         // Compile catch block.
         let mut jump_after_catch = None;
         if let Some(ref catch_body) = catch_stmts {
-            for stmt in catch_body {
-                self.compile_stmt(stmt);
+            // If the catch body itself contains a nested CATCH/CONTROL,
+            // wrap it in an implicit try so exceptions thrown inside the
+            // outer CATCH can be handled by the nested CATCH.
+            if Self::has_catch_or_control(catch_body) {
+                self.compile_try(catch_body, &None);
+                self.code.emit(OpCode::Pop);
+            } else {
+                for stmt in catch_body {
+                    self.compile_stmt(stmt);
+                }
             }
             if control_stmts.is_some() {
                 jump_after_catch = Some(self.code.emit(OpCode::Jump(0)));

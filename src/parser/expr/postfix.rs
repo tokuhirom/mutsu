@@ -432,6 +432,48 @@ fn parse_bracket_indices(input: &str) -> PResult<'_, Expr> {
 }
 
 fn parse_bracket_indices_inner(input: &str) -> PResult<'_, ParsedBracketIndex> {
+    // Allow phaser-only blocks (e.g. `%h{ CATCH { } }`) inside subscripts.
+    // In Raku this evaluates the block which returns Nil and then indexes
+    // the hash with Nil; we represent it as a Whatever placeholder to keep
+    // parsing alive (the evaluation will produce a Nil result at runtime).
+    {
+        let probe = input.trim_start();
+        if probe.starts_with("CATCH") || probe.starts_with("CONTROL") {
+            let kw_len = if probe.starts_with("CATCH") { 5 } else { 7 };
+            let after_kw = &probe[kw_len..];
+            if after_kw.is_empty()
+                || after_kw.starts_with(' ')
+                || after_kw.starts_with('\t')
+                || after_kw.starts_with('{')
+            {
+                // Skip whitespace, then parse the phaser body block and discard.
+                let (r, _) = ws(after_kw)?;
+                if r.starts_with('{') {
+                    // Skip a balanced brace block.
+                    let bytes = r.as_bytes();
+                    let mut depth = 0i32;
+                    let mut i = 0;
+                    while i < bytes.len() {
+                        match bytes[i] {
+                            b'{' => depth += 1,
+                            b'}' => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    i += 1;
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                        i += 1;
+                    }
+                    let after_block = &r[i..];
+                    let (after_block, _) = ws(after_block)?;
+                    return Ok((after_block, ParsedBracketIndex::Single(Expr::Whatever)));
+                }
+            }
+        }
+    }
     let (r, first) = expression(input)?;
     let mut current_dim = vec![first];
     let mut dimensions: Vec<Expr> = Vec::new();
