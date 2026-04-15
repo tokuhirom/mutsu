@@ -152,6 +152,15 @@ impl VM {
             .env()
             .get(&var_name)
             .and_then(|v| self.interpreter.container_type_metadata(v));
+        // Save container default (pointer-keyed) before delete. Using
+        // container_default (not var_default) ensures we only apply the
+        // default that belongs to *this* container, not a leftover entry
+        // from a leaky `var_defaults` set by an earlier same-named var.
+        let saved_default = self
+            .interpreter
+            .env()
+            .get(&var_name)
+            .and_then(|v| self.interpreter.container_default(v).cloned());
         // Resolve WhateverCode indices (e.g. *-1) for array targets
         let idx = if let Some(container) = self.interpreter.env().get(&var_name).cloned() {
             self.resolve_delete_index_for_array(idx, &container)
@@ -187,6 +196,9 @@ impl VM {
         // Remove deleted indices from the initialized-index tracking set
         // so that trim_trailing_array_holes recognizes them as holes.
         self.unmark_initialized_indices(&var_name, &idx_for_unmark);
+        // Mark deleted positions so :exists can report them as missing even
+        // though the slot still holds a type-object hole value.
+        self.mark_deleted_indices(&var_name, &idx_for_unmark);
         // Remove deleted indices from the bound-index tracking set to sever bindings.
         self.unmark_bound_indices(&var_name, &idx_for_unmark);
         // Trim trailing holes from arrays after deletion.
@@ -195,7 +207,7 @@ impl VM {
         // If the deleted value is a hole (Nil or type object like Package("Any")),
         // substitute the container's default value if one was set via `is default(...)`.
         let result = if matches!(&result, Value::Nil | Value::Package(_)) {
-            if let Some(def) = self.interpreter.var_default(&var_name) {
+            if let Some(def) = &saved_default {
                 def.clone()
             } else {
                 result
@@ -216,17 +228,19 @@ impl VM {
                 .register_container_type_metadata(&container, info);
         }
         // Re-register container default if it was lost due to Arc::make_mut.
-        // Use var_default (name-based, survives mutations) as the source of
-        // truth, and sync it to the current container's pointer-based default.
-        if let Some(def) = self.interpreter.var_default(&var_name).cloned()
+        // Use the pointer-keyed container_default saved before delete so we
+        // don't inherit a leaked default from a same-named variable in an
+        // outer scope.
+        if let Some(def) = saved_default
             && let Some(container) = self.interpreter.env().get(&var_name).cloned()
+            && self.interpreter.container_default(&container).is_none()
         {
-            if self.interpreter.container_default(&container).is_none() {
-                self.interpreter
-                    .set_container_default(&container, def.clone());
-            }
-            // Sync env value to locals so reads through locals see the
-            // updated container with its default.
+            self.interpreter.set_container_default(&container, def);
+        }
+        // Sync env value to locals so reads through locals see the
+        // updated container after delete (Arc::make_mut may have changed
+        // the container pointer).
+        if let Some(container) = self.interpreter.env().get(&var_name).cloned() {
             self.locals_set_by_name(code, &var_name, container);
         }
         self.stack.push(result);
@@ -258,6 +272,23 @@ impl VM {
         hole_type: &str,
     ) -> Result<Value, RuntimeError> {
         match idx {
+            Value::Whatever => {
+                // `@a[*]:delete` — delete all elements, returning the
+                // previous contents of the array.
+                let len = match container {
+                    Value::Array(items, ..) => items.len(),
+                    _ => 0,
+                };
+                let indices: Vec<Value> = (0..len as i64).map(Value::Int).collect();
+                let mut results = Vec::with_capacity(indices.len());
+                for i in indices {
+                    let r =
+                        Self::delete_array_multidim(container, std::slice::from_ref(&i), hole_type)
+                            .unwrap_or(Value::Nil);
+                    results.push(r);
+                }
+                Ok(Value::array(results))
+            }
             Value::Array(indices, ..) => {
                 let indices_vec: Vec<Value> = indices.to_vec();
                 let mut results = Vec::with_capacity(indices_vec.len());

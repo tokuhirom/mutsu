@@ -2420,7 +2420,12 @@ impl VM {
                 *ip += 1;
             }
             OpCode::ExistsIndexAdv(flags) => {
-                self.exec_exists_index_adv_op(*flags)?;
+                self.exec_exists_index_adv_op(*flags, None)?;
+                *ip += 1;
+            }
+            OpCode::ExistsIndexNamedAdv { name_idx, flags } => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                self.exec_exists_index_adv_op(*flags, Some(name))?;
                 *ip += 1;
             }
 

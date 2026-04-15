@@ -1159,6 +1159,53 @@ impl VM {
         name_idx: u32,
         is_positional: bool,
     ) -> Result<(), RuntimeError> {
+        // Save type metadata and container default by pointer BEFORE the
+        // inner op runs. Auto-vivification and Arc::make_mut may
+        // reconstruct the array Arc, changing the pointer used as the
+        // metadata key. Reapply them on the final container so typed-array
+        // hole semantics and `is default(...)` are preserved.
+        let save_var_name = Self::const_str(code, name_idx).to_string();
+        let saved_type_meta_outer = self
+            .interpreter
+            .env()
+            .get(&save_var_name)
+            .and_then(|v| self.interpreter.container_type_metadata(v));
+        let saved_default_outer = self
+            .interpreter
+            .env()
+            .get(&save_var_name)
+            .and_then(|v| self.interpreter.container_default(v).cloned());
+        let result = self.exec_index_assign_expr_named_op_inner(code, name_idx, is_positional);
+        // Restore metadata on the post-assignment container if the
+        // identity-keyed map lost it.
+        if let Some(info) = saved_type_meta_outer
+            && let Some(container) = self.interpreter.env().get(&save_var_name).cloned()
+            && self
+                .interpreter
+                .container_type_metadata(&container)
+                .is_none()
+        {
+            self.interpreter
+                .register_container_type_metadata(&container, info);
+            // Sync the refreshed container pointer into locals so fast-path
+            // reads see the preserved metadata.
+            self.locals_set_by_name(code, &save_var_name, container);
+        }
+        if let Some(def) = saved_default_outer
+            && let Some(container) = self.interpreter.env().get(&save_var_name).cloned()
+            && self.interpreter.container_default(&container).is_none()
+        {
+            self.interpreter.set_container_default(&container, def);
+        }
+        result
+    }
+
+    fn exec_index_assign_expr_named_op_inner(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        is_positional: bool,
+    ) -> Result<(), RuntimeError> {
         let original_var_name = Self::const_str(code, name_idx).to_string();
         // Resolve sigilless alias: if `h` is a sigilless alias for `%a`,
         // operate on `%a` directly so in-place mutations are visible.
@@ -2247,6 +2294,19 @@ impl VM {
         self.constant_context = false;
         self.explicit_initializer_context = false;
         self.vardecl_context = false;
+        // A redeclaration (`my @a` in a new scope) must not inherit the
+        // `is default(...)` trait from an earlier same-named variable,
+        // since var_defaults is keyed only by name. Drop any stale entry;
+        // if the current decl has its own `is default(...)` trait, the
+        // trait op will re-set it immediately after.
+        if is_vardecl {
+            let name = &code.locals[idx];
+            self.interpreter.clear_var_default(name);
+            // Clear the deleted-index tracker left over from a previous
+            // same-named variable in an outer scope.
+            let deleted_key = format!("__mutsu_deleted_index::{}", name);
+            self.interpreter.env_mut().remove(&deleted_key);
+        }
 
         // Fast path for simple scalar variables — skip all metadata checks
         if code.simple_locals[idx] && bind_source.is_none() && !is_bind {
@@ -2608,6 +2668,15 @@ impl VM {
             && let Some(err) = self.interpreter.failure_to_runtime_error_if_unhandled(&val)
         {
             return Err(err);
+        }
+        // For variable redeclarations (`my @a` in a new scope), drop any
+        // pointer-keyed container default that an earlier same-named
+        // variable left behind. Arc pointers can be reused across
+        // allocations (especially in release builds) and would otherwise
+        // cause a freed container's `is default(...)` to leak into the
+        // new scope.
+        if is_vardecl {
+            self.interpreter.clear_container_default(&val);
         }
         self.locals[idx] = val.clone();
         // When binding a typed hash/array to a variable, propagate the container's

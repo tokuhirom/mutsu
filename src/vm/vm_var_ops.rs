@@ -619,6 +619,14 @@ impl VM {
     }
 
     pub(super) fn mark_initialized_index(&mut self, var_name: &str, encoded: String) {
+        // Assigning a slot clears any deleted-index marker so subsequent
+        // `:exists` checks report the slot as present again.
+        {
+            let deleted_key = format!("__mutsu_deleted_index::{}", var_name);
+            if let Some(Value::Hash(map)) = self.interpreter.env_mut().get_mut(&deleted_key) {
+                Arc::make_mut(map).remove(&encoded);
+            }
+        }
         let key = format!("__mutsu_initialized_index::{}", var_name);
         if let Some(Value::Hash(map)) = self.interpreter.env_mut().get_mut(&key) {
             Arc::make_mut(map).insert(encoded, Value::Bool(true));
@@ -627,6 +635,73 @@ impl VM {
         let mut map = std::collections::HashMap::new();
         map.insert(encoded, Value::Bool(true));
         self.interpreter.env_mut().insert(key, Value::hash(map));
+    }
+
+    /// Mark the given indices as deleted. `:exists` on an array consults
+    /// this set so that a slot holding a type-object hole can be reported
+    /// as missing even though the slot value is not `Nil`.
+    pub(super) fn mark_deleted_indices(&mut self, var_name: &str, idx: &Value) {
+        let key = format!("__mutsu_deleted_index::{}", var_name);
+        let map = if let Some(Value::Hash(map)) = self.interpreter.env_mut().get_mut(&key) {
+            Arc::make_mut(map)
+        } else {
+            let m = std::collections::HashMap::new();
+            self.interpreter
+                .env_mut()
+                .insert(key.clone(), Value::hash(m));
+            match self.interpreter.env_mut().get_mut(&key) {
+                Some(Value::Hash(map)) => Arc::make_mut(map),
+                _ => return,
+            }
+        };
+        Self::mark_index_entries(map, idx);
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn unmark_deleted_indices(&mut self, var_name: &str, idx: &Value) {
+        let key = format!("__mutsu_deleted_index::{}", var_name);
+        let Some(Value::Hash(map)) = self.interpreter.env_mut().get_mut(&key) else {
+            return;
+        };
+        let m = Arc::make_mut(map);
+        Self::unmark_index_entries(m, idx);
+    }
+
+    pub(super) fn is_deleted_index(&self, var_name: &str, idx: i64) -> bool {
+        let key = format!("__mutsu_deleted_index::{}", var_name);
+        matches!(
+            self.interpreter.env().get(&key),
+            Some(Value::Hash(map)) if map.contains_key(&idx.to_string())
+        )
+    }
+
+    fn mark_index_entries(map: &mut std::collections::HashMap<String, Value>, idx: &Value) {
+        match idx {
+            Value::Array(items, ..) => {
+                for item in items.iter() {
+                    Self::mark_index_entries(map, item);
+                }
+            }
+            Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. } => {
+                let expanded = crate::runtime::utils::value_to_list(idx);
+                for item in &expanded {
+                    Self::mark_index_entries(map, item);
+                }
+            }
+            Value::Int(i) => {
+                map.insert(i.to_string(), Value::Bool(true));
+            }
+            Value::Num(f) => {
+                map.insert((*f as i64).to_string(), Value::Bool(true));
+            }
+            _ => {
+                map.insert(idx.to_string_value(), Value::Bool(true));
+            }
+        }
     }
 
     /// Remove deleted indices from the bound-index tracking set.

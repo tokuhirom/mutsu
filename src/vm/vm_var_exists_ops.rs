@@ -6,6 +6,7 @@ impl VM {
     pub(super) fn exec_exists_index_adv_op(
         &mut self,
         flags: u32,
+        array_var_name: Option<String>,
     ) -> Result<(), crate::value::RuntimeError> {
         let negated_flag = flags & 1 != 0;
         let has_arg = flags & 2 != 0;
@@ -516,10 +517,14 @@ impl VM {
         if !is_multi {
             // Single index
             let i = indices[0];
-            let exists = i >= 0
+            let slot_present = i >= 0
                 && items
                     .get(i as usize)
                     .is_some_and(|v| !matches!(v, Value::Nil));
+            let is_deleted = array_var_name
+                .as_deref()
+                .is_some_and(|n| self.is_deleted_index(n, i));
+            let exists = slot_present && !is_deleted;
             let result_bool = exists ^ effective_negated;
             let key = Value::Int(i);
             let result = match adverb_bits {
@@ -554,11 +559,14 @@ impl VM {
         let pairs: Vec<(i64, bool)> = indices
             .iter()
             .map(|&i| {
-                let exists = i >= 0
+                let slot_present = i >= 0
                     && items
                         .get(i as usize)
                         .is_some_and(|v| !matches!(v, Value::Nil));
-                (i, exists)
+                let is_deleted = array_var_name
+                    .as_deref()
+                    .is_some_and(|n| self.is_deleted_index(n, i));
+                (i, slot_present && !is_deleted)
             })
             .collect();
 
