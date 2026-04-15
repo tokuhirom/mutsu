@@ -8,6 +8,7 @@ roast/S03-operators/context.t (17 failures across many unrelated features: @(mul
 roast/S03-sequence/misc.t
 roast/S04-exceptions/exceptions-alternatives.t
 roast/S04-phasers/in-eval.t (test 13 "INIT did not run at compile time" is marked `#?rakudo todo` in the source and fails on raku itself when run directly via prove without roast fudging — cannot pass through our test infrastructure regardless of mutsu changes)
+roast/S04-statements/for.t (raku itself fails subtest 65 "for loop iteration with label-less 'last' gives ()" — the test cannot pass completely on any implementation in its current form, so per workflow we cannot whitelist it; additionally mutsu fails ~20 other subtests including lazy for loop semantics, for loops not decontainerizing, hole mutability for @a[*], and sink-context method dispatch in final statement)
 roast/S04-statements/return.t
 roast/S05-capture/alias.t
 roast/S05-capture/array-alias.t
