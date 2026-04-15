@@ -198,6 +198,7 @@ impl Compiler {
                     || name == "receive"
                     || name == "getc"
                     || name == "get"
+                    || name == "lock"
                     || (name == "new" && matches!(target.as_ref(), Expr::BareWord(n) if n == "Promise"))
                     || Self::xx_lhs_needs_reeval(target)
         ) || matches!(
