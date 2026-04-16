@@ -169,6 +169,17 @@ impl Interpreter {
                 return None;
             }
             RegexAtom::Alternation(alternatives) => {
+                let mut best: Option<usize> = None;
+                for alt in alternatives {
+                    if let Some(end) = self.regex_match_end_from_in_pkg(alt, chars, pos, pkg)
+                        && (best.is_none() || end > best.unwrap())
+                    {
+                        best = Some(end);
+                    }
+                }
+                return best;
+            }
+            RegexAtom::SequentialAlternation(alternatives) => {
                 for alt in alternatives {
                     if let Some(end) = self.regex_match_end_from_in_pkg(alt, chars, pos, pkg) {
                         return Some(end);
@@ -526,6 +537,7 @@ impl Interpreter {
             RegexAtom::Group(_)
             | RegexAtom::CaptureGroup(_)
             | RegexAtom::Alternation(_)
+            | RegexAtom::SequentialAlternation(_)
             | RegexAtom::GoalMatch { .. }
             | RegexAtom::Newline
             | RegexAtom::NotNewline

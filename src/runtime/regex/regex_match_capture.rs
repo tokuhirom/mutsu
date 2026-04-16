@@ -83,6 +83,28 @@ impl Interpreter {
                 }
                 return best;
             }
+            RegexAtom::SequentialAlternation(alternatives) => {
+                for alt in alternatives {
+                    if let Some((next, mut inner_caps)) =
+                        self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)
+                    {
+                        let mut new_caps = current_caps.clone();
+                        for (k, v) in inner_caps.named.drain() {
+                            new_caps.named.entry(k).or_default().extend(v);
+                        }
+                        new_caps.positional.append(&mut inner_caps.positional);
+                        new_caps
+                            .positional_subcaps
+                            .append(&mut inner_caps.positional_subcaps);
+                        new_caps
+                            .positional_quantified
+                            .append(&mut inner_caps.positional_quantified);
+                        new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+                        return Some((next, new_caps));
+                    }
+                }
+                return None;
+            }
             RegexAtom::ZeroWidth
             | RegexAtom::UnicodePropAssert { .. }
             | RegexAtom::LeftWordBoundary

@@ -131,6 +131,9 @@ fn strip_marks_atom(atom: &RegexAtom) -> RegexAtom {
         RegexAtom::Alternation(alts) => {
             RegexAtom::Alternation(alts.iter().map(strip_marks_pattern).collect())
         }
+        RegexAtom::SequentialAlternation(alts) => {
+            RegexAtom::SequentialAlternation(alts.iter().map(strip_marks_pattern).collect())
+        }
         RegexAtom::GoalMatch {
             goal,
             inner,
@@ -311,7 +314,7 @@ pub(super) fn count_capture_groups(atom: &RegexAtom) -> usize {
     match atom {
         RegexAtom::CaptureGroup(_) => 1,
         RegexAtom::Group(pat) => count_pattern_capture_groups(pat),
-        RegexAtom::Alternation(alts) => {
+        RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => {
             // All alternatives should produce the same number of captures
             alts.iter()
                 .map(count_pattern_capture_groups)
