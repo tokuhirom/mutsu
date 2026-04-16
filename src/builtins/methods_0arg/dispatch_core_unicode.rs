@@ -49,9 +49,28 @@ pub(super) fn dispatch(
             _ => Some(Ok(Value::Int(target.to_string_value().len() as i64))),
         }),
         "decode" => Some(super::super::decode_buf_method(target, None)),
-        "chars" => Some(Some(Ok(Value::Int(
-            target.to_string_value().graphemes(true).count() as i64,
-        )))),
+        "chars" => {
+            // Buf/Blob instances: throw X::Buf::AsStr
+            if let Value::Instance { class_name, .. } = target
+                && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
+            {
+                let msg = format!(
+                    "Cannot use a {} as a string, but you called the .chars method on it",
+                    class_name
+                );
+                let mut ex_attrs = std::collections::HashMap::new();
+                ex_attrs.insert("message".to_string(), Value::str(msg.clone()));
+                ex_attrs.insert("method".to_string(), Value::str("chars".to_string()));
+                let exception =
+                    Value::make_instance(crate::symbol::Symbol::intern("X::Buf::AsStr"), ex_attrs);
+                let mut err = crate::value::RuntimeError::new(msg);
+                err.exception = Some(Box::new(exception));
+                return Some(Some(Err(err)));
+            }
+            Some(Some(Ok(Value::Int(
+                target.to_string_value().graphemes(true).count() as i64,
+            ))))
+        }
         "ord" => {
             let s = target.to_string_value();
             if let Some(ch) = s.chars().next() {

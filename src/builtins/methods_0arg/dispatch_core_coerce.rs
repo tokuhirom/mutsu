@@ -410,6 +410,17 @@ pub(super) fn dispatch(
                 Value::Complex(r, _) => Value::Int(*r as i64),
                 Value::Hash(h) => Value::Int(h.len() as i64),
                 Value::Array(items, ..) => Value::Int(items.len() as i64),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
+                    if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                        Value::Int(bytes.len() as i64)
+                    } else {
+                        Value::Int(0)
+                    }
+                }
                 _ => return Some(None),
             };
             Some(Some(Ok(result)))
@@ -643,6 +654,17 @@ pub(super) fn dispatch(
                 Value::Complex(r, _) => Value::Num(*r),
                 Value::Array(items, ..) => Value::Int(items.len() as i64),
                 Value::Hash(h) => Value::Int(h.len() as i64),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
+                    if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                        Value::Int(bytes.len() as i64)
+                    } else {
+                        Value::Int(0)
+                    }
+                }
                 Value::Instance {
                     class_name,
                     attributes,

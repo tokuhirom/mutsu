@@ -693,6 +693,152 @@ impl Interpreter {
                 return self.buf_allocate(*name, &args);
             }
         }
+        // Buf/Blob class-level and instance-level methods
+        if method == "encoding" {
+            // Package (type object) encoding
+            if let Value::Package(name) = &target {
+                let cn = name.resolve();
+                if crate::runtime::utils::is_buf_or_blob_class(&cn) {
+                    // utf8 -> "utf-8", utf16 -> "utf-16", others -> Any type object
+                    let enc = match cn.as_str() {
+                        "utf8" => Value::str("utf-8".to_string()),
+                        "utf16" => Value::str("utf-16".to_string()),
+                        _ => Value::Package(crate::symbol::Symbol::intern("Any")),
+                    };
+                    return Ok(enc);
+                }
+            }
+            // Instance encoding
+            if let Value::Instance { class_name, .. } = &target {
+                let cn = class_name.resolve();
+                if crate::runtime::utils::is_buf_or_blob_class(&cn) {
+                    let enc = match cn.as_str() {
+                        "utf8" => Value::str("utf-8".to_string()),
+                        "utf16" => Value::str("utf-16".to_string()),
+                        _ => Value::Package(crate::symbol::Symbol::intern("Any")),
+                    };
+                    return Ok(enc);
+                }
+            }
+        }
+        // Buf/Blob .reallocate on non-variable targets (chained calls)
+        if method == "reallocate"
+            && let Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } = &target
+        {
+            let cn = class_name.resolve();
+            if crate::runtime::utils::is_buf_or_blob_class(&cn) {
+                let new_size = match args.first() {
+                    Some(v) => super::to_int(v) as usize,
+                    None => 0,
+                };
+                let mut bytes = if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                    items.to_vec()
+                } else {
+                    Vec::new()
+                };
+                // When growing, fill with zeros; when shrinking, truncate
+                // After reallocate(0).reallocate(N), the new bytes should be zeros
+                bytes.resize(new_size, Value::Int(0));
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("bytes".to_string(), Value::array(bytes));
+                return Ok(Value::make_instance(*class_name, attrs));
+            }
+        }
+        // Buf/Blob push/append/unshift/prepend on non-variable targets: validate args
+        if matches!(method, "push" | "append" | "unshift" | "prepend")
+            && let Value::Instance { class_name, .. } = &target
+        {
+            let cn = class_name.resolve();
+            if crate::runtime::utils::is_buf_or_blob_class(&cn) {
+                // Check for string args => X::TypeCheck
+                for a in &args {
+                    if matches!(a, Value::Str(_)) {
+                        let msg =
+                            "Type check failed in assignment; expected Int but got Str".to_string();
+                        let mut ex_attrs = std::collections::HashMap::new();
+                        ex_attrs.insert("message".to_string(), Value::str(msg.clone()));
+                        ex_attrs.insert("got".to_string(), a.clone());
+                        ex_attrs.insert("expected".to_string(), Value::str("Int".to_string()));
+                        let exception = Value::make_instance(
+                            crate::symbol::Symbol::intern("X::TypeCheck"),
+                            ex_attrs,
+                        );
+                        let mut err = RuntimeError::new(msg);
+                        err.exception = Some(Box::new(exception));
+                        return Err(err);
+                    }
+                }
+            }
+        }
+        // Buf/Blob pop/shift on non-variable targets (e.g. Buf.new.pop throws X::Cannot::Empty)
+        if matches!(method, "pop" | "shift")
+            && let Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } = &target
+        {
+            let cn = class_name.resolve();
+            if crate::runtime::utils::is_buf_or_blob_class(&cn) {
+                if crate::runtime::utils::is_blob_like_class(&cn) {
+                    return Err(RuntimeError::new(format!(
+                        "Cannot modify immutable {} with {}",
+                        cn, method
+                    )));
+                }
+                let bytes = if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                    items.to_vec()
+                } else {
+                    Vec::new()
+                };
+                if bytes.is_empty() {
+                    let mut ex_attrs = std::collections::HashMap::new();
+                    ex_attrs.insert("action".to_string(), Value::str(method.to_string()));
+                    ex_attrs.insert("what".to_string(), Value::str("Buf".to_string()));
+                    ex_attrs.insert(
+                        "message".to_string(),
+                        Value::str(format!("Cannot {} from an empty Buf", method)),
+                    );
+                    let exception = Value::make_instance(
+                        crate::symbol::Symbol::intern("X::Cannot::Empty"),
+                        ex_attrs,
+                    );
+                    let mut err = RuntimeError::new(format!("Cannot {} from an empty Buf", method));
+                    err.exception = Some(Box::new(exception));
+                    return Err(err);
+                }
+                // Non-empty: return element
+                if method == "pop" {
+                    return Ok(bytes.last().unwrap().clone());
+                } else {
+                    return Ok(bytes.first().unwrap().clone());
+                }
+            }
+        }
+        // Buf/Blob .chars throws X::Buf::AsStr
+        if (method == "chars" || method == "Str" || method == "chop" || method == "chomp")
+            && let Value::Instance { class_name, .. } = &target
+        {
+            let cn = class_name.resolve();
+            if crate::runtime::utils::is_buf_or_blob_class(&cn) {
+                let msg = format!(
+                    "Cannot use a {} as a string, but you called the .{} method on it",
+                    cn, method
+                );
+                let mut ex_attrs = std::collections::HashMap::new();
+                ex_attrs.insert("message".to_string(), Value::str(msg.clone()));
+                ex_attrs.insert("method".to_string(), Value::str(method.to_string()));
+                let exception =
+                    Value::make_instance(crate::symbol::Symbol::intern("X::Buf::AsStr"), ex_attrs);
+                let mut err = RuntimeError::new(msg);
+                err.exception = Some(Box::new(exception));
+                return Err(err);
+            }
+        }
         // Coerce Instance args for log/exp/atan2
         let mut args = args;
         if matches!(method, "log" | "exp" | "atan2") {

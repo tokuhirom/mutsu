@@ -304,6 +304,39 @@ impl Interpreter {
                             .collect()
                     }
                 }
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
+                    // Extract bytes from Buf/Blob instance and cycle them
+                    let pattern: Vec<Value> =
+                        if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                            items.to_vec()
+                        } else {
+                            Vec::new()
+                        };
+                    if pattern.is_empty() {
+                        vec![Value::Int(0); size]
+                    } else {
+                        (0..size)
+                            .map(|i| pattern[i % pattern.len()].clone())
+                            .collect()
+                    }
+                }
+                Value::Str(_) => {
+                    // String arguments are not valid for Blob.allocate
+                    let msg =
+                        "Type check failed in assignment; expected Int but got Str".to_string();
+                    let mut ex_attrs = std::collections::HashMap::new();
+                    ex_attrs.insert("message".to_string(), Value::str(msg.clone()));
+                    ex_attrs.insert("got".to_string(), fill.clone());
+                    ex_attrs.insert("expected".to_string(), Value::str("Int".to_string()));
+                    let exception = Value::make_instance(Symbol::intern("X::TypeCheck"), ex_attrs);
+                    let mut err = RuntimeError::new(msg);
+                    err.exception = Some(Box::new(exception));
+                    return Err(err);
+                }
                 _ => vec![fill.clone(); size],
             }
         } else {

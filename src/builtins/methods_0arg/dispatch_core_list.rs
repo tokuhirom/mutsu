@@ -137,6 +137,21 @@ pub(super) fn dispatch(
                 }
             }
             Value::Str(s) => Some(Ok(Value::str(s.chars().rev().collect()))),
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
+                let mut bytes = if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                    items.to_vec()
+                } else {
+                    Vec::new()
+                };
+                bytes.reverse();
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("bytes".to_string(), Value::array(bytes));
+                Some(Ok(Value::make_instance(*class_name, attrs)))
+            }
             _ => None,
         }),
         "unique" => Some(match target {

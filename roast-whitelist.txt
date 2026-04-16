@@ -876,6 +876,7 @@ roast/S32-array/unshift.t
 roast/S32-basics/pairup.t
 roast/S32-basics/warn.t
 roast/S32-basics/xxPOS-native.t
+roast/S32-container/buf.t
 roast/S32-container/cat.t
 roast/S32-container/roundrobin.t
 roast/S32-container/stringify.t
