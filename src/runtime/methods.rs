@@ -634,8 +634,11 @@ impl Interpreter {
                             return Ok(Value::str_from(""));
                         }
                         let path = first.map(|v| v.to_string_value()).unwrap_or_default();
+                        let is_qnx = cn == "IO::Spec::QNX";
                         let cleaned = if is_win32 {
                             Self::cleanup_io_path_lexical_win32(&path)
+                        } else if is_qnx {
+                            Self::canonpath_qnx(&path, parent)
                         } else {
                             Self::canonpath_unix(&path, parent)
                         };
@@ -671,6 +674,247 @@ impl Interpreter {
                         #[cfg(target_arch = "wasm32")]
                         let tmpdir_str = "/tmp".to_string();
                         return Ok(self.make_io_path_instance(&tmpdir_str));
+                    }
+                    "curdir" => return Ok(Value::str_from(".")),
+                    "rootdir" => return Ok(Value::str_from("/")),
+                    "updir" => return Ok(Value::str_from("..")),
+                    "catdir" => {
+                        let parts: Vec<String> = args.iter().map(|a| a.to_string_value()).collect();
+                        if parts.is_empty() {
+                            return Ok(Value::str_from(""));
+                        }
+                        let mut joined = parts.join("/");
+                        joined.push('/');
+                        let result = Self::canonpath_unix(&joined, false);
+                        return Ok(Value::str(result));
+                    }
+                    "catfile" => {
+                        let parts: Vec<String> = args.iter().map(|a| a.to_string_value()).collect();
+                        let joined = parts.join("/");
+                        let result = Self::canonpath_unix(&joined, false);
+                        return Ok(Value::str(result));
+                    }
+                    "curupdir" => {
+                        // Returns a matcher that accepts everything except "." and ".."
+                        return Ok(Value::make_instance(
+                            crate::symbol::Symbol::intern("IO::Spec::CurUpDir"),
+                            std::collections::HashMap::new(),
+                        ));
+                    }
+                    "path" => {
+                        let path_env = std::env::var("PATH").unwrap_or_default();
+                        if path_env.is_empty() {
+                            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+                        }
+                        let parts: Vec<Value> = path_env
+                            .split(':')
+                            .map(|p| {
+                                if p.is_empty() {
+                                    Value::str_from(".")
+                                } else {
+                                    Value::str(p.to_string())
+                                }
+                            })
+                            .collect();
+                        return Ok(Value::Seq(std::sync::Arc::new(parts)));
+                    }
+                    "splitpath" => {
+                        let path = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        // Split into (volume, directory, file)
+                        // On Unix, volume is always empty
+                        // If path ends with / or last component is . or ..,
+                        // treat entire path as directory with empty file
+                        let basename = path
+                            .rfind('/')
+                            .map(|pos| &path[pos + 1..])
+                            .unwrap_or(path.as_str());
+                        let (dir, file) =
+                            if path.ends_with('/') || basename == "." || basename == ".." {
+                                (path.as_str(), "")
+                            } else if let Some(pos) = path.rfind('/') {
+                                (&path[..=pos], &path[pos + 1..])
+                            } else {
+                                ("", path.as_str())
+                            };
+                        return Ok(Value::Array(
+                            std::sync::Arc::new(vec![
+                                Value::str_from(""),
+                                Value::str(dir.to_string()),
+                                Value::str(file.to_string()),
+                            ]),
+                            crate::value::ArrayKind::List,
+                        ));
+                    }
+                    "split" => {
+                        let path = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        // Returns a hash with volume, dirname, basename
+                        let (dirname, basename) = if path == "/" {
+                            ("/", "/")
+                        } else if path.ends_with('/') {
+                            // Trailing slash: strip it, then split
+                            let trimmed = path.trim_end_matches('/');
+                            if let Some(pos) = trimmed.rfind('/') {
+                                let dir = if pos == 0 { "/" } else { &trimmed[..pos] };
+                                (dir, &trimmed[pos + 1..])
+                            } else {
+                                (".", trimmed)
+                            }
+                        } else if let Some(pos) = path.rfind('/') {
+                            let dir = if pos == 0 { "/" } else { &path[..pos] };
+                            (dir, &path[pos + 1..])
+                        } else if path == "." {
+                            (".", ".")
+                        } else {
+                            (".", path.as_str())
+                        };
+                        let mut hash = std::collections::HashMap::new();
+                        hash.insert("volume".to_string(), Value::str_from(""));
+                        hash.insert("dirname".to_string(), Value::str(dirname.to_string()));
+                        hash.insert("basename".to_string(), Value::str(basename.to_string()));
+                        return Ok(Value::make_instance(
+                            crate::symbol::Symbol::intern("IO::Path::Parts"),
+                            hash,
+                        ));
+                    }
+                    "join" => {
+                        // On Unix, volume is ignored
+                        let dir = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
+                        let file = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
+                        let result = if file.is_empty() {
+                            if dir.is_empty() { String::new() } else { dir }
+                        } else if dir.is_empty() || dir == "." {
+                            file
+                        } else if dir == "/" && file == "/" {
+                            "/".to_string()
+                        } else if dir.ends_with('/') {
+                            format!("{}{}", dir, file)
+                        } else {
+                            format!("{}/{}", dir, file)
+                        };
+                        return Ok(Value::str(result));
+                    }
+                    "splitdir" => {
+                        let path = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        if path.is_empty() {
+                            return Ok(Value::Array(
+                                std::sync::Arc::new(vec![Value::str_from("")]),
+                                crate::value::ArrayKind::List,
+                            ));
+                        }
+                        let parts: Vec<Value> =
+                            path.split('/').map(|s| Value::str(s.to_string())).collect();
+                        return Ok(Value::Array(
+                            std::sync::Arc::new(parts),
+                            crate::value::ArrayKind::List,
+                        ));
+                    }
+                    "catpath" => {
+                        let _vol = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let dir = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
+                        let file = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
+                        let mut result = dir;
+                        if !file.is_empty() {
+                            if !result.is_empty() && !result.ends_with('/') {
+                                result.push('/');
+                            }
+                            result.push_str(&file);
+                        }
+                        return Ok(Value::str(result));
+                    }
+                    "abs2rel" => {
+                        let path_str = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let base_str =
+                            args.get(1).map(|v| v.to_string_value()).unwrap_or_else(|| {
+                                std::env::current_dir()
+                                    .map(|p| p.to_string_lossy().to_string())
+                                    .unwrap_or_else(|_| ".".to_string())
+                            });
+                        let path = Self::canonpath_unix(&path_str, false);
+                        let base = Self::canonpath_unix(&base_str, false);
+                        let path_parts: Vec<&str> =
+                            path.split('/').filter(|s| !s.is_empty()).collect();
+                        let base_parts: Vec<&str> =
+                            base.split('/').filter(|s| !s.is_empty()).collect();
+                        // Find common prefix length
+                        let mut common = 0;
+                        while common < path_parts.len()
+                            && common < base_parts.len()
+                            && path_parts[common] == base_parts[common]
+                        {
+                            common += 1;
+                        }
+                        let ups = base_parts.len() - common;
+                        let mut result_parts: Vec<&str> = vec![".."; ups];
+                        result_parts.extend_from_slice(&path_parts[common..]);
+                        let result = if result_parts.is_empty() {
+                            ".".to_string()
+                        } else {
+                            result_parts.join("/")
+                        };
+                        return Ok(Value::str(result));
+                    }
+                    "rel2abs" => {
+                        let path_str = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let base_str =
+                            args.get(1).map(|v| v.to_string_value()).unwrap_or_else(|| {
+                                std::env::current_dir()
+                                    .map(|p| p.to_string_lossy().to_string())
+                                    .unwrap_or_else(|_| ".".to_string())
+                            });
+                        if path_str.starts_with('/') {
+                            return Ok(Value::str(path_str));
+                        }
+                        let mut result = base_str;
+                        if !result.ends_with('/') {
+                            result.push('/');
+                        }
+                        result.push_str(&path_str);
+                        let cleaned = Self::canonpath_unix(&result, false);
+                        return Ok(Value::str(cleaned));
+                    }
+                    "basename" => {
+                        let path = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        // basename is the part after the last '/'
+                        let result = if let Some(pos) = path.rfind('/') {
+                            &path[pos + 1..]
+                        } else {
+                            path.as_str()
+                        };
+                        return Ok(Value::str(result.to_string()));
+                    }
+                    "extension" => {
+                        let path = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        // Extension is everything after the last '.' in the full path
+                        let result = if let Some(pos) = path.rfind('.') {
+                            &path[pos + 1..]
+                        } else {
+                            ""
+                        };
+                        return Ok(Value::str(result.to_string()));
                     }
                     _ => {}
                 }
@@ -1465,6 +1709,7 @@ impl Interpreter {
         // (handled by native_io_handle which slurps the file first).
         if method == "split"
             && !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply" || class_name == "IO::Handle")
+            && !matches!(&target, Value::Package(name) if name.resolve().starts_with("IO::Spec"))
         {
             return self.handle_split_method(target, args);
         }
