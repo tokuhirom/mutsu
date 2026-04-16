@@ -171,7 +171,7 @@ impl Interpreter {
         if matches!(constraint, "Callable" | "Code" | "Block")
             && matches!(
                 value_type,
-                "Sub" | "Routine" | "Method" | "Block" | "WhateverCode"
+                "Sub" | "Routine" | "Method" | "Block" | "WhateverCode" | "Regex"
             )
         {
             return true;

@@ -204,8 +204,10 @@ pub(super) type ClassAttributeDef = (
 pub(crate) enum DocDeclKind {
     #[default]
     Package, // class, module, package, grammar, role, enum, subset
-    Sub,  // sub, method, submethod, token, rule, regex
-    Attr, // has $.attr
+    Sub,         // sub, method, submethod
+    GrammarRule, // token, rule, regex (inside grammar)
+    Attr,        // has $.attr
+    Param,       // documented parameter
 }
 
 /// A declarator doc comment with leading (#|) and trailing (#=) parts.
@@ -217,6 +219,8 @@ pub(crate) struct DocComment {
     pub wherefore_name: String,
     /// Kind of declaration.
     pub kind: DocDeclKind,
+    /// Whether this is a proto declaration (affects WHEREFORE type in $=pod).
+    pub is_proto: bool,
 }
 
 impl DocComment {

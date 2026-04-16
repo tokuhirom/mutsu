@@ -328,10 +328,35 @@ impl Interpreter {
                     }
                     k
                 } else if class_name == "Parameter" {
-                    // Parameter objects: look up by "SubName::param"
+                    // Parameter objects: look up by "owner_sub::param_name"
                     let mut k = Vec::new();
-                    if let Some(Value::Str(param_name)) = attributes.get("name") {
-                        k.push(param_name.to_string());
+                    let param_name = attributes
+                        .get("name")
+                        .and_then(|v| match v {
+                            Value::Str(s) => Some(s.to_string()),
+                            _ => None,
+                        })
+                        .unwrap_or_default();
+                    let sigil = attributes
+                        .get("sigil")
+                        .and_then(|v| match v {
+                            Value::Str(s) => Some(s.to_string()),
+                            _ => None,
+                        })
+                        .unwrap_or_default();
+                    if let Some(Value::Str(owner)) = attributes.get("__mutsu_owner_sub") {
+                        // Try scoped key with param name
+                        if !param_name.is_empty() {
+                            k.push(format!("{}::{}", owner, param_name));
+                        }
+                        // For anonymous params, try with just the sigil
+                        if param_name.is_empty() || !param_name.starts_with(&sigil) {
+                            k.push(format!("{}::{}", owner, sigil));
+                        }
+                    }
+                    // Fallback: try plain param name
+                    if !param_name.is_empty() {
+                        k.push(param_name);
                     }
                     k
                 } else {
@@ -340,6 +365,26 @@ impl Interpreter {
             }
             Value::Sub(sub_data) => {
                 let mut k = Vec::new();
+                // Check for multi candidate index (from .candidates or routine_candidate_subs)
+                let multi_idx = sub_data
+                    .env
+                    .get("__mutsu_multi_index")
+                    .or_else(|| sub_data.env.get("__mutsu_lookup_candidate_idx"))
+                    .and_then(|v| match v {
+                        Value::Int(i) => Some(*i),
+                        _ => None,
+                    });
+                if let Some(idx) = multi_idx {
+                    if sub_data.package != "" && sub_data.name != "" {
+                        k.push(format!(
+                            "{}::{}/multi.{}",
+                            sub_data.package, sub_data.name, idx
+                        ));
+                    }
+                    if sub_data.name != "" {
+                        k.push(format!("&{}/multi.{}", sub_data.name.resolve(), idx));
+                    }
+                }
                 if sub_data.package != "" && sub_data.name != "" {
                     k.push(format!("{}::{}", sub_data.package, sub_data.name));
                 }

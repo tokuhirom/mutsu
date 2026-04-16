@@ -186,6 +186,12 @@ pub(crate) fn param_defs_to_sig_info(params: &[ParamDef], return_type: Option<St
 
 /// Create a Signature Value from SigInfo.
 pub(crate) fn make_signature_value(info: SigInfo) -> Value {
+    make_signature_value_with_owner(info, None)
+}
+
+/// Create a Signature Value from SigInfo, with an optional owner sub key
+/// for parameter doc comment lookup.
+pub(crate) fn make_signature_value_with_owner(info: SigInfo, owner_key: Option<String>) -> Value {
     let raku_str = render_signature(&info);
     // .gist is like .raku but without the leading ':'
     let gist_str = raku_str.strip_prefix(':').unwrap_or(&raku_str).to_string();
@@ -196,7 +202,7 @@ pub(crate) fn make_signature_value(info: SigInfo) -> Value {
     attrs.insert("gist".to_string(), Value::str(gist_str));
     attrs.insert(
         "params".to_string(),
-        make_params_value_from_sig_params(&info.params),
+        make_params_value_with_owner(&info.params, &owner_key),
     );
     let val = Value::make_instance(Symbol::intern("Signature"), attrs);
     // Register the SigInfo for later lookup (smartmatch, etc.)
@@ -211,7 +217,30 @@ fn make_params_value_from_sig_params(params: &[SigParam]) -> Value {
     Value::array(values)
 }
 
+fn make_params_value_with_owner(params: &[SigParam], owner_key: &Option<String>) -> Value {
+    let values: Vec<Value> = params
+        .iter()
+        .map(|p| sig_param_to_parameter_instance_with_owner(p, owner_key))
+        .collect();
+    Value::array(values)
+}
+
+fn sig_param_to_parameter_instance_with_owner(p: &SigParam, owner_key: &Option<String>) -> Value {
+    // Build the base parameter attrs
+    let mut attrs = build_parameter_attrs(p);
+    // Inject owner sub key for doc comment lookup
+    if let Some(key) = owner_key {
+        attrs.insert("__mutsu_owner_sub".to_string(), Value::str(key.clone()));
+    }
+    Value::make_instance(Symbol::intern("Parameter"), attrs)
+}
+
 fn sig_param_to_parameter_instance(p: &SigParam) -> Value {
+    let attrs = build_parameter_attrs(p);
+    Value::make_instance(Symbol::intern("Parameter"), attrs)
+}
+
+fn build_parameter_attrs(p: &SigParam) -> HashMap<String, Value> {
     let mut attrs = HashMap::new();
     // .name returns the sigiled name (e.g., "$x", "@pos", "%named")
     // For named params with aliases (:x($a)), resolve the inner variable name
@@ -340,7 +369,7 @@ fn sig_param_to_parameter_instance(p: &SigParam) -> Value {
             make_params_value_from_sig_params(sub),
         );
     }
-    Value::make_instance(Symbol::intern("Parameter"), attrs)
+    attrs
 }
 
 /// Construct the `.raku` string for a Parameter instance from its attributes.

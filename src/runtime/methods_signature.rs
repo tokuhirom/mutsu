@@ -1,7 +1,7 @@
 use super::*;
 use crate::ast::CallArg;
 use crate::symbol::Symbol;
-use crate::value::signature::{make_signature_value, param_defs_to_sig_info};
+use crate::value::signature::{make_signature_value_with_owner, param_defs_to_sig_info};
 
 /// Create a structured X::Method::Private::Permission error.
 pub(super) fn make_private_permission_error(method_name: &str, class_name: &str) -> RuntimeError {
@@ -622,6 +622,7 @@ impl Interpreter {
         let prefix_global = format!("GLOBAL::{name}/");
         let mut seen = std::collections::HashSet::new();
         let mut out = Vec::new();
+        let mut multi_idx = 0usize;
         for (key, def) in &self.functions {
             let key_s = key.resolve();
             if key_s == exact_local
@@ -632,6 +633,12 @@ impl Interpreter {
                 let fp =
                     crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
                 if seen.insert(fp) {
+                    let mut env = self.env.clone();
+                    // Store the multi index for doc comment lookup
+                    env.insert(
+                        "__mutsu_multi_index".to_string(),
+                        Value::Int(multi_idx as i64),
+                    );
                     out.push(Value::make_sub(
                         def.package,
                         def.name,
@@ -639,8 +646,9 @@ impl Interpreter {
                         def.param_defs.clone(),
                         def.body.clone(),
                         def.is_rw,
-                        self.env.clone(),
+                        env,
                     ));
+                    multi_idx += 1;
                 }
             }
         }
@@ -757,7 +765,24 @@ impl Interpreter {
             _ => None,
         });
         let info = param_defs_to_sig_info(&param_defs, return_type);
-        make_signature_value(info)
+        // Build the owner sub key for parameter doc comment lookup.
+        // Must match the key format used by collect_doc_comments:
+        // - Subs use "&name" prefix
+        // - Methods use "ClassName::name" format
+        let sub_key = if data.name != "" {
+            let name = data.name.resolve();
+            // Check if the sub is a method (has a non-GLOBAL package context
+            // and uses Class::method format in doc comments)
+            let pkg = data.package.resolve();
+            if !pkg.is_empty() && pkg != "GLOBAL" {
+                Some(format!("{}::{}", pkg, name))
+            } else {
+                Some(format!("&{}", name))
+            }
+        } else {
+            None
+        };
+        make_signature_value_with_owner(info, sub_key)
     }
 
     pub(super) fn signature_required_positional_count(

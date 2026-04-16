@@ -41,6 +41,47 @@ impl Interpreter {
                 env,
             ));
         }
+        // Check role methods
+        if let Some(role_def) = self.roles.get(&class_name_str)
+            && let Some(defs) = role_def.methods.get(method_name)
+            && let Some(def) = defs.first()
+        {
+            let has_multi = defs.iter().any(|d| d.is_multi);
+            let mut full_param_defs = Vec::with_capacity(def.param_defs.len() + 1);
+            full_param_defs.push(Self::make_invocant_param(&class_name_str));
+            full_param_defs.extend(def.param_defs.iter().cloned());
+            let mut env = crate::env::Env::new();
+            if has_multi {
+                env.insert(
+                    "__mutsu_lookup_class".to_string(),
+                    Value::str(class_name_str.clone()),
+                );
+                env.insert(
+                    "__mutsu_lookup_method".to_string(),
+                    Value::str(method_name.to_string()),
+                );
+            }
+            return Some(Value::make_sub(
+                class_name,
+                Symbol::intern(method_name),
+                def.params.clone(),
+                full_param_defs,
+                (*def.body).clone(),
+                def.is_rw,
+                env,
+            ));
+        }
+        // Check grammar token/rule/regex definitions
+        let token_key = format!("{}::{}", class_name_str, method_name);
+        if let Some(defs) = self.token_defs.get(&Symbol::intern(&token_key))
+            && !defs.is_empty()
+        {
+            return Some(Value::Routine {
+                package: class_name,
+                name: Symbol::intern(method_name),
+                is_regex: true,
+            });
+        }
         // Check built-in type methods — return a Routine marker that the
         // runtime can dispatch when called.
         if self.is_builtin_type_method(&class_name_str, method_name) {
