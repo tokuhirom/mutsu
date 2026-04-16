@@ -117,6 +117,11 @@ impl Interpreter {
         &mut self.readonly_vars
     }
 
+    /// Check if a variable is readonly.
+    pub(crate) fn is_readonly(&self, name: &str) -> bool {
+        self.readonly_vars.contains(name)
+    }
+
     /// Mark a variable as readonly.
     pub(crate) fn mark_readonly(&mut self, name: &str) {
         self.readonly_vars.insert(name.to_string());

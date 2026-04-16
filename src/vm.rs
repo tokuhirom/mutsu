@@ -92,6 +92,9 @@ pub(crate) struct VM {
     resume_ip: Option<usize>,
     /// When true, the next SetLocal is a `:=` bind (preserves container type for `@` vars).
     bind_context: bool,
+    /// When true, the next SetLocal is a `:=` rebind (not VarDecl).
+    /// Used to trigger cleanup of old bind pairs and reverse aliases.
+    rebind_context: bool,
     /// When true, the next SetLocal skips @/% container coercion (for `constant @x`).
     constant_context: bool,
     /// When true, the next SetLocal came from an explicit initializer (`= expr`).
@@ -126,6 +129,11 @@ pub(crate) struct VM {
     /// each active BlockScope. Used during BlockScope restoration to avoid
     /// propagating block-local variable values to the outer scope.
     block_declared_vars: Vec<std::collections::HashSet<String>>,
+    /// Pending alias-based bind pairs created by `:=` binding inside closures
+    /// (e.g. `$a := $arg` where `$arg is rw`).  Each entry is
+    /// (target_name, source_name): after the closure returns, the caller
+    /// creates local_bind_pairs from these so writes to source propagate to target.
+    pending_alias_bind_names: Vec<(String, String)>,
 }
 
 impl VM {
@@ -264,6 +272,7 @@ impl VM {
             locals_dirty: false,
             resume_ip: None,
             bind_context: false,
+            rebind_context: false,
             constant_context: false,
             explicit_initializer_context: false,
             vardecl_context: false,
@@ -276,6 +285,7 @@ impl VM {
             multi_candidates_cache: HashMap::new(),
             multi_candidates_cache_gen: 0,
             block_declared_vars: Vec::new(),
+            pending_alias_bind_names: Vec::new(),
         }
     }
 
@@ -1010,7 +1020,7 @@ impl VM {
                     return Err(RuntimeError::assignment_ro(None));
                 }
                 if let Some(source_name) = bind_source {
-                    let mut resolved_source = source_name;
+                    let mut resolved_source = source_name.clone();
                     let mut seen = std::collections::HashSet::new();
                     while seen.insert(resolved_source.clone()) {
                         let key = format!("__mutsu_sigilless_alias::{}", resolved_source);
@@ -1021,10 +1031,23 @@ impl VM {
                     }
                     self.interpreter
                         .env_mut()
-                        .insert(alias_key.clone(), Value::str(resolved_source));
+                        .insert(alias_key.clone(), Value::str(resolved_source.clone()));
+                    // Propagate readonly status from the source variable.
+                    // Binding to a readonly parameter should make the target
+                    // readonly as well (persisted in env for cross-scope survival).
+                    let source_readonly = self.interpreter.is_readonly(&source_name);
                     self.interpreter
                         .env_mut()
-                        .insert(readonly_key.clone(), Value::Bool(false));
+                        .insert(readonly_key.clone(), Value::Bool(source_readonly));
+                    if source_readonly {
+                        self.interpreter.mark_readonly(&name);
+                    }
+                    // Record pending alias bind for the caller to create
+                    // local_bind_pairs after the closure returns.
+                    if !source_readonly {
+                        self.pending_alias_bind_names
+                            .push((name.clone(), resolved_source));
+                    }
                 }
                 if raw_mode && name.starts_with('@') {
                     // For `constant @x`, bypass set_shared_var's List→Array
@@ -1220,6 +1243,10 @@ impl VM {
             }
             OpCode::MarkBindContext => {
                 self.bind_context = true;
+                *ip += 1;
+            }
+            OpCode::MarkRebindContext => {
+                self.rebind_context = true;
                 *ip += 1;
             }
             OpCode::MarkConstantContext => {
@@ -2940,6 +2967,17 @@ impl VM {
             OpCode::CheckReadOnly(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
                 self.interpreter.check_readonly_for_modify(name)?;
+                // Also check env-based readonly status set by cross-scope
+                // `:=` binding (e.g. binding to a readonly sub parameter
+                // in a closure).  The readonly_vars set is scope-local
+                // and gets restored on frame pop, but the env key persists.
+                let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
+                if matches!(
+                    self.interpreter.env().get(&readonly_key),
+                    Some(Value::Bool(true))
+                ) {
+                    return Err(RuntimeError::assignment_ro(Some(name)));
+                }
                 *ip += 1;
             }
             OpCode::MarkVarReadonly(name_idx) => {

@@ -70,6 +70,9 @@ pub(crate) enum OpCode {
     WrapVarRef(u32),
     /// Signal that the next SetLocal is a `:=` bind (preserve container type for `@` vars).
     MarkBindContext,
+    /// Signal that the next SetLocal is a `:=` rebind (not a VarDecl).
+    /// Triggers cleanup of old bind pairs and reverse aliases.
+    MarkRebindContext,
 
     // -- String --
     Concat,

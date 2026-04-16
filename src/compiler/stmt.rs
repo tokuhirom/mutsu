@@ -826,6 +826,8 @@ impl Compiler {
                     if name.starts_with('@') {
                         self.code.emit(OpCode::MarkBindContext);
                     }
+                    // Signal rebind context for cleanup of old bind pairs.
+                    self.code.emit(OpCode::MarkRebindContext);
                     self.compile_call_arg(expr);
                 } else {
                     self.compile_assignment_rhs_for_target(name, expr);

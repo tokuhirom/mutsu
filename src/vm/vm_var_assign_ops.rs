@@ -879,6 +879,8 @@ impl VM {
         code: &CompiledCode,
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
+        // Lazily convert pending alias bind names into local_bind_pairs.
+        self.resolve_pending_alias_binds(code);
         let name = Self::const_str(code, name_idx);
         // Handle $CALLER::varname++ — increment through caller scope
         if let Some((bare_name, depth)) = crate::compiler::Compiler::parse_caller_prefix(name) {
@@ -912,6 +914,22 @@ impl VM {
         self.set_env_with_main_alias(name, new_val.clone());
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
+        // Propagate via local_bind_pairs (for `:=` bindings within this scope
+        // or cross-scope bindings resolved by resolve_pending_alias_binds).
+        if let Some(source_idx) = code.locals.iter().position(|n| n == name) {
+            let mut env_updates = Vec::new();
+            for &(src, tgt) in &self.local_bind_pairs {
+                if src == source_idx {
+                    self.locals[tgt] = new_val.clone();
+                    env_updates.push((code.locals[tgt].clone(), new_val.clone()));
+                }
+            }
+            // Also update env so ensure_locals_synced doesn't overwrite
+            // with stale data.
+            for (target_name, val) in env_updates {
+                self.set_env_with_main_alias(&target_name, val);
+            }
+        }
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
         let mut alias_name = self.interpreter.env().get(&alias_key).and_then(|v| {
             if let Value::Str(name) = v {
@@ -2246,6 +2264,7 @@ impl VM {
                 return Ok(());
             }
         }
+        // Disabled: GetLocal alias following for cross-scope binding
         let atomic_name = name.strip_prefix('$').unwrap_or(&name);
         let atomic_name_key = format!("__mutsu_atomic_name::{atomic_name}");
         // Only use the scalar atomic fast path for scalar ($) variables.
@@ -2335,10 +2354,12 @@ impl VM {
         let raw_popped = self.stack.pop().unwrap_or(Value::Nil);
         let (raw_popped, bind_source) = Self::extract_varref_binding(raw_popped);
         let is_bind = self.bind_context || bind_source.is_some();
+        let is_rebind = self.rebind_context;
         let is_constant = self.constant_context;
         let has_explicit_initializer = self.explicit_initializer_context;
         let is_vardecl = self.vardecl_context;
         self.bind_context = false;
+        self.rebind_context = false;
         self.constant_context = false;
         self.explicit_initializer_context = false;
         self.vardecl_context = false;
@@ -2355,6 +2376,9 @@ impl VM {
             let deleted_key = format!("__mutsu_deleted_index::{}", name);
             self.interpreter.env_mut().remove(&deleted_key);
         }
+
+        // Lazily convert pending alias bind names into local_bind_pairs.
+        self.resolve_pending_alias_binds(code);
 
         // Fast path for simple scalar variables — skip all metadata checks
         if code.simple_locals[idx] && bind_source.is_none() && !is_bind {
@@ -2432,6 +2456,23 @@ impl VM {
             // from firing).
             self.interpreter
                 .set_shared_var(name, self.locals[idx].clone());
+            // When rebinding (`$x := expr`), remove old bind pairs and reverse aliases.
+            if is_rebind {
+                self.local_bind_pairs.retain(|&(source, _)| source != idx);
+                let mut aliases_to_remove = Vec::new();
+                let prefix = "__mutsu_sigilless_alias::";
+                for (k, v) in self.interpreter.env().iter() {
+                    if let Some(_var_name) = k.strip_prefix(prefix)
+                        && let Value::Str(target) = v
+                        && target.as_str() == name
+                    {
+                        aliases_to_remove.push(k.clone());
+                    }
+                }
+                for k in aliases_to_remove {
+                    self.interpreter.env_mut().remove(&k);
+                }
+            }
             // Propagate value to variables bound to this one via `:=` binding.
             // Uses local_bind_pairs recorded at binding time to avoid
             // cross-scope name collisions.
@@ -2675,6 +2716,27 @@ impl VM {
         }
         if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
             self.interpreter.reset_atomic_var_key(name);
+        }
+        // When rebinding a variable (`$x := expr`), remove any existing
+        // bind pairs where this slot was the source.  Rebinding replaces
+        // the container, so previously bound targets must stop tracking.
+        if is_rebind {
+            self.local_bind_pairs.retain(|&(source, _)| source != idx);
+            // Also remove env-based aliases that point TO this variable,
+            // so GetLocal alias-following doesn't read the new value.
+            let mut aliases_to_remove = Vec::new();
+            let prefix = "__mutsu_sigilless_alias::";
+            for (k, v) in self.interpreter.env().iter() {
+                if let Some(_var_name) = k.strip_prefix(prefix)
+                    && let Value::Str(target) = v
+                    && target.as_str() == name
+                {
+                    aliases_to_remove.push(k.clone());
+                }
+            }
+            for k in aliases_to_remove {
+                self.interpreter.env_mut().remove(&k);
+            }
         }
         if let Some(source_name) = bind_source {
             let resolved_source = self.resolve_sigilless_alias_source_name(&source_name);
@@ -3362,5 +3424,39 @@ impl VM {
             .to_i64()
             .map(Value::Int)
             .unwrap_or_else(|| Value::bigint(wrapped)))
+    }
+
+    /// Lazily convert pending alias bind names (from closure `:=` bindings)
+    /// into local_bind_pairs now that we have access to the outer code.
+    fn resolve_pending_alias_binds(&mut self, code: &CompiledCode) {
+        if self.pending_alias_bind_names.is_empty() {
+            return;
+        }
+        let pending = std::mem::take(&mut self.pending_alias_bind_names);
+        for (target_name, source_name) in pending {
+            if let Some(target_idx) = code.locals.iter().position(|n| n == &target_name)
+                && let Some(source_idx) = code.locals.iter().position(|n| n == &source_name)
+                && source_idx != target_idx
+            {
+                // Add bidirectional bind pairs: source->target AND target->source.
+                // This ensures writes to either variable propagate to the other.
+                if !self.local_bind_pairs.contains(&(source_idx, target_idx)) {
+                    self.local_bind_pairs.push((source_idx, target_idx));
+                }
+                if !self.local_bind_pairs.contains(&(target_idx, source_idx)) {
+                    self.local_bind_pairs.push((target_idx, source_idx));
+                }
+                // Sync the target local from the source local or env so the
+                // initial value is correct (the closure may have set the
+                // target via SetGlobal but locals are stale from the frame
+                // restore).
+                let source_val = if let Some(v) = self.interpreter.env().get(&source_name) {
+                    v.clone()
+                } else {
+                    self.locals[source_idx].clone()
+                };
+                self.locals[target_idx] = source_val;
+            }
+        }
     }
 }
