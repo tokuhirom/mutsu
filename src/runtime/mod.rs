@@ -4156,6 +4156,10 @@ impl Interpreter {
                 // Skip internal variables and topic variables
                 if key == "_"
                     || key == "@_"
+                    || key == "/"
+                    || key == "!"
+                    || key == "$/"
+                    || key == "$!"
                     || key.starts_with("__mutsu_")
                     || key.starts_with("&")
                     || key == "?LINE"
@@ -4367,6 +4371,11 @@ impl Interpreter {
             },
             is_thread_clone: true,
         };
+        // Raku gives each start block fresh $/ and $! (they are lexically scoped).
+        cloned.env.insert("/".to_string(), Value::Nil);
+        cloned.env.insert("!".to_string(), Value::Nil);
+        cloned.env.insert("$/".to_string(), Value::Nil);
+        cloned.env.insert("$!".to_string(), Value::Nil);
         cloned.init_io_environment();
         cloned
     }

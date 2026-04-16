@@ -274,8 +274,10 @@ pub(in crate::parser) fn should_wrap_whatevercode(expr: &Expr) -> bool {
         return false;
     }
     match expr {
-        // SmartMatch: Whatever on RHS is handled at runtime. LHS bare * and
-        // compound expressions are handled at runtime too — don't curry.
+        // SmartMatch: Whatever on RHS is handled at runtime (autoprime).
+        // LHS compound Whatever curries (e.g. `*.abs ~~ Code`), but bare
+        // `* ~~ Type` currying is handled in the precedence parser where we can
+        // distinguish a true bare * operand from a parenthesized ((*)).
         Expr::Binary {
             op: TokenKind::SmartMatch,
             ..
@@ -776,6 +778,16 @@ fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Expr {
             }
             body_expr
         }
+        // SmartMatch: only replace Whatever on LHS; RHS is handled at runtime.
+        Expr::Binary {
+            left,
+            op: op @ TokenKind::SmartMatch,
+            right,
+        } => Expr::Binary {
+            left: Box::new(replace_whatever_numbered(left, counter)),
+            op: op.clone(),
+            right: right.clone(),
+        },
         Expr::Binary { left, op, right } => Expr::Binary {
             left: Box::new(replace_whatever_numbered(left, counter)),
             op: op.clone(),
@@ -1044,6 +1056,16 @@ fn replace_whatever_single(expr: &Expr) -> Expr {
                 Expr::Var("_".to_string())
             }
         }
+        // SmartMatch: only replace Whatever on LHS; RHS is handled at runtime.
+        Expr::Binary {
+            left,
+            op: op @ TokenKind::SmartMatch,
+            right,
+        } => Expr::Binary {
+            left: Box::new(replace_whatever_single(left)),
+            op: op.clone(),
+            right: right.clone(),
+        },
         Expr::Binary { left, op, right } => Expr::Binary {
             left: Box::new(replace_whatever_single(left)),
             op: op.clone(),

@@ -2240,6 +2240,31 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             if super::should_wrap_whatevercode(&left) {
                 left = super::wrap_whatevercode(&left);
             }
+            // Bare `* ~~ Type` curries to WhateverCode `{ $_ ~~ Type }`.
+            // This is only done here (not in should_curry_whatever) because at the
+            // top-level wrapping stage, parenthesized `((*)) ~~ Type` also has
+            // Expr::Whatever as LHS and should NOT curry — only a true bare `*`
+            // operand in the precedence parser should trigger this.
+            // We distinguish bare `*` from `((*))` by checking whether the consumed
+            // input for the LHS started with `(`.
+            if matches!(&left, Expr::Whatever) {
+                let lhs_text = input[..input.len() - rest.len()].trim_start();
+                if !lhs_text.starts_with('(') {
+                    let sm_expr = Expr::Binary {
+                        left: Box::new(Expr::Var("_".to_string())),
+                        op: op.token_kind(),
+                        right: Box::new(right),
+                    };
+                    return Ok((
+                        r,
+                        Expr::Lambda {
+                            param: "_".to_string(),
+                            body: vec![crate::ast::Stmt::Expr(sm_expr)],
+                            is_whatever_code: true,
+                        },
+                    ));
+                }
+            }
         }
         // When the smartmatch RHS is a regex literal, do not chain with
         // subsequent comparison operators.  The regex literal terminates the
