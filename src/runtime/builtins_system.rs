@@ -68,6 +68,20 @@ impl Interpreter {
         let parent_handles_snapshot: std::collections::HashSet<usize> =
             self.handles.keys().copied().collect();
 
+        // Raku gives each start block fresh $/ and $!.
+        // Strip these from the closure's captured env so they don't override
+        // the fresh Nil values set in clone_for_thread.
+        let block = if let Value::Sub(ref data) = block {
+            let mut new_data = (**data).clone();
+            new_data.env.remove("/");
+            new_data.env.remove("!");
+            new_data.env.remove("$/");
+            new_data.env.remove("$!");
+            Value::Sub(std::sync::Arc::new(new_data))
+        } else {
+            block
+        };
+
         std::thread::spawn(move || {
             let vm = crate::vm::VM::new(thread_interp);
             let (mut thread_interp, result) = vm.call_value(block, vec![]);
