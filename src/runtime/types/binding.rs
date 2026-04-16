@@ -595,7 +595,13 @@ impl Interpreter {
                                 varref_from_value(&args[positional_idx]).map(|(name, _)| name)
                             });
                         if let Some(source_name) = source_name {
-                            rw_bindings.push((pd.name.clone(), source_name));
+                            rw_bindings.push((pd.name.clone(), source_name.clone()));
+                            // Set up a sigilless alias so that subsequent `:=`
+                            // bindings (e.g. `$a := $arg`) can transitively
+                            // resolve through the `is rw` parameter to the
+                            // caller's variable.
+                            let alias_key = format!("__mutsu_sigilless_alias::{}", pd.name);
+                            self.env.insert(alias_key, Value::str(source_name));
                         } else if is_rw {
                             return Err(RuntimeError::new(format!(
                                 "X::Parameter::RW: '{}' expects a writable variable argument",

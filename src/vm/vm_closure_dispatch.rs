@@ -482,6 +482,18 @@ impl VM {
                 restored_env.insert(k.clone(), v.clone());
             }
         }
+        // Write back readonly/alias metadata for captured variables that were
+        // modified inside the closure (e.g. `$a := $arg` where `$a` is captured).
+        for captured_name in &captured_names {
+            let readonly_key = format!("__mutsu_sigilless_readonly::{}", captured_name);
+            if let Some(v) = self.interpreter.env().get(&readonly_key).cloned() {
+                restored_env.insert(readonly_key, v);
+            }
+            let alias_key = format!("__mutsu_sigilless_alias::{}", captured_name);
+            if let Some(v) = self.interpreter.env().get(&alias_key).cloned() {
+                restored_env.insert(alias_key, v);
+            }
+        }
         self.interpreter
             .merge_sigilless_alias_writes(&mut restored_env, self.interpreter.env());
 
