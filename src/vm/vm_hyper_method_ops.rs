@@ -32,7 +32,22 @@ impl VM {
         if let Value::Seq(ref arc) = target {
             crate::value::seq_consume(arc)?;
         }
-        let mut items = crate::runtime::value_to_list(&target);
+        // For Buf/Blob instances, expand to individual byte values for hyper dispatch
+        let mut items = if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &target
+            && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
+        {
+            if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
+                bytes.to_vec()
+            } else {
+                Vec::new()
+            }
+        } else {
+            crate::runtime::value_to_list(&target)
+        };
         let mut results = Vec::with_capacity(items.len());
         for (idx, item) in items.iter_mut().enumerate() {
             let method = Self::rewrite_method_name(&method_raw, modifier.as_deref());

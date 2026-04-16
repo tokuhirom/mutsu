@@ -753,6 +753,12 @@ impl Interpreter {
                 return Ok(Value::Bool(true));
             }
             if op == "~" {
+                // Buf/Blob: arity-1 infix:<~> is identity (returns the same Buf/Blob)
+                if let Value::Instance { class_name, .. } = &args[0]
+                    && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
+                {
+                    return Ok(args[0].clone());
+                }
                 return Ok(Value::str(crate::runtime::utils::coerce_to_str(&args[0])));
             }
             // Set operators with single arg: coerce to appropriate set type

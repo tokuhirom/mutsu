@@ -205,7 +205,7 @@ pub(super) fn dispatch(
                         elems.join(",")
                     ))))
                 } else {
-                    // gist
+                    // gist — show at most 100 elements, append "..." if truncated
                     if bytes.is_empty() {
                         Some(Ok(Value::str(format!("{}()", class_name))))
                     } else {
@@ -219,7 +219,9 @@ pub(super) fn dispatch(
                         } else {
                             2
                         };
-                        let hex: Vec<String> = bytes
+                        let truncated = bytes.len() > 100;
+                        let display_bytes = if truncated { &bytes[..100] } else { &bytes[..] };
+                        let mut hex: Vec<String> = display_bytes
                             .iter()
                             .map(|b| match b {
                                 Value::Int(i) => match hex_width {
@@ -231,6 +233,9 @@ pub(super) fn dispatch(
                                 _ => "0".repeat(hex_width),
                             })
                             .collect();
+                        if truncated {
+                            hex.push("...".to_string());
+                        }
                         Some(Ok(Value::str(format!(
                             "{}:0x<{}>",
                             class_name,

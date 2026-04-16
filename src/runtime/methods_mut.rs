@@ -1675,14 +1675,17 @@ impl Interpreter {
             }
         }
 
-        // Buf/Blob mutating methods: append, push, prepend, unshift, reallocate
+        // Buf/Blob mutating methods: append, push, prepend, unshift, reallocate, pop, shift, splice
         if matches!(
             method,
-            "append" | "push" | "prepend" | "unshift" | "reallocate"
+            "append" | "push" | "prepend" | "unshift" | "reallocate" | "pop" | "shift" | "splice"
         ) && Self::is_buf_like_value(&target)
         {
             if method == "reallocate" {
                 return self.buf_reallocate(target_var, target, &args);
+            }
+            if method == "pop" || method == "shift" || method == "splice" {
+                return self.buf_pop_shift_splice(target_var, target, method, args);
             }
             return self.buf_mutate_method(target_var, target, method, args);
         }
@@ -3228,6 +3231,32 @@ impl Interpreter {
         Ok(updated)
     }
 
+    /// Recursively flatten arguments for Buf mutate methods.
+    /// Handles nested arrays, Seq, Slip, and Buf/Blob instances.
+    fn flatten_buf_args(args: Vec<Value>) -> Vec<Value> {
+        let mut result = Vec::new();
+        for a in args {
+            match &a {
+                Value::Int(_) => result.push(a),
+                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                    // Recursively flatten
+                    result.extend(Self::flatten_buf_args(items.to_vec()));
+                }
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
+                    if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                        result.extend(items.to_vec());
+                    }
+                }
+                _ => result.push(a),
+            }
+        }
+        result
+    }
+
     fn is_buf_like_value(val: &Value) -> bool {
         if let Value::Instance { class_name, .. } = val {
             let cn = class_name.resolve();
@@ -3268,17 +3297,23 @@ impl Interpreter {
             return Err(RuntimeError::new("Not a Buf".to_string()));
         };
 
-        // Flatten args to int values
-        let new_items: Vec<Value> = args
-            .into_iter()
-            .flat_map(|a| match a {
-                Value::Int(_) => vec![a],
-                Value::Array(items, ..) => items.to_vec(),
-                Value::Seq(items) => items.to_vec(),
-                Value::Slip(items) => items.to_vec(),
-                _ => vec![a],
-            })
-            .collect();
+        // Validate and flatten args to int values
+        // String args should throw X::TypeCheck
+        for a in &args {
+            if matches!(a, Value::Str(_)) {
+                let msg = "Type check failed in assignment; expected Int but got Str".to_string();
+                let mut ex_attrs = HashMap::new();
+                ex_attrs.insert("message".to_string(), Value::str(msg.clone()));
+                ex_attrs.insert("got".to_string(), a.clone());
+                ex_attrs.insert("expected".to_string(), Value::str("Int".to_string()));
+                let exception =
+                    Value::make_instance(crate::symbol::Symbol::intern("X::TypeCheck"), ex_attrs);
+                let mut err = RuntimeError::new(msg);
+                err.exception = Some(Box::new(exception));
+                return Err(err);
+            }
+        }
+        let new_items: Vec<Value> = Self::flatten_buf_args(args);
 
         match method {
             "append" | "push" => {
@@ -3297,5 +3332,103 @@ impl Interpreter {
         let updated = Value::make_instance_with_id(class_name_sym, attrs, orig_id);
         self.env.insert(target_var.to_string(), updated.clone());
         Ok(updated)
+    }
+
+    fn buf_pop_shift_splice(
+        &mut self,
+        target_var: &str,
+        target: Value,
+        method: &str,
+        _args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let (class_name_sym, mut bytes, orig_id) = if let Value::Instance {
+            class_name,
+            attributes,
+            id,
+            ..
+        } = &target
+        {
+            let cn = class_name.resolve();
+            // Blob is immutable
+            if crate::runtime::utils::is_blob_like_class(&cn) {
+                return Err(RuntimeError::new(format!(
+                    "Cannot modify immutable {} with {}",
+                    cn, method
+                )));
+            }
+            let items = if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                items.to_vec()
+            } else {
+                Vec::new()
+            };
+            (*class_name, items, *id)
+        } else {
+            return Err(RuntimeError::new("Not a Buf".to_string()));
+        };
+
+        match method {
+            "pop" => {
+                if bytes.is_empty() {
+                    let mut ex_attrs = HashMap::new();
+                    ex_attrs.insert("action".to_string(), Value::str("pop".to_string()));
+                    ex_attrs.insert("what".to_string(), Value::str("Buf".to_string()));
+                    ex_attrs.insert(
+                        "message".to_string(),
+                        Value::str("Cannot pop from an empty Buf".to_string()),
+                    );
+                    let exception = Value::make_instance(
+                        crate::symbol::Symbol::intern("X::Cannot::Empty"),
+                        ex_attrs,
+                    );
+                    let mut err = RuntimeError::new("Cannot pop from an empty Buf".to_string());
+                    err.exception = Some(Box::new(exception));
+                    return Err(err);
+                }
+                let popped = bytes.pop().unwrap();
+                let mut attrs = HashMap::new();
+                attrs.insert("bytes".to_string(), Value::array(bytes));
+                let updated = Value::make_instance_with_id(class_name_sym, attrs, orig_id);
+                self.env.insert(target_var.to_string(), updated);
+                Ok(popped)
+            }
+            "shift" => {
+                if bytes.is_empty() {
+                    let mut ex_attrs = HashMap::new();
+                    ex_attrs.insert("action".to_string(), Value::str("shift".to_string()));
+                    ex_attrs.insert("what".to_string(), Value::str("Buf".to_string()));
+                    ex_attrs.insert(
+                        "message".to_string(),
+                        Value::str("Cannot shift from an empty Buf".to_string()),
+                    );
+                    let exception = Value::make_instance(
+                        crate::symbol::Symbol::intern("X::Cannot::Empty"),
+                        ex_attrs,
+                    );
+                    let mut err = RuntimeError::new("Cannot shift from an empty Buf".to_string());
+                    err.exception = Some(Box::new(exception));
+                    return Err(err);
+                }
+                let shifted = bytes.remove(0);
+                let mut attrs = HashMap::new();
+                attrs.insert("bytes".to_string(), Value::array(bytes));
+                let updated = Value::make_instance_with_id(class_name_sym, attrs, orig_id);
+                self.env.insert(target_var.to_string(), updated);
+                Ok(shifted)
+            }
+            "splice" => {
+                // .splice() with no args: returns all elements, empties the Buf
+                let spliced_bytes = bytes.clone();
+                bytes.clear();
+                let mut attrs = HashMap::new();
+                attrs.insert("bytes".to_string(), Value::array(bytes));
+                let updated = Value::make_instance_with_id(class_name_sym, attrs, orig_id);
+                self.env.insert(target_var.to_string(), updated);
+                // Return a Buf with the spliced elements
+                let mut result_attrs = HashMap::new();
+                result_attrs.insert("bytes".to_string(), Value::array(spliced_bytes));
+                Ok(Value::make_instance(class_name_sym, result_attrs))
+            }
+            _ => unreachable!(),
+        }
     }
 }
