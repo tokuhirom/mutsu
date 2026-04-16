@@ -112,6 +112,99 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Pod::Block::Para"), attrs)
     }
 
+    /// Create a Pod::Block::Para whose contents may include Pod::FormattingCode
+    /// nodes when the text contains `C<...>`, `B<...>`, etc.
+    fn make_pod_para_with_formatting(text: &str) -> Value {
+        let contents = Self::parse_formatting_codes(text);
+        let mut attrs = HashMap::new();
+        attrs.insert("contents".to_string(), Value::array(contents));
+        attrs.insert("config".to_string(), Value::hash(HashMap::new()));
+        Value::make_instance(Symbol::intern("Pod::Block::Para"), attrs)
+    }
+
+    /// Parse Pod formatting codes (e.g. `C<code>`, `B<bold>`) within text.
+    /// Returns a list of Value items: plain strings and Pod::FormattingCode instances.
+    fn parse_formatting_codes(text: &str) -> Vec<Value> {
+        let mut result = Vec::new();
+        let mut rest = text;
+        while let Some(pos) = rest.find(|c: char| c.is_ascii_uppercase())
+            && pos < rest.len()
+        {
+            let after_letter = &rest[pos + 1..];
+            if let Some(inside) = after_letter.strip_prefix('<') {
+                let letter = &rest[pos..pos + 1];
+                // Find matching '>' accounting for nesting
+                if let Some(close) = Self::find_formatting_close(inside) {
+                    let before = &rest[..pos];
+                    if !before.is_empty() {
+                        result.push(Value::str(before.to_string()));
+                    }
+                    let inner = &inside[..close];
+                    let mut fc_attrs = HashMap::new();
+                    fc_attrs.insert("type".to_string(), Value::str(letter.to_string()));
+                    fc_attrs.insert(
+                        "contents".to_string(),
+                        Value::array(vec![Value::str(inner.to_string())]),
+                    );
+                    fc_attrs.insert("config".to_string(), Value::hash(HashMap::new()));
+                    result.push(Value::make_instance(
+                        Symbol::intern("Pod::FormattingCode"),
+                        fc_attrs,
+                    ));
+                    rest = &inside[close + 1..]; // skip past '>'
+                    continue;
+                }
+            }
+            // Not a formatting code, include up to and past the letter
+            let end = pos + 1;
+            // Continue scanning from next position
+            result.push(Value::str(rest[..end].to_string()));
+            rest = &rest[end..];
+        }
+        if !rest.is_empty() {
+            result.push(Value::str(rest.to_string()));
+        }
+        // Merge adjacent strings
+        let mut merged: Vec<Value> = Vec::new();
+        for val in result {
+            if let Value::Str(s) = &val
+                && let Some(Value::Str(prev)) = merged.last()
+            {
+                let combined = format!("{}{}", &**prev, &**s);
+                let len = merged.len();
+                merged[len - 1] = Value::str(combined);
+                continue;
+            }
+            merged.push(val);
+        }
+        merged
+    }
+
+    /// Find the closing `>` for a formatting code, accounting for nested `<>`.
+    fn find_formatting_close(text: &str) -> Option<usize> {
+        let mut depth = 0usize;
+        for (i, ch) in text.char_indices() {
+            match ch {
+                '<' => depth += 1,
+                '>' => {
+                    if depth == 0 {
+                        return Some(i);
+                    }
+                    depth -= 1;
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    fn make_pod_code(text: String) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("contents".to_string(), Value::array(vec![Value::str(text)]));
+        attrs.insert("config".to_string(), Value::hash(HashMap::new()));
+        Value::make_instance(Symbol::intern("Pod::Block::Code"), attrs)
+    }
+
     fn make_pod_item(level: i64, contents: Vec<Value>) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("contents".to_string(), Value::array(contents));
@@ -413,27 +506,111 @@ impl Interpreter {
         )
     }
 
-    fn collect_pod_para(
+    /// Collect a paragraph and parse formatting codes in the text.
+    fn collect_pod_para_formatted(
         lines: &[&str],
         mut idx: usize,
         end_target: Option<&str>,
     ) -> (Value, usize) {
+        let allows_code_blocks = matches!(end_target, Some("pod"))
+            || end_target.is_some_and(|t| Self::parse_item_level(t).is_some());
         let mut para_lines = Vec::new();
         while idx < lines.len() {
             let trimmed = lines[idx].trim_start();
             if trimmed.is_empty() || Self::active_pod_directive(lines[idx], end_target).is_some() {
                 break;
             }
+            // Stop if line is indented (code block follows) — only in pod/item blocks
+            if allows_code_blocks {
+                let indent = lines[idx].len() - trimmed.len();
+                if indent > 0 {
+                    break;
+                }
+            }
             para_lines.push(lines[idx].trim().to_string());
             idx += 1;
         }
         let text = Self::normalize_pod_text(&para_lines);
-        let payload = if text.is_empty() {
-            Vec::new()
+        if text.is_empty() {
+            (Self::make_pod_para(Vec::new()), idx)
         } else {
-            vec![text]
-        };
-        (Self::make_pod_para(payload), idx)
+            // Check if text contains formatting codes
+            let has_formatting = text
+                .as_bytes()
+                .windows(2)
+                .any(|w| w[0].is_ascii_uppercase() && w[1] == b'<');
+            if has_formatting {
+                (Self::make_pod_para_with_formatting(&text), idx)
+            } else {
+                (Self::make_pod_para(vec![text]), idx)
+            }
+        }
+    }
+
+    /// Collect consecutive indented lines as a Pod::Block::Code.
+    /// Groups lines with the same base indentation level.
+    /// When indentation changes, this returns and lets the caller create a new block.
+    fn collect_pod_code_block(
+        lines: &[&str],
+        mut idx: usize,
+        end_target: Option<&str>,
+    ) -> (Value, usize) {
+        // Determine base indentation from first line
+        let base_indent = lines[idx].len() - lines[idx].trim_start().len();
+        let mut code_lines: Vec<&str> = Vec::new();
+
+        while idx < lines.len() {
+            let trimmed = lines[idx].trim_start();
+            if Self::active_pod_directive(lines[idx], end_target).is_some() {
+                break;
+            }
+            if trimmed.is_empty() {
+                // Blank line: include it if the next non-blank line has the same
+                // base indentation. Peek ahead.
+                let mut peek = idx + 1;
+                while peek < lines.len() && lines[peek].trim().is_empty() {
+                    peek += 1;
+                }
+                if peek < lines.len() {
+                    let next_trimmed = lines[peek].trim_start();
+                    if !next_trimmed.is_empty() {
+                        let next_indent = lines[peek].len() - next_trimmed.len();
+                        if next_indent == base_indent {
+                            // Include the blank line(s) and continue
+                            code_lines.push("");
+                            idx += 1;
+                            continue;
+                        }
+                    }
+                }
+                // End of this code block
+                break;
+            }
+            let indent = lines[idx].len() - trimmed.len();
+            if indent == 0 {
+                // Not indented → not a code block line
+                break;
+            }
+            if indent < base_indent {
+                // Different base indentation → different code block
+                break;
+            }
+            // Strip the base indentation
+            if lines[idx].len() >= base_indent {
+                code_lines.push(&lines[idx][base_indent..]);
+            } else {
+                code_lines.push(trimmed);
+            }
+            idx += 1;
+        }
+
+        // Remove trailing empty lines
+        while code_lines.last().is_some_and(|l| l.is_empty()) {
+            code_lines.pop();
+        }
+
+        let text = code_lines.join("\n");
+        (Self::make_pod_code(text), idx)
     }
 
     fn collect_pod_para_with_inline(
@@ -655,6 +832,46 @@ impl Interpreter {
                         idx = next_idx.max(idx + 1);
                         continue;
                     }
+                    if target == "code" {
+                        // =begin code ... =end code → Pod::Block::Code
+                        // Collect raw text (no inner directive parsing)
+                        idx += 1;
+                        let mut code_lines: Vec<&str> = Vec::new();
+                        while idx < lines.len() {
+                            if let Some((ed, er)) =
+                                Self::active_pod_directive(lines[idx], Some("code"))
+                                && ed == "end"
+                                && er.split_whitespace().next().unwrap_or_default() == "code"
+                            {
+                                idx += 1;
+                                break;
+                            }
+                            code_lines.push(lines[idx]);
+                            idx += 1;
+                        }
+                        // Strip common leading indentation
+                        let min_indent = code_lines
+                            .iter()
+                            .filter(|l| !l.trim().is_empty())
+                            .map(|l| l.len() - l.trim_start().len())
+                            .min()
+                            .unwrap_or(0);
+                        let text: String = code_lines
+                            .iter()
+                            .map(|l| {
+                                if l.len() >= min_indent {
+                                    &l[min_indent..]
+                                } else {
+                                    l.trim_start()
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        // Trim trailing newlines
+                        let text = text.trim_end_matches('\n').to_string();
+                        entries.push(Self::make_pod_code(text));
+                        continue;
+                    }
                     if let Some(level) = Self::parse_item_level(target) {
                         let (item_contents, next_idx) =
                             Self::collect_pod_entries(lines, idx + 1, Some(target));
@@ -721,9 +938,19 @@ impl Interpreter {
                 continue;
             }
 
-            let (para, next_idx) = Self::collect_pod_para(lines, idx, end_target);
-            entries.push(para);
-            idx = next_idx.max(idx + 1);
+            // Check if this line is indented → code block (only in pod/item blocks)
+            let indent = lines[idx].len() - lines[idx].trim_start().len();
+            let allows_code_blocks = matches!(end_target, Some("pod"))
+                || end_target.is_some_and(|t| Self::parse_item_level(t).is_some());
+            if indent > 0 && allows_code_blocks {
+                let (code, next_idx) = Self::collect_pod_code_block(lines, idx, end_target);
+                entries.push(code);
+                idx = next_idx.max(idx + 1);
+            } else {
+                let (para, next_idx) = Self::collect_pod_para_formatted(lines, idx, end_target);
+                entries.push(para);
+                idx = next_idx.max(idx + 1);
+            }
         }
         (entries, idx)
     }
@@ -868,6 +1095,43 @@ impl Interpreter {
                             Self::build_pod_defn_delimited(&lines, idx + 1, config);
                         entries.push(defn);
                         idx = next_idx.max(idx + 1);
+                        continue;
+                    }
+                    if target == "code" {
+                        // =begin code ... =end code → Pod::Block::Code
+                        idx += 1;
+                        let mut code_lines: Vec<&str> = Vec::new();
+                        while idx < lines.len() {
+                            if let Some((ed, er)) =
+                                Self::active_pod_directive(lines[idx], Some("code"))
+                                && ed == "end"
+                                && er.split_whitespace().next().unwrap_or_default() == "code"
+                            {
+                                idx += 1;
+                                break;
+                            }
+                            code_lines.push(lines[idx]);
+                            idx += 1;
+                        }
+                        let min_indent = code_lines
+                            .iter()
+                            .filter(|l| !l.trim().is_empty())
+                            .map(|l| l.len() - l.trim_start().len())
+                            .min()
+                            .unwrap_or(0);
+                        let text: String = code_lines
+                            .iter()
+                            .map(|l| {
+                                if l.len() >= min_indent {
+                                    &l[min_indent..]
+                                } else {
+                                    l.trim_start()
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        let text = text.trim_end_matches('\n').to_string();
+                        entries.push(Self::make_pod_code(text));
                         continue;
                     }
                     if let Some(level) = Self::parse_item_level(target) {
