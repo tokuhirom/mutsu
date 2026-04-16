@@ -189,8 +189,17 @@ impl VM {
                             None
                         };
                         let effective_idx = resolved_idx.as_ref().unwrap_or(idx);
+                        // Nested list index: @a[0,(1,2)] => (a[0], (a[1], a[2]))
+                        if matches!(
+                            effective_idx,
+                            Value::Array(..) | Value::Seq(..) | Value::Slip(..)
+                        ) {
+                            self.stack.push(target.clone());
+                            self.stack.push(effective_idx.clone());
+                            self.exec_index_op_with_positional(is_positional)?;
+                            out.push(self.stack.pop().unwrap_or(Value::Nil));
                         // Range index in a multi-index context produces a sublist
-                        if let Some(range_items) =
+                        } else if let Some(range_items) =
                             Self::resolve_range_index_slice(effective_idx, items, *kind, len, self)
                         {
                             out.push(Value::array(range_items));
@@ -825,34 +834,70 @@ impl VM {
             (ref range, Value::Array(indices, ..)) if range.is_range() => {
                 if let Some((start, end, _excl_start, excl_end)) = range_params(range) {
                     let actual_end = if excl_end { end - 1 } else { end };
-                    let result: Vec<Value> = indices
-                        .iter()
-                        .map(|idx| match idx {
+                    let mut result: Vec<Value> = Vec::with_capacity(indices.len());
+                    for idx in indices.iter() {
+                        match idx {
                             Value::Int(i) if *i >= 0 => {
                                 let val = start + i;
                                 if start > actual_end || val > actual_end {
-                                    Value::Nil
+                                    result.push(Value::Nil);
                                 } else {
-                                    Value::Int(val)
+                                    result.push(Value::Int(val));
                                 }
                             }
-                            _ => Value::Nil,
-                        })
-                        .collect();
+                            Value::Array(..) | Value::Seq(..) | Value::Slip(..) => {
+                                // Nested list index: recurse
+                                self.stack.push(range.clone());
+                                self.stack.push(idx.clone());
+                                self.exec_index_op_with_positional(is_positional)?;
+                                result.push(self.stack.pop().unwrap_or(Value::Nil));
+                            }
+                            _ => result.push(Value::Nil),
+                        }
+                    }
                     Value::array(result)
                 } else {
                     let items = crate::runtime::utils::value_to_list(range);
-                    let result: Vec<Value> = indices
-                        .iter()
-                        .map(|idx| match idx {
+                    let mut result: Vec<Value> = Vec::with_capacity(indices.len());
+                    for idx in indices.iter() {
+                        match idx {
                             Value::Int(i) if *i >= 0 => {
-                                items.get(*i as usize).cloned().unwrap_or(Value::Nil)
+                                result.push(items.get(*i as usize).cloned().unwrap_or(Value::Nil));
                             }
-                            _ => Value::Nil,
-                        })
-                        .collect();
+                            Value::Array(..) | Value::Seq(..) | Value::Slip(..) => {
+                                // Nested list index: recurse
+                                self.stack.push(range.clone());
+                                self.stack.push(idx.clone());
+                                self.exec_index_op_with_positional(is_positional)?;
+                                result.push(self.stack.pop().unwrap_or(Value::Nil));
+                            }
+                            _ => result.push(Value::Nil),
+                        }
+                    }
                     Value::array(result)
                 }
+            }
+            // GenericRange index on Range target: ("a".."z")[0..^Inf], (^3)[0..*]
+            (
+                ref range,
+                Value::GenericRange {
+                    ref start,
+                    ref end,
+                    excl_start,
+                    excl_end,
+                },
+            ) if range.is_range() => {
+                // Convert range target to array, then re-index
+                let items = crate::runtime::utils::value_to_list(range);
+                let target_arr = Value::array(items);
+                self.stack.push(target_arr);
+                self.stack.push(Value::GenericRange {
+                    start: start.clone(),
+                    end: end.clone(),
+                    excl_start,
+                    excl_end,
+                });
+                return self.exec_index_op_with_positional(is_positional);
             }
             // WhateverCode index: @a[*-1] → evaluate the lambda with array length
             (Value::Array(ref items, ..), Value::Sub(ref data)) => {
@@ -968,6 +1013,7 @@ impl VM {
                 let mut resolve_endpoint = |val: &Value| -> i64 {
                     match val {
                         Value::Int(i) => *i,
+                        Value::Whatever => len,
                         Value::Sub(data) => {
                             let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
                             let mut sub_env = data.env.clone();
