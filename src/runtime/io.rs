@@ -1630,6 +1630,10 @@ impl Interpreter {
         let mut current_class: Option<String> = None;
         // Stack of class scopes for nested classes
         let mut class_stack: Vec<Option<String>> = Vec::new();
+        // Per-function counter for uniquifying multi sub/method doc keys
+        let mut multi_counters: HashMap<String, usize> = HashMap::new();
+        // Track current function name for scoping parameter docs
+        let mut current_sub: Option<String> = None;
 
         fn extract_ident(s: &str) -> String {
             s.trim_start()
@@ -1671,14 +1675,13 @@ impl Interpreter {
                             break;
                         }
                     }
-                    if end_idx > idx {
-                        let end_byte = if end_idx < len {
-                            chars[end_idx].0
-                        } else {
-                            s.len()
-                        };
-                        return Some(s[start..end_byte].to_string());
-                    }
+                    let end_byte = if end_idx < len {
+                        chars[end_idx].0
+                    } else {
+                        s.len()
+                    };
+                    // Allow both named params ($x) and anonymous ($, @, %)
+                    return Some(s[start..end_byte].to_string());
                 }
                 idx += 1;
             }
@@ -1851,12 +1854,21 @@ impl Interpreter {
             (line.to_string(), None)
         }
 
+        /// Dispatch prefix for proto/multi/only declarations.
+        #[derive(Clone, Copy, PartialEq)]
+        enum DispatchPrefix {
+            None,
+            Proto,
+            Multi,
+            Only,
+        }
+
         /// Try to extract a declarant name from a line, handling various declaration patterns.
-        /// Returns (name, is_class_like, kind)
+        /// Returns (name, is_class_like, kind, dispatch_prefix)
         fn try_extract_declarant(
             trimmed: &str,
             current_class: &Option<String>,
-        ) -> Option<(String, bool, super::DocDeclKind)> {
+        ) -> Option<(String, bool, super::DocDeclKind, DispatchPrefix)> {
             use super::DocDeclKind;
             // Strip optional scope declarators
             let s = trimmed
@@ -1876,7 +1888,7 @@ impl Interpreter {
                         } else {
                             name
                         };
-                        return Some((full_name, true, DocDeclKind::Package));
+                        return Some((full_name, true, DocDeclKind::Package, DispatchPrefix::None));
                     }
                 }
             }
@@ -1892,7 +1904,7 @@ impl Interpreter {
                     } else {
                         name
                     };
-                    return Some((full_name, true, DocDeclKind::Package));
+                    return Some((full_name, true, DocDeclKind::Package, DispatchPrefix::None));
                 }
             }
 
@@ -1903,30 +1915,66 @@ impl Interpreter {
                 .or_else(|| s.strip_prefix("only "))
                 .unwrap_or(s);
 
-            let had_dispatch_prefix =
-                s.starts_with("multi ") || s.starts_with("proto ") || s.starts_with("only ");
+            let dispatch_prefix = if s.starts_with("multi ") {
+                DispatchPrefix::Multi
+            } else if s.starts_with("proto ") {
+                DispatchPrefix::Proto
+            } else if s.starts_with("only ") {
+                DispatchPrefix::Only
+            } else {
+                DispatchPrefix::None
+            };
+
+            let had_dispatch_prefix = dispatch_prefix != DispatchPrefix::None;
+
+            // Also handle "anon" keyword (e.g., "anon Str sub {}")
+            let s3 = s2.strip_prefix("anon ").unwrap_or(s2);
+            // Strip optional return type between anon/dispatch and sub keyword
+            let s4 = if s3 != s2 {
+                // After "anon ", there may be a type name before "sub"
+                if let Some(sub_pos) = s3.find("sub ") {
+                    &s3[sub_pos..]
+                } else {
+                    s3
+                }
+            } else {
+                s3
+            };
 
             for kw in &["sub ", "method ", "submethod ", "token ", "rule ", "regex "] {
-                if let Some(rest) = s2.strip_prefix(kw) {
+                if let Some(rest) = s4.strip_prefix(kw) {
                     let name = extract_ident(rest);
-                    if !name.is_empty() {
-                        let full_name = if kw.starts_with("method")
-                            || kw.starts_with("submethod")
-                            || kw.starts_with("token")
-                            || kw.starts_with("rule")
-                            || kw.starts_with("regex")
-                        {
-                            if let Some(class) = current_class {
-                                format!("{}::{}", class, name)
+                    let is_grammar_rule = kw.starts_with("token")
+                        || kw.starts_with("rule")
+                        || kw.starts_with("regex");
+                    let is_method_like =
+                        kw.starts_with("method") || kw.starts_with("submethod") || is_grammar_rule;
+                    let full_name = if is_method_like {
+                        if let Some(class) = current_class {
+                            if name.is_empty() {
+                                // Anonymous method
+                                format!("{}::<anon>", class)
                             } else {
-                                name
+                                format!("{}::{}", class, name)
                             }
+                        } else if name.is_empty() {
+                            "<anon>".to_string()
                         } else {
-                            // Prefix sub names with & to avoid collision with package names
-                            format!("&{}", name)
-                        };
-                        return Some((full_name, false, DocDeclKind::Sub));
-                    }
+                            name
+                        }
+                    } else if name.is_empty() {
+                        // Anonymous sub (like "anon Str sub {}")
+                        "&<anon>".to_string()
+                    } else {
+                        // Prefix sub names with & to avoid collision with package names
+                        format!("&{}", name)
+                    };
+                    let kind = if is_grammar_rule {
+                        DocDeclKind::GrammarRule
+                    } else {
+                        DocDeclKind::Sub
+                    };
+                    return Some((full_name, false, kind, dispatch_prefix));
                 }
             }
 
@@ -1934,7 +1982,12 @@ impl Interpreter {
             if had_dispatch_prefix {
                 let name = extract_ident(s2);
                 if !name.is_empty() {
-                    return Some((format!("&{}", name), false, DocDeclKind::Sub));
+                    return Some((
+                        format!("&{}", name),
+                        false,
+                        DocDeclKind::Sub,
+                        dispatch_prefix,
+                    ));
                 }
             }
 
@@ -1964,7 +2017,7 @@ impl Interpreter {
                         } else {
                             format!("$!{}", name)
                         };
-                        return Some((full_name, false, DocDeclKind::Attr));
+                        return Some((full_name, false, DocDeclKind::Attr, DispatchPrefix::None));
                     }
                 }
             }
@@ -1973,7 +2026,7 @@ impl Interpreter {
             if let Some(rest) = s.strip_prefix("enum ") {
                 let name = extract_ident(rest);
                 if !name.is_empty() {
-                    return Some((name, false, DocDeclKind::Package));
+                    return Some((name, false, DocDeclKind::Package, DispatchPrefix::None));
                 }
             }
 
@@ -1981,7 +2034,7 @@ impl Interpreter {
             if let Some(rest) = s.strip_prefix("subset ") {
                 let name = extract_ident(rest);
                 if !name.is_empty() {
-                    return Some((name, false, DocDeclKind::Package));
+                    return Some((name, false, DocDeclKind::Package, DispatchPrefix::None));
                 }
             }
 
@@ -1989,7 +2042,31 @@ impl Interpreter {
             if let Some(rest) = s.strip_prefix("unit module") {
                 let name = extract_ident(rest);
                 if !name.is_empty() {
-                    return Some((name, false, DocDeclKind::Package));
+                    return Some((name, false, DocDeclKind::Package, DispatchPrefix::None));
+                }
+            }
+
+            // Handle "anon sub" in assignments like "my $x = anon Str sub {}"
+            if let Some(anon_pos) = s.find("anon ") {
+                let after_anon = &s[anon_pos + 5..];
+                // Skip optional type name before "sub"
+                let sub_rest = if let Some(sub_pos) = after_anon.find("sub ") {
+                    &after_anon[sub_pos + 4..]
+                } else if let Some(sub_pos) = after_anon.find("sub{") {
+                    &after_anon[sub_pos + 3..]
+                } else {
+                    ""
+                };
+                if !sub_rest.is_empty()
+                    || after_anon.starts_with("sub ")
+                    || after_anon.starts_with("sub{")
+                {
+                    return Some((
+                        "&<anon>".to_string(),
+                        false,
+                        DocDeclKind::Sub,
+                        DispatchPrefix::None,
+                    ));
                 }
             }
 
@@ -2048,25 +2125,42 @@ impl Interpreter {
                 continue;
             }
 
-            // Opening brace tracking for class scope
-            if trimmed == "}" {
+            // Closing brace tracking for class scope
+            // Handle lines that are just "}" or start with "}" (possibly with trailing content)
+            if let Some(after_close) = trimmed.strip_prefix('}') {
                 if let Some(prev) = class_stack.pop() {
                     current_class = prev;
                 } else {
                     current_class = None;
                 }
                 last_declarant = None;
-                idx += 1;
-                continue;
+                // If the line is just "}" or "};" or "} # comment", skip it entirely
+                let after_brace = after_close.trim();
+                if after_brace.is_empty() || after_brace == ";" || after_brace.starts_with('#') {
+                    idx += 1;
+                    continue;
+                }
+                // Otherwise fall through to process the rest of the line
             }
 
             // Check for inline trailing #= on the same line as a declaration
             let (line_without_trailing, inline_trailing) = extract_inline_trailing(trimmed);
             let check_line = line_without_trailing.trim();
 
-            if let Some((name, is_class_like, kind)) =
+            if let Some((name, is_class_like, kind, dispatch)) =
                 try_extract_declarant(check_line, &current_class)
             {
+                // For multi declarations, generate a unique key to avoid
+                // overwriting proto or other multi variants
+                let doc_key = if dispatch == DispatchPrefix::Multi {
+                    let counter = multi_counters.entry(name.clone()).or_insert(0);
+                    let key = format!("{}/multi.{}", name, counter);
+                    *counter += 1;
+                    key
+                } else {
+                    name.clone()
+                };
+
                 let leading = pending_leading.take();
                 let has_leading = leading.is_some();
                 let has_inline_trailing = inline_trailing.is_some();
@@ -2074,13 +2168,15 @@ impl Interpreter {
                 if has_leading || has_inline_trailing {
                     let entry =
                         self.doc_comments
-                            .entry(name.clone())
+                            .entry(doc_key.clone())
                             .or_insert_with(|| DocComment {
                                 wherefore_name: name.clone(),
                                 kind: kind.clone(),
+                                is_proto: false,
                                 ..Default::default()
                             });
                     entry.kind = kind.clone();
+                    entry.is_proto = dispatch == DispatchPrefix::Proto;
                     if has_leading {
                         entry.leading = leading;
                     }
@@ -2089,22 +2185,52 @@ impl Interpreter {
                     }
                 }
                 // Always set last_declarant so trailing #= on the next line can attach
-                last_declarant = Some((name.clone(), kind.clone()));
+                last_declarant = Some((doc_key, kind.clone()));
+                // Track the current function for parameter scoping
+                if kind == super::DocDeclKind::Sub {
+                    current_sub = Some(name.clone());
+                }
                 if is_class_like {
                     class_stack.push(current_class.take());
                     current_class = Some(name);
+                    // Check if the scope opens and closes on the same line
+                    // e.g. "class Simple { }" — count braces to detect this
+                    let mut depth: i32 = 0;
+                    for ch in trimmed.chars() {
+                        if ch == '{' {
+                            depth += 1;
+                        } else if ch == '}' {
+                            depth -= 1;
+                        }
+                    }
+                    if depth <= 0 {
+                        // Self-closing: pop the scope we just pushed
+                        if let Some(prev) = class_stack.pop() {
+                            current_class = prev;
+                        } else {
+                            current_class = None;
+                        }
+                    }
                 }
             } else if let Some(param_name) = try_extract_param_name(check_line) {
                 if let Some(leading) = pending_leading.take() {
-                    let entry = self
-                        .doc_comments
-                        .entry(param_name.clone())
-                        .or_insert_with(|| DocComment {
+                    // Key parameter docs by "sub_name::param_name" to avoid
+                    // collisions when the same param name appears in different subs
+                    let param_key = if let Some(ref sub_name) = current_sub {
+                        format!("{}::{}", sub_name, param_name)
+                    } else {
+                        param_name.clone()
+                    };
+                    self.doc_comments.insert(
+                        param_key.clone(),
+                        DocComment {
                             wherefore_name: param_name.clone(),
-                            kind: super::DocDeclKind::Sub,
-                            ..Default::default()
-                        });
-                    entry.leading = append_doc_text(entry.leading.take(), &leading);
+                            leading: Some(leading),
+                            trailing: None,
+                            kind: super::DocDeclKind::Param,
+                            is_proto: false,
+                        },
+                    );
                 }
                 last_declarant = None;
             } else {
@@ -2125,6 +2251,7 @@ impl Interpreter {
         {
             let mut cur_class2: Option<String> = None;
             let mut cls_stack2: Vec<Option<String>> = Vec::new();
+            let mut cur_sub2: Option<String> = None;
             let mut idx2 = 0usize;
             while idx2 < lines.len() {
                 let trimmed2 = lines[idx2].trim_start();
@@ -2142,27 +2269,83 @@ impl Interpreter {
                     idx2 += 1;
                     continue;
                 }
-                if trimmed2 == "}" {
+                if let Some(after_close2) = trimmed2.strip_prefix('}') {
                     if let Some(prev) = cls_stack2.pop() {
                         cur_class2 = prev;
                     } else {
                         cur_class2 = None;
                     }
-                    idx2 += 1;
-                    continue;
+                    let after_brace = after_close2.trim();
+                    if after_brace.is_empty() || after_brace == ";" || after_brace.starts_with('#')
+                    {
+                        idx2 += 1;
+                        continue;
+                    }
                 }
                 let (lwt, _) = extract_inline_trailing(trimmed2);
                 let ck = lwt.trim();
-                if let Some((name, is_cls, _kind)) = try_extract_declarant(ck, &cur_class2) {
-                    if !seen_names.contains(&name)
-                        && let Some(dc) = self.doc_comments.get(&name)
+                if let Some((name, is_cls, kind, dispatch)) = try_extract_declarant(ck, &cur_class2)
+                {
+                    // Generate the same key as the first pass
+                    let doc_key = if dispatch == DispatchPrefix::Multi {
+                        // Find the next multi key that hasn't been seen
+                        let mut mi = 0usize;
+                        loop {
+                            let candidate_key = format!("{}/multi.{}", name, mi);
+                            if !seen_names.contains(&candidate_key)
+                                && self.doc_comments.contains_key(&candidate_key)
+                            {
+                                break candidate_key;
+                            }
+                            mi += 1;
+                            if mi > 100 {
+                                break format!("{}/multi.{}", name, mi);
+                            }
+                        }
+                    } else {
+                        name.clone()
+                    };
+                    if !seen_names.contains(&doc_key)
+                        && let Some(dc) = self.doc_comments.get(&doc_key)
                     {
-                        seen_names.insert(name.clone());
+                        seen_names.insert(doc_key);
                         self.doc_comment_list.push(dc.clone());
+                    }
+                    if kind == super::DocDeclKind::Sub {
+                        cur_sub2 = Some(name.clone());
                     }
                     if is_cls {
                         cls_stack2.push(cur_class2.take());
                         cur_class2 = Some(name);
+                        // Self-closing scope detection
+                        let mut depth: i32 = 0;
+                        for ch in trimmed2.chars() {
+                            if ch == '{' {
+                                depth += 1;
+                            } else if ch == '}' {
+                                depth -= 1;
+                            }
+                        }
+                        if depth <= 0 {
+                            if let Some(prev) = cls_stack2.pop() {
+                                cur_class2 = prev;
+                            } else {
+                                cur_class2 = None;
+                            }
+                        }
+                    }
+                } else if let Some(param_name) = try_extract_param_name(ck) {
+                    // Check for parameter doc entries
+                    let param_key = if let Some(ref sub_name) = cur_sub2 {
+                        format!("{}::{}", sub_name, param_name)
+                    } else {
+                        param_name.clone()
+                    };
+                    if !seen_names.contains(&param_key)
+                        && let Some(dc) = self.doc_comments.get(&param_key)
+                    {
+                        seen_names.insert(param_key);
+                        self.doc_comment_list.push(dc.clone());
                     }
                 }
                 idx2 += 1;
@@ -2189,11 +2372,22 @@ impl Interpreter {
                     Value::Package(crate::symbol::Symbol::intern(&dc.wherefore_name))
                 }
                 DocDeclKind::Sub => {
-                    // Use "Sub" as the type name — in mutsu, ^name returns "Sub"
-                    // for both subs and methods.
-                    Value::Package(crate::symbol::Symbol::intern("Sub"))
+                    // Proto/only subs (not methods) have ^name "Routine",
+                    // regular subs and methods have "Sub" in mutsu.
+                    // Methods have wherefore_name containing "::" (e.g., "C::meth")
+                    // or not starting with "&".
+                    let is_standalone_sub =
+                        dc.wherefore_name.starts_with('&') || !dc.wherefore_name.contains("::");
+                    let type_name = if dc.is_proto && is_standalone_sub {
+                        "Routine"
+                    } else {
+                        "Sub"
+                    };
+                    Value::Package(crate::symbol::Symbol::intern(type_name))
                 }
+                DocDeclKind::GrammarRule => Value::Package(crate::symbol::Symbol::intern("Regex")),
                 DocDeclKind::Attr => Value::Package(crate::symbol::Symbol::intern("Attribute")),
+                DocDeclKind::Param => Value::Package(crate::symbol::Symbol::intern("Parameter")),
             };
             let pod_entry = Interpreter::make_pod_declarator(dc, wherefore);
             pod_entries.push(pod_entry);

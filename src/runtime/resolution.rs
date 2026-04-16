@@ -475,7 +475,9 @@ impl Interpreter {
             ],
             "Sub" => &["Sub", "Routine", "Block", "Code", "Callable", "Any", "Mu"],
             "Seq" => &["Seq", "Positional", "Cool", "Any", "Mu"],
-            "Regex" => &["Regex", "Method", "Routine", "Block", "Code", "Any", "Mu"],
+            "Regex" => &[
+                "Regex", "Method", "Routine", "Block", "Code", "Callable", "Any", "Mu",
+            ],
             "Junction" => &["Junction", "Mu"],
             _ => &[],
         };

@@ -1268,7 +1268,13 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
             _ => "Sub",
         },
         Value::WeakSub(_) => "Sub",
-        Value::Routine { .. } => "Routine",
+        Value::Routine { is_regex, .. } => {
+            if *is_regex {
+                "Regex"
+            } else {
+                "Routine"
+            }
+        }
         Value::Package(_) => "Package",
         Value::CompUnitDepSpec { .. } => "Any",
         Value::Enum { .. } => "Int",
