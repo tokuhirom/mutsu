@@ -215,6 +215,10 @@ impl Interpreter {
                 name, sig_gist
             ))));
         }
+        if method == "rw" && args.is_empty() {
+            // Built-in routines are not rw by default
+            return Some(Ok(Value::Bool(false)));
+        }
         if method == "can" {
             let method_name = args
                 .first()
@@ -230,6 +234,7 @@ impl Interpreter {
                     | "cando"
                     | "of"
                     | "name"
+                    | "rw"
                     | "raku"
                     | "perl"
                     | "Str"
@@ -545,6 +550,9 @@ impl Interpreter {
                 .as_ref()
                 .map(|f| Value::str(f.clone()))
                 .unwrap_or(Value::Nil)));
+        }
+        if method == "rw" && args.is_empty() {
+            return Some(Ok(Value::Bool(data.is_rw)));
         }
         if method == "of" && args.is_empty() {
             let type_name = self

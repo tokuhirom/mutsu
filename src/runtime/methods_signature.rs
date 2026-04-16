@@ -139,23 +139,25 @@ impl Interpreter {
     /// Coerce a value based on attribute sigil: @ → Array, % → Hash
     pub(crate) fn coerce_attr_value_by_sigil(val: Value, sigil: char) -> Value {
         match sigil {
-            '@' => match val {
+            '@' => match &val {
                 // @-sigiled attributes always produce Array (not List)
                 // Preserve Shaped kind for shaped array attributes
-                Value::Array(items, ArrayKind::Shaped) => Value::Array(items, ArrayKind::Shaped),
+                Value::Array(_, ArrayKind::Shaped) => val,
+                // Itemized arrays ($[...]) become single-element arrays
+                Value::Array(_, kind) if kind.is_itemized() => Value::real_array(vec![val]),
                 Value::Array(items, kind) if kind.is_real_array() => {
-                    Value::Array(items, ArrayKind::Array)
+                    Value::Array(items.clone(), ArrayKind::Array)
                 }
-                Value::Array(items, _) => Value::Array(items, ArrayKind::Array),
+                Value::Array(items, _) => Value::Array(items.clone(), ArrayKind::Array),
                 Value::Range(start, end) => {
-                    let items: Vec<Value> = (start..=end).map(Value::Int).collect();
+                    let items: Vec<Value> = (*start..=*end).map(Value::Int).collect();
                     Value::real_array(items)
                 }
                 Value::RangeExcl(start, end) => {
-                    let items: Vec<Value> = (start..end).map(Value::Int).collect();
+                    let items: Vec<Value> = (*start..*end).map(Value::Int).collect();
                     Value::real_array(items)
                 }
-                other => other,
+                _ => val,
             },
             '%' => match &val {
                 Value::Hash(_) => val,

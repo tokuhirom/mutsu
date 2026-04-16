@@ -73,34 +73,76 @@ fn has_decl_list(input: &str) -> PResult<'_, Stmt> {
     }
     let (mut rest, _) = ws(rest)?;
 
-    // Parse optional `is default(expr)` trait on grouped has declaration
-    if let Some(r) = keyword("is", rest)
-        && let Ok((r, _)) = ws1(r)
-        && let Some(r) = keyword("default", r)
-    {
-        let (r, _) = ws(r)?;
-        if let Some(inner) = r.strip_prefix('(') {
-            let (inner, _) = ws(inner)?;
-            let (inner, default_expr) = expression(inner)?;
-            let (inner, _) = ws(inner)?;
-            let inner = inner
-                .strip_prefix(')')
-                .ok_or_else(|| PError::expected("closing paren in is default"))?;
-            // Apply the default to all attributes in the list
+    // Parse traits on grouped has declaration: `is rw`, `is default(expr)`, etc.
+    while let Some(r) = keyword("is", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, trait_name) = ident(r)?;
+        if trait_name == "rw" {
             for stmt in &mut stmts {
-                if let Stmt::HasDecl {
-                    default,
-                    is_default,
-                    ..
-                } = stmt
-                {
-                    *default = Some(default_expr.clone());
-                    *is_default = Some(default_expr.clone());
+                if let Stmt::HasDecl { is_rw, .. } = stmt {
+                    *is_rw = true;
                 }
             }
-            let (r2, _) = ws(inner)?;
-            rest = r2;
+        } else if trait_name == "readonly" {
+            for stmt in &mut stmts {
+                if let Stmt::HasDecl { is_readonly, .. } = stmt {
+                    *is_readonly = true;
+                }
+            }
+        } else if trait_name == "default" {
+            let (r_ws, _) = ws(r)?;
+            if let Some(inner) = r_ws.strip_prefix('(') {
+                let (inner, _) = ws(inner)?;
+                let (inner, default_expr) = expression(inner)?;
+                let (inner, _) = ws(inner)?;
+                let inner = inner
+                    .strip_prefix(')')
+                    .ok_or_else(|| PError::expected("closing paren in is default"))?;
+                // Apply the default to all attributes in the list
+                for stmt in &mut stmts {
+                    if let Stmt::HasDecl {
+                        default,
+                        is_default,
+                        ..
+                    } = stmt
+                    {
+                        *default = Some(default_expr.clone());
+                        *is_default = Some(default_expr.clone());
+                    }
+                }
+                let (r2, _) = ws(inner)?;
+                rest = r2;
+                continue;
+            }
+        } else if trait_name == "required" {
+            for stmt in &mut stmts {
+                if let Stmt::HasDecl { is_required, .. } = stmt {
+                    *is_required = Some(None);
+                }
+            }
+        } else if trait_name
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_uppercase())
+        {
+            // Uppercase-starting trait name: container type trait
+        } else {
+            // Unknown trait
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("type".to_string(), Value::str("is".to_string()));
+            attrs.insert("subtype".to_string(), Value::str(trait_name.to_string()));
+            attrs.insert("declaring".to_string(), Value::str("attribute".to_string()));
+            let ex = Value::make_instance(Symbol::intern("X::Comp::Trait::Unknown"), attrs);
+            return Err(PError::fatal_with_exception(
+                format!(
+                    "X::Comp::Trait::Unknown: Can't use unknown trait 'is' -> '{}' in an attribute declaration.",
+                    trait_name
+                ),
+                Box::new(ex),
+            ));
         }
+        let (r, _) = ws(r)?;
+        rest = r;
     }
 
     let (rest, _) = opt_char(rest, ';');
@@ -253,9 +295,66 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             // Uppercase-starting trait name: `is Buf`, `is BagHash`, etc.
             // This is a container type trait for `@`/`%` attributes.
             is_type = Some(trait_name.to_string());
+        } else {
+            // Unknown trait
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("type".to_string(), Value::str("is".to_string()));
+            attrs.insert("subtype".to_string(), Value::str(trait_name.to_string()));
+            attrs.insert("declaring".to_string(), Value::str("attribute".to_string()));
+            let ex = Value::make_instance(Symbol::intern("X::Comp::Trait::Unknown"), attrs);
+            return Err(PError::fatal_with_exception(
+                format!(
+                    "X::Comp::Trait::Unknown: Can't use unknown trait 'is' -> '{}' in an attribute declaration.",
+                    trait_name
+                ),
+                Box::new(ex),
+            ));
         }
         let (r, _) = ws(r)?;
         rest = r;
+    }
+
+    // `will` trait on attributes — only `will lazy` is valid; anything else is unknown
+    if let Some(r) = keyword("will", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, will_name) = ident(r)?;
+        if will_name != "lazy" {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("type".to_string(), Value::str("will".to_string()));
+            attrs.insert("subtype".to_string(), Value::str(will_name.to_string()));
+            attrs.insert("declaring".to_string(), Value::str("attribute".to_string()));
+            let ex = Value::make_instance(Symbol::intern("X::Comp::Trait::Unknown"), attrs);
+            return Err(PError::fatal_with_exception(
+                format!(
+                    "X::Comp::Trait::Unknown: Can't use unknown trait 'will' -> '{}' in an attribute declaration.",
+                    will_name
+                ),
+                Box::new(ex),
+            ));
+        }
+        // Skip block for `will lazy { ... }`
+        let (r, _) = ws(r)?;
+        if r.starts_with('{') {
+            // Find matching closing brace (simple, no nesting)
+            let mut depth = 0;
+            let mut pos = 0;
+            for (i, ch) in r.char_indices() {
+                if ch == '{' {
+                    depth += 1;
+                } else if ch == '}' {
+                    depth -= 1;
+                    if depth == 0 {
+                        pos = i + 1;
+                        break;
+                    }
+                }
+            }
+            let (r, _) = ws(&r[pos..])?;
+            rest = r;
+        } else {
+            let (r, _) = ws(r)?;
+            rest = r;
+        }
     }
 
     // `handles` trait, e.g. `has $.x handles <a b>`

@@ -299,10 +299,22 @@ impl Interpreter {
                 attributes.insert(attr_name, val);
             }
         }
+        // Build a map of attribute sigils for proper container semantics
+        let attr_sigils: HashMap<String, char> = if self.classes.contains_key(&class_name.resolve())
+        {
+            self.collect_class_attributes(&class_name.resolve())
+                .into_iter()
+                .map(|(name, _, _, _, _, sigil, _)| (name, sigil))
+                .collect()
+        } else {
+            HashMap::new()
+        };
         // Override with named args from bless call
         for arg in &args {
             if let Value::Pair(key, value) = arg {
-                attributes.insert(key.clone(), *value.clone());
+                let sigil = attr_sigils.get(key.as_str()).copied().unwrap_or('$');
+                let coerced = Self::coerce_attr_value_by_sigil(*value.clone(), sigil);
+                attributes.insert(key.clone(), coerced);
             }
         }
         // Run BUILD/TWEAK submethods in MRO order (base-first)

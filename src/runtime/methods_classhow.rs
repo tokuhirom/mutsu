@@ -2,7 +2,7 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
-    pub(super) fn classhow_lookup(&self, invocant: &Value, method_name: &str) -> Option<Value> {
+    pub(super) fn classhow_lookup(&mut self, invocant: &Value, method_name: &str) -> Option<Value> {
         let (class_name, class_name_str) = match invocant {
             Value::Package(name) => (*name, name.resolve()),
             other => {
@@ -40,6 +40,30 @@ impl Interpreter {
                 def.is_rw,
                 env,
             ));
+        }
+        // Check if method_name matches a public attribute accessor
+        {
+            let class_attrs = self.collect_class_attributes(&class_name_str);
+            for (attr_name, is_public, _default, is_rw, _is_required, _sigil, _where) in
+                &class_attrs
+            {
+                if *is_public && attr_name == method_name {
+                    // Return a Sub representing the accessor with correct is_rw
+                    let full_param_defs = vec![Self::make_invocant_param(&class_name_str)];
+                    return Some(Value::make_sub(
+                        class_name,
+                        Symbol::intern(method_name),
+                        Vec::new(),
+                        full_param_defs,
+                        vec![crate::ast::Stmt::Expr(crate::ast::Expr::Var(format!(
+                            "!{}",
+                            attr_name
+                        )))],
+                        *is_rw,
+                        crate::env::Env::new(),
+                    ));
+                }
+            }
         }
         // Check built-in type methods — return a Routine marker that the
         // runtime can dispatch when called.
@@ -136,7 +160,7 @@ impl Interpreter {
     }
 
     pub(super) fn classhow_find_method(
-        &self,
+        &mut self,
         invocant: &Value,
         method_name: &str,
     ) -> Option<Value> {

@@ -897,6 +897,24 @@ impl VM {
                 {
                     return Err(self.strict_undeclared_error(&name));
                 }
+                // Guard: cannot modify instance attributes when invocant is a type object
+                if (name.starts_with('!')
+                    || name.starts_with("@!")
+                    || name.starts_with("%!")
+                    || name.starts_with("&!"))
+                    && !name.starts_with("!!")
+                    && let Some(self_val) = self.interpreter.env().get("self")
+                    && matches!(self_val, Value::Package(_))
+                {
+                    let class_name = match self_val {
+                        Value::Package(sym) => sym.to_string(),
+                        _ => "Any".to_string(),
+                    };
+                    return Err(RuntimeError::new(format!(
+                        "Cannot look up attributes in a {} type object. Did you forget a '.new'?",
+                        class_name
+                    )));
+                }
                 // Check readonly variables (e.g., $*USAGE)
                 self.interpreter.check_readonly_for_modify(&name)?;
                 // Reject assignment to immutable type objects (e.g., `Foo .= new`)
