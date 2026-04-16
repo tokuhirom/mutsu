@@ -1286,6 +1286,27 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     let (rest, name) = super::super::stmt::parse_raku_ident(input)?;
     let name = normalize_raku_identifier(name);
 
+    // If the identifier is followed by `=>` (fat arrow), treat it as a pair
+    // key regardless of whether it would otherwise be a declarator keyword.
+    // e.g., `(my => 1)`, `(sub => 1)`, `(class => 1)` are all valid pairs.
+    {
+        let after_ws = rest.trim_start();
+        if after_ws.starts_with("=>") && !after_ws.starts_with("==>") {
+            let (r, _) = ws(rest)?;
+            let r2 = &r[2..];
+            let (r2, _) = ws(r2)?;
+            let (r2, value) = crate::parser::expr::parse_fat_arrow_value(r2)?;
+            return Ok((
+                r2,
+                Expr::Binary {
+                    left: Box::new(Expr::Literal(Value::str(name))),
+                    op: crate::token_kind::TokenKind::FatArrow,
+                    right: Box::new(value),
+                },
+            ));
+        }
+    }
+
     // Handle special expression keywords before qualified name resolution
     match name.as_str() {
         "infix" | "prefix" | "postfix" | "circumfix" | "postcircumfix" => {

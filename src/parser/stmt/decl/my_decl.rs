@@ -68,6 +68,15 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
         .or_else(|| keyword("our", input))
         .or_else(|| keyword("state", input))
         .ok_or_else(|| PError::expected("my/our/state declaration"))?;
+    // If the keyword is immediately followed by `=>`, it's being used as a
+    // pair key (e.g., `(my => 1)`). Refuse to parse it as a declaration so
+    // that the caller can fall back to treating it as a bareword.
+    {
+        let after_ws = rest.trim_start();
+        if after_ws.starts_with("=>") && !after_ws.starts_with("==>") {
+            return Err(PError::expected("my/our/state declaration"));
+        }
+    }
     let (mut rest, _) = ws1(rest)?;
 
     // my enum Foo <...>
