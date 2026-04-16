@@ -12,6 +12,33 @@ impl Interpreter {
         ignore_case: bool,
     ) -> Vec<(usize, RegexCaptures)> {
         if let RegexAtom::Alternation(alternatives) = atom {
+            let mut indexed: Vec<(usize, usize, RegexCaptures)> = Vec::new();
+            for (i, alt) in alternatives.iter().enumerate() {
+                if let Some((next, mut inner_caps)) =
+                    self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)
+                {
+                    let mut new_caps = current_caps.clone();
+                    for (k, v) in inner_caps.named.drain() {
+                        new_caps.named.entry(k).or_default().extend(v);
+                    }
+                    new_caps.positional.append(&mut inner_caps.positional);
+                    new_caps
+                        .positional_subcaps
+                        .append(&mut inner_caps.positional_subcaps);
+                    new_caps
+                        .positional_quantified
+                        .append(&mut inner_caps.positional_quantified);
+                    new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+                    indexed.push((i, next, new_caps));
+                }
+            }
+            indexed.sort_by(|a, b| a.1.cmp(&b.1).then(b.0.cmp(&a.0)));
+            return indexed
+                .into_iter()
+                .map(|(_, end, caps)| (end, caps))
+                .collect();
+        }
+        if let RegexAtom::SequentialAlternation(alternatives) = atom {
             let mut out = Vec::new();
             for alt in alternatives {
                 if let Some((next, mut inner_caps)) =
@@ -32,7 +59,6 @@ impl Interpreter {
                     out.push((next, new_caps));
                 }
             }
-            // Stack matching is LIFO; reverse so the first alternative is explored first.
             out.reverse();
             return out;
         }
@@ -125,7 +151,9 @@ impl Interpreter {
             }
             return deduped;
         }
-        if let RegexAtom::Alternation(alternatives) = atom {
+        if let RegexAtom::Alternation(alternatives)
+        | RegexAtom::SequentialAlternation(alternatives) = atom
+        {
             let mut out = Vec::new();
             for alt in alternatives {
                 for (end, mut inner_caps) in

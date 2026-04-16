@@ -578,6 +578,7 @@ enum RegexAtom {
     Group(RegexPattern),
     CaptureGroup(RegexPattern),
     Alternation(Vec<RegexPattern>),
+    SequentialAlternation(Vec<RegexPattern>),
     ZeroWidth,
     CodeAssertion {
         code: String,

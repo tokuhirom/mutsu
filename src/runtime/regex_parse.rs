@@ -249,7 +249,7 @@ impl Interpreter {
 
     /// Split a regex pattern on top-level `|` or `||` alternation operators.
     /// Respects grouping: `(...)`, `[...]`, `{...}`, `<...>` and escapes.
-    fn split_top_level_alternation(pattern: &str) -> Vec<String> {
+    fn split_top_level_alternation(pattern: &str) -> (Vec<String>, bool) {
         let mut parts = Vec::new();
         let mut current = String::new();
         let mut depth_paren = 0i32;
@@ -259,6 +259,7 @@ impl Interpreter {
         let mut escaped = false;
         let mut in_single_quote = false;
         let mut in_double_quote = false;
+        let mut is_sequential = false;
         let mut chars = pattern.chars().peekable();
 
         while let Some(ch) = chars.next() {
@@ -338,9 +339,10 @@ impl Interpreter {
                     && depth_brace == 0
                     && depth_angle == 0 =>
                 {
-                    // Skip second | for ||
+                    // Check for || (sequential alternation)
                     if chars.peek() == Some(&'|') {
                         chars.next();
+                        is_sequential = true;
                     }
                     parts.push(std::mem::take(&mut current));
                 }
@@ -350,7 +352,7 @@ impl Interpreter {
         if !current.is_empty() || !parts.is_empty() {
             parts.push(current);
         }
-        parts
+        (parts, is_sequential)
     }
 
     fn has_unquoted_ltm_separator(pattern: &str) -> bool {
@@ -743,7 +745,7 @@ impl Interpreter {
             source = source.trim_end();
         }
         // Handle top-level alternation (| or ||)
-        let top_alts = Self::split_top_level_alternation(source);
+        let (top_alts, is_sequential) = Self::split_top_level_alternation(source);
         if top_alts.len() > 1 {
             let mut alt_patterns = Vec::new();
             for alt in &top_alts {
@@ -762,8 +764,12 @@ impl Interpreter {
                 }
             }
             if alt_patterns.len() > 1 {
-                let atom = try_collapse_alternation_to_charclass(&alt_patterns)
-                    .unwrap_or(RegexAtom::Alternation(alt_patterns));
+                let atom = if is_sequential {
+                    RegexAtom::SequentialAlternation(alt_patterns)
+                } else {
+                    try_collapse_alternation_to_charclass(&alt_patterns)
+                        .unwrap_or(RegexAtom::Alternation(alt_patterns))
+                };
                 return Some(RegexPattern {
                     tokens: vec![RegexToken {
                         atom,
@@ -1870,7 +1876,8 @@ impl Interpreter {
                             group_pattern.push(ch);
                         }
                     }
-                    let alternatives = Self::split_top_level_alternation(&group_pattern);
+                    let (alternatives, cap_is_sequential) =
+                        Self::split_top_level_alternation(&group_pattern);
                     let needs_capture_scope = ignore_case || sigspace || ratchet || ignore_mark;
                     if alternatives.len() > 1 {
                         let mut alt_patterns = Vec::new();
@@ -1902,8 +1909,12 @@ impl Interpreter {
                                 alt_patterns.push(p);
                             }
                         }
-                        let group_atom = try_collapse_alternation_to_charclass(&alt_patterns)
-                            .unwrap_or(RegexAtom::Alternation(alt_patterns));
+                        let group_atom = if cap_is_sequential {
+                            RegexAtom::SequentialAlternation(alt_patterns)
+                        } else {
+                            try_collapse_alternation_to_charclass(&alt_patterns)
+                                .unwrap_or(RegexAtom::Alternation(alt_patterns))
+                        };
                         let group_pat = RegexPattern {
                             tokens: vec![RegexToken {
                                 atom: group_atom,
@@ -1969,7 +1980,8 @@ impl Interpreter {
                         }
                     }
                     // Parse the group as top-level alternation, including `||`.
-                    let alternatives = Self::split_top_level_alternation(&group_pattern);
+                    let (alternatives, bracket_is_sequential) =
+                        Self::split_top_level_alternation(&group_pattern);
                     let needs_scope = ignore_case || sigspace || ratchet || ignore_mark;
                     if alternatives.len() > 1 {
                         let mut alt_patterns = Vec::new();
@@ -2003,8 +2015,12 @@ impl Interpreter {
                                 alt_patterns.push(p);
                             }
                         }
-                        try_collapse_alternation_to_charclass(&alt_patterns)
-                            .unwrap_or(RegexAtom::Alternation(alt_patterns))
+                        if bracket_is_sequential {
+                            RegexAtom::SequentialAlternation(alt_patterns)
+                        } else {
+                            try_collapse_alternation_to_charclass(&alt_patterns)
+                                .unwrap_or(RegexAtom::Alternation(alt_patterns))
+                        }
                     } else {
                         let parsed_group = if needs_scope {
                             let mut scoped = String::new();

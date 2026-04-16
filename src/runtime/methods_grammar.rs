@@ -11,7 +11,7 @@ impl Interpreter {
                         return Some(goal);
                     }
                 }
-                RegexAtom::Alternation(alts) => {
+                RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => {
                     for alt in alts {
                         if let Some(goal) = Self::first_goal_name(alt) {
                             return Some(goal);
