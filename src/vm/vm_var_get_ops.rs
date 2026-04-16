@@ -69,6 +69,17 @@ impl VM {
             } else {
                 Value::str(name.to_string())
             }
+        } else if name == "i" {
+            // Raku term constant `i` (imaginary unit) — must be resolved before
+            // the env lookup because `$i` is stored under key "i" (no sigil) and
+            // would shadow the term.  Sigilless `my \i` goes through GetLocal.
+            Value::Complex(0.0, 1.0)
+        } else if name == "NaN" {
+            Value::Num(f64::NAN)
+        } else if name == "Inf" {
+            Value::Num(f64::INFINITY)
+        } else if name == "Empty" {
+            Value::Slip(std::sync::Arc::new(vec![]))
         } else if let Some(v) = self.interpreter.env().get(name) {
             if matches!(v, Value::Enum { .. } | Value::Nil)
                 || matches!(v, Value::Package(pkg) if pkg.resolve() != name)
@@ -172,14 +183,6 @@ impl VM {
             let result = self.interpreter.call_function(name, Vec::new())?;
             self.env_dirty = true;
             result
-        } else if name == "i" {
-            Value::Complex(0.0, 1.0)
-        } else if name == "NaN" {
-            Value::Num(f64::NAN)
-        } else if name == "Inf" {
-            Value::Num(f64::INFINITY)
-        } else if name == "Empty" {
-            Value::Slip(std::sync::Arc::new(vec![]))
         } else if name.starts_with("Metamodel::") {
             // Meta-object protocol type objects
             Value::Package(Symbol::intern(name))

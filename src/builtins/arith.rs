@@ -1267,7 +1267,12 @@ pub(crate) fn arith_negate(val: Value) -> Result<Value, RuntimeError> {
             }
         }
         Value::BigRat(n, d) => Ok(crate::value::make_big_rat(-n, d)),
-        Value::Complex(r, i) => Ok(Value::Complex(-r, -i)),
+        Value::Complex(r, i) => {
+            // Canonicalize -0.0 to 0.0 so that e.g. (-i).reals gives (0e0, -1e0)
+            let nr = if r == 0.0 { 0.0 } else { -r };
+            let ni = if i == 0.0 { 0.0 } else { -i };
+            Ok(Value::Complex(nr, ni))
+        }
         Value::Str(ref s) => {
             if let Ok(i) = s.trim().parse::<i64>() {
                 Ok(Value::Int(-i))
