@@ -1056,6 +1056,22 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
 
+    // IO::Path::Parts — .hash returns attributes as a Hash
+    if let Value::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target
+        && class_name.resolve() == "IO::Path::Parts"
+        && (method == "hash" || method == "Hash")
+    {
+        let map: HashMap<String, Value> = attributes
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        return Some(Ok(Value::hash(map)));
+    }
+
     // Match object methods
     if let Value::Instance {
         class_name,

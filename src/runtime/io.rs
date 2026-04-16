@@ -1379,7 +1379,12 @@ impl Interpreter {
 
     pub(super) fn make_io_spec_instance(&self) -> Value {
         let attrs = HashMap::new();
-        Value::make_instance(Symbol::intern("IO::Spec"), attrs)
+        let class_name = if cfg!(target_os = "windows") {
+            "IO::Spec::Win32"
+        } else {
+            "IO::Spec::Unix"
+        };
+        Value::make_instance(Symbol::intern(class_name), attrs)
     }
 
     pub(super) fn make_distro_instance() -> Value {

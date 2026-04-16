@@ -1211,9 +1211,18 @@ impl Interpreter {
     /// Strict Unix `IO::Spec::Unix.canonpath` implementation used by
     /// `IO::Spec::Unix` / `IO::Spec::QNX` etc. When `parent` is true, `..`
     /// segments are resolved lexically. Returns `''` for empty input.
-    /// Preserves a leading `//` (POSIX implementation-defined) but collapses
-    /// three or more leading slashes to a single `/`.
+    /// When `preserve_double_slash` is true, a leading `//` is kept
+    /// (POSIX implementation-defined, used by QNX).
     pub fn canonpath_unix(path: &str, parent: bool) -> String {
+        Self::canonpath_unix_inner(path, parent, false)
+    }
+
+    /// QNX variant that preserves a leading `//`.
+    pub fn canonpath_qnx(path: &str, parent: bool) -> String {
+        Self::canonpath_unix_inner(path, parent, true)
+    }
+
+    fn canonpath_unix_inner(path: &str, parent: bool, preserve_double_slash: bool) -> String {
         if path.is_empty() {
             return String::new();
         }
@@ -1224,7 +1233,7 @@ impl Interpreter {
         }
         let prefix = if leading == 0 {
             ""
-        } else if leading == 2 {
+        } else if preserve_double_slash && leading == 2 {
             "//"
         } else {
             "/"
@@ -1235,8 +1244,7 @@ impl Interpreter {
             .split('/')
             .filter(|s| !s.is_empty() && *s != ".")
             .collect();
-        // For "//"-prefixed paths, do not collapse leading `..` — POSIX leaves
-        // `//` implementation-defined and Rakudo's IO::Spec::Unix preserves it.
+        // For "//"-prefixed paths (QNX), do not collapse leading `..` past the prefix.
         let collapse_leading_dotdot = is_absolute && prefix == "/";
         let mut stack: Vec<&str> = Vec::new();
         if parent {

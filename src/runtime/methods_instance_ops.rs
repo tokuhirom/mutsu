@@ -346,119 +346,21 @@ impl Interpreter {
                 }
             }
 
-            // IO::Spec methods
+            // IO::Spec::CurUpDir ACCEPTS
+            if class_name.resolve() == "IO::Spec::CurUpDir" && method == "ACCEPTS" {
+                let arg = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                // curupdir rejects "." and "..", accepts everything else
+                let result = arg != "." && arg != "..";
+                return Ok(Value::Bool(result));
+            }
+
+            // IO::Spec methods — delegate to Package-based handler
             if class_name == "IO::Spec" || class_name.resolve().starts_with("IO::Spec::") {
-                let is_win32 = class_name == "IO::Spec::Win32";
-                let sep = if is_win32 { "\\" } else { "/" };
-                let sep_char = if is_win32 { '\\' } else { '/' };
-                match method {
-                    "dir-sep" => {
-                        return Ok(Value::str_from(sep));
-                    }
-                    "join" => {
-                        let vol = args
-                            .first()
-                            .map(|v| v.to_string_value())
-                            .unwrap_or_default();
-                        let dir = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
-                        let file = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
-                        let mut result = String::new();
-                        if !vol.is_empty() {
-                            result.push_str(&vol);
-                        }
-                        if !dir.is_empty() {
-                            if !result.is_empty()
-                                && !result.ends_with('/')
-                                && !result.ends_with('\\')
-                            {
-                                result.push(sep_char);
-                            }
-                            result.push_str(&dir);
-                        }
-                        if !file.is_empty() {
-                            if !result.is_empty()
-                                && !result.ends_with('/')
-                                && !result.ends_with('\\')
-                            {
-                                result.push(sep_char);
-                            }
-                            result.push_str(&file);
-                        }
-                        return Ok(Value::str(result));
-                    }
-                    "catdir" => {
-                        let parts: Vec<String> = args
-                            .iter()
-                            .map(|a| {
-                                if let Value::Array(items, ..) = a {
-                                    items
-                                        .iter()
-                                        .map(|v| v.to_string_value())
-                                        .collect::<Vec<_>>()
-                                        .join(sep)
-                                } else {
-                                    a.to_string_value()
-                                }
-                            })
-                            .collect();
-                        let joined = parts.join(sep);
-                        return Ok(Value::str(joined));
-                    }
-                    "catfile" => {
-                        let parts: Vec<String> = args
-                            .iter()
-                            .map(|a| {
-                                if let Value::Array(items, ..) = a {
-                                    items
-                                        .iter()
-                                        .map(|v| v.to_string_value())
-                                        .collect::<Vec<_>>()
-                                        .join(sep)
-                                } else {
-                                    a.to_string_value()
-                                }
-                            })
-                            .collect();
-                        let joined = parts.join(sep);
-                        return Ok(Value::str(joined));
-                    }
-                    "devnull" => {
-                        let devnull = if is_win32 { "NUL" } else { "/dev/null" };
-                        return Ok(Value::str_from(devnull));
-                    }
-                    "catpath" => {
-                        let vol = args
-                            .first()
-                            .map(|v| v.to_string_value())
-                            .unwrap_or_default();
-                        let dir = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
-                        let file = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
-                        let mut result = String::new();
-                        if !vol.is_empty() {
-                            result.push_str(&vol);
-                        }
-                        if !dir.is_empty() {
-                            if !result.is_empty()
-                                && !result.ends_with('/')
-                                && !result.ends_with('\\')
-                            {
-                                result.push(sep_char);
-                            }
-                            result.push_str(&dir);
-                        }
-                        if !file.is_empty() {
-                            if !result.is_empty()
-                                && !result.ends_with('/')
-                                && !result.ends_with('\\')
-                            {
-                                result.push(sep_char);
-                            }
-                            result.push_str(&file);
-                        }
-                        return Ok(Value::str(result));
-                    }
-                    _ => {}
-                }
+                let pkg = Value::Package(*class_name);
+                return self.call_method_with_values(pkg, method, args);
             }
             if class_name == "CompUnit::Repository::FileSystem" {
                 match method {
