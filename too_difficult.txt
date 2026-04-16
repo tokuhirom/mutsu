@@ -36,6 +36,7 @@ roast/S32-array/perl.t
 roast/S32-hash/perl.t
 roast/S32-io/child-secure.t
 roast/S32-io/io-path-cygwin.t
+roast/S32-io/io-path.t (29/39 pass; requires massive IO::Path infrastructure: IO::Path::Unix/Win32/Cygwin/QNX subclasses with distinct .^name and per-SPEC behavior, IO::Spec/IO::Spec::Win32/Unix/Cygwin/QNX classes, .parts returning Associative Map with basename/dirname/volume, .SPEC/.CWD/.path attributes, IO::Path.new(:volume/:dirname/:basename) constructor, .add/.resolve/.resolve(:completely)/.link/.sibling/.parent(Int) methods, .Numeric/.Rat/.Num/.Int/.FatRat via Cool coercion on IO::Path, X::IO::Resolve/X::IO::Link exceptions, IO::Path.IO on :U returning self. Currently mutsu reports IO::Path.^name as "Path" and subclasses as bare "Unix"/"Win32" etc. Scope spans parser, runtime class hierarchy, and many method impls — far beyond a focused fix.)
 roast/S32-list/categorize.t
 roast/S32-io/socket-recv-vs-read.t
 roast/S32-temporal/local.t
