@@ -2021,6 +2021,36 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "Pod::Block::Code".to_string(),
+            ClassDef {
+                parents: vec!["Pod::Block".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Pod::Block::Code".to_string(), "Pod::Block".to_string()],
+                attribute_types: HashMap::new(),
+                attribute_smileys: HashMap::new(),
+                wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
+            },
+        );
+        classes.insert(
+            "Pod::FormattingCode".to_string(),
+            ClassDef {
+                parents: vec!["Pod::Block".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Pod::FormattingCode".to_string(), "Pod::Block".to_string()],
+                attribute_types: HashMap::new(),
+                attribute_smileys: HashMap::new(),
+                wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
+            },
+        );
+        classes.insert(
             "Pod::Block::Comment".to_string(),
             ClassDef {
                 parents: vec!["Pod::Block".to_string()],
