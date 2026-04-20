@@ -10,6 +10,26 @@ impl Value {
     ///   1 eqv 1.0  → False  (Int vs Num)
     ///   [1,2] eqv (1,2)  → False  (Array vs List)
     pub(crate) fn eqv(&self, other: &Self) -> bool {
+        // Junction threading: if either side is a junction, thread eqv
+        // through it and return the boolean result of the junction.
+        if let Value::Junction { kind, values } = other {
+            let results: Vec<bool> = values.iter().map(|v| self.eqv(v)).collect();
+            return match kind {
+                crate::value::JunctionKind::Any => results.iter().any(|&b| b),
+                crate::value::JunctionKind::All => results.iter().all(|&b| b),
+                crate::value::JunctionKind::One => results.iter().filter(|&&b| b).count() == 1,
+                crate::value::JunctionKind::None => results.iter().all(|&b| !b),
+            };
+        }
+        if let Value::Junction { kind, values } = self {
+            let results: Vec<bool> = values.iter().map(|v| v.eqv(other)).collect();
+            return match kind {
+                crate::value::JunctionKind::Any => results.iter().any(|&b| b),
+                crate::value::JunctionKind::All => results.iter().all(|&b| b),
+                crate::value::JunctionKind::One => results.iter().filter(|&&b| b).count() == 1,
+                crate::value::JunctionKind::None => results.iter().all(|&b| !b),
+            };
+        }
         match (self, other) {
             // Arrays/Lists: must be same container type (Array vs List) and recursively eqv
             // eqv ignores Scalar wrapping — only Array vs List distinction matters
