@@ -612,6 +612,7 @@ impl Interpreter {
             let cn = name.resolve();
             if cn.starts_with("IO::Spec") {
                 let is_win32 = cn == "IO::Spec::Win32";
+                let is_cygwin = cn == "IO::Spec::Cygwin";
                 match method {
                     "canonpath" => {
                         // Separate positional and named args (e.g. `:parent`).
@@ -637,6 +638,8 @@ impl Interpreter {
                         let is_qnx = cn == "IO::Spec::QNX";
                         let cleaned = if is_win32 {
                             Self::cleanup_io_path_lexical_win32(&path)
+                        } else if is_cygwin {
+                            Self::canonpath_cygwin(&path, parent)
                         } else if is_qnx {
                             Self::canonpath_qnx(&path, parent)
                         } else {
@@ -749,32 +752,44 @@ impl Interpreter {
                         ));
                     }
                     "split" => {
-                        let path = args
+                        let raw_path = args
                             .first()
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
+                        // For Cygwin, convert backslashes to forward slashes first
+                        let path = if is_cygwin {
+                            raw_path.replace('\\', "/")
+                        } else {
+                            raw_path
+                        };
+                        // Extract volume for Cygwin (drive letter or UNC)
+                        let (volume, rest) = if is_cygwin {
+                            Self::split_cygwin_volume(&path)
+                        } else {
+                            ("".to_string(), path.clone())
+                        };
                         // Returns a hash with volume, dirname, basename
-                        let (dirname, basename) = if path == "/" {
+                        let (dirname, basename) = if rest == "/" {
                             ("/", "/")
-                        } else if path.ends_with('/') {
+                        } else if rest.ends_with('/') {
                             // Trailing slash: strip it, then split
-                            let trimmed = path.trim_end_matches('/');
+                            let trimmed = rest.trim_end_matches('/');
                             if let Some(pos) = trimmed.rfind('/') {
                                 let dir = if pos == 0 { "/" } else { &trimmed[..pos] };
                                 (dir, &trimmed[pos + 1..])
                             } else {
                                 (".", trimmed)
                             }
-                        } else if let Some(pos) = path.rfind('/') {
-                            let dir = if pos == 0 { "/" } else { &path[..pos] };
-                            (dir, &path[pos + 1..])
-                        } else if path == "." {
+                        } else if let Some(pos) = rest.rfind('/') {
+                            let dir = if pos == 0 { "/" } else { &rest[..pos] };
+                            (dir, &rest[pos + 1..])
+                        } else if rest == "." {
                             (".", ".")
                         } else {
-                            (".", path.as_str())
+                            (".", rest.as_str())
                         };
                         let mut hash = std::collections::HashMap::new();
-                        hash.insert("volume".to_string(), Value::str_from(""));
+                        hash.insert("volume".to_string(), Value::str(volume));
                         hash.insert("dirname".to_string(), Value::str(dirname.to_string()));
                         hash.insert("basename".to_string(), Value::str(basename.to_string()));
                         return Ok(Value::make_instance(
@@ -783,10 +798,13 @@ impl Interpreter {
                         ));
                     }
                     "join" => {
-                        // On Unix, volume is ignored
+                        let vol = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
                         let dir = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
                         let file = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
-                        let result = if file.is_empty() {
+                        let path_part = if file.is_empty() {
                             if dir.is_empty() { String::new() } else { dir }
                         } else if dir.is_empty() || dir == "." {
                             file
@@ -796,6 +814,12 @@ impl Interpreter {
                             format!("{}{}", dir, file)
                         } else {
                             format!("{}/{}", dir, file)
+                        };
+                        // Prepend volume for Cygwin/Win32
+                        let result = if (is_cygwin || is_win32) && !vol.is_empty() {
+                            format!("{}{}", vol, path_part)
+                        } else {
+                            path_part
                         };
                         return Ok(Value::str(result));
                     }
@@ -818,7 +842,7 @@ impl Interpreter {
                         ));
                     }
                     "catpath" => {
-                        let _vol = args
+                        let vol = args
                             .first()
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
@@ -830,6 +854,10 @@ impl Interpreter {
                                 result.push('/');
                             }
                             result.push_str(&file);
+                        }
+                        // Prepend volume for Cygwin/Win32
+                        if (is_cygwin || is_win32) && !vol.is_empty() {
+                            result = format!("{}{}", vol, result);
                         }
                         return Ok(Value::str(result));
                     }

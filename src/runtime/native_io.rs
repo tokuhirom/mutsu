@@ -1286,6 +1286,67 @@ impl Interpreter {
         out
     }
 
+    /// Cygwin `IO::Spec::Cygwin.canonpath`: converts backslashes to forward
+    /// slashes, strips drive-letter prefix, then delegates to Unix canonpath
+    /// (preserving leading `//` like QNX).
+    pub fn canonpath_cygwin(path: &str, parent: bool) -> String {
+        if path.is_empty() {
+            return String::new();
+        }
+        // Convert backslashes to forward slashes
+        let converted = path.replace('\\', "/");
+        // Extract drive letter prefix if present (e.g. "c:" or "C:")
+        let (prefix, rest) = if converted.len() >= 2
+            && converted.as_bytes()[0].is_ascii_alphabetic()
+            && converted.as_bytes()[1] == b':'
+        {
+            (&converted[..2], &converted[2..])
+        } else {
+            ("", converted.as_str())
+        };
+        // Cygwin preserves leading // (like QNX)
+        let canon = Self::canonpath_unix_inner(rest, parent, true);
+        if prefix.is_empty() {
+            canon
+        } else {
+            format!("{}{}", prefix, canon)
+        }
+    }
+
+    /// Split a Cygwin path into (volume, rest).
+    /// Handles UNC paths (//server/share -> volume="//server/share", rest="/")
+    /// and drive letters (c:/foo -> volume="c:", rest="/foo").
+    pub fn split_cygwin_volume(path: &str) -> (String, String) {
+        let bytes = path.as_bytes();
+        // UNC path: //server/share
+        if bytes.len() >= 2 && bytes[0] == b'/' && bytes[1] == b'/' {
+            // Find end of server name
+            if let Some(server_end) = path[2..].find('/') {
+                let share_start = 2 + server_end + 1;
+                // Find end of share name
+                let share_end = path[share_start..]
+                    .find('/')
+                    .map(|p| share_start + p)
+                    .unwrap_or(path.len());
+                let volume = path[..share_end].to_string();
+                let rest = if share_end >= path.len() {
+                    "/".to_string()
+                } else {
+                    path[share_end..].to_string()
+                };
+                return (volume, rest);
+            }
+        }
+        // Drive letter: X:
+        if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+            let vol = path[..2].to_string();
+            let rest = path[2..].to_string();
+            return (vol, rest);
+        }
+        // No volume
+        (String::new(), path.to_string())
+    }
+
     pub fn cleanup_io_path_lexical(path: &str) -> String {
         if path.is_empty() {
             return ".".to_string();
