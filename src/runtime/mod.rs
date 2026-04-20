@@ -221,6 +221,10 @@ pub(crate) struct DocComment {
     pub kind: DocDeclKind,
     /// Whether this is a proto declaration (affects WHEREFORE type in $=pod).
     pub is_proto: bool,
+    /// Optional return type for subs (e.g., `anon Str sub {}` has return_type "Str").
+    pub return_type: Option<String>,
+    /// Source line number (1-based) where the declaration appears.
+    pub source_line: Option<u32>,
 }
 
 impl DocComment {

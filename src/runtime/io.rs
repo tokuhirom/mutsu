@@ -2339,6 +2339,33 @@ impl Interpreter {
                 }
             }
 
+            // Handle block assignments: "my $var = {" or "my $var = {;"
+            // This allows doc comments to attach to blocks assigned to variables.
+            if let Some(eq_pos) = s.find('=') {
+                let after_eq = s[eq_pos + 1..].trim_start();
+                if after_eq.starts_with('{') || after_eq.starts_with("{;") {
+                    // Extract the variable name from before the '='
+                    let before_eq = s[..eq_pos].trim();
+                    if let Some(dollar_pos) = before_eq.rfind('$') {
+                        let var_name = &before_eq[dollar_pos..];
+                        let var_name = var_name
+                            .split(|c: char| {
+                                !c.is_alphanumeric() && c != '_' && c != '-' && c != '$'
+                            })
+                            .next()
+                            .unwrap_or(var_name);
+                        if !var_name.is_empty() {
+                            return Some((
+                                format!("block:{}", var_name),
+                                false,
+                                DocDeclKind::Sub,
+                                DispatchPrefix::None,
+                            ));
+                        }
+                    }
+                }
+            }
+
             None
         }
 
@@ -2376,6 +2403,69 @@ impl Interpreter {
             }
 
             // Not a doc comment line — check for declarations
+            // Skip embedded block comments (#`(...), #`[...], #`{...}, #`<...>)
+            // These can span multiple lines and may contain #| or #= that should
+            // NOT be treated as doc comments.
+            if let Some(after_backtick) = trimmed.strip_prefix("#`")
+                && let Some(open_char) = after_backtick.chars().next()
+                && let Some(close_char) = matching_bracket(open_char)
+            {
+                // Count consecutive open brackets
+                let mut count = 1usize;
+                let mut scan = &after_backtick[open_char.len_utf8()..];
+                while scan.starts_with(open_char) {
+                    count += 1;
+                    scan = &scan[open_char.len_utf8()..];
+                }
+                let open_seq: String = std::iter::repeat_n(open_char, count).collect();
+                let close_seq: String = std::iter::repeat_n(close_char, count).collect();
+                let mut depth = 1i32;
+                let mut current = scan;
+                let mut block_idx = idx;
+                loop {
+                    if count == 1 {
+                        while !current.is_empty() {
+                            let ch = current.chars().next().unwrap();
+                            if ch == open_char {
+                                depth += 1;
+                            } else if ch == close_char {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                            current = &current[ch.len_utf8()..];
+                        }
+                    } else {
+                        while !current.is_empty() {
+                            if current.starts_with(&close_seq[..]) {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                                current = &current[close_seq.len()..];
+                            } else if current.starts_with(&open_seq[..]) {
+                                depth += 1;
+                                current = &current[open_seq.len()..];
+                            } else {
+                                let ch = current.chars().next().unwrap();
+                                current = &current[ch.len_utf8()..];
+                            }
+                        }
+                    }
+                    if depth == 0 {
+                        idx = block_idx + 1;
+                        break;
+                    }
+                    block_idx += 1;
+                    if block_idx >= lines.len() {
+                        idx = block_idx;
+                        break;
+                    }
+                    current = lines[block_idx];
+                }
+                continue;
+            }
             // Skip empty lines and plain comments (but not #| or #=)
             if trimmed.is_empty()
                 || (trimmed.starts_with('#')
@@ -2446,11 +2536,24 @@ impl Interpreter {
                             });
                     entry.kind = kind.clone();
                     entry.is_proto = dispatch == DispatchPrefix::Proto;
+                    entry.source_line = Some((idx + 1) as u32);
                     if has_leading {
                         entry.leading = leading;
                     }
                     if let Some(ref trail) = inline_trailing {
                         entry.trailing = append_doc_text(entry.trailing.take(), trail);
+                    }
+                    // Extract return type for "anon Type sub {}" patterns
+                    if name == "&<anon>"
+                        && let Some(anon_pos) = check_line.find("anon ")
+                    {
+                        let after_anon = &check_line[anon_pos + 5..];
+                        if let Some(sub_pos) = after_anon.find("sub") {
+                            let type_part = after_anon[..sub_pos].trim();
+                            if !type_part.is_empty() {
+                                entry.return_type = Some(type_part.to_string());
+                            }
+                        }
                     }
                 }
                 // Always set last_declarant so trailing #= on the next line can attach
@@ -2498,6 +2601,8 @@ impl Interpreter {
                             trailing: None,
                             kind: super::DocDeclKind::Param,
                             is_proto: false,
+                            return_type: None,
+                            source_line: Some((idx + 1) as u32),
                         },
                     );
                 }
@@ -2524,6 +2629,66 @@ impl Interpreter {
             let mut idx2 = 0usize;
             while idx2 < lines.len() {
                 let trimmed2 = lines[idx2].trim_start();
+                // Skip embedded block comments (#`(...), #`[...], etc.)
+                if let Some(after_bt) = trimmed2.strip_prefix("#`")
+                    && let Some(oc) = after_bt.chars().next()
+                    && let Some(cc) = matching_bracket(oc)
+                {
+                    let mut cnt = 1usize;
+                    let mut sc = &after_bt[oc.len_utf8()..];
+                    while sc.starts_with(oc) {
+                        cnt += 1;
+                        sc = &sc[oc.len_utf8()..];
+                    }
+                    let os: String = std::iter::repeat_n(oc, cnt).collect();
+                    let cs: String = std::iter::repeat_n(cc, cnt).collect();
+                    let mut dp = 1i32;
+                    let mut cur = sc;
+                    let mut bi = idx2;
+                    loop {
+                        if cnt == 1 {
+                            while !cur.is_empty() {
+                                let ch = cur.chars().next().unwrap();
+                                if ch == oc {
+                                    dp += 1;
+                                } else if ch == cc {
+                                    dp -= 1;
+                                    if dp == 0 {
+                                        break;
+                                    }
+                                }
+                                cur = &cur[ch.len_utf8()..];
+                            }
+                        } else {
+                            while !cur.is_empty() {
+                                if cur.starts_with(&cs[..]) {
+                                    dp -= 1;
+                                    if dp == 0 {
+                                        break;
+                                    }
+                                    cur = &cur[cs.len()..];
+                                } else if cur.starts_with(&os[..]) {
+                                    dp += 1;
+                                    cur = &cur[os.len()..];
+                                } else {
+                                    let ch = cur.chars().next().unwrap();
+                                    cur = &cur[ch.len_utf8()..];
+                                }
+                            }
+                        }
+                        if dp == 0 {
+                            idx2 = bi + 1;
+                            break;
+                        }
+                        bi += 1;
+                        if bi >= lines.len() {
+                            idx2 = bi;
+                            break;
+                        }
+                        cur = lines[bi];
+                    }
+                    continue;
+                }
                 if parse_doc_comment(&lines, idx2, "#|").is_some()
                     || parse_doc_comment(&lines, idx2, "#=").is_some()
                 {
@@ -2641,18 +2806,30 @@ impl Interpreter {
                     Value::Package(crate::symbol::Symbol::intern(&dc.wherefore_name))
                 }
                 DocDeclKind::Sub => {
-                    // Proto/only subs (not methods) have ^name "Routine",
-                    // regular subs and methods have "Sub" in mutsu.
-                    // Methods have wherefore_name containing "::" (e.g., "C::meth")
-                    // or not starting with "&".
-                    let is_standalone_sub =
-                        dc.wherefore_name.starts_with('&') || !dc.wherefore_name.contains("::");
-                    let type_name = if dc.is_proto && is_standalone_sub {
-                        "Routine"
+                    // Block declarations (from "my $var = {") use "Block" type
+                    if dc.wherefore_name.starts_with("block:") {
+                        Value::Package(crate::symbol::Symbol::intern("Block"))
                     } else {
-                        "Sub"
-                    };
-                    Value::Package(crate::symbol::Symbol::intern(type_name))
+                        // Proto/only subs (not methods) have ^name "Routine",
+                        // regular subs and methods have "Sub" in mutsu.
+                        // Methods have wherefore_name containing "::" (e.g., "C::meth")
+                        // or not starting with "&".
+                        let is_standalone_sub =
+                            dc.wherefore_name.starts_with('&') || !dc.wherefore_name.contains("::");
+                        let base_type = if dc.is_proto && is_standalone_sub {
+                            "Routine"
+                        } else {
+                            "Sub"
+                        };
+                        // For subs with return types (e.g., "anon Str sub {}"),
+                        // produce "Sub+{Callable[Str]}" format
+                        let type_name = if let Some(ref rt) = dc.return_type {
+                            format!("{}+{{Callable[{}]}}", base_type, rt)
+                        } else {
+                            base_type.to_string()
+                        };
+                        Value::Package(crate::symbol::Symbol::intern(&type_name))
+                    }
                 }
                 DocDeclKind::GrammarRule => Value::Package(crate::symbol::Symbol::intern("Regex")),
                 DocDeclKind::Attr => Value::Package(crate::symbol::Symbol::intern("Attribute")),

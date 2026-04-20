@@ -1547,6 +1547,77 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     return Ok((r, make_anon_sub(body)));
                 }
             }
+            // anon [Type] sub { ... } — anonymous sub with return type
+            if let Some(after_sub) = keyword("sub", r_ws) {
+                // `anon sub { }` — no return type
+                let (r_sub, _) = ws(after_sub)?;
+                if r_sub.starts_with('{') {
+                    let (r, body) = parse_block_body(r_sub)?;
+                    return Ok((
+                        r,
+                        Expr::AnonSub {
+                            body,
+                            is_rw: false,
+                            is_block: false,
+                        },
+                    ));
+                }
+                if r_sub.starts_with('(') {
+                    let (r, params_body) =
+                        parse_anon_sub_with_params(r_sub).map_err(|err| PError {
+                            messages: merge_expected_messages(
+                                "expected anonymous sub parameter list/body",
+                                &err.messages,
+                            ),
+                            remaining_len: err.remaining_len.or(Some(r_sub.len())),
+                            exception: None,
+                        })?;
+                    return Ok((r, params_body));
+                }
+            } else if let Ok((r_type, type_name)) =
+                take_while1(r_ws, |c: char| c.is_alphanumeric() || c == ':' || c == '_')
+            {
+                // anon Str sub { ... } — with return type
+                let (r_type, _) = ws(r_type)?;
+                if let Some(after_sub) = keyword("sub", r_type) {
+                    let (r_sub, _) = ws(after_sub)?;
+                    if r_sub.starts_with('{') {
+                        let (r, body) = parse_block_body(r_sub)?;
+                        return Ok((
+                            r,
+                            Expr::AnonSubParams {
+                                params: Vec::new(),
+                                param_defs: Vec::new(),
+                                return_type: Some(type_name.to_string()),
+                                body,
+                                is_rw: false,
+                                is_whatever_code: false,
+                            },
+                        ));
+                    }
+                    if r_sub.starts_with('(') {
+                        let (r, mut params_body) =
+                            parse_anon_sub_with_params(r_sub).map_err(|err| PError {
+                                messages: merge_expected_messages(
+                                    "expected anonymous sub parameter list/body",
+                                    &err.messages,
+                                ),
+                                remaining_len: err.remaining_len.or(Some(r_sub.len())),
+                                exception: None,
+                            })?;
+                        // Wrap with return type info
+                        if let Expr::AnonSubParams {
+                            ref mut return_type,
+                            ..
+                        } = params_body
+                            && return_type.is_none()
+                        {
+                            *return_type = Some(type_name.to_string());
+                        }
+                        return Ok((r, params_body));
+                    }
+                }
+            }
         }
         "sub" => {
             let (r, _) = ws(rest)?;
