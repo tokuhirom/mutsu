@@ -17,8 +17,14 @@ impl Interpreter {
             && let Some(def) = defs.first()
         {
             let has_multi = defs.iter().any(|d| d.is_multi);
+            let has_explicit_invocant = def
+                .param_defs
+                .iter()
+                .any(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"));
             let mut full_param_defs = Vec::with_capacity(def.param_defs.len() + 1);
-            full_param_defs.push(Self::make_invocant_param(&class_name_str));
+            if !has_explicit_invocant {
+                full_param_defs.push(Self::make_invocant_param(&class_name_str));
+            }
             full_param_defs.extend(def.param_defs.iter().cloned());
             let mut env = crate::env::Env::new();
             if has_multi {
@@ -47,8 +53,14 @@ impl Interpreter {
             && let Some(def) = defs.first()
         {
             let has_multi = defs.iter().any(|d| d.is_multi);
+            let has_explicit_invocant = def
+                .param_defs
+                .iter()
+                .any(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"));
             let mut full_param_defs = Vec::with_capacity(def.param_defs.len() + 1);
-            full_param_defs.push(Self::make_invocant_param(&class_name_str));
+            if !has_explicit_invocant {
+                full_param_defs.push(Self::make_invocant_param(&class_name_str));
+            }
             full_param_defs.extend(def.param_defs.iter().cloned());
             let mut env = crate::env::Env::new();
             if has_multi {

@@ -844,6 +844,7 @@ roast/S26-documentation/block-leading-user-format.t
 roast/S26-documentation/module-comment.t
 roast/S26-documentation/multiline-leading.t
 roast/S26-documentation/multiline-trailing.t
+roast/S26-documentation/why-leading.t
 roast/S28-named-variables/cwd.t
 roast/S28-named-variables/init-instant.t
 roast/S28-named-variables/slangs.t

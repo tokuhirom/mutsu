@@ -55,7 +55,8 @@ impl Compiler {
             };
             let cc_idx = self.code.add_closure_code(compiled);
             let idx = self.code.add_stmt(Stmt::Block(body.to_vec()));
-            self.code.emit(OpCode::MakeAnonSub(idx, Some(cc_idx)));
+            self.code
+                .emit(OpCode::MakeAnonSub(idx, Some(cc_idx), is_block));
         }
     }
 

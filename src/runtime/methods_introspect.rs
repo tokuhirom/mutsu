@@ -392,6 +392,9 @@ impl Interpreter {
                     // Try &-prefixed key first (to disambiguate from package names)
                     k.push(format!("&{}", sub_data.name.resolve()));
                     k.push(sub_data.name.resolve());
+                } else if !sub_data.is_bare_block {
+                    // Anonymous sub (not bare block): try the &<anon> key
+                    k.push("&<anon>".to_string());
                 }
                 k
             }
@@ -411,6 +414,39 @@ impl Interpreter {
         for key in keys {
             if let Some(doc) = self.doc_comments.get(&key) {
                 return Ok(Self::make_pod_declarator(doc, target.clone()));
+            }
+        }
+        // For anonymous bare blocks, try to find a doc comment by source line proximity
+        if let Value::Sub(sub_data) = target
+            && sub_data.name == ""
+            && sub_data.is_bare_block
+            && let Some(src_line) = sub_data.source_line
+        {
+            // Find the block:* doc comment whose source_line is closest
+            // to (and at or after) the sub's source line
+            let mut best_match: Option<&super::DocComment> = None;
+            let mut best_dist = u32::MAX;
+            for dc in self.doc_comments.values() {
+                if dc.wherefore_name.starts_with("block:")
+                    && let Some(dc_line) = dc.source_line
+                {
+                    let dist = if dc_line >= src_line {
+                        dc_line - src_line
+                    } else if src_line - dc_line <= 2 {
+                        // Allow the sub to be 1-2 lines before the
+                        // declaration (source_line might be off)
+                        src_line - dc_line
+                    } else {
+                        continue;
+                    };
+                    if dist < best_dist {
+                        best_dist = dist;
+                        best_match = Some(dc);
+                    }
+                }
+            }
+            if let Some(dc) = best_match {
+                return Ok(Self::make_pod_declarator(dc, target.clone()));
             }
         }
         Ok(Value::Nil)
@@ -465,6 +501,15 @@ impl Interpreter {
                     .collect::<Vec<_>>()
                     .join(",");
                 format!("{}[{}]", base_name, args_str)
+            }
+            Value::Sub(data) => {
+                let base = value_type_name(target);
+                // Check for return type to produce Sub+{Callable[Type]} format
+                if let Some(Value::Str(ret)) = data.env.get("__mutsu_return_type") {
+                    format!("{}+{{Callable[{}]}}", base, ret)
+                } else {
+                    base.to_string()
+                }
             }
             other => value_type_name(other).to_string(),
         }))

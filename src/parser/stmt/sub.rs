@@ -1766,6 +1766,10 @@ fn parse_param_list_with_return_inner(input: &str) -> PResult<'_, (Vec<ParamDef>
             continue;
         }
         if let Some(r) = r.strip_prefix(':') {
+            // Mark all params parsed so far as invocant
+            for p in params.iter_mut() {
+                p.is_invocant = true;
+            }
             let (r, _) = ws(r)?;
             if r.starts_with(')') {
                 mark_params_as_invocant(&mut params);
