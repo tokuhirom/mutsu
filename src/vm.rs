@@ -2803,8 +2803,8 @@ impl VM {
                 self.stack.push(result);
                 *ip += 1;
             }
-            OpCode::MakeAnonSub(idx, cc_idx) => {
-                self.exec_make_anon_sub_op(code, *idx, *cc_idx)?;
+            OpCode::MakeAnonSub(idx, cc_idx, is_block) => {
+                self.exec_make_anon_sub_op(code, *idx, *cc_idx, *is_block)?;
                 *ip += 1;
             }
             OpCode::MakeAnonSubParams(idx, cc_idx, is_wc) => {

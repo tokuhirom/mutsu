@@ -63,6 +63,7 @@ impl VM {
         code: &CompiledCode,
         idx: u32,
         cc_idx: Option<u32>,
+        is_block: bool,
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
@@ -87,7 +88,7 @@ impl VM {
                 assumed_named: std::collections::HashMap::new(),
                 id: crate::value::next_instance_id(),
                 empty_sig: false,
-                is_bare_block: true,
+                is_bare_block: is_block,
                 compiled_code,
                 deprecated_message: None,
                 source_line: cc_source_line,

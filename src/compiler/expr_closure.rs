@@ -54,33 +54,9 @@ impl Compiler {
                 self.compile_routine_closure_body(&placeholders, &[], body)
             };
             let cc_idx = self.code.add_closure_code(compiled);
-            if is_block {
-                let idx = self.code.add_stmt(Stmt::Block(body.to_vec()));
-                self.code.emit(OpCode::MakeAnonSub(idx, Some(cc_idx)));
-            } else {
-                // `sub { }` — use MakeAnonSubParams so is_bare_block=false
-                let idx = self.code.add_stmt(Stmt::SubDecl {
-                    name: Symbol::intern(""),
-                    name_expr: None,
-                    params: placeholders.clone(),
-                    param_defs: Vec::new(),
-                    return_type: None,
-                    associativity: None,
-                    precedence_trait: None,
-                    signature_alternates: Vec::new(),
-                    body: body.to_vec(),
-                    multi: false,
-                    is_rw: false,
-                    is_raw: false,
-                    is_export: false,
-                    export_tags: Vec::new(),
-                    is_test_assertion: false,
-                    supersede: false,
-                    custom_traits: Vec::new(),
-                });
-                self.code
-                    .emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx), false));
-            }
+            let idx = self.code.add_stmt(Stmt::Block(body.to_vec()));
+            self.code
+                .emit(OpCode::MakeAnonSub(idx, Some(cc_idx), is_block));
         }
     }
 
