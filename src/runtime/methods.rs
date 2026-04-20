@@ -1126,12 +1126,10 @@ impl Interpreter {
                             } else {
                                 path.as_str()
                             }
+                        } else if let Some(pos) = path.rfind('/') {
+                            &path[pos + 1..]
                         } else {
-                            if let Some(pos) = path.rfind('/') {
-                                &path[pos + 1..]
-                            } else {
-                                path.as_str()
-                            }
+                            path.as_str()
                         };
                         return Ok(Value::str(result.to_string()));
                     }
