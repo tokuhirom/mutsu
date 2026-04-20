@@ -371,7 +371,9 @@ impl Interpreter {
                             format!("{}{}{}", base, sep, p)
                         }
                     };
-                    Ok(Value::str(abs))
+                    // Canonicalize the result
+                    let cleaned = Self::canonpath_win32(&abs, false);
+                    Ok(Value::str(cleaned))
                 } else {
                     let base = args.first().map(|v| v.to_string_value());
                     if let Some(base) = base {
@@ -1347,6 +1349,75 @@ impl Interpreter {
         (String::new(), path.to_string())
     }
 
+    /// Extract Win32 volume (drive letter or UNC) from a path.
+    /// Returns (volume, rest) where rest is everything after the volume.
+    /// The volume preserves original slash style; callers should normalize if needed.
+    pub fn split_win32_volume(path: &str) -> (String, String) {
+        let bytes = path.as_bytes();
+        // UNC path: \\server\share or //server/share
+        if bytes.len() >= 2
+            && ((bytes[0] == b'\\' && bytes[1] == b'\\') || (bytes[0] == b'/' && bytes[1] == b'/'))
+        {
+            let after = &path[2..];
+            // Server name must be non-empty and not start with a separator
+            if !after.is_empty() && !after.starts_with('/') && !after.starts_with('\\') {
+                if let Some(server_end) = after.find(['/', '\\']) {
+                    let share_start = server_end + 1;
+                    let share_end = after[share_start..]
+                        .find(['/', '\\'])
+                        .map(|p| share_start + p)
+                        .unwrap_or(after.len());
+                    let volume = path[..2 + share_end].to_string();
+                    let rest = path[2 + share_end..].to_string();
+                    return (volume, rest);
+                }
+                // Only server, no share -- whole thing is volume
+                return (path.to_string(), String::new());
+            }
+        }
+        // Drive letter: X:
+        if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+            let vol = path[..2].to_string();
+            let rest = path[2..].to_string();
+            return (vol, rest);
+        }
+        // No volume
+        (String::new(), path.to_string())
+    }
+
+    /// Like `split_win32_volume` but normalizes the volume (/ -> \).
+    pub fn split_win32_volume_normalized(path: &str) -> (String, String) {
+        let (vol, rest) = Self::split_win32_volume(path);
+        (vol.replace('/', "\\"), rest)
+    }
+
+    /// Win32 `.path` method: reads PATH (or Path), splits on `;`,
+    /// strips `"` characters from each entry, always prepends ".".
+    pub fn win32_path_from_env() -> Vec<Value> {
+        // PATH overrides Path
+        let path_env = if let Ok(v) = std::env::var("PATH") {
+            Some(v)
+        } else {
+            std::env::var("Path").ok()
+        };
+        let mut result = vec![Value::str_from(".")];
+        let raw = match path_env {
+            None => return result, // env unset -> (".",)
+            Some(v) => v,
+        };
+        if raw.is_empty() {
+            return result; // empty -> (".",)
+        }
+        // Win32 PATH parsing: split on `;`, strip `"` chars, skip empties.
+        for entry in raw.split(';') {
+            let cleaned: String = entry.chars().filter(|&c| c != '"').collect();
+            if !cleaned.is_empty() {
+                result.push(Value::str(cleaned));
+            }
+        }
+        result
+    }
+
     pub fn cleanup_io_path_lexical(path: &str) -> String {
         if path.is_empty() {
             return ".".to_string();
@@ -1391,55 +1462,233 @@ impl Interpreter {
         if out.is_empty() { ".".to_string() } else { out }
     }
 
-    /// Win32-specific cleanup: always uses `\` as separator.
-    pub fn cleanup_io_path_lexical_win32(path: &str) -> String {
+    /// Win32-specific canonpath with optional `:parent` resolution.
+    pub fn canonpath_win32(path: &str, parent: bool) -> String {
         if path.is_empty() {
-            return ".".to_string();
+            return String::new();
         }
         let mut prefix = String::new();
         let mut rest = path;
-        // Check for UNC paths
         let bytes = path.as_bytes();
+        // Check for UNC paths (\\server\share or //server/share)
+        // A valid UNC needs a non-empty server name that is not "." or "..".
         if path.len() >= 2
             && ((bytes[0] == b'\\' && bytes[1] == b'\\') || (bytes[0] == b'/' && bytes[1] == b'/'))
         {
-            // Extract UNC volume
             let after = &path[2..];
-            if let Some(sep1) = after.find(['/', '\\']) {
-                let after_server = &after[sep1 + 1..];
-                let share_end = after_server.find(['/', '\\']).unwrap_or(after_server.len());
-                let unc_end = 2 + sep1 + 1 + share_end;
-                prefix = path[..unc_end].replace('/', "\\");
-                rest = &path[unc_end..];
-            } else {
-                return path.replace('/', "\\");
+            let server_name = after.split(['/', '\\']).next().unwrap_or("");
+            let has_server = !server_name.is_empty() && server_name != "." && server_name != "..";
+            if has_server {
+                if let Some(sep1) = after.find(['/', '\\']) {
+                    let after_server = &after[sep1 + 1..];
+                    let share_end = after_server.find(['/', '\\']).unwrap_or(after_server.len());
+                    let unc_end = 2 + sep1 + 1 + share_end;
+                    prefix = path[..unc_end].replace('/', "\\");
+                    rest = &path[unc_end..];
+                } else {
+                    return path.replace('/', "\\");
+                }
             }
+            // else: not a valid UNC (e.g. "//" or "////"), treat as absolute path
         } else if path.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
-            prefix = path[..2].to_string();
+            // Drive letter -- uppercase it
+            let mut p = String::new();
+            p.push(bytes[0].to_ascii_uppercase() as char);
+            p.push(':');
+            prefix = p;
             rest = &path[2..];
         }
+
+        let is_unc = prefix.starts_with("\\\\");
         let is_absolute = rest.starts_with('/') || rest.starts_with('\\');
-        let mut stack: Vec<&str> = Vec::new();
+
+        let mut stack: Vec<String> = Vec::new();
         for seg in rest.split(['/', '\\']) {
             if seg.is_empty() || seg == "." {
                 continue;
             }
             if seg == ".." {
-                if !is_absolute || !stack.is_empty() {
-                    stack.push(seg);
+                if is_unc {
+                    // UNC paths: never go above \\server\share
+                    continue;
                 }
+                if parent {
+                    if stack.last().is_some_and(|last| *last != "..") {
+                        stack.pop();
+                        continue;
+                    }
+                    if is_absolute {
+                        continue;
+                    }
+                    stack.push("..".to_string());
+                } else {
+                    if is_absolute && stack.is_empty() {
+                        continue;
+                    }
+                    stack.push("..".to_string());
+                }
+                continue;
+            }
+            stack.push(seg.to_string());
+        }
+
+        let joined = stack.join("\\");
+        let mut out = prefix;
+        if is_absolute {
+            // For UNC paths, only add \ if there are segments to append
+            if !is_unc || !joined.is_empty() {
+                out.push('\\');
+            }
+        }
+        if !joined.is_empty() {
+            out.push_str(&joined);
+        }
+
+        if out.is_empty() { ".".to_string() } else { out }
+    }
+
+    // Legacy wrapper
+    pub fn cleanup_io_path_lexical_win32(path: &str) -> String {
+        Self::canonpath_win32(path, false)
+    }
+
+    /// Win32 catdir: join directory parts and canonicalize.
+    pub fn win32_catdir(parts: &[String]) -> String {
+        if parts.is_empty() {
+            return String::new();
+        }
+        let first_nonempty_idx = parts.iter().position(|p| !p.is_empty());
+        let had_leading_empties = first_nonempty_idx.is_some_and(|i| i > 0);
+
+        let (volume, first_rest) = if let Some(idx) = first_nonempty_idx {
+            if had_leading_empties {
+                (String::new(), (idx, parts[idx].clone()))
+            } else {
+                let (v, r) = Self::split_win32_volume_normalized(&parts[idx]);
+                (v, (idx, r))
+            }
+        } else {
+            (String::new(), (0, String::new()))
+        };
+
+        let starts_absolute = if first_nonempty_idx.is_some() {
+            let rest_starts_sep = first_rest.1.starts_with('/') || first_rest.1.starts_with('\\');
+            if !volume.is_empty() {
+                rest_starts_sep
+            } else {
+                had_leading_empties || rest_starts_sep
+            }
+        } else {
+            false
+        };
+
+        let mut all_segs: Vec<&str> = Vec::new();
+        for (i, part) in parts.iter().enumerate() {
+            let p = if Some(i) == first_nonempty_idx && !volume.is_empty() {
+                first_rest.1.as_str()
+            } else {
+                part.as_str()
+            };
+            for seg in p.split(['/', '\\']) {
+                all_segs.push(seg);
+            }
+        }
+
+        let mut stack: Vec<&str> = Vec::new();
+        let is_unc = volume.starts_with("\\\\");
+        for seg in &all_segs {
+            if seg.is_empty() || *seg == "." {
+                continue;
+            }
+            if *seg == ".." {
+                if is_unc || (starts_absolute && stack.is_empty()) {
+                    continue;
+                }
+                stack.push(seg);
                 continue;
             }
             stack.push(seg);
         }
+
         let joined = stack.join("\\");
-        let mut out = prefix;
-        if is_absolute {
+        let mut out = volume;
+        if (starts_absolute && !is_unc) || (is_unc && !joined.is_empty()) {
             out.push('\\');
         }
         if !joined.is_empty() {
             out.push_str(&joined);
         }
+
+        if out.is_empty() { ".".to_string() } else { out }
+    }
+
+    /// Win32 catfile: like catdir but without trailing separator treatment.
+    pub fn win32_catfile(parts: &[String]) -> String {
+        if parts.is_empty() {
+            return String::new();
+        }
+        let first_nonempty_idx = parts.iter().position(|p| !p.is_empty());
+        let had_leading_empties = first_nonempty_idx.is_some_and(|i| i > 0);
+
+        let (volume, first_rest) = if let Some(idx) = first_nonempty_idx {
+            if had_leading_empties {
+                (String::new(), (idx, parts[idx].clone()))
+            } else {
+                let (v, r) = Self::split_win32_volume_normalized(&parts[idx]);
+                (v, (idx, r))
+            }
+        } else {
+            (String::new(), (0, String::new()))
+        };
+
+        let starts_absolute = if first_nonempty_idx.is_some() {
+            let rest_starts_sep = first_rest.1.starts_with('/') || first_rest.1.starts_with('\\');
+            if !volume.is_empty() {
+                rest_starts_sep
+            } else {
+                had_leading_empties || rest_starts_sep
+            }
+        } else {
+            false
+        };
+
+        let mut all_segs: Vec<&str> = Vec::new();
+        for (i, part) in parts.iter().enumerate() {
+            let p = if Some(i) == first_nonempty_idx && !volume.is_empty() {
+                first_rest.1.as_str()
+            } else {
+                part.as_str()
+            };
+            for seg in p.split(['/', '\\']) {
+                all_segs.push(seg);
+            }
+        }
+
+        let mut stack: Vec<&str> = Vec::new();
+        let is_unc = volume.starts_with("\\\\");
+        for seg in &all_segs {
+            if seg.is_empty() || *seg == "." {
+                continue;
+            }
+            if *seg == ".." {
+                if is_unc || (starts_absolute && stack.is_empty()) {
+                    continue;
+                }
+                stack.push(seg);
+                continue;
+            }
+            stack.push(seg);
+        }
+
+        let joined = stack.join("\\");
+        let mut out = volume;
+        if (starts_absolute && !is_unc) || (is_unc && !joined.is_empty()) {
+            out.push('\\');
+        }
+        if !joined.is_empty() {
+            out.push_str(&joined);
+        }
+
         if out.is_empty() { ".".to_string() } else { out }
     }
 

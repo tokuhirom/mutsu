@@ -615,7 +615,6 @@ impl Interpreter {
                 let is_cygwin = cn == "IO::Spec::Cygwin";
                 match method {
                     "canonpath" => {
-                        // Separate positional and named args (e.g. `:parent`).
                         let mut positional: Vec<&Value> = Vec::new();
                         let mut parent = false;
                         for a in &args {
@@ -628,7 +627,6 @@ impl Interpreter {
                             }
                         }
                         let first = positional.first().copied();
-                        // Undefined invocant (Any / Nil / type object) -> ''
                         let is_undef =
                             matches!(first, None | Some(Value::Nil) | Some(Value::Package(_)));
                         if is_undef {
@@ -637,7 +635,7 @@ impl Interpreter {
                         let path = first.map(|v| v.to_string_value()).unwrap_or_default();
                         let is_qnx = cn == "IO::Spec::QNX";
                         let cleaned = if is_win32 {
-                            Self::cleanup_io_path_lexical_win32(&path)
+                            Self::canonpath_win32(&path, parent)
                         } else if is_cygwin {
                             Self::canonpath_cygwin(&path, parent)
                         } else if is_qnx {
@@ -653,14 +651,17 @@ impl Interpreter {
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
                         let abs = if is_win32 {
-                            // Drive-letter, UNC, or leading slash/backslash.
                             let bytes = path.as_bytes();
-                            (bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic())
-                                || path.starts_with('/')
-                                || path.starts_with('\\')
+                            let drive_abs = bytes.len() >= 3
+                                && bytes[0].is_ascii_alphabetic()
+                                && bytes[1] == b':'
+                                && (bytes[2] == b'\\' || bytes[2] == b'/');
+                            let unc = bytes.len() >= 2
+                                && ((bytes[0] == b'\\' && bytes[1] == b'\\')
+                                    || (bytes[0] == b'/' && bytes[1] == b'/'));
+                            let leading = path.starts_with('/') || path.starts_with('\\');
+                            drive_abs || unc || leading
                         } else {
-                            // Unix: starts with '/'. Use chars().next() so that a
-                            // leading '/' followed by combining marks still counts.
                             path.starts_with('/')
                         };
                         return Ok(Value::Bool(abs));
@@ -669,7 +670,7 @@ impl Interpreter {
                         return Ok(Value::str_from(if is_win32 { "\\" } else { "/" }));
                     }
                     "devnull" => {
-                        return Ok(Value::str_from(if is_win32 { "NUL" } else { "/dev/null" }));
+                        return Ok(Value::str_from(if is_win32 { "nul" } else { "/dev/null" }));
                     }
                     "tmpdir" => {
                         #[cfg(not(target_arch = "wasm32"))]
@@ -679,12 +680,17 @@ impl Interpreter {
                         return Ok(self.make_io_path_instance(&tmpdir_str));
                     }
                     "curdir" => return Ok(Value::str_from(".")),
-                    "rootdir" => return Ok(Value::str_from("/")),
+                    "rootdir" => {
+                        return Ok(Value::str_from(if is_win32 { "\\" } else { "/" }));
+                    }
                     "updir" => return Ok(Value::str_from("..")),
                     "catdir" => {
                         let parts: Vec<String> = args.iter().map(|a| a.to_string_value()).collect();
                         if parts.is_empty() {
                             return Ok(Value::str_from(""));
+                        }
+                        if is_win32 {
+                            return Ok(Value::str(Self::win32_catdir(&parts)));
                         }
                         let mut joined = parts.join("/");
                         joined.push('/');
@@ -693,18 +699,25 @@ impl Interpreter {
                     }
                     "catfile" => {
                         let parts: Vec<String> = args.iter().map(|a| a.to_string_value()).collect();
+                        if is_win32 {
+                            return Ok(Value::str(Self::win32_catfile(&parts)));
+                        }
                         let joined = parts.join("/");
                         let result = Self::canonpath_unix(&joined, false);
                         return Ok(Value::str(result));
                     }
                     "curupdir" => {
-                        // Returns a matcher that accepts everything except "." and ".."
                         return Ok(Value::make_instance(
                             crate::symbol::Symbol::intern("IO::Spec::CurUpDir"),
                             std::collections::HashMap::new(),
                         ));
                     }
                     "path" => {
+                        if is_win32 {
+                            return Ok(Value::Seq(
+                                std::sync::Arc::new(Self::win32_path_from_env()),
+                            ));
+                        }
                         let path_env = std::env::var("PATH").unwrap_or_default();
                         if path_env.is_empty() {
                             return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
@@ -722,20 +735,60 @@ impl Interpreter {
                         return Ok(Value::Seq(std::sync::Arc::new(parts)));
                     }
                     "splitpath" => {
-                        let path = args
+                        let mut positional: Vec<&Value> = Vec::new();
+                        let mut nofile = false;
+                        for a in &args {
+                            if let Value::Pair(k, v) = a {
+                                if k == "nofile" {
+                                    nofile = v.truthy();
+                                }
+                            } else {
+                                positional.push(a);
+                            }
+                        }
+                        let path = positional
                             .first()
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
-                        // Split into (volume, directory, file)
-                        // On Unix, volume is always empty
-                        // If path ends with / or last component is . or ..,
-                        // treat entire path as directory with empty file
+                        if is_win32 {
+                            let (volume, after_vol) = Self::split_win32_volume_normalized(&path);
+                            let (dir, file) = if nofile
+                                || after_vol.ends_with('/')
+                                || after_vol.ends_with('\\')
+                            {
+                                (after_vol.to_string(), String::new())
+                            } else {
+                                let last_sep = after_vol.rfind(['/', '\\']);
+                                let basename = last_sep
+                                    .map(|pos| &after_vol[pos + 1..])
+                                    .unwrap_or(&after_vol);
+                                if basename == "." || basename == ".." {
+                                    (after_vol.to_string(), String::new())
+                                } else if let Some(pos) = last_sep {
+                                    (
+                                        after_vol[..=pos].to_string(),
+                                        after_vol[pos + 1..].to_string(),
+                                    )
+                                } else {
+                                    (String::new(), after_vol.to_string())
+                                }
+                            };
+                            return Ok(Value::Array(
+                                std::sync::Arc::new(vec![
+                                    Value::str(volume),
+                                    Value::str(dir),
+                                    Value::str(file),
+                                ]),
+                                crate::value::ArrayKind::List,
+                            ));
+                        }
                         let basename = path
                             .rfind('/')
                             .map(|pos| &path[pos + 1..])
                             .unwrap_or(path.as_str());
                         let (dir, file) =
-                            if path.ends_with('/') || basename == "." || basename == ".." {
+                            if nofile || path.ends_with('/') || basename == "." || basename == ".."
+                            {
                                 (path.as_str(), "")
                             } else if let Some(pos) = path.rfind('/') {
                                 (&path[..=pos], &path[pos + 1..])
@@ -756,23 +809,65 @@ impl Interpreter {
                             .first()
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
-                        // For Cygwin, convert backslashes to forward slashes first
+                        if is_win32 {
+                            let (volume, after_vol) = Self::split_win32_volume(&raw_path);
+                            let rest = after_vol;
+                            let is_sep = |c: char| c == '/' || c == '\\';
+                            let only_seps = !rest.is_empty() && rest.chars().all(is_sep);
+                            let (dirname, basename) = if only_seps {
+                                ("\\".to_string(), "\\".to_string())
+                            } else if rest.ends_with('/') || rest.ends_with('\\') {
+                                let trimmed = rest.trim_end_matches(['/', '\\']);
+                                if let Some(pos) = trimmed.rfind(['/', '\\']) {
+                                    let dir = if pos == 0 {
+                                        "\\".to_string()
+                                    } else {
+                                        trimmed[..pos].to_string()
+                                    };
+                                    (dir, trimmed[pos + 1..].to_string())
+                                } else {
+                                    (".".to_string(), trimmed.to_string())
+                                }
+                            } else if let Some(pos) = rest.rfind(['/', '\\']) {
+                                let dir = if pos == 0 {
+                                    "\\".to_string()
+                                } else {
+                                    rest[..pos].to_string()
+                                };
+                                (dir, rest[pos + 1..].to_string())
+                            } else if rest == "." {
+                                (".".to_string(), ".".to_string())
+                            } else if rest.is_empty() {
+                                if volume.starts_with("//") || volume.starts_with("\\\\") {
+                                    ("\\".to_string(), "\\".to_string())
+                                } else {
+                                    (".".to_string(), String::new())
+                                }
+                            } else {
+                                (".".to_string(), rest.to_string())
+                            };
+                            let mut hash = std::collections::HashMap::new();
+                            hash.insert("volume".to_string(), Value::str(volume));
+                            hash.insert("dirname".to_string(), Value::str(dirname));
+                            hash.insert("basename".to_string(), Value::str(basename));
+                            return Ok(Value::make_instance(
+                                crate::symbol::Symbol::intern("IO::Path::Parts"),
+                                hash,
+                            ));
+                        }
                         let path = if is_cygwin {
                             raw_path.replace('\\', "/")
                         } else {
                             raw_path
                         };
-                        // Extract volume for Cygwin (drive letter or UNC)
                         let (volume, rest) = if is_cygwin {
                             Self::split_cygwin_volume(&path)
                         } else {
                             ("".to_string(), path.clone())
                         };
-                        // Returns a hash with volume, dirname, basename
                         let (dirname, basename) = if rest == "/" {
                             ("/", "/")
                         } else if rest.ends_with('/') {
-                            // Trailing slash: strip it, then split
                             let trimmed = rest.trim_end_matches('/');
                             if let Some(pos) = trimmed.rfind('/') {
                                 let dir = if pos == 0 { "/" } else { &trimmed[..pos] };
@@ -804,6 +899,39 @@ impl Interpreter {
                             .unwrap_or_default();
                         let dir = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
                         let file = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
+                        if is_win32 {
+                            let path_part = if file.is_empty() {
+                                if dir.is_empty() { String::new() } else { dir }
+                            } else if dir.is_empty() || dir == "." {
+                                file
+                            } else {
+                                let dir_is_sep = dir.chars().all(|c| c == '/' || c == '\\');
+                                let file_is_sep = file.chars().all(|c| c == '/' || c == '\\');
+                                if dir_is_sep && file_is_sep {
+                                    dir
+                                } else if dir.ends_with('/') || dir.ends_with('\\') {
+                                    format!("{}{}", dir, file)
+                                } else {
+                                    format!("{}\\{}", dir, file)
+                                }
+                            };
+                            let result = if !vol.is_empty() {
+                                if vol.starts_with("\\\\") {
+                                    let path_only_seps = !path_part.is_empty()
+                                        && path_part.chars().all(|c| c == '/' || c == '\\');
+                                    if path_only_seps || path_part.is_empty() {
+                                        vol
+                                    } else {
+                                        format!("{}{}", vol, path_part)
+                                    }
+                                } else {
+                                    format!("{}{}", vol, path_part)
+                                }
+                            } else {
+                                path_part
+                            };
+                            return Ok(Value::str(result));
+                        }
                         let path_part = if file.is_empty() {
                             if dir.is_empty() { String::new() } else { dir }
                         } else if dir.is_empty() || dir == "." {
@@ -815,8 +943,7 @@ impl Interpreter {
                         } else {
                             format!("{}/{}", dir, file)
                         };
-                        // Prepend volume for Cygwin/Win32
-                        let result = if (is_cygwin || is_win32) && !vol.is_empty() {
+                        let result = if is_cygwin && !vol.is_empty() {
                             format!("{}{}", vol, path_part)
                         } else {
                             path_part
@@ -834,8 +961,13 @@ impl Interpreter {
                                 crate::value::ArrayKind::List,
                             ));
                         }
-                        let parts: Vec<Value> =
-                            path.split('/').map(|s| Value::str(s.to_string())).collect();
+                        let parts: Vec<Value> = if is_win32 {
+                            path.split(['/', '\\'])
+                                .map(|s| Value::str(s.to_string()))
+                                .collect()
+                        } else {
+                            path.split('/').map(|s| Value::str(s.to_string())).collect()
+                        };
                         return Ok(Value::Array(
                             std::sync::Arc::new(parts),
                             crate::value::ArrayKind::List,
@@ -848,14 +980,17 @@ impl Interpreter {
                             .unwrap_or_default();
                         let dir = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
                         let file = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
+                        let sep = if is_win32 { '\\' } else { '/' };
                         let mut result = dir;
                         if !file.is_empty() {
-                            if !result.is_empty() && !result.ends_with('/') {
-                                result.push('/');
+                            if !result.is_empty()
+                                && !result.ends_with('/')
+                                && !result.ends_with('\\')
+                            {
+                                result.push(sep);
                             }
                             result.push_str(&file);
                         }
-                        // Prepend volume for Cygwin/Win32
                         if (is_cygwin || is_win32) && !vol.is_empty() {
                             result = format!("{}{}", vol, result);
                         }
@@ -872,13 +1007,54 @@ impl Interpreter {
                                     .map(|p| p.to_string_lossy().to_string())
                                     .unwrap_or_else(|_| ".".to_string())
                             });
+                        if is_win32 {
+                            let path_canon = Self::canonpath_win32(&path_str, false);
+                            let base_canon = Self::canonpath_win32(&base_str, false);
+                            let (path_vol, path_rest) =
+                                Self::split_win32_volume_normalized(&path_canon);
+                            let (base_vol, base_rest) =
+                                Self::split_win32_volume_normalized(&base_canon);
+                            if path_vol != base_vol
+                                && ((!path_vol.is_empty()
+                                    && !base_vol.is_empty()
+                                    && path_vol.to_uppercase() != base_vol.to_uppercase())
+                                    || (path_vol.is_empty() != base_vol.is_empty())
+                                    || (path_vol.starts_with("\\\\")
+                                        != base_vol.starts_with("\\\\")))
+                            {
+                                return Ok(Value::str(path_canon));
+                            }
+                            let path_parts: Vec<&str> = path_rest
+                                .split(['/', '\\'])
+                                .filter(|s| !s.is_empty())
+                                .collect();
+                            let base_parts: Vec<&str> = base_rest
+                                .split(['/', '\\'])
+                                .filter(|s| !s.is_empty())
+                                .collect();
+                            let mut common = 0;
+                            while common < path_parts.len()
+                                && common < base_parts.len()
+                                && path_parts[common].eq_ignore_ascii_case(base_parts[common])
+                            {
+                                common += 1;
+                            }
+                            let ups = base_parts.len() - common;
+                            let mut result_parts: Vec<&str> = vec![".."; ups];
+                            result_parts.extend_from_slice(&path_parts[common..]);
+                            let result = if result_parts.is_empty() {
+                                ".".to_string()
+                            } else {
+                                result_parts.join("\\")
+                            };
+                            return Ok(Value::str(result));
+                        }
                         let path = Self::canonpath_unix(&path_str, false);
                         let base = Self::canonpath_unix(&base_str, false);
                         let path_parts: Vec<&str> =
                             path.split('/').filter(|s| !s.is_empty()).collect();
                         let base_parts: Vec<&str> =
                             base.split('/').filter(|s| !s.is_empty()).collect();
-                        // Find common prefix length
                         let mut common = 0;
                         while common < path_parts.len()
                             && common < base_parts.len()
@@ -907,6 +1083,28 @@ impl Interpreter {
                                     .map(|p| p.to_string_lossy().to_string())
                                     .unwrap_or_else(|_| ".".to_string())
                             });
+                        if is_win32 {
+                            let (path_vol, path_rest) =
+                                Self::split_win32_volume_normalized(&path_str);
+                            if !path_vol.is_empty()
+                                && (path_rest.starts_with('/') || path_rest.starts_with('\\'))
+                            {
+                                return Ok(Value::str(Self::canonpath_win32(&path_str, false)));
+                            }
+                            if path_str.starts_with('\\') || path_str.starts_with('/') {
+                                let (base_vol, _) = Self::split_win32_volume_normalized(&base_str);
+                                return Ok(Value::str(Self::canonpath_win32(
+                                    &format!("{}{}", base_vol, path_str),
+                                    false,
+                                )));
+                            }
+                            let mut result = base_str.clone();
+                            if !result.ends_with('/') && !result.ends_with('\\') {
+                                result.push('\\');
+                            }
+                            result.push_str(&path_str);
+                            return Ok(Value::str(Self::canonpath_win32(&result, false)));
+                        }
                         if path_str.starts_with('/') {
                             return Ok(Value::str(path_str));
                         }
@@ -915,19 +1113,25 @@ impl Interpreter {
                             result.push('/');
                         }
                         result.push_str(&path_str);
-                        let cleaned = Self::canonpath_unix(&result, false);
-                        return Ok(Value::str(cleaned));
+                        return Ok(Value::str(Self::canonpath_unix(&result, false)));
                     }
                     "basename" => {
                         let path = args
                             .first()
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
-                        // basename is the part after the last '/'
-                        let result = if let Some(pos) = path.rfind('/') {
-                            &path[pos + 1..]
+                        let result = if is_win32 {
+                            if let Some(pos) = path.rfind(['/', '\\']) {
+                                &path[pos + 1..]
+                            } else {
+                                path.as_str()
+                            }
                         } else {
-                            path.as_str()
+                            if let Some(pos) = path.rfind('/') {
+                                &path[pos + 1..]
+                            } else {
+                                path.as_str()
+                            }
                         };
                         return Ok(Value::str(result.to_string()));
                     }
