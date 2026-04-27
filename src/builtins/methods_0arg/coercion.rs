@@ -183,7 +183,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             ))),
             _ => None,
         },
-        "Capture" => Some(Ok(value_to_capture(target))),
+        "Capture" => Some(value_to_capture(target)),
         "Slip" => match target {
             Value::Array(items, ..) | Value::Seq(items) => Some(Ok(Value::Slip(items.clone()))),
             Value::Slip(_) => Some(Ok(target.clone())),
@@ -586,28 +586,30 @@ pub(crate) fn value_is_prime(target: &Value) -> Result<Value, RuntimeError> {
 }
 
 /// Convert a value to a Capture.
-fn value_to_capture(target: &Value) -> Value {
+fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
     match target {
         // A Capture is already a Capture
-        Value::Capture { .. } => target.clone(),
+        Value::Capture { .. } => Ok(target.clone()),
+        // Match.Capture returns self
+        Value::Instance { class_name, .. } if class_name.resolve() == "Match" => Ok(target.clone()),
         // Pair.Capture → \(:key($pair.key), :value($pair.value))
         Value::Pair(k, v) => {
             let mut named = HashMap::new();
             named.insert("key".to_string(), Value::str(k.clone()));
             named.insert("value".to_string(), *v.clone());
-            Value::Capture {
+            Ok(Value::Capture {
                 positional: vec![],
                 named,
-            }
+            })
         }
         Value::ValuePair(k, v) => {
             let mut named = HashMap::new();
             named.insert("key".to_string(), *k.clone());
             named.insert("value".to_string(), *v.clone());
-            Value::Capture {
+            Ok(Value::Capture {
                 positional: vec![],
                 named,
-            }
+            })
         }
         // Hash.Capture → named args from hash entries
         Value::Hash(map) => {
@@ -615,11 +617,16 @@ fn value_to_capture(target: &Value) -> Value {
             for (k, v) in map.iter() {
                 named.insert(k.clone(), v.clone());
             }
-            Value::Capture {
+            Ok(Value::Capture {
                 positional: vec![],
                 named,
-            }
+            })
         }
+        // Lazy arrays must throw X::Cannot::Lazy
+        Value::Array(_, kind) if kind.is_lazy() => Err(RuntimeError::cannot_lazy_with_action(
+            "create a Capture from",
+            "List",
+        )),
         // Array/List.Capture → positional args, with Pair values becoming named
         Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
             let mut positional = vec![];
@@ -635,17 +642,126 @@ fn value_to_capture(target: &Value) -> Value {
                     _ => positional.push(item.clone()),
                 }
             }
-            Value::Capture { positional, named }
+            Ok(Value::Capture { positional, named })
+        }
+        Value::LazyList(ll) => {
+            // A LazyList is considered lazy if it has a body or compiled code
+            // (i.e., it's a gather/take or similar lazy generator)
+            let is_lazy = !ll.body.is_empty() || ll.compiled_code.is_some();
+            if is_lazy {
+                Err(RuntimeError::cannot_lazy_with_action(
+                    "create a Capture from",
+                    &crate::value::types::what_type_name(target),
+                ))
+            } else {
+                let items = ll.cache.lock().unwrap().clone().unwrap_or_default();
+                let mut positional = vec![];
+                let mut named = HashMap::new();
+                for item in items.iter() {
+                    match item {
+                        Value::Pair(k, v) => {
+                            named.insert(k.clone(), *v.clone());
+                        }
+                        Value::ValuePair(k, v) => {
+                            named.insert(k.to_string_value(), *v.clone());
+                        }
+                        _ => positional.push(item.clone()),
+                    }
+                }
+                Ok(Value::Capture { positional, named })
+            }
+        }
+        // Range.Capture → Mu.Capture semantics (named args from attributes)
+        Value::Range(start, end)
+        | Value::RangeExcl(start, end)
+        | Value::RangeExclStart(start, end)
+        | Value::RangeExclBoth(start, end) => {
+            let mut named = HashMap::new();
+            named.insert("min".to_string(), Value::Int(*start));
+            named.insert("max".to_string(), Value::Int(*end));
+            named.insert(
+                "excludes-min".to_string(),
+                Value::Bool(matches!(
+                    target,
+                    Value::RangeExclStart(..) | Value::RangeExclBoth(..)
+                )),
+            );
+            named.insert(
+                "excludes-max".to_string(),
+                Value::Bool(matches!(
+                    target,
+                    Value::RangeExcl(..) | Value::RangeExclBoth(..)
+                )),
+            );
+            named.insert("is-int".to_string(), Value::Bool(true));
+            Ok(Value::Capture {
+                positional: vec![],
+                named,
+            })
+        }
+        Value::GenericRange {
+            start,
+            end,
+            excl_start,
+            excl_end,
+        } => {
+            let mut named = HashMap::new();
+            named.insert("min".to_string(), (**start).clone());
+            named.insert("max".to_string(), (**end).clone());
+            named.insert("excludes-min".to_string(), Value::Bool(*excl_start));
+            named.insert("excludes-max".to_string(), Value::Bool(*excl_end));
+            let is_int = matches!(&**start, Value::Int(_) | Value::BigInt(_))
+                && matches!(&**end, Value::Int(_) | Value::BigInt(_));
+            named.insert("is-int".to_string(), Value::Bool(is_int));
+            Ok(Value::Capture {
+                positional: vec![],
+                named,
+            })
         }
         // Nil.Capture → empty capture
-        Value::Nil => Value::Capture {
+        Value::Nil => Ok(Value::Capture {
             positional: vec![],
             named: HashMap::new(),
-        },
+        }),
+        // Types whose .Capture throws X::Cannot::Capture
+        Value::Bool(_)
+        | Value::Str(_)
+        | Value::Int(_)
+        | Value::BigInt(_)
+        | Value::Num(_)
+        | Value::Whatever
+        | Value::HyperWhatever => Err(cannot_capture(&crate::value::types::what_type_name(target))),
+        // Sub → X::Cannot::Capture (Callable)
+        Value::Sub(..) => Err(cannot_capture(&crate::value::types::what_type_name(target))),
+        // Regex → X::Cannot::Capture
+        Value::Regex(..) => Err(cannot_capture("Regex")),
+        // Mixin types that should throw X::Cannot::Capture
+        // (e.g., IntStr, NumStr allomorphs, WhateverCode, Signature, Version)
+        Value::Mixin(..) => {
+            let type_name = crate::value::types::what_type_name(target);
+            match type_name.as_str() {
+                "IntStr" | "NumStr" | "RatStr" | "ComplexStr" | "WhateverCode" | "Signature"
+                | "Version" => Err(cannot_capture(&type_name)),
+                _ => Ok(Value::Capture {
+                    positional: vec![target.clone()],
+                    named: HashMap::new(),
+                }),
+            }
+        }
         // Default: wrap in a single-positional capture
-        _ => Value::Capture {
+        _ => Ok(Value::Capture {
             positional: vec![target.clone()],
             named: HashMap::new(),
-        },
+        }),
     }
+}
+
+fn cannot_capture(type_name: &str) -> RuntimeError {
+    let mut attrs = HashMap::new();
+    attrs.insert("what".to_string(), Value::str(type_name.to_string()));
+    attrs.insert(
+        "message".to_string(),
+        Value::str(format!("Cannot unpack or Capture {}", type_name)),
+    );
+    RuntimeError::typed("X::Cannot::Capture", attrs)
 }

@@ -920,6 +920,7 @@ roast/S32-io/io-path-win.t
 roast/S32-io/io-spec-cygwin.t
 roast/S32-io/io-spec-qnx.t
 roast/S32-io/io-spec-unix.t
+roast/S32-io/io-spec-win.t
 roast/S32-io/io-special.t
 roast/S32-io/mkdir_rmdir.t
 roast/S32-io/move.t
