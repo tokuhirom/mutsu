@@ -356,9 +356,15 @@ pub(super) fn dispatch(
             if matches!(target, Value::LazyList(_)) {
                 return Some(None);
             }
-            // Single-threaded: just materialize into an array
+            // Single-threaded: materialize and wrap in HyperSeq/RaceSeq
             let items = runtime::value_to_list(target);
-            Some(Some(Ok(Value::array(items))))
+            let arc = std::sync::Arc::new(items);
+            let result = if method == "hyper" {
+                Value::HyperSeq(arc)
+            } else {
+                Value::RaceSeq(arc)
+            };
+            Some(Some(Ok(result)))
         }
         "NFC" | "NFD" | "NFKC" | "NFKD" => {
             use unicode_normalization::UnicodeNormalization;

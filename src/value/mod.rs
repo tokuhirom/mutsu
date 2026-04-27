@@ -761,6 +761,10 @@ pub enum Value {
         values: Arc<Vec<Value>>,
     },
     Seq(Arc<Vec<Value>>),
+    /// HyperSeq: result of `.hyper` — preserves order, single-threaded implementation.
+    HyperSeq(Arc<Vec<Value>>),
+    /// RaceSeq: result of `.race` — unordered parallel, single-threaded implementation.
+    RaceSeq(Arc<Vec<Value>>),
     Slip(Arc<Vec<Value>>),
     LazyList(Arc<LazyList>),
     Version {

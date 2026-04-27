@@ -287,6 +287,165 @@ impl VM {
         } else {
             target
         };
+        // .hyper/.race with named arguments (batch, degree): validate and wrap
+        if matches!(method.as_str(), "hyper" | "race") && !args.is_empty() {
+            // Extract named args (batch, degree) and validate
+            let mut batch: Option<i64> = None;
+            let mut degree: Option<i64> = None;
+            for arg in &args {
+                let (key, val) = match arg {
+                    Value::Pair(k, v) => (k.clone(), crate::runtime::to_int(v)),
+                    Value::ValuePair(k, v) => (k.to_string_value(), crate::runtime::to_int(v)),
+                    _ => continue,
+                };
+                match key.as_str() {
+                    "batch" => batch = Some(val),
+                    "degree" => degree = Some(val),
+                    _ => {}
+                }
+            }
+            // Validate batch
+            if let Some(b) = batch
+                && b <= 0
+            {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert(
+                    "method".to_string(),
+                    Value::str(method.as_str().to_string()),
+                );
+                attrs.insert("name".to_string(), Value::str("batch".to_string()));
+                attrs.insert("value".to_string(), Value::Int(b));
+                attrs.insert(
+                    "message".to_string(),
+                    Value::str(format!(
+                        "Invalid value '{}' for 'batch' on '{}'",
+                        b,
+                        method.as_str()
+                    )),
+                );
+                return Err(RuntimeError::typed("X::Invalid::Value", attrs));
+            }
+            // Validate degree
+            if let Some(d) = degree
+                && d <= 0
+            {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert(
+                    "method".to_string(),
+                    Value::str(method.as_str().to_string()),
+                );
+                attrs.insert("name".to_string(), Value::str("degree".to_string()));
+                attrs.insert("value".to_string(), Value::Int(d));
+                attrs.insert(
+                    "message".to_string(),
+                    Value::str(format!(
+                        "Invalid value '{}' for 'degree' on '{}'",
+                        d,
+                        method.as_str()
+                    )),
+                );
+                return Err(RuntimeError::typed("X::Invalid::Value", attrs));
+            }
+            // Materialize and wrap
+            let items = crate::runtime::value_to_list(&target);
+            let arc = std::sync::Arc::new(items);
+            let result = if method == "hyper" {
+                Value::HyperSeq(arc)
+            } else {
+                Value::RaceSeq(arc)
+            };
+            self.stack.push(result);
+            self.env_dirty = true;
+            return Ok(());
+        }
+        // HyperSeq/RaceSeq delegation: unwrap, dispatch on inner list, wrap back for map/grep
+        let hyper_race_wrap = if matches!(&target, Value::HyperSeq(_) | Value::RaceSeq(_)) {
+            match method.as_str() {
+                "hyper" => {
+                    let items_arc = match &target {
+                        Value::HyperSeq(items) | Value::RaceSeq(items) => items.clone(),
+                        _ => unreachable!(),
+                    };
+                    self.stack.push(Value::HyperSeq(items_arc));
+                    self.env_dirty = true;
+                    return Ok(());
+                }
+                "race" => {
+                    let items_arc = match &target {
+                        Value::HyperSeq(items) | Value::RaceSeq(items) => items.clone(),
+                        _ => unreachable!(),
+                    };
+                    self.stack.push(Value::RaceSeq(items_arc));
+                    self.env_dirty = true;
+                    return Ok(());
+                }
+                "is-lazy" => {
+                    self.stack.push(Value::Bool(false));
+                    self.env_dirty = true;
+                    return Ok(());
+                }
+                "^name" => {
+                    let name = if matches!(&target, Value::HyperSeq(_)) {
+                        "HyperSeq"
+                    } else {
+                        "RaceSeq"
+                    };
+                    self.stack.push(Value::str(name.to_string()));
+                    self.env_dirty = true;
+                    return Ok(());
+                }
+                "WHAT" => {
+                    let name = if matches!(&target, Value::HyperSeq(_)) {
+                        "HyperSeq"
+                    } else {
+                        "RaceSeq"
+                    };
+                    self.stack.push(Value::Package(Symbol::intern(name)));
+                    self.env_dirty = true;
+                    return Ok(());
+                }
+                "isa" | "does" => {
+                    let type_name = if !args.is_empty() {
+                        match &args[0] {
+                            Value::Package(name) => name.resolve(),
+                            Value::Str(s) => (**s).clone(),
+                            _ => args[0].to_string_value(),
+                        }
+                    } else {
+                        String::new()
+                    };
+                    let my_name = if matches!(&target, Value::HyperSeq(_)) {
+                        "HyperSeq"
+                    } else {
+                        "RaceSeq"
+                    };
+                    let result = type_name == my_name
+                        || type_name == "Seq"
+                        || type_name == "Any"
+                        || type_name == "Mu"
+                        || type_name == "Cool";
+                    self.stack.push(Value::Bool(result));
+                    self.env_dirty = true;
+                    return Ok(());
+                }
+                "defined" => {
+                    self.stack.push(Value::Bool(true));
+                    self.env_dirty = true;
+                    return Ok(());
+                }
+                "map" | "grep" => Some(matches!(&target, Value::HyperSeq(_))),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        // Convert HyperSeq/RaceSeq to List for method dispatch
+        let target = match target {
+            Value::HyperSeq(items) | Value::RaceSeq(items) => {
+                Value::Array(items, crate::value::ArrayKind::List)
+            }
+            other => other,
+        };
         // Regex.Bool / Regex.so: smartmatch against $_ (needs runtime context)
         if matches!(method.as_str(), "Bool" | "so")
             && args.is_empty()
@@ -498,6 +657,18 @@ impl VM {
                         self.stack.push(call_result?);
                         self.env_dirty = true;
                     }
+                }
+                // Wrap map/grep results back into HyperSeq/RaceSeq
+                if let Some(is_hyper) = hyper_race_wrap
+                    && let Some(result) = self.stack.pop()
+                {
+                    let result_items = crate::runtime::value_to_list(&result);
+                    let wrapped = if is_hyper {
+                        Value::HyperSeq(std::sync::Arc::new(result_items))
+                    } else {
+                        Value::RaceSeq(std::sync::Arc::new(result_items))
+                    };
+                    self.stack.push(wrapped);
                 }
             }
         }

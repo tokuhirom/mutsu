@@ -52,6 +52,144 @@ impl VM {
                 err.return_value = Some(target);
                 return Err(err);
             }
+            // .hyper/.race with named arguments: validate, then create HyperSeq/RaceSeq
+            if matches!(method.as_str(), "hyper" | "race") {
+                // Extract batch/degree for validation
+                let mut batch: Option<i64> = None;
+                let mut degree: Option<i64> = None;
+                for arg in &args {
+                    let (key, val) = match arg {
+                        Value::Pair(k, v) => (k.clone(), crate::runtime::to_int(v)),
+                        Value::ValuePair(k, v) => (k.to_string_value(), crate::runtime::to_int(v)),
+                        _ => continue,
+                    };
+                    match key.as_str() {
+                        "batch" => batch = Some(val),
+                        "degree" => degree = Some(val),
+                        _ => {}
+                    }
+                }
+                if let Some(b) = batch
+                    && b <= 0
+                {
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("method".to_string(), Value::str(method.clone()));
+                    attrs.insert("name".to_string(), Value::str("batch".to_string()));
+                    attrs.insert("value".to_string(), Value::Int(b));
+                    attrs.insert(
+                        "message".to_string(),
+                        Value::str(format!("Invalid value '{}' for 'batch' on '{}'", b, method)),
+                    );
+                    return Err(RuntimeError::typed("X::Invalid::Value", attrs));
+                }
+                if let Some(d) = degree
+                    && d <= 0
+                {
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("method".to_string(), Value::str(method.clone()));
+                    attrs.insert("name".to_string(), Value::str("degree".to_string()));
+                    attrs.insert("value".to_string(), Value::Int(d));
+                    attrs.insert(
+                        "message".to_string(),
+                        Value::str(format!(
+                            "Invalid value '{}' for 'degree' on '{}'",
+                            d, method
+                        )),
+                    );
+                    return Err(RuntimeError::typed("X::Invalid::Value", attrs));
+                }
+                // Create HyperSeq/RaceSeq
+                let items = crate::runtime::value_to_list(&target);
+                let arc = std::sync::Arc::new(items);
+                let result = if method == "hyper" {
+                    Value::HyperSeq(arc)
+                } else {
+                    Value::RaceSeq(arc)
+                };
+                self.stack.push(result);
+                self.env_dirty = true;
+                return Ok(());
+            }
+            // HyperSeq/RaceSeq: delegate methods
+            if matches!(&target, Value::HyperSeq(_) | Value::RaceSeq(_)) {
+                let is_hyper = matches!(&target, Value::HyperSeq(_));
+                let items_arc = match &target {
+                    Value::HyperSeq(items) | Value::RaceSeq(items) => items.clone(),
+                    _ => unreachable!(),
+                };
+                match method.as_str() {
+                    "hyper" => {
+                        self.stack.push(Value::HyperSeq(items_arc));
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                    "race" => {
+                        self.stack.push(Value::RaceSeq(items_arc));
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                    "is-lazy" => {
+                        self.stack.push(Value::Bool(false));
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                    "^name" => {
+                        self.stack.push(Value::str(
+                            if is_hyper { "HyperSeq" } else { "RaceSeq" }.to_string(),
+                        ));
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                    "WHAT" => {
+                        self.stack.push(Value::Package(Symbol::intern(if is_hyper {
+                            "HyperSeq"
+                        } else {
+                            "RaceSeq"
+                        })));
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                    "defined" => {
+                        self.stack.push(Value::Bool(true));
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                    "map" | "grep" => {
+                        let array_target = Value::Array(items_arc, crate::value::ArrayKind::List);
+                        let call_result = if let Some(nr) =
+                            self.try_native_method(&array_target, Symbol::intern(&method), &args)
+                        {
+                            nr
+                        } else {
+                            self.try_compiled_method_or_interpret(array_target, &method, args)
+                        };
+                        let result_val = call_result?;
+                        let result_items = crate::runtime::value_to_list(&result_val);
+                        let wrapped = if is_hyper {
+                            Value::HyperSeq(Arc::new(result_items))
+                        } else {
+                            Value::RaceSeq(Arc::new(result_items))
+                        };
+                        self.stack.push(wrapped);
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                    _ => {
+                        // Convert to array and delegate
+                        let array_target = Value::Array(items_arc, crate::value::ArrayKind::List);
+                        let call_result = if let Some(nr) =
+                            self.try_native_method(&array_target, Symbol::intern(&method), &args)
+                        {
+                            nr
+                        } else {
+                            self.try_compiled_method_or_interpret(array_target, &method, args)
+                        };
+                        self.stack.push(call_result?);
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                }
+            }
             if let Some(native_result) =
                 self.try_native_method(&target, Symbol::intern(&method), &args)
             {
@@ -406,6 +544,143 @@ impl VM {
             self.env_dirty = true;
             return Ok(());
         }
+        // .hyper/.race with named arguments in mut path
+        if matches!(method.as_str(), "hyper" | "race") && !args.is_empty() {
+            let mut batch: Option<i64> = None;
+            let mut degree: Option<i64> = None;
+            for arg in &args {
+                let (key, val) = match arg {
+                    Value::Pair(k, v) => (k.clone(), crate::runtime::to_int(v)),
+                    Value::ValuePair(k, v) => (k.to_string_value(), crate::runtime::to_int(v)),
+                    _ => continue,
+                };
+                match key.as_str() {
+                    "batch" => batch = Some(val),
+                    "degree" => degree = Some(val),
+                    _ => {}
+                }
+            }
+            if let Some(b) = batch
+                && b <= 0
+            {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert(
+                    "method".to_string(),
+                    Value::str(method.as_str().to_string()),
+                );
+                attrs.insert("name".to_string(), Value::str("batch".to_string()));
+                attrs.insert("value".to_string(), Value::Int(b));
+                attrs.insert(
+                    "message".to_string(),
+                    Value::str(format!(
+                        "Invalid value '{}' for 'batch' on '{}'",
+                        b,
+                        method.as_str()
+                    )),
+                );
+                return Err(RuntimeError::typed("X::Invalid::Value", attrs));
+            }
+            if let Some(d) = degree
+                && d <= 0
+            {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert(
+                    "method".to_string(),
+                    Value::str(method.as_str().to_string()),
+                );
+                attrs.insert("name".to_string(), Value::str("degree".to_string()));
+                attrs.insert("value".to_string(), Value::Int(d));
+                attrs.insert(
+                    "message".to_string(),
+                    Value::str(format!(
+                        "Invalid value '{}' for 'degree' on '{}'",
+                        d,
+                        method.as_str()
+                    )),
+                );
+                return Err(RuntimeError::typed("X::Invalid::Value", attrs));
+            }
+            let items = crate::runtime::value_to_list(&target);
+            let arc = std::sync::Arc::new(items);
+            let result = if method == "hyper" {
+                Value::HyperSeq(arc)
+            } else {
+                Value::RaceSeq(arc)
+            };
+            self.stack.push(result);
+            self.env_dirty = true;
+            return Ok(());
+        }
+        // HyperSeq/RaceSeq delegation in mut path
+        if matches!(&target, Value::HyperSeq(_) | Value::RaceSeq(_)) {
+            let is_hyper = matches!(&target, Value::HyperSeq(_));
+            match method.as_str() {
+                "hyper" | "race" | "is-lazy" | "^name" | "WHAT" | "defined" => {
+                    let items_arc = match &target {
+                        Value::HyperSeq(items) | Value::RaceSeq(items) => items.clone(),
+                        _ => unreachable!(),
+                    };
+                    let result = match method.as_str() {
+                        "hyper" => Value::HyperSeq(items_arc),
+                        "race" => Value::RaceSeq(items_arc),
+                        "is-lazy" => Value::Bool(false),
+                        "defined" => Value::Bool(true),
+                        "^name" => {
+                            let name = if is_hyper { "HyperSeq" } else { "RaceSeq" };
+                            Value::str(name.to_string())
+                        }
+                        "WHAT" => {
+                            let name = if is_hyper { "HyperSeq" } else { "RaceSeq" };
+                            Value::Package(Symbol::intern(name))
+                        }
+                        _ => unreachable!(),
+                    };
+                    self.stack.push(result);
+                    self.env_dirty = true;
+                    return Ok(());
+                }
+                "map" | "grep" => {
+                    // Delegate to array, then wrap result
+                    let items_arc = match &target {
+                        Value::HyperSeq(items) | Value::RaceSeq(items) => items.clone(),
+                        _ => unreachable!(),
+                    };
+                    let array_target = Value::Array(items_arc, crate::value::ArrayKind::List);
+                    let call_result = if let Some(native_result) =
+                        self.try_native_method(&array_target, Symbol::intern(&method), &args)
+                    {
+                        native_result
+                    } else {
+                        self.try_compiled_method_mut_or_interpret(
+                            &target_name,
+                            array_target,
+                            &method,
+                            args,
+                        )
+                    };
+                    let result_val = call_result?;
+                    let result_items = crate::runtime::value_to_list(&result_val);
+                    let wrapped = if is_hyper {
+                        Value::HyperSeq(std::sync::Arc::new(result_items))
+                    } else {
+                        Value::RaceSeq(std::sync::Arc::new(result_items))
+                    };
+                    self.stack.push(wrapped);
+                    self.env_dirty = true;
+                    return Ok(());
+                }
+                _ => {
+                    // For all other methods, convert to List and delegate
+                }
+            }
+        }
+        // Convert HyperSeq/RaceSeq to List for remaining method dispatch
+        let target = match target {
+            Value::HyperSeq(items) | Value::RaceSeq(items) => {
+                Value::Array(items, crate::value::ArrayKind::List)
+            }
+            other => other,
+        };
         // Auto-vivify undefined values (Nil, Any, Mu type objects) to empty Arrays
         // for mutating list methods. In Raku, calling push/unshift/append/prepend on
         // an undefined variable auto-vivifies it to an Array.

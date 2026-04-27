@@ -448,7 +448,7 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             }
             Value::hash(map)
         }
-        Value::Seq(items) | Value::Slip(items) => {
+        Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) | Value::Slip(items) => {
             let mut map = HashMap::new();
             let mut i = 0;
             while i < items.len() {
@@ -661,7 +661,9 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
                 Value::real_array(value_to_list(&value))
             }
         }
-        Value::Slip(items) | Value::Seq(items) => Value::Array(items, ArrayKind::Array),
+        Value::Slip(items) | Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => {
+            Value::Array(items, ArrayKind::Array)
+        }
         Value::LazyList(_) => value,
         Value::Hash(ref map) => {
             // Hash assigned to @-var: flatten into pairs
@@ -746,7 +748,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
         }
         Value::Pair(k, v) => format!("{} => {}", k, gist_value(v)),
         Value::ValuePair(k, v) => format!("{} => {}", gist_value(k), gist_value(v)),
-        Value::Seq(items) | Value::Slip(items) => {
+        Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) | Value::Slip(items) => {
             format!(
                 "({})",
                 items.iter().map(gist_value).collect::<Vec<_>>().join(" ")
@@ -1299,6 +1301,8 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::Regex(_) | Value::RegexWithAdverbs { .. } => "Regex",
         Value::Version { .. } => "Version",
         Value::Seq(_) => "Seq",
+        Value::HyperSeq(_) => "HyperSeq",
+        Value::RaceSeq(_) => "RaceSeq",
         Value::Slip(_) => "Slip",
         Value::Promise(_) => "Promise",
         Value::Channel(_) => "Channel",
@@ -1483,7 +1487,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
     match val {
         Value::Array(items, kind) if kind.is_itemized() => vec![val.clone()],
         Value::Array(items, ..) => items.to_vec(),
-        Value::Seq(items) => items.to_vec(),
+        Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => items.to_vec(),
         Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
         Value::Hash(items) => items
             .iter()
@@ -2991,7 +2995,7 @@ pub(crate) fn to_int(v: &Value) -> i64 {
         Value::Str(s) => s.parse().unwrap_or(0),
         Value::Array(items, ..) => items.len() as i64,
         Value::Hash(items) => items.len() as i64,
-        Value::Seq(items) => items.len() as i64,
+        Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => items.len() as i64,
         Value::Slip(items) => items.len() as i64,
         Value::Instance { attributes, .. } => attributes.get("__mutsu_int_value").map_or(0, to_int),
         _ => 0,
