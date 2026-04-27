@@ -702,6 +702,49 @@ pub(crate) fn native_method_1arg(
             };
             Some(Ok(Value::Bool(result)))
         }
+        // ACCEPTS for Pair: checks if the argument has the matching key->value
+        "ACCEPTS" if matches!(target, Value::Pair(..) | Value::ValuePair(..)) => {
+            let (pk, pv) = match target {
+                Value::Pair(k, v) => (k.to_string(), v.as_ref().clone()),
+                Value::ValuePair(k, v) => (k.to_string_value(), *v.clone()),
+                _ => unreachable!(),
+            };
+            let result = match arg {
+                Value::Bag(data, _) => {
+                    let count = data.counts.get(&pk).copied().unwrap_or(0);
+                    Value::Int(count) == pv
+                }
+                Value::Mix(data, _) => {
+                    let w = data.weights.get(&pk).copied().unwrap_or(0.0);
+                    let mv = if w.fract() == 0.0 {
+                        Value::Int(w as i64)
+                    } else {
+                        Value::Num(w)
+                    };
+                    mv == pv
+                }
+                Value::Set(data, _) => {
+                    let in_set = data.elements.contains(&pk);
+                    Value::Bool(in_set) == pv
+                }
+                Value::Hash(items) => {
+                    let hv = items.get(&pk).cloned().unwrap_or(Value::Int(0));
+                    hv == pv
+                }
+                Value::Pair(ok, ov) => pk == ok.as_str() && **ov == pv,
+                Value::ValuePair(ok, ov) => {
+                    let tk = match target {
+                        Value::Pair(k, _) => Value::str(k.to_string()),
+                        Value::ValuePair(k, _) => *k.clone(),
+                        _ => unreachable!(),
+                    };
+                    tk == **ok && **ov == pv
+                }
+                Value::Instance { .. } | Value::Package(_) => return None,
+                _ => false,
+            };
+            Some(Ok(Value::Bool(result)))
+        }
         // ACCEPTS for Range: value ~~ Range containment, Range ~~ Range subset
         "ACCEPTS" if target.is_range() => {
             let result = if arg.is_range() {

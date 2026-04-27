@@ -324,6 +324,16 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
         // :!name (negated boolean)
         if let Some(stripped) = r.strip_prefix('!') {
             let (r, name) = ident(stripped)?;
+            // If followed by `.method` (possibly with whitespace), treat as positional
+            {
+                let trimmed = r.trim_start_matches([' ', '\t']);
+                if trimmed.starts_with('.')
+                    && !trimmed.starts_with("..")
+                    && let Ok((r2, expr)) = expression(input)
+                {
+                    return Ok((r2, CallArg::Positional(expr)));
+                }
+            }
             return Ok((
                 r,
                 CallArg::Named {
@@ -426,6 +436,13 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                         ));
                     }
                     let (r, _) = parse_char(r, ')')?;
+                    // If followed by `.method`, re-parse as positional expression
+                    if r.starts_with('.')
+                        && !r.starts_with("..")
+                        && let Ok((r2, expr)) = expression(input)
+                    {
+                        return Ok((r2, CallArg::Positional(expr)));
+                    }
                     return Ok((
                         r,
                         CallArg::Named {
@@ -504,6 +521,13 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                         .ok_or_else(|| PError::expected("'>' closing angle bracket"))?;
                     let content = &r[..end];
                     let r = &r[end + 1..];
+                    // If followed by `.method`, re-parse as positional expression
+                    if r.starts_with('.')
+                        && !r.starts_with("..")
+                        && let Ok((r2, expr)) = expression(input)
+                    {
+                        return Ok((r2, CallArg::Positional(expr)));
+                    }
                     let words = split_angle_words(content);
                     if words.len() == 1 {
                         return Ok((
@@ -525,6 +549,16 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                             value: Some(Expr::ArrayLiteral(items)),
                         },
                     ));
+                }
+                // If followed by `.method` (possibly with whitespace), treat as positional
+                {
+                    let trimmed = r.trim_start_matches([' ', '\t']);
+                    if trimmed.starts_with('.')
+                        && !trimmed.starts_with("..")
+                        && let Ok((r2, expr)) = expression(input)
+                    {
+                        return Ok((r2, CallArg::Positional(expr)));
+                    }
                 }
                 // :name (boolean true)
                 return Ok((r, CallArg::Named { name, value: None }));
