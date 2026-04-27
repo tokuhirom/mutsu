@@ -190,6 +190,7 @@ mod system;
 mod test_functions;
 pub(crate) mod types;
 mod unicode;
+pub(crate) mod utf8_c8;
 pub(crate) mod utils;
 pub(crate) use self::registration_class::ClassDeclModifiers;
 

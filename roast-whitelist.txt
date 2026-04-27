@@ -1054,6 +1054,7 @@ roast/S32-str/tclc.t
 roast/S32-str/trim.t
 roast/S32-str/uc.t
 roast/S32-str/uniparse.t
+roast/S32-str/utf8-c8.t
 roast/S32-str/windows-1251-windows-1252-encode-decode.t
 roast/S32-str/words.t
 roast/S32-temporal/Date.t

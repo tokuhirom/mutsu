@@ -88,6 +88,7 @@ impl Interpreter {
             .to_lowercase();
 
         match encoding.as_str() {
+            "utf8-c8" => Ok(super::utf8_c8::encode_utf8_c8(input)),
             "ascii" => {
                 for ch in input.chars() {
                     if (ch as u32) > 0x7F {
@@ -149,6 +150,7 @@ impl Interpreter {
             .to_lowercase();
 
         match encoding.as_str() {
+            "utf8-c8" => Ok(super::utf8_c8::decode_utf8_c8(bytes)),
             "ascii" => Ok(bytes
                 .iter()
                 .map(|b| if *b <= 0x7F { *b as char } else { '\u{FFFD}' })
