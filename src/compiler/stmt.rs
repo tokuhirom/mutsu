@@ -581,8 +581,13 @@ impl Compiler {
                 } else if self.bind_vardecl && !name.starts_with('@') && !name.starts_with('%') {
                     // `:=` binding for scalar VarDecl: use compile_call_arg
                     // so WrapVarRef is emitted and the VM can set up aliases.
+                    // Set scalar_bind_autovivify so that Index expressions
+                    // emit IndexAutovivify (for hash element binding like
+                    // `my $b := %h<foo><baz>`).
                     self.bind_vardecl = false;
+                    self.scalar_bind_autovivify = true;
                     self.compile_call_arg(expr);
+                    self.scalar_bind_autovivify = false;
                 } else {
                     let rhs_expr = if has_default_trait
                         && !name.starts_with('@')

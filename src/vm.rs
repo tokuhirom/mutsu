@@ -2085,6 +2085,10 @@ impl VM {
                 self.exec_index_op_with_positional(*is_positional)?;
                 *ip += 1;
             }
+            OpCode::IndexAutovivify => {
+                self.exec_index_autovivify_op()?;
+                *ip += 1;
+            }
             OpCode::DeleteIndexNamed(name_idx) => {
                 self.exec_delete_index_named_op(code, *name_idx)?;
                 *ip += 1;

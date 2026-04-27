@@ -393,6 +393,10 @@ pub(crate) enum OpCode {
     Index {
         is_positional: bool,
     },
+    /// Like Index, but auto-vivifies intermediate hash entries and returns
+    /// a `HashSlotRef` for the final key.  Used for `:=` bind to hash elements
+    /// (e.g. `my $b := %h<foo><baz>`).
+    IndexAutovivify,
     DeleteIndexNamed(u32),
     DeleteIndexExpr,
     /// Multi-dimensional indexing: @a[$x;$y;$z]

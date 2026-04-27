@@ -36,6 +36,49 @@ impl VM {
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
+    /// Auto-vivifying index: creates intermediate Hash entries and returns
+    /// a `HashSlotRef` so that `:=` bind to nested hash elements works.
+    /// Stack: [target, key] -> [HashSlotRef]
+    pub(super) fn exec_index_autovivify_op(&mut self) -> Result<(), RuntimeError> {
+        let index = self.stack.pop().unwrap();
+        let target = self.stack.pop().unwrap();
+        let key = Value::hash_key_encode(&index);
+
+        // If the target is a HashSlotRef, resolve its value first.
+        let hash_val = match &target {
+            Value::HashSlotRef { .. } => target.hash_slot_read(),
+            other => other.clone(),
+        };
+
+        match &hash_val {
+            Value::Hash(_) => {
+                if let Some(slot_ref) = hash_val.hash_autovivify(&key) {
+                    self.stack.push(slot_ref);
+                } else {
+                    self.stack.push(Value::Nil);
+                }
+            }
+            // If the target is Nil/Any (not yet vivified), create an empty hash
+            // inside the HashSlotRef and then auto-vivify the key.
+            _ if matches!(&target, Value::HashSlotRef { .. }) => {
+                let new_hash = Value::hash(std::collections::HashMap::new());
+                target.hash_slot_write(new_hash.clone());
+                if let Some(slot_ref) = new_hash.hash_autovivify(&key) {
+                    self.stack.push(slot_ref);
+                } else {
+                    self.stack.push(Value::Nil);
+                }
+            }
+            _ => {
+                // Fallback: just do a normal index read
+                self.stack.push(target);
+                self.stack.push(index);
+                return self.exec_index_op_with_positional(false);
+            }
+        }
+        Ok(())
+    }
+
     /// Backward-compatible wrapper: defaults to associative indexing.
     pub(super) fn exec_index_op(&mut self) -> Result<(), RuntimeError> {
         self.exec_index_op_with_positional(false)
