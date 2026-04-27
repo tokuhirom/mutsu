@@ -40,6 +40,14 @@ fn flatten_append_args(args: Vec<Value>) -> Vec<Value> {
         match &args[0] {
             Value::Array(vals, kind) if !kind.is_itemized() => vals.to_vec(),
             Value::Seq(vals) => vals.to_vec(),
+            Value::Hash(map) => {
+                // Flatten hash into key-value pairs
+                let mut result = Vec::new();
+                for (k, v) in map.iter() {
+                    result.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                }
+                result
+            }
             _ => args,
         }
     } else {

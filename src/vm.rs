@@ -850,6 +850,17 @@ impl VM {
                             .and_then(|bare| self.interpreter.env().get(bare).cloned())
                     })
                     .unwrap_or(Value::Nil);
+                // When @-sigil dereferences a Hash, convert to a list of pairs
+                let val = match val {
+                    Value::Hash(ref map) => {
+                        let pairs: Vec<Value> = map
+                            .iter()
+                            .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                            .collect();
+                        Value::real_array(pairs)
+                    }
+                    other => other,
+                };
                 self.stack.push(val);
                 *ip += 1;
             }

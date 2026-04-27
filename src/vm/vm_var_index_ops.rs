@@ -125,6 +125,23 @@ impl VM {
         } else {
             index
         };
+        // Itemized arrays ($[...]) used as indices should be numified (for
+        // positional access) or stringified (for associative access) rather
+        // than treated as slices.
+        let index = if let Value::Array(ref items, kind) = index
+            && kind.is_itemized()
+        {
+            if is_positional {
+                // Numify: elems count
+                Value::Int(items.len() as i64)
+            } else {
+                // Stringify: space-separated
+                let parts: Vec<String> = items.iter().map(|v| v.to_str_context()).collect();
+                Value::Str(std::sync::Arc::new(parts.join(" ")))
+            }
+        } else {
+            index
+        };
         let result = match (target, index) {
             // Whatever (*) index on Array: @a[*] returns all elements as a List
             (Value::Array(items, _is_arr), Value::Whatever) => {

@@ -663,6 +663,14 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
         }
         Value::Slip(items) | Value::Seq(items) => Value::Array(items, ArrayKind::Array),
         Value::LazyList(_) => value,
+        Value::Hash(ref map) => {
+            // Hash assigned to @-var: flatten into pairs
+            let pairs: Vec<Value> = map
+                .iter()
+                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                .collect();
+            Value::real_array(pairs)
+        }
         other => Value::real_array(vec![other]),
     }
 }

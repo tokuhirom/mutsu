@@ -994,6 +994,10 @@ pub(super) fn sub_decl_body(
             .into_iter()
             .filter_map(|arg| match arg {
                 crate::ast::CallArg::Positional(e) => Some(e),
+                crate::ast::CallArg::Slip(e) => Some(Expr::Unary {
+                    op: crate::token_kind::TokenKind::Pipe,
+                    expr: Box::new(e),
+                }),
                 _ => None,
             })
             .collect();
