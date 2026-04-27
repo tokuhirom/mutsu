@@ -722,6 +722,11 @@ impl Value {
                         || class_name == "Pod::Block::Table"
                         || class_name == "Pod::Item"
             ),
+            "Pod::Config" => matches!(
+                self,
+                Value::Instance { class_name, .. }
+                    if class_name == "Pod::Config"
+            ),
             _ => false,
         }
     }
