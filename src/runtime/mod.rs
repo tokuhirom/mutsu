@@ -2142,6 +2142,21 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "Pod::Config".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Pod::Config".to_string()],
+                attribute_types: HashMap::new(),
+                attribute_smileys: HashMap::new(),
+                wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
+            },
+        );
+        classes.insert(
             "Pod::Item".to_string(),
             ClassDef {
                 parents: vec!["Pod::Block".to_string()],
