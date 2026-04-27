@@ -100,11 +100,9 @@ impl Interpreter {
         } = target
             && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
         {
-            let default_encoding = if class_name == "utf16" {
-                "utf-16"
-            } else {
-                "utf-8"
-            };
+            let cn = class_name.resolve();
+            let is_wide = cn == "utf16" || cn == "buf16" || cn == "Buf[uint16]";
+            let default_encoding = if is_wide { "utf-16" } else { "utf-8" };
             let encoding = args
                 .first()
                 .map(|v| v.to_string_value())
@@ -113,7 +111,7 @@ impl Interpreter {
                 .find_encoding(&encoding)
                 .map(|e| e.name.as_str().to_lowercase())
                 .unwrap_or_else(|| encoding.to_lowercase());
-            let bytes = if class_name == "utf16" {
+            let bytes = if is_wide {
                 if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
                     let use_be = normalized_encoding == "utf-16be";
                     let mut out = Vec::with_capacity(items.len() * 2);

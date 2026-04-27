@@ -258,7 +258,10 @@ fn decode_buf_target_bytes(target: &Value, encoding_name: &str) -> Option<Vec<u8
         return Some(Vec::new());
     };
 
-    if class_name == "utf16" {
+    let cn = class_name.resolve();
+    // buf16 / Buf[uint16] / utf16 store 16-bit code units; expand each to 2 bytes
+    let is_wide = cn == "utf16" || cn == "buf16" || cn == "Buf[uint16]";
+    if is_wide {
         let use_be = encoding_name == "utf-16be";
         let mut out = Vec::with_capacity(items.len() * 2);
         for item in items.iter() {
@@ -298,7 +301,8 @@ pub(crate) fn decode_buf_method(
         return None;
     }
 
-    let default_encoding = if class_name == "utf16" {
+    let cn = class_name.resolve();
+    let default_encoding = if cn == "utf16" || cn == "buf16" || cn == "Buf[uint16]" {
         "utf-16"
     } else {
         "utf-8"

@@ -629,6 +629,7 @@ roast/S15-nfg/cgj.t
 roast/S15-nfg/concatenation.t
 roast/S15-nfg/crlf-encoding.t
 roast/S15-nfg/emoji-test.t
+roast/S15-nfg/from-buf.t
 roast/S15-nfg/from-file.t
 roast/S15-nfg/grapheme-break.t
 roast/S15-nfg/long-uni.t
