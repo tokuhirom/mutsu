@@ -111,6 +111,7 @@ roast/S02-types/bool.t
 roast/S02-types/built-in.t
 roast/S02-types/catch_type_cast_mismatch.t
 roast/S02-types/compact.t
+roast/S02-types/declare.t
 roast/S02-types/fatrat.t
 roast/S02-types/hash_ref.t
 roast/S02-types/hyperwhatever.t
@@ -837,6 +838,7 @@ roast/S26-documentation/04a-input-output.t
 roast/S26-documentation/05-comment.t
 roast/S26-documentation/06-lists.t
 roast/S26-documentation/07c-tables.t
+roast/S26-documentation/09-configuration.t
 roast/S26-documentation/10-doc-cli.t
 roast/S26-documentation/12-non-breaking-space.t
 roast/S26-documentation/14-defn.t
