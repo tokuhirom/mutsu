@@ -1059,9 +1059,15 @@ impl Interpreter {
             }
         }
         // Push onto routine_stack so that `return` inside the method body
-        // compiles as `Return` (not `ReturnFromNonRoutine`).
+        // compiles as `Return` (not `ReturnFromNonRoutine`), and so that
+        // `&?ROUTINE` can find the current method name.
+        let method_name_for_stack = self
+            .samewith_context_stack
+            .last()
+            .map(|(n, _)| n.clone())
+            .unwrap_or_default();
         self.routine_stack
-            .push((owner_class.to_string(), String::new()));
+            .push((owner_class.to_string(), method_name_for_stack));
         let block_result = self.run_block(&method_def.body);
         self.routine_stack.pop();
         let implicit_return = self.env.get("_").cloned();

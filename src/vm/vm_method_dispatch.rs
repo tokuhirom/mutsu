@@ -339,6 +339,10 @@ impl VM {
             }
         }
 
+        // Push routine_stack so &?ROUTINE can find the current method
+        self.interpreter
+            .push_routine(owner_class.to_string(), method_name.to_string());
+
         // Execute bytecode
         let let_mark = self.interpreter.let_saves_len();
         let mut ip = 0;
@@ -527,6 +531,7 @@ impl VM {
         }
         self.interpreter.restore_var_bindings(restored_bindings);
 
+        self.interpreter.pop_routine();
         self.interpreter.pop_method_class();
         let _frame = self.pop_call_frame();
         *self.interpreter.env_mut() = merged_env;

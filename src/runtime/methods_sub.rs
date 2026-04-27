@@ -215,6 +215,24 @@ impl Interpreter {
                 name, sig_gist
             ))));
         }
+        if method == "dispatcher" && args.is_empty() {
+            let qualified = format!("{}::{}", package, name);
+            if self.resolve_proto_function(&qualified).is_some() {
+                return Some(Ok(Value::Routine {
+                    package: Symbol::intern(package),
+                    name: Symbol::intern(name),
+                    is_regex: false,
+                }));
+            }
+            if self.resolve_proto_function_with_alias(name).is_some() {
+                return Some(Ok(Value::Routine {
+                    package: Symbol::intern(package),
+                    name: Symbol::intern(name),
+                    is_regex: false,
+                }));
+            }
+            return Some(Ok(target.clone()));
+        }
         if method == "can" {
             let method_name = args
                 .first()
@@ -235,6 +253,7 @@ impl Interpreter {
                     | "Str"
                     | "gist"
                     | "can"
+                    | "dispatcher"
             );
             return Some(Ok(Value::Bool(can)));
         }
