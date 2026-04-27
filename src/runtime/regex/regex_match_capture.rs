@@ -111,7 +111,9 @@ impl Interpreter {
             | RegexAtom::RightWordBoundary
             | RegexAtom::StartOfLine
             | RegexAtom::EndOfLine
-            | RegexAtom::WsRule => {
+            | RegexAtom::WsRule
+            | RegexAtom::SameAssertion { .. }
+            | RegexAtom::AtPosition(_) => {
                 return self
                     .regex_match_atom_in_pkg(atom, chars, pos, pkg, ignore_case)
                     .map(|next| (next, current_caps.clone()));

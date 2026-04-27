@@ -645,6 +645,12 @@ enum RegexAtom {
     Backref(usize),
     /// `$<name>` — backreference to named capture group
     NamedBackref(String),
+    /// `<?same>` / `<!same>` — zero-width assertion: adjacent chars are same/different
+    SameAssertion {
+        negated: bool,
+    },
+    /// `<at(N)>` — zero-width assertion: match at position N
+    AtPosition(usize),
     /// Internal marker used while rewriting `left ~ goal inner`.
     TildeMarker,
     /// Goal matching produced by `~`: match `inner` first, then `goal`,

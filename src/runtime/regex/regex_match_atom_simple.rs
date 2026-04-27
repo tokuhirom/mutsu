@@ -311,6 +311,20 @@ impl Interpreter {
                 let result = if *negated { !prop_match } else { prop_match };
                 return if result { Some(pos) } else { None };
             }
+            RegexAtom::SameAssertion { negated } => {
+                // <?same> succeeds when chars[pos-1] == chars[pos]
+                // <!same> succeeds when chars[pos-1] != chars[pos]
+                if pos == 0 || pos >= chars.len() {
+                    return if *negated { Some(pos) } else { None };
+                }
+                let same = chars[pos - 1] == chars[pos];
+                let pass = if *negated { !same } else { same };
+                return if pass { Some(pos) } else { None };
+            }
+            RegexAtom::AtPosition(target) => {
+                // <at(N)> succeeds when current position == N
+                return if pos == *target { Some(pos) } else { None };
+            }
             _ => {}
         }
         if let RegexAtom::Named(name) = atom {
@@ -556,7 +570,9 @@ impl Interpreter {
             | RegexAtom::StartOfLine
             | RegexAtom::TildeMarker
             | RegexAtom::EndOfLine
-            | RegexAtom::WsRule => unreachable!(),
+            | RegexAtom::WsRule
+            | RegexAtom::SameAssertion { .. }
+            | RegexAtom::AtPosition(_) => unreachable!(),
         };
         if matched {
             match atom {

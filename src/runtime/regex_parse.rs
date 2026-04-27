@@ -1688,6 +1688,103 @@ impl Interpreter {
                                         name: prop_name.to_string(),
                                         negated: true,
                                     }
+                                } else if let Some(negated_name) = trimmed.strip_prefix('!') {
+                                    if negated_name.is_empty() {
+                                        // <!> — always-fail (handled as Named("!") downstream)
+                                        RegexAtom::Named(name)
+                                    } else if negated_name == "same" || negated_name == ".same" {
+                                        // <!same> — zero-width assertion: next two chars are different
+                                        RegexAtom::SameAssertion { negated: true }
+                                    } else {
+                                        // <!alpha>, <!digit>, etc. — zero-width negative assertion for named class
+                                        let clean_name =
+                                            negated_name.strip_prefix('.').unwrap_or(negated_name);
+                                        let is_known = matches!(
+                                            clean_name,
+                                            "alpha"
+                                                | "upper"
+                                                | "lower"
+                                                | "digit"
+                                                | "xdigit"
+                                                | "space"
+                                                | "alnum"
+                                                | "blank"
+                                                | "cntrl"
+                                                | "punct"
+                                                | "graph"
+                                                | "print"
+                                                | "ws"
+                                                | "ident"
+                                        );
+                                        if is_known {
+                                            let inner_atom = if clean_name == "ident" {
+                                                RegexAtom::Group(RegexPattern {
+                                                    tokens: vec![
+                                                        RegexToken {
+                                                            atom: RegexAtom::CharClass(CharClass {
+                                                                items: vec![
+                                                                    ClassItem::NamedBuiltin(
+                                                                        "alpha".to_string(),
+                                                                    ),
+                                                                ],
+                                                                negated: false,
+                                                            }),
+                                                            quant: RegexQuant::One,
+                                                            named_capture: None,
+                                                            ratchet: false,
+                                                            frugal: false,
+                                                        },
+                                                        RegexToken {
+                                                            atom: RegexAtom::CharClass(CharClass {
+                                                                items: vec![
+                                                                    ClassItem::NamedBuiltin(
+                                                                        "alnum".to_string(),
+                                                                    ),
+                                                                ],
+                                                                negated: false,
+                                                            }),
+                                                            quant: RegexQuant::ZeroOrMore,
+                                                            named_capture: None,
+                                                            ratchet: false,
+                                                            frugal: false,
+                                                        },
+                                                    ],
+                                                    anchor_start: false,
+                                                    anchor_end: false,
+                                                    ignore_case,
+                                                    ignore_mark,
+                                                })
+                                            } else {
+                                                RegexAtom::CharClass(CharClass {
+                                                    items: vec![ClassItem::NamedBuiltin(
+                                                        clean_name.to_string(),
+                                                    )],
+                                                    negated: false,
+                                                })
+                                            };
+                                            let inner_pattern = RegexPattern {
+                                                tokens: vec![RegexToken {
+                                                    atom: inner_atom,
+                                                    quant: RegexQuant::One,
+                                                    named_capture: None,
+                                                    ratchet: false,
+                                                    frugal: false,
+                                                }],
+                                                anchor_start: false,
+                                                anchor_end: false,
+                                                ignore_case,
+                                                ignore_mark,
+                                            };
+                                            RegexAtom::Lookaround {
+                                                pattern: inner_pattern,
+                                                negated: true,
+                                                is_behind: false,
+                                            }
+                                        } else {
+                                            // Not a known builtin — pass through as Named
+                                            RegexAtom::Named(name)
+                                        }
+                                    } // close else (non-empty negated_name)
                                 } else if trimmed.starts_with(":!") || trimmed.starts_with("-:") {
                                     // <:!PropName> or <-:PropName> — negated Unicode property
                                     let prop_name = &trimmed[2..];
@@ -1773,6 +1870,17 @@ impl Interpreter {
                                     }
                                     try_collapse_alternation_to_charclass(&alt_patterns)
                                         .unwrap_or(RegexAtom::Alternation(alt_patterns))
+                                } else if trimmed == "?same" || trimmed == "?.same" {
+                                    // <?same> — zero-width assertion: next two chars are the same
+                                    RegexAtom::SameAssertion { negated: false }
+                                } else if trimmed.starts_with("at(") && trimmed.ends_with(')') {
+                                    // <at(N)> — zero-width assertion: match at position N
+                                    let inner = &trimmed[3..trimmed.len() - 1];
+                                    if let Ok(pos) = inner.trim().parse::<usize>() {
+                                        RegexAtom::AtPosition(pos)
+                                    } else {
+                                        RegexAtom::Named(name)
+                                    }
                                 } else {
                                     // Strip dot prefix for non-capturing named calls
                                     // <.alpha> is the same as <alpha> but without named capture
@@ -1785,7 +1893,8 @@ impl Interpreter {
                                     // Check for named character classes
                                     match class_name {
                                         "alpha" | "upper" | "lower" | "digit" | "xdigit"
-                                        | "space" | "alnum" | "blank" | "cntrl" | "punct" => {
+                                        | "space" | "alnum" | "blank" | "cntrl" | "punct"
+                                        | "graph" | "print" => {
                                             // Set builtin named capture so $<alpha>, $<digit>, etc. work
                                             // (only for non-dot calls)
                                             if !is_dot_call {
@@ -1801,6 +1910,10 @@ impl Interpreter {
                                         }
                                         "ident" => {
                                             // <ident> = <alpha> <alnum>*
+                                            if !is_dot_call {
+                                                pending_builtin_named_capture =
+                                                    Some("ident".to_string());
+                                            }
                                             RegexAtom::Group(RegexPattern {
                                                 tokens: vec![
                                                     RegexToken {
@@ -3065,7 +3178,11 @@ impl Interpreter {
         }
 
         if positive_items.is_empty() && negative_items.is_empty() {
-            return None;
+            // <[]> or <-[]> — empty bracket class: always fails (matches no character)
+            return Some(RegexAtom::CharClass(CharClass {
+                items: vec![],
+                negated: false,
+            }));
         }
 
         if negative_items.is_empty() {
@@ -3270,6 +3387,8 @@ impl Interpreter {
                             | "blank"
                             | "cntrl"
                             | "punct"
+                            | "graph"
+                            | "print"
                             | "ws"
                     );
                     if !is_known_builtin {
@@ -3297,13 +3416,21 @@ impl Interpreter {
                 }
             }
         }
-        if positive_items.is_empty() {
+        if positive_items.is_empty() && negative_items.is_empty() {
             return None;
         }
-        Some(RegexAtom::CompositeClass {
-            positive: positive_items,
-            negative: negative_items,
-        })
+        if positive_items.is_empty() {
+            // Purely negated: <-alpha> means "any character NOT matching alpha"
+            Some(RegexAtom::CharClass(CharClass {
+                items: negative_items,
+                negated: true,
+            }))
+        } else {
+            Some(RegexAtom::CompositeClass {
+                positive: positive_items,
+                negative: negative_items,
+            })
+        }
     }
 
     /// Find the end of a named class part in a combined class expression.
