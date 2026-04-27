@@ -695,7 +695,38 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             _ => None,
         },
-        "invert" => invert_value(target).map(Ok),
+        "invert" => match invert_value(target) {
+            Some(v) => Some(Ok(v)),
+            None => {
+                if matches!(target, Value::Array(..) | Value::Seq(..) | Value::Slip(..)) {
+                    let got_val = crate::runtime::utils::value_to_list(target)
+                        .into_iter()
+                        .find(|item| !matches!(item, Value::Pair(..) | Value::ValuePair(..)))
+                        .unwrap_or(Value::Nil);
+                    let got_type = crate::value::types::what_type_name(&got_val);
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("operation".to_string(), Value::str_from("invert"));
+                    attrs.insert(
+                        "expected".to_string(),
+                        Value::Package(crate::symbol::Symbol::intern("Pair")),
+                    );
+                    attrs.insert("got".to_string(), got_val);
+                    attrs.insert(
+                        "message".to_string(),
+                        Value::str(format!(
+                            "Type check failed in invert; expected Pair but got {}",
+                            got_type,
+                        )),
+                    );
+                    Some(Err(crate::value::RuntimeError::typed(
+                        "X::TypeCheck",
+                        attrs,
+                    )))
+                } else {
+                    None
+                }
+            }
+        },
         "total" => match target {
             Value::Set(s, _) => Some(Ok(Value::Int(s.len() as i64))),
             Value::Bag(b, _) => Some(Ok(Value::Int(b.values().sum::<i64>()))),

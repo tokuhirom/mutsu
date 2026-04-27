@@ -1879,6 +1879,34 @@ impl Interpreter {
             return Ok(Value::Bool(result));
         }
 
+        // Pair.ACCEPTS for Package/Instance: call method named by key, compare result
+        if method == "ACCEPTS"
+            && matches!(&target, Value::Pair(..) | Value::ValuePair(..))
+            && args.len() == 1
+            && matches!(&args[0], Value::Instance { .. } | Value::Package(_))
+        {
+            let (pair_key, pair_value) = match &target {
+                Value::Pair(k, v) => (k.to_string(), v.as_ref().clone()),
+                Value::ValuePair(k, v) => (k.to_string_value(), *v.clone()),
+                _ => unreachable!(),
+            };
+            let method_result = self.call_method_with_values(args[0].clone(), &pair_key, vec![])?;
+            // Use smartmatch semantics: pair_value.ACCEPTS(method_result)
+            let result = match &pair_value {
+                // Bool pair value: True matches any truthy result, False matches falsy
+                Value::Bool(expected) => {
+                    if *expected {
+                        method_result.truthy()
+                    } else {
+                        !method_result.truthy()
+                    }
+                }
+                // Otherwise: use equality
+                _ => method_result == pair_value,
+            };
+            return Ok(Value::Bool(result));
+        }
+
         if let Some(result) = native_result {
             if method == "decode" {
                 return result.map(|value| match value {

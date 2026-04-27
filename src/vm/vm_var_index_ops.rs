@@ -1284,7 +1284,7 @@ impl VM {
             (ref val, Value::Int(i))
                 if !matches!(val, Value::Array(..) | Value::Hash(_)) && i > 0 =>
             {
-                Value::Nil
+                Self::make_out_of_range_failure(i)
             }
             // Scalar value with WhateverCode index: treat as single-element list
             (ref val, Value::Sub(ref data))

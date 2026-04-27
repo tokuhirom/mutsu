@@ -251,6 +251,14 @@ impl Interpreter {
                         Err(_) => false,
                     }
                 }
+                Value::Package(type_name) => {
+                    // Type object matcher: check if actual_val isa the type
+                    if let Some(ref actual) = actual_val {
+                        crate::value::types::what_type_name(actual) == type_name.resolve()
+                    } else {
+                        false
+                    }
+                }
                 _ => actual_str == expected_val.to_string_value(),
             };
             let expected_display = match expected_val {

@@ -53,6 +53,13 @@ pub(super) fn dispatch(
                     new_data.id = crate::value::next_instance_id();
                     Some(Some(Ok(Value::Sub(Arc::new(new_data)))))
                 }
+                Value::Pair(key, value) => {
+                    Some(Some(Ok(Value::Pair(key.clone(), Box::new(*value.clone())))))
+                }
+                Value::ValuePair(key, value) => Some(Some(Ok(Value::ValuePair(
+                    Box::new(*key.clone()),
+                    Box::new(*value.clone()),
+                )))),
                 _ => Some(None), // fall through to slow path for instances etc.
             }
         }

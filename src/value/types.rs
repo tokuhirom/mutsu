@@ -120,8 +120,15 @@ impl Value {
             | (Value::Enum { .. }, Value::Enum { .. })
             | (Value::Regex(_), Value::Regex(_))
             | (Value::RegexWithAdverbs { .. }, Value::RegexWithAdverbs { .. })
-            | (Value::Routine { .. }, Value::Routine { .. })
-            | (Value::Sub(_), Value::Sub(_)) => self == other,
+            | (Value::Routine { .. }, Value::Routine { .. }) => self == other,
+            (Value::Sub(a), Value::Sub(b)) => {
+                if Arc::ptr_eq(a, b) {
+                    return true;
+                }
+                let a_name = a.name.resolve();
+                let b_name = b.name.resolve();
+                !a_name.is_empty() && a_name == b_name && a.package == b.package
+            }
             // Signature instances: compare by .raku string (structural equality)
             (
                 Value::Instance {
