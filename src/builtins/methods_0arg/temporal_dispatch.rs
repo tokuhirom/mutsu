@@ -26,7 +26,7 @@ fn f64_to_decimal_rat(f: f64) -> Value {
     Value::Num(f)
 }
 
-fn gcd_i64(mut a: i64, mut b: i64) -> i64 {
+pub(crate) fn gcd_i64(mut a: i64, mut b: i64) -> i64 {
     while b != 0 {
         let t = b;
         b = a % b;
@@ -97,10 +97,9 @@ pub fn date_method_0arg(
         }
         "DateTime" => Some(Ok(make_datetime(year, month, day, 0, 0, 0.0, 0))),
         "Instant" => {
-            let posix = civil_to_epoch_days(year, month, day) as f64 * 86400.0;
-            let tai = posix_to_instant(posix);
+            let (int_part, _) = datetime_to_instant_parts(year, month, day, 0, 0, 0.0, 0);
             let mut attrs = HashMap::new();
-            attrs.insert("value".to_string(), Value::Num(tai));
+            attrs.insert("value".to_string(), Value::Int(int_part));
             Some(Ok(Value::make_instance(Symbol::intern("Instant"), attrs)))
         }
         "raku" | "perl" => Some(Ok(Value::str(format!(
@@ -226,10 +225,18 @@ pub fn datetime_method_0arg(
             Some(Ok(crate::value::make_rat(n, d)))
         }
         "Instant" => {
-            let posix = datetime_to_posix(year, month, day, hour, minute, second, timezone);
-            let tai = posix_to_instant(posix);
+            let (int_part, frac) =
+                datetime_to_instant_parts(year, month, day, hour, minute, second, timezone);
             let mut attrs = HashMap::new();
-            attrs.insert("value".to_string(), Value::Num(tai));
+            if frac == 0.0 {
+                attrs.insert("value".to_string(), Value::Int(int_part));
+            } else {
+                let scale = 1_000_000_000i64;
+                let frac_num = (frac * scale as f64).round() as i64;
+                let num = int_part * scale + frac_num;
+                let g = gcd_i64(num.abs(), scale);
+                attrs.insert("value".to_string(), Value::Rat(num / g, scale / g));
+            }
             Some(Ok(Value::make_instance(Symbol::intern("Instant"), attrs)))
         }
         "DateTime" => Some(Ok(make_datetime(

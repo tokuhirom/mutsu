@@ -586,7 +586,7 @@ fn gcd_i64(a: i64, b: i64) -> i64 {
 /// Leap seconds table: (posix_timestamp_of_insertion, cumulative_leap_seconds).
 /// Each entry marks a point where a leap second was inserted.
 /// Raku's Instant uses TAI-like time = POSIX + offset (including leap seconds).
-const LEAP_SECONDS: &[(i64, i64)] = &[
+pub const LEAP_SECONDS: &[(i64, i64)] = &[
     (63_072_000, 10),    // 1972-01-01
     (78_796_800, 11),    // 1972-07-01
     (94_694_400, 12),    // 1973-01-01
@@ -655,6 +655,27 @@ pub fn instant_to_posix(instant: f64) -> f64 {
 /// Convert DateTime components to a leap-aware instant value.
 /// Unlike `posix_to_instant(datetime_to_posix(...))`, this keeps leap second
 /// values (`second in [60, 61)`) distinct from the following `:00` second.
+pub fn datetime_to_instant_parts(
+    year: i64,
+    month: i64,
+    day: i64,
+    hour: i64,
+    minute: i64,
+    second: f64,
+    timezone: i64,
+) -> (i64, f64) {
+    let sec_floor = second.floor() as i64;
+    let sec_frac = second - sec_floor as f64;
+    let epoch_days = civil_to_epoch_days(year, month, day);
+    let posix_int = epoch_days * 86_400 + hour * 3_600 + minute * 60 + sec_floor - timezone;
+    let leap_secs = leap_seconds_at(posix_int as f64 + sec_frac);
+    let mut tai_int = posix_int + leap_secs;
+    if second >= 60.0 {
+        tai_int -= 1;
+    }
+    (tai_int, sec_frac)
+}
+
 pub fn datetime_to_instant_leap_aware(
     year: i64,
     month: i64,
@@ -664,47 +685,50 @@ pub fn datetime_to_instant_leap_aware(
     second: f64,
     timezone: i64,
 ) -> f64 {
-    let posix = datetime_to_posix(year, month, day, hour, minute, second, timezone);
-    let mut instant = posix_to_instant(posix);
-    if second >= 60.0 {
-        instant -= 1.0;
-    }
-    instant
+    let (int_part, frac) =
+        datetime_to_instant_parts(year, month, day, hour, minute, second, timezone);
+    int_part as f64 + frac
 }
 
 /// Convert leap-aware instant value back to DateTime components in a timezone.
+pub fn instant_to_datetime_leap_aware_parts(
+    instant_int: i64,
+    instant_frac: f64,
+    timezone: i64,
+) -> (i64, i64, i64, i64, i64, f64) {
+    for &(threshold, cumulative) in LEAP_SECONDS.iter().skip(1) {
+        let leap_start = threshold + (cumulative - 1);
+        if instant_int == leap_start {
+            let local_int = (threshold - 1) + timezone;
+            let day_secs = local_int.rem_euclid(86_400);
+            let epoch_days = (local_int - day_secs) / 86_400;
+            let (y, m, d) = epoch_days_to_civil(epoch_days);
+            let h = day_secs / 3_600;
+            let mi = (day_secs % 3_600) / 60;
+            return (y, m, d, h, mi, 60.0 + instant_frac);
+        }
+    }
+    let mut posix_int = instant_int;
+    for _ in 0..3 {
+        let ls = leap_seconds_at(posix_int as f64);
+        posix_int = instant_int - ls;
+    }
+    let local_int = posix_int + timezone;
+    let day_secs = local_int.rem_euclid(86_400);
+    let epoch_days = (local_int - day_secs) / 86_400;
+    let (y, m, d) = epoch_days_to_civil(epoch_days);
+    let h = day_secs / 3_600;
+    let mi = (day_secs % 3_600) / 60;
+    (y, m, d, h, mi, (day_secs % 60) as f64 + instant_frac)
+}
+
 pub fn instant_to_datetime_leap_aware(
     instant: f64,
     timezone: i64,
 ) -> (i64, i64, i64, i64, i64, f64) {
-    for &(threshold, cumulative) in LEAP_SECONDS.iter().skip(1) {
-        let leap_start = threshold as f64 + (cumulative - 1) as f64;
-        if instant >= leap_start && instant < leap_start + 1.0 {
-            let frac = instant - leap_start;
-            let local = (threshold - 1) as f64 + frac + timezone as f64;
-            let total_i = local.floor() as i64;
-            let local_frac = local - total_i as f64;
-            let day_secs = total_i.rem_euclid(86_400);
-            let epoch_days = (total_i - day_secs) / 86_400;
-            let (y, m, d) = epoch_days_to_civil(epoch_days);
-            let h = day_secs / 3_600;
-            let mi = (day_secs % 3_600) / 60;
-            let s = 60.0 + local_frac;
-            return (y, m, d, h, mi, s);
-        }
-    }
-
-    let posix = instant_to_posix(instant);
-    let local = posix + timezone as f64;
-    let total_i = local.floor() as i64;
-    let frac = local - total_i as f64;
-    let day_secs = total_i.rem_euclid(86_400);
-    let epoch_days = (total_i - day_secs) / 86_400;
-    let (y, m, d) = epoch_days_to_civil(epoch_days);
-    let h = day_secs / 3_600;
-    let mi = (day_secs % 3_600) / 60;
-    let s = (day_secs % 60) as f64 + frac;
-    (y, m, d, h, mi, s)
+    let instant_int = instant.floor() as i64;
+    let instant_frac = instant - instant_int as f64;
+    instant_to_datetime_leap_aware_parts(instant_int, instant_frac, timezone)
 }
 
 #[cfg(test)]
