@@ -820,6 +820,7 @@ pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
             | "BagHash"
             | "Mix"
             | "MixHash"
+            | "QuantHash"
             | "Blob"
             | "Buf"
             | "Junction"

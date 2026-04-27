@@ -111,6 +111,7 @@ roast/S02-types/bool.t
 roast/S02-types/built-in.t
 roast/S02-types/catch_type_cast_mismatch.t
 roast/S02-types/compact.t
+roast/S02-types/declare.t
 roast/S02-types/fatrat.t
 roast/S02-types/flattening.t
 roast/S02-types/hash_ref.t

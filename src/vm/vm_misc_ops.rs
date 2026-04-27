@@ -29,6 +29,7 @@ fn is_core_raku_type(name: &str) -> bool {
             | "SetHash"
             | "BagHash"
             | "MixHash"
+            | "QuantHash"
             | "Capture"
             | "Signature"
             | "Parameter"
