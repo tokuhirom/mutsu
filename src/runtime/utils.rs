@@ -1225,6 +1225,7 @@ pub(crate) fn is_known_compound_type(name: &str) -> bool {
             | "X::Worry::P5::BackReference"
             | "X::Worry::P5::LeadingZero"
             | "X::Worry::P5::Reference"
+            | "X::Worry::Precedence::Range"
     )
 }
 

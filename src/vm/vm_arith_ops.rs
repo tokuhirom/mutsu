@@ -113,6 +113,73 @@ impl VM {
         Ok(out)
     }
 
+    /// Extract range components (start, end, excl_start, excl_end) from a Range value.
+    /// Also unwraps Mixin wrappers and returns the mixin overrides if present.
+    #[allow(clippy::type_complexity)]
+    fn range_components(
+        v: &Value,
+    ) -> Option<(
+        Value,
+        Value,
+        bool,
+        bool,
+        Option<Arc<std::collections::HashMap<String, Value>>>,
+    )> {
+        match v {
+            Value::Range(a, b) => Some((Value::Int(*a), Value::Int(*b), false, false, None)),
+            Value::RangeExcl(a, b) => Some((Value::Int(*a), Value::Int(*b), false, true, None)),
+            Value::RangeExclStart(a, b) => {
+                Some((Value::Int(*a), Value::Int(*b), true, false, None))
+            }
+            Value::RangeExclBoth(a, b) => Some((Value::Int(*a), Value::Int(*b), true, true, None)),
+            Value::GenericRange {
+                start,
+                end,
+                excl_start,
+                excl_end,
+            } => Some((
+                start.as_ref().clone(),
+                end.as_ref().clone(),
+                *excl_start,
+                *excl_end,
+                None,
+            )),
+            Value::Mixin(inner, overrides) => Self::range_components(inner)
+                .map(|(s, e, es, ee, _)| (s, e, es, ee, Some(overrides.clone()))),
+            _ => None,
+        }
+    }
+
+    /// Build a Range value from components, using GenericRange for non-i64 endpoints.
+    /// If `mixin` is Some, wraps the result in a Mixin to preserve `but Role`.
+    fn build_range(
+        start: Value,
+        end: Value,
+        excl_start: bool,
+        excl_end: bool,
+        mixin: Option<Arc<std::collections::HashMap<String, Value>>>,
+    ) -> Value {
+        let range = if let (Value::Int(a), Value::Int(b)) = (&start, &end) {
+            match (excl_start, excl_end) {
+                (false, false) => Value::Range(*a, *b),
+                (false, true) => Value::RangeExcl(*a, *b),
+                (true, false) => Value::RangeExclStart(*a, *b),
+                (true, true) => Value::RangeExclBoth(*a, *b),
+            }
+        } else {
+            Value::GenericRange {
+                start: Arc::new(start),
+                end: Arc::new(end),
+                excl_start,
+                excl_end,
+            }
+        };
+        match mixin {
+            Some(overrides) => Value::Mixin(Arc::new(range), overrides),
+            None => range,
+        }
+    }
+
     pub(super) fn exec_add_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -121,6 +188,17 @@ impl VM {
             // candidates (e.g. `multi sub infix:<+>(Foo $x, Foo $y)`) can match.
             if let Some(result) = vm.try_user_infix("infix:<+>", &l, &r)? {
                 return Ok(result);
+            }
+            // Range + Real or Real + Range => new Range with offset applied
+            if let Some((start, end, es, ee, mx)) = Self::range_components(&l) {
+                let new_start = crate::builtins::arith_add(start, r.clone())?;
+                let new_end = crate::builtins::arith_add(end, r)?;
+                return Ok(Self::build_range(new_start, new_end, es, ee, mx));
+            }
+            if let Some((start, end, es, ee, mx)) = Self::range_components(&r) {
+                let new_start = crate::builtins::arith_add(l.clone(), start)?;
+                let new_end = crate::builtins::arith_add(l, end)?;
+                return Ok(Self::build_range(new_start, new_end, es, ee, mx));
             }
             // Handle Date/Instant arithmetic before numeric coercion
             if crate::builtins::arith::is_temporal_operand(&l)
@@ -143,6 +221,12 @@ impl VM {
             // candidates can match.
             if let Some(result) = vm.try_user_infix("infix:<->", &l, &r)? {
                 return Ok(result);
+            }
+            // Range - Real => new Range with offset subtracted
+            if let Some((start, end, es, ee, mx)) = Self::range_components(&l) {
+                let new_start = crate::builtins::arith_sub(start, r.clone());
+                let new_end = crate::builtins::arith_sub(end, r);
+                return Ok(Self::build_range(new_start, new_end, es, ee, mx));
             }
             // Handle Date/Instant arithmetic before numeric coercion
             if crate::builtins::arith::is_temporal_operand(&l)
@@ -178,6 +262,17 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            // Range * Real or Real * Range => new Range with endpoints multiplied
+            if let Some((start, end, es, ee, mx)) = Self::range_components(&l) {
+                let new_start = crate::builtins::arith_mul(start, r.clone());
+                let new_end = crate::builtins::arith_mul(end, r);
+                return Ok(Self::build_range(new_start, new_end, es, ee, mx));
+            }
+            if let Some((start, end, es, ee, mx)) = Self::range_components(&r) {
+                let new_start = crate::builtins::arith_mul(l.clone(), start);
+                let new_end = crate::builtins::arith_mul(l, end);
+                return Ok(Self::build_range(new_start, new_end, es, ee, mx));
+            }
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Ok(crate::builtins::arith_mul(l, r))
         })?;
@@ -189,6 +284,12 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            // Range / Real => new Range with endpoints divided
+            if let Some((start, end, es, ee, mx)) = Self::range_components(&l) {
+                let new_start = crate::builtins::arith_div(start, r.clone())?;
+                let new_end = crate::builtins::arith_div(end, r)?;
+                return Ok(Self::build_range(new_start, new_end, es, ee, mx));
+            }
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             crate::builtins::arith_div(l, r)
         })?;

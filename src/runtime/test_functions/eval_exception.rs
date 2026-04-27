@@ -1,6 +1,22 @@
 use super::super::*;
 use crate::symbol::Symbol;
 
+/// Restore an environment key to its saved value, or remove it if there was none.
+fn restore_env_key(
+    env: &mut std::collections::HashMap<String, Value>,
+    key: &str,
+    saved: Option<Value>,
+) {
+    match saved {
+        Some(v) => {
+            env.insert(key.to_string(), v);
+        }
+        None => {
+            env.remove(key);
+        }
+    }
+}
+
 impl Interpreter {
     pub(crate) fn test_fn_lives_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let block = Self::positional_value_required(args, 0, "lives-ok expects block")?.clone();
@@ -10,15 +26,12 @@ impl Interpreter {
             Value::Sub(data) => {
                 self.push_caller_env();
                 let saved_topic = self.env.get("$_").cloned();
+                let saved_bare = self.env.get("_").cloned();
                 let result = self.eval_block_value(&data.body).is_ok();
-                match saved_topic {
-                    Some(v) => {
-                        self.env.insert("$_".to_string(), v);
-                    }
-                    None => {
-                        self.env.remove("$_");
-                    }
-                }
+                // Restore both "$_" and "_" (bare name used by the VM) to
+                // prevent the block from leaking its topic to the caller.
+                restore_env_key(&mut self.env, "$_", saved_topic);
+                restore_env_key(&mut self.env, "_", saved_bare);
                 self.pop_caller_env();
                 result
             }
@@ -36,6 +49,7 @@ impl Interpreter {
             Value::Sub(data) => {
                 self.push_caller_env();
                 let saved_topic = self.env.get("$_").cloned();
+                let saved_bare = self.env.get("_").cloned();
                 let result = self.eval_block_value(&data.body);
                 let died = match &result {
                     Err(_) => true,
@@ -44,14 +58,8 @@ impl Interpreter {
                         Self::is_failure_value(val)
                     }
                 };
-                match saved_topic {
-                    Some(v) => {
-                        self.env.insert("$_".to_string(), v);
-                    }
-                    None => {
-                        self.env.remove("$_");
-                    }
-                }
+                restore_env_key(&mut self.env, "$_", saved_topic);
+                restore_env_key(&mut self.env, "_", saved_bare);
                 self.pop_caller_env();
                 died
             }

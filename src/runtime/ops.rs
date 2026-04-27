@@ -923,6 +923,25 @@ impl Interpreter {
         }
     }
 
+    /// Build a Range value from endpoints and exclusivity flags.
+    fn make_range_value(left: &Value, right: &Value, excl_start: bool, excl_end: bool) -> Value {
+        if let (Value::Int(a), Value::Int(b)) = (left, right) {
+            match (excl_start, excl_end) {
+                (false, false) => Value::Range(*a, *b),
+                (false, true) => Value::RangeExcl(*a, *b),
+                (true, false) => Value::RangeExclStart(*a, *b),
+                (true, true) => Value::RangeExclBoth(*a, *b),
+            }
+        } else {
+            Value::GenericRange {
+                start: std::sync::Arc::new(left.clone()),
+                end: std::sync::Arc::new(right.clone()),
+                excl_start,
+                excl_end,
+            }
+        }
+    }
+
     pub(crate) fn apply_reduction_op(
         op: &str,
         left: &Value,
@@ -1656,6 +1675,11 @@ impl Interpreter {
             "(^)" | "⊖" => Ok(set_sym_diff_values(left, right)),
             "(==)" | "≡" => Ok(Value::Bool(Self::apply_set_equality(left, right)?)),
             "≢" => Ok(Value::Bool(!Self::apply_set_equality(left, right)?)),
+            // Range operators used by R-meta (R.., R..^, R^.., R^..^)
+            ".." => Ok(Self::make_range_value(left, right, false, false)),
+            "..^" => Ok(Self::make_range_value(left, right, false, true)),
+            "^.." => Ok(Self::make_range_value(left, right, true, false)),
+            "^..^" => Ok(Self::make_range_value(left, right, true, true)),
             _ if op.ends_with('=') && op.len() > 1 => {
                 // Compound assignment operator (e.g., "~=", "+=", "-=", "*=")
                 // Apply the base operator and return the result.

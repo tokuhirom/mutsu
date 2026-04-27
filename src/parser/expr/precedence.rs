@@ -2568,12 +2568,36 @@ fn parse_negated_meta_comparison_op(r: &str) -> Option<(ComparisonOp, usize)> {
     Some((op, len + 1))
 }
 
-/// Range: ..  ..^  ^..  ^..^
+/// Check if the LHS of a range starts with an unparenthesized `|` or `~`.
+fn left_has_bare_prefix_before_range(input: &str, rest: &str) -> bool {
+    let consumed = &input[..input.len() - rest.len()];
+    let trimmed = consumed.trim_start();
+    trimmed.starts_with('|') || trimmed.starts_with('~')
+}
+
+fn range_precedence_worry(op_str: &str) -> PError {
+    syntax_exception(
+        "X::Worry::Precedence::Range",
+        format!(
+            "To apply a Slip flattener to a range, parenthesize the whole range.\n\
+             (Or parenthesize the whole endpoint expression, if you meant that.)\n\
+             near: {op_str}"
+        ),
+    )
+}
+
+/// Range: ..  ..^  ^..  ^..^  and reverse meta: R.., R..^, R^.., R^..^
 pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, left) = structural_expr(input)?;
     let (r, _) = ws(rest)?;
 
+    // Macro-like check for range-precedence worry
+    let has_bare_prefix = left_has_bare_prefix_before_range(input, rest);
+
     if let Some(stripped) = r.strip_prefix("^..^") {
+        if has_bare_prefix {
+            return Err(range_precedence_worry("^..^"));
+        }
         let (r, _) = ws(stripped)?;
         let (r, right) = structural_expr(r).map_err(|err| {
             enrich_expected_error(err, "expected range RHS after '^..^'", r.len())
@@ -2588,6 +2612,9 @@ pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
         ));
     }
     if let Some(stripped) = r.strip_prefix("^..") {
+        if has_bare_prefix {
+            return Err(range_precedence_worry("^.."));
+        }
         let (r, _) = ws(stripped)?;
         let (r, right) = structural_expr(r)
             .map_err(|err| enrich_expected_error(err, "expected range RHS after '^..'", r.len()))?;
@@ -2601,6 +2628,9 @@ pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
         ));
     }
     if let Some(stripped) = r.strip_prefix("..^") {
+        if has_bare_prefix {
+            return Err(range_precedence_worry("..^"));
+        }
         let (r, _) = ws(stripped)?;
         let (r, right) = structural_expr(r)
             .map_err(|err| enrich_expected_error(err, "expected range RHS after '..^'", r.len()))?;
@@ -2614,6 +2644,9 @@ pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
         ));
     }
     if r.starts_with("..") && !r.starts_with("...") {
+        if has_bare_prefix {
+            return Err(range_precedence_worry(".."));
+        }
         let r = &r[2..];
         let (r, _) = ws(r)?;
         let (r, right) = structural_expr(r)
@@ -2623,6 +2656,29 @@ pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Binary {
                 left: Box::new(left),
                 op: TokenKind::DotDot,
+                right: Box::new(right),
+            },
+        ));
+    }
+    // Reverse-range meta-operators: R.., R..^, R^.., R^..^
+    if let Some((meta, op, len)) = parse_meta_op(r)
+        && meta == "R"
+        && matches!(op.as_str(), ".." | "..^" | "^.." | "^..^")
+    {
+        if has_bare_prefix {
+            return Err(range_precedence_worry(&format!("R{}", op)));
+        }
+        let r = &r[len..];
+        let (r, _) = ws(r)?;
+        let (r, right) = structural_expr(r).map_err(|err| {
+            enrich_expected_error(err, &format!("expected range RHS after 'R{}'", op), r.len())
+        })?;
+        return Ok((
+            r,
+            Expr::MetaOp {
+                meta: "R".to_string(),
+                op: op.to_string(),
+                left: Box::new(left),
                 right: Box::new(right),
             },
         ));
