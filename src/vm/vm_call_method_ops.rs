@@ -414,16 +414,8 @@ impl VM {
                     } else {
                         String::new()
                     };
-                    let my_name = if matches!(&target, Value::HyperSeq(_)) {
-                        "HyperSeq"
-                    } else {
-                        "RaceSeq"
-                    };
-                    let result = type_name == my_name
-                        || type_name == "Seq"
-                        || type_name == "Any"
-                        || type_name == "Mu"
-                        || type_name == "Cool";
+                    // Delegate to isa_check which handles the full type hierarchy
+                    let result = target.isa_check(&type_name);
                     self.stack.push(Value::Bool(result));
                     self.env_dirty = true;
                     return Ok(());

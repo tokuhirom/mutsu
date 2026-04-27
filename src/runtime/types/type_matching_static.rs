@@ -198,13 +198,26 @@ impl Interpreter {
         if constraint == "Positional"
             && matches!(
                 value_type,
-                "Array" | "List" | "Seq" | "Range" | "Buf" | "Blob" | "Capture"
+                "Array"
+                    | "List"
+                    | "Seq"
+                    | "HyperSeq"
+                    | "RaceSeq"
+                    | "Range"
+                    | "Buf"
+                    | "Blob"
+                    | "Capture"
             )
         {
             return true;
         }
         // Array is-a List in Raku type hierarchy
-        if constraint == "List" && matches!(value_type, "Array" | "List" | "Seq") {
+        if constraint == "List"
+            && matches!(
+                value_type,
+                "Array" | "List" | "Seq" | "HyperSeq" | "RaceSeq"
+            )
+        {
             return true;
         }
         if constraint == "Associative"

@@ -680,6 +680,8 @@ impl Value {
                     self,
                     Value::Array(..)
                         | Value::LazyList(_)
+                        | Value::HyperSeq(_)
+                        | Value::RaceSeq(_)
                         | Value::Range(_, _)
                         | Value::RangeExcl(_, _)
                         | Value::RangeExclStart(_, _)
