@@ -2114,6 +2114,88 @@ impl Interpreter {
             return Err(err);
         }
 
+        // .hyper/.race with named args: validate and wrap
+        if matches!(method, "hyper" | "race") && !args.is_empty() {
+            let mut batch_val: Option<i64> = None;
+            let mut degree_val: Option<i64> = None;
+            for arg in &args {
+                let (key, val) = match arg {
+                    Value::Pair(k, v) => (k.clone(), to_int(v)),
+                    Value::ValuePair(k, v) => (k.to_string_value(), to_int(v)),
+                    _ => continue,
+                };
+                match key.as_str() {
+                    "batch" => batch_val = Some(val),
+                    "degree" => degree_val = Some(val),
+                    _ => {}
+                }
+            }
+            if let Some(b) = batch_val
+                && b <= 0
+            {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("method".to_string(), Value::str(method.to_string()));
+                attrs.insert("name".to_string(), Value::str("batch".to_string()));
+                attrs.insert("value".to_string(), Value::Int(b));
+                attrs.insert(
+                    "message".to_string(),
+                    Value::str(format!("Invalid value '{}' for 'batch' on '{}'", b, method)),
+                );
+                return Err(RuntimeError::typed("X::Invalid::Value", attrs));
+            }
+            if let Some(d) = degree_val
+                && d <= 0
+            {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("method".to_string(), Value::str(method.to_string()));
+                attrs.insert("name".to_string(), Value::str("degree".to_string()));
+                attrs.insert("value".to_string(), Value::Int(d));
+                attrs.insert(
+                    "message".to_string(),
+                    Value::str(format!(
+                        "Invalid value '{}' for 'degree' on '{}'",
+                        d, method
+                    )),
+                );
+                return Err(RuntimeError::typed("X::Invalid::Value", attrs));
+            }
+            let items = value_to_list(&target);
+            let arc = std::sync::Arc::new(items);
+            return Ok(if method == "hyper" {
+                Value::HyperSeq(arc)
+            } else {
+                Value::RaceSeq(arc)
+            });
+        }
+
+        // HyperSeq/RaceSeq: delegate to array for most methods
+        if matches!(&target, Value::HyperSeq(_) | Value::RaceSeq(_)) {
+            let is_hyper = matches!(&target, Value::HyperSeq(_));
+            let items = match &target {
+                Value::HyperSeq(items) | Value::RaceSeq(items) => items.clone(),
+                _ => unreachable!(),
+            };
+            match method {
+                "hyper" => return Ok(Value::HyperSeq(items)),
+                "race" => return Ok(Value::RaceSeq(items)),
+                "is-lazy" => return Ok(Value::Bool(false)),
+                "map" | "grep" => {
+                    let array_target = Value::Array(items, crate::value::ArrayKind::List);
+                    let result = self.call_method_with_values(array_target, method, args)?;
+                    let result_items = value_to_list(&result);
+                    return Ok(if is_hyper {
+                        Value::HyperSeq(std::sync::Arc::new(result_items))
+                    } else {
+                        Value::RaceSeq(std::sync::Arc::new(result_items))
+                    });
+                }
+                _ => {
+                    let array_target = Value::Array(items, crate::value::ArrayKind::List);
+                    return self.call_method_with_values(array_target, method, args);
+                }
+            }
+        }
+
         // Force LazyList and re-dispatch as Seq
         if let Value::LazyList(ll) = &target
             && Self::should_force_lazy_list(method)

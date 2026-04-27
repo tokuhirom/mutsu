@@ -835,7 +835,10 @@ impl Value {
                     s
                 }
             }
-            Value::Seq(items) | Value::Slip(items) => items
+            Value::Seq(items)
+            | Value::HyperSeq(items)
+            | Value::RaceSeq(items)
+            | Value::Slip(items) => items
                 .iter()
                 .map(|v| v.to_str_context())
                 .collect::<Vec<_>>()

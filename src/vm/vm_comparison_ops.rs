@@ -168,7 +168,9 @@ fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
 fn get_list_elements(v: &Value) -> Option<&[Value]> {
     match v {
         Value::Array(elems, _) => Some(elems.as_slice()),
-        Value::Seq(elems) => Some(elems.as_slice()),
+        Value::Seq(elems) | Value::HyperSeq(elems) | Value::RaceSeq(elems) => {
+            Some(elems.as_slice())
+        }
         Value::Slip(elems) => Some(elems.as_slice()),
         _ => None,
     }
@@ -1077,9 +1079,11 @@ impl VM {
         let value = self.stack.pop().unwrap_or(Value::Nil);
         let scalarized = match value {
             Value::Nil => Value::Int(0),
-            Value::Array(items, _) | Value::Seq(items) | Value::Slip(items) => {
-                Value::Int(items.len() as i64)
-            }
+            Value::Array(items, _)
+            | Value::Seq(items)
+            | Value::HyperSeq(items)
+            | Value::RaceSeq(items)
+            | Value::Slip(items) => Value::Int(items.len() as i64),
             Value::Capture { positional, .. } => Value::Int(positional.len() as i64),
             Value::Instance {
                 class_name,

@@ -392,7 +392,7 @@ impl Value {
                 JunctionKind::None => values.iter().all(|v| !v.truthy()),
             },
             Value::Slip(items) => !items.is_empty(),
-            Value::Seq(items) => !items.is_empty(),
+            Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => !items.is_empty(),
             Value::LazyList(_) => true,
             Value::Promise(p) => p.is_resolved(),
             Value::Channel(_) => true,
@@ -447,6 +447,8 @@ impl Value {
             Value::Complex(_, _) => "Complex",
             Value::Array(..) | Value::LazyList(_) => "Array",
             Value::Seq(_) => "Seq",
+            Value::HyperSeq(_) => "HyperSeq",
+            Value::RaceSeq(_) => "RaceSeq",
             Value::Hash(_) => "Hash",
             Value::Set(_, is_mutable) => {
                 if *is_mutable {
@@ -664,14 +666,29 @@ impl Value {
                     false
                 }
             }
+            "HyperSeq" => {
+                matches!(self, Value::HyperSeq(_))
+            }
+            "RaceSeq" => {
+                matches!(self, Value::RaceSeq(_))
+            }
             "Seq" | "List" => {
-                matches!(self, Value::Array(..) | Value::LazyList(_) | Value::Slip(_))
+                matches!(
+                    self,
+                    Value::Array(..)
+                        | Value::LazyList(_)
+                        | Value::Slip(_)
+                        | Value::HyperSeq(_)
+                        | Value::RaceSeq(_)
+                )
             }
             "Positional" => {
                 matches!(
                     self,
                     Value::Array(..)
                         | Value::LazyList(_)
+                        | Value::HyperSeq(_)
+                        | Value::RaceSeq(_)
                         | Value::Range(_, _)
                         | Value::RangeExcl(_, _)
                         | Value::RangeExclStart(_, _)
@@ -777,6 +794,8 @@ pub(crate) fn what_type_name(val: &Value) -> String {
         Value::Complex(_, _) => "Complex".to_string(),
         Value::Array(..) | Value::LazyList(_) => "Array".to_string(),
         Value::Seq(_) => "Seq".to_string(),
+        Value::HyperSeq(_) => "HyperSeq".to_string(),
+        Value::RaceSeq(_) => "RaceSeq".to_string(),
         Value::Hash(_) => "Hash".to_string(),
         Value::Set(_, is_mutable) => {
             if *is_mutable {

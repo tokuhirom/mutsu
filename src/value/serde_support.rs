@@ -227,7 +227,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
                 values: ser_values?,
             })
         }
-        Value::Seq(items) => {
+        Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => {
             let ser_items: Result<Vec<_>, _> = items.iter().map(value_to_ser).collect();
             Ok(SerValue::Seq(ser_items?))
         }

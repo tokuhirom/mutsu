@@ -92,6 +92,8 @@ impl Interpreter {
             Value::Version { .. } => "Version",
             Value::Slip(_) => "Slip",
             Value::Seq(_) => "Seq",
+            Value::HyperSeq(_) => "HyperSeq",
+            Value::RaceSeq(_) => "RaceSeq",
             Value::Promise(_) => "Promise",
             Value::Channel(_) => "Channel",
             Value::Whatever => "Whatever",
