@@ -499,16 +499,7 @@ impl Value {
                 } else if d.abs().to_string().len() > 20 {
                     // For BigRats with very large denominators (beyond uint64 range),
                     // fall back to Num-based formatting like Raku does for standard Rats.
-                    // Use scaled integer division to get a float value even when both
-                    // n and d are too large for f64 individually.
-                    let sign = n.is_negative() ^ d.is_negative();
-                    let na = n.abs();
-                    let da = d.abs();
-                    // Scale numerator up to get enough precision for f64
-                    let scaled = &na * NumBigInt::from(10u64).pow(20);
-                    let div = &scaled / &da;
-                    let val = div.to_f64().unwrap_or(0.0) / 1e20;
-                    let val = if sign { -val } else { val };
+                    let val = crate::value::bigrat_to_f64(n, d);
                     // Use the Num Str formatting
                     Value::Num(val).to_string_value()
                 } else if has_terminating_decimal_bigint(d) {

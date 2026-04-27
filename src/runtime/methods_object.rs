@@ -1621,7 +1621,7 @@ impl Interpreter {
                     return Ok(make_rat(a, b));
                 }
                 "FatRat" => {
-                    use crate::value::make_big_rat;
+                    use crate::value::make_big_fat_rat;
                     use num_bigint::BigInt;
                     let a = match args.first() {
                         Some(Value::BigInt(bi)) => (**bi).clone(),
@@ -1633,7 +1633,7 @@ impl Interpreter {
                         Some(v) => BigInt::from(to_int(v)),
                         None => BigInt::from(1),
                     };
-                    return Ok(match make_big_rat(a, b) {
+                    return Ok(match make_big_fat_rat(a, b) {
                         Value::Rat(n, d) => Value::FatRat(n, d),
                         Value::BigRat(n, d) => Value::BigRat(n, d),
                         other => other,
