@@ -869,6 +869,121 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
 
+    // Instant methods: to-posix, DateTime, Date, tai
+    if let Value::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target
+    {
+        if class_name == "Instant" {
+            use crate::builtins::methods_0arg::temporal;
+            match method {
+                "to-posix" => {
+                    let val = attributes.get("value").cloned().unwrap_or(Value::Int(0));
+                    let tai = crate::runtime::to_float_value(&val).unwrap_or(0.0);
+                    let tai_int = tai.floor() as i64;
+                    let mut is_leap = false;
+                    for &(threshold, cumulative) in temporal::LEAP_SECONDS.iter().skip(1) {
+                        if tai_int == threshold + (cumulative - 1) {
+                            is_leap = true;
+                            break;
+                        }
+                    }
+                    let posix = temporal::instant_to_posix(tai);
+                    let posix_val = if posix == posix.floor() {
+                        Value::Int(posix as i64)
+                    } else {
+                        Value::Num(posix)
+                    };
+                    return Some(Ok(Value::array(vec![posix_val, Value::Bool(is_leap)])));
+                }
+                "DateTime" => {
+                    let val = attributes.get("value").cloned().unwrap_or(Value::Int(0));
+                    let (tai_int, tai_frac) = match &val {
+                        Value::Rat(n, d) if *d != 0 => (*n / *d, (*n % *d) as f64 / *d as f64),
+                        _ => {
+                            let f = crate::runtime::to_float_value(&val).unwrap_or(0.0);
+                            (f.floor() as i64, f - f.floor())
+                        }
+                    };
+                    let (y, m, d, h, mi, s) =
+                        temporal::instant_to_datetime_leap_aware_parts(tai_int, tai_frac, 0);
+                    return Some(Ok(temporal::make_datetime(y, m, d, h, mi, s, 0)));
+                }
+                "Date" => {
+                    let val = attributes.get("value").cloned().unwrap_or(Value::Int(0));
+                    let tai = crate::runtime::to_float_value(&val).unwrap_or(0.0);
+                    let posix = temporal::instant_to_posix(tai);
+                    let (y, m, d) = temporal::epoch_days_to_civil((posix / 86400.0).floor() as i64);
+                    return Some(Ok(temporal::make_date(y, m, d)));
+                }
+                "tai" => {
+                    return Some(Ok(attributes
+                        .get("value")
+                        .cloned()
+                        .unwrap_or(Value::Int(0))));
+                }
+                _ => {}
+            }
+        }
+        if class_name == "Duration" {
+            match method {
+                "narrow" => {
+                    let val = attributes.get("value").cloned().unwrap_or(Value::Num(0.0));
+                    // Delegate narrow to the inner numeric value
+                    match val {
+                        Value::Num(f) if f.is_finite() => {
+                            let rounded = f.round();
+                            if (f - rounded).abs() <= f.abs().max(rounded.abs()) * 1e-15
+                                || (f == 0.0 && rounded == 0.0)
+                            {
+                                return Some(Ok(Value::Int(rounded as i64)));
+                            }
+                            // Convert Num to Rat for narrow
+                            let s = format!("{}", f);
+                            if let Some(dot) = s.find('.') {
+                                let dec = s.len() - dot - 1;
+                                let mut den = 1i64;
+                                for _ in 0..dec {
+                                    den *= 10;
+                                }
+                                let num_s: String = s.chars().filter(|c| *c != '.').collect();
+                                if let Ok(num) = num_s.parse::<i64>() {
+                                    let g = {
+                                        let (mut a, mut b) = (num.abs(), den);
+                                        while b != 0 {
+                                            let t = b;
+                                            b = a % b;
+                                            a = t;
+                                        }
+                                        a.max(1)
+                                    };
+                                    return Some(Ok(Value::Rat(num / g, den / g)));
+                                }
+                            }
+                            return Some(Ok(Value::Num(f)));
+                        }
+                        Value::Num(f) => return Some(Ok(Value::Num(f))),
+                        Value::Rat(n, d) if d != 0 && n % d == 0 => {
+                            return Some(Ok(Value::Int(n / d)));
+                        }
+                        Value::Rat(n, d) => return Some(Ok(Value::Rat(n, d))),
+                        Value::Int(i) => return Some(Ok(Value::Int(i))),
+                        _ => return Some(Ok(val)),
+                    }
+                }
+                "tai" => {
+                    return Some(Ok(attributes
+                        .get("value")
+                        .cloned()
+                        .unwrap_or(Value::Num(0.0))));
+                }
+                _ => {}
+            }
+        }
+    }
+
     // Buf/Blob.Str throws X::Buf::AsStr
     if (method == "Str" || method == "Stringy")
         && let Value::Instance { class_name, .. } = target

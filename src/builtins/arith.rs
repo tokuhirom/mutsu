@@ -183,6 +183,25 @@ fn instance_instant_value(value: &Value) -> Option<f64> {
         _ => None,
     }
 }
+fn instance_instant_raw(value: &Value) -> Option<Value> {
+    match value {
+        Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == "Instant" => attributes.get("value").cloned(),
+        _ => None,
+    }
+}
+fn value_sub(a: Value, b: Value) -> Value {
+    let (l, r) = runtime::coerce_numeric(a, b);
+    if let (Some((an, ad)), Some((bn, bd))) = (to_big_rat_parts(&l), to_big_rat_parts(&r)) {
+        return crate::value::make_big_rat(an * &bd - bn * &ad, ad * bd);
+    }
+    Value::Num(
+        runtime::to_float_value(&l).unwrap_or(0.0) - runtime::to_float_value(&r).unwrap_or(0.0),
+    )
+}
 
 fn instance_duration_value(value: &Value) -> Option<f64> {
     match value {
@@ -555,27 +574,21 @@ fn arith_add_coerced(l: Value, r: Value) -> Value {
 }
 
 pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
-    if let (Some(a), Some(b)) = (
-        instance_instant_value(&left),
-        instance_instant_value(&right),
-    ) {
-        // Instant - Instant returns a Duration
-        return make_duration(a - b);
+    if let (Some(a), Some(b)) = (instance_instant_raw(&left), instance_instant_raw(&right)) {
+        return make_duration(runtime::to_float_value(&value_sub(a, b)).unwrap_or(0.0));
     }
-    // Instant - Duration => Instant
-    if let Some(a) = instance_instant_value(&left)
+    if let Some(a) = instance_instant_raw(&left)
         && let Some(dur) = instance_duration_value(&right)
     {
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("value".to_string(), Value::Num(a - dur));
+        attrs.insert("value".to_string(), value_sub(a, Value::Num(dur)));
         return Value::make_instance(Symbol::intern("Instant"), attrs);
     }
-    if let Some(a) = instance_instant_value(&left)
+    if let Some(a) = instance_instant_raw(&left)
         && right.is_numeric()
     {
-        let delta = runtime::to_float_value(&right).unwrap_or(0.0);
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("value".to_string(), Value::Num(a - delta));
+        attrs.insert("value".to_string(), value_sub(a, right));
         return Value::make_instance(Symbol::intern("Instant"), attrs);
     }
     // Duration - Duration returns Duration
@@ -901,6 +914,15 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
 }
 
 pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError> {
+    if let Some(dur) = instance_duration_value(&left)
+        && right.is_numeric()
+    {
+        let rhs = runtime::to_float_value(&right).unwrap_or(0.0);
+        if rhs == 0.0 {
+            return Err(RuntimeError::numeric_divide_by_zero());
+        }
+        return Ok(make_duration(dur.rem_euclid(rhs)));
+    }
     let (mut l, mut r) = runtime::coerce_numeric(left, right);
     // Mixed Num/Rat modulo should use floating semantics; routing through
     // exact-rational reduction loses expected precision behavior for cases like

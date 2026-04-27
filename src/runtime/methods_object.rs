@@ -886,13 +886,51 @@ impl Interpreter {
                     return Ok(Self::version_from_value(arg));
                 }
                 "Duration" => {
-                    let secs = args
-                        .first()
-                        .map(to_float_value)
-                        .unwrap_or(Some(0.0))
-                        .unwrap_or(0.0);
+                    let secs = if let Some(arg) = args.first() {
+                        if let Value::Str(s) = arg {
+                            match s.parse::<f64>() {
+                                Ok(f) => f,
+                                Err(_) => {
+                                    let mut err = RuntimeError::new(format!(
+                                        "Cannot convert string to number: base-10 number must begin with valid digits or '.' in '{}'",
+                                        s
+                                    ));
+                                    let mut eattrs = HashMap::new();
+                                    eattrs.insert("source".to_string(), Value::str(s.to_string()));
+                                    eattrs.insert("pos".to_string(), Value::Int(0));
+                                    eattrs.insert(
+                                        "reason".to_string(),
+                                        Value::str(
+                                            "base-10 number must begin with valid digits or '.'"
+                                                .to_string(),
+                                        ),
+                                    );
+                                    err.exception = Some(Box::new(Value::make_instance(
+                                        Symbol::intern("X::Str::Numeric"),
+                                        eattrs,
+                                    )));
+                                    return Err(err);
+                                }
+                            }
+                        } else {
+                            to_float_value(arg).unwrap_or(0.0)
+                        }
+                    } else {
+                        0.0
+                    };
+                    let val = if secs.is_infinite() {
+                        if secs > 0.0 {
+                            Value::Rat(1, 0)
+                        } else {
+                            Value::Rat(-1, 0)
+                        }
+                    } else if secs.is_nan() {
+                        Value::Rat(0, 0)
+                    } else {
+                        Value::Num(secs)
+                    };
                     let mut attrs = HashMap::new();
-                    attrs.insert("value".to_string(), Value::Num(secs));
+                    attrs.insert("value".to_string(), val);
                     return Ok(Value::make_instance(Symbol::intern("Duration"), attrs));
                 }
                 "StrDistance" => {
@@ -968,12 +1006,10 @@ impl Interpreter {
                                 attributes,
                                 ..
                             } if class_name == "Instant" => {
-                                // Convert Instant to Date via POSIX
-                                let tai = match attributes.get("value") {
-                                    Some(Value::Num(v)) => *v,
-                                    Some(Value::Int(v)) => *v as f64,
-                                    _ => 0.0,
-                                };
+                                let tai = attributes
+                                    .get("value")
+                                    .and_then(crate::runtime::to_float_value)
+                                    .unwrap_or(0.0);
                                 let posix = temporal::instant_to_posix(tai);
                                 let epoch_days = (posix / 86400.0).floor() as i64;
                                 let (y, m, d) = temporal::epoch_days_to_civil(epoch_days);
@@ -1185,24 +1221,26 @@ impl Interpreter {
                                 attributes,
                                 ..
                             } if class_name == "Instant" => {
-                                let tai = match attributes.get("value") {
-                                    Some(Value::Num(n)) => *n,
-                                    Some(Value::Int(n)) => *n as f64,
-                                    _ => 0.0,
+                                let val = attributes.get("value").cloned().unwrap_or(Value::Int(0));
+                                let (tai_int, tai_frac) = match &val {
+                                    Value::Rat(n, d) if *d != 0 => {
+                                        (*n / *d, (*n % *d) as f64 / *d as f64)
+                                    }
+                                    _ => {
+                                        let f = crate::runtime::to_float_value(&val).unwrap_or(0.0);
+                                        (f.floor() as i64, f - f.floor())
+                                    }
                                 };
-                                // Convert from TAI (Instant) to POSIX
-                                let epoch = temporal::instant_to_posix(tai);
-                                let total_i = epoch.floor() as i64;
-                                let frac = epoch - total_i as f64;
-                                let day_secs = total_i.rem_euclid(86400);
-                                let epoch_days = (total_i - day_secs) / 86400;
-                                let (y, m, d) = temporal::epoch_days_to_civil(epoch_days);
+                                let (y, m, d, h, mi, s) =
+                                    temporal::instant_to_datetime_leap_aware_parts(
+                                        tai_int, tai_frac, timezone,
+                                    );
                                 year = y;
                                 month = m;
                                 day = d;
-                                hour = day_secs / 3600;
-                                minute = (day_secs % 3600) / 60;
-                                second = (day_secs % 60) as f64 + frac;
+                                hour = h;
+                                minute = mi;
+                                second = s;
                                 has_named = true;
                             }
                             other if other.is_numeric() => {
