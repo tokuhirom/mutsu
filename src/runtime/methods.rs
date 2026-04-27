@@ -1571,7 +1571,6 @@ impl Interpreter {
                 | "squish"
                 | "produce"
                 | "map"
-                | "flat"
                 | "batch"
                 | "rotor"
                 | "rotate"
