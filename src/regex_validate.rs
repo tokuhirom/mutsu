@@ -691,6 +691,7 @@ fn validate_bracket_class_content(content: &str) -> Result<(), RuntimeError> {
         }
         if found_close {
             check_bracket_body_for_perl5_range(&body)?;
+            check_bracket_body_for_nfg_synthetic(&body)?;
         }
         // Advance past the consumed content (bracket body + closing ']')
         remaining = &remaining[start + 1 + consumed..];
@@ -827,6 +828,55 @@ fn check_bracket_body_for_perl5_range(body: &str) -> Result<(), RuntimeError> {
             prev_was_alnum = false;
         } else {
             prev_was_alnum = c.is_alphanumeric();
+        }
+    }
+    Ok(())
+}
+
+/// Check a bracket class body for NFG synthetic characters (base char + combining marks).
+/// These cannot be used as range endpoints.
+#[allow(clippy::result_large_err)]
+fn check_bracket_body_for_nfg_synthetic(body: &str) -> Result<(), RuntimeError> {
+    let mut chars = body.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            // Skip escape sequences
+            if let Some(&esc) = chars.peek() {
+                chars.next();
+                if matches!(esc, 'c' | 'C' | 'x' | 'X' | 'o') && chars.peek() == Some(&'[') {
+                    chars.next(); // skip '['
+                    let mut depth = 1;
+                    for ch in chars.by_ref() {
+                        if ch == '[' {
+                            depth += 1;
+                        } else if ch == ']' {
+                            depth -= 1;
+                            if depth == 0 {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        } else if c == ' ' {
+            // Skip whitespace
+        } else if chars
+            .peek()
+            .is_some_and(|ch| unicode_normalization::char::is_combining_mark(*ch))
+        {
+            // Base character followed by combining mark(s) — NFG synthetic
+            let mut grapheme = c.to_string();
+            while chars
+                .peek()
+                .is_some_and(|ch| unicode_normalization::char::is_combining_mark(*ch))
+            {
+                grapheme.push(chars.next().unwrap());
+            }
+            let msg = format!(
+                "Cannot use {} as a range endpoint, as it is not a single codepoint",
+                grapheme
+            );
+            return Err(RuntimeError::new(msg));
         }
     }
     Ok(())

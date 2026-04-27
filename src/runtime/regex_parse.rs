@@ -1573,8 +1573,20 @@ impl Interpreter {
                                     }
                                     continue;
                                 }
+                                // Handle backslash escapes inside bracket classes:
+                                // \[ and \] should not affect bracket_depth, etc.
+                                if escaped {
+                                    escaped = false;
+                                    name.push(ch);
+                                    continue;
+                                }
+                                if ch == '\\' && bracket_depth > 0 {
+                                    escaped = true;
+                                    name.push(ch);
+                                    continue;
+                                }
                                 match ch {
-                                    '\'' | '"' => {
+                                    '\'' | '"' if bracket_depth == 0 => {
                                         quote = Some(ch);
                                         name.push(ch);
                                     }
