@@ -1,6 +1,6 @@
 use crate::builtins::primality::{is_prime_bigint, is_prime_i64};
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value, make_big_rat, make_rat};
+use crate::value::{RuntimeError, Value, make_big_fat_rat, make_rat};
 use std::collections::HashMap;
 
 /// Type coercion and specialized 0-arg methods: numerator, denominator, nude,
@@ -43,7 +43,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Value::Rat(nn, dd) => Value::FatRat(nn, dd),
                 other => other,
             })),
-            Value::BigRat(n, d) => Some(Ok(match make_big_rat(n.clone(), d.clone()) {
+            Value::BigRat(n, d) => Some(Ok(match make_big_fat_rat(n.clone(), d.clone()) {
                 Value::Rat(nn, dd) => Value::FatRat(nn, dd),
                 Value::BigRat(nn, dd) => Value::BigRat(nn, dd),
                 other => other,

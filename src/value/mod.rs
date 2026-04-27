@@ -489,7 +489,42 @@ pub fn make_rat(num: i64, den: i64) -> Value {
     Value::Rat(n, d)
 }
 
+/// Create a Rat from BigInt numerator/denominator.
+/// Per Raku spec, Rat denominators are limited to uint64 range.
+/// When the reduced denominator exceeds this, degrade to Num.
+/// Use `make_big_fat_rat` for FatRat contexts that should never degrade.
 pub fn make_big_rat(num: NumBigInt, den: NumBigInt) -> Value {
+    if den.is_zero() {
+        if num.is_zero() {
+            return Value::Rat(0, 0);
+        }
+        return if num.is_positive() {
+            Value::Rat(1, 0)
+        } else {
+            Value::Rat(-1, 0)
+        };
+    }
+    let g = num.gcd(&den);
+    let mut n = num / &g;
+    let mut d = den / &g;
+    if d.is_negative() {
+        n = -n;
+        d = -d;
+    }
+    if let (Some(n_i64), Some(d_i64)) = (n.to_i64(), d.to_i64()) {
+        Value::Rat(n_i64, d_i64)
+    } else {
+        // Check if denominator exceeds uint64 range — if so, degrade to Num
+        if d.to_u64().is_none() {
+            return Value::Num(bigrat_to_f64(&n, &d));
+        }
+        Value::BigRat(n, d)
+    }
+}
+
+/// Create a FatRat from BigInt numerator/denominator.
+/// Unlike `make_big_rat`, this never degrades to Num — FatRat has unlimited precision.
+pub fn make_big_fat_rat(num: NumBigInt, den: NumBigInt) -> Value {
     if den.is_zero() {
         if num.is_zero() {
             return Value::Rat(0, 0);
@@ -512,6 +547,44 @@ pub fn make_big_rat(num: NumBigInt, den: NumBigInt) -> Value {
     } else {
         Value::BigRat(n, d)
     }
+}
+
+/// Convert a BigInt ratio n/d to f64 with correct rounding.
+/// Uses bit-level scaling to avoid precision loss from independent to_f64() conversions.
+pub fn bigrat_to_f64(n: &NumBigInt, d: &NumBigInt) -> f64 {
+    if d.is_zero() {
+        return if n.is_zero() {
+            f64::NAN
+        } else if n.is_negative() {
+            f64::NEG_INFINITY
+        } else {
+            f64::INFINITY
+        };
+    }
+    let sign = n.is_negative() != d.is_negative();
+    let na = n.abs();
+    let da = d.abs();
+    if na.is_zero() {
+        return if sign { -0.0 } else { 0.0 };
+    }
+    // Compute bit counts to estimate the magnitude of the result.
+    // Then shift so the quotient has ~55 significant bits (enough for f64 + rounding).
+    let n_bits = na.bits();
+    let d_bits = da.bits();
+    let target_bits: u64 = 55;
+    // We want quotient = (na << shift) / da to have ~target_bits significant bits.
+    // quotient_bits ~ n_bits + shift - d_bits, so shift = target_bits - n_bits + d_bits.
+    let shift = if d_bits + target_bits > n_bits {
+        (d_bits + target_bits - n_bits) as u32
+    } else {
+        0u32
+    };
+    let scaled = &na << shift;
+    let quotient = &scaled / &da;
+    let qf = quotient.to_f64().unwrap_or(f64::INFINITY);
+    // Scale back: divide by 2^shift
+    let result = qf * 2.0f64.powi(-(shift as i32));
+    if sign { -result } else { result }
 }
 
 /// Distinguishes the five array/list container kinds.
