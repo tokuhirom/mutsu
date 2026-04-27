@@ -412,6 +412,14 @@ pub(super) fn matches_named_builtin(name: &str, c: char) -> bool {
         "blank" => c == '\t' || c == ' ' || c == '\u{A0}',
         "cntrl" => c.is_control(),
         "punct" => check_unicode_property("Punctuation", c),
+        "graph" => {
+            // graph: visible characters — not whitespace, not control, not unassigned surrogates
+            !c.is_whitespace() && !c.is_control()
+        }
+        "print" => {
+            // print: graph + space-like characters (but not control characters)
+            !c.is_control()
+        }
         _ => false,
     }
 }
