@@ -199,6 +199,9 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(container::itemized_paren_expr(input));
         try_primary!(container::itemized_bracket_expr(input));
         try_primary!(container::itemized_brace_expr(input));
+        // User-declared circumfix operators must be checked before variable parsers
+        // so that e.g. circumfix:<@ @> is recognized before `@` is parsed as an array sigil.
+        try_primary!(ident::declared_circumfix_op(input));
         try_primary!(var::scalar_var(input));
         try_primary!(var::array_var(input));
         try_primary!(container::percent_hash_literal(input));
@@ -223,7 +226,6 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(misc::anon_class_expr(input));
         // anonymous grammar: grammar { ... }
         try_primary!(misc::anon_grammar_expr(input));
-        try_primary!(ident::declared_circumfix_op(input));
 
         match ident::identifier_or_call(input) {
             Ok(r) => Ok(r),
