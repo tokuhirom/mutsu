@@ -805,13 +805,29 @@ impl VM {
                             .cloned()
                             .or_else(|| self.get_env_with_main_alias(&candidate))
                     })
+                    .map(Ok)
                     .unwrap_or_else(|| {
                         if name.starts_with('^') {
-                            Value::Bool(true)
+                            Ok(Value::Bool(true))
+                        } else if name == "self" || name.ends_with("::self") {
+                            Err(RuntimeError::new(
+                                "'self' used where no object is available".to_string(),
+                            ))
+                        } else if name.starts_with('!')
+                            && name.len() > 1
+                            && name[1..]
+                                .chars()
+                                .next()
+                                .is_some_and(|c| c.is_alphanumeric() || c == '_')
+                        {
+                            Err(RuntimeError::new(format!(
+                                "Variable $!{} used where no 'self' is available",
+                                &name[1..]
+                            )))
                         } else {
-                            Value::Nil
+                            Ok(Value::Nil)
                         }
-                    });
+                    })?;
                 // When the value is Nil and the variable has a type constraint,
                 // return the type object (consistent with GetLocal behavior).
                 let val = if matches!(val, Value::Nil) {

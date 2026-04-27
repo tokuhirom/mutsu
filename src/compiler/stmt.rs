@@ -806,15 +806,23 @@ impl Compiler {
                 if name.starts_with('&')
                     && !name.contains("::")
                     && !self.local_map.contains_key(name.as_str())
+                    && !name.starts_with("&!")
                 {
                     self.code.emit(OpCode::AssignReadOnly);
                     return;
                 }
+                // For &!attr (callable private attributes), strip the &
+                // sigil so the env key matches the attribute name (!attr).
+                let effective_name = if name.starts_with("&!") {
+                    &name[1..]
+                } else {
+                    name.as_str()
+                };
                 // Compile-time check: assigning a numeric literal to a typed
                 // numeric variable with a mismatched type (e.g. `my Num $n; $n = 42`)
                 // should produce X::Syntax::Number::LiteralType.
                 if matches!(op, AssignOp::Assign)
-                    && let Some(err) = self.check_literal_type_mismatch(name, expr)
+                    && let Some(err) = self.check_literal_type_mismatch(effective_name, expr)
                 {
                     let idx = self.code.add_constant(err);
                     self.code.emit(OpCode::LoadConst(idx));
@@ -823,21 +831,23 @@ impl Compiler {
                 }
                 // Emit readonly check for assignment to potentially readonly params.
                 // Skip the check for `:=` (rebinding replaces the container).
-                let name_idx = self.code.add_constant(Value::str(name.clone()));
+                let name_idx = self
+                    .code
+                    .add_constant(Value::str(effective_name.to_string()));
                 if !matches!(op, AssignOp::Bind) {
                     self.code.emit(OpCode::CheckReadOnly(name_idx));
                 }
                 if matches!(op, AssignOp::Bind) {
-                    if name.starts_with('@') {
+                    if effective_name.starts_with('@') {
                         self.code.emit(OpCode::MarkBindContext);
                     }
                     // Signal rebind context for cleanup of old bind pairs.
                     self.code.emit(OpCode::MarkRebindContext);
                     self.compile_call_arg(expr);
                 } else {
-                    self.compile_assignment_rhs_for_target(name, expr);
+                    self.compile_assignment_rhs_for_target(effective_name, expr);
                 }
-                self.emit_set_named_var(name);
+                self.emit_set_named_var(effective_name);
             }
             Stmt::If {
                 cond,

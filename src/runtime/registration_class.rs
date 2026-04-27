@@ -1,5 +1,5 @@
 use super::*;
-use crate::ast::{HandleSpec, ParamDef};
+use crate::ast::{HandleSpec, ParamDef, PhaserKind};
 use crate::symbol::Symbol;
 
 type ResolvedRoleCandidate = (RoleDef, Vec<String>, Vec<Value>);
@@ -1864,12 +1864,36 @@ impl Interpreter {
                     }
                 }
                 _ => {
+                    // BEGIN phasers and EVAL calls in class bodies may fail
+                    // (e.g. `BEGIN EVAL q[has $.x]` or `EVAL q[has $.x]`).
+                    // Swallow errors from these so the class still registers.
+                    let is_swallowable = matches!(
+                        stmt,
+                        Stmt::Phaser {
+                            kind: PhaserKind::Begin,
+                            ..
+                        }
+                    ) || matches!(
+                        stmt,
+                        Stmt::Call { name: fn_name, .. }
+                            if fn_name.resolve() == "EVAL"
+                    ) || matches!(
+                        stmt,
+                        Stmt::Expr(Expr::Call { name: fn_name, .. })
+                            if fn_name.resolve() == "EVAL"
+                    );
                     self.classes.insert(name.to_string(), class_def.clone());
-                    self.run_block_raw(std::slice::from_ref(stmt))?;
-                    for outer_name in saved_env.keys() {
-                        let class_scoped_name = format!("{}::{}", name, outer_name);
-                        if let Some(updated) = self.env.get(&class_scoped_name).cloned() {
-                            self.env.insert(outer_name.clone(), updated);
+                    let result = self.run_block_raw(std::slice::from_ref(stmt));
+                    if let Err(e) = result {
+                        if !is_swallowable {
+                            return Err(e);
+                        }
+                    } else {
+                        for outer_name in saved_env.keys() {
+                            let class_scoped_name = format!("{}::{}", name, outer_name);
+                            if let Some(updated) = self.env.get(&class_scoped_name).cloned() {
+                                self.env.insert(outer_name.clone(), updated);
+                            }
                         }
                     }
                     if let Some(updated) = self.classes.get(name).cloned() {
