@@ -911,14 +911,26 @@ impl Interpreter {
             other => other,
         };
         if let Value::Routine { package, name, .. } = &func {
-            // Try fully-qualified name first (e.g. "A::foo"), then bare name
             if package != "" && package != "GLOBAL" {
                 let fq = format!("{package}::{name}");
                 if self.resolve_function(&fq).is_some() {
                     return self.call_function(&fq, args);
                 }
             }
-            return self.call_function(&name.resolve(), args);
+            let name_str = name.resolve();
+            if self.resolve_function(&name_str).is_some()
+                || self.has_proto(&name_str)
+                || self.has_multi_candidates(&name_str)
+            {
+                return self.call_function(&name_str, args);
+            }
+            // Method dispatch fallback for &?ROUTINE.dispatcher()(self, ...)
+            if !args.is_empty() {
+                let invocant = args[0].clone();
+                let method_args = args[1..].to_vec();
+                return self.call_method_with_values(invocant, &name_str, method_args);
+            }
+            return self.call_function(&name_str, args);
         }
         if let Value::Junction { kind, values } = func {
             let mut results = Vec::with_capacity(values.len());

@@ -319,6 +319,20 @@ impl VM {
                     return self.interpreter.call_function(&fq, args);
                 }
             }
+            if self.interpreter.has_function(&name_str)
+                || self.interpreter.has_proto(&name_str)
+                || self.interpreter.has_multi_candidates(&name_str)
+            {
+                return self.interpreter.call_function(&name_str, args);
+            }
+            // Method dispatch fallback for &?ROUTINE.dispatcher()(self, ...)
+            if !args.is_empty() && !pkg.is_empty() && pkg != "GLOBAL" {
+                let invocant = args[0].clone();
+                let method_args = args[1..].to_vec();
+                return self
+                    .interpreter
+                    .call_method_with_values(invocant, &name_str, method_args);
+            }
             return self.interpreter.call_function(&name_str, args);
         }
 

@@ -1018,7 +1018,7 @@ impl Interpreter {
         None
     }
 
-    fn resolve_proto_function(&self, name: &str) -> Option<FunctionDef> {
+    pub(super) fn resolve_proto_function(&self, name: &str) -> Option<FunctionDef> {
         if name.contains("::") {
             return self.proto_functions.get(&Symbol::intern(name)).cloned();
         }
@@ -1171,10 +1171,25 @@ impl Interpreter {
                 return Err(e);
             }
         };
+        // Set up multi dispatch stack so nextsame/nextwith can walk through
+        // remaining candidates when called inside a proto-dispatched multi sub.
+        // Get candidates in dispatch order (same sorting as resolve_function_with_types)
+        // and take all candidates after the first (current) match.
+        let remaining = self.resolve_remaining_proto_candidates(&proto_name, &args, &def);
+        let pushed_dispatch = !remaining.is_empty();
+        if pushed_dispatch {
+            self.multi_dispatch_stack
+                .push((proto_name.clone(), remaining, args.clone()));
+        }
+        self.samewith_context_stack.push((proto_name.clone(), None));
         self.routine_stack
             .push((def.package.resolve(), def.name.resolve()));
         let result = self.run_block(&def.body);
         self.routine_stack.pop();
+        self.samewith_context_stack.pop();
+        if pushed_dispatch {
+            self.multi_dispatch_stack.pop();
+        }
         let implicit_return = self.env.get("_").cloned().unwrap_or(Value::Nil);
         let mut restored_env = saved_env.clone();
         self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
@@ -1185,6 +1200,78 @@ impl Interpreter {
             Err(e) => Err(e),
             Ok(()) => Ok(implicit_return),
         }
+    }
+
+    /// Collect remaining multi candidates after the current one, in dispatch order.
+    /// Uses the same candidate sorting as resolve_function_with_types to ensure
+    /// nextsame/nextwith walk candidates in the correct order.
+    fn resolve_remaining_proto_candidates(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        current_def: &FunctionDef,
+    ) -> Vec<FunctionDef> {
+        let arity = args
+            .iter()
+            .filter(|v| !matches!(v, Value::Pair(..)))
+            .count();
+        let prefix_local = format!("{}::{}/{}:", self.current_package, name, arity);
+        let prefix_global = format!("GLOBAL::{}/{}:", name, arity);
+        let generic_keys = [
+            format!("{}::{}/{}", self.current_package, name, arity),
+            format!("GLOBAL::{}/{}", name, arity),
+        ];
+        // Collect all candidates (typed + generic) like resolve_function_with_types
+        let mut candidates: Vec<(String, FunctionDef)> = self
+            .functions
+            .iter()
+            .filter(|(key, _)| {
+                let ks = key.resolve();
+                ks.starts_with(&prefix_local) || ks.starts_with(&prefix_global)
+            })
+            .map(|(key, def)| (key.resolve(), def.clone()))
+            .collect();
+        for key in &generic_keys {
+            let key_sym = Symbol::intern(key);
+            let m_prefix = format!("{}__m", key);
+            let more: Vec<(String, FunctionDef)> = self
+                .functions
+                .iter()
+                .filter(|(k, _)| **k == key_sym || k.resolve().starts_with(&m_prefix))
+                .map(|(k, def)| (k.resolve(), def.clone()))
+                .collect();
+            candidates.extend(more);
+        }
+        // Sort by specificity (same as resolve_function_with_types)
+        self.sort_candidates_by_specificity(&mut candidates);
+        // Walk sorted candidates: find all matching ones, skip duplicates,
+        // and return everything after the current candidate.
+        let current_fp = crate::ast::function_body_fingerprint(
+            &current_def.params,
+            &current_def.param_defs,
+            &current_def.body,
+        );
+        let mut seen_fps = std::collections::HashSet::new();
+        let mut found_current = false;
+        let mut remaining = Vec::new();
+        for (_key, cand) in &candidates {
+            let fp =
+                crate::ast::function_body_fingerprint(&cand.params, &cand.param_defs, &cand.body);
+            if !seen_fps.insert(fp) {
+                continue; // duplicate
+            }
+            if !self.args_match_param_types(args, &cand.param_defs) {
+                continue; // doesn't match
+            }
+            if !found_current {
+                if fp == current_fp {
+                    found_current = true;
+                }
+                continue;
+            }
+            remaining.push(cand.clone());
+        }
+        remaining
     }
 
     fn rewrite_proto_dispatch_stmts(body: &[Stmt]) -> Vec<Stmt> {
