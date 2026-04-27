@@ -677,8 +677,9 @@ impl Compiler {
                     // so the trait handler gets the raw array/list value.
                     let has_quant_hash_trait = name.starts_with('%')
                         && custom_traits.iter().any(|(t, _)| {
+                            let base = t.split('[').next().unwrap_or(t);
                             matches!(
-                                t.as_str(),
+                                base,
                                 "BagHash" | "SetHash" | "MixHash" | "Bag" | "Set" | "Mix"
                             )
                         });

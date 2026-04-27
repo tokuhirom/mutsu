@@ -2,6 +2,10 @@ use super::*;
 
 impl Interpreter {
     pub(super) fn dispatch_to_set(&self, target: Value) -> Result<Value, RuntimeError> {
+        // Check for lazy/infinite values
+        if Self::is_lazy_for_coerce(&target) {
+            return Err(RuntimeError::cannot_lazy_what("Set"));
+        }
         let mut elems = HashSet::new();
         match target {
             Value::Set(_, _) => return Ok(target),
