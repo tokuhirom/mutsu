@@ -470,6 +470,7 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     let mark_scalar_readonly =
         !s.is_array && !bound_name.starts_with('%') && super::scalar_binding_rhs_is_readonly(&expr);
     let bind_to_var = matches!(expr, Expr::Var(_));
+    let bind_to_index = matches!(expr, Expr::Index { .. });
     let stmt = Stmt::VarDecl {
         name: s.name,
         expr,
@@ -506,7 +507,7 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         Stmt::SyntheticBlock(stmts)
     } else if mark_scalar_readonly {
         Stmt::SyntheticBlock(vec![Stmt::MarkReadonly(bound_name), stmt])
-    } else if bind_to_var {
+    } else if bind_to_var || bind_to_index {
         Stmt::SyntheticBlock(vec![Stmt::MarkBind, stmt])
     } else {
         stmt

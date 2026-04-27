@@ -114,6 +114,7 @@ roast/S02-types/compact.t
 roast/S02-types/declare.t
 roast/S02-types/fatrat.t
 roast/S02-types/flattening.t
+roast/S02-types/hash.t
 roast/S02-types/hash_ref.t
 roast/S02-types/hyperwhatever.t
 roast/S02-types/infinity.t

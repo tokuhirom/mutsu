@@ -287,6 +287,12 @@ impl Compiler {
 
     /// Compile Index expression (target[index] or target{index}).
     pub(super) fn compile_expr_index(&mut self, target: &Expr, index: &Expr, is_positional: bool) {
+        // When in scalar bind context (`:=`), emit IndexAutovivify for
+        // associative indexing so that the VM auto-vivifies intermediate
+        // hashes and returns a HashSlotRef.
+        // This enables `my $b := %h<foo><baz>; $b = 42`.
+        let use_autovivify = self.scalar_bind_autovivify && !is_positional;
+
         // Special case: %*ENV<key> compiles to GetEnvIndex
         if let Expr::HashVar(name) = target {
             if name == "*ENV" {
@@ -296,17 +302,29 @@ impl Compiler {
                 } else {
                     self.compile_expr(target);
                     self.compile_expr(index);
-                    self.code.emit(OpCode::Index { is_positional });
+                    if use_autovivify {
+                        self.code.emit(OpCode::IndexAutovivify);
+                    } else {
+                        self.code.emit(OpCode::Index { is_positional });
+                    }
                 }
             } else {
                 self.compile_expr(target);
                 self.compile_expr(index);
-                self.code.emit(OpCode::Index { is_positional });
+                if use_autovivify {
+                    self.code.emit(OpCode::IndexAutovivify);
+                } else {
+                    self.code.emit(OpCode::Index { is_positional });
+                }
             }
         } else {
             self.compile_expr(target);
             self.compile_expr(index);
-            self.code.emit(OpCode::Index { is_positional });
+            if use_autovivify {
+                self.code.emit(OpCode::IndexAutovivify);
+            } else {
+                self.code.emit(OpCode::Index { is_positional });
+            }
         }
     }
 

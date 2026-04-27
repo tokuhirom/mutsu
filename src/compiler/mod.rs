@@ -62,6 +62,10 @@ pub(crate) struct Compiler {
     pub(crate) lexically_in_routine: bool,
     /// When true, the current VarDecl is from a `:=` bind declaration.
     bind_vardecl: bool,
+    /// When true, Index expressions should emit IndexAutovivify instead of
+    /// Index.  Set only during scalar `:=` bind VarDecl compilation so that
+    /// `my $b := %h<foo><baz>` creates a HashSlotRef.
+    scalar_bind_autovivify: bool,
     /// Variables declared as `constant` (no Scalar container).
     constant_vars: std::collections::HashSet<String>,
     /// Last source line emitted via SetSourceLine (for tracking block definition lines).
@@ -85,6 +89,7 @@ impl Compiler {
             is_routine: false,
             lexically_in_routine: false,
             bind_vardecl: false,
+            scalar_bind_autovivify: false,
             constant_vars: std::collections::HashSet::new(),
             last_source_line: None,
         }
