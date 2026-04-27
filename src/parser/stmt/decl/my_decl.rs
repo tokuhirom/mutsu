@@ -383,6 +383,37 @@ fn parse_variable_traits<'a>(
                 }
                 first_type_trait = Some(trait_name.clone());
             }
+            // Handle parameterized type traits like `is Set[Int]`, `is Foo[Int,Str]`
+            let mut trait_name = trait_name;
+            let r2 = if r2.starts_with('[') {
+                // Find matching ']', respecting nested brackets
+                let mut depth = 0usize;
+                let mut end = 0;
+                for (i, ch) in r2.char_indices() {
+                    match ch {
+                        '[' => depth += 1,
+                        ']' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                end = i;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                if end > 0 {
+                    let param_text = &r2[1..end]; // content inside [...]
+                    trait_name = format!("{}[{}]", trait_name, param_text.trim());
+                    let after = &r2[end + 1..];
+                    let (after, _) = ws(after)?;
+                    after
+                } else {
+                    r2
+                }
+            } else {
+                r2
+            };
             let include_in_traits = !is_builtin
                 || trait_name == "default"
                 || is_buf_trait

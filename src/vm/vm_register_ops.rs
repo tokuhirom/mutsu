@@ -738,10 +738,12 @@ impl VM {
         }
 
         // Handle `is BagHash`, `is SetHash`, `is MixHash`, `is Bag`, `is Set`, `is Mix`
+        // (and parameterized versions like `is Set[Int]`, `is Bag[Str]`)
         // on hash variables: replace the variable with an instance of the appropriate type.
         if name.starts_with('%') {
+            let base_trait = trait_name.split('[').next().unwrap_or(&trait_name);
             let is_hash_like_trait = matches!(
-                trait_name.as_str(),
+                base_trait,
                 "BagHash" | "SetHash" | "MixHash" | "Bag" | "Set" | "Mix"
             );
             if is_hash_like_trait {
@@ -764,7 +766,7 @@ impl VM {
                     let init_val = current_val.unwrap();
                     // If already the target QuantHash type, use it directly
                     let already_target = matches!(
-                        (&init_val, trait_name.as_str()),
+                        (&init_val, base_trait),
                         (Value::Mix(_, _), "MixHash" | "Mix")
                             | (Value::Bag(_, _), "BagHash" | "Bag")
                             | (Value::Set(_, _), "SetHash" | "Set")
@@ -773,25 +775,25 @@ impl VM {
                         // Ensure mutability flag matches the trait
                         match init_val {
                             Value::Mix(data, _) => {
-                                let mutable = trait_name == "MixHash";
+                                let mutable = base_trait == "MixHash";
                                 Value::Mix(data, mutable)
                             }
                             Value::Bag(data, _) => {
-                                let mutable = trait_name == "BagHash";
+                                let mutable = base_trait == "BagHash";
                                 Value::Bag(data, mutable)
                             }
                             Value::Set(data, _) => {
-                                let mutable = trait_name == "SetHash";
+                                let mutable = base_trait == "SetHash";
                                 Value::Set(data, mutable)
                             }
                             other => other,
                         }
                     } else {
                         // Convert initial values to the target QuantHash type
-                        self.try_compiled_method_or_interpret(init_val, &trait_name, vec![])?
+                        self.try_compiled_method_or_interpret(init_val, base_trait, vec![])?
                     }
                 } else {
-                    let type_obj = Value::Package(crate::symbol::Symbol::intern(&trait_name));
+                    let type_obj = Value::Package(crate::symbol::Symbol::intern(base_trait));
                     self.try_compiled_method_or_interpret(type_obj, "new", vec![])?
                 };
                 // Register container type metadata so assignment operations

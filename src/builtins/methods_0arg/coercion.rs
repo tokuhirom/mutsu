@@ -611,6 +611,39 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
                 named,
             })
         }
+        // Set.Capture → named args where each key maps to True
+        Value::Set(s, _) => {
+            let mut named = HashMap::new();
+            for k in s.iter() {
+                named.insert(k.clone(), Value::Bool(true));
+            }
+            Ok(Value::Capture {
+                positional: vec![],
+                named,
+            })
+        }
+        // Bag.Capture → named args where each key maps to its count
+        Value::Bag(b, _) => {
+            let mut named = HashMap::new();
+            for (k, v) in b.iter() {
+                named.insert(k.clone(), Value::Int(*v));
+            }
+            Ok(Value::Capture {
+                positional: vec![],
+                named,
+            })
+        }
+        // Mix.Capture → named args where each key maps to its weight
+        Value::Mix(m, _) => {
+            let mut named = HashMap::new();
+            for (k, v) in m.iter() {
+                named.insert(k.clone(), Value::Num(*v));
+            }
+            Ok(Value::Capture {
+                positional: vec![],
+                named,
+            })
+        }
         // Hash.Capture → named args from hash entries
         Value::Hash(map) => {
             let mut named = HashMap::new();

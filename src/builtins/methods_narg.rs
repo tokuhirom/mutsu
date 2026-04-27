@@ -692,6 +692,16 @@ pub(crate) fn native_method_1arg(
             // Instance args need the interpreter to call .Numeric, so return None
             allomorph_accepts(target, arg).map(|result| Ok(Value::Bool(result)))
         }
+        // ACCEPTS for Set/Bag/Mix types: equality check
+        "ACCEPTS" if matches!(target, Value::Set(..)) => {
+            let result = match (target, arg) {
+                (Value::Set(set1, _), Value::Set(set2, _)) => {
+                    set1.len() == set2.len() && set1.iter().all(|k| set2.contains(k))
+                }
+                _ => false,
+            };
+            Some(Ok(Value::Bool(result)))
+        }
         // ACCEPTS for Range: value ~~ Range containment, Range ~~ Range subset
         "ACCEPTS" if target.is_range() => {
             let result = if arg.is_range() {

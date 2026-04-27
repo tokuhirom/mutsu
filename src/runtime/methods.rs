@@ -1889,6 +1889,105 @@ impl Interpreter {
             return result;
         }
 
+        // STORE for BagHash/SetHash/MixHash: re-initialize the container
+        if method == "STORE"
+            && matches!(
+                &target,
+                Value::Bag(_, true) | Value::Set(_, true) | Value::Mix(_, true)
+            )
+        {
+            // STORE(@keys, @values) or STORE(@pairs)
+            // First, flatten all args into a list of items
+            let mut items: Vec<Value> = Vec::new();
+            for arg in &args {
+                match arg {
+                    Value::Array(elems, _) => items.extend(elems.iter().cloned()),
+                    Value::Seq(elems) | Value::Slip(elems) => items.extend(elems.iter().cloned()),
+                    other => items.push(other.clone()),
+                }
+            }
+            // If items are all non-Pair and there are exactly 2 array args,
+            // zip them as keys => values
+            let has_pairs = items
+                .iter()
+                .any(|v| matches!(v, Value::Pair(..) | Value::ValuePair(..)));
+            let pairs: Vec<(String, i64)> = if has_pairs {
+                items
+                    .iter()
+                    .map(|v| match v {
+                        Value::Pair(k, v) => {
+                            let count = match v.as_ref() {
+                                Value::Int(i) => *i,
+                                Value::Num(f) => *f as i64,
+                                _ => 1,
+                            };
+                            (k.clone(), count)
+                        }
+                        Value::ValuePair(k, v) => {
+                            let count = match v.as_ref() {
+                                Value::Int(i) => *i,
+                                Value::Num(f) => *f as i64,
+                                _ => 1,
+                            };
+                            (k.to_string_value(), count)
+                        }
+                        other => (other.to_string_value(), 1),
+                    })
+                    .collect()
+            } else if args.len() == 2
+                && matches!(&args[0], Value::Array(..))
+                && matches!(&args[1], Value::Array(..))
+            {
+                // Zip keys and values
+                let keys = if let Value::Array(k, _) = &args[0] {
+                    k.iter().map(|v| v.to_string_value()).collect::<Vec<_>>()
+                } else {
+                    vec![]
+                };
+                let values = if let Value::Array(v, _) = &args[1] {
+                    v.iter()
+                        .map(|v| match v {
+                            Value::Int(i) => *i,
+                            Value::Num(f) => *f as i64,
+                            _ => 1,
+                        })
+                        .collect::<Vec<_>>()
+                } else {
+                    vec![]
+                };
+                keys.into_iter().zip(values).collect()
+            } else {
+                items.iter().map(|v| (v.to_string_value(), 1i64)).collect()
+            };
+
+            match &target {
+                Value::Bag(_, _) => {
+                    let mut counts = std::collections::HashMap::new();
+                    for (k, v) in pairs {
+                        *counts.entry(k).or_insert(0i64) += v;
+                    }
+                    return Ok(Value::bag_hash(counts));
+                }
+                Value::Set(_, _) => {
+                    let mut elems = std::collections::HashSet::new();
+                    for (k, v) in pairs {
+                        if v > 0 {
+                            elems.insert(k);
+                        }
+                    }
+                    return Ok(Value::set_hash(elems));
+                }
+                Value::Mix(_, _) => {
+                    let mut weights = std::collections::HashMap::new();
+                    for (k, v) in pairs {
+                        *weights.entry(k).or_insert(0f64) += v as f64;
+                    }
+                    return Ok(Value::mix_hash(weights));
+                }
+                _ => {}
+            }
+        }
+
         // .pick/.roll/.grab/.grabpairs/.pickpairs with Callable arg on
         // Bag/BagHash/Set/SetHash/Mix/MixHash/Array/List/Range:
         // invoke the callable to get the actual count, then re-dispatch.

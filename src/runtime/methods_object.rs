@@ -3403,19 +3403,31 @@ impl Interpreter {
 
     /// Check if a class composes the Baggy or Setty role (directly or transitively).
     fn class_does_baggy_or_setty(&self, class_name: &str) -> bool {
+        // Direct builtin Setty/Baggy types
+        const SETTY_BAGGY_TYPES: &[&str] = &[
+            "Set",
+            "SetHash",
+            "Bag",
+            "BagHash",
+            "Mix",
+            "MixHash",
+            "Baggy",
+            "Setty",
+            "QuantHash",
+        ];
         // Check the class definition's parents and MRO for Baggy/Setty
         if let Some(class_def) = self.classes.get(class_name) {
             if class_def
                 .parents
                 .iter()
-                .any(|p| p == "Baggy" || p == "Setty" || p == "QuantHash")
+                .any(|p| SETTY_BAGGY_TYPES.contains(&p.as_str()))
             {
                 return true;
             }
             if class_def
                 .mro
                 .iter()
-                .any(|p| p == "Baggy" || p == "Setty" || p == "QuantHash")
+                .any(|p| SETTY_BAGGY_TYPES.contains(&p.as_str()))
             {
                 return true;
             }
@@ -3424,44 +3436,78 @@ impl Interpreter {
         if let Some(roles) = self.class_composed_roles.get(class_name)
             && roles
                 .iter()
-                .any(|r| r == "Baggy" || r == "Setty" || r == "QuantHash")
+                .any(|r| SETTY_BAGGY_TYPES.contains(&r.as_str()))
         {
             return true;
         }
         false
     }
 
-    /// Construct an instance for a class that does Baggy.
-    /// Positional args are counted like a Bag, and the result is stored as
-    /// an Instance with internal Bag-like storage.
+    /// Determine whether a class inherits from a Set-like type (vs Bag-like).
+    fn class_is_setty(&self, class_name: &str) -> bool {
+        const SETTY_TYPES: &[&str] = &["Set", "SetHash"];
+        if let Some(class_def) = self.classes.get(class_name) {
+            if class_def
+                .parents
+                .iter()
+                .any(|p| SETTY_TYPES.contains(&p.as_str()))
+            {
+                return true;
+            }
+            if class_def
+                .mro
+                .iter()
+                .any(|p| SETTY_TYPES.contains(&p.as_str()))
+            {
+                return true;
+            }
+        }
+        if let Some(roles) = self.class_composed_roles.get(class_name)
+            && roles
+                .iter()
+                .any(|r| r == "Setty" || r == "Set" || r == "SetHash")
+        {
+            return true;
+        }
+        false
+    }
+
+    /// Construct an instance for a class that does Baggy/Setty.
+    /// Positional args are counted like a Bag (or treated as Set elements),
+    /// and the result is stored as an Instance with internal storage.
     fn construct_baggy_instance(
         &mut self,
         class_name: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        // Flatten positional args into a list of elements to count
-        let mut items = Vec::new();
-        for arg in args {
-            match arg {
-                Value::Array(elems, _) => {
-                    items.extend(elems.iter().cloned());
+        let is_setty = self.class_is_setty(class_name);
+
+        if is_setty {
+            // Set-like construction: delegate to Set.new
+            // TODO: properly track the subclass type on the resulting value
+            self.dispatch_new(Value::Package(Symbol::intern("Set")), args.to_vec())
+        } else {
+            // Bag-like construction: flatten arrays, count occurrences
+            let mut items = Vec::new();
+            for arg in args {
+                match arg {
+                    Value::Array(elems, _) => {
+                        items.extend(elems.iter().cloned());
+                    }
+                    other => items.push(other.clone()),
                 }
-                other => items.push(other.clone()),
             }
+            let mut counts: HashMap<String, i64> = HashMap::new();
+            for item in &items {
+                let key = item.to_string_value();
+                *counts.entry(key).or_insert(0) += 1;
+            }
+            let mut attrs = HashMap::new();
+            attrs.insert(
+                "__baggy_data__".to_string(),
+                Value::bag_typed(counts.clone(), HashMap::new()),
+            );
+            Ok(Value::make_instance(Symbol::intern(class_name), attrs))
         }
-        // Count occurrences (like Bag.new)
-        let mut counts: HashMap<String, i64> = HashMap::new();
-        for item in &items {
-            let key = item.to_string_value();
-            *counts.entry(key).or_insert(0) += 1;
-        }
-        // Build an Instance with bag-like attributes
-        let mut attrs = HashMap::new();
-        // Store the bag data as a Bag value in a special attribute
-        attrs.insert(
-            "__baggy_data__".to_string(),
-            Value::bag_typed(counts.clone(), HashMap::new()),
-        );
-        Ok(Value::make_instance(Symbol::intern(class_name), attrs))
     }
 }
