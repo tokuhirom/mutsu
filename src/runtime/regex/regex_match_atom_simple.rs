@@ -318,11 +318,8 @@ impl Interpreter {
                     return if *negated { Some(pos) } else { None };
                 }
                 let same = chars[pos - 1] == chars[pos];
-                return if *negated {
-                    if !same { Some(pos) } else { None }
-                } else {
-                    if same { Some(pos) } else { None }
-                };
+                let pass = if *negated { !same } else { same };
+                return if pass { Some(pos) } else { None };
             }
             RegexAtom::AtPosition(target) => {
                 // <at(N)> succeeds when current position == N
