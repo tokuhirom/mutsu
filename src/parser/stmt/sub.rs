@@ -359,64 +359,134 @@ pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
             return Ok((after_close, full_name));
         }
     }
+    // Handle all bracket forms: :['op'], :["op"], :["op1", "op2"], :[sym], :[sym1, sym2]
     if is_op_category
         && rest.starts_with(":[")
-        && let Some(after_open) = rest.strip_prefix(":['")
-        && let Some(end_pos) = after_open.find("']")
+        && let Some(result) = parse_bracket_op_name(&rest[2..], &base)
     {
-        let op_symbol = unescape_operator_single_quoted(&after_open[..end_pos]);
-        let after_close = &after_open[end_pos + 2..];
-        let full_name = format!("{}:<{}>", base, op_symbol);
-        return Ok((after_close, full_name));
+        return Ok(result);
     }
-    if is_op_category
-        && rest.starts_with(":[")
-        && let Some(after_open) = rest.strip_prefix(":[\"")
-        && let Some(end_pos) = after_open.find("\"]")
-    {
-        let op_symbol = unescape_operator_double_quoted(&after_open[..end_pos]);
-        let after_close = &after_open[end_pos + 2..];
-        let full_name = format!("{}:<{}>", base, op_symbol);
-        return Ok((after_close, full_name));
+    Ok((rest, base))
+}
+
+/// Parse the content inside `:[...]` for operator sub names.
+/// Handles: `["op"]`, `['op']`, `["op1", "op2"]`, `[sym]`, `[sym1, sym2]`
+/// Returns `(remaining_input, full_name)` on success.
+fn parse_bracket_op_name<'a>(input: &'a str, base: &str) -> Option<(&'a str, String)> {
+    let bracket_end = find_closing_bracket(input)?;
+    let content = &input[..bracket_end];
+    let after_close = &input[bracket_end + 1..];
+
+    let parts = parse_bracket_parts(content)?;
+    if parts.is_empty() {
+        return None;
     }
-    // Bare identifier form: infix:[sym] or circumfix:[sym1, sym2]
-    // where the identifiers are compile-time constants
-    if is_op_category
-        && let Some(after_open) = rest.strip_prefix(":[")
-        && let Some(end_pos) = after_open.find(']')
-    {
-        let content = after_open[..end_pos].trim();
-        // Check if content contains comma-separated parts (for circumfix)
-        let parts: Vec<&str> = content.split(',').map(|s| s.trim()).collect();
-        let mut resolved_parts = Vec::new();
-        let mut all_resolved = true;
-        for part in &parts {
-            let p = part.trim_matches(|c: char| c == '"' || c == '\'');
-            // Try to resolve as a compile-time constant
-            if let Some(value) = super::simple::lookup_compile_time_constant(p) {
-                resolved_parts.push(value);
-            } else if let Some(bare) = p.strip_prefix('$') {
-                if let Some(value) = super::simple::lookup_compile_time_constant(bare) {
-                    resolved_parts.push(value);
-                } else if let Some(value) = super::simple::lookup_compile_time_constant(p) {
-                    resolved_parts.push(value);
-                } else {
-                    all_resolved = false;
-                    break;
+
+    let op_symbol = parts.join(" ");
+    let full_name = format!("{}:<{}>", base, op_symbol);
+    Some((after_close, full_name))
+}
+
+/// Find the position of the closing `]`, skipping over quoted strings.
+fn find_closing_bracket(input: &str) -> Option<usize> {
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b']' => return Some(i),
+            b'"' => {
+                i += 1;
+                while i < bytes.len() {
+                    if bytes[i] == b'\\' {
+                        i += 2;
+                    } else if bytes[i] == b'"' {
+                        i += 1;
+                        break;
+                    } else {
+                        i += 1;
+                    }
                 }
-            } else {
-                all_resolved = false;
+            }
+            b'\'' => {
+                i += 1;
+                while i < bytes.len() {
+                    if bytes[i] == b'\'' {
+                        i += 1;
+                        break;
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+/// Parse comma-separated parts inside brackets.
+/// Each part can be a double-quoted string, single-quoted string, or bare identifier.
+fn parse_bracket_parts(content: &str) -> Option<Vec<String>> {
+    let mut parts = Vec::new();
+    let mut rest = content.trim();
+
+    while !rest.is_empty() {
+        if !parts.is_empty() {
+            rest = rest.strip_prefix(',')?.trim();
+            if rest.is_empty() {
                 break;
             }
         }
-        if all_resolved && !resolved_parts.is_empty() {
-            let after_close = &after_open[end_pos + 1..];
-            let op_symbol = resolved_parts.join(" ");
-            let full_name = format!("{}:<{}>", base, op_symbol);
-            return Ok((after_close, full_name));
+        if let Some(after_quote) = rest.strip_prefix('"') {
+            let mut end = 0;
+            let mut escaped = false;
+            for (i, c) in after_quote.char_indices() {
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                if c == '\\' {
+                    escaped = true;
+                    continue;
+                }
+                if c == '"' {
+                    end = i;
+                    break;
+                }
+            }
+            let raw = &after_quote[..end];
+            parts.push(unescape_operator_double_quoted(raw));
+            rest = after_quote[end + 1..].trim();
+        } else if let Some(after_quote) = rest.strip_prefix('\'') {
+            if let Some(end) = after_quote.find('\'') {
+                let raw = &after_quote[..end];
+                parts.push(unescape_operator_single_quoted(raw));
+                rest = after_quote[end + 1..].trim();
+            } else {
+                return None;
+            }
+        } else {
+            let ident_end = rest
+                .find(|c: char| c == ',' || c == ']' || c.is_whitespace())
+                .unwrap_or(rest.len());
+            let ident = rest[..ident_end].trim();
+            if let Some(value) = super::simple::lookup_compile_time_constant(ident) {
+                parts.push(value);
+            } else if let Some(bare) = ident.strip_prefix('$') {
+                if let Some(value) = super::simple::lookup_compile_time_constant(bare) {
+                    parts.push(value);
+                } else if let Some(value) = super::simple::lookup_compile_time_constant(ident) {
+                    parts.push(value);
+                } else {
+                    return None;
+                }
+            } else {
+                return None;
+            }
+            rest = rest[ident_end..].trim();
         }
     }
-    Ok((rest, base))
+    Some(parts)
 }
 
 /// Validate that circumfix/postcircumfix operators have exactly 2 delimiter parts.

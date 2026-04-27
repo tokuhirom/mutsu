@@ -419,6 +419,7 @@ roast/S06-operator-overloading/circumfix.t
 roast/S06-operator-overloading/methods.t
 roast/S06-operator-overloading/prefix.t
 roast/S06-operator-overloading/semicolon.t
+roast/S06-operator-overloading/sub.t
 roast/S06-operator-overloading/term.t
 roast/S06-operator-overloading/workout.t
 roast/S06-other/anon-hashes-vs-blocks.t

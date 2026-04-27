@@ -1282,6 +1282,30 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
     Ok((rest, make_call_expr("require".to_string(), input, args)))
 }
 
+/// Try to extend an identifier with colon-pair adverbs (e.g. `meow:foo<bar>`).
+/// Returns the extended name and remaining input, or the original name and input unchanged.
+fn try_extend_colon_name<'a>(input: &'a str, base: &str) -> (&'a str, String) {
+    let mut rest = input;
+    let mut name = base.to_string();
+    while rest.starts_with(':') && !rest.starts_with(":<") && !rest.starts_with(":<<") {
+        let r = &rest[1..];
+        // Try to parse identifier part
+        if let Ok((r2, part)) =
+            take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
+            && let Some(after_open) = r2.strip_prefix('<')
+            && let Some(end) = after_open.find('>')
+        {
+            name.push(':');
+            name.push_str(part);
+            name.push_str(&r2[..=end + 1]);
+            rest = &r2[end + 2..];
+            continue;
+        }
+        break;
+    }
+    (rest, name)
+}
+
 pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     let (rest, name) = super::super::stmt::parse_raku_ident(input)?;
     let name = normalize_raku_identifier(name);
@@ -1304,6 +1328,44 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     right: Box::new(value),
                 },
             ));
+        }
+    }
+
+    // Try to extend the identifier with colon-pair adverbs (e.g. meow:foo<bar>)
+    // if the extended name matches a known user-defined sub.
+    {
+        let (extended_rest, extended_name) = try_extend_colon_name(rest, &name);
+        if extended_name != name
+            && crate::parser::stmt::simple::is_user_declared_sub(&extended_name)
+        {
+            let (r, _) = ws(extended_rest)?;
+            if let Some(r) = r.strip_prefix('(') {
+                let (r, _) = ws(r)?;
+                let full_name = Symbol::intern(&extended_name);
+                if let Some(r) = r.strip_prefix(')') {
+                    return Ok((
+                        r,
+                        Expr::Call {
+                            name: full_name,
+                            args: vec![],
+                        },
+                    ));
+                }
+                let (r, args) = parse_call_arg_list(r)?;
+                let (r, _) = ws(r)?;
+                let Some(r) = r.strip_prefix(')') else {
+                    return Err(PError::expected("')'"));
+                };
+                return Ok((
+                    r,
+                    Expr::Call {
+                        name: full_name,
+                        args,
+                    },
+                ));
+            }
+            // No parens — bare reference
+            return Ok((extended_rest, Expr::BareWord(extended_name)));
         }
     }
 
