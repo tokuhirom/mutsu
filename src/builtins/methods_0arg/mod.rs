@@ -1359,6 +1359,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             "chunks" => {
                 return Some(Ok(match_helpers::match_chunks(attributes)));
             }
+            "Capture" => {
+                // Match.Capture returns self
+                return Some(Ok(target.clone()));
+            }
             _ => {
                 let str_val = Value::str(target.to_string_value());
                 return native_method_0arg(&str_val, Symbol::intern(method));

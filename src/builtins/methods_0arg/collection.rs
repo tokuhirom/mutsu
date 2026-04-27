@@ -624,6 +624,25 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         })
                         .collect(),
                 ))),
+                Value::Capture { positional, named } => {
+                    let mut pairs: Vec<Value> = positional
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, val)| {
+                            Value::ValuePair(
+                                Box::new(val.clone()),
+                                Box::new(Value::Int(idx as i64)),
+                            )
+                        })
+                        .collect();
+                    for (k, v) in named.iter() {
+                        pairs.push(Value::ValuePair(
+                            Box::new(v.clone()),
+                            Box::new(Value::str(k.clone())),
+                        ));
+                    }
+                    Some(Ok(Value::array(pairs)))
+                }
                 Value::Package(_) => None, // let runtime handle (may be enum type)
                 v if v.is_range() => {
                     let values = crate::runtime::utils::value_to_list(v);
