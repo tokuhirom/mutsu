@@ -128,6 +128,7 @@ pub(crate) fn num_to_rat_with_epsilon(f: f64, epsilon: f64) -> Value {
 fn normalize_builtin_encoding_label(name: &str) -> Option<String> {
     let lowered = name.to_lowercase();
     let normalized = match lowered.as_str() {
+        "utf8-c8" => "utf8-c8",
         "utf8" | "utf-8" => "utf-8",
         "utf16" | "utf-16" => "utf-16",
         "utf16le" | "utf-16le" => "utf-16le",
@@ -184,6 +185,7 @@ fn decode_bytes_with_builtin_encoding(
     encoding_name: &str,
 ) -> Result<String, RuntimeError> {
     match encoding_name {
+        "utf8-c8" => Ok(crate::runtime::utf8_c8::decode_utf8_c8(bytes)),
         "ascii" => Ok(bytes
             .iter()
             .map(|b| if *b <= 0x7F { *b as char } else { '\u{FFFD}' })

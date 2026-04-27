@@ -36,15 +36,15 @@ fn value_to_byte(v: &Value) -> Option<u8> {
     }
 }
 
-/// Decode all bytes as UTF-8, replacing invalid sequences with U+FFFD.
-/// Used for both "utf-8" and "utf8-c8" decoders. (utf8-c8 round-trips
-/// invalid bytes via synthetics in real Raku, but for the purpose of the
-/// roast tests we exercise here, lossy UTF-8 decoding is sufficient because
-/// the input is always valid UTF-8 — the value of utf8-c8 is that it does
-/// not error on invalid bytes.)
-// TODO: implement true utf8-c8 synthetic-codepoint round-tripping.
-fn decode_bytes(bytes: &[u8], translate_nl: bool) -> String {
-    let s = String::from_utf8_lossy(bytes).into_owned();
+/// Decode bytes using the appropriate encoding.
+/// For utf8-c8, invalid bytes are preserved as synthetic codepoints.
+/// For other encodings, invalid bytes are replaced with U+FFFD.
+fn decode_bytes(bytes: &[u8], translate_nl: bool, encoding: &str) -> String {
+    let s = if encoding == "utf8-c8" {
+        crate::runtime::utf8_c8::decode_utf8_c8(bytes)
+    } else {
+        String::from_utf8_lossy(bytes).into_owned()
+    };
     if translate_nl {
         s.replace("\r\n", "\n")
     } else {
@@ -54,7 +54,12 @@ fn decode_bytes(bytes: &[u8], translate_nl: bool) -> String {
 
 /// Decode as many complete UTF-8 characters as possible, returning
 /// (decoded_string, remaining_bytes).
-fn decode_available(bytes: &[u8]) -> (String, Vec<u8>) {
+fn decode_available(bytes: &[u8], encoding: &str) -> (String, Vec<u8>) {
+    if encoding == "utf8-c8" {
+        // utf8-c8 can always decode all bytes (invalid ones become synthetics)
+        let s = crate::runtime::utf8_c8::decode_utf8_c8(bytes);
+        return (s, Vec::new());
+    }
     let mut end = bytes.len();
     while end > 0 {
         if std::str::from_utf8(&bytes[..end]).is_ok() {
@@ -145,10 +150,16 @@ impl Interpreter {
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
                 let replacement = attributes.get("replacement");
-                let is_ascii = matches!(enc_name.to_lowercase().as_str(), "ascii" | "us-ascii");
+                let enc_lower = enc_name.to_lowercase();
+                let is_ascii = matches!(enc_lower.as_str(), "ascii" | "us-ascii");
+                let is_utf8_c8 = enc_lower == "utf8-c8";
 
                 let mut bytes: Vec<Value> = Vec::new();
-                if is_ascii {
+                if is_utf8_c8 {
+                    for b in crate::runtime::utf8_c8::encode_utf8_c8(&input) {
+                        bytes.push(Value::Int(b as i64));
+                    }
+                } else if is_ascii {
                     for ch in input.chars() {
                         if ch as u32 > 127 {
                             if let Some(repl) = replacement {
@@ -232,17 +243,25 @@ impl Interpreter {
             }
             "consume-all-chars" => {
                 let buf = decoder_buffer(&attributes);
+                let enc_name = attributes
+                    .get("encoding")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
                 let translate_nl = attributes
                     .get("translate-nl")
                     .map(|v| v.truthy())
                     .unwrap_or(false);
-                let s = decode_bytes(&buf, translate_nl);
+                let s = decode_bytes(&buf, translate_nl, &enc_name);
                 attributes.insert("buffer".to_string(), Value::array(Vec::new()));
                 Ok((Value::str(s), attributes))
             }
             "consume-available-chars" => {
                 let buf = decoder_buffer(&attributes);
-                let (decoded, remaining) = decode_available(&buf);
+                let enc_name = attributes
+                    .get("encoding")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let (decoded, remaining) = decode_available(&buf, &enc_name);
                 let translate_nl = attributes
                     .get("translate-nl")
                     .map(|v| v.truthy())
