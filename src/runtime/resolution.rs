@@ -925,7 +925,9 @@ impl Interpreter {
                 return self.call_function(&name_str, args);
             }
             // Method dispatch fallback for &?ROUTINE.dispatcher()(self, ...)
-            if !args.is_empty() {
+            // Only use this when the package is a known class.
+            let pkg = package.resolve();
+            if !args.is_empty() && !pkg.is_empty() && pkg != "GLOBAL" && self.has_class(&pkg) {
                 let invocant = args[0].clone();
                 let method_args = args[1..].to_vec();
                 return self.call_method_with_values(invocant, &name_str, method_args);

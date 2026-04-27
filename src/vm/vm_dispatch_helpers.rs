@@ -326,7 +326,12 @@ impl VM {
                 return self.interpreter.call_function(&name_str, args);
             }
             // Method dispatch fallback for &?ROUTINE.dispatcher()(self, ...)
-            if !args.is_empty() && !pkg.is_empty() && pkg != "GLOBAL" {
+            // Only use this when the package is a known class.
+            if !args.is_empty()
+                && !pkg.is_empty()
+                && pkg != "GLOBAL"
+                && self.interpreter.has_class(&pkg)
+            {
                 let invocant = args[0].clone();
                 let method_args = args[1..].to_vec();
                 return self
