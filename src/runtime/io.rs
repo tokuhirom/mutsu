@@ -3301,7 +3301,21 @@ impl Interpreter {
                 }
                 let (lwt, _) = extract_inline_trailing(trimmed2);
                 let ck = lwt.trim();
-                if let Some((name, is_cls, kind, dispatch)) = try_extract_declarant(ck, &cur_class2)
+                // Also try last segment for multi-declaration lines
+                let last_seg2 = if ck.contains(';') {
+                    ck.split(';').rev().find_map(|seg| {
+                        let seg = seg.trim();
+                        if !seg.is_empty() {
+                            try_extract_declarant(seg, &cur_class2)
+                        } else {
+                            None
+                        }
+                    })
+                } else {
+                    None
+                };
+                if let Some((name, is_cls, kind, dispatch)) =
+                    last_seg2.or_else(|| try_extract_declarant(ck, &cur_class2))
                 {
                     // Generate the same key as the first pass
                     let doc_key = if dispatch == DispatchPrefix::Multi {
@@ -3317,6 +3331,21 @@ impl Interpreter {
                             mi += 1;
                             if mi > 100 {
                                 break format!("{}/multi.{}", name, mi);
+                            }
+                        }
+                    } else if name == "&<anon>" {
+                        // Find the next anon key that hasn't been seen
+                        let mut ai = 0usize;
+                        loop {
+                            let candidate_key = format!("&<anon>.{}", ai);
+                            if !seen_names.contains(&candidate_key)
+                                && self.doc_comments.contains_key(&candidate_key)
+                            {
+                                break candidate_key;
+                            }
+                            ai += 1;
+                            if ai > 100 {
+                                break format!("&<anon>.{}", ai);
                             }
                         }
                     } else {
