@@ -188,7 +188,24 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn builtin_spurt(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_spurt(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // If the first argument is an IO::Handle, delegate to IO::Handle.spurt
+        if let Some(Value::Instance {
+            class_name,
+            attributes,
+            ..
+        }) = args.first()
+            && class_name == "IO::Handle"
+        {
+            let content_value = args
+                .get(1)
+                .cloned()
+                .unwrap_or(Value::Str(String::new().into()));
+            let method_args = std::iter::once(content_value)
+                .chain(args.iter().skip(2).cloned())
+                .collect();
+            return self.native_io_handle(attributes, "spurt", method_args);
+        }
         let path = args
             .first()
             .map(|v| v.to_string_value())
@@ -199,11 +216,13 @@ impl Interpreter {
             .ok_or_else(|| RuntimeError::new("spurt requires a content argument"))?;
         let mut append = false;
         let mut createonly = false;
+        let mut enc: Option<String> = None;
         for arg in args.iter().skip(2) {
             if let Value::Pair(key, val) = arg {
                 match key.as_str() {
                     "append" => append = val.truthy(),
                     "createonly" => createonly = val.truthy(),
+                    "enc" => enc = Some(val.to_string_value()),
                     _ => {}
                 }
             }
@@ -230,15 +249,25 @@ impl Interpreter {
             }
         } else {
             let content = content_value.to_string_value();
+            let bytes = if let Some(ref enc_name) = enc {
+                match self.encode_with_encoding(&content, enc_name) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        return Ok(io_exception_failure("X::IO::Spurt", e.message));
+                    }
+                }
+            } else {
+                content.into_bytes()
+            };
             if append {
                 use std::io::Write;
                 fs::OpenOptions::new()
                     .append(true)
                     .create(true)
                     .open(&resolved)
-                    .and_then(|mut file| file.write_all(content.as_bytes()))
+                    .and_then(|mut file| file.write_all(&bytes))
             } else {
-                fs::write(&resolved, &content)
+                fs::write(&resolved, &bytes)
             }
         };
         match write_result {

@@ -941,6 +941,7 @@ roast/S32-io/signals.t
 roast/S32-io/socket-accept-and-working-threads.t
 roast/S32-io/socket-fail-invalid-values.t
 roast/S32-io/socket-host-port-split.t
+roast/S32-io/spurt.t
 roast/S32-io/tell.t
 roast/S32-list/are.t
 roast/S32-list/batch.t
