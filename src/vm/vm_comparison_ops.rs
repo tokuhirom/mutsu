@@ -1106,36 +1106,55 @@ impl VM {
     pub(super) fn exec_divisible_by_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let (l, r) = runtime::coerce_numeric(left.clone(), right);
-        let result = match (l, r) {
-            (Value::Int(_), Value::Int(0)) => {
-                return Err(RuntimeError::numeric_divide_by_zero_full(
-                    Some(left),
-                    Some("infix:<%%>"),
-                ));
-            }
-            (Value::Int(a), Value::Int(b)) => Value::Bool(a % b == 0),
-            _ => Value::Bool(false),
-        };
+        // Thread over junctions
+        if matches!(left, Value::Junction { .. }) || matches!(right, Value::Junction { .. }) {
+            let result = self
+                .eval_binary_with_junctions(left, right, |vm, l, r| vm.divisible_by_values(l, r))?;
+            self.stack.push(result);
+            return Ok(());
+        }
+        let result = self.divisible_by_values(left.clone(), right)?;
         self.stack.push(result);
         Ok(())
+    }
+
+    fn divisible_by_values(&self, left: Value, right: Value) -> Result<Value, RuntimeError> {
+        let (l, r) = runtime::coerce_numeric(left.clone(), right);
+        match (l, r) {
+            (Value::Int(_), Value::Int(0)) => Err(RuntimeError::numeric_divide_by_zero_full(
+                Some(left),
+                Some("infix:<%%>"),
+            )),
+            (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a % b == 0)),
+            _ => Ok(Value::Bool(false)),
+        }
     }
 
     pub(super) fn exec_not_divisible_by_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let (l, r) = runtime::coerce_numeric(left.clone(), right);
-        let result = match (l, r) {
-            (Value::Int(_), Value::Int(0)) => {
-                return Err(RuntimeError::numeric_divide_by_zero_full(
-                    Some(left),
-                    Some("infix:<%%>"),
-                ));
-            }
-            (Value::Int(a), Value::Int(b)) => Value::Bool(a % b != 0),
-            _ => Value::Bool(true),
-        };
+        // Thread over junctions
+        if matches!(left, Value::Junction { .. }) || matches!(right, Value::Junction { .. }) {
+            let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+                vm.not_divisible_by_values(l, r)
+            })?;
+            self.stack.push(result);
+            return Ok(());
+        }
+        let result = self.not_divisible_by_values(left.clone(), right)?;
         self.stack.push(result);
         Ok(())
+    }
+
+    fn not_divisible_by_values(&self, left: Value, right: Value) -> Result<Value, RuntimeError> {
+        let (l, r) = runtime::coerce_numeric(left.clone(), right);
+        match (l, r) {
+            (Value::Int(_), Value::Int(0)) => Err(RuntimeError::numeric_divide_by_zero_full(
+                Some(left),
+                Some("infix:<%%>"),
+            )),
+            (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a % b != 0)),
+            _ => Ok(Value::Bool(true)),
+        }
     }
 }
