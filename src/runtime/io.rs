@@ -2442,6 +2442,8 @@ impl Interpreter {
         let mut multi_counters: HashMap<String, usize> = HashMap::new();
         // Track current function name for scoping parameter docs
         let mut current_sub: Option<String> = None;
+        // Counter for uniquifying anonymous sub doc keys
+        let mut anon_sub_counter: usize = 0;
 
         fn extract_ident(s: &str) -> String {
             s.trim_start()
@@ -2878,6 +2880,16 @@ impl Interpreter {
                 }
             }
 
+            // Handle bare anonymous sub anywhere in the line (e.g. "is sub {")
+            if s.contains("sub {") || s.contains("sub{") {
+                return Some((
+                    "&<anon>".to_string(),
+                    false,
+                    DocDeclKind::Sub,
+                    DispatchPrefix::None,
+                ));
+            }
+
             // Handle block assignments: "my $var = {" or "my $var = {;"
             // This allows doc comments to attach to blocks assigned to variables.
             if let Some(eq_pos) = s.find('=') {
@@ -3045,15 +3057,36 @@ impl Interpreter {
             let (line_without_trailing, inline_trailing) = extract_inline_trailing(trimmed);
             let check_line = line_without_trailing.trim();
 
+            // When a line contains multiple declarations separated by ';',
+            // try the last segment first so trailing #= attaches to the last
+            // declarant (e.g. "has $.first; has $.second; #= comment").
+            let last_seg = if check_line.contains(';') {
+                check_line.split(';').rev().find_map(|seg| {
+                    let seg = seg.trim();
+                    if !seg.is_empty() {
+                        try_extract_declarant(seg, &current_class)
+                    } else {
+                        None
+                    }
+                })
+            } else {
+                None
+            };
+
             if let Some((name, is_class_like, kind, dispatch)) =
-                try_extract_declarant(check_line, &current_class)
+                last_seg.or_else(|| try_extract_declarant(check_line, &current_class))
             {
                 // For multi declarations, generate a unique key to avoid
-                // overwriting proto or other multi variants
+                // overwriting proto or other multi variants.
+                // For anonymous subs, also uniquify to avoid collisions.
                 let doc_key = if dispatch == DispatchPrefix::Multi {
                     let counter = multi_counters.entry(name.clone()).or_insert(0);
                     let key = format!("{}/multi.{}", name, counter);
                     *counter += 1;
+                    key
+                } else if name == "&<anon>" {
+                    let key = format!("&<anon>.{}", anon_sub_counter);
+                    anon_sub_counter += 1;
                     key
                 } else {
                     name.clone()
@@ -3100,6 +3133,17 @@ impl Interpreter {
                 // Track the current function for parameter scoping
                 if kind == super::DocDeclKind::Sub {
                     current_sub = Some(name.clone());
+                }
+                // Check for inline #| on the same line as a sub declaration
+                // (e.g. "sub foo( #| leading for param") — sets pending_leading
+                // for the next parameter
+                if kind == super::DocDeclKind::Sub
+                    && let Some(hash_pipe_pos) = trimmed.find("#|")
+                {
+                    let doc_text = trimmed[hash_pipe_pos + 2..].trim();
+                    if !doc_text.is_empty() {
+                        pending_leading = append_doc_text(pending_leading.take(), doc_text);
+                    }
                 }
                 if is_class_like {
                     class_stack.push(current_class.take());
@@ -3257,7 +3301,21 @@ impl Interpreter {
                 }
                 let (lwt, _) = extract_inline_trailing(trimmed2);
                 let ck = lwt.trim();
-                if let Some((name, is_cls, kind, dispatch)) = try_extract_declarant(ck, &cur_class2)
+                // Also try last segment for multi-declaration lines
+                let last_seg2 = if ck.contains(';') {
+                    ck.split(';').rev().find_map(|seg| {
+                        let seg = seg.trim();
+                        if !seg.is_empty() {
+                            try_extract_declarant(seg, &cur_class2)
+                        } else {
+                            None
+                        }
+                    })
+                } else {
+                    None
+                };
+                if let Some((name, is_cls, kind, dispatch)) =
+                    last_seg2.or_else(|| try_extract_declarant(ck, &cur_class2))
                 {
                     // Generate the same key as the first pass
                     let doc_key = if dispatch == DispatchPrefix::Multi {
@@ -3273,6 +3331,21 @@ impl Interpreter {
                             mi += 1;
                             if mi > 100 {
                                 break format!("{}/multi.{}", name, mi);
+                            }
+                        }
+                    } else if name == "&<anon>" {
+                        // Find the next anon key that hasn't been seen
+                        let mut ai = 0usize;
+                        loop {
+                            let candidate_key = format!("&<anon>.{}", ai);
+                            if !seen_names.contains(&candidate_key)
+                                && self.doc_comments.contains_key(&candidate_key)
+                            {
+                                break candidate_key;
+                            }
+                            ai += 1;
+                            if ai > 100 {
+                                break format!("&<anon>.{}", ai);
                             }
                         }
                     } else {
