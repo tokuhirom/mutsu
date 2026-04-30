@@ -213,7 +213,7 @@ pub(in crate::runtime) fn sub_signature_matches_value(
         if pd.slurpy {
             continue;
         }
-        let mut candidate = if pd.named {
+        let mut raw_candidate = if pd.named {
             extract_named_from_unpack_target(interpreter, value, &pd.name)
         } else if positional_idx < positional.len() {
             let v = positional[positional_idx].clone();
@@ -222,20 +222,28 @@ pub(in crate::runtime) fn sub_signature_matches_value(
         } else {
             None
         };
-        if candidate.is_none()
+        if raw_candidate.is_none()
             && let Some(default) = &pd.default
         {
-            candidate = interpreter
+            raw_candidate = interpreter
                 .eval_block_value(&[Stmt::Expr(default.clone())])
                 .ok();
         }
-        let Some(candidate) = candidate else {
-            // Optional params are OK without a value
-            if pd.optional_marker || pd.default.is_some() {
+        let Some(raw_candidate) = raw_candidate else {
+            // Optional params are OK without a value.
+            // Named params without `!` are optional by default.
+            if pd.optional_marker || pd.default.is_some() || (pd.named && !pd.required) {
                 continue;
             }
             return false;
         };
+        // For multi-dispatch: `is rw` params require a writable variable argument.
+        // Check VarRef wrapping on the raw (not yet unwrapped) candidate.
+        if pd.traits.iter().any(|t| t == "rw") && varref_from_value(&raw_candidate).is_none() {
+            return false;
+        }
+        // Unwrap VarRef for type checking
+        let candidate = unwrap_varref_value(raw_candidate);
         if let Some(constraint) = &pd.type_constraint
             && !interpreter.type_matches_value(constraint, &candidate)
         {
@@ -251,6 +259,34 @@ pub(in crate::runtime) fn sub_signature_matches_value(
         {
             return false;
         }
+        // Check where constraint
+        if let Some(where_expr) = &pd.where_constraint {
+            let saved = interpreter.env.clone();
+            interpreter.env.insert("_".to_string(), candidate.clone());
+            if !pd.name.is_empty() {
+                interpreter.env.insert(pd.name.clone(), candidate.clone());
+            }
+            let ok = match where_expr.as_ref() {
+                Expr::AnonSub { body, .. } => interpreter
+                    .eval_block_value(body)
+                    .map(|v| v.truthy())
+                    .unwrap_or(false),
+                Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
+                    interpreter
+                        .eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())])
+                        .map(|v| v.truthy())
+                        .unwrap_or(false)
+                }
+                expr => interpreter
+                    .eval_block_value(&[Stmt::Expr(expr.clone())])
+                    .map(|v| interpreter.smart_match(&candidate, &v))
+                    .unwrap_or(false),
+            };
+            interpreter.env = saved;
+            if !ok {
+                return false;
+            }
+        }
         if let Some(sub) = &pd.sub_signature
             && !sub_signature_matches_value(interpreter, sub, &candidate)
         {
@@ -258,9 +294,32 @@ pub(in crate::runtime) fn sub_signature_matches_value(
         }
     }
     // If there are unconsumed positional elements and no slurpy param, the match fails
-    let has_slurpy = sub_params.iter().any(|p| p.slurpy);
-    if !has_slurpy && positional_idx < positional.len() {
+    let has_any_slurpy = sub_params.iter().any(|p| p.slurpy);
+    if !has_any_slurpy && positional_idx < positional.len() {
         return false;
+    }
+    // If there are unconsumed named args and no named slurpy (*%_), the match fails
+    let has_named_slurpy = sub_params
+        .iter()
+        .any(|p| p.slurpy && (p.name.starts_with('%') || p.sigilless));
+    if !has_named_slurpy {
+        let named = named_values_from_unpack_target(value);
+        let consumed_named: std::collections::HashSet<&str> = sub_params
+            .iter()
+            .filter(|p| p.named)
+            .map(|p| {
+                p.name
+                    .strip_prefix('$')
+                    .or_else(|| p.name.strip_prefix('@'))
+                    .or_else(|| p.name.strip_prefix('%'))
+                    .unwrap_or(p.name.as_str())
+            })
+            .collect();
+        for key in named.keys() {
+            if !consumed_named.contains(key.as_str()) {
+                return false;
+            }
+        }
     }
     true
 }
@@ -357,8 +416,12 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
             candidate = Some(interpreter.eval_block_value(&[Stmt::Expr(default_expr.clone())])?);
         }
         let Some(mut candidate) = candidate else {
-            // If the param is required (not optional, no default), error
-            if !sub_pd.optional_marker && sub_pd.default.is_none() {
+            // If the param is required (not optional, no default), error.
+            // Named params without `!` are optional by default.
+            let is_optional = sub_pd.optional_marker
+                || sub_pd.default.is_some()
+                || (sub_pd.named && !sub_pd.required);
+            if !is_optional {
                 return Err(RuntimeError::new(
                     "Too few positional arguments in sub-signature binding".to_string(),
                 ));
@@ -439,6 +502,21 @@ pub(in crate::runtime) fn sub_signature_target_from_remaining_args(args: &[Value
         positional: args.to_vec(),
         named: std::collections::HashMap::new(),
     }
+}
+
+/// Like `sub_signature_target_from_remaining_args` but separates Pair args
+/// into the named map. Used for anonymous capture subsignatures `| (...)`.
+pub(in crate::runtime) fn capture_target_from_remaining_args(args: &[Value]) -> Value {
+    let mut positional = Vec::new();
+    let mut named = std::collections::HashMap::new();
+    for arg in args {
+        if let Value::Pair(key, val) = arg {
+            named.insert(key.clone(), *val.clone());
+        } else {
+            positional.push(arg.clone());
+        }
+    }
+    Value::Capture { positional, named }
 }
 
 pub(in crate::runtime) fn callable_signature_info(

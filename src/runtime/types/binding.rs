@@ -591,8 +591,30 @@ impl Interpreter {
                     if pd.name == "__subsig__"
                         && let Some(sub_params) = &pd.sub_signature
                     {
-                        let capture =
-                            sub_signature_target_from_remaining_args(&args[positional_idx..]);
+                        let remaining = &args[positional_idx..];
+                        let named_param_names: std::collections::HashSet<&str> = sub_params
+                            .iter()
+                            .filter(|sp| sp.named)
+                            .map(|sp| {
+                                sp.name
+                                    .strip_prefix('$')
+                                    .or_else(|| sp.name.strip_prefix('@'))
+                                    .or_else(|| sp.name.strip_prefix('%'))
+                                    .unwrap_or(sp.name.as_str())
+                            })
+                            .collect();
+                        let pairs_match_named = remaining.iter().any(|a| {
+                            if let Value::Pair(key, _) = a {
+                                named_param_names.contains(key.as_str())
+                            } else {
+                                false
+                            }
+                        });
+                        let capture = if pairs_match_named {
+                            capture_target_from_remaining_args(remaining)
+                        } else {
+                            sub_signature_target_from_remaining_args(remaining)
+                        };
                         bind_sub_signature_from_value(self, sub_params, &capture)?;
                         positional_idx = args.len();
                         continue;
@@ -1078,13 +1100,26 @@ impl Interpreter {
                         let target = self.env.get(&pd.name).cloned().unwrap_or(Value::Nil);
                         bind_sub_signature_from_value(self, sub_params, &target)?;
                     }
+                } else if pd.name == "__subsig__"
+                    && let Some(sub_params) = &pd.sub_signature
+                {
+                    // Anonymous capture subsignature with no args: bind empty capture
+                    let empty_capture = Value::Capture {
+                        positional: Vec::new(),
+                        named: std::collections::HashMap::new(),
+                    };
+                    bind_sub_signature_from_value(self, sub_params, &empty_capture)?;
                 } else if !pd.optional_marker && !pd.name.is_empty() {
                     // Positional parameter with no default and no `?` marker is required.
                     // Count required and total positional params for the error message.
                     let total_positional = param_defs
                         .iter()
                         .filter(|p| {
-                            !p.named && !p.slurpy && !p.double_slurpy && !p.name.starts_with(':')
+                            !(p.named
+                                || p.slurpy
+                                || p.double_slurpy
+                                || p.name.starts_with(':')
+                                || (p.name == "__subsig__" && p.sub_signature.is_some()))
                         })
                         .count();
                     let positional_arg_count = args

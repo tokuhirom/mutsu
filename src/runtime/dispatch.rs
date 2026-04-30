@@ -35,7 +35,7 @@ impl Interpreter {
     }
 
     fn candidate_uses_order_sensitive_dispatch(&self, def: &FunctionDef) -> bool {
-        Self::dispatch_visible_params(def).any(|p| {
+        let outer_check = Self::dispatch_visible_params(def).any(|p| {
             p.literal_value.is_some()
                 || p.where_constraint.is_some()
                 || p.type_constraint
@@ -43,6 +43,24 @@ impl Interpreter {
                     .map(Self::constraint_base_name)
                     .map(|base| self.subsets.contains_key(base))
                     .unwrap_or(false)
+        });
+        if outer_check {
+            return true;
+        }
+        // Also check subsignature params for order-sensitive dispatch
+        def.param_defs.iter().any(|p| {
+            p.sub_signature.as_ref().is_some_and(|sub_params| {
+                sub_params.iter().any(|sp| {
+                    sp.literal_value.is_some()
+                        || sp.where_constraint.is_some()
+                        || sp
+                            .type_constraint
+                            .as_deref()
+                            .map(Self::constraint_base_name)
+                            .map(|base| self.subsets.contains_key(base))
+                            .unwrap_or(false)
+                })
+            })
         })
     }
 
@@ -71,6 +89,30 @@ impl Interpreter {
                     p.traits.iter().any(|t| t == "raw"),
                     p.traits.iter().any(|t| t == "copy"),
                 )
+            })
+            .collect()
+    }
+
+    /// Compute dispatch shape for subsignature params (e.g. `|c(Int $x is rw)`).
+    /// This is used to detect when tied candidates differ in subsignature details.
+    /// Only includes `multi_invocant` params (params before `;;`).
+    fn candidate_subsig_dispatch_shape(&self, def: &FunctionDef) -> Vec<DispatchShape> {
+        def.param_defs
+            .iter()
+            .flat_map(|p| {
+                p.sub_signature.iter().flat_map(|sub_params| {
+                    sub_params.iter().filter(|sp| sp.multi_invocant).map(|sp| {
+                        (
+                            sp.type_constraint.clone(),
+                            sp.named,
+                            sp.sub_signature.is_some(),
+                            sp.literal_value.is_some(),
+                            sp.traits.iter().any(|t| t == "rw"),
+                            sp.traits.iter().any(|t| t == "raw"),
+                            sp.traits.iter().any(|t| t == "copy"),
+                        )
+                    })
+                })
             })
             .collect()
     }
@@ -201,6 +243,19 @@ impl Interpreter {
                 shape.sort();
                 shape == best_shape_sorted
             })
+            // If candidates differ in subsignature details (e.g. `is rw` trait),
+            // they are not truly tied — the first matching candidate wins.
+            && {
+                let subsig_shapes: Vec<Vec<DispatchShape>> = tied
+                    .iter()
+                    .map(|def| {
+                        let mut shape = self.candidate_subsig_dispatch_shape(def);
+                        shape.sort();
+                        shape
+                    })
+                    .collect();
+                subsig_shapes.windows(2).all(|w| w[0] == w[1])
+            }
         {
             // `is default` trait tie-breaking: if exactly one tied candidate
             // has `is_default`, prefer it over the others.
@@ -217,16 +272,37 @@ impl Interpreter {
         Some(matches.remove(0))
     }
 
+    /// Iterate over all subsignature params that participate in dispatch
+    fn subsig_dispatch_params(def: &FunctionDef) -> Vec<&ParamDef> {
+        def.param_defs
+            .iter()
+            .flat_map(|p| {
+                p.sub_signature
+                    .iter()
+                    .flat_map(|sub_params| sub_params.iter().filter(|sp| sp.multi_invocant))
+            })
+            .collect()
+    }
+
     fn candidate_specificity_rank(
         &self,
         def: &FunctionDef,
     ) -> (usize, usize, usize, usize, usize, usize, usize, usize) {
+        let subsig_params = Self::subsig_dispatch_params(def);
         let literal_value_count = Self::dispatch_visible_params(def)
             .filter(|p| p.literal_value.is_some())
-            .count();
+            .count()
+            + subsig_params
+                .iter()
+                .filter(|p| p.literal_value.is_some())
+                .count();
         let where_count = Self::dispatch_visible_params(def)
             .filter(|p| p.where_constraint.is_some())
-            .count();
+            .count()
+            + subsig_params
+                .iter()
+                .filter(|p| p.where_constraint.is_some())
+                .count();
         let subset_type_count = Self::dispatch_visible_params(def)
             .filter(|p| {
                 p.type_constraint
@@ -235,7 +311,17 @@ impl Interpreter {
                     .map(|base| self.subsets.contains_key(base))
                     .unwrap_or(false)
             })
-            .count();
+            .count()
+            + subsig_params
+                .iter()
+                .filter(|p| {
+                    p.type_constraint
+                        .as_deref()
+                        .map(Self::constraint_base_name)
+                        .map(|base| self.subsets.contains_key(base))
+                        .unwrap_or(false)
+                })
+                .count();
         let typed_param_count = Self::dispatch_visible_params(def)
             .filter(|p| {
                 p.type_constraint.is_some()
@@ -244,26 +330,49 @@ impl Interpreter {
                             || p.name.starts_with('%')
                             || p.name.starts_with('&')))
             })
-            .count();
+            .count()
+            + subsig_params
+                .iter()
+                .filter(|p| {
+                    p.type_constraint.is_some()
+                        || (!p.slurpy
+                            && (p.name.starts_with('@')
+                                || p.name.starts_with('%')
+                                || p.name.starts_with('&')))
+                })
+                .count();
         let subsig_count = Self::dispatch_visible_params(def)
             .filter(|p| p.sub_signature.is_some())
             .count();
         let named_count = Self::dispatch_visible_params(def)
             .filter(|p| p.named)
-            .count();
+            .count()
+            + subsig_params.iter().filter(|p| p.named).count();
         // Required named params (`:$a!`) are more specific than optional ones
         let required_named_count = def
             .param_defs
             .iter()
             .filter(|p| p.named && p.required)
-            .count();
+            .count()
+            + subsig_params
+                .iter()
+                .filter(|p| p.named && p.required)
+                .count();
         let trait_count = Self::dispatch_visible_params(def)
             .filter(|p| {
                 p.traits
                     .iter()
                     .any(|t| matches!(t.as_str(), "rw" | "raw" | "copy"))
             })
-            .count();
+            .count()
+            + subsig_params
+                .iter()
+                .filter(|p| {
+                    p.traits
+                        .iter()
+                        .any(|t| matches!(t.as_str(), "rw" | "raw" | "copy"))
+                })
+                .count();
         (
             literal_value_count,
             where_count,
@@ -1289,6 +1398,8 @@ impl Interpreter {
             let untyped_key = format!("{}/{}", name, arity);
             let untyped_key_sym = Symbol::intern(&untyped_key);
             let untyped_m_prefix = format!("{}__m", untyped_key);
+            // Also search all arities to find capture/slurpy candidates
+            let all_arity_prefix = format!("{}/", name);
             let mut candidates: Vec<(String, FunctionDef)> = self
                 .functions
                 .iter()
@@ -1297,6 +1408,7 @@ impl Interpreter {
                     ks.starts_with(&prefix)
                         || **key == untyped_key_sym
                         || ks.starts_with(&untyped_m_prefix)
+                        || ks.starts_with(&all_arity_prefix)
                 })
                 .map(|(key, def)| (key.resolve(), def.clone()))
                 .collect();

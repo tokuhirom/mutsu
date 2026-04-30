@@ -1057,6 +1057,7 @@ impl Interpreter {
                 new_env.insert(k.clone(), v.clone());
             }
             self.env = new_env.clone();
+            let pre_binding_env = self.env.clone();
             let rw_bindings =
                 match self.bind_function_args_values(&data.param_defs, &data.params, &call_args) {
                     Ok(bindings) => bindings,
@@ -1067,6 +1068,15 @@ impl Interpreter {
                         return Err(e);
                     }
                 };
+            // Record keys whose values were changed by parameter binding
+            // (including subsignature params) so we can exclude them from
+            // closure env persistence later.
+            let binding_modified_keys: std::collections::HashSet<String> = self
+                .env
+                .iter()
+                .filter(|(k, v)| pre_binding_env.get(k.as_str()) != Some(v))
+                .map(|(k, _)| k.clone())
+                .collect();
             new_env = self.env.clone();
             if data.params.is_empty() {
                 for arg in &sanitized_args {
@@ -1188,8 +1198,15 @@ impl Interpreter {
             if persist_closure_env {
                 let mut persisted_closure_env = closure_base_env.clone();
                 for key in closure_base_env.keys() {
-                    if let Some(value) = self.env.get(key).cloned() {
-                        persisted_closure_env.insert(key.clone(), value);
+                    if binding_modified_keys.contains(key) {
+                        // This key was modified by param/subsig binding —
+                        // use the pre-binding value to avoid leaking
+                        // temporary bindings into the closure env.
+                        if let Some(pre_val) = pre_binding_env.get(key).cloned() {
+                            persisted_closure_env.insert(key.clone(), pre_val);
+                        }
+                    } else if let Some(cur_val) = self.env.get(key).cloned() {
+                        persisted_closure_env.insert(key.clone(), cur_val);
                     }
                 }
                 self.closure_env_overrides

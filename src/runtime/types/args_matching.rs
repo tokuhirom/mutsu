@@ -63,15 +63,17 @@ impl Interpreter {
                 let mut arg_for_checks: Option<Value> = if pd.slurpy || is_capture_param {
                     if is_capture_param {
                         // |c capture params preserve both positional and named parts.
+                        // Keep VarRef wrappers in positional values so that
+                        // sub_signature_matches_value can check `is rw` traits.
                         let mut positional = Vec::new();
                         let mut named = std::collections::HashMap::new();
                         let remaining = args.get(i..).unwrap_or(&[]);
                         for arg in remaining {
-                            let arg = unwrap_varref_value(arg.clone());
-                            if let Value::Pair(key, val) = arg {
+                            let unwrapped = unwrap_varref_value(arg.clone());
+                            if let Value::Pair(key, val) = unwrapped {
                                 named.insert(key, *val);
                             } else {
-                                positional.push(arg);
+                                positional.push(arg.clone());
                             }
                         }
                         Some(Value::Capture { positional, named })
@@ -111,13 +113,41 @@ impl Interpreter {
                     args.get(i).cloned().map(unwrap_varref_value)
                 } else if is_subsig_capture {
                     let remaining = args.get(i..).unwrap_or(&[]);
-                    Some(sub_signature_target_from_remaining_args(
-                        &remaining
-                            .iter()
-                            .cloned()
-                            .map(unwrap_varref_value)
-                            .collect::<Vec<_>>(),
-                    ))
+                    let unwrapped: Vec<_> =
+                        remaining.iter().cloned().map(unwrap_varref_value).collect();
+                    // Separate Pair args into the named map only when
+                    // they represent named arguments (their keys match
+                    // named subsignature params), not when they are
+                    // objects being destructured.
+                    let named_param_names: std::collections::HashSet<&str> = pd
+                        .sub_signature
+                        .as_ref()
+                        .map(|sub_params| {
+                            sub_params
+                                .iter()
+                                .filter(|sp| sp.named)
+                                .map(|sp| {
+                                    sp.name
+                                        .strip_prefix('$')
+                                        .or_else(|| sp.name.strip_prefix('@'))
+                                        .or_else(|| sp.name.strip_prefix('%'))
+                                        .unwrap_or(sp.name.as_str())
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let pairs_match_named = unwrapped.iter().any(|a| {
+                        if let Value::Pair(key, _) = a {
+                            named_param_names.contains(key.as_str())
+                        } else {
+                            false
+                        }
+                    });
+                    Some(if pairs_match_named {
+                        capture_target_from_remaining_args(&unwrapped)
+                    } else {
+                        sub_signature_target_from_remaining_args(&unwrapped)
+                    })
                 } else {
                     args.get(i).cloned().map(unwrap_varref_value)
                 };
@@ -359,9 +389,10 @@ impl Interpreter {
                     i += 1;
                 }
             }
-            let has_named_slurpy = param_defs
-                .iter()
-                .any(|pd| pd.slurpy && (pd.name.starts_with('%') || pd.sigilless));
+            let has_named_slurpy = param_defs.iter().any(|pd| {
+                (pd.slurpy && (pd.name.starts_with('%') || pd.sigilless))
+                    || (pd.name == "__subsig__" && pd.sub_signature.is_some())
+            });
             if !has_named_slurpy {
                 for arg in args {
                     let arg = unwrap_varref_value(arg.clone());
