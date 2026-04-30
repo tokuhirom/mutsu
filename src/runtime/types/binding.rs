@@ -502,7 +502,21 @@ impl Interpreter {
                     }
                 }
                 if !found && let Some(default_expr) = &pd.default {
+                    // Save $_ so that evaluating the default expression does not
+                    // leak the topic into the caller's scope.
+                    let saved_topic = self.env.get("_").cloned();
+                    let saved_dollar_topic = self.env.get("$_").cloned();
                     let value = self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?;
+                    if let Some(t) = saved_topic {
+                        self.env.insert("_".to_string(), t);
+                    } else {
+                        self.env.remove("_");
+                    }
+                    if let Some(t) = saved_dollar_topic {
+                        self.env.insert("$_".to_string(), t);
+                    } else {
+                        self.env.remove("$_");
+                    }
                     let value = self.checked_default_param_value(pd, value)?;
                     let value = if pd
                         .type_constraint
@@ -1034,7 +1048,21 @@ impl Interpreter {
                     }
                     positional_idx += 1;
                 } else if let Some(default_expr) = &pd.default {
+                    // Save $_ so that evaluating the default expression does not
+                    // leak the topic into the caller's scope.
+                    let saved_topic = self.env.get("_").cloned();
+                    let saved_dollar_topic = self.env.get("$_").cloned();
                     let value = self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?;
+                    if let Some(t) = saved_topic {
+                        self.env.insert("_".to_string(), t);
+                    } else {
+                        self.env.remove("_");
+                    }
+                    if let Some(t) = saved_dollar_topic {
+                        self.env.insert("$_".to_string(), t);
+                    } else {
+                        self.env.remove("$_");
+                    }
                     let value = self.checked_default_param_value(pd, value)?;
                     if let Some(captured_name) = pd
                         .type_constraint

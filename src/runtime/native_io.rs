@@ -882,11 +882,13 @@ impl Interpreter {
                     .unwrap_or(Value::Str(String::new().into()));
                 let mut append = false;
                 let mut createonly = false;
+                let mut enc: Option<String> = None;
                 for arg in args.iter().skip(1) {
                     if let Value::Pair(key, val) = arg {
                         match key.as_str() {
                             "append" => append = val.truthy(),
                             "createonly" => createonly = val.truthy(),
+                            "enc" => enc = Some(val.to_string_value()),
                             _ => {}
                         }
                     }
@@ -912,15 +914,25 @@ impl Interpreter {
                     }
                 } else {
                     let content = content_value.to_string_value();
+                    let bytes = if let Some(ref enc_name) = enc {
+                        match self.encode_with_encoding(&content, enc_name) {
+                            Ok(b) => b,
+                            Err(e) => {
+                                return Ok(io_exception_failure("X::IO::Spurt", e.message));
+                            }
+                        }
+                    } else {
+                        content.into_bytes()
+                    };
                     if append {
                         use std::io::Write;
                         fs::OpenOptions::new()
                             .append(true)
                             .create(true)
                             .open(&path_buf)
-                            .and_then(|mut file| file.write_all(content.as_bytes()))
+                            .and_then(|mut file| file.write_all(&bytes))
                     } else {
-                        fs::write(&path_buf, &content)
+                        fs::write(&path_buf, &bytes)
                     }
                 };
                 match write_result {
@@ -2348,6 +2360,33 @@ impl Interpreter {
                     content.push_str(&self.render_str_value(arg));
                 }
                 self.write_to_handle_value_trying(&target_val, &content, true, "put")?;
+                Ok(Value::Bool(true))
+            }
+            "spurt" => {
+                // IO::Handle.spurt($data) -- write data to the handle
+                let content_value = args
+                    .first()
+                    .cloned()
+                    .unwrap_or(Value::Str(String::new().into()));
+                let is_buf = crate::vm::VM::is_buf_value(&content_value);
+                if is_buf {
+                    let bytes = crate::vm::VM::extract_buf_bytes(&content_value);
+                    self.write_bytes_to_handle_value(&target_val, &bytes)?;
+                } else {
+                    let content = content_value.to_string_value();
+                    // Determine encoding from the handle's state
+                    let enc = if let Ok(state) = self.handle_state_mut(&target_val) {
+                        state.encoding.clone()
+                    } else {
+                        "utf-8".to_string()
+                    };
+                    let bytes = if enc == "utf-8" || enc == "utf8" {
+                        content.into_bytes()
+                    } else {
+                        self.encode_with_encoding(&content, &enc)?
+                    };
+                    self.write_bytes_to_handle_value(&target_val, &bytes)?;
+                }
                 Ok(Value::Bool(true))
             }
             "flush" => {
