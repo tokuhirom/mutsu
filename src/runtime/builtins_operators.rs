@@ -556,6 +556,30 @@ impl Interpreter {
                     }
                 }
             }
+            // Role called with args but no CALL-ME/COERCE/new:
+            // In `does` context, return a Pair for role application.
+            // Otherwise, throw X::Coerce::Impossible.
+            if !args.is_empty() {
+                if self.in_does_rhs {
+                    return Ok(Value::Pair(
+                        name.to_string(),
+                        Box::new(Value::array(args.to_vec())),
+                    ));
+                }
+                let source_type = crate::runtime::value_type_name(&args[0]).to_string();
+                let msg = format!(
+                    "Impossible coercion from '{}' into '{}': no acceptable coercion method found",
+                    source_type, name
+                );
+                return Err(RuntimeError::typed(
+                    "X::Coerce::Impossible",
+                    std::collections::HashMap::from([
+                        ("target-type".to_string(), Value::str(name.to_string())),
+                        ("from-type".to_string(), Value::str(source_type)),
+                        ("message".to_string(), Value::str(msg)),
+                    ]),
+                ));
+            }
             return Ok(Value::Pair(
                 name.to_string(),
                 Box::new(Value::array(args.to_vec())),
@@ -610,15 +634,28 @@ impl Interpreter {
             );
         }
 
-        // Fallback: if name is a known class/role with CALL-ME, invoke it on the type object
-        if (self.has_class(name) && self.has_user_method(name, "CALL-ME"))
-            || (self.has_role(name) && self.role_has_method(name, "CALL-ME"))
+        // Fallback: if name is a known class/role with CALL-ME, invoke it on the type object.
+        // When called with no args (e.g. A()), Raku treats it as a coercion type literal
+        // rather than invoking CALL-ME — only A.() (dotted form) invokes CALL-ME with no args.
+        if !args.is_empty()
+            && ((self.has_class(name) && self.has_user_method(name, "CALL-ME"))
+                || (self.has_role(name) && self.role_has_method(name, "CALL-ME")))
         {
             return self.call_method_with_values(
                 Value::Package(Symbol::intern(name)),
                 "CALL-ME",
                 args.to_vec(),
             );
+        }
+
+        // TypeName() with no args produces a coercion type TypeName(Any)
+        if args.is_empty()
+            && (self.has_type(name)
+                || crate::runtime::utils::is_known_type_constraint(name)
+                || self.subsets.contains_key(name)
+                || self.roles.contains_key(name))
+        {
+            return Ok(Value::Package(Symbol::intern(&format!("{name}(Any)"))));
         }
 
         // comb($matcher, $str) or comb($matcher, $str, $limit)

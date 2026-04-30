@@ -820,6 +820,10 @@ pub struct Interpreter {
     pub(crate) suppress_exports: bool,
     /// When true, rw routine calls should not auto-FETCH Proxy return values.
     pub(crate) in_lvalue_assignment: bool,
+    /// When true, a role call with non-matching args returns a Pair instead of
+    /// throwing X::Coerce::Impossible. Set during the RHS evaluation of `does`
+    /// so that `$x does Role("arg")` works as a role application.
+    pub(crate) in_does_rhs: bool,
     /// When true, hash indexing with a missing key autovivifies (creates an
     /// empty Hash entry and returns it).  Set during reduce with `is raw`
     /// callbacks so that container semantics are preserved.
@@ -2786,6 +2790,7 @@ impl Interpreter {
             unit_module_loading_stack: Vec::new(),
             suppress_exports: false,
             in_lvalue_assignment: false,
+            in_does_rhs: false,
             hash_autovivify: false,
             newline_mode: NewlineMode::Lf,
             import_scope_stack: Vec::new(),
@@ -4417,6 +4422,7 @@ impl Interpreter {
             unit_module_loading_stack: Vec::new(),
             suppress_exports: false,
             in_lvalue_assignment: false,
+            in_does_rhs: false,
             hash_autovivify: false,
             newline_mode: self.newline_mode,
             import_scope_stack: Vec::new(),

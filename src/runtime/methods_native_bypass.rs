@@ -10,6 +10,7 @@ impl Interpreter {
             || cn == "Perl6::Metamodel::EnumHOW"
             || cn == "Perl6::Metamodel::CurriedRoleHOW"
             || cn == "Perl6::Metamodel::ParametricRoleGroupHOW"
+            || cn == "Perl6::Metamodel::CoercionHOW"
     }
 
     /// Check if a method name is a ClassHOW method.

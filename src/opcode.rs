@@ -160,6 +160,9 @@ pub(crate) enum OpCode {
     Isa,
     Does,
     DoesVar(u32),
+    /// Set/clear the in_does_rhs flag so role calls return Pairs instead of
+    /// throwing X::Coerce::Impossible during `does` RHS evaluation.
+    SetDoesContext(bool),
 
     // -- Pair --
     MakePair,
