@@ -231,6 +231,13 @@ impl VM {
         // bare variable name in the environment.
         if let Some(bare) = Self::pseudo_package_unqualified_name(name) {
             self.interpreter.env_mut().insert(bare, value);
+        } else if let Some(bare) = name.strip_prefix("GLOBAL::") {
+            // For unsigiled GLOBAL-qualified names (e.g. "GLOBAL::x" from
+            // `$x` at top level), also update the bare name in the env so
+            // that lookups by bare name see the latest value.
+            if self.interpreter.env().contains_key(bare) {
+                self.interpreter.env_mut().insert(bare.to_string(), value);
+            }
         }
     }
 

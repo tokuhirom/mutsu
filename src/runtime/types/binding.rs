@@ -663,9 +663,18 @@ impl Interpreter {
                             .and_then(|name| name.as_ref())
                             .cloned()
                         {
+                            // Compile-time pseudo-variables (?CLASS, ?ROLE, ?PACKAGE, etc.)
+                            // should NOT be re-resolved from the callee's env because the
+                            // env may have already overwritten them (e.g., ?CLASS is set to
+                            // the method's owner class). Use the argument value as-is.
+                            let is_compile_time_pseudo = source_name.starts_with('?');
                             let resolved_source =
                                 self.resolve_sigilless_alias_source_name(&source_name);
-                            if let Some(source_val) = self.env.get(&resolved_source).cloned() {
+                            if is_compile_time_pseudo {
+                                self.env.remove(&alias_key);
+                                self.env.insert(readonly_key, Value::Bool(true));
+                            } else if let Some(source_val) = self.env.get(&resolved_source).cloned()
+                            {
                                 value = source_val;
                                 self.env.insert(alias_key, Value::str(resolved_source));
                                 self.env.insert(readonly_key, Value::Bool(false));

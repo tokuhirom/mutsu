@@ -1087,6 +1087,40 @@ impl Interpreter {
         } else {
             result
         };
+        // If `self` in the env was updated (e.g. by overwrite_instance_bindings_by_identity
+        // after a nested method call like `self.some-method(...)`), sync the attribute env
+        // variables (!attr, .attr) from `self`'s updated attributes. Without this,
+        // attribute mutations made by nested method calls on `self` would be lost during
+        // the writeback below, because the env variables still hold the pre-call values.
+        if let Some(Value::Instance {
+            attributes: self_attrs,
+            ..
+        }) = self.env.get("self")
+        {
+            let self_attrs_snapshot: Vec<(String, Value)> = self_attrs
+                .iter()
+                .filter(|(k, _)| !k.contains('\0'))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            for (attr_name, attr_val) in self_attrs_snapshot {
+                let env_key = format!("!{}", attr_name);
+                let public_env_key = format!(".{}", attr_name);
+                let original = attributes.get(&attr_name).cloned().unwrap_or(Value::Nil);
+                let private_unchanged = self.env.get(&env_key).is_some_and(|v| *v == original);
+                let public_unchanged = self
+                    .env
+                    .get(&public_env_key)
+                    .is_some_and(|v| *v == original);
+                // Only sync if neither the private nor public env variable
+                // was modified by the method body. This preserves direct
+                // mutations like `$.count++` (which modifies .count) while
+                // still propagating changes from nested method calls.
+                if private_unchanged && public_unchanged {
+                    self.env.insert(env_key, attr_val.clone());
+                    self.env.insert(public_env_key, attr_val);
+                }
+            }
+        }
         for attr_name in attributes.keys().cloned().collect::<Vec<_>>() {
             // Skip class-qualified private attribute keys
             if attr_name.contains('\0') {
