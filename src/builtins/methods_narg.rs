@@ -702,6 +702,30 @@ pub(crate) fn native_method_1arg(
             };
             Some(Ok(Value::Bool(result)))
         }
+        "ACCEPTS" if matches!(target, Value::Bag(..)) => {
+            let result = match (target, arg) {
+                (Value::Bag(bag1, _), Value::Bag(bag2, _)) => {
+                    bag1.len() == bag2.len()
+                        && bag1.iter().all(|(k, v)| bag2.get(k).copied() == Some(*v))
+                }
+                _ => false,
+            };
+            Some(Ok(Value::Bool(result)))
+        }
+        "ACCEPTS" if matches!(target, Value::Mix(..)) => {
+            let result = match (target, arg) {
+                (Value::Mix(mix1, _), Value::Mix(mix2, _)) => {
+                    mix1.len() == mix2.len()
+                        && mix1.iter().all(|(k, v)| {
+                            mix2.get(k)
+                                .copied()
+                                .is_some_and(|v2| (v - v2).abs() < f64::EPSILON)
+                        })
+                }
+                _ => false,
+            };
+            Some(Ok(Value::Bool(result)))
+        }
         // ACCEPTS for Pair: checks if the argument has the matching key->value
         "ACCEPTS" if matches!(target, Value::Pair(..) | Value::ValuePair(..)) => {
             let (pk, pv) = match target {

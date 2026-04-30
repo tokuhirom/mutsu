@@ -306,8 +306,11 @@ pub(crate) fn native_method_0arg(
     let method = method_sym.resolve();
     let method = method.as_str();
 
-    // Scalar containers are transparent for method dispatch.
+    // Scalar containers are transparent for method dispatch (except .VAR).
     if let Value::Scalar(inner) = target {
+        if method == "VAR" {
+            return Some(Ok(Value::Package(crate::symbol::Symbol::intern("Scalar"))));
+        }
         return native_method_0arg(inner, method_sym);
     }
 

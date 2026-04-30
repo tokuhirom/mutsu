@@ -1396,6 +1396,22 @@ impl Interpreter {
             self.env.insert(target_var.to_string(), updated);
             return Ok(current);
         }
+        // .keyof on Mix/Set/Bag variables: check type constraint for parameterized type
+        if method == "keyof"
+            && args.is_empty()
+            && matches!(
+                &target,
+                Value::Mix(_, _) | Value::Set(_, _) | Value::Bag(_, _)
+            )
+        {
+            if let Some(constraint) = self.var_type_constraint(target_var)
+                && let Some(bracket_pos) = constraint.find('[')
+            {
+                let param = &constraint[bracket_pos + 1..constraint.len() - 1];
+                return Ok(Value::Package(Symbol::intern(param)));
+            }
+            return Ok(Value::Package(Symbol::intern("Mu")));
+        }
         if method == "VAR" && args.is_empty() {
             // Proxy (including subclasses): .VAR returns the proxy wrapped as a
             // ProxyObject so that subsequent method calls don't auto-FETCH.

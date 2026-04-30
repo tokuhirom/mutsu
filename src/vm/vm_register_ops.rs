@@ -762,7 +762,7 @@ impl VM {
                     Some(Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)) => true,
                     _ => false,
                 };
-                let instance = if has_init_values {
+                let mut instance = if has_init_values {
                     let init_val = current_val.unwrap();
                     // If already the target QuantHash type, use it directly
                     let already_target = matches!(
@@ -796,6 +796,74 @@ impl VM {
                     let type_obj = Value::Package(crate::symbol::Symbol::intern(base_trait));
                     self.try_compiled_method_or_interpret(type_obj, "new", vec![])?
                 };
+                // Type check for parameterized QuantHash (e.g. Mix[Int], Set[Str])
+                // and store typed original_keys so .keys returns typed values
+                if let Some(bracket_pos) = trait_name.find('[') {
+                    let constraint = &trait_name[bracket_pos + 1..trait_name.len() - 1];
+                    if constraint.starts_with(char::is_uppercase)
+                        && constraint != "Any"
+                        && constraint != "Mu"
+                    {
+                        let keys: Vec<String> = match &instance {
+                            Value::Mix(m, _) => m.weights.keys().cloned().collect(),
+                            Value::Bag(b, _) => b.counts.keys().cloned().collect(),
+                            Value::Set(s, _) => s.elements.iter().cloned().collect(),
+                            _ => vec![],
+                        };
+                        // Try to coerce keys to the constraint type for type checking
+                        let mut typed_keys = std::collections::HashMap::new();
+                        for key in &keys {
+                            let coerced = self.interpreter.try_coerce_str_to_type(key, constraint);
+                            if let Some(ref typed_val) = coerced {
+                                if !self.interpreter.type_matches_value(constraint, typed_val) {
+                                    let got_type = crate::value::what_type_name(typed_val);
+                                    return Err(RuntimeError::new(format!(
+                                        "Type check failed in binding; expected {} but got {} (\"{}\")",
+                                        constraint, got_type, key
+                                    )));
+                                }
+                                typed_keys.insert(key.clone(), typed_val.clone());
+                            } else {
+                                // Can't coerce to type - check original string
+                                let key_val = Value::str(key.clone());
+                                if !self.interpreter.type_matches_value(constraint, &key_val) {
+                                    let got_type = crate::value::what_type_name(&key_val);
+                                    return Err(RuntimeError::new(format!(
+                                        "Type check failed in binding; expected {} but got {} (\"{}\")",
+                                        constraint, got_type, key
+                                    )));
+                                }
+                            }
+                        }
+                        // Store typed keys in the QuantHash so .keys returns typed values
+                        if !typed_keys.is_empty() {
+                            instance = match instance {
+                                Value::Mix(data, mutable) => {
+                                    let new_data = crate::value::MixData::with_original_keys(
+                                        data.weights.clone(),
+                                        typed_keys,
+                                    );
+                                    Value::Mix(std::sync::Arc::new(new_data), mutable)
+                                }
+                                Value::Bag(data, mutable) => {
+                                    let new_data = crate::value::BagData::with_original_keys(
+                                        data.counts.clone(),
+                                        typed_keys,
+                                    );
+                                    Value::Bag(std::sync::Arc::new(new_data), mutable)
+                                }
+                                Value::Set(data, mutable) => {
+                                    let new_data = crate::value::SetData::with_original_keys(
+                                        data.elements.clone(),
+                                        typed_keys,
+                                    );
+                                    Value::Set(std::sync::Arc::new(new_data), mutable)
+                                }
+                                other => other,
+                            };
+                        }
+                    }
+                }
                 // Register container type metadata so assignment operations
                 // know to coerce back to BagHash/SetHash/etc.
                 let info = crate::runtime::ContainerTypeInfo {

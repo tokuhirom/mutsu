@@ -260,6 +260,29 @@ impl Interpreter {
             .unwrap_or(value)
     }
 
+    /// Try to coerce a string to a specific type (e.g., "42" -> Int(42)).
+    /// Returns None if coercion is not possible or not applicable.
+    pub(crate) fn try_coerce_str_to_type(&self, s: &str, type_name: &str) -> Option<Value> {
+        match type_name {
+            "Int" => s.parse::<i64>().ok().map(Value::Int),
+            "Num" => s.parse::<f64>().ok().map(Value::Num),
+            "Rat" => {
+                if let Ok(n) = s.parse::<i64>() {
+                    Some(Value::Rat(n, 1))
+                } else {
+                    None
+                }
+            }
+            "Str" => Some(Value::str(s.to_string())),
+            "Bool" => match s {
+                "True" => Some(Value::Bool(true)),
+                "False" => Some(Value::Bool(false)),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     pub(crate) fn try_coerce_value_for_constraint(
         &mut self,
         constraint: &str,

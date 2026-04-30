@@ -200,8 +200,12 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        // Scalar containers are transparent for method dispatch (except .item itself)
+        // Scalar containers are transparent for method dispatch (except .item and .VAR)
         if let Value::Scalar(inner) = target {
+            if method == "VAR" {
+                // Return an opaque Scalar type object so .^name returns "Scalar"
+                return Ok(Value::Package(Symbol::intern("Scalar")));
+            }
             return self.call_method_with_values(*inner, method, args);
         }
         // .return method: triggers a return from the enclosing sub with the invocant
@@ -2087,6 +2091,24 @@ impl Interpreter {
                 return Ok(Value::Package(Symbol::intern(key_type)));
             }
             return Ok(Value::Package(Symbol::intern("Str(Any)")));
+        }
+
+        // .keyof on Mix/Set/Bag - check container type metadata for parameterized types
+        if method == "keyof"
+            && args.is_empty()
+            && matches!(
+                &target,
+                Value::Mix(_, _) | Value::Set(_, _) | Value::Bag(_, _)
+            )
+        {
+            if let Some(info) = self.container_type_metadata(&target)
+                && let Some(ref declared_type) = info.declared_type
+                && let Some(bracket_pos) = declared_type.find('[')
+            {
+                let param = &declared_type[bracket_pos + 1..declared_type.len() - 1];
+                return Ok(Value::Package(Symbol::intern(param)));
+            }
+            return Ok(Value::Package(Symbol::intern("Mu")));
         }
 
         // Complex->Num conversion
