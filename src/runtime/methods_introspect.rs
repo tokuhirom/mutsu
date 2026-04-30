@@ -418,18 +418,22 @@ impl Interpreter {
                 return Ok(Self::make_pod_declarator(doc, target.clone()));
             }
         }
-        // For anonymous bare blocks, try to find a doc comment by source line proximity
+        // For anonymous subs/bare blocks, try to find a doc comment by source line proximity
         if let Value::Sub(sub_data) = target
             && sub_data.name == ""
-            && sub_data.is_bare_block
             && let Some(src_line) = sub_data.source_line
         {
-            // Find the block:* doc comment whose source_line is closest
+            let prefix = if sub_data.is_bare_block {
+                "block:"
+            } else {
+                "&<anon>"
+            };
+            // Find the doc comment whose source_line is closest
             // to (and at or after) the sub's source line
             let mut best_match: Option<&super::DocComment> = None;
             let mut best_dist = u32::MAX;
             for dc in self.doc_comments.values() {
-                if dc.wherefore_name.starts_with("block:")
+                if dc.wherefore_name.starts_with(prefix)
                     && let Some(dc_line) = dc.source_line
                 {
                     let dist = if dc_line >= src_line {
