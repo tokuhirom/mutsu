@@ -1511,6 +1511,9 @@ impl PartialEq for Value {
                     false
                 }
             }
+            (Value::Uni { form: af, text: at }, Value::Uni { form: bf, text: bt }) => {
+                af == bf && at == bt
+            }
             _ => false,
         }
     }
