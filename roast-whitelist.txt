@@ -627,6 +627,7 @@ roast/S14-roles/typecheck.t
 roast/S14-traits/variables.t
 roast/S15-literals/identifiers.t
 roast/S15-literals/numbers.t
+roast/S15-nfg/GraphemeBreakTest-0.t
 roast/S15-nfg/case-change.t
 roast/S15-nfg/cgj.t
 roast/S15-nfg/concatenation.t
