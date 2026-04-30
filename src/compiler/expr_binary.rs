@@ -315,7 +315,11 @@ impl Compiler {
                 };
                 if let Some(name) = var_name {
                     self.compile_expr(left);
+                    // Set does-context flag so role calls with args return Pairs
+                    // instead of throwing X::Coerce::Impossible.
+                    self.code.emit(OpCode::SetDoesContext(true));
                     self.compile_expr(right);
+                    self.code.emit(OpCode::SetDoesContext(false));
                     let name_idx = self.code.add_constant(Value::str(name));
                     self.code.emit(OpCode::DoesVar(name_idx));
                     return;

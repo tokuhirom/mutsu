@@ -43,6 +43,12 @@ impl Interpreter {
         if let Value::Instance { class_name, .. } = &target {
             return self.dispatch_new(Value::Package(*class_name), args);
         }
+        // Calling .new() on a Mixin(Instance{..}, ..) delegates to the class constructor
+        if let Value::Mixin(inner, _) = &target
+            && let Value::Instance { class_name, .. } = inner.as_ref()
+        {
+            return self.dispatch_new(Value::Package(*class_name), args);
+        }
         // Calling .new() on a concrete Array delegates to the type constructor.
         // If the array has type metadata (e.g. array[str]), use the declared type.
         if let Value::Array(..) = &target {

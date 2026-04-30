@@ -272,6 +272,8 @@ impl Interpreter {
             || matches!(type_name.as_str(), "UInt" | "NativeInt")
         {
             "Perl6::Metamodel::SubsetHOW"
+        } else if crate::runtime::types::parse_coercion_type(&type_name).is_some() {
+            "Perl6::Metamodel::CoercionHOW"
         } else {
             "Perl6::Metamodel::ClassHOW"
         };

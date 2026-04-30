@@ -1513,6 +1513,10 @@ impl VM {
                 self.exec_does_var_op(code, *name_idx)?;
                 *ip += 1;
             }
+            OpCode::SetDoesContext(flag) => {
+                self.interpreter.in_does_rhs = *flag;
+                *ip += 1;
+            }
 
             // -- Pair --
             OpCode::MakePair => {
