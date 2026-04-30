@@ -152,7 +152,7 @@ impl Interpreter {
             if let Some(enum_value) = self.coerce_to_enum_variant(name, &variants, first.clone()) {
                 return Ok(enum_value);
             }
-            // Throw X::Enum::NoValue
+            // Return a Failure wrapping X::Enum::NoValue (lazy exception, like Raku)
             let value_str = first.to_string_value();
             let msg = format!("No value '{}' found in enum {}", value_str, name);
             let mut attrs = std::collections::HashMap::new();
@@ -160,9 +160,12 @@ impl Interpreter {
             attrs.insert("type".to_string(), Value::Package(Symbol::intern(name)));
             attrs.insert("value".to_string(), first);
             let ex = Value::make_instance(Symbol::intern("X::Enum::NoValue"), attrs);
-            let mut err = RuntimeError::new(msg);
-            err.exception = Some(Box::new(ex));
-            return Err(err);
+            let mut failure_attrs = std::collections::HashMap::new();
+            failure_attrs.insert("exception".to_string(), ex);
+            return Ok(Value::make_instance(
+                Symbol::intern("Failure"),
+                failure_attrs,
+            ));
         }
         // Calling a type with a type object argument constructs a coercion type
         // object (e.g. Str(Any), Int(Str), Child(Parent)).

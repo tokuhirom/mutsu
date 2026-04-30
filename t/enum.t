@@ -70,9 +70,9 @@ is Day.enums.elems, 7, "Day.enums returns hash with 7 elements";
 
 # Parenthesized enum variants can use colonpair and quoted-string entries.
 enum day (:Sun(1), 'Mon', 'Tue', 'Wed');
-is day(Tue), day(3), "day(Tue) same as day(3)";
-my $today = "Today" but day(Tue);
-ok $today.day ~~ day, "day(Tue).day is a day";
-ok $today.day == Tue, "day(Tue) == Tue";
+is day(day::Tue), day(3), "day(day::Tue) same as day(3)";
+my $today = "Today" but day(day::Tue);
+ok $today.day ~~ day, "day(day::Tue).day is a day";
+ok $today.day == day::Tue, "day(day::Tue) == day::Tue";
 lives-ok { day($today) }, "day(\$today) lives";
-ok $today.Tue, "day(Tue).Tue";
+ok $today.Tue, "day(day::Tue).Tue";

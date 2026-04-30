@@ -924,6 +924,11 @@ pub struct Interpreter {
     method_wrap_chains: HashMap<(String, String, usize), Vec<(u64, Value)>>,
     /// Names suppressed by `anon class`. These bare words should error as undeclared.
     suppressed_names: HashSet<String>,
+    /// Bare enum variant names poisoned by redeclaration from different enums.
+    /// Maps bare name -> latest enum package name.
+    poisoned_enum_aliases: HashMap<String, String>,
+    /// Per-scope stack of bare enum names introduced, for cleanup on scope exit.
+    enum_scope_names: Vec<Vec<String>>,
     /// Fully-qualified names of `my`-scoped classes/subs inside packages.
     /// These should NOT appear in the parent package's stash.
     my_scoped_package_items: HashSet<String>,
@@ -2826,6 +2831,8 @@ impl Interpreter {
             wrap_dispatch_stack: Vec::new(),
             method_wrap_chains: HashMap::new(),
             suppressed_names: HashSet::new(),
+            poisoned_enum_aliases: HashMap::new(),
+            enum_scope_names: vec![Vec::new()],
             my_scoped_package_items: HashSet::new(),
             lexical_class_scopes: Vec::new(),
             last_value: None,
@@ -3012,6 +3019,47 @@ impl Interpreter {
 
     pub(crate) fn is_name_suppressed(&self, name: &str) -> bool {
         self.suppressed_names.contains(name)
+    }
+
+    /// Check if a bare enum variant name is poisoned (declared by multiple enums).
+    pub(crate) fn is_poisoned_enum_alias(&self, name: &str) -> Option<&str> {
+        self.poisoned_enum_aliases.get(name).map(|s| s.as_str())
+    }
+
+    /// Record a bare enum name in the current scope for poisoning detection.
+    /// Only marks as poisoned if the name was already declared in the *same*
+    /// scope level by a different enum.
+    pub(crate) fn register_enum_bare_name(&mut self, name: &str, enum_type: &str) {
+        // Check only the current scope for the same name from a different enum
+        if let Some(current_scope) = self.enum_scope_names.last()
+            && current_scope.iter().any(|n| n == name)
+            && let Some(Value::Enum {
+                enum_type: prev_type,
+                ..
+            }) = self.env.get(name)
+            && prev_type.resolve() != enum_type
+        {
+            self.poisoned_enum_aliases
+                .insert(name.to_string(), enum_type.to_string());
+        }
+        if let Some(scope) = self.enum_scope_names.last_mut() {
+            scope.push(name.to_string());
+        }
+    }
+
+    /// Push a new enum scope frame (called on block enter).
+    pub(crate) fn push_enum_scope(&mut self) {
+        self.enum_scope_names.push(Vec::new());
+    }
+
+    /// Pop an enum scope frame, removing poisoned aliases for names
+    /// that were introduced in the exiting scope.
+    pub(crate) fn pop_enum_scope(&mut self) {
+        if let Some(names) = self.enum_scope_names.pop() {
+            for name in names {
+                self.poisoned_enum_aliases.remove(&name);
+            }
+        }
     }
 
     /// Resolve a suppressed nested class short name to its qualified form.
@@ -4414,6 +4462,8 @@ impl Interpreter {
             wrap_dispatch_stack: Vec::new(),
             method_wrap_chains: self.method_wrap_chains.clone(),
             suppressed_names: self.suppressed_names.clone(),
+            poisoned_enum_aliases: self.poisoned_enum_aliases.clone(),
+            enum_scope_names: self.enum_scope_names.clone(),
             my_scoped_package_items: self.my_scoped_package_items.clone(),
             lexical_class_scopes: self.lexical_class_scopes.clone(),
             last_value: None,

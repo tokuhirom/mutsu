@@ -84,6 +84,33 @@ impl VM {
             if matches!(v, Value::Enum { .. } | Value::Nil)
                 || matches!(v, Value::Package(pkg) if pkg.resolve() != name)
             {
+                // Check for poisoned enum aliases
+                if matches!(v, Value::Enum { .. })
+                    && !name.contains("::")
+                    && let Some(pkg_name) = self.interpreter.is_poisoned_enum_alias(name)
+                {
+                    let pkg_name = pkg_name.to_string();
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert(
+                        "message".to_string(),
+                        Value::str(format!(
+                            "Cannot directly use poisoned alias '{name}' because it \
+                             was declared by several enums. Please access it via \
+                             explicit package name like: '{pkg_name}::{name}'"
+                        )),
+                    );
+                    attrs.insert("alias".to_string(), Value::str(name.to_string()));
+                    attrs.insert("package-name".to_string(), Value::str(pkg_name.clone()));
+                    attrs.insert("package-type".to_string(), Value::str("enum".to_string()));
+                    let ex = Value::make_instance(Symbol::intern("X::PoisonedAlias"), attrs);
+                    let mut err = RuntimeError::new(format!(
+                        "Cannot directly use poisoned alias '{name}' because it was \
+                         declared by several enums. Please access it via explicit \
+                         package name like: '{pkg_name}::{name}'"
+                    ));
+                    err.exception = Some(Box::new(ex));
+                    return Err(err);
+                }
                 v.clone()
             } else if self.interpreter.has_type(name) || Self::is_builtin_type(name) {
                 Value::Package(Symbol::intern(Self::resolve_type_alias(name)))
