@@ -637,7 +637,13 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
         Value::Mix(m, _) => {
             let mut named = HashMap::new();
             for (k, v) in m.iter() {
-                named.insert(k.clone(), Value::Num(*v));
+                // Use Int when the weight is a whole number
+                let val = if v.fract() == 0.0 && v.is_finite() {
+                    Value::Int(*v as i64)
+                } else {
+                    Value::Num(*v)
+                };
+                named.insert(k.clone(), val);
             }
             Ok(Value::Capture {
                 positional: vec![],

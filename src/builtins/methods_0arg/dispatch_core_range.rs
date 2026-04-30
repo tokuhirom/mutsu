@@ -537,7 +537,9 @@ pub(super) fn dispatch(
         }),
         "keyof" => Some(match target {
             Value::Bag(_, _) | Value::Set(_, _) | Value::Mix(_, _) => {
-                Some(Ok(Value::Package(Symbol::intern("Mu"))))
+                // Fall through to runtime to check container type metadata
+                // for parameterized types (e.g., Mix[Int])
+                None
             }
             Value::Hash(_) => None,
             Value::Package(name) | Value::CustomType { name, .. } => {

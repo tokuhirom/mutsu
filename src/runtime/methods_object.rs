@@ -1930,6 +1930,50 @@ impl Interpreter {
                             add_item(&mut weights, &mut original_keys, &mut has_non_str_keys, arg);
                         }
                     }
+                    // Type check for parameterized Mix/MixHash (e.g. Mix[Int].new(<a b c>))
+                    if let Some(ref ta) = type_args
+                        && let Some(constraint) = ta.first()
+                        && constraint.starts_with(char::is_uppercase)
+                        && constraint != "Any"
+                        && constraint != "Mu"
+                    {
+                        let items_to_check: Vec<Value> = if args.len() == 1 {
+                            let arg = &args[0];
+                            if matches!(arg, Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _))
+                            {
+                                vec![arg.clone()]
+                            } else {
+                                Self::value_to_list(arg)
+                            }
+                        } else {
+                            args.clone()
+                        };
+                        for item in &items_to_check {
+                            if !self.type_matches_value(constraint, item) {
+                                let got_type = crate::value::what_type_name(item);
+                                let got_repr = item.to_string_value();
+                                let msg = format!(
+                                    "Type check failed in binding; expected {} but got {} (\"{}\")",
+                                    constraint, got_type, got_repr,
+                                );
+                                let mut attrs = std::collections::HashMap::new();
+                                attrs.insert("message".to_string(), Value::str(msg.clone()));
+                                attrs.insert("operation".to_string(), Value::str_from("bind"));
+                                attrs.insert("got".to_string(), item.clone());
+                                attrs.insert(
+                                    "expected".to_string(),
+                                    Value::Package(Symbol::intern(constraint)),
+                                );
+                                let ex = Value::make_instance(
+                                    Symbol::intern("X::TypeCheck::Binding"),
+                                    attrs,
+                                );
+                                let mut err = RuntimeError::new(msg);
+                                err.exception = Some(Box::new(ex));
+                                return Err(err);
+                            }
+                        }
+                    }
                     let is_hash_variant = class_name.resolve() == "MixHash";
                     let result = if has_non_str_keys {
                         if is_hash_variant {

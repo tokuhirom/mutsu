@@ -936,6 +936,32 @@ impl VM {
                 }
                 // Check readonly variables (e.g., $*USAGE)
                 self.interpreter.check_readonly_for_modify(&name)?;
+                // Prevent re-assignment of immutable containers (Mix, Set, Bag)
+                // Only when the variable has an explicit immutable type constraint
+                // (e.g., `my %h is Mix`), not for regular scalar variables holding
+                // an immutable value.
+                if let Some(constraint) = self.interpreter.var_type_constraint(&name) {
+                    let base = constraint.split('[').next().unwrap_or(&constraint);
+                    if matches!(base, "Mix" | "Set" | "Bag")
+                        && let Some(existing) = self.interpreter.env().get(&name)
+                        && matches!(
+                            existing,
+                            Value::Mix(_, false) | Value::Set(_, false) | Value::Bag(_, false)
+                        )
+                    {
+                        let type_name = match existing {
+                            Value::Mix(..) => "Mix",
+                            Value::Set(..) => "Set",
+                            Value::Bag(..) => "Bag",
+                            _ => unreachable!(),
+                        };
+                        return Err(RuntimeError::new(format!(
+                            "Cannot modify an immutable {} ({})",
+                            type_name,
+                            existing.to_string_value()
+                        )));
+                    }
+                }
                 // Reject assignment to immutable type objects (e.g., `Foo .= new`)
                 if !name.starts_with('$')
                     && !name.starts_with('@')

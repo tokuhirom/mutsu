@@ -1323,6 +1323,26 @@ impl VM {
                 ));
             }
         }
+        // Mix/Set/Bag: prevent auto-vivification of undefined typed variables.
+        // When `my Mix $m; $m<key> = val`, the variable is undefined (Nil or
+        // type object) but has an immutable type constraint.
+        {
+            let current_val = self.interpreter.env().get(&var_name).cloned();
+            let is_undefined = current_val.is_none()
+                || matches!(&current_val, Some(Value::Nil))
+                || matches!(&current_val, Some(Value::Package(_)));
+            if is_undefined {
+                let constraint_owned = self.interpreter.var_type_constraint(&var_name);
+                let type_name_check = declared_type.as_deref().or(constraint_owned.as_deref());
+                if type_name_check.is_some_and(|t| matches!(t, "Mix" | "Set" | "Bag")) {
+                    let type_name = type_name_check.unwrap_or("Mix");
+                    return Err(RuntimeError::new(format!(
+                        "Cannot auto-vivify an immutable {}",
+                        type_name
+                    )));
+                }
+            }
+        }
         // Immutable List/Range containers - prevent assignment and binding
         if let Some(target_val) = self.interpreter.env().get(&var_name) {
             let is_immutable = matches!(
@@ -2526,6 +2546,26 @@ impl VM {
                 return Err(RuntimeError::new(
                     runtime::utils::type_check_assignment_error(name, &constraint, &Value::Nil),
                 ));
+            }
+            // Prevent re-initialization of immutable containers (Mix, Set, Bag)
+            if !is_vardecl
+                && !is_bind
+                && matches!(
+                    &self.locals[idx],
+                    Value::Mix(_, false) | Value::Set(_, false) | Value::Bag(_, false)
+                )
+            {
+                let type_name = match &self.locals[idx] {
+                    Value::Mix(..) => "Mix",
+                    Value::Set(..) => "Set",
+                    Value::Bag(..) => "Bag",
+                    _ => unreachable!(),
+                };
+                return Err(RuntimeError::new(format!(
+                    "Cannot modify an immutable {} ({})",
+                    type_name,
+                    self.locals[idx].to_string_value()
+                )));
             }
             if is_constant || is_bind {
                 // `:=` binding or `constant %x` preserves containers — skip coercion.

@@ -347,6 +347,78 @@ impl VM {
             }
             self.env_dirty = true;
         }
+        // Preserve the container type of the target for QuantHash types.
+        // The items list was produced by value_to_list, which yields Pairs
+        // in HashMap iteration order. Reconstruct the same type using the
+        // keys from those pairs and the transformed results.
+        match &target {
+            Value::Mix(_, is_mutable) => {
+                let mut weights = std::collections::HashMap::new();
+                for (i, item) in items.iter().enumerate() {
+                    if let Some(result) = results.get(i) {
+                        let key = match item {
+                            Value::Pair(k, _) => k.clone(),
+                            Value::ValuePair(k, _) => k.to_string_value(),
+                            other => other.to_string_value(),
+                        };
+                        weights.insert(
+                            key,
+                            crate::runtime::utils::to_float_value(result).unwrap_or(0.0),
+                        );
+                    }
+                }
+                let result = if *is_mutable {
+                    Value::mix_hash(weights)
+                } else {
+                    Value::mix(weights)
+                };
+                self.stack.push(result);
+                return Ok(());
+            }
+            Value::Bag(_, is_mutable) => {
+                let mut counts = std::collections::HashMap::new();
+                for (i, item) in items.iter().enumerate() {
+                    if let Some(result) = results.get(i) {
+                        let key = match item {
+                            Value::Pair(k, _) => k.clone(),
+                            Value::ValuePair(k, _) => k.to_string_value(),
+                            other => other.to_string_value(),
+                        };
+                        counts.insert(key, crate::runtime::utils::to_int(result));
+                    }
+                }
+                let result = if *is_mutable {
+                    Value::bag_hash(counts)
+                } else {
+                    Value::bag(counts)
+                };
+                self.stack.push(result);
+                return Ok(());
+            }
+            Value::Set(_, is_mutable) => {
+                let mut elems = std::collections::HashSet::new();
+                for (i, item) in items.iter().enumerate() {
+                    if let Some(result) = results.get(i) {
+                        let key = match item {
+                            Value::Pair(k, _) => k.clone(),
+                            Value::ValuePair(k, _) => k.to_string_value(),
+                            other => other.to_string_value(),
+                        };
+                        if result.truthy() {
+                            elems.insert(key);
+                        }
+                    }
+                }
+                let result = if *is_mutable {
+                    Value::set_hash(elems)
+                } else {
+                    Value::set(elems)
+                };
+                self.stack.push(result);
+                return Ok(());
+            }
+            _ => {}
+        }
         // Preserve the container type of the target: Array->Array, List->List
         let result_kind = match &target {
             Value::Array(_, kind) if kind.is_real_array() => ArrayKind::Array,
@@ -492,6 +564,75 @@ impl VM {
                 *kind,
             );
             self.env_dirty = true;
+        }
+        // Preserve the container type of the target for QuantHash types
+        match &target {
+            Value::Mix(_, is_mutable) => {
+                let mut weights = std::collections::HashMap::new();
+                for (i, item) in items.iter().enumerate() {
+                    if let Some(result) = results.get(i) {
+                        let key = match item {
+                            Value::Pair(k, _) => k.clone(),
+                            Value::ValuePair(k, _) => k.to_string_value(),
+                            other => other.to_string_value(),
+                        };
+                        weights.insert(
+                            key,
+                            crate::runtime::utils::to_float_value(result).unwrap_or(0.0),
+                        );
+                    }
+                }
+                let result = if *is_mutable {
+                    Value::mix_hash(weights)
+                } else {
+                    Value::mix(weights)
+                };
+                self.stack.push(result);
+                return Ok(());
+            }
+            Value::Bag(_, is_mutable) => {
+                let mut counts = std::collections::HashMap::new();
+                for (i, item) in items.iter().enumerate() {
+                    if let Some(result) = results.get(i) {
+                        let key = match item {
+                            Value::Pair(k, _) => k.clone(),
+                            Value::ValuePair(k, _) => k.to_string_value(),
+                            other => other.to_string_value(),
+                        };
+                        counts.insert(key, crate::runtime::utils::to_int(result));
+                    }
+                }
+                let result = if *is_mutable {
+                    Value::bag_hash(counts)
+                } else {
+                    Value::bag(counts)
+                };
+                self.stack.push(result);
+                return Ok(());
+            }
+            Value::Set(_, is_mutable) => {
+                let mut elems = std::collections::HashSet::new();
+                for (i, item) in items.iter().enumerate() {
+                    if let Some(result) = results.get(i) {
+                        let key = match item {
+                            Value::Pair(k, _) => k.clone(),
+                            Value::ValuePair(k, _) => k.to_string_value(),
+                            other => other.to_string_value(),
+                        };
+                        if result.truthy() {
+                            elems.insert(key);
+                        }
+                    }
+                }
+                let result = if *is_mutable {
+                    Value::set_hash(elems)
+                } else {
+                    Value::set(elems)
+                };
+                self.stack.push(result);
+                return Ok(());
+            }
+            _ => {}
         }
         // Preserve the container type of the target
         let result_kind = match &target {
