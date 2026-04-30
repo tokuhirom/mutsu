@@ -880,6 +880,10 @@ impl Interpreter {
                     enum_val.clone(),
                 );
             }
+            // Track for poisoned alias detection before inserting
+            if !is_anonymous {
+                self.register_enum_bare_name(key, enum_type_name);
+            }
             self.env.insert(key.clone(), enum_val);
         }
         // Register exports if `is export`

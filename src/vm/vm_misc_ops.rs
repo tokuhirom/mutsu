@@ -2253,6 +2253,7 @@ impl VM {
         self.interpreter.push_once_scope(once_scope);
         self.interpreter.push_block_scope_depth();
         self.interpreter.push_lexical_class_scope();
+        self.interpreter.push_enum_scope();
         let stack_base = self.stack.len();
         let topic_before = self.last_topic_value.clone();
         // If ENTER died, skip the body but still run LEAVE phasers
@@ -2447,6 +2448,7 @@ impl VM {
         }
         // Note: `our`-scoped variables persist in our_vars and are accessible
         // via package-qualified names (e.g., $Pkg::var) after block exit.
+        self.interpreter.pop_enum_scope();
         self.interpreter.pop_lexical_class_scope();
         self.interpreter.pop_block_scope_depth();
         self.interpreter.pop_once_scope();
@@ -2539,6 +2541,7 @@ impl VM {
         let stack_base = self.stack.len();
         let once_scope = self.interpreter.next_once_scope_id();
         self.interpreter.push_once_scope(once_scope);
+        self.interpreter.push_enum_scope();
         let saved_env = if scope_isolate {
             Some((self.interpreter.env().clone(), self.locals.clone()))
         } else {
@@ -2584,6 +2587,7 @@ impl VM {
                 Err(e) => break Err(e),
             }
         };
+        self.interpreter.pop_enum_scope();
         self.interpreter.pop_once_scope();
         // Restore scope if scope_isolate is true
         if let Some((saved_env, saved_locals)) = saved_env {
