@@ -412,7 +412,20 @@ impl Interpreter {
                     }
                     result
                 };
-                let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
+                // If the block returned a value equal to the old value or Nil
+                // but the variable itself was modified (e.g., `{ $x = expr }`),
+                // use the variable's current value from the env. This handles
+                // blocks that modify the variable as a side effect.
+                let effective_new = if new_val == current || matches!(new_val, Value::Nil) {
+                    self.env.get(&name).cloned().unwrap_or(new_val)
+                } else {
+                    new_val
+                };
+                let coerced = self.atomic_assign_coerced_value(&name, effective_new)?;
+                // Restore the env variable to `current` before the CAS comparison,
+                // so that atomic_current_value (which falls back to env) reads the
+                // pre-block snapshot rather than the value the block may have modified.
+                self.env.insert(name.clone(), current.clone());
 
                 let mut updated = false;
                 {

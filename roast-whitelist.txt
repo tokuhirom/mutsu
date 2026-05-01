@@ -557,6 +557,7 @@ roast/S12-construction/construction.t
 roast/S12-construction/destruction.t
 roast/S12-construction/named-params-in-BUILD.t
 roast/S12-construction/new.t
+roast/S12-construction/roles-6e.t
 roast/S12-enums/anonymous.t
 roast/S12-enums/as-role.t
 roast/S12-enums/misc.t
