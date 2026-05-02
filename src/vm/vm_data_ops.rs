@@ -166,6 +166,8 @@ impl VM {
         for v in &values {
             let v = self.interpreter.auto_fetch_proxy(v)?;
             check_rat_divide_by_zero(&v)?;
+            // Resolve bound-element sentinels inside arrays before gist
+            let v = self.resolve_bound_array_elements(v);
             if needs_method_dispatch(&v) {
                 parts.push(self.interpreter.render_gist_value(&v));
             } else {

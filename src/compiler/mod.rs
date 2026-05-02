@@ -110,6 +110,13 @@ impl Compiler {
         }
     }
 
+    fn is_simple_var_expr(expr: &Expr) -> bool {
+        matches!(
+            expr,
+            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::CodeVar(_)
+        )
+    }
+
     pub(crate) fn qualify_variable_name(&self, name: &str) -> String {
         if self.current_package.contains("::&") {
             // Sub/method state scopes use package-like names (e.g. GLOBAL::&foo/1)

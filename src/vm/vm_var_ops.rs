@@ -618,6 +618,14 @@ impl VM {
         self.interpreter.env_mut().insert(key, Value::hash(map));
     }
 
+    /// Remove a bound-index marker (e.g. after splice breaks the binding).
+    pub(super) fn remove_bound_index(&mut self, var_name: &str, encoded: &str) {
+        let key = format!("__mutsu_bound_index::{}", var_name);
+        if let Some(Value::Hash(map)) = self.interpreter.env_mut().get_mut(&key) {
+            Arc::make_mut(map).remove(encoded);
+        }
+    }
+
     pub(super) fn mark_initialized_index(&mut self, var_name: &str, encoded: String) {
         // Assigning a slot clears any deleted-index marker so subsequent
         // `:exists` checks report the slot as present again.

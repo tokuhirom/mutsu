@@ -578,12 +578,13 @@ impl Compiler {
                     let qualified = self.qualify_variable_name(name);
                     let idx = self.code.add_constant(Value::str(qualified));
                     self.code.emit(OpCode::GetOurVar(idx));
-                } else if self.bind_vardecl && !name.starts_with('@') && !name.starts_with('%') {
-                    // `:=` binding for scalar VarDecl: use compile_call_arg
-                    // so WrapVarRef is emitted and the VM can set up aliases.
-                    // Set scalar_bind_autovivify so that Index expressions
-                    // emit IndexAutovivify (for hash element binding like
-                    // `my $b := %h<foo><baz>`).
+                } else if self.bind_vardecl
+                    && (!name.starts_with('@') && !name.starts_with('%')
+                        || Self::is_simple_var_expr(expr))
+                {
+                    // `:=` binding for VarDecl: use compile_call_arg so WrapVarRef
+                    // is emitted and the VM can set up aliases.  For @/% targets,
+                    // only emit WrapVarRef when the RHS is a simple variable.
                     self.bind_vardecl = false;
                     self.scalar_bind_autovivify = true;
                     self.compile_call_arg(expr);

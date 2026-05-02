@@ -514,4 +514,41 @@ impl VM {
             Ok(Value::Bool(matched))
         }
     }
+
+    /// Resolve bound-element sentinels inside an Array value.
+    ///
+    /// When an array element has been bound (`@a[1] := $var`), mutsu stores a
+    /// sentinel `Pair("__mutsu_bound_array_ref", var_name)` in the underlying
+    /// Vec.  This method replaces every such sentinel with the current value of
+    /// the referenced variable, so that callers that iterate elements (e.g.
+    /// stringification, `say`, `gist`) see the live value instead of the
+    /// internal marker.
+    pub(super) fn resolve_bound_array_elements(&self, val: Value) -> Value {
+        use super::vm_var_ops::BOUND_ARRAY_REF_SENTINEL;
+        if let Value::Array(ref items, kind) = val {
+            let needs_resolve = items
+                .iter()
+                .any(|v| matches!(v, Value::Pair(name, _) if name == BOUND_ARRAY_REF_SENTINEL));
+            if !needs_resolve {
+                return val;
+            }
+            let resolved: Vec<Value> = items
+                .iter()
+                .map(|v| match v {
+                    Value::Pair(name, source) if name == BOUND_ARRAY_REF_SENTINEL => {
+                        let source_name = source.to_string_value();
+                        self.interpreter
+                            .env()
+                            .get(&source_name)
+                            .cloned()
+                            .unwrap_or(Value::Nil)
+                    }
+                    other => other.clone(),
+                })
+                .collect();
+            Value::Array(std::sync::Arc::new(resolved), kind)
+        } else {
+            val
+        }
+    }
 }
