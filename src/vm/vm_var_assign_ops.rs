@@ -3506,20 +3506,40 @@ impl VM {
         if !native_types::is_native_int_type(base) {
             return Ok(val);
         }
-        // Full-width native types don't wrap — they should throw on overflow.
-        if matches!(base, "int" | "int64" | "uint" | "uint64") {
+        // Full-width signed native types don't wrap — they should throw on overflow.
+        if matches!(base, "int" | "int64") {
             if let Value::BigInt(ref n) = val {
-                // For unsigned types, values that fit in u64 are valid
-                if matches!(base, "uint" | "uint64") && n.to_u64().is_some() {
-                    return Ok(val);
-                }
-                // For signed types, any BigInt is too large (i64 values are Value::Int)
-                // For unsigned types that didn't fit in u64, also too large
                 let bits = n.bits();
                 return Err(RuntimeError::new(format!(
                     "Cannot unbox {} bit wide bigint into native integer",
                     bits
                 )));
+            }
+            return Ok(val);
+        }
+        // Full-width unsigned native types: BigInt values that fit in u64 are valid,
+        // negative Value::Int values need wrapping (like C unsigned semantics).
+        if matches!(base, "uint" | "uint64") {
+            if let Value::BigInt(ref n) = val {
+                if n.to_u64().is_some() {
+                    return Ok(val);
+                }
+                let bits = n.bits();
+                return Err(RuntimeError::new(format!(
+                    "Cannot unbox {} bit wide bigint into native integer",
+                    bits
+                )));
+            }
+            // Value::Int with negative value needs wrapping to unsigned range
+            if let Value::Int(n) = &val
+                && *n < 0
+            {
+                let big_val = NumBigInt::from(*n);
+                let wrapped = native_types::wrap_native_int(base, &big_val);
+                return Ok(wrapped
+                    .to_i64()
+                    .map(Value::Int)
+                    .unwrap_or_else(|| Value::bigint(wrapped)));
             }
             return Ok(val);
         }

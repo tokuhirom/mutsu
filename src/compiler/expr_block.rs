@@ -42,6 +42,7 @@ impl Compiler {
                 is_state,
                 is_our,
                 is_dynamic: ast_is_dynamic,
+                type_constraint,
                 ..
             } => {
                 let is_dynamic = *ast_is_dynamic || self.var_is_dynamic(name);
@@ -114,8 +115,32 @@ impl Compiler {
                         let idx = self.code.add_constant(Value::str(qualified));
                         self.code.emit(OpCode::SetGlobal(idx));
                     } else {
-                        self.code.emit(OpCode::Dup);
-                        self.emit_set_named_var(name);
+                        // For native int types, the value may be wrapped during
+                        // assignment (e.g., -1 -> 255 for uint8). We need to
+                        // return the wrapped value, so emit TypeCheck (which
+                        // wraps on the stack) then Dup, then store.
+                        let is_native_int = type_constraint
+                            .as_ref()
+                            .is_some_and(|tc| crate::runtime::native_types::is_native_int_type(tc));
+                        if is_native_int {
+                            let tc = type_constraint.as_ref().unwrap();
+                            // Set type constraint so future assignments also wrap
+                            let name_idx2 = self.code.add_constant(Value::str(name.clone()));
+                            let tc_idx = self.code.add_constant(Value::str(tc.clone()));
+                            self.code.emit(OpCode::SetVarType {
+                                name_idx: name_idx2,
+                                tc_idx,
+                            });
+                            // TypeCheck wraps the value on the stack for native types
+                            let tc_idx2 = self.code.add_constant(Value::str(tc.clone()));
+                            self.code.emit(OpCode::TypeCheck(tc_idx2, None));
+                            // Now Dup the wrapped value and store
+                            self.code.emit(OpCode::Dup);
+                            self.emit_set_named_var(name);
+                        } else {
+                            self.code.emit(OpCode::Dup);
+                            self.emit_set_named_var(name);
+                        }
                     }
                 }
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
