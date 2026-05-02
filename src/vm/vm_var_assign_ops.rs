@@ -1413,9 +1413,10 @@ impl VM {
                     // Sentinel present — write will propagate, allow it
                 }
                 Some(false) => {
-                    // No sentinel but bound metadata exists — this is a
-                    // non-bound readonly index, reject the write.
-                    return Err(RuntimeError::assignment_ro(None));
+                    // No sentinel but bound metadata exists — the binding was
+                    // broken (e.g. by splice removing the element).  Clean up
+                    // the stale metadata and allow the write.
+                    self.remove_bound_index(&var_name, &encoded_idx);
                 }
                 None => {
                     // Array was reset or index is gone — stale metadata, allow write
@@ -2611,6 +2612,71 @@ impl VM {
                 }
             } else if is_bind {
                 // `:=` binding preserves the container type (e.g. List stays List).
+                // Type-check: only Positional values can be bound to @-sigiled vars.
+                let is_positional = match &raw_popped {
+                    Value::Array(..)
+                    | Value::LazyList(_)
+                    | Value::LazyIoLines { .. }
+                    | Value::Seq(_)
+                    | Value::Slip(_)
+                    | Value::Range(..)
+                    | Value::RangeExcl(..)
+                    | Value::RangeExclStart(..)
+                    | Value::RangeExclBoth(..)
+                    | Value::GenericRange { .. }
+                    | Value::Nil => true,
+                    // Instance objects are Positional only if they implement
+                    // the Positional role (or Array subclass etc.), but not
+                    // Failure or arbitrary classes.
+                    Value::Instance { class_name, .. } => {
+                        let cn = class_name.resolve();
+                        matches!(
+                            cn.as_str(),
+                            "Array"
+                                | "List"
+                                | "Slip"
+                                | "Seq"
+                                | "Range"
+                                | "Buf"
+                                | "Blob"
+                                | "utf8"
+                                | "buf8"
+                                | "buf16"
+                                | "buf32"
+                        ) || self
+                            .interpreter
+                            .class_composed_roles(&cn)
+                            .is_some_and(|roles| roles.iter().any(|r| r == "Positional"))
+                    }
+                    _ => false,
+                };
+                if !is_positional {
+                    let got_type = crate::runtime::utils::value_type_name(&raw_popped);
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("got".to_string(), raw_popped.clone());
+                    attrs.insert(
+                        "expected".to_string(),
+                        Value::Package(crate::symbol::Symbol::intern("Positional")),
+                    );
+                    attrs.insert("symbol".to_string(), Value::str(name.clone()));
+                    attrs.insert(
+                        "message".to_string(),
+                        Value::str(format!(
+                            "Type check failed in binding; expected Positional but got {}",
+                            got_type
+                        )),
+                    );
+                    let ex = Value::make_instance(
+                        crate::symbol::Symbol::intern("X::TypeCheck::Binding"),
+                        attrs,
+                    );
+                    let mut err = RuntimeError::new(format!(
+                        "Type check failed in binding; expected Positional but got {}",
+                        got_type
+                    ));
+                    err.exception = Some(Box::new(ex));
+                    return Err(err);
+                }
                 match raw_popped {
                     Value::LazyList(list) => Value::real_array(self.force_lazy_list_vm(&list)?),
                     Value::LazyIoLines { .. } => {
@@ -2631,7 +2697,13 @@ impl VM {
                         let forced = self.force_if_lazy_io_lines(raw_popped)?;
                         runtime::coerce_to_array(forced)
                     }
-                    other => runtime::coerce_to_array(other),
+                    other => {
+                        // Resolve bound-element sentinels before coercing to
+                        // array.  Assignment (not binding) creates new
+                        // containers, so bound refs must be snapshotted.
+                        let other = self.resolve_bound_array_elements(other);
+                        runtime::coerce_to_array(other)
+                    }
                 }
             };
             // Preserve shaped array property on re-assignment

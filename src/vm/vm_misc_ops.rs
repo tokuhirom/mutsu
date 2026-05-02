@@ -722,6 +722,8 @@ impl VM {
             self.stack.push(result);
             return Ok(());
         }
+        // Resolve bound-element sentinels inside arrays before stringification
+        let val = self.resolve_bound_array_elements(val);
         self.stack
             .push(Value::str(crate::runtime::utils::coerce_to_str(&val)));
         Ok(())

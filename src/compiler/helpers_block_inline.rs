@@ -16,6 +16,13 @@ impl Compiler {
             self.pop_dynamic_scope_lexical(saved);
             return;
         }
+        let has_bound_array_len = stmts.iter().any(|s| {
+            matches!(s,
+                Stmt::Expr(Expr::Call { name, .. })
+                if name.resolve() == "__mutsu_record_bound_array_len"
+            )
+        });
+        let has_mark_bind = stmts.iter().any(|s| matches!(s, Stmt::MarkBind));
         // Hoist sub declarations
         self.hoist_sub_decls(stmts, true);
         for (i, stmt) in stmts.iter().enumerate() {
@@ -124,6 +131,15 @@ impl Compiler {
                     }
                     _ => {}
                 }
+            }
+            if has_bound_array_len
+                && let Stmt::VarDecl { name, .. } = stmt
+                && name.starts_with('@')
+            {
+                self.bind_vardecl = true;
+            }
+            if has_mark_bind && matches!(stmt, Stmt::VarDecl { .. }) {
+                self.bind_vardecl = true;
             }
             self.compile_stmt(stmt);
         }
