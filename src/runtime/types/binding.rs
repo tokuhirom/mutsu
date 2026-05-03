@@ -1018,6 +1018,16 @@ impl Interpreter {
                             )));
                         }
                     }
+                    // Resolve type capture prefixes (e.g., `::T` → `Int`) so
+                    // that the stored variable type constraint uses the
+                    // concrete captured type name, not the raw `::T` token.
+                    let bound_type_constraint = bound_type_constraint.map(|tc| {
+                        if let Some(captured_name) = tc.strip_prefix("::") {
+                            self.resolved_type_capture_name(captured_name)
+                        } else {
+                            self.resolved_type_capture_name(&tc)
+                        }
+                    });
                     if !pd.name.is_empty()
                         && pd.name != "__type_only__"
                         && !pd.name.starts_with("__type_capture__")
