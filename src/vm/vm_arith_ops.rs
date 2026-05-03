@@ -32,6 +32,74 @@ impl VM {
         }
     }
 
+    /// Fast path for `@var.shift xx N` and `@var.pop xx N`.
+    /// Drains N elements in bulk instead of running a thunk N times.
+    fn try_bulk_shift_pop(
+        &mut self,
+        data: &crate::value::SubData,
+        n: usize,
+    ) -> Result<Option<Vec<Value>>, RuntimeError> {
+        use crate::ast::{Expr, Stmt};
+        if data.body.len() != 1 {
+            return Ok(None);
+        }
+        let (var_name, is_shift) = match &data.body[0] {
+            Stmt::Expr(Expr::MethodCall {
+                target, name, args, ..
+            }) if args.is_empty() && (name.resolve() == "shift" || name.resolve() == "pop") => {
+                let vname = match target.as_ref() {
+                    Expr::Var(v) => v.clone(),
+                    Expr::ArrayVar(v) => format!("@{}", v),
+                    _ => return Ok(None),
+                };
+                (vname, name.resolve() == "shift")
+            }
+            _ => return Ok(None),
+        };
+        // Look up the array in env
+        let arr_key = if var_name.starts_with('@') {
+            var_name.clone()
+        } else {
+            format!("@{}", var_name)
+        };
+        let target_val = self
+            .interpreter
+            .env()
+            .get(&arr_key)
+            .or_else(|| self.interpreter.env().get(&var_name))
+            .cloned();
+        let Value::Array(arc_items, kind) = target_val.unwrap_or(Value::Nil) else {
+            return Ok(None);
+        };
+        if !kind.is_real_array() {
+            return Ok(None);
+        }
+        let mut items = (*arc_items).clone();
+        let actual_n = n.min(items.len());
+        let result = if is_shift {
+            let rest = items.split_off(actual_n);
+            let shifted = items;
+            items = rest;
+            shifted
+        } else {
+            // pop
+            let split_at = items.len().saturating_sub(actual_n);
+            let popped: Vec<Value> = items.drain(split_at..).rev().collect();
+            popped
+        };
+        // Write the mutated array back
+        let lookup_key = if self.interpreter.env().contains_key(&arr_key) {
+            &arr_key
+        } else {
+            &var_name
+        };
+        self.interpreter
+            .env_mut()
+            .insert(lookup_key.to_string(), Value::Array(Arc::new(items), kind));
+        self.env_dirty = true;
+        Ok(Some(result))
+    }
+
     /// VM-native implementation of xx-repeat for thunks.
     /// Compiles the thunk body once and runs it N times via `run_reuse`,
     /// avoiding the interpreter roundtrip through `eval_xx_repeat_thunk`.
@@ -99,8 +167,19 @@ impl VM {
 
         self.stack = saved_stack;
         self.locals = saved_locals;
-        // Restore env
+        // Restore env, but keep mutations to arrays (e.g. shift/pop
+        // inside the thunk should persist).
         for (k, orig) in saved {
+            // If the thunk mutated an array variable (e.g. via .shift),
+            // keep the mutated version instead of restoring the original.
+            let current = self.interpreter.env().get(&k).cloned();
+            let should_keep_current = matches!(
+                (&orig, &current),
+                (Some(Value::Array(..)), Some(Value::Array(..)))
+            );
+            if should_keep_current {
+                continue;
+            }
             match orig {
                 Some(v) => {
                     self.interpreter.env_mut().insert(k, v);
@@ -656,6 +735,11 @@ impl VM {
             && let Value::Int(n) = right
         {
             let n = n.max(0) as usize;
+            // Fast path: @var.shift xx N or @var.pop xx N — bulk drain
+            if let Some(items) = self.try_bulk_shift_pop(&data, n)? {
+                self.stack.push(Value::Seq(Arc::new(items)));
+                return Ok(());
+            }
             let items = self.vm_xx_repeat_thunk(data.as_ref(), n)?;
             self.stack.push(Value::Seq(Arc::new(items)));
             return Ok(());

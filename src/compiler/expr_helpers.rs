@@ -194,6 +194,8 @@ impl Compiler {
                     || name == "pick"
                     || name == "roll"
                     || name == "take"
+                    || name == "shift"
+                    || name == "pop"
                     || name == "readchars"
                     || name == "receive"
                     || name == "getc"

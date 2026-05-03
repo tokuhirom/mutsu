@@ -289,6 +289,76 @@ fn normalize_subst_replacement(template: &str) -> String {
                 out.push('&');
                 chars.next();
             }
+            'n' => {
+                out.push('\n');
+                chars.next();
+            }
+            'r' => {
+                out.push('\r');
+                chars.next();
+            }
+            't' => {
+                out.push('\t');
+                chars.next();
+            }
+            '0' => {
+                out.push('\0');
+                chars.next();
+            }
+            'a' => {
+                out.push('\x07'); // BEL
+                chars.next();
+            }
+            'b' => {
+                out.push('\x08'); // BS
+                chars.next();
+            }
+            'e' => {
+                out.push('\x1B'); // ESC
+                chars.next();
+            }
+            'f' => {
+                out.push('\x0C'); // FF
+                chars.next();
+            }
+            'x' => {
+                chars.next(); // consume 'x'
+                if chars.peek() == Some(&'[') {
+                    chars.next(); // consume '['
+                    let mut hex = String::new();
+                    while let Some(&c) = chars.peek() {
+                        if c == ']' {
+                            chars.next();
+                            break;
+                        }
+                        hex.push(c);
+                        chars.next();
+                    }
+                    // Support space-separated multi-codepoint: \x[48 65 6C]
+                    for part in hex.split_whitespace() {
+                        if let Ok(cp) = u32::from_str_radix(part, 16)
+                            && let Some(c) = char::from_u32(cp)
+                        {
+                            out.push(c);
+                        }
+                    }
+                } else {
+                    let mut hex = String::new();
+                    while let Some(&c) = chars.peek() {
+                        if c.is_ascii_hexdigit() && hex.len() < 2 {
+                            hex.push(c);
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    if let Ok(cp) = u32::from_str_radix(&hex, 16)
+                        && let Some(c) = char::from_u32(cp)
+                    {
+                        out.push(c);
+                    }
+                }
+            }
             _ => out.push('\\'),
         }
     }
