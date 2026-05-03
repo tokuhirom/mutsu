@@ -186,6 +186,17 @@ impl VM {
             }
         }
 
+        // When cloning a container (Hash/Array/Set/Bag/Mix) that has type
+        // metadata, copy the metadata to the cloned value so the clone
+        // preserves the type constraint (e.g. %h.clone ~~ Hash[Int,Int]).
+        if method_name == "clone"
+            && let Some(Ok(ref cloned)) = result
+            && let Some(info) = self.interpreter.container_type_metadata(target)
+        {
+            self.interpreter
+                .register_container_type_metadata(cloned, info);
+        }
+
         result
     }
 

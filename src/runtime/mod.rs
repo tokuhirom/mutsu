@@ -3951,6 +3951,22 @@ impl Interpreter {
         self.set_type_metadata.get(&id).cloned()
     }
 
+    /// Remove container type metadata for a value, breaking the association.
+    pub(crate) fn unregister_container_type_metadata(&mut self, value: &Value) {
+        match value {
+            Value::Array(items, ..) => {
+                let id = Arc::as_ptr(items) as usize;
+                self.array_type_metadata.remove(&id);
+            }
+            Value::Hash(items) => {
+                let id = Arc::as_ptr(items) as usize;
+                self.hash_type_metadata.remove(&id);
+            }
+            Value::Mixin(inner, _) => self.unregister_container_type_metadata(inner),
+            _ => {}
+        }
+    }
+
     pub(crate) fn container_type_metadata(&self, value: &Value) -> Option<ContainerTypeInfo> {
         match value {
             Value::Array(items, ..) => {

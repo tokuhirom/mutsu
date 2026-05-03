@@ -2901,6 +2901,19 @@ impl VM {
             self.interpreter.clear_container_default(&val);
         }
         self.locals[idx] = val.clone();
+        // When assigning (not binding) to an untyped hash variable, clear
+        // stale container type metadata from Arc pointer reuse.
+        // Skip for attribute variables (.h, !h) which get typed metadata from
+        // the class definition, not from var_type_constraints.
+        if !is_bind
+            && name.starts_with('%')
+            && !name.contains('.')
+            && !name.contains('!')
+            && self.interpreter.var_type_constraint(name).is_none()
+            && self.interpreter.container_type_metadata(&val).is_some()
+        {
+            self.interpreter.unregister_container_type_metadata(&val);
+        }
         // When binding a typed hash/array to a variable, propagate the container's
         // type constraints to the variable so that subsequent element assignments
         // are type-checked (e.g. `my %h := Hash[Int].new; %h<a> = "b"` should die).

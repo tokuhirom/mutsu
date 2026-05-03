@@ -354,13 +354,56 @@ impl Interpreter {
                     return false;
                 }
                 "Hash" | "Associative" => {
+                    // Handle Hash[ValueType,KeyType] with two type parameters
+                    let (value_type, key_type) = if let Some(comma_pos) = inner.find(',') {
+                        let vt = inner[..comma_pos].trim();
+                        let kt = inner[comma_pos + 1..].trim();
+                        (vt, Some(kt))
+                    } else {
+                        (inner, None)
+                    };
                     if let Value::Hash(map) = value {
-                        return map.values().all(|v| self.type_matches_value(inner, v));
+                        // Check container type metadata first (typed hashes)
+                        if let Some(metadata) = self.container_type_metadata(value) {
+                            let (vt_base, _) = strip_type_smiley(value_type);
+                            let (mvt_base, _) = strip_type_smiley(&metadata.value_type);
+                            let value_ok = Self::type_matches(vt_base, mvt_base)
+                                || Self::type_matches(mvt_base, vt_base)
+                                || vt_base == "Mu"
+                                || vt_base == "Any";
+                            let key_ok = if let Some(kt) = key_type {
+                                let (kt_base, _) = strip_type_smiley(kt);
+                                if let Some(ref mkt) = metadata.key_type {
+                                    let (mkt_base, _) = strip_type_smiley(mkt);
+                                    Self::type_matches(kt_base, mkt_base)
+                                        || Self::type_matches(mkt_base, kt_base)
+                                        || kt_base == "Mu"
+                                        || kt_base == "Any"
+                                } else {
+                                    kt_base == "Str" || kt_base == "Any" || kt_base == "Mu"
+                                }
+                            } else {
+                                true
+                            };
+                            return value_ok && key_ok;
+                        }
+                        // No metadata: check all values match the value type
+                        let values_ok =
+                            map.values().all(|v| self.type_matches_value(value_type, v));
+                        // If a key type constraint is given, check it against
+                        // default Str keys (strip smileys for comparison).
+                        let keys_ok = if let Some(kt) = key_type {
+                            let (kt_base, _) = strip_type_smiley(kt);
+                            kt_base == "Str" || kt_base == "Any" || kt_base == "Mu"
+                        } else {
+                            true
+                        };
+                        return values_ok && keys_ok;
                     }
                     if let Value::Array(items, ..) = value {
                         return items.iter().all(|item| {
                             if let Value::Pair(_, v) = item {
-                                self.type_matches_value(inner, v)
+                                self.type_matches_value(value_type, v)
                             } else {
                                 false
                             }

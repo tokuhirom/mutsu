@@ -519,7 +519,30 @@ impl Interpreter {
                     base.to_string()
                 }
             }
-            other => value_type_name(other).to_string(),
+            other => {
+                // Check container type metadata for typed Hash/Array
+                if let Some(info) = self.container_type_metadata(other) {
+                    match other {
+                        Value::Hash(_) => {
+                            if let Some(ref key_type) = info.key_type {
+                                return Ok(Value::str(format!(
+                                    "Hash[{},{}]",
+                                    info.value_type, key_type
+                                )));
+                            } else if info.value_type != "Any" && info.value_type != "Mu" {
+                                return Ok(Value::str(format!("Hash[{}]", info.value_type)));
+                            }
+                        }
+                        Value::Array(_, kind) if kind.is_real_array() => {
+                            if info.value_type != "Any" && info.value_type != "Mu" {
+                                return Ok(Value::str(format!("Array[{}]", info.value_type)));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                value_type_name(other).to_string()
+            }
         }))
     }
 
