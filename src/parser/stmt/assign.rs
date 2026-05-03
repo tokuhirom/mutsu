@@ -856,6 +856,10 @@ pub(crate) fn build_compound_assign_expr(
                 assigned_value,
             )
         }
+        Expr::BareWord(name) => Expr::AssignExpr {
+            name: name.clone(),
+            expr: Box::new(compound_assigned_value_expr(Expr::BareWord(name), op, rhs)),
+        },
         Expr::BracketArray(items, tc) => Expr::Binary {
             left: Box::new(Expr::BracketArray(items, tc)),
             op: op.token_kind(),

@@ -50,6 +50,20 @@ impl Interpreter {
                 other => other.to_string_value(),
             };
         }
+        // Handle composite type specs where the base name is a type capture
+        // but has suffixes like `:D`, `:U`, `()`, `:D()`, etc.
+        // E.g., `T:D()` where `T` is a captured type should resolve to `Int:D()`.
+        if let Some(suffix_start) = constraint.find([':', '('])
+            && let (base, suffix) = (&constraint[..suffix_start], &constraint[suffix_start..])
+            && self.has_type_capture_binding(base)
+            && let Some(value) = self.env.get(base)
+        {
+            let resolved_base = match value {
+                Value::Package(name) => name.resolve(),
+                other => other.to_string_value(),
+            };
+            return format!("{}{}", resolved_base, suffix);
+        }
         constraint.to_string()
     }
 

@@ -415,6 +415,9 @@ impl Interpreter {
             }
             self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
             self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
+            let effective_return_spec = return_spec
+                .as_deref()
+                .map(|spec| self.resolved_type_capture_name(spec));
             self.env = restored_env;
             self.restore_readonly_vars(saved_readonly);
             self.samewith_context_stack.pop();
@@ -440,7 +443,8 @@ impl Interpreter {
                     return result;
                 }
             }
-            let finalized = self.finalize_return_with_spec(result, return_spec.as_deref());
+            let finalized =
+                self.finalize_return_with_spec(result, effective_return_spec.as_deref());
             return finalized.and_then(|v| {
                 let v = if def.is_raw {
                     // Mark Proxy as decontainerized so the VM's auto-FETCH doesn't strip it
