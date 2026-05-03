@@ -519,8 +519,23 @@ impl Compiler {
                 }
                 // Track constant declarations so the compiler can avoid itemizing
                 // them in `for` loops (constants have no Scalar container).
-                if custom_traits.iter().any(|(t, _)| t == "__constant") {
+                let is_constant_decl = custom_traits.iter().any(|(t, _)| t == "__constant");
+                if is_constant_decl {
                     self.constant_vars.insert(name.clone());
+                }
+                // X::ParametricConstant: typed @/% constants are forbidden
+                if is_constant_decl
+                    && type_constraint.is_some()
+                    && (name.starts_with('@') || name.starts_with('%'))
+                {
+                    let err = Value::make_instance(
+                        Symbol::intern("X::ParametricConstant"),
+                        std::collections::HashMap::new(),
+                    );
+                    let idx = self.code.add_constant(err);
+                    self.code.emit(OpCode::LoadConst(idx));
+                    self.code.emit(OpCode::Die);
+                    return;
                 }
                 let is_dynamic = *is_dynamic || self.var_is_dynamic(name);
                 let name_idx = self.code.add_constant(Value::str(name.clone()));

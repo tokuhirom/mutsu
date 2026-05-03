@@ -256,6 +256,7 @@ roast/S03-smartmatch/signature-signature.t
 roast/S04-blocks-and-statements/let.t
 roast/S04-blocks-and-statements/pointy-rw.t
 roast/S04-blocks-and-statements/pointy.t
+roast/S04-declarations/constant-6.d.t
 roast/S04-declarations/implicit-parameter.t
 roast/S04-declarations/multiple.t
 roast/S04-declarations/our.t

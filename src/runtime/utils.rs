@@ -564,7 +564,18 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
                     let message = format!(
                         "Odd number of elements found where hash initializer expected: found {total_items} element(s); last element seen: {last_item}"
                     );
-                    return Err(RuntimeError::new(message));
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert(
+                        "message".to_string(),
+                        crate::value::Value::str(message.clone()),
+                    );
+                    let ex = crate::value::Value::make_instance(
+                        crate::symbol::Symbol::intern("X::Hash::Store::OddNumber"),
+                        attrs,
+                    );
+                    let mut err = RuntimeError::new(message);
+                    err.exception = Some(Box::new(ex));
+                    return Err(err);
                 };
                 map.insert(Value::hash_key_encode(&other), value);
             }

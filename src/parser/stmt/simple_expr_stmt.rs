@@ -1383,6 +1383,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     if rest.starts_with(',') && !rest.starts_with(",,") {
         let mut exprs = vec![expr];
         let mut r = rest;
+        let mut trailing_comma = false;
 
         // Collect comma-separated expressions
         while r.starts_with(',') && !r.starts_with(",,") {
@@ -1395,8 +1396,10 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 break;
             }
 
-            // Stop at semicolon, closing brace, or end of input
+            // Stop at semicolon, closing brace, or end of input.
+            // A trailing comma before `}` creates a list (e.g. `42,`).
             if r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') {
+                trailing_comma = r2.starts_with('}');
                 r = r2;
                 break;
             }
@@ -1409,11 +1412,13 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
 
         // Without a trailing statement modifier, keep this as a plain comma
         // expression statement (do not split into multiple statements).
+        // A trailing comma before `}` always creates a list, even with
+        // a single element (e.g. `{ 42, }` gives `(42,)`).
         if !is_stmt_modifier_keyword(r) {
-            let expr = if exprs.len() == 1 {
-                exprs.remove(0)
-            } else {
+            let expr = if trailing_comma || exprs.len() > 1 {
                 Expr::ArrayLiteral(exprs)
+            } else {
+                exprs.remove(0)
             };
             add_xor_sink_warnings(&expr);
             return Ok((r, Stmt::Expr(expr)));
