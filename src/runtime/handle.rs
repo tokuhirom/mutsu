@@ -728,25 +728,23 @@ impl Interpreter {
                             .collect();
                         Ok(String::from_utf16_lossy(&units))
                     }
-                } else {
-                    if let Some(limit) = count {
-                        if limit == 0 {
-                            return Ok(String::new());
-                        }
-                        let mut out = String::new();
-                        for _ in 0..limit {
-                            let Some(ch) = Self::read_utf8_char(file)? else {
-                                break;
-                            };
-                            out.push_str(&ch);
-                        }
-                        Ok(out)
-                    } else {
-                        let mut bytes = Vec::new();
-                        file.read_to_end(&mut bytes)
-                            .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
-                        Ok(String::from_utf8_lossy(&bytes).to_string())
+                } else if let Some(limit) = count {
+                    if limit == 0 {
+                        return Ok(String::new());
                     }
+                    let mut out = String::new();
+                    for _ in 0..limit {
+                        let Some(ch) = Self::read_utf8_char(file)? else {
+                            break;
+                        };
+                        out.push_str(&ch);
+                    }
+                    Ok(out)
+                } else {
+                    let mut bytes = Vec::new();
+                    file.read_to_end(&mut bytes)
+                        .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                    Ok(String::from_utf8_lossy(&bytes).to_string())
                 }
             }
             IoHandleTarget::Socket => {
