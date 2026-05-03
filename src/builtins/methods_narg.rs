@@ -2360,10 +2360,55 @@ pub(crate) fn native_method_1arg(
                 endian,
             )))
         }
+        "AT-KEY" => match target {
+            Value::Hash(map) => {
+                let key = arg.to_string_value();
+                Some(Ok(map.get(&key).cloned().unwrap_or(Value::Nil)))
+            }
+            Value::Set(data, _) => {
+                let key = arg.to_string_value();
+                Some(Ok(Value::Bool(data.elements.contains(&key))))
+            }
+            Value::Bag(data, _) => {
+                let key = arg.to_string_value();
+                let count = data.counts.get(&key).copied().unwrap_or(0);
+                Some(Ok(Value::Int(count)))
+            }
+            Value::Mix(data, _) => {
+                let key = arg.to_string_value();
+                let weight = data.weights.get(&key).copied().unwrap_or(0.0);
+                if weight == weight.floor() && weight.abs() < i64::MAX as f64 {
+                    Some(Ok(Value::Int(weight as i64)))
+                } else {
+                    Some(Ok(Value::Num(weight)))
+                }
+            }
+            Value::Nil => Some(Ok(Value::Package(Symbol::intern("Any")))),
+            Value::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu") => {
+                Some(Ok(Value::Package(Symbol::intern("Any"))))
+            }
+            _ => None,
+        },
         "EXISTS-KEY" => match target {
             Value::Hash(map) => {
                 let key = arg.to_string_value();
                 Some(Ok(Value::Bool(map.contains_key(&key))))
+            }
+            Value::Set(data, _) => {
+                let key = arg.to_string_value();
+                Some(Ok(Value::Bool(data.elements.contains(&key))))
+            }
+            Value::Bag(data, _) => {
+                let key = arg.to_string_value();
+                Some(Ok(Value::Bool(data.counts.contains_key(&key))))
+            }
+            Value::Mix(data, _) => {
+                let key = arg.to_string_value();
+                Some(Ok(Value::Bool(data.weights.contains_key(&key))))
+            }
+            Value::Nil => Some(Ok(Value::Bool(false))),
+            Value::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu") => {
+                Some(Ok(Value::Bool(false)))
             }
             _ => None,
         },

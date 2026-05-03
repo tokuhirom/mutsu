@@ -409,6 +409,15 @@ impl RuntimeError {
         Self::typed("X::Assignment::RO", attrs)
     }
 
+    /// X::Assignment::RO with typename - Cannot modify an immutable value of a given type
+    pub(crate) fn assignment_ro_typename(typename: &str, repr: &str) -> Self {
+        let msg = format!("Cannot modify an immutable {} ({})", typename, repr);
+        let mut attrs = HashMap::new();
+        attrs.insert("typename".to_string(), Value::str(typename.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg));
+        Self::typed("X::Assignment::RO", attrs)
+    }
+
     /// X::Str::Numeric - Cannot convert string to number
     #[allow(dead_code)]
     pub(crate) fn str_numeric(source: &str, reason: &str) -> Self {
