@@ -851,6 +851,7 @@ pub(crate) fn build_compound_assign_expr(
                 Expr::Var(name) => Some(name.clone()),
                 Expr::ArrayVar(name) => Some(format!("@{}", name)),
                 Expr::HashVar(name) => Some(format!("%{}", name)),
+                Expr::BareWord(name) => Some(name.clone()),
                 _ => None,
             };
             let current_value = Expr::MethodCall {
@@ -1313,6 +1314,7 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                     Expr::Var(name) => Some(name.clone()),
                     Expr::ArrayVar(name) => Some(format!("@{}", name)),
                     Expr::HashVar(name) => Some(format!("%{}", name)),
+                    Expr::BareWord(name) => Some(name.clone()),
                     _ => None,
                 };
                 method_lvalue_assign_expr(*target, target_var_name, name.resolve(), args, rhs)

@@ -738,6 +738,311 @@ impl VM {
             }
             other => other,
         };
+
+        // Fast paths for xxKEY methods on Hash/Set/Bag/Mix types
+        match method.as_str() {
+            "AT-KEY" if args.len() == 1 => {
+                let inner_target = match &target {
+                    Value::Scalar(inner) => inner.as_ref(),
+                    other => other,
+                };
+                if let Value::Hash(map) = inner_target {
+                    let key = args[0].to_string_value();
+                    let result = self.resolve_hash_entry(map, &key);
+                    self.stack.push(result);
+                    self.env_dirty = true;
+                    return Ok(());
+                }
+            }
+            "ASSIGN-KEY" if args.len() == 2 => {
+                let key = args[0].to_string_value();
+                let value = args[1].clone();
+                let inner_target = match &target {
+                    Value::Scalar(inner) => inner.as_ref(),
+                    other => other,
+                };
+                match inner_target {
+                    Value::Hash(_) => {
+                        let old_meta = self
+                            .interpreter
+                            .container_type_metadata(inner_target)
+                            .clone();
+                        let mut hash = match inner_target {
+                            Value::Hash(map) => (**map).clone(),
+                            _ => std::collections::HashMap::new(),
+                        };
+                        hash.insert(key, value.clone());
+                        let new_hash = Value::Hash(Arc::new(hash));
+                        let meta = old_meta.unwrap_or(crate::runtime::ContainerTypeInfo {
+                            value_type: "Any".to_string(),
+                            key_type: None,
+                            declared_type: None,
+                        });
+                        self.interpreter
+                            .register_container_type_metadata(&new_hash, meta);
+                        self.interpreter
+                            .env_mut()
+                            .insert(target_name.to_string(), new_hash);
+                        self.stack.push(value);
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                    Value::Set(_, false) => {
+                        let repr = crate::runtime::gist_value(inner_target);
+                        return Err(RuntimeError::assignment_ro_typename("Set", &repr));
+                    }
+                    Value::Set(data, true) => {
+                        let mut new_set = data.elements.clone();
+                        if value.truthy() {
+                            new_set.insert(key);
+                        } else {
+                            new_set.remove(&key);
+                        }
+                        let new_val = Value::set_hash(new_set);
+                        self.interpreter
+                            .env_mut()
+                            .insert(target_name.to_string(), new_val);
+                        self.stack.push(value);
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                    Value::Bag(_, false) => {
+                        return Err(RuntimeError::assignment_ro_typename("Int", "1"));
+                    }
+                    Value::Bag(data, true) => {
+                        let count = crate::runtime::to_int(&value);
+                        let mut new_counts = data.counts.clone();
+                        if count > 0 {
+                            new_counts.insert(key, count);
+                        } else {
+                            new_counts.remove(&key);
+                        }
+                        let new_val = Value::bag_hash(new_counts);
+                        self.interpreter
+                            .env_mut()
+                            .insert(target_name.to_string(), new_val);
+                        self.stack.push(value);
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                    Value::Mix(_, false) => {
+                        return Err(RuntimeError::assignment_ro_typename("Int", "1"));
+                    }
+                    Value::Mix(data, true) => {
+                        let weight = crate::runtime::to_float_value(&value).unwrap_or(0.0);
+                        let mut new_weights = data.weights.clone();
+                        if weight != 0.0 {
+                            new_weights.insert(key, weight);
+                        } else {
+                            new_weights.remove(&key);
+                        }
+                        let new_val = Value::mix_hash(new_weights);
+                        self.interpreter
+                            .env_mut()
+                            .insert(target_name.to_string(), new_val);
+                        self.stack.push(value);
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                    Value::Nil | Value::Package(_) => {
+                        let mut hash = std::collections::HashMap::new();
+                        hash.insert(key, value.clone());
+                        self.interpreter
+                            .env_mut()
+                            .insert(target_name.to_string(), Value::Hash(Arc::new(hash)));
+                        self.stack.push(value);
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                    _ => {}
+                }
+            }
+            "DELETE-KEY" if args.len() == 1 => {
+                let key = args[0].to_string_value();
+                let inner_target = match &target {
+                    Value::Scalar(inner) => inner.as_ref(),
+                    other => other,
+                };
+                match inner_target {
+                    Value::Hash(map) => {
+                        let old_meta = self
+                            .interpreter
+                            .container_type_metadata(inner_target)
+                            .clone();
+                        let old_value = if map.contains_key(&key) {
+                            self.resolve_hash_entry(map, &key)
+                        } else {
+                            let type_name = old_meta
+                                .as_ref()
+                                .map(|info| info.value_type.clone())
+                                .unwrap_or_else(|| "Any".to_string());
+                            Value::Package(Symbol::intern(&type_name))
+                        };
+                        let mut new_map = (**map).clone();
+                        new_map.remove(&key);
+                        let new_hash = Value::Hash(Arc::new(new_map));
+                        let meta = old_meta.unwrap_or(crate::runtime::ContainerTypeInfo {
+                            value_type: "Any".to_string(),
+                            key_type: None,
+                            declared_type: None,
+                        });
+                        self.interpreter
+                            .register_container_type_metadata(&new_hash, meta);
+                        self.interpreter
+                            .env_mut()
+                            .insert(target_name.to_string(), new_hash);
+                        self.stack.push(old_value);
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                    Value::Set(_, false) => {
+                        return Err(RuntimeError::immutable("Set", "DELETE-KEY"));
+                    }
+                    Value::Set(data, true) => {
+                        let existed = data.elements.contains(&key);
+                        let mut new_set = data.elements.clone();
+                        new_set.remove(&key);
+                        let new_val = Value::set_hash(new_set);
+                        self.interpreter
+                            .env_mut()
+                            .insert(target_name.to_string(), new_val);
+                        self.stack.push(Value::Bool(existed));
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                    Value::Bag(_, false) => {
+                        return Err(RuntimeError::immutable("Bag", "DELETE-KEY"));
+                    }
+                    Value::Bag(data, true) => {
+                        let old_count = data.counts.get(&key).copied().unwrap_or(0);
+                        let mut new_counts = data.counts.clone();
+                        new_counts.remove(&key);
+                        let new_val = Value::bag_hash(new_counts);
+                        self.interpreter
+                            .env_mut()
+                            .insert(target_name.to_string(), new_val);
+                        self.stack.push(Value::Int(old_count));
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                    Value::Mix(_, false) => {
+                        return Err(RuntimeError::immutable("Mix", "DELETE-KEY"));
+                    }
+                    Value::Mix(data, true) => {
+                        let old_weight = data.weights.get(&key).copied().unwrap_or(0.0);
+                        let mut new_weights = data.weights.clone();
+                        new_weights.remove(&key);
+                        let new_val = Value::mix_hash(new_weights);
+                        self.interpreter
+                            .env_mut()
+                            .insert(target_name.to_string(), new_val);
+                        let result = if old_weight == old_weight.floor()
+                            && old_weight.abs() < i64::MAX as f64
+                        {
+                            Value::Int(old_weight as i64)
+                        } else {
+                            Value::Num(old_weight)
+                        };
+                        self.stack.push(result);
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                    Value::Nil | Value::Package(_) => {
+                        self.stack.push(Value::Nil);
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                    _ => {}
+                }
+            }
+            "BIND-KEY" if args.len() == 2 => {
+                let inner_target = match &target {
+                    Value::Scalar(inner) => inner.as_ref(),
+                    other => other,
+                };
+                match inner_target {
+                    Value::Hash(map) => {
+                        let old_meta = self
+                            .interpreter
+                            .container_type_metadata(inner_target)
+                            .clone();
+                        let key = args[0].to_string_value();
+                        let value = args[1].clone();
+                        let source_var = arg_sources
+                            .as_ref()
+                            .and_then(|s| s.get(1))
+                            .and_then(|s| s.clone());
+                        let mut new_map = (**map).clone();
+                        if let Some(var_name) = source_var {
+                            new_map.insert(
+                                key,
+                                Value::Pair(
+                                    super::vm_var_ops::BOUND_HASH_REF_SENTINEL.to_string(),
+                                    Box::new(Value::str(var_name)),
+                                ),
+                            );
+                        } else {
+                            new_map.insert(key, value.clone());
+                        }
+                        let new_hash = Value::Hash(Arc::new(new_map));
+                        let meta = old_meta.unwrap_or(crate::runtime::ContainerTypeInfo {
+                            value_type: "Any".to_string(),
+                            key_type: None,
+                            declared_type: None,
+                        });
+                        self.interpreter
+                            .register_container_type_metadata(&new_hash, meta);
+                        self.interpreter
+                            .env_mut()
+                            .insert(target_name.to_string(), new_hash);
+                        self.stack.push(value);
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                    Value::Nil | Value::Package(_) => {
+                        let key = args[0].to_string_value();
+                        let value = args[1].clone();
+                        let source_var = arg_sources
+                            .as_ref()
+                            .and_then(|s| s.get(1))
+                            .and_then(|s| s.clone());
+                        let mut new_map = std::collections::HashMap::new();
+                        if let Some(var_name) = source_var {
+                            new_map.insert(
+                                key,
+                                Value::Pair(
+                                    super::vm_var_ops::BOUND_HASH_REF_SENTINEL.to_string(),
+                                    Box::new(Value::str(var_name)),
+                                ),
+                            );
+                        } else {
+                            new_map.insert(key, value.clone());
+                        }
+                        self.interpreter
+                            .env_mut()
+                            .insert(target_name.to_string(), Value::Hash(Arc::new(new_map)));
+                        self.stack.push(value);
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                    Value::Set(_, mutable) => {
+                        let name = if *mutable { "SetHash" } else { "Set" };
+                        return Err(RuntimeError::bind(name));
+                    }
+                    Value::Bag(_, mutable) => {
+                        let name = if *mutable { "BagHash" } else { "Bag" };
+                        return Err(RuntimeError::bind(name));
+                    }
+                    Value::Mix(_, mutable) => {
+                        let name = if *mutable { "MixHash" } else { "Mix" };
+                        return Err(RuntimeError::bind(name));
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+
         // Auto-vivify undefined values (Nil, Any, Mu type objects) to empty Arrays
         // for mutating list methods. In Raku, calling push/unshift/append/prepend on
         // an undefined variable auto-vivifies it to an Array.

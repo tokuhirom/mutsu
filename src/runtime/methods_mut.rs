@@ -566,6 +566,36 @@ impl Interpreter {
         method_args: Vec<Value>,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        // Handle AT-KEY assignment on Hash: h.AT-KEY("k") = v  =>  ASSIGN-KEY("k", v)
+        if method == "AT-KEY" && method_args.len() == 1 {
+            let inner = match &target {
+                Value::Scalar(inner) => inner.as_ref(),
+                other => other,
+            };
+            if matches!(inner, Value::Hash(_) | Value::Nil)
+                || matches!(inner, Value::Package(n) if matches!(n.resolve().as_str(), "Any" | "Mu"))
+            {
+                let old_meta = self.container_type_metadata(inner).clone();
+                let key = method_args[0].to_string_value();
+                let mut hash = match inner {
+                    Value::Hash(map) => (**map).clone(),
+                    _ => std::collections::HashMap::new(),
+                };
+                hash.insert(key, value.clone());
+                let new_hash = Value::Hash(std::sync::Arc::new(hash));
+                // Propagate container type metadata to avoid stale pointer reuse
+                let meta = old_meta.unwrap_or(ContainerTypeInfo {
+                    value_type: "Any".to_string(),
+                    key_type: None,
+                    declared_type: None,
+                });
+                self.register_container_type_metadata(&new_hash, meta);
+                if let Some(var_name) = target_var {
+                    self.env.insert(var_name.to_string(), new_hash);
+                }
+                return Ok(value);
+            }
+        }
         if let Value::Instance { class_name, .. } = &target
             && (class_name == "Date" || class_name == "DateTime")
         {
