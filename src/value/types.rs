@@ -10,6 +10,13 @@ impl Value {
     ///   1 eqv 1.0  → False  (Int vs Num)
     ///   [1,2] eqv (1,2)  → False  (Array vs List)
     pub(crate) fn eqv(&self, other: &Self) -> bool {
+        // Unwrap Scalar containers: eqv looks through containerization
+        if let Value::Scalar(inner) = self {
+            return inner.eqv(other);
+        }
+        if let Value::Scalar(inner) = other {
+            return self.eqv(inner);
+        }
         // Junction threading: if either side is a junction, thread eqv
         // through it and return the boolean result of the junction.
         if let Value::Junction { kind, values } = other {

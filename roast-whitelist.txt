@@ -954,6 +954,7 @@ roast/S32-io/spurt.t
 roast/S32-io/tell.t
 roast/S32-list/are.t
 roast/S32-list/batch.t
+roast/S32-list/categorize-list.t
 roast/S32-list/classify-list.t
 roast/S32-list/combinations.t
 roast/S32-list/create.t

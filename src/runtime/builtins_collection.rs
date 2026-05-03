@@ -1866,30 +1866,47 @@ impl Interpreter {
             as_items(&value).unwrap_or_else(|| vec![value])
         }
 
-        fn mapper_categories(value: Value) -> Vec<Vec<Value>> {
+        /// Returns (paths, is_multi_level).
+        /// `is_multi_level` is true when the mapper returned a list whose
+        /// elements are themselves lists (multi-level paths), as opposed to
+        /// a flat list of single category names.
+        fn mapper_categories(value: Value) -> (Vec<Vec<Value>>, bool) {
             if let Some(items) = as_items(&value) {
                 if items.is_empty() {
-                    return Vec::new();
+                    return (Vec::new(), false);
                 }
+                let has_list_element = items.iter().any(|i| as_items(i).is_some());
                 let mut out = Vec::new();
                 for item in items {
                     out.push(mapper_path(item));
                 }
-                out
+                (out, has_list_element)
             } else {
-                vec![vec![value]]
+                (vec![vec![value]], false)
             }
         }
 
         fn mixed_level_error(name: &str) -> RuntimeError {
-            RuntimeError::new(format!(
-                "X::Invalid::ComputedValue: mixed-level {}",
-                if name == "categorize" {
-                    "categorization"
-                } else {
-                    "classification"
-                }
-            ))
+            make_mixed_level_err(name)
+        }
+
+        fn make_mixed_level_err(name: &str) -> RuntimeError {
+            let kind = if name == "categorize" {
+                "categorization"
+            } else {
+                "classification"
+            };
+            let msg = format!(
+                "mapper on {}-list computed to an item with different number of elements in it than previous items, which cannot be used because all values need to have the same number of elements. Mixed-level {} is not supported.",
+                name, kind
+            );
+            let mut attrs = HashMap::new();
+            attrs.insert("message".to_string(), Value::str(msg.clone()));
+            let exception =
+                Value::make_instance(Symbol::intern("X::Invalid::ComputedValue"), attrs);
+            let mut err = RuntimeError::new(msg);
+            err.exception = Some(Box::new(exception));
+            err
         }
 
         fn insert_nested_bucket(
@@ -2035,6 +2052,7 @@ impl Interpreter {
 
         // Track classification level depth across all items for mixed-level detection
         let mut expected_level: Option<usize> = None;
+        let mut expected_multi_level: Option<bool> = None;
 
         for item in &items {
             let mapped = match &mapper {
@@ -2068,7 +2086,8 @@ impl Interpreter {
 
             if bag_counts.is_some() || mix_counts.is_some() {
                 let paths = if name == "categorize" {
-                    mapper_categories(mapped)
+                    let (p, _) = mapper_categories(mapped);
+                    p
                 } else {
                     let path = mapper_path(mapped);
                     if path.is_empty() {
@@ -2099,36 +2118,31 @@ impl Interpreter {
                 continue;
             }
 
-            let paths = if name == "categorize" {
+            let (paths, is_multi_level) = if name == "categorize" {
                 mapper_categories(mapped)
             } else {
                 let path = mapper_path(mapped);
-                if path.is_empty() {
+                let ml = path.len() > 1;
+                let v = if path.is_empty() {
                     Vec::new()
                 } else {
                     vec![path]
-                }
+                };
+                (v, ml)
             };
+            if !paths.is_empty() {
+                if let Some(prev_ml) = expected_multi_level {
+                    if is_multi_level != prev_ml {
+                        return Err(make_mixed_level_err(name));
+                    }
+                } else {
+                    expected_multi_level = Some(is_multi_level);
+                }
+            }
             for path in &paths {
                 if let Some(expected) = expected_level {
                     if path.len() != expected {
-                        let msg = format!(
-                            "X::Invalid::ComputedValue: mixed-level {}",
-                            if name == "categorize" {
-                                "categorization"
-                            } else {
-                                "classification"
-                            }
-                        );
-                        let mut attrs = HashMap::new();
-                        attrs.insert("message".to_string(), Value::str(msg.clone()));
-                        let exception = Value::make_instance(
-                            Symbol::intern("X::Invalid::ComputedValue"),
-                            attrs,
-                        );
-                        let mut err = RuntimeError::new(msg);
-                        err.exception = Some(Box::new(exception));
-                        return Err(err);
+                        return Err(make_mixed_level_err(name));
                     }
                 } else {
                     expected_level = Some(path.len());
