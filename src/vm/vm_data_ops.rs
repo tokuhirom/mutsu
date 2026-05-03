@@ -206,18 +206,17 @@ impl VM {
         let n = n as usize;
         let start = self.stack.len() - n;
         let values: Vec<Value> = self.stack.drain(start..).collect();
-        let mut content = String::new();
+        // put threads through Junctions: each eigenstate gets put individually
+        let mut lines = Vec::new();
         for v in &values {
             let v = self.interpreter.auto_fetch_proxy(v)?;
             check_rat_divide_by_zero(&v)?;
-            if needs_method_dispatch(&v) {
-                content.push_str(&self.interpreter.render_str_value(&v));
-            } else {
-                content.push_str(&v.to_str_context());
-            }
+            self.collect_put_lines(&v, &mut lines)?;
         }
-        self.interpreter
-            .write_to_named_handle("$*OUT", &content, true)?;
+        for line in &lines {
+            self.interpreter
+                .write_to_named_handle("$*OUT", line, true)?;
+        }
         Ok(())
     }
 
@@ -233,6 +232,28 @@ impl VM {
         }
         self.interpreter
             .write_to_named_handle("$*OUT", &content, false)?;
+        Ok(())
+    }
+
+    /// Recursively collect put lines from a value, threading through Junctions.
+    fn collect_put_lines(
+        &mut self,
+        v: &Value,
+        lines: &mut Vec<String>,
+    ) -> Result<(), RuntimeError> {
+        match v {
+            Value::Junction { values, .. } => {
+                for elem in values.iter() {
+                    self.collect_put_lines(elem, lines)?;
+                }
+            }
+            _ if needs_method_dispatch(v) => {
+                lines.push(self.interpreter.render_str_value(v));
+            }
+            _ => {
+                lines.push(v.to_str_context());
+            }
+        }
         Ok(())
     }
 

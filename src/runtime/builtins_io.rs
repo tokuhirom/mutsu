@@ -902,6 +902,38 @@ impl Interpreter {
         name: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        // put and print thread through Junctions: each eigenstate is output individually
+        if matches!(name, "put" | "print") {
+            let has_junctions = args.iter().any(|a| matches!(a, Value::Junction { .. }));
+            if has_junctions {
+                let mut flat = Vec::new();
+                for arg in args {
+                    Self::collect_junction_eigenstates(arg, &mut flat);
+                }
+                let (handle, newline) = if name == "put" {
+                    ("$*OUT", true)
+                } else {
+                    ("$*OUT", false)
+                };
+                for v in &flat {
+                    let content = self.render_str_value(v);
+                    self.write_to_named_handle(handle, &content, newline)?;
+                }
+                return Ok(Value::Bool(true));
+            }
+            // No junctions: regular put/print behavior
+            let mut content = String::new();
+            for arg in args {
+                content.push_str(&self.render_str_value(arg));
+            }
+            let (handle, newline) = if name == "put" {
+                ("$*OUT", true)
+            } else {
+                ("$*OUT", false)
+            };
+            self.write_to_named_handle(handle, &content, newline)?;
+            return Ok(Value::Bool(true));
+        }
         let mut content = String::new();
         if args.is_empty() && name == "note" {
             content.push_str("Noted");
@@ -911,7 +943,6 @@ impl Interpreter {
                 content.push_str(&self.render_gist_value(arg));
             }
         } else {
-            // print and put use .Str (method dispatch for custom types)
             for arg in args {
                 content.push_str(&self.render_str_value(arg));
             }
@@ -923,6 +954,17 @@ impl Interpreter {
         };
         self.write_to_named_handle(handle, &content, newline)?;
         Ok(Value::Bool(true))
+    }
+
+    /// Collect all non-junction eigenstates from a value, flattening junctions recursively.
+    fn collect_junction_eigenstates(v: &Value, out: &mut Vec<Value>) {
+        if let Value::Junction { values, .. } = v {
+            for elem in values.iter() {
+                Self::collect_junction_eigenstates(elem, out);
+            }
+        } else {
+            out.push(v.clone());
+        }
     }
 
     pub(super) fn builtin_prompt(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

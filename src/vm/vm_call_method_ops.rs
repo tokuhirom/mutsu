@@ -61,7 +61,6 @@ impl VM {
                     | "WHICH"
                     | "^name"
                     | "gist"
-                    | "Str"
                     | "defined"
                     | "THREAD"
                     | "raku"
@@ -532,14 +531,26 @@ impl VM {
                 // to avoid affecting internal dispatch (e.g. max :by comparators).
                 if matches!(&target, Value::Nil) {
                     match method.as_str() {
-                        "BIND-POS" | "BIND-KEY" | "ASSIGN-POS" | "ASSIGN-KEY" | "STORE"
-                        | "push" | "append" | "unshift" | "prepend" => {
+                        "BIND-POS" | "BIND-KEY" | "ASSIGN-POS" | "ASSIGN-KEY" | "STORE" => {
                             return Err(RuntimeError::new(format!(
                                 "Invocant of method '{}' must be an object instance of type \
                                  'Any', not a type object of type 'Nil'.  Did you forget a \
                                  '.new'?",
                                 method
                             )));
+                        }
+                        // Any:U autovivification: push/append/unshift/prepend on
+                        // an undefined value creates a new Array.
+                        "push" | "append" | "unshift" | "prepend" => {
+                            let arr: Vec<Value> =
+                                if matches!(method.as_str(), "unshift" | "prepend") {
+                                    args.to_vec()
+                                } else {
+                                    args
+                                };
+                            self.stack.push(Value::real_array(arr));
+                            self.env_dirty = true;
+                            return Ok(());
                         }
                         "defined" | "Bool" | "so" | "not" | "gist" | "Str" | "raku" | "perl"
                         | "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "VAR" | "DEFINITE"
@@ -553,6 +564,20 @@ impl VM {
                             return Ok(());
                         }
                     }
+                }
+                // Any:U autovivification: push/append/unshift/prepend on a type
+                // object (e.g. Any from hash miss) creates a new Array.
+                if matches!(method.as_str(), "push" | "append" | "unshift" | "prepend")
+                    && matches!(&target, Value::Package(name) if name.resolve() == "Any" || name.resolve() == "Mu")
+                {
+                    let arr: Vec<Value> = if matches!(method.as_str(), "unshift" | "prepend") {
+                        args.to_vec()
+                    } else {
+                        args
+                    };
+                    self.stack.push(Value::real_array(arr));
+                    self.env_dirty = true;
+                    return Ok(());
                 }
                 // If we have a pending Proxy subclass attribute reference and this
                 // is a mutating array method, delegate to the shared storage mutator
