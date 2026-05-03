@@ -119,6 +119,8 @@ impl Interpreter {
                     nl_out: "\n".to_string(),
                     bytes_written: 0,
                     read_attempted: false,
+                    utf16_bom_written: false,
+                    utf16_detected_be: None,
                     argfiles_index: 0,
                     argfiles_reader: None,
                 };
@@ -160,6 +162,8 @@ impl Interpreter {
                 nl_out: "\n".to_string(),
                 bytes_written: 0,
                 read_attempted: false,
+                utf16_bom_written: false,
+                utf16_detected_be: None,
                 argfiles_index: 0,
                 argfiles_reader: None,
             };
@@ -214,6 +218,8 @@ impl Interpreter {
                     nl_out: "\n".to_string(),
                     bytes_written: 0,
                     read_attempted: false,
+                    utf16_bom_written: false,
+                    utf16_detected_be: None,
                     argfiles_index: 0,
                     argfiles_reader: None,
                 };

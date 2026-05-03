@@ -633,8 +633,6 @@ roast/S14-traits/variables.t
 roast/S15-literals/identifiers.t
 roast/S15-literals/numbers.t
 roast/S15-nfg/GraphemeBreakTest-0.t
-roast/S15-nfg/GraphemeBreakTest-1.t
-roast/S15-nfg/GraphemeBreakTest-2.t
 roast/S15-nfg/case-change.t
 roast/S15-nfg/cgj.t
 roast/S15-nfg/concat-stable.t
@@ -956,6 +954,7 @@ roast/S32-io/socket-fail-invalid-values.t
 roast/S32-io/socket-host-port-split.t
 roast/S32-io/spurt.t
 roast/S32-io/tell.t
+roast/S32-io/utf16.t
 roast/S32-list/are.t
 roast/S32-list/batch.t
 roast/S32-list/categorize-list.t
