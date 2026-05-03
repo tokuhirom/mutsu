@@ -336,6 +336,10 @@ impl VM {
                     custom_traits,
                 )?;
             }
+            // Note: we intentionally do NOT push the Sub onto the stack or
+            // store it in env here. The interpreter's trailing_sub_value
+            // mechanism handles returning the Sub when it's the last statement
+            // of a block. Pushing would interfere with stack depth tracking.
             Ok(())
         } else {
             Err(RuntimeError::new("RegisterSub expects SubDecl"))

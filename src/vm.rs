@@ -357,10 +357,8 @@ impl VM {
         // callers (e.g. eval_block_value) can observe side effects.
         self.sync_env_from_locals(code);
         let last_stack_value = self.stack.last().cloned();
-        (
-            self.interpreter,
-            Ok(last_stack_value.or(self.last_topic_value)),
-        )
+        let fallback = self.last_topic_value;
+        (self.interpreter, Ok(last_stack_value.or(fallback)))
     }
 
     /// Invoke a callable value using the VM fast paths when available and

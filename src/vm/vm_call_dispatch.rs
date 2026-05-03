@@ -543,6 +543,28 @@ impl VM {
         if !fn_package.is_empty() && fn_package != "GLOBAL" {
             self.interpreter.set_current_package(fn_package.to_string());
         }
+        // When the function has where constraints and there is a &name Sub in
+        // env (which carries closure env), merge the Sub's captured variables
+        // into the current env so where-constraint expressions can access them.
+        if !fn_name.is_empty() && cf.param_defs.iter().any(|pd| pd.where_constraint.is_some()) {
+            let ampname = format!("&{}", fn_name);
+            if let Some(Value::Sub(ref sub_data)) = self.interpreter.env().get(&ampname).cloned() {
+                for (k, v) in &sub_data.env {
+                    // Skip internal variables, parameters, and sigiled variables
+                    // that belong to the calling scope. Only merge simple lexical
+                    // variables that the where constraint might reference.
+                    if !k.starts_with("__mutsu_")
+                        && !k.starts_with("?")
+                        && !k.starts_with("!")
+                        && k != "_"
+                        && k != "@_"
+                        && k != "%_"
+                    {
+                        self.interpreter.env_mut().insert(k.clone(), v.clone());
+                    }
+                }
+            }
+        }
         // Skip bind_function_args_values for 0-arg functions with no params,
         // avoiding the @_ env insert that triggers Arc::make_mut deep clone.
         let rw_bindings = if args.is_empty() && cf.param_defs.is_empty() && cf.params.is_empty() {
@@ -676,7 +698,7 @@ impl VM {
             }
         }
 
-        let ret_val = if result.is_ok() {
+        let mut ret_val = if result.is_ok() {
             if self.stack.len() > saved_stack_depth {
                 self.stack.pop().unwrap_or(Value::Nil)
             } else {
@@ -685,6 +707,32 @@ impl VM {
         } else {
             Value::Nil
         };
+        // Raku semantics: `sub foo(...) { ... }` as the last statement
+        // of a block returns the Sub. If the return value is Nil/Any and
+        // the last opcode was RegisterSub, create the Sub value.
+        if result.is_ok()
+            && (matches!(ret_val, Value::Nil)
+                || matches!(&ret_val, Value::Package(n) if n.resolve() == "Any"))
+            && let Some(crate::opcode::OpCode::RegisterSub(idx)) = cf.code.ops.last()
+            && let crate::ast::Stmt::SubDecl {
+                name: sub_name,
+                params,
+                param_defs,
+                body,
+                is_rw,
+                ..
+            } = &cf.code.stmt_pool[*idx as usize]
+        {
+            ret_val = Value::make_sub(
+                Symbol::intern(self.interpreter.current_package()),
+                *sub_name,
+                params.clone(),
+                param_defs.clone(),
+                body.clone(),
+                *is_rw,
+                self.interpreter.env().clone(),
+            );
+        }
 
         self.stack.truncate(saved_stack_depth);
 

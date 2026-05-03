@@ -4,10 +4,11 @@ impl VM {
     /// Find the first positional argument that is a Junction and whose corresponding
     /// parameter type constraint does not accept Junction (i.e., needs auto-threading).
     /// Returns the index of that argument, or None if no auto-threading is needed.
-    fn find_junction_autothread_arg(
+    fn find_junction_autothread_arg_with_pointy(
         &self,
         data: &crate::value::SubData,
         args: &[Value],
+        is_pointy_block: bool,
     ) -> Option<usize> {
         // Collect positional param_defs (skip named)
         let positional_params: Vec<&crate::ast::ParamDef> = data
@@ -39,15 +40,21 @@ impl VM {
                 // Check if the corresponding param accepts Junction
                 if let Some(pd) = positional_params.get(positional_idx) {
                     let constraint = pd.type_constraint.as_deref().unwrap_or(
-                        if pd.name.starts_with('$') || pd.name.is_empty() {
-                            "Any" // implicit Any for $-sigiled params
+                        if is_pointy_block || pd.name.starts_with('@') || pd.name.starts_with('%') {
+                            "Mu" // pointy blocks and array/hash sigils: implicit Mu
                         } else {
-                            "Mu" // no constraint for other sigils
+                            "Any" // scalar params ($x stored as "x"): implicit Any
                         },
                     );
                     // Mu and Junction accept junctions directly
-                    if constraint != "Mu" && constraint != "Junction" {
-                        return Some(i);
+                    if constraint == "Mu" || constraint == "Junction" {
+                        // No auto-threading needed
+                    } else {
+                        // Check if constraint is a subset with Mu/Junction base
+                        let resolved_base = self.interpreter.resolve_subset_base_type(constraint);
+                        if resolved_base != "Mu" && resolved_base != "Junction" {
+                            return Some(i);
+                        }
                     }
                 }
                 // If no param_def found (extra args), implicit Any rejects Junction
@@ -110,7 +117,10 @@ impl VM {
         // corresponding parameter's type constraint does not accept Junction (i.e., is
         // not Mu or Junction), call the closure once per eigenvalue and collect results
         // into a new Junction of the same kind.
-        if let Some(junction_idx) = self.find_junction_autothread_arg(data, &args)
+        // For pointy blocks (-> { }), untyped params have implicit Mu, so skip
+        // auto-threading when the param has no type constraint.
+        if let Some(junction_idx) =
+            self.find_junction_autothread_arg_with_pointy(data, &args, cc.is_pointy_block)
             && let Value::Junction { kind, values } = &args[junction_idx]
         {
             let kind = kind.clone();
