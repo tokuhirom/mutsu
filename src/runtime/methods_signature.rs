@@ -1010,7 +1010,7 @@ impl Interpreter {
             }
 
             let candidates =
-                self.resolve_all_methods_with_owner(&class_name.resolve(), method, &args);
+                self.resolve_methods_per_mro_level(&class_name.resolve(), method, &args);
             if !candidates.is_empty() {
                 let mut attrs = (**attributes).clone();
                 let mut out = Vec::with_capacity(candidates.len());
