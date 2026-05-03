@@ -308,6 +308,13 @@ impl VM {
             RuntimeError::new("VM stack underflow in CallOnValue target".to_string())
         })?;
 
+        // Resolve slot refs to their underlying values before dispatch
+        let target = match &target {
+            Value::HashSlotRef { .. } => target.hash_slot_read(),
+            Value::ArraySlotRef { .. } => target.array_slot_read(),
+            _ => target,
+        };
+
         // Upgrade WeakSub (e.g., &?BLOCK) to strong Sub before dispatch
         let target = if let Value::WeakSub(ref weak) = target {
             match weak.upgrade() {

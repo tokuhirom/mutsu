@@ -844,6 +844,13 @@ pub enum Value {
         hash: Arc<HashMap<String, Value>>,
         key: String,
     },
+    /// A reference to an array slot, used for binding to array elements.
+    /// Reading this value returns the current value at the index (or Nil).
+    /// Assigning to it writes back to the parent array via interior mutation.
+    ArraySlotRef {
+        array: Arc<Vec<Value>>,
+        index: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1645,6 +1652,50 @@ impl Value {
             let ptr = Arc::as_ptr(hash) as *mut HashMap<String, Value>;
             unsafe {
                 (*ptr).insert(key.clone(), val);
+            }
+        }
+    }
+
+    /// Create an ArraySlotRef pointing to a specific index in an array.
+    /// Uses interior mutation to ensure the array is large enough.
+    pub fn array_slot_ref(&self, idx: usize) -> Option<Value> {
+        if let Value::Array(arc, _kind) = self {
+            // SAFETY: mutsu is single-threaded.
+            let ptr = Arc::as_ptr(arc) as *mut Vec<Value>;
+            unsafe {
+                // Ensure the array is large enough
+                while (&(*ptr)).len() <= idx {
+                    (&mut (*ptr)).push(Value::Nil);
+                }
+            }
+            Some(Value::ArraySlotRef {
+                array: arc.clone(),
+                index: idx,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Read the current value from an ArraySlotRef.
+    pub fn array_slot_read(&self) -> Value {
+        if let Value::ArraySlotRef { array, index } = self {
+            let ptr = Arc::as_ptr(array);
+            unsafe { (&(*ptr)).get(*index).cloned().unwrap_or(Value::Nil) }
+        } else {
+            self.clone()
+        }
+    }
+
+    /// Write a value to an ArraySlotRef's parent array at the stored index.
+    pub fn array_slot_write(&self, val: Value) {
+        if let Value::ArraySlotRef { array, index } = self {
+            let ptr = Arc::as_ptr(array) as *mut Vec<Value>;
+            unsafe {
+                while (&(*ptr)).len() <= *index {
+                    (&mut (*ptr)).push(Value::Nil);
+                }
+                (&mut (*ptr))[*index] = val;
             }
         }
     }

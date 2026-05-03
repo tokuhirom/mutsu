@@ -892,6 +892,7 @@ impl Value {
                 }
             }
             Value::HashSlotRef { .. } => self.hash_slot_read().to_string_value(),
+            Value::ArraySlotRef { .. } => self.array_slot_read().to_string_value(),
         }
     }
 

@@ -1910,7 +1910,17 @@ impl VM {
                                         &val,
                                         Value::Array(source_items, ..) if Arc::ptr_eq(items, source_items)
                                     );
-                                    let arr = Arc::make_mut(items);
+                                    // Use in-place mutation when the array is shared
+                                    // (strong_count > 1) to preserve identity semantics
+                                    // and support ArraySlotRef binding.
+                                    // SAFETY: mutsu is single-threaded.
+                                    let use_inplace =
+                                        Arc::strong_count(items) > 1 && !var_name.starts_with('@');
+                                    let arr: &mut Vec<Value> = if use_inplace {
+                                        unsafe { &mut *(Arc::as_ptr(items) as *mut _) }
+                                    } else {
+                                        Arc::make_mut(items)
+                                    };
                                     if i >= arr.len() {
                                         arr.resize(i + 1, Value::Package(Symbol::intern("Any")));
                                     }
@@ -2307,12 +2317,25 @@ impl VM {
             match inner_val {
                 Value::Array(arr, _) => {
                     // Hash-containing-Array: $hash<key>[idx] = val
+                    // Use interior mutation when the array is shared (supports
+                    // ArraySlotRef and cross-variable identity).
                     if let Ok(i) = outer_key.parse::<usize>() {
-                        let a = Arc::make_mut(arr);
-                        if i >= a.len() {
-                            a.resize(i + 1, Value::Nil);
+                        if Arc::strong_count(arr) > 1 {
+                            // SAFETY: mutsu is single-threaded.
+                            let ptr = Arc::as_ptr(arr) as *mut Vec<Value>;
+                            unsafe {
+                                while (&(*ptr)).len() <= i {
+                                    (&mut (*ptr)).push(Value::Nil);
+                                }
+                                (&mut (*ptr))[i] = val.clone();
+                            }
+                        } else {
+                            let a = Arc::make_mut(arr);
+                            if i >= a.len() {
+                                a.resize(i + 1, Value::Nil);
+                            }
+                            a[i] = val.clone();
                         }
-                        a[i] = val.clone();
                     }
                 }
                 Value::Hash(h) => {
@@ -2333,15 +2356,36 @@ impl VM {
     /// Stack order: target (bottom), index, value (top).
     /// If the target hash has `__callframe_depth`, routes through set_caller_var.
     pub(super) fn exec_index_assign_generic_op(&mut self) -> Result<(), RuntimeError> {
-        let val = self.stack.pop().unwrap_or(Value::Nil);
+        let raw_val = self.stack.pop().unwrap_or(Value::Nil);
         let idx = self.stack.pop().unwrap_or(Value::Nil);
         let target = self.stack.pop().unwrap_or(Value::Nil);
         let key = idx.to_string_value();
 
+        // Detect bind marker (__mutsu_bind_index_value) and extract the actual value
+        let (val, bind_source) = match raw_val {
+            Value::Pair(ref name, ref payload) if name == "__mutsu_bind_index_value" => {
+                match payload.as_ref() {
+                    Value::Array(items, ..) if items.len() >= 2 => {
+                        let value = items.first().cloned().unwrap_or(Value::Nil);
+                        let source = match items.get(1) {
+                            Some(Value::Array(srcs, ..)) => srcs.first().and_then(|s| match s {
+                                Value::Str(name) if !name.is_empty() => Some((**name).clone()),
+                                _ => None,
+                            }),
+                            _ => None,
+                        };
+                        (value, source)
+                    }
+                    other => (other.clone(), None),
+                }
+            }
+            other => (other, None),
+        };
+
         match &target {
-            Value::Hash(h) => {
+            Value::Hash(arc) => {
                 // Check for callframe .my hash with depth marker
-                if let Some(Value::Int(depth)) = h.get("__callframe_depth") {
+                if let Some(Value::Int(depth)) = arc.get("__callframe_depth") {
                     let depth = *depth as usize;
                     // Strip sigil from key to get bare variable name
                     let bare_name =
@@ -2355,8 +2399,65 @@ impl VM {
                     self.stack.push(val);
                     return Ok(());
                 }
-                // Regular hash: just do the assignment (on a temporary — won't persist)
+                // Interior mutation: write into the hash via raw pointer
+                // so the change is visible to all holders of the same Arc.
+                let ptr = Arc::as_ptr(arc) as *mut std::collections::HashMap<String, Value>;
+                unsafe {
+                    (*ptr).insert(key.clone(), val.clone());
+                }
+                // For bind mode, set up a HashSlotRef on the source variable
+                if let Some(source_name) = &bind_source {
+                    let slot_ref = Value::HashSlotRef {
+                        hash: arc.clone(),
+                        key,
+                    };
+                    self.interpreter
+                        .env_mut()
+                        .insert(source_name.clone(), slot_ref.clone());
+                    self.env_dirty = true;
+                }
                 self.stack.push(val);
+            }
+            Value::Array(arc, _kind) => {
+                // Interior mutation: write into the array via raw pointer
+                // so the change is visible to all holders of the same Arc.
+                if let Ok(i) = key.parse::<usize>() {
+                    let ptr = Arc::as_ptr(arc) as *mut Vec<Value>;
+                    unsafe {
+                        while (&(*ptr)).len() <= i {
+                            (&mut (*ptr)).push(Value::Nil);
+                        }
+                        (&mut (*ptr))[i] = val.clone();
+                    }
+                    // For bind mode, set up an ArraySlotRef on the source variable
+                    if let Some(source_name) = &bind_source {
+                        let slot_ref = Value::ArraySlotRef {
+                            array: arc.clone(),
+                            index: i,
+                        };
+                        self.interpreter
+                            .env_mut()
+                            .insert(source_name.clone(), slot_ref.clone());
+                        self.env_dirty = true;
+                    }
+                }
+                self.stack.push(val);
+            }
+            Value::HashSlotRef { .. } => {
+                // Resolve the HashSlotRef and assign into the resolved container.
+                let resolved = target.hash_slot_read();
+                self.stack.push(resolved);
+                self.stack.push(idx);
+                self.stack.push(val);
+                return self.exec_index_assign_generic_op();
+            }
+            Value::ArraySlotRef { .. } => {
+                // Resolve the ArraySlotRef and assign into the resolved container.
+                let resolved = target.array_slot_read();
+                self.stack.push(resolved);
+                self.stack.push(idx);
+                self.stack.push(val);
+                return self.exec_index_assign_generic_op();
             }
             Value::Instance {
                 class_name,
@@ -2539,8 +2640,16 @@ impl VM {
                 return Ok(());
             }
             // If the current value is a HashSlotRef, write back to the parent hash
-            if let Value::HashSlotRef { .. } = &self.locals[idx] {
+            // (unless rebinding, which replaces the ref with a new value).
+            if !is_rebind && let Value::HashSlotRef { .. } = &self.locals[idx] {
                 self.locals[idx].hash_slot_write(val);
+                self.locals_dirty = true;
+                return Ok(());
+            }
+            // If the current value is an ArraySlotRef, write back to the parent array
+            // (unless rebinding, which replaces the ref with a new value).
+            if !is_rebind && let Value::ArraySlotRef { .. } = &self.locals[idx] {
+                self.locals[idx].array_slot_write(val);
                 self.locals_dirty = true;
                 return Ok(());
             }
@@ -3091,8 +3200,22 @@ impl VM {
             return Ok(());
         }
         // If the current value is a HashSlotRef, write back to the parent hash
-        if !is_bind && let Value::HashSlotRef { .. } = &self.locals[idx] {
+        // (unless rebinding, which replaces the ref with a new value).
+        if !is_bind
+            && !is_rebind
+            && let Value::HashSlotRef { .. } = &self.locals[idx]
+        {
             self.locals[idx].hash_slot_write(val);
+            self.locals_dirty = true;
+            return Ok(());
+        }
+        // If the current value is an ArraySlotRef, write back to the parent array
+        // (unless rebinding, which replaces the ref with a new value).
+        if !is_bind
+            && !is_rebind
+            && let Value::ArraySlotRef { .. } = &self.locals[idx]
+        {
+            self.locals[idx].array_slot_write(val);
             self.locals_dirty = true;
             return Ok(());
         }

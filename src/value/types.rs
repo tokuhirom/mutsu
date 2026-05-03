@@ -432,6 +432,7 @@ impl Value {
             }
             Value::LazyIoLines { .. } => true,
             Value::HashSlotRef { .. } => self.hash_slot_read().truthy(),
+            Value::ArraySlotRef { .. } => self.array_slot_read().truthy(),
         }
     }
 
@@ -561,6 +562,7 @@ impl Value {
             }
             Value::LazyIoLines { .. } => "Seq",
             Value::HashSlotRef { .. } => return self.hash_slot_read().isa_check(type_name),
+            Value::ArraySlotRef { .. } => return self.array_slot_read().isa_check(type_name),
         };
         if my_type == type_name {
             return true;
