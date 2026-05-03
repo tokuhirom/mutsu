@@ -1068,7 +1068,18 @@ impl Interpreter {
             .unwrap_or_default();
         self.routine_stack
             .push((owner_class.to_string(), method_name_for_stack));
+        // Set current_package to the receiver class so that the compiler
+        // qualifies function calls with the correct package prefix,
+        // allowing class-scoped subs (e.g. `sub helper` in a class body)
+        // to be found by methods in the same class.
+        // Set current_package so the compiler qualifies function calls
+        // with the class name, allowing class-scoped subs to be found.
+        let saved_package = self.current_package.clone();
+        if self.has_class_scoped_subs(receiver_class_name) {
+            self.current_package = receiver_class_name.to_string();
+        }
         let block_result = self.run_block(&method_def.body);
+        self.current_package = saved_package;
         self.routine_stack.pop();
         let implicit_return = self.env.get("_").cloned();
         let result = match block_result {

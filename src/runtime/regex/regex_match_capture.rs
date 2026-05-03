@@ -83,6 +83,38 @@ impl Interpreter {
                 }
                 return best;
             }
+            RegexAtom::Conjunction(branches) => {
+                // ALL branches must match from the same position.
+                // The result is the longest match among the branches.
+                let mut longest_end = 0usize;
+                let mut longest_caps = current_caps.clone();
+                for branch in branches {
+                    if let Some((next, inner_caps)) =
+                        self.regex_match_end_from_caps_in_pkg(branch, chars, pos, pkg)
+                    {
+                        if next >= longest_end {
+                            longest_end = next;
+                            longest_caps = inner_caps;
+                        }
+                    } else {
+                        // If any branch fails, the whole conjunction fails
+                        return None;
+                    }
+                }
+                let mut new_caps = current_caps.clone();
+                for (k, v) in longest_caps.named {
+                    new_caps.named.entry(k).or_default().extend(v);
+                }
+                new_caps.positional.append(&mut longest_caps.positional);
+                new_caps
+                    .positional_subcaps
+                    .append(&mut longest_caps.positional_subcaps);
+                new_caps
+                    .positional_quantified
+                    .append(&mut longest_caps.positional_quantified);
+                new_caps.code_blocks.append(&mut longest_caps.code_blocks);
+                return Some((longest_end, new_caps));
+            }
             RegexAtom::SequentialAlternation(alternatives) => {
                 for alt in alternatives {
                     if let Some((next, mut inner_caps)) =

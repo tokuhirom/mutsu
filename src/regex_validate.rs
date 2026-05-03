@@ -556,10 +556,16 @@ fn validate_backslash_sequence(esc: char) -> Result<(), RuntimeError> {
     // Known valid backslash sequences in Raku regex
     match esc {
         'd' | 'D' | 'w' | 'W' | 's' | 'S' | 'n' | 'N' | 't' | 'T' | 'r' | 'R' | 'x' | 'o' | 'c'
-        | 'C' | 'X' | 'O' | 'v' | 'V' | 'h' | 'H' | 'e' | 'E' | 'b' | 'B' | 'f' | 'F' | '0' => {
-            Ok(())
-        }
+        | 'C' | 'X' | 'O' | 'v' | 'V' | 'h' | 'H' | 'e' | 'E' | 'f' | 'F' | '0' => Ok(()),
         // Obsolete Perl 5 backslash sequences
+        'b' => Err(RuntimeError::obsolete(
+            "\\b as a word boundary",
+            "<?wb> (word boundary) or <!wb> (not a word boundary)",
+        )),
+        'B' => Err(RuntimeError::obsolete(
+            "\\B as a word boundary",
+            "<?wb> (word boundary) or <!wb> (not a word boundary)",
+        )),
         'A' => Err(RuntimeError::obsolete(
             "\\A as beginning-of-string matcher",
             "^",

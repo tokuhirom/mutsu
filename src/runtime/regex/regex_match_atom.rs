@@ -62,6 +62,36 @@ impl Interpreter {
             out.reverse();
             return out;
         }
+        if let RegexAtom::Conjunction(branches) = atom {
+            // ALL branches must match at the same position.
+            let mut longest_end = 0usize;
+            let mut longest_caps = current_caps.clone();
+            for branch in branches {
+                if let Some((end, caps)) =
+                    self.regex_match_end_from_caps_in_pkg(branch, chars, pos, pkg)
+                {
+                    if end >= longest_end {
+                        longest_end = end;
+                        longest_caps = caps;
+                    }
+                } else {
+                    return Vec::new();
+                }
+            }
+            let mut new_caps = current_caps.clone();
+            for (k, v) in longest_caps.named {
+                new_caps.named.entry(k).or_default().extend(v);
+            }
+            new_caps.positional.append(&mut longest_caps.positional);
+            new_caps
+                .positional_subcaps
+                .append(&mut longest_caps.positional_subcaps);
+            new_caps
+                .positional_quantified
+                .append(&mut longest_caps.positional_quantified);
+            new_caps.code_blocks.append(&mut longest_caps.code_blocks);
+            return vec![(longest_end, new_caps)];
+        }
         if let RegexAtom::Group(pattern) = atom {
             let mut out = Vec::new();
             for (end, mut inner_caps) in

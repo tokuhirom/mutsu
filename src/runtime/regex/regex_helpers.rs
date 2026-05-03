@@ -134,6 +134,9 @@ fn strip_marks_atom(atom: &RegexAtom) -> RegexAtom {
         RegexAtom::SequentialAlternation(alts) => {
             RegexAtom::SequentialAlternation(alts.iter().map(strip_marks_pattern).collect())
         }
+        RegexAtom::Conjunction(branches) => {
+            RegexAtom::Conjunction(branches.iter().map(strip_marks_pattern).collect())
+        }
         RegexAtom::GoalMatch {
             goal,
             inner,
