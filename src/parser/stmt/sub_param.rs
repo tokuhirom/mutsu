@@ -325,6 +325,7 @@ fn expr_contains_whatever(expr: &Expr) -> bool {
             target,
             name_expr,
             args,
+            ..
         }
         | Expr::HyperMethodCallDynamic {
             target,

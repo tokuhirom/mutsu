@@ -361,6 +361,7 @@ fn lift_phasers_from_expr(
             target,
             name_expr,
             args,
+            ..
         }
         | Expr::HyperMethodCallDynamic {
             target,

@@ -577,6 +577,7 @@ roast/S12-meta/classhow.t
 roast/S12-meta/grammarhow.t
 roast/S12-meta/primitives.t
 roast/S12-methods/attribute-params.t
+roast/S12-methods/calling_sets.t
 roast/S12-methods/calling_syntax.t
 roast/S12-methods/chaining.t
 roast/S12-methods/class-and-instance.t

@@ -2032,15 +2032,24 @@ impl VM {
                 }
                 *ip += 1;
             }
-            OpCode::CallMethodDynamic { arity } => {
-                self.exec_call_method_dynamic_op(code, *arity)?;
+            OpCode::CallMethodDynamic {
+                arity,
+                modifier_idx,
+            } => {
+                self.exec_call_method_dynamic_op(code, *arity, *modifier_idx)?;
                 *ip += 1;
             }
             OpCode::CallMethodDynamicMut {
                 arity,
                 target_name_idx,
+                modifier_idx,
             } => {
-                self.exec_call_method_dynamic_mut_op(code, *arity, *target_name_idx)?;
+                self.exec_call_method_dynamic_mut_op(
+                    code,
+                    *arity,
+                    *target_name_idx,
+                    *modifier_idx,
+                )?;
                 *ip += 1;
             }
             OpCode::CallMethodMut {

@@ -495,36 +495,80 @@ impl Interpreter {
         method_name: &str,
         arg_values: &[Value],
     ) -> Vec<(String, MethodDef)> {
-        let role_bindings = self.class_role_param_bindings.get(class_name).cloned();
         let mro = self.class_mro(class_name);
-        let mut matches = Vec::new();
+        // Find which MRO levels define the method.
+        let mut defining_levels: Vec<String> = Vec::new();
         for cn in &mro {
+            let is_ancestor = cn != class_name;
             if let Some(overloads) = self
                 .classes
                 .get(cn.as_str())
                 .and_then(|c| c.methods.get(method_name))
                 .cloned()
             {
+                let has_visible = overloads
+                    .iter()
+                    .any(|d| !d.is_private && (!d.is_my || !is_ancestor));
+                if has_visible {
+                    defining_levels.push(cn.clone());
+                }
+            }
+        }
+        if defining_levels.is_empty() {
+            return Vec::new();
+        }
+        // Check if any level has multi methods.
+        let any_multi = defining_levels.iter().any(|cn| {
+            self.classes
+                .get(cn.as_str())
+                .and_then(|c| c.methods.get(method_name))
+                .is_some_and(|ovs| ovs.iter().any(|d| d.is_multi))
+        });
+        if !any_multi {
+            // Non-multi: return matching candidates directly (original behavior)
+            let role_bindings = self.class_role_param_bindings.get(class_name).cloned();
+            let mut matches = Vec::new();
+            for cn in &defining_levels {
                 let is_ancestor = cn != class_name;
-                for def in overloads {
-                    if def.is_private {
-                        continue;
-                    }
-                    // Submethods are NOT inherited
-                    if def.is_my && is_ancestor {
-                        continue;
-                    }
-                    if self.method_args_match_for_invocant(
-                        class_name,
-                        &def,
-                        arg_values,
-                        role_bindings.as_ref(),
-                        None,
-                    ) {
-                        matches.push((cn.clone(), def));
+                if let Some(overloads) = self
+                    .classes
+                    .get(cn.as_str())
+                    .and_then(|c| c.methods.get(method_name))
+                    .cloned()
+                {
+                    for def in overloads {
+                        if def.is_private || (def.is_my && is_ancestor) {
+                            continue;
+                        }
+                        if self.method_args_match_for_invocant(
+                            class_name,
+                            &def,
+                            arg_values,
+                            role_bindings.as_ref(),
+                            None,
+                        ) {
+                            matches.push((cn.clone(), def));
+                        }
                     }
                 }
             }
+            return matches;
+        }
+        // Multi methods: for each defining level, resolve using the normal
+        // dispatch mechanism starting from that level's MRO.
+        let mut matches = Vec::new();
+        let mut any_failed = false;
+        for cn in &defining_levels {
+            if let Some(resolved) =
+                self.resolve_method_with_owner_impl(cn, method_name, arg_values, None)
+            {
+                matches.push(resolved);
+            } else {
+                any_failed = true;
+            }
+        }
+        if any_failed {
+            return Vec::new();
         }
         matches
     }

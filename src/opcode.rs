@@ -310,12 +310,14 @@ pub(crate) enum OpCode {
     /// Stack layout: [target, name_str, arg0, arg1, ...]
     CallMethodDynamic {
         arity: u32,
+        modifier_idx: Option<u32>,
     },
     /// Dynamic method call on a variable target (allows mutation/writeback).
     /// Stack layout: [target, name_str, arg0, arg1, ...]
     CallMethodDynamicMut {
         arity: u32,
         target_name_idx: u32,
+        modifier_idx: Option<u32>,
     },
     /// Statement-level call: pop `arity` args, call name (no push).
     ExecCall {

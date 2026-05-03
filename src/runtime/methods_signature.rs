@@ -328,6 +328,7 @@ impl Interpreter {
                     target,
                     name_expr,
                     args,
+                    ..
                 }
                 | Expr::HyperMethodCallDynamic {
                     target,
@@ -1036,6 +1037,17 @@ impl Interpreter {
                     attrs,
                 );
                 return Ok(out);
+            }
+            // If the method is defined but no multi candidate matched,
+            // produce a dispatch error.
+            let method_exists = self.class_mro(&class_name.resolve()).iter().any(|cn| {
+                self.classes
+                    .get(cn.as_str())
+                    .and_then(|c| c.methods.get(method))
+                    .is_some_and(|ovs| !ovs.is_empty())
+            });
+            if method_exists {
+                return Err(make_multi_no_match_error(method));
             }
         }
 
