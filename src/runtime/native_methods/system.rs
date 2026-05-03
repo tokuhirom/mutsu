@@ -89,7 +89,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         match method {
             "name" | "auth" | "desc" | "release" | "hardware" | "arch" | "bits" | "hostname"
-            | "version" | "signature" | "signals" => {
+            | "version" | "signature" | "signals" | "endian" => {
                 Ok(attributes.get(method).cloned().unwrap_or(Value::Nil))
             }
             "signal" => {

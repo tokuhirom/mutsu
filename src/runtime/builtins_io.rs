@@ -251,7 +251,23 @@ impl Interpreter {
             let content = content_value.to_string_value();
             let bytes = if let Some(ref enc_name) = enc {
                 match self.encode_with_encoding(&content, enc_name) {
-                    Ok(b) => b,
+                    Ok(mut b) => {
+                        // For utf16 (auto-endian), prepend BOM like Raku does
+                        let enc_lower = enc_name.to_lowercase();
+                        if enc_lower == "utf-16" || enc_lower == "utf16" {
+                            let bom: &[u8] = if cfg!(target_endian = "little") {
+                                &[0xFF, 0xFE]
+                            } else {
+                                &[0xFE, 0xFF]
+                            };
+                            let mut with_bom = Vec::with_capacity(bom.len() + b.len());
+                            with_bom.extend_from_slice(bom);
+                            with_bom.append(&mut b);
+                            with_bom
+                        } else {
+                            b
+                        }
+                    }
                     Err(e) => {
                         return Ok(io_exception_failure("X::IO::Spurt", e.message));
                     }

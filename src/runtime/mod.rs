@@ -505,6 +505,12 @@ pub(crate) struct IoHandleState {
     /// Used to implement Raku's eof semantics: a freshly opened file at
     /// position 0 with size 0 returns False for .eof until a read is attempted.
     read_attempted: bool,
+    /// Whether the UTF-16 BOM has been written for this handle.
+    /// Used to ensure we only write one BOM at the start of a utf16 stream.
+    utf16_bom_written: bool,
+    /// For utf16 auto-detect: the detected endianness after reading BOM.
+    /// None = not yet detected, Some(true) = big-endian, Some(false) = little-endian.
+    utf16_detected_be: Option<bool>,
     /// For ArgFiles: index into @*ARGS tracking which file we're reading
     argfiles_index: usize,
     /// For ArgFiles: currently open file reader (buffered)
@@ -4341,6 +4347,8 @@ impl Interpreter {
                 nl_out: handle.nl_out.clone(),
                 bytes_written: handle.bytes_written,
                 read_attempted: handle.read_attempted,
+                utf16_bom_written: handle.utf16_bom_written,
+                utf16_detected_be: handle.utf16_detected_be,
                 argfiles_index: handle.argfiles_index,
                 argfiles_reader: None, // Cannot clone BufReader; will reopen if needed
             };

@@ -2338,6 +2338,8 @@ impl Interpreter {
             nl_out: "\n".to_string(),
             bytes_written: 0,
             read_attempted: false,
+            utf16_bom_written: false,
+            utf16_detected_be: None,
             argfiles_index: 0,
             argfiles_reader: None,
         };
@@ -2657,6 +2659,13 @@ impl Interpreter {
         // config: a non-empty hash so the value is truthy.
         let mut config = HashMap::new();
         config.insert("name".to_string(), Value::str_from("mutsu"));
+        // be: 0 for little-endian, 1 for big-endian (matches Rakudo's $*VM.config<be>)
+        let be_val = if cfg!(target_endian = "big") {
+            "1"
+        } else {
+            "0"
+        };
+        config.insert("be".to_string(), Value::str_from(be_val));
         attrs.insert("config".to_string(), Value::Hash(config.into()));
         Value::make_instance(Symbol::intern("VM"), attrs)
     }
@@ -2763,6 +2772,24 @@ impl Interpreter {
         attrs.insert("bits".to_string(), Value::Int(bits));
         attrs.insert("hostname".to_string(), Value::str(hostname));
         attrs.insert("signals".to_string(), Value::array(signals));
+
+        // endian: Endian enum value matching the host system
+        let endian_val = if cfg!(target_endian = "little") {
+            Value::Enum {
+                enum_type: Symbol::intern("Endian"),
+                key: Symbol::intern("LittleEndian"),
+                value: crate::value::EnumValue::Int(1),
+                index: 1,
+            }
+        } else {
+            Value::Enum {
+                enum_type: Symbol::intern("Endian"),
+                key: Symbol::intern("BigEndian"),
+                value: crate::value::EnumValue::Int(2),
+                index: 2,
+            }
+        };
+        attrs.insert("endian".to_string(), endian_val);
 
         Value::make_instance(Symbol::intern("Kernel"), attrs)
     }

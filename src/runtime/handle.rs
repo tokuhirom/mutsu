@@ -567,6 +567,56 @@ impl Interpreter {
         Ok(Some(String::from_utf8_lossy(&bytes).to_string()))
     }
 
+    /// Read one character from a UTF-16 stream.
+    /// `big_endian` controls byte order. Handles surrogate pairs.
+    fn read_utf16_char<R: Read>(
+        reader: &mut R,
+        big_endian: bool,
+    ) -> Result<Option<String>, RuntimeError> {
+        let mut buf = [0u8; 2];
+        let n = reader
+            .read(&mut buf)
+            .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+        if n == 0 {
+            return Ok(None);
+        }
+        if n < 2 {
+            // Incomplete code unit — replacement char
+            return Ok(Some("\u{FFFD}".to_string()));
+        }
+        let unit = if big_endian {
+            u16::from_be_bytes(buf)
+        } else {
+            u16::from_le_bytes(buf)
+        };
+        // Check for surrogate pair
+        if (0xD800..=0xDBFF).contains(&unit) {
+            // High surrogate — read low surrogate
+            let mut buf2 = [0u8; 2];
+            let n2 = reader
+                .read(&mut buf2)
+                .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+            if n2 < 2 {
+                return Ok(Some("\u{FFFD}".to_string()));
+            }
+            let low = if big_endian {
+                u16::from_be_bytes(buf2)
+            } else {
+                u16::from_le_bytes(buf2)
+            };
+            let codepoint = 0x10000 + ((unit as u32 - 0xD800) << 10) + (low as u32 - 0xDC00);
+            match char::from_u32(codepoint) {
+                Some(ch) => Ok(Some(ch.to_string())),
+                None => Ok(Some("\u{FFFD}".to_string())),
+            }
+        } else {
+            match char::from_u32(unit as u32) {
+                Some(ch) => Ok(Some(ch.to_string())),
+                None => Ok(Some("\u{FFFD}".to_string())),
+            }
+        }
+    }
+
     pub(super) fn read_chars_from_handle_value(
         &mut self,
         handle_value: &Value,
@@ -577,6 +627,22 @@ impl Interpreter {
             return Err(RuntimeError::io_closed("handle operation"));
         }
         state.read_attempted = true;
+        let encoding = state.encoding.to_lowercase();
+        // Determine if this is a utf16 stream and its byte order
+        let utf16_auto = matches!(encoding.as_str(), "utf-16" | "utf16");
+        let utf16_mode = match encoding.as_str() {
+            "utf-16be" | "utf16be" => Some(true),  // big endian
+            "utf-16le" | "utf16le" => Some(false), // little endian
+            "utf-16" | "utf16" => {
+                // Use previously detected endianness, or default to native
+                Some(
+                    state
+                        .utf16_detected_be
+                        .unwrap_or(cfg!(target_endian = "big")),
+                )
+            }
+            _ => None,
+        };
         match state.target {
             IoHandleTarget::Stdout | IoHandleTarget::Stderr => {
                 Err(RuntimeError::new("Handle not readable"))
@@ -609,23 +675,78 @@ impl Interpreter {
                     .file
                     .as_mut()
                     .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
-                if let Some(limit) = count {
-                    if limit == 0 {
-                        return Ok(String::new());
+                if let Some(mut big_endian) = utf16_mode {
+                    // For utf16 auto-detect: detect BOM on first read
+                    if utf16_auto && state.utf16_detected_be.is_none() {
+                        let mut bom_buf = [0u8; 2];
+                        let n = file
+                            .read(&mut bom_buf)
+                            .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                        if n >= 2 {
+                            if bom_buf[0] == 0xFE && bom_buf[1] == 0xFF {
+                                big_endian = true;
+                                state.utf16_detected_be = Some(true);
+                                // BOM consumed, don't include in output
+                            } else if bom_buf[0] == 0xFF && bom_buf[1] == 0xFE {
+                                big_endian = false;
+                                state.utf16_detected_be = Some(false);
+                                // BOM consumed, don't include in output
+                            } else {
+                                // No BOM, seek back
+                                state.utf16_detected_be = Some(cfg!(target_endian = "big"));
+                                use std::io::Seek;
+                                let _ = file.seek(std::io::SeekFrom::Current(-2));
+                            }
+                        }
                     }
-                    let mut out = String::new();
-                    for _ in 0..limit {
-                        let Some(ch) = Self::read_utf8_char(file)? else {
-                            break;
-                        };
-                        out.push_str(&ch);
+                    if let Some(limit) = count {
+                        if limit == 0 {
+                            return Ok(String::new());
+                        }
+                        let mut out = String::new();
+                        for _ in 0..limit {
+                            let Some(ch) = Self::read_utf16_char(file, big_endian)? else {
+                                break;
+                            };
+                            out.push_str(&ch);
+                        }
+                        Ok(out)
+                    } else {
+                        let mut bytes = Vec::new();
+                        file.read_to_end(&mut bytes)
+                            .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                        // Decode all bytes using the utf16 decoder
+                        let units: Vec<u16> = bytes
+                            .chunks_exact(2)
+                            .map(|c| {
+                                if big_endian {
+                                    u16::from_be_bytes([c[0], c[1]])
+                                } else {
+                                    u16::from_le_bytes([c[0], c[1]])
+                                }
+                            })
+                            .collect();
+                        Ok(String::from_utf16_lossy(&units))
                     }
-                    Ok(out)
                 } else {
-                    let mut bytes = Vec::new();
-                    file.read_to_end(&mut bytes)
-                        .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
-                    Ok(String::from_utf8_lossy(&bytes).to_string())
+                    if let Some(limit) = count {
+                        if limit == 0 {
+                            return Ok(String::new());
+                        }
+                        let mut out = String::new();
+                        for _ in 0..limit {
+                            let Some(ch) = Self::read_utf8_char(file)? else {
+                                break;
+                            };
+                            out.push_str(&ch);
+                        }
+                        Ok(out)
+                    } else {
+                        let mut bytes = Vec::new();
+                        file.read_to_end(&mut bytes)
+                            .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                        Ok(String::from_utf8_lossy(&bytes).to_string())
+                    }
                 }
             }
             IoHandleTarget::Socket => {
@@ -919,7 +1040,7 @@ impl Interpreter {
         } else {
             IoHandleMode::Read
         };
-        let state = IoHandleState {
+        let mut state = IoHandleState {
             target: IoHandleTarget::File,
             mode,
             path: Some(Self::stringify_path(path)),
@@ -940,9 +1061,37 @@ impl Interpreter {
             nl_out: nl_out.unwrap_or_else(|| "\n".to_string()),
             bytes_written: 0,
             read_attempted: false,
+            utf16_bom_written: false,
+            utf16_detected_be: None,
             argfiles_index: 0,
             argfiles_reader: None,
         };
+        // For utf16 encoding in write/append mode, write BOM at start
+        let enc_lower = state.encoding.to_lowercase();
+        let is_utf16_no_endian = enc_lower == "utf-16" || enc_lower == "utf16";
+        if is_utf16_no_endian && (write || append) {
+            // For append mode, only write BOM if file is empty
+            let should_write_bom = if append {
+                state
+                    .file
+                    .as_ref()
+                    .is_some_and(|f| f.metadata().is_ok_and(|m| m.len() == 0))
+            } else {
+                true
+            };
+            if should_write_bom {
+                if let Some(ref mut file) = state.file {
+                    use std::io::Write;
+                    let bom = if cfg!(target_endian = "little") {
+                        [0xFF_u8, 0xFE]
+                    } else {
+                        [0xFE_u8, 0xFF]
+                    };
+                    let _ = file.write_all(&bom);
+                }
+                state.utf16_bom_written = true;
+            }
+        }
         self.handles.insert(id, state);
         Ok(self.make_handle_instance_with_bin(id, bin))
     }
