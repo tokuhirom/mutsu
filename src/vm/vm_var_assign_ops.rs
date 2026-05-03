@@ -360,6 +360,131 @@ impl VM {
         Ok(hash_val)
     }
 
+    /// Coerce a value for `constant %x = ...` assignment.
+    /// Associative values (Hash, Pair, Bag, Set, Mix) are preserved.
+    /// Non-Associative values (Lists, Arrays) are coerced to Map.
+    /// Instance objects that don't do Associative get `.Map` called.
+    pub(crate) fn coerce_constant_hash_value(
+        &mut self,
+        name: &str,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        match &value {
+            // Associative types are preserved as-is
+            Value::Hash(_) | Value::Pair(..) | Value::Set(..) | Value::Bag(..) | Value::Mix(..) => {
+                Ok(value)
+            }
+            // Instance objects: check if they do Associative
+            Value::Instance { class_name, .. } => {
+                let cn = class_name.resolve();
+                let does_associative = matches!(
+                    cn.as_str(),
+                    "Hash"
+                        | "Map"
+                        | "Pair"
+                        | "Set"
+                        | "Bag"
+                        | "Mix"
+                        | "SetHash"
+                        | "BagHash"
+                        | "MixHash"
+                ) || self
+                    .interpreter
+                    .class_composed_roles(&cn)
+                    .is_some_and(|roles| roles.iter().any(|r| r == "Associative"));
+                if does_associative {
+                    Ok(value)
+                } else {
+                    // Call .Map on non-Associative to coerce.
+                    // Skip native methods so user-defined .Map is called.
+                    let mapped = self.call_method_all_with_fallback(&value, "Map", &[], true)?;
+                    let mapped_val = mapped.into_iter().next().unwrap_or(Value::Nil);
+                    // Check that .Map returned an Associative
+                    let is_assoc = matches!(
+                        &mapped_val,
+                        Value::Hash(_)
+                            | Value::Pair(..)
+                            | Value::Set(..)
+                            | Value::Bag(..)
+                            | Value::Mix(..)
+                    );
+                    if !is_assoc {
+                        let got_type = crate::runtime::utils::value_type_name(&mapped_val);
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("got".to_string(), mapped_val);
+                        attrs.insert(
+                            "expected".to_string(),
+                            Value::Package(crate::symbol::Symbol::intern("Associative")),
+                        );
+                        attrs.insert(
+                            "message".to_string(),
+                            Value::str(format!(
+                                "Type check failed in assignment to {}; expected Associative but got {}",
+                                name, got_type
+                            )),
+                        );
+                        let ex = Value::make_instance(
+                            crate::symbol::Symbol::intern("X::TypeCheck"),
+                            attrs,
+                        );
+                        let mut err = RuntimeError::new(format!(
+                            "Type check failed in assignment to {}; expected Associative but got {}",
+                            name, got_type
+                        ));
+                        err.exception = Some(Box::new(ex));
+                        return Err(err);
+                    }
+                    // Register as Map
+                    let info = crate::runtime::ContainerTypeInfo {
+                        value_type: String::new(),
+                        key_type: None,
+                        declared_type: Some("Map".to_string()),
+                    };
+                    self.interpreter
+                        .register_container_type_metadata(&mapped_val, info);
+                    Ok(mapped_val)
+                }
+            }
+            // Non-Associative values: coerce to Map
+            Value::Array(items, _) => {
+                let hash = runtime::utils::build_hash_from_items(items.iter().cloned().collect())?;
+                let info = crate::runtime::ContainerTypeInfo {
+                    value_type: String::new(),
+                    key_type: None,
+                    declared_type: Some("Map".to_string()),
+                };
+                self.interpreter
+                    .register_container_type_metadata(&hash, info);
+                Ok(hash)
+            }
+            Value::Seq(items) | Value::Slip(items) => {
+                let hash = runtime::utils::build_hash_from_items(items.iter().cloned().collect())?;
+                let info = crate::runtime::ContainerTypeInfo {
+                    value_type: String::new(),
+                    key_type: None,
+                    declared_type: Some("Map".to_string()),
+                };
+                self.interpreter
+                    .register_container_type_metadata(&hash, info);
+                Ok(hash)
+            }
+            _ => {
+                // For other types (Int, Str, etc.), coerce to Map via
+                // build_hash_from_items which raises X::Hash::Store::OddNumber
+                // for odd element counts (e.g., `constant %h = 42`).
+                let hash = runtime::utils::build_hash_from_items(vec![value])?;
+                let info = crate::runtime::ContainerTypeInfo {
+                    value_type: String::new(),
+                    key_type: None,
+                    declared_type: Some("Map".to_string()),
+                };
+                self.interpreter
+                    .register_container_type_metadata(&hash, info);
+                Ok(hash)
+            }
+        }
+    }
+
     fn mix_assignment_weight(value: &Value) -> f64 {
         match value {
             Value::Int(i) => *i as f64,
@@ -2568,10 +2693,14 @@ impl VM {
                     self.locals[idx].to_string_value()
                 )));
             }
-            if is_constant || is_bind {
-                // `:=` binding or `constant %x` preserves containers — skip coercion.
-                // `constant %x = :42foo` keeps the Pair; `constant %x = bag(...)` keeps the Bag.
+            if is_bind {
+                // `:=` binding preserves containers — skip coercion.
                 raw_popped
+            } else if is_constant {
+                // `constant %x` preserves Associative containers (Hash, Bag, Set, Mix, Pair).
+                // Non-Associative values (Lists) are coerced to Map.
+                // Non-Associative Instance objects get .Map called for coercion.
+                self.coerce_constant_hash_value(name, raw_popped)?
             } else {
                 self.coerce_hash_var_value(name, raw_popped)?
             }
@@ -2589,6 +2718,8 @@ impl VM {
             let mut assigned = if is_constant {
                 // `constant @x` stores a List, not an Array.
                 // Explicit Arrays ([1,2,3]) are preserved.
+                // Instance objects that do Positional are kept as-is.
+                // Non-Positional objects have .cache called for coercion.
                 match raw_popped {
                     Value::Array(items, kind) if kind.is_real_array() => Value::Array(items, kind),
                     Value::Array(items, _) => Value::Array(items, crate::value::ArrayKind::List),
@@ -2604,6 +2735,89 @@ impl VM {
                         let forced = self.force_if_lazy_io_lines(raw_popped)?;
                         let items = runtime::value_to_list(&forced);
                         Value::Array(std::sync::Arc::new(items), crate::value::ArrayKind::List)
+                    }
+                    Value::Instance { ref class_name, .. } => {
+                        // Check if Instance does Positional — if so, keep as-is.
+                        let cn = class_name.resolve();
+                        let does_positional = matches!(
+                            cn.as_str(),
+                            "Array"
+                                | "List"
+                                | "Slip"
+                                | "Seq"
+                                | "Range"
+                                | "Buf"
+                                | "Blob"
+                                | "utf8"
+                                | "buf8"
+                                | "buf16"
+                                | "buf32"
+                        ) || self
+                            .interpreter
+                            .class_composed_roles(&cn)
+                            .is_some_and(|roles| roles.iter().any(|r| r == "Positional"));
+                        if does_positional {
+                            raw_popped
+                        } else {
+                            // Call .cache on non-Positional to coerce.
+                            // Skip native methods so user-defined .cache is called.
+                            let cached = self.call_method_all_with_fallback(
+                                &raw_popped,
+                                "cache",
+                                &[],
+                                true,
+                            )?;
+                            let cached_val = cached.into_iter().next().unwrap_or(Value::Nil);
+                            // Check that .cache returned a Positional
+                            let is_pos = matches!(
+                                &cached_val,
+                                Value::Array(..)
+                                    | Value::Seq(_)
+                                    | Value::Slip(_)
+                                    | Value::LazyList(_)
+                                    | Value::LazyIoLines { .. }
+                            );
+                            if !is_pos {
+                                let got_type = crate::runtime::utils::value_type_name(&cached_val);
+                                let mut attrs = std::collections::HashMap::new();
+                                attrs.insert("got".to_string(), cached_val);
+                                attrs.insert(
+                                    "expected".to_string(),
+                                    Value::Package(crate::symbol::Symbol::intern("Positional")),
+                                );
+                                attrs.insert(
+                                    "message".to_string(),
+                                    Value::str(format!(
+                                        "Type check failed in assignment to {}; expected Positional but got {}",
+                                        name, got_type
+                                    )),
+                                );
+                                let ex = Value::make_instance(
+                                    crate::symbol::Symbol::intern("X::TypeCheck"),
+                                    attrs,
+                                );
+                                let mut err = RuntimeError::new(format!(
+                                    "Type check failed in assignment to {}; expected Positional but got {}",
+                                    name, got_type
+                                ));
+                                err.exception = Some(Box::new(ex));
+                                return Err(err);
+                            }
+                            // Coerce cached result to List
+                            match cached_val {
+                                Value::Array(items, _) => {
+                                    Value::Array(items, crate::value::ArrayKind::List)
+                                }
+                                Value::Seq(items) => Value::Array(
+                                    std::sync::Arc::new(items.to_vec()),
+                                    crate::value::ArrayKind::List,
+                                ),
+                                other => Value::Array(
+                                    std::sync::Arc::new(vec![other]),
+                                    crate::value::ArrayKind::List,
+                                ),
+                            }
+                        }
                     }
                     other => Value::Array(
                         std::sync::Arc::new(vec![other]),

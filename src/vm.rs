@@ -998,6 +998,8 @@ impl VM {
                     // Constants with @ sigil coerce to List (not Array).
                     // `constant @x = 42` gives `(42,)`, not `[42]`.
                     // Explicit Arrays ([1,2,3]) are preserved.
+                    // Instance objects that do Positional are kept as-is
+                    // (they already went through CoerceToList).
                     match raw_val {
                         Value::Array(items, kind) if kind.is_real_array() => {
                             Value::Array(items, kind)
@@ -1005,11 +1007,42 @@ impl VM {
                         Value::Array(items, _) => {
                             Value::Array(items, crate::value::ArrayKind::List)
                         }
+                        Value::Instance { ref class_name, .. } => {
+                            let cn = class_name.resolve();
+                            let does_positional = matches!(
+                                cn.as_str(),
+                                "Array"
+                                    | "List"
+                                    | "Slip"
+                                    | "Seq"
+                                    | "Range"
+                                    | "Buf"
+                                    | "Blob"
+                                    | "utf8"
+                                    | "buf8"
+                                    | "buf16"
+                                    | "buf32"
+                            ) || self
+                                .interpreter
+                                .class_composed_roles(&cn)
+                                .is_some_and(|roles| roles.iter().any(|r| r == "Positional"));
+                            if does_positional {
+                                raw_val
+                            } else {
+                                Value::Array(
+                                    std::sync::Arc::new(vec![raw_val]),
+                                    crate::value::ArrayKind::List,
+                                )
+                            }
+                        }
                         other => Value::Array(
                             std::sync::Arc::new(vec![other]),
                             crate::value::ArrayKind::List,
                         ),
                     }
+                } else if raw_mode && name.starts_with('%') {
+                    // `constant %x` coerces non-Associative values to Map.
+                    self.coerce_constant_hash_value(&name, raw_val)?
                 } else if raw_mode {
                     raw_val
                 } else if name.starts_with('%') {
@@ -1808,6 +1841,94 @@ impl VM {
                         std::sync::Arc::new(items.to_vec()),
                         crate::value::ArrayKind::List,
                     ),
+                    // Hash values are flattened to pairs for constant @.
+                    Value::Hash(ref map) => {
+                        let pairs: Vec<Value> = map
+                            .iter()
+                            .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                            .collect();
+                        Value::Array(std::sync::Arc::new(pairs), crate::value::ArrayKind::List)
+                    }
+                    // Instance objects: check if Positional; if so keep as-is,
+                    // otherwise call .cache for coercion (constant @ semantics).
+                    Value::Instance { ref class_name, .. } => {
+                        let cn = class_name.resolve();
+                        let does_positional = matches!(
+                            cn.as_str(),
+                            "Array"
+                                | "List"
+                                | "Slip"
+                                | "Seq"
+                                | "Range"
+                                | "Buf"
+                                | "Blob"
+                                | "utf8"
+                                | "buf8"
+                                | "buf16"
+                                | "buf32"
+                        ) || self
+                            .interpreter
+                            .class_composed_roles(&cn)
+                            .is_some_and(|roles| roles.iter().any(|r| r == "Positional"));
+                        if does_positional {
+                            val
+                        } else {
+                            // Call .cache on non-Positional to coerce.
+                            // Skip native methods so user-defined .cache is called.
+                            let cached =
+                                self.call_method_all_with_fallback(&val, "cache", &[], true)?;
+                            let cached_val = cached.into_iter().next().unwrap_or(Value::Nil);
+                            // Check that .cache returned a Positional
+                            let is_pos = matches!(
+                                &cached_val,
+                                Value::Array(..)
+                                    | Value::Seq(_)
+                                    | Value::Slip(_)
+                                    | Value::LazyList(_)
+                                    | Value::LazyIoLines { .. }
+                            );
+                            if !is_pos {
+                                let got_type = crate::runtime::utils::value_type_name(&cached_val);
+                                let mut attrs = std::collections::HashMap::new();
+                                attrs.insert("got".to_string(), cached_val);
+                                attrs.insert(
+                                    "expected".to_string(),
+                                    Value::Package(crate::symbol::Symbol::intern("Positional")),
+                                );
+                                attrs.insert(
+                                    "message".to_string(),
+                                    Value::str(format!(
+                                        "Type check failed in assignment; expected Positional but got {}",
+                                        got_type
+                                    )),
+                                );
+                                let ex = Value::make_instance(
+                                    crate::symbol::Symbol::intern("X::TypeCheck"),
+                                    attrs,
+                                );
+                                let mut err = RuntimeError::new(format!(
+                                    "Type check failed in assignment; expected Positional but got {}",
+                                    got_type
+                                ));
+                                err.exception = Some(Box::new(ex));
+                                return Err(err);
+                            }
+                            // Coerce cached result to List
+                            match cached_val {
+                                Value::Array(items, _) => {
+                                    Value::Array(items, crate::value::ArrayKind::List)
+                                }
+                                Value::Seq(items) => Value::Array(
+                                    std::sync::Arc::new(items.to_vec()),
+                                    crate::value::ArrayKind::List,
+                                ),
+                                other => Value::Array(
+                                    std::sync::Arc::new(vec![other]),
+                                    crate::value::ArrayKind::List,
+                                ),
+                            }
+                        }
+                    }
                     other => Value::Array(
                         std::sync::Arc::new(vec![other]),
                         crate::value::ArrayKind::List,
