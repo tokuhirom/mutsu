@@ -333,6 +333,30 @@ impl Interpreter {
                 self.env.insert("?LINE".to_string(), Value::Int(line));
             }
             self.push_caller_env();
+            // When the function has where constraints and there is a &name Sub
+            // in env (which carries closure env), merge the Sub's captured
+            // variables so where-constraint expressions can access them.
+            let fn_name = def.name.resolve();
+            if def
+                .param_defs
+                .iter()
+                .any(|pd| pd.where_constraint.is_some())
+            {
+                let ampname = format!("&{}", fn_name);
+                if let Some(Value::Sub(ref sub_data)) = self.env.get(&ampname).cloned() {
+                    for (k, v) in &sub_data.env {
+                        if !k.starts_with("__mutsu_")
+                            && !k.starts_with("?")
+                            && !k.starts_with("!")
+                            && k != "_"
+                            && k != "@_"
+                            && k != "%_"
+                        {
+                            self.env.insert(k.clone(), v.clone());
+                        }
+                    }
+                }
+            }
             let rw_bindings =
                 match self.bind_function_args_values(&def.param_defs, &def.params, args) {
                     Ok(bindings) => bindings,

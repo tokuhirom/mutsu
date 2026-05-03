@@ -123,7 +123,11 @@ impl VM {
                 if let Value::Pair(key, _) = &args[idx] {
                     if let Some(pd) = pds.iter().find(|pd| pd.named && pd.name == *key) {
                         if let Some(tc) = &pd.type_constraint {
-                            return !matches!(tc.as_str(), "Mu" | "Junction");
+                            if matches!(tc.as_str(), "Mu" | "Junction") {
+                                return false;
+                            }
+                            let resolved_base = self.interpreter.resolve_subset_base_type(tc);
+                            return !matches!(resolved_base, "Mu" | "Junction");
                         }
                         return true; // No type constraint = default Any
                     }
@@ -136,7 +140,18 @@ impl VM {
                 if let Some(pd) = positional_pds.get(idx) {
                     // Don't auto-thread if param accepts Mu or Junction
                     if let Some(tc) = &pd.type_constraint {
-                        return !matches!(tc.as_str(), "Mu" | "Junction");
+                        if matches!(tc.as_str(), "Mu" | "Junction") {
+                            return false;
+                        }
+                        // Don't auto-thread if the type constraint is a subset
+                        // whose ultimate base type is Mu or Junction — the
+                        // junction should be passed as-is to the subset's
+                        // where-clause check.
+                        let resolved_base = self.interpreter.resolve_subset_base_type(tc);
+                        if matches!(resolved_base, "Mu" | "Junction") {
+                            return false;
+                        }
+                        return true;
                     }
                     // No type constraint means default Any — needs auto-threading
                     return true;

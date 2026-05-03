@@ -372,10 +372,18 @@ impl Interpreter {
                             self.env.remove("_");
                         }
                         if !ok {
-                            return Err(RuntimeError::new(format!(
+                            let mut err = RuntimeError::new(format!(
                                 "X::TypeCheck::Binding::Parameter: where constraint failed for parameter '{}'",
                                 pd.name
-                            )));
+                            ));
+                            let mut ex_attrs = std::collections::HashMap::new();
+                            ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                            let exception = Value::make_instance(
+                                Symbol::intern("X::TypeCheck::Binding::Parameter"),
+                                ex_attrs,
+                            );
+                            err.exception = Some(Box::new(exception));
+                            return Err(err);
                         }
                     }
                     // Unpack sub-signature from the slurpy array (e.g., *[$a, $b, $c])
@@ -857,7 +865,11 @@ impl Interpreter {
                     }
                     // Implicit Any constraint: untyped $ parameters default to Any,
                     // which rejects Junction (a direct subtype of Mu, not Any).
+                    // Skip when a where constraint is present: the where clause
+                    // handles the type checking, and junctions should be passed
+                    // through to the where clause for proper checking.
                     if pd.type_constraint.is_none()
+                        && pd.where_constraint.is_none()
                         && !pd.name.starts_with('@')
                         && !pd.name.starts_with('%')
                         && !pd.name.starts_with('&')
@@ -876,8 +888,10 @@ impl Interpreter {
                         ));
                         let mut ex_attrs = std::collections::HashMap::new();
                         ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
-                        let exception =
-                            Value::make_instance(Symbol::intern("X::TypeCheck::Binding"), ex_attrs);
+                        let exception = Value::make_instance(
+                            Symbol::intern("X::TypeCheck::Binding::Parameter"),
+                            ex_attrs,
+                        );
                         err.exception = Some(Box::new(exception));
                         return Err(err);
                     }
@@ -1012,10 +1026,18 @@ impl Interpreter {
                             }
                         }
                         if !ok {
-                            return Err(RuntimeError::new(format!(
+                            let mut err = RuntimeError::new(format!(
                                 "X::TypeCheck::Binding::Parameter: where constraint failed for parameter '{}'",
                                 pd.name
-                            )));
+                            ));
+                            let mut ex_attrs = std::collections::HashMap::new();
+                            ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                            let exception = Value::make_instance(
+                                Symbol::intern("X::TypeCheck::Binding::Parameter"),
+                                ex_attrs,
+                            );
+                            err.exception = Some(Box::new(exception));
+                            return Err(err);
                         }
                     }
                     // Resolve type capture prefixes (e.g., `::T` → `Int`) so
