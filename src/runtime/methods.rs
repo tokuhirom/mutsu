@@ -1711,13 +1711,80 @@ impl Interpreter {
                     );
                     return Ok(value.clone());
                 }
-                ("BIND-POS", [_, _]) => {
-                    return Err(RuntimeError::new("Cannot bind to a natively typed array"));
+                ("BIND-POS", [idx, value]) => {
+                    // Native typed arrays (e.g. array[int]) cannot be bound
+                    let is_native = self.env.iter().any(|(name, bound)| {
+                        if let Value::Array(existing, ..) = bound
+                            && std::sync::Arc::ptr_eq(existing, items)
+                            && let Some(constraint) = self.var_type_constraint(name)
+                        {
+                            crate::runtime::native_types::is_native_array_element_type(&constraint)
+                        } else {
+                            false
+                        }
+                    });
+                    if is_native {
+                        return Err(RuntimeError::new("Cannot bind to a natively typed array"));
+                    }
+                    let index = match idx {
+                        Value::Int(i) if *i >= 0 => Some(*i as usize),
+                        Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+                        _ => None,
+                    };
+                    let Some(index) = index else {
+                        return Err(RuntimeError::new("Cannot BIND-POS with a negative index"));
+                    };
+                    let mut updated = items.to_vec();
+                    if index >= updated.len() {
+                        updated.resize(index + 1, Value::Package(Symbol::intern("Any")));
+                    }
+                    updated[index] = Value::Scalar(Box::new(value.clone()));
+                    self.overwrite_array_bindings_by_identity(
+                        items,
+                        Value::Array(std::sync::Arc::new(updated), *arr_kind),
+                    );
+                    return Ok(value.clone());
                 }
-                ("DELETE-POS", [_]) => {
-                    return Err(RuntimeError::new(
-                        "Cannot delete from a natively typed array",
-                    ));
+                ("DELETE-POS", [idx]) => {
+                    // Native typed arrays (e.g. array[int]) cannot be deleted from
+                    let is_native = self.env.iter().any(|(name, bound)| {
+                        if let Value::Array(existing, ..) = bound
+                            && std::sync::Arc::ptr_eq(existing, items)
+                            && let Some(constraint) = self.var_type_constraint(name)
+                        {
+                            crate::runtime::native_types::is_native_array_element_type(&constraint)
+                        } else {
+                            false
+                        }
+                    });
+                    if is_native {
+                        return Err(RuntimeError::new(
+                            "Cannot delete from a natively typed array",
+                        ));
+                    }
+                    let index = match idx {
+                        Value::Int(i) if *i >= 0 => Some(*i as usize),
+                        Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+                        _ => None,
+                    };
+                    let Some(index) = index else {
+                        return Err(RuntimeError::new("Cannot DELETE-POS with a negative index"));
+                    };
+                    let mut updated = items.to_vec();
+                    let deleted = if index < updated.len() {
+                        let old = std::mem::replace(&mut updated[index], Value::Nil);
+                        match old {
+                            Value::Scalar(inner) => *inner,
+                            v => v,
+                        }
+                    } else {
+                        Value::Nil
+                    };
+                    self.overwrite_array_bindings_by_identity(
+                        items,
+                        Value::Array(std::sync::Arc::new(updated), *arr_kind),
+                    );
+                    return Ok(deleted);
                 }
                 ("clone", _) => {
                     let cloned = items.to_vec();
