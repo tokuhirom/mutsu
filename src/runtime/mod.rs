@@ -596,6 +596,8 @@ enum RegexAtom {
     CaptureGroup(RegexPattern),
     Alternation(Vec<RegexPattern>),
     SequentialAlternation(Vec<RegexPattern>),
+    /// Conjunction: all branches must match at the same position; longest match wins
+    Conjunction(Vec<RegexPattern>),
     ZeroWidth,
     CodeAssertion {
         code: String,
@@ -670,6 +672,8 @@ enum RegexQuant {
     ZeroOrOne,
     /// `** min..max` — repeat exactly min to max times (max=None means unbounded)
     Repeat(usize, Option<usize>),
+    /// `** {code}` — repeat count determined at runtime by evaluating code block
+    RepeatCode(String),
 }
 
 #[derive(Clone)]
@@ -783,6 +787,9 @@ pub struct Interpreter {
     role_hides: HashMap<String, Vec<String>>,
     role_type_params: HashMap<String, Vec<String>>,
     class_role_param_bindings: HashMap<String, HashMap<String, Value>>,
+    /// Private subs declared in class bodies, keyed by class name.
+    /// Maps class_name -> { "&sub_name" -> Value }.
+    class_subs: HashMap<String, HashMap<String, Value>>,
     attribute_build_overrides: HashMap<(String, String), Value>,
     /// Evaluated `is default(...)` values for class attributes.
     /// Maps (class_name, attr_name) to the default value that should be restored when Nil is assigned.
@@ -2768,6 +2775,7 @@ impl Interpreter {
             role_hides: HashMap::new(),
             role_type_params: HashMap::new(),
             class_role_param_bindings: HashMap::new(),
+            class_subs: HashMap::new(),
             attribute_build_overrides: HashMap::new(),
             class_attribute_defaults: HashMap::new(),
             class_attribute_is_types: HashMap::new(),
@@ -4263,6 +4271,17 @@ impl Interpreter {
         self.classes.contains_key(name)
     }
 
+    /// Check if a class has scoped subs declared in its body.
+    pub(crate) fn has_class_scoped_subs(&self, class_name: &str) -> bool {
+        self.class_subs
+            .get(class_name)
+            .is_some_and(|subs| !subs.is_empty())
+            || self.class_subs.keys().any(|k| {
+                k.ends_with(&format!("::{}", class_name))
+                    || class_name.ends_with(&format!("::{}", k))
+            })
+    }
+
     /// Create a lightweight clone of this interpreter for use in a spawned thread.
     /// Shares function/class/role/enum definitions but starts with fresh output and test state.
     /// Array (`@`) and scalar (`$`) variables are shared between parent and child via `shared_vars`
@@ -4400,6 +4419,7 @@ impl Interpreter {
             role_hides: self.role_hides.clone(),
             role_type_params: self.role_type_params.clone(),
             class_role_param_bindings: self.class_role_param_bindings.clone(),
+            class_subs: self.class_subs.clone(),
             attribute_build_overrides: self.attribute_build_overrides.clone(),
             class_attribute_defaults: self.class_attribute_defaults.clone(),
             class_attribute_is_types: self.class_attribute_is_types.clone(),

@@ -1285,6 +1285,8 @@ impl Interpreter {
                 class_own_attrs.insert(attr_name.resolve());
             }
         }
+        let saved_functions_keys: HashSet<String> =
+            self.functions.keys().map(|k| k.resolve()).collect();
         for stmt in flattened_body {
             match stmt {
                 Stmt::HasDecl {
@@ -1901,6 +1903,21 @@ impl Interpreter {
                     }
                 }
             }
+            // Check if any new functions were registered under the class package
+            // during body processing (e.g., class-scoped subs).
+            // Only count functions that are actual subs (not methods, which are
+            // registered via MethodDecl and stored in the class methods table).
+            if let Stmt::SubDecl { name: sub_name, .. } = stmt {
+                let fq = format!("{}::{}", name, sub_name);
+                if self.functions.contains_key(&Symbol::intern(&fq))
+                    && !saved_functions_keys.contains(&fq)
+                {
+                    self.class_subs
+                        .entry(name.to_string())
+                        .or_default()
+                        .insert(fq, Value::Bool(true));
+                }
+            }
             self.classes.insert(name.to_string(), class_def.clone());
         }
         self.current_package = saved_package;
@@ -2159,7 +2176,12 @@ impl Interpreter {
                         );
                     }
                 }
-                // Execute other statements in the class body (e.g., sub declarations)
+                // Sub declarations in the class body should persist across scope
+                // boundaries so that methods can call them. Use run_block_raw
+                // instead of eval_block_value to avoid function registry rollback.
+                Stmt::SubDecl { .. } => {
+                    let _ = self.run_block_raw(std::slice::from_ref(stmt));
+                }
                 other => {
                     let _ = self.eval_block_value(std::slice::from_ref(other));
                 }

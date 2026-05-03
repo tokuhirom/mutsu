@@ -67,6 +67,14 @@ impl VM {
             self.interpreter.env_mut().remove("?ROLE");
         }
 
+        // Set current_package so class-scoped subs are found during method execution.
+        // Only change package if the class has subs declared in its body.
+        let saved_package = self.interpreter.current_package().to_string();
+        if self.interpreter.has_class_scoped_subs(receiver_class_name) {
+            self.interpreter
+                .set_current_package(receiver_class_name.to_string());
+        }
+
         // Set self and __ANON_STATE__ (used by `$.foo` desugaring inside methods)
         self.interpreter
             .env_mut()
@@ -179,6 +187,7 @@ impl VM {
                         if !self.interpreter.type_matches_value(expected, &base) {
                             self.interpreter.restore_var_bindings(saved_var_bindings);
                             self.interpreter.pop_method_class();
+                            self.interpreter.set_current_package(saved_package.clone());
                             self.stack.truncate(saved_stack_depth);
                             let frame = self.pop_call_frame();
                             *self.interpreter.env_mut() = frame.saved_env;
@@ -318,6 +327,7 @@ impl VM {
                 Err(e) => {
                     self.interpreter.restore_var_bindings(saved_var_bindings);
                     self.interpreter.pop_method_class();
+                    self.interpreter.set_current_package(saved_package.clone());
                     self.stack.truncate(saved_stack_depth);
                     let frame = self.pop_call_frame();
                     *self.interpreter.env_mut() = frame.saved_env;
@@ -533,6 +543,7 @@ impl VM {
 
         self.interpreter.pop_routine();
         self.interpreter.pop_method_class();
+        self.interpreter.set_current_package(saved_package);
         let _frame = self.pop_call_frame();
         *self.interpreter.env_mut() = merged_env;
 

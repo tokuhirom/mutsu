@@ -322,7 +322,17 @@ impl Interpreter {
                         }
                     }
                 }
-                RegexQuant::Repeat(min, max) => {
+                RegexQuant::Repeat(..) | RegexQuant::RepeatCode(_) => {
+                    let (min, max) = match &token.quant {
+                        RegexQuant::Repeat(min, max) => (*min, *max),
+                        RegexQuant::RepeatCode(code) => {
+                            match self.eval_regex_repeat_code(code, &caps) {
+                                Some((min, max)) => (min, max),
+                                None => continue, // code eval failed, no match
+                            }
+                        }
+                        _ => unreachable!(),
+                    };
                     let base_len = caps.positional.len();
                     let stride = count_capture_groups(&token.atom);
                     let mut positions = Vec::new();

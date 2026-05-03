@@ -97,7 +97,17 @@ impl Interpreter {
                         stack.push((idx + 1, p));
                     }
                 }
-                RegexQuant::Repeat(min, max) => {
+                RegexQuant::Repeat(..) | RegexQuant::RepeatCode(_) => {
+                    let (min, max) = match &token.quant {
+                        RegexQuant::Repeat(min, max) => (*min, *max),
+                        RegexQuant::RepeatCode(code) => {
+                            match self.eval_regex_repeat_code(code, &RegexCaptures::default()) {
+                                Some((min, max)) => (min, max),
+                                None => continue,
+                            }
+                        }
+                        _ => unreachable!(),
+                    };
                     // Match atom between min and max times
                     let mut positions = Vec::new();
                     let mut current = pos;

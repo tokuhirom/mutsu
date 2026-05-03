@@ -117,6 +117,74 @@ impl Interpreter {
         }
     }
 
+    /// Evaluate a `** {code}` quantifier code block and return (min, max).
+    /// The code should return either a numeric value (exact count) or a Range.
+    pub(super) fn eval_regex_repeat_code(
+        &self,
+        code: &str,
+        caps: &RegexCaptures,
+    ) -> Option<(usize, Option<usize>)> {
+        let (stmts, _) = crate::parse_dispatch::parse_source(code).ok()?;
+        let env = self.make_regex_eval_env(caps);
+        let mut interp = Interpreter {
+            env,
+            functions: self.functions.clone(),
+            token_defs: self.token_defs.clone(),
+            current_package: self.current_package.clone(),
+            ..Default::default()
+        };
+        let val = match interp.eval_block_value(&stmts) {
+            Ok(v) => v,
+            Err(_) => return None,
+        };
+        match &val {
+            Value::Range(start, end) => {
+                let min = (*start).max(0) as usize;
+                let max = if *end == i64::MAX {
+                    None
+                } else {
+                    Some((*end).max(0) as usize)
+                };
+                Some((min, max))
+            }
+            Value::RangeExcl(start, end) => {
+                let min = (*start).max(0) as usize;
+                let max = if *end == i64::MAX {
+                    None
+                } else {
+                    Some(((*end) - 1).max(0) as usize)
+                };
+                Some((min, max))
+            }
+            Value::RangeExclStart(start, end) => {
+                let min = ((*start) + 1).max(0) as usize;
+                let max = if *end == i64::MAX {
+                    None
+                } else {
+                    Some((*end).max(0) as usize)
+                };
+                Some((min, max))
+            }
+            Value::RangeExclBoth(start, end) => {
+                let min = ((*start) + 1).max(0) as usize;
+                let max = if *end == i64::MAX {
+                    None
+                } else {
+                    Some(((*end) - 1).max(0) as usize)
+                };
+                Some((min, max))
+            }
+            _ => {
+                let n = val.to_f64();
+                if n.is_nan() || n.is_infinite() {
+                    return None;
+                }
+                let n = n.max(0.0) as usize;
+                Some((n, Some(n)))
+            }
+        }
+    }
+
     /// Enable eager collection of plain code blocks during regex matching.
     /// When enabled, code blocks are recorded even if the overall match fails.
     pub(in crate::runtime) fn enable_eager_code_blocks(&self) {

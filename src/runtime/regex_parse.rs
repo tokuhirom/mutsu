@@ -355,6 +355,100 @@ impl Interpreter {
         (parts, is_sequential)
     }
 
+    /// Split a regex pattern on top-level `&` (conjunction) or `&&`.
+    /// Returns the parts; if there's only one part, no conjunction was present.
+    fn split_top_level_conjunction(pattern: &str) -> Vec<String> {
+        let mut parts = Vec::new();
+        let mut current = String::new();
+        let mut depth_paren = 0i32;
+        let mut depth_bracket = 0i32;
+        let mut depth_brace = 0i32;
+        let mut depth_angle = 0i32;
+        let mut escaped = false;
+        let mut in_single_quote = false;
+        let mut in_double_quote = false;
+        let mut chars = pattern.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            if escaped {
+                current.push(ch);
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                current.push(ch);
+                escaped = true;
+                continue;
+            }
+            if ch == '\'' && !in_double_quote {
+                in_single_quote = !in_single_quote;
+                current.push(ch);
+                continue;
+            }
+            if ch == '"' && !in_single_quote {
+                in_double_quote = !in_double_quote;
+                current.push(ch);
+                continue;
+            }
+            if in_single_quote || in_double_quote {
+                current.push(ch);
+                continue;
+            }
+            match ch {
+                '(' => {
+                    depth_paren += 1;
+                    current.push(ch);
+                }
+                ')' => {
+                    depth_paren -= 1;
+                    current.push(ch);
+                }
+                '[' => {
+                    depth_bracket += 1;
+                    current.push(ch);
+                }
+                ']' => {
+                    depth_bracket -= 1;
+                    current.push(ch);
+                }
+                '{' => {
+                    depth_brace += 1;
+                    current.push(ch);
+                }
+                '}' => {
+                    depth_brace -= 1;
+                    current.push(ch);
+                }
+                '<' => {
+                    depth_angle += 1;
+                    current.push(ch);
+                }
+                '>' => {
+                    if depth_angle > 0 {
+                        depth_angle -= 1;
+                    }
+                    current.push(ch);
+                }
+                '&' if depth_paren == 0
+                    && depth_bracket == 0
+                    && depth_brace == 0
+                    && depth_angle == 0 =>
+                {
+                    // Skip && (also conjunction, same semantics for now)
+                    if chars.peek() == Some(&'&') {
+                        chars.next();
+                    }
+                    parts.push(std::mem::take(&mut current));
+                }
+                _ => current.push(ch),
+            }
+        }
+        if !current.is_empty() || !parts.is_empty() {
+            parts.push(current);
+        }
+        parts
+    }
+
     fn has_unquoted_ltm_separator(pattern: &str) -> bool {
         let mut in_single = false;
         let mut in_double = false;
@@ -785,6 +879,45 @@ impl Interpreter {
                 });
             } else if alt_patterns.len() == 1 {
                 return alt_patterns.into_iter().next();
+            }
+        }
+
+        // Check for conjunction (`&` or `&&`) at the top level.
+        // Conjunction has higher precedence than alternation, so this runs
+        // after alternation splitting found no `|`.
+        let conj_parts = Self::split_top_level_conjunction(source);
+        if conj_parts.len() > 1 {
+            let mut conj_patterns = Vec::new();
+            for part in &conj_parts {
+                let part_src = part.trim();
+                if part_src.is_empty() {
+                    continue;
+                }
+                let part_pat = if ignore_case && !part_src.starts_with(":i") {
+                    format!(":i {}", part_src)
+                } else {
+                    part_src.to_string()
+                };
+                if let Some(p) = self.parse_regex(&part_pat) {
+                    conj_patterns.push(p);
+                }
+            }
+            if conj_patterns.len() > 1 {
+                return Some(RegexPattern {
+                    tokens: vec![RegexToken {
+                        atom: RegexAtom::Conjunction(conj_patterns),
+                        quant: RegexQuant::One,
+                        named_capture: None,
+                        ratchet: false,
+                        frugal: false,
+                    }],
+                    anchor_start: false,
+                    anchor_end: false,
+                    ignore_case,
+                    ignore_mark,
+                });
+            } else if conj_patterns.len() == 1 {
+                return conj_patterns.into_iter().next();
             }
         }
 
@@ -1260,6 +1393,26 @@ impl Interpreter {
                                 RegexAtom::Literal('X')
                             }
                         }
+                        'b' => {
+                            // Bare \b is obsolete Perl 5 syntax — reject with X::Obsolete
+                            PENDING_REGEX_ERROR.with(|e| {
+                                *e.borrow_mut() = Some(RuntimeError::obsolete(
+                                    "\\b as a word boundary",
+                                    "<?wb> (word boundary) or <!wb> (not a word boundary)",
+                                ));
+                            });
+                            return None;
+                        }
+                        'B' => {
+                            // Bare \B is obsolete Perl 5 syntax — reject with X::Obsolete
+                            PENDING_REGEX_ERROR.with(|e| {
+                                *e.borrow_mut() = Some(RuntimeError::obsolete(
+                                    "\\B as a word boundary",
+                                    "<?wb> (word boundary) or <!wb> (not a word boundary)",
+                                ));
+                            });
+                            return None;
+                        }
                         other => RegexAtom::Literal(other),
                     }
                 }
@@ -1302,6 +1455,7 @@ impl Interpreter {
                                 Some('t') => literal.push('\t'),
                                 Some('r') => literal.push('\r'),
                                 Some('f') => literal.push('\u{000C}'),
+                                Some('b') => literal.push('\u{0008}'), // backspace
                                 Some('0') => literal.push('\0'),
                                 Some('c') | Some('C') => {
                                     // \c[NAME] or \c[NAME1, NAME2] inside double-quoted regex string
@@ -1987,7 +2141,51 @@ impl Interpreter {
                     // Capture group: (...)
                     let mut group_pattern = String::new();
                     let mut depth = 1;
-                    for ch in chars.by_ref() {
+                    let mut in_comment = false;
+                    while let Some(ch) = chars.next() {
+                        if in_comment {
+                            group_pattern.push(ch);
+                            if ch == '\n' {
+                                in_comment = false;
+                            }
+                            continue;
+                        }
+                        if ch == '#' {
+                            // '#' starts a comment — everything until newline is comment
+                            in_comment = true;
+                            group_pattern.push(ch);
+                            continue;
+                        }
+                        if ch == '\\' {
+                            // Backslash escape — push both chars without interpreting
+                            group_pattern.push(ch);
+                            if let Some(next) = chars.next() {
+                                group_pattern.push(next);
+                            }
+                            continue;
+                        }
+                        if ch == '\'' {
+                            // Single-quoted string — skip until closing quote
+                            group_pattern.push(ch);
+                            for sq in chars.by_ref() {
+                                group_pattern.push(sq);
+                                if sq == '\'' {
+                                    break;
+                                }
+                            }
+                            continue;
+                        }
+                        if ch == '"' {
+                            // Double-quoted string — skip until closing quote
+                            group_pattern.push(ch);
+                            for dq in chars.by_ref() {
+                                group_pattern.push(dq);
+                                if dq == '"' {
+                                    break;
+                                }
+                            }
+                            continue;
+                        }
                         if ch == '(' {
                             depth += 1;
                             group_pattern.push(ch);
@@ -2000,6 +2198,20 @@ impl Interpreter {
                         } else {
                             group_pattern.push(ch);
                         }
+                    }
+                    // If depth > 0, the group was never closed — parse error
+                    if depth > 0 {
+                        PENDING_REGEX_ERROR.with(|e| {
+                            *e.borrow_mut() = Some(RuntimeError::typed("X::Comp::Group", {
+                                let mut attrs = std::collections::HashMap::new();
+                                attrs.insert(
+                                    "message".to_string(),
+                                    Value::str("Unmatched ( in regex".to_string()),
+                                );
+                                attrs
+                            }));
+                        });
+                        return None;
                     }
                     let (alternatives, cap_is_sequential) =
                         Self::split_top_level_alternation(&group_pattern);
@@ -2222,6 +2434,7 @@ impl Interpreter {
                     }
                 }
             }
+            let mut starstar_frugal = false;
             if let Some(q) = chars.peek().copied() {
                 quant = match q {
                     '*' => {
@@ -2233,32 +2446,60 @@ impl Interpreter {
                         if chars.peek() == Some(&'*') {
                             // `**` quantifier: parse count or range
                             chars.next();
-                            // Skip whitespace after **
+                            // Handle frugal modifier: **? means non-greedy
+                            starstar_frugal = if chars.peek() == Some(&'?') {
+                                chars.next();
+                                true
+                            } else {
+                                false
+                            };
+                            // Skip whitespace after ** or **?
                             while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
                                 chars.next();
                             }
-                            // Parse the count/range: N, N..M, N..*
-                            let mut count_str = String::new();
-                            while chars
-                                .peek()
-                                .is_some_and(|ch| ch.is_ascii_digit() || *ch == '.' || *ch == '*')
-                            {
-                                count_str.push(chars.next().unwrap());
-                            }
-                            let (min, max) =
-                                if let Some((min_str, max_str)) = count_str.split_once("..") {
-                                    let min = min_str.parse::<usize>().unwrap_or(0);
-                                    let max = if max_str == "*" {
-                                        None
+                            if chars.peek() == Some(&'{') {
+                                // `** {code}` — code block quantifier
+                                chars.next(); // skip '{'
+                                let mut code = String::new();
+                                let mut depth = 1usize;
+                                for ch in chars.by_ref() {
+                                    if ch == '{' {
+                                        depth += 1;
+                                        code.push(ch);
+                                    } else if ch == '}' {
+                                        depth -= 1;
+                                        if depth == 0 {
+                                            break;
+                                        }
+                                        code.push(ch);
                                     } else {
-                                        max_str.parse::<usize>().ok()
+                                        code.push(ch);
+                                    }
+                                }
+                                RegexQuant::RepeatCode(code)
+                            } else {
+                                // Parse the count/range: N, N..M, N..*
+                                let mut count_str = String::new();
+                                while chars.peek().is_some_and(|ch| {
+                                    ch.is_ascii_digit() || *ch == '.' || *ch == '*'
+                                }) {
+                                    count_str.push(chars.next().unwrap());
+                                }
+                                let (min, max) =
+                                    if let Some((min_str, max_str)) = count_str.split_once("..") {
+                                        let min = min_str.parse::<usize>().unwrap_or(0);
+                                        let max = if max_str == "*" {
+                                            None
+                                        } else {
+                                            max_str.parse::<usize>().ok()
+                                        };
+                                        (min, max)
+                                    } else {
+                                        let exact = count_str.parse::<usize>().unwrap_or(1);
+                                        (exact, Some(exact))
                                     };
-                                    (min, max)
-                                } else {
-                                    let exact = count_str.parse::<usize>().unwrap_or(1);
-                                    (exact, Some(exact))
-                                };
-                            RegexQuant::Repeat(min, max)
+                                RegexQuant::Repeat(min, max)
+                            }
                         } else {
                             RegexQuant::ZeroOrMore
                         }
@@ -2275,7 +2516,9 @@ impl Interpreter {
                 };
             }
             // Handle frugal (non-greedy) modifier: `*?`, `+?`, `??`
-            let token_frugal = if !matches!(quant, RegexQuant::One) && chars.peek() == Some(&'?') {
+            let token_frugal = if starstar_frugal {
+                true
+            } else if !matches!(quant, RegexQuant::One) && chars.peek() == Some(&'?') {
                 chars.next();
                 true
             } else {
@@ -2871,6 +3114,8 @@ impl Interpreter {
                     't' => EscResult::Char('\t'),
                     'r' => EscResult::Char('\r'),
                     'f' => EscResult::Char('\u{000C}'),
+                    'b' => EscResult::Char('\u{0008}'), // backspace
+                    'B' => EscResult::NegChar('\u{0008}'), // not backspace
                     '0' => EscResult::Char('\0'),
                     'd' => EscResult::Item(ClassItem::Digit),
                     'D' => EscResult::Item(ClassItem::NegDigit),

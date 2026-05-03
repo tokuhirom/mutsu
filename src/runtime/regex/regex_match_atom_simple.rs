@@ -101,7 +101,17 @@ impl Interpreter {
                         stack.push((idx + 1, p));
                     }
                 }
-                RegexQuant::Repeat(min, max) => {
+                RegexQuant::Repeat(..) | RegexQuant::RepeatCode(_) => {
+                    let (min, max) = match &token.quant {
+                        RegexQuant::Repeat(min, max) => (*min, *max),
+                        RegexQuant::RepeatCode(code) => {
+                            match self.eval_regex_repeat_code(code, &RegexCaptures::default()) {
+                                Some((min, max)) => (min, max),
+                                None => continue,
+                            }
+                        }
+                        _ => unreachable!(),
+                    };
                     let mut current = pos;
                     let mut count = 0usize;
                     let mut positions = Vec::new();
@@ -186,6 +196,19 @@ impl Interpreter {
                     }
                 }
                 return None;
+            }
+            RegexAtom::Conjunction(branches) => {
+                let mut longest_end = 0usize;
+                for branch in branches {
+                    if let Some(end) = self.regex_match_end_from_in_pkg(branch, chars, pos, pkg) {
+                        if end > longest_end {
+                            longest_end = end;
+                        }
+                    } else {
+                        return None;
+                    }
+                }
+                return Some(longest_end);
             }
             RegexAtom::ZeroWidth => {
                 return Some(pos);
@@ -552,6 +575,7 @@ impl Interpreter {
             | RegexAtom::CaptureGroup(_)
             | RegexAtom::Alternation(_)
             | RegexAtom::SequentialAlternation(_)
+            | RegexAtom::Conjunction(_)
             | RegexAtom::GoalMatch { .. }
             | RegexAtom::Newline
             | RegexAtom::NotNewline
