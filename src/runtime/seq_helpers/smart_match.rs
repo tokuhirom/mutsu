@@ -1043,6 +1043,44 @@ impl Interpreter {
                 } else {
                     None
                 };
+                // For Hash/Array values, also check container type metadata
+                let lhs_args = lhs_args.or_else(|| {
+                    let rhs_base_resolved = rhs_base.resolve();
+                    if matches!(left_value, Value::Hash(_))
+                        && (rhs_base_resolved == "Hash" || rhs_base_resolved == "Associative")
+                    {
+                        if let Some(info) = self.container_type_metadata(left_value) {
+                            let vt = &info.value_type;
+                            if let Some(ref kt) = info.key_type {
+                                if vt != "Any" || kt != "Str" {
+                                    return Some(vec![
+                                        Value::Package(crate::symbol::Symbol::intern(vt)),
+                                        Value::Package(crate::symbol::Symbol::intern(kt)),
+                                    ]);
+                                }
+                            } else if vt != "Any" && vt != "Mu" {
+                                return Some(vec![Value::Package(crate::symbol::Symbol::intern(
+                                    vt,
+                                ))]);
+                            }
+                        }
+                        None
+                    } else if matches!(left_value, Value::Array(..))
+                        && (rhs_base_resolved == "Array" || rhs_base_resolved == "Positional")
+                    {
+                        if let Some(info) = self.container_type_metadata(left_value) {
+                            let vt = &info.value_type;
+                            if vt != "Any" && vt != "Mu" {
+                                return Some(vec![Value::Package(crate::symbol::Symbol::intern(
+                                    vt,
+                                ))]);
+                            }
+                        }
+                        None
+                    } else {
+                        None
+                    }
+                });
                 let Some(lhs_args) = lhs_args else {
                     return false;
                 };
@@ -1130,6 +1168,18 @@ impl Interpreter {
                         Some(":D") => false, // Package is not defined
                         _ => true,
                     };
+                }
+                // For Hash ~~ Hash[V,K] smartmatch, only typed hashes match.
+                // In Raku, an untyped hash does NOT match Hash[Int] even if all
+                // values happen to be Int. This differs from parameter binding
+                // where Associative[Int] checks element types.
+                if matches!(left, Value::Hash(_))
+                    && let Some((hash_base, _)) =
+                        Self::parse_generic_constraint(&type_name_resolved)
+                    && (hash_base == "Hash" || hash_base == "Associative")
+                    && self.container_type_metadata(left).is_none()
+                {
+                    return false;
                 }
                 self.type_matches_value(&type_name_resolved, left)
             }
