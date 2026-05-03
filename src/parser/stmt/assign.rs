@@ -68,6 +68,9 @@ pub(crate) enum CompoundAssignOp {
     BoolBitOr,
     BoolBitXor,
     XorXor,
+    JuncAny,
+    JuncAll,
+    JuncOne,
 }
 
 impl CompoundAssignOp {
@@ -109,6 +112,9 @@ impl CompoundAssignOp {
             CompoundAssignOp::BoolBitOr => "?|=",
             CompoundAssignOp::BoolBitXor => "?^=",
             CompoundAssignOp::XorXor => "^^=",
+            CompoundAssignOp::JuncAny => "|=",
+            CompoundAssignOp::JuncAll => "&=",
+            CompoundAssignOp::JuncOne => "^=",
         }
     }
 
@@ -193,6 +199,9 @@ impl CompoundAssignOp {
             CompoundAssignOp::BoolBitOr => TokenKind::BoolBitOr,
             CompoundAssignOp::BoolBitXor => TokenKind::BoolBitXor,
             CompoundAssignOp::XorXor => TokenKind::XorXor,
+            CompoundAssignOp::JuncAny => TokenKind::Pipe,
+            CompoundAssignOp::JuncAll => TokenKind::Ampersand,
+            CompoundAssignOp::JuncOne => TokenKind::Caret,
         }
     }
 }
@@ -315,6 +324,10 @@ pub(super) const COMPOUND_ASSIGN_OPS: &[CompoundAssignOp] = &[
     CompoundAssignOp::BoolBitAnd, // ?&=
     CompoundAssignOp::BoolBitOr,  // ?|=
     CompoundAssignOp::BoolBitXor, // ?^=
+    // Junction compound assignment: |=, &=, ^= -- must come after all prefixed variants
+    CompoundAssignOp::JuncAny,    // |=
+    CompoundAssignOp::JuncAll,    // &=
+    CompoundAssignOp::JuncOne,    // ^=
     CompoundAssignOp::Min,        // min=
     CompoundAssignOp::Max,        // max=
     CompoundAssignOp::Orelse,     // orelse= before or= to match longest first

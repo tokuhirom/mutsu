@@ -1545,10 +1545,14 @@ pub(super) fn put_stmt(input: &str) -> PResult<'_, Stmt> {
 pub(super) fn note_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("note", input).ok_or_else(|| PError::expected("note statement"))?;
     // `note` with no arguments is valid (prints "Noted\n")
-    if let Ok((rest2, _)) = ws1(rest)
-        && let Ok((rest3, args)) = parse_io_expr_list(rest2)
-    {
-        return parse_statement_modifier(rest3, Stmt::Note(args));
+    if let Ok((rest2, _)) = ws1(rest) {
+        // Check for colon invocant syntax: `note EXPR:` or `note EXPR: arg1, arg2`
+        if let Ok((rest3, stmt)) = parse_io_colon_invocant_stmt(rest2, "note") {
+            return parse_statement_modifier(rest3, stmt);
+        }
+        if let Ok((rest3, args)) = parse_io_expr_list(rest2) {
+            return parse_statement_modifier(rest3, Stmt::Note(args));
+        }
     }
     // Bare `note` with no args
     parse_statement_modifier(rest, Stmt::Note(vec![]))
@@ -1619,36 +1623,51 @@ fn parse_io_colon_invocant_stmt<'a>(input: &'a str, method_name: &str) -> PResul
     let mut rest = &rest_after_target[1..];
     let (r, _) = ws(rest)?;
     rest = r;
-    let (mut rest_after_args, first_arg) = expression(rest).map_err(|err| PError {
-        messages: merge_expected_messages(
-            "expected expression after ':' in io invocant call",
-            &err.messages,
-        ),
-        remaining_len: err.remaining_len.or(Some(rest.len())),
-        exception: None,
-    })?;
-    let mut args = vec![first_arg];
-    loop {
-        let (r, _) = ws(rest_after_args)?;
-        if !r.starts_with(',') {
-            break;
+
+    // Check for no-args form: `say EXPR:` with nothing after colon
+    let args = if rest.is_empty()
+        || rest.starts_with(';')
+        || rest.starts_with('\n')
+        || rest.starts_with('}')
+        || rest.starts_with(')')
+        || rest.starts_with('#')
+        || is_stmt_modifier_keyword(rest)
+    {
+        vec![]
+    } else {
+        let (first_rest, first_arg) = expression(rest).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected expression after ':' in io invocant call",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(rest.len())),
+            exception: None,
+        })?;
+        let mut args = vec![first_arg];
+        rest = first_rest;
+        loop {
+            let (r, _) = ws(rest)?;
+            if !r.starts_with(',') {
+                break;
+            }
+            let r = &r[1..];
+            let (r, _) = ws(r)?;
+            if r.starts_with(';')
+                || r.is_empty()
+                || r.starts_with('}')
+                || r.starts_with(')')
+                || is_stmt_modifier_keyword(r)
+            {
+                break;
+            }
+            let (r, next) = expression(r)?;
+            args.push(next);
+            rest = r;
         }
-        let r = &r[1..];
-        let (r, _) = ws(r)?;
-        if r.starts_with(';')
-            || r.is_empty()
-            || r.starts_with('}')
-            || r.starts_with(')')
-            || is_stmt_modifier_keyword(r)
-        {
-            break;
-        }
-        let (r, next) = expression(r)?;
-        args.push(next);
-        rest_after_args = r;
-    }
+        args
+    };
     Ok((
-        rest_after_args,
+        rest,
         Stmt::Expr(Expr::MethodCall {
             target: Box::new(target),
             name: Symbol::intern(method_name),

@@ -326,6 +326,10 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
                 a_id == b_id
             }
         }
+        // Junction identity: each junction object is unique
+        (Value::Junction { values: a_vals, .. }, Value::Junction { values: b_vals, .. }) => {
+            std::sync::Arc::ptr_eq(a_vals, b_vals)
+        }
         _ => left.eqv(right),
     }
 }

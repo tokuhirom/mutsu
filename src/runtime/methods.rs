@@ -570,6 +570,19 @@ impl Interpreter {
                 return Err(make_x_immutable_error(method, typename));
             }
         }
+        // Any:U autovivification: calling push/append/unshift/prepend on an
+        // undefined value (Nil or type object Any) creates a new Array.
+        if matches!(method, "push" | "append" | "unshift" | "prepend")
+            && (matches!(&target, Value::Nil)
+                || matches!(&target, Value::Package(name) if name.resolve() == "Any" || name.resolve() == "Mu"))
+        {
+            let arr: Vec<Value> = if matches!(method, "unshift" | "prepend") {
+                args.to_vec()
+            } else {
+                args
+            };
+            return Ok(Value::real_array(arr));
+        }
         // Non-container definite values: mutating methods throw errors.
         // In Raku, push/unshift/append/prepend/splice are defined on Any:U so calling
         // on a definite non-array value throws X::Multi::NoMatch; pop/shift have no
