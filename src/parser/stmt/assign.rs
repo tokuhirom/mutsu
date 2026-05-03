@@ -1546,6 +1546,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     target: Box::new(method_target),
                     name_expr: Box::new(name_expr),
                     args,
+                    modifier: None,
                 },
             };
             return Ok((
@@ -2187,6 +2188,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                     target: Box::new(var_expr),
                     name_expr: Box::new(name_expr),
                     args,
+                    modifier: None,
                 },
             };
             let stmt = Stmt::Assign {

@@ -845,6 +845,7 @@ fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Expr> {
                     target: Box::new(target),
                     name_expr: Box::new(name_expr.clone()),
                     args: args.clone(),
+                    modifier: None,
                 })
             }
         };
@@ -1493,6 +1494,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         target: Box::new(expr),
                         name_expr: Box::new(name_expr),
                         args,
+                        modifier,
                     };
                     rest = r;
                     continue;
@@ -1527,6 +1529,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         target: Box::new(expr),
                         name_expr: Box::new(name_expr),
                         args,
+                        modifier,
                     };
                     rest = r_inner;
                     continue;
@@ -1535,6 +1538,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     target: Box::new(expr),
                     name_expr: Box::new(name_expr),
                     args: Vec::new(),
+                    modifier,
                 };
                 rest = r;
                 continue;
@@ -1756,6 +1760,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                             target: Box::new(expr),
                             name_expr: Box::new(name_expr),
                             args,
+                            modifier,
                         };
                     }
                 }
@@ -1782,6 +1787,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                             target: Box::new(expr),
                             name_expr: Box::new(name_expr),
                             args,
+                            modifier,
                         };
                         rest = r_name;
                         continue;
@@ -1790,6 +1796,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         target: Box::new(expr),
                         name_expr: Box::new(name_expr),
                         args: Vec::new(),
+                        modifier,
                     };
                     rest = r_name;
                     continue;
@@ -1806,6 +1813,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         target: Box::new(expr),
                         name_expr: Box::new(name_expr),
                         args,
+                        modifier,
                     };
                     rest = r_name;
                     continue;
@@ -1814,6 +1822,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     target: Box::new(expr),
                     name_expr: Box::new(name_expr),
                     args: Vec::new(),
+                    modifier,
                 };
                 rest = r_name;
                 continue;
@@ -1922,6 +1931,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                             target: Box::new(expr),
                             name_expr: Box::new(name_expr),
                             args,
+                            modifier: Some('!'),
                         };
                     }
                 }

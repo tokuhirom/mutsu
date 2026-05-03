@@ -818,10 +818,12 @@ fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Expr {
             target,
             name_expr,
             args,
+            modifier,
         } => Expr::DynamicMethodCall {
             target: Box::new(replace_whatever_numbered(target, counter)),
             name_expr: name_expr.clone(),
             args: args.clone(),
+            modifier: *modifier,
         },
         Expr::CallOn { target, args } => Expr::CallOn {
             target: Box::new(replace_whatever_numbered(target, counter)),
@@ -1096,10 +1098,12 @@ fn replace_whatever_single(expr: &Expr) -> Expr {
             target,
             name_expr,
             args,
+            modifier,
         } => Expr::DynamicMethodCall {
             target: Box::new(replace_whatever_single(target)),
             name_expr: name_expr.clone(),
             args: args.clone(),
+            modifier: *modifier,
         },
         Expr::CallOn { target, args } => Expr::CallOn {
             target: Box::new(replace_whatever_single(target)),
@@ -2429,6 +2433,7 @@ mod tests {
                 target,
                 name_expr,
                 args,
+                ..
             } => {
                 assert!(matches!(*target, Expr::Var(ref n) if n.as_str() == "m"));
                 assert!(matches!(*name_expr, Expr::AnonSub { .. }));

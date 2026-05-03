@@ -6,8 +6,8 @@ impl Interpreter {
             return true;
         }
         if constraint == "Any" {
-            // Junction is a direct subtype of Mu, not Any
-            return value_type != "Junction";
+            // Junction and Mu are direct subtypes of Mu, not Any
+            return !matches!(value_type, "Junction" | "Mu");
         }
         if constraint == value_type {
             return true;

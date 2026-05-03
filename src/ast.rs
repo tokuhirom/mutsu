@@ -182,6 +182,7 @@ pub(crate) enum Expr {
         target: Box<Expr>,
         name_expr: Box<Expr>,
         args: Vec<Expr>,
+        modifier: Option<char>,
     },
     HyperMethodCall {
         target: Box<Expr>,
@@ -997,6 +998,7 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
             target,
             name_expr,
             args,
+            ..
         }
         | Expr::HyperMethodCallDynamic {
             target,
@@ -1287,6 +1289,7 @@ fn collect_ph_expr_shallow(expr: &Expr, out: &mut Vec<String>) {
             target,
             name_expr,
             args,
+            ..
         }
         | Expr::HyperMethodCallDynamic {
             target,
@@ -1490,6 +1493,7 @@ fn check_bare_var_expr(expr: &Expr, bare_name: &str, found: &mut bool) {
             target,
             name_expr,
             args,
+            ..
         }
         | Expr::HyperMethodCallDynamic {
             target,

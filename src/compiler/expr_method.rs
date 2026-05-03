@@ -246,6 +246,7 @@ impl Compiler {
         target: &Expr,
         name_expr: &Expr,
         args: &[Expr],
+        modifier: &Option<char>,
     ) {
         let target_var_name = match target {
             Expr::Var(n) => Some(n.clone()),
@@ -259,14 +260,19 @@ impl Compiler {
         for arg in args {
             self.compile_method_arg(arg);
         }
+        let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
         if let Some(var_name) = target_var_name {
             let target_name_idx = self.code.add_constant(Value::str(var_name));
             self.code.emit(OpCode::CallMethodDynamicMut {
                 arity,
                 target_name_idx,
+                modifier_idx,
             });
         } else {
-            self.code.emit(OpCode::CallMethodDynamic { arity });
+            self.code.emit(OpCode::CallMethodDynamic {
+                arity,
+                modifier_idx,
+            });
         }
     }
 

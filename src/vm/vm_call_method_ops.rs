@@ -494,6 +494,18 @@ impl VM {
         {
             return Err(err);
         }
+        // Pseudo-methods (WHAT, WHICH, etc.) cannot be used with .* or .+
+        if matches!(modifier.as_deref(), Some("*") | Some("+"))
+            && matches!(
+                method.as_str(),
+                "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "WHO" | "DEFINITE" | "VAR"
+            )
+        {
+            return Err(RuntimeError::new(format!(
+                "Cannot use .{} on a non-identifier method call",
+                modifier.as_deref().unwrap()
+            )));
+        }
         // For .* and .+ modifiers, skip the single-dispatch call and go
         // directly to the all-methods-in-MRO path to avoid double execution.
         match modifier.as_deref() {
@@ -506,7 +518,10 @@ impl VM {
             Some("*") => {
                 match self.call_method_all_with_fallback(&target, &method, &args, skip_native) {
                     Ok(vals) => self.stack.push(Value::array(vals)),
-                    Err(_) => self.stack.push(Value::array(vec![])),
+                    Err(e) if Self::is_method_not_found_error(&e) => {
+                        self.stack.push(Value::array(vec![]))
+                    }
+                    Err(e) => return Err(e),
                 }
                 self.env_dirty = true;
             }
@@ -641,10 +656,17 @@ impl VM {
                     self.try_compiled_method_or_interpret(target, &method, args)
                 };
                 match modifier.as_deref() {
-                    Some("?") => {
-                        self.stack.push(call_result.unwrap_or(Value::Nil));
-                        self.env_dirty = true;
-                    }
+                    Some("?") => match call_result {
+                        Ok(val) => {
+                            self.stack.push(val);
+                            self.env_dirty = true;
+                        }
+                        Err(e) if Self::is_method_not_found_error(&e) => {
+                            self.stack.push(Value::Nil);
+                            self.env_dirty = true;
+                        }
+                        Err(e) => return Err(e),
+                    },
                     _ => {
                         self.stack.push(call_result?);
                         self.env_dirty = true;

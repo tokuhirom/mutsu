@@ -7,8 +7,10 @@ impl VM {
         &mut self,
         code: &CompiledCode,
         arity: u32,
+        modifier_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         self.ensure_env_synced(code);
+        let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
         let arity = arity as usize;
         if self.stack.len() < arity + 2 {
             return Err(RuntimeError::new("VM stack underflow in CallMethodDynamic"));
@@ -29,13 +31,35 @@ impl VM {
             .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamic target"))?;
         // Force lazy IO lines for non-lazy-preserving methods
         let method_name_str = name_val.to_string_value();
+        let method = Self::rewrite_method_name(&method_name_str, modifier.as_deref());
         let target = if matches!(&target, Value::LazyIoLines { .. })
-            && !matches!(method_name_str.as_str(), "kv" | "iterator" | "lazy")
+            && !matches!(method.as_str(), "kv" | "iterator" | "lazy")
         {
             self.force_if_lazy_io_lines(target)?
         } else {
             target
         };
+        // Handle .* and .+ modifiers
+        match modifier.as_deref() {
+            Some("+") => {
+                let vals = self.call_method_all_with_fallback(&target, &method, &args, false)?;
+                self.stack.push(Value::array(vals));
+                self.env_dirty = true;
+                return Ok(());
+            }
+            Some("*") => {
+                match self.call_method_all_with_fallback(&target, &method, &args, false) {
+                    Ok(vals) => self.stack.push(Value::array(vals)),
+                    Err(e) if Self::is_method_not_found_error(&e) => {
+                        self.stack.push(Value::array(vec![]))
+                    }
+                    Err(e) => return Err(e),
+                }
+                self.env_dirty = true;
+                return Ok(());
+            }
+            _ => {}
+        }
         let call_result = if matches!(
             &name_val,
             Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
@@ -198,7 +222,16 @@ impl VM {
                 self.try_compiled_method_or_interpret(target, &method, args)
             }
         };
-        self.stack.push(call_result?);
+        match modifier.as_deref() {
+            Some("?") => match call_result {
+                Ok(val) => self.stack.push(val),
+                Err(e) if Self::is_method_not_found_error(&e) => self.stack.push(Value::Nil),
+                Err(e) => return Err(e),
+            },
+            _ => {
+                self.stack.push(call_result?);
+            }
+        }
         self.env_dirty = true;
         Ok(())
     }
@@ -208,9 +241,11 @@ impl VM {
         code: &CompiledCode,
         arity: u32,
         target_name_idx: u32,
+        modifier_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         self.ensure_env_synced(code);
         let target_name = Self::const_str(code, target_name_idx).to_string();
+        let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
         let arity = arity as usize;
         if self.stack.len() < arity + 2 {
             return Err(RuntimeError::new(
@@ -231,6 +266,29 @@ impl VM {
             .stack
             .pop()
             .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamicMut"))?;
+        let method_name_str = name_val.to_string_value();
+        let method = Self::rewrite_method_name(&method_name_str, modifier.as_deref());
+        // Handle .* and .+ modifiers
+        match modifier.as_deref() {
+            Some("+") => {
+                let vals = self.call_method_all_with_fallback(&target, &method, &args, false)?;
+                self.stack.push(Value::array(vals));
+                self.env_dirty = true;
+                return Ok(());
+            }
+            Some("*") => {
+                match self.call_method_all_with_fallback(&target, &method, &args, false) {
+                    Ok(vals) => self.stack.push(Value::array(vals)),
+                    Err(e) if Self::is_method_not_found_error(&e) => {
+                        self.stack.push(Value::array(vec![]))
+                    }
+                    Err(e) => return Err(e),
+                }
+                self.env_dirty = true;
+                return Ok(());
+            }
+            _ => {}
+        }
         let call_result = if matches!(
             &name_val,
             Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
@@ -240,7 +298,6 @@ impl VM {
             call_args.extend(args);
             self.vm_call_on_value(name_val, call_args, None)?
         } else {
-            let method = name_val.to_string_value();
             self.interpreter
                 .call_method_mut_with_values(&target_name, target, &method, args)?
         };
@@ -711,7 +768,10 @@ impl VM {
             Some("*") => {
                 match self.call_method_all_with_fallback(&target, &method, &args, skip_native) {
                     Ok(vals) => self.stack.push(Value::array(vals)),
-                    Err(_) => self.stack.push(Value::array(vec![])),
+                    Err(e) if Self::is_method_not_found_error(&e) => {
+                        self.stack.push(Value::array(vec![]))
+                    }
+                    Err(e) => return Err(e),
                 }
                 self.env_dirty = true;
             }
@@ -751,10 +811,17 @@ impl VM {
                     self.try_compiled_method_mut_or_interpret(&target_name, target, &method, args)
                 };
                 match modifier.as_deref() {
-                    Some("?") => {
-                        self.stack.push(call_result.unwrap_or(Value::Nil));
-                        self.env_dirty = true;
-                    }
+                    Some("?") => match call_result {
+                        Ok(val) => {
+                            self.stack.push(val);
+                            self.env_dirty = true;
+                        }
+                        Err(e) if Self::is_method_not_found_error(&e) => {
+                            self.stack.push(Value::Nil);
+                            self.env_dirty = true;
+                        }
+                        Err(e) => return Err(e),
+                    },
                     _ => {
                         self.stack.push(call_result?);
                         self.env_dirty = true;

@@ -529,6 +529,64 @@ impl Interpreter {
         matches
     }
 
+    /// Resolve methods for .*/,+ dispatch: one resolution per MRO level.
+    /// For multi methods, dispatches through the proto at each level.
+    /// Returns empty vec if any level has the method but no candidate matches.
+    pub(crate) fn resolve_methods_per_mro_level(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        arg_values: &[Value],
+    ) -> Vec<(String, MethodDef)> {
+        let mro = self.class_mro(class_name);
+        let mut defining_levels: Vec<String> = Vec::new();
+        for cn in &mro {
+            let is_ancestor = cn != class_name;
+            if let Some(overloads) = self
+                .classes
+                .get(cn.as_str())
+                .and_then(|c| c.methods.get(method_name))
+                .cloned()
+            {
+                let has_visible = overloads
+                    .iter()
+                    .any(|d| !d.is_private && (!d.is_my || !is_ancestor));
+                if has_visible {
+                    defining_levels.push(cn.clone());
+                }
+            }
+        }
+        if defining_levels.is_empty() {
+            return Vec::new();
+        }
+        let any_multi = defining_levels.iter().any(|cn| {
+            self.classes
+                .get(cn.as_str())
+                .and_then(|c| c.methods.get(method_name))
+                .is_some_and(|ovs| ovs.iter().any(|d| d.is_multi))
+        });
+        if !any_multi {
+            // Non-multi: use the standard resolution
+            return self.resolve_all_methods_with_owner(class_name, method_name, arg_values);
+        }
+        // Multi methods: dispatch through proto at each level
+        let mut matches = Vec::new();
+        let mut any_failed = false;
+        for cn in &defining_levels {
+            if let Some(resolved) =
+                self.resolve_method_with_owner_impl(cn, method_name, arg_values, None)
+            {
+                matches.push(resolved);
+            } else {
+                any_failed = true;
+            }
+        }
+        if any_failed {
+            return Vec::new();
+        }
+        matches
+    }
+
     pub(crate) fn should_skip_defer_method_candidate(
         &self,
         receiver_class: &str,
