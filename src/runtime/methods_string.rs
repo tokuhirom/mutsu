@@ -58,12 +58,17 @@ impl Interpreter {
                 }
                 _ => {
                     if let Some(enc) = Self::lookup_encoding_rs_codec(&encoding) {
+                        // Pre-encode the replacement string in the target encoding
+                        let repl_encoded = {
+                            let (enc_bytes, _, _) = enc.encode(repl);
+                            enc_bytes.into_owned()
+                        };
                         let mut result = Vec::new();
                         for ch in input.chars() {
                             let s = ch.to_string();
                             let (encoded, _enc, had_errors) = enc.encode(&s);
-                            if had_errors {
-                                result.extend_from_slice(repl.as_bytes());
+                            if had_errors || !Self::char_is_encodable(ch, &encoded, enc) {
+                                result.extend_from_slice(&repl_encoded);
                             } else {
                                 result.extend_from_slice(&encoded);
                             }
@@ -119,11 +124,11 @@ impl Interpreter {
                 if let Some(enc) = Self::lookup_encoding_rs_codec(&encoding) {
                     for ch in input.chars() {
                         let s = ch.to_string();
-                        let (_, _, had_errors) = enc.encode(&s);
-                        if had_errors {
+                        let (encoded, _, had_errors) = enc.encode(&s);
+                        if had_errors || !Self::char_is_encodable(ch, &encoded, enc) {
                             return Err(RuntimeError::new(format!(
-                                "Error encoding {} string: character '{}' (U+{:04X}) is not representable",
-                                encoding, ch, ch as u32
+                                "Error encoding {} string: could not encode codepoint 0x{:x}",
+                                encoding, ch as u32
                             )));
                         }
                     }
@@ -239,6 +244,30 @@ impl Interpreter {
                 Ok(String::from_utf8_lossy(bytes).into_owned())
             }
         }
+    }
+
+    /// Check whether a character can be encoded in the given encoding following
+    /// Raku's rules. This catches cases where `encoding_rs` (WHATWG) silently
+    /// maps codepoints that Raku considers non-encodable:
+    /// - GB18030: U+E000..U+E864 (PUA range excluded by the Chinese national
+    ///   standard but mapped by WHATWG).
+    /// - Other encodings: round-trip check (encode then decode must produce the
+    ///   same character).
+    fn char_is_encodable(ch: char, encoded: &[u8], enc: &'static encoding_rs::Encoding) -> bool {
+        // GB18030-specific: Raku rejects PUA U+E000..U+E864.
+        if enc == encoding_rs::GB18030 {
+            let cp = ch as u32;
+            if (0xE000..=0xE864).contains(&cp) {
+                return false;
+            }
+        }
+        // General round-trip check for other mismatches.
+        let (decoded, _, had_errors) = enc.decode(encoded);
+        if had_errors {
+            return false;
+        }
+        let mut chars = decoded.chars();
+        matches!(chars.next(), Some(c) if c == ch) && chars.next().is_none()
     }
 
     pub(super) fn lookup_encoding_rs_codec(
