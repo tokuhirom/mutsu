@@ -2948,6 +2948,8 @@ impl Interpreter {
         let mut current_sub: Option<String> = None;
         // Counter for uniquifying anonymous sub doc keys
         let mut anon_sub_counter: usize = 0;
+        // Track role declaration counts for uniquifying parametric role variants
+        let mut role_counters: HashMap<String, usize> = HashMap::new();
 
         fn extract_ident(s: &str) -> String {
             s.trim_start()
@@ -3178,11 +3180,17 @@ impl Interpreter {
         }
 
         /// Try to extract a declarant name from a line, handling various declaration patterns.
-        /// Returns (name, is_class_like, kind, dispatch_prefix)
+        /// Returns (name, is_class_like, kind, dispatch_prefix, callable_type_override)
         fn try_extract_declarant(
             trimmed: &str,
             current_class: &Option<String>,
-        ) -> Option<(String, bool, super::DocDeclKind, DispatchPrefix)> {
+        ) -> Option<(
+            String,
+            bool,
+            super::DocDeclKind,
+            DispatchPrefix,
+            Option<&'static str>,
+        )> {
             use super::DocDeclKind;
             // Strip optional scope declarators
             let s = trimmed
@@ -3202,7 +3210,13 @@ impl Interpreter {
                         } else {
                             name
                         };
-                        return Some((full_name, true, DocDeclKind::Package, DispatchPrefix::None));
+                        return Some((
+                            full_name,
+                            true,
+                            DocDeclKind::Package,
+                            DispatchPrefix::None,
+                            None,
+                        ));
                     }
                 }
             }
@@ -3218,7 +3232,13 @@ impl Interpreter {
                     } else {
                         name
                     };
-                    return Some((full_name, true, DocDeclKind::Package, DispatchPrefix::None));
+                    return Some((
+                        full_name,
+                        true,
+                        DocDeclKind::Package,
+                        DispatchPrefix::None,
+                        None,
+                    ));
                 }
             }
 
@@ -3288,7 +3308,14 @@ impl Interpreter {
                     } else {
                         DocDeclKind::Sub
                     };
-                    return Some((full_name, false, kind, dispatch_prefix));
+                    let callable_type = if kw.starts_with("submethod") {
+                        Some("Submethod")
+                    } else if kw.starts_with("method") {
+                        Some("Method")
+                    } else {
+                        None
+                    };
+                    return Some((full_name, false, kind, dispatch_prefix, callable_type));
                 }
             }
 
@@ -3301,6 +3328,7 @@ impl Interpreter {
                         false,
                         DocDeclKind::Sub,
                         dispatch_prefix,
+                        None,
                     ));
                 }
             }
@@ -3331,7 +3359,13 @@ impl Interpreter {
                         } else {
                             format!("$!{}", name)
                         };
-                        return Some((full_name, false, DocDeclKind::Attr, DispatchPrefix::None));
+                        return Some((
+                            full_name,
+                            false,
+                            DocDeclKind::Attr,
+                            DispatchPrefix::None,
+                            None,
+                        ));
                     }
                 }
             }
@@ -3340,7 +3374,13 @@ impl Interpreter {
             if let Some(rest) = s.strip_prefix("enum ") {
                 let name = extract_ident(rest);
                 if !name.is_empty() {
-                    return Some((name, false, DocDeclKind::Package, DispatchPrefix::None));
+                    return Some((
+                        name,
+                        false,
+                        DocDeclKind::Package,
+                        DispatchPrefix::None,
+                        None,
+                    ));
                 }
             }
 
@@ -3348,7 +3388,13 @@ impl Interpreter {
             if let Some(rest) = s.strip_prefix("subset ") {
                 let name = extract_ident(rest);
                 if !name.is_empty() {
-                    return Some((name, false, DocDeclKind::Package, DispatchPrefix::None));
+                    return Some((
+                        name,
+                        false,
+                        DocDeclKind::Package,
+                        DispatchPrefix::None,
+                        None,
+                    ));
                 }
             }
 
@@ -3356,7 +3402,13 @@ impl Interpreter {
             if let Some(rest) = s.strip_prefix("unit module") {
                 let name = extract_ident(rest);
                 if !name.is_empty() {
-                    return Some((name, false, DocDeclKind::Package, DispatchPrefix::None));
+                    return Some((
+                        name,
+                        false,
+                        DocDeclKind::Package,
+                        DispatchPrefix::None,
+                        None,
+                    ));
                 }
             }
 
@@ -3380,6 +3432,7 @@ impl Interpreter {
                         false,
                         DocDeclKind::Sub,
                         DispatchPrefix::None,
+                        None,
                     ));
                 }
             }
@@ -3391,6 +3444,7 @@ impl Interpreter {
                     false,
                     DocDeclKind::Sub,
                     DispatchPrefix::None,
+                    None,
                 ));
             }
 
@@ -3415,6 +3469,7 @@ impl Interpreter {
                                 false,
                                 DocDeclKind::Sub,
                                 DispatchPrefix::None,
+                                None,
                             ));
                         }
                     }
@@ -3577,12 +3632,20 @@ impl Interpreter {
                 None
             };
 
-            if let Some((name, is_class_like, kind, dispatch)) =
+            if let Some((name, is_class_like, kind, dispatch, callable_type_ovr)) =
                 last_seg.or_else(|| try_extract_declarant(check_line, &current_class))
             {
                 // For multi declarations, generate a unique key to avoid
                 // overwriting proto or other multi variants.
                 // For anonymous subs, also uniquify to avoid collisions.
+                // For re-declared roles (parametric variants), uniquify too.
+                let is_role_decl = {
+                    let s = check_line
+                        .strip_prefix("my ")
+                        .or_else(|| check_line.strip_prefix("our "))
+                        .unwrap_or(check_line);
+                    s.starts_with("role ")
+                };
                 let doc_key = if dispatch == DispatchPrefix::Multi {
                     let counter = multi_counters.entry(name.clone()).or_insert(0);
                     let key = format!("{}/multi.{}", name, counter);
@@ -3591,6 +3654,15 @@ impl Interpreter {
                 } else if name == "&<anon>" {
                     let key = format!("&<anon>.{}", anon_sub_counter);
                     anon_sub_counter += 1;
+                    key
+                } else if is_role_decl {
+                    let counter = role_counters.entry(name.clone()).or_insert(0);
+                    let key = if *counter == 0 {
+                        name.clone()
+                    } else {
+                        format!("{}/role.{}", name, counter)
+                    };
+                    *counter += 1;
                     key
                 } else {
                     name.clone()
@@ -3613,6 +3685,9 @@ impl Interpreter {
                     entry.kind = kind.clone();
                     entry.is_proto = dispatch == DispatchPrefix::Proto;
                     entry.source_line = Some((idx + 1) as u32);
+                    if let Some(ct) = callable_type_ovr {
+                        entry.callable_type_override = Some(ct.to_string());
+                    }
                     if has_leading {
                         entry.leading = leading;
                     }
@@ -3672,28 +3747,35 @@ impl Interpreter {
                     }
                 }
             } else if let Some(param_name) = try_extract_param_name(check_line) {
-                if let Some(leading) = pending_leading.take() {
-                    // Key parameter docs by "sub_name::param_name" to avoid
-                    // collisions when the same param name appears in different subs
-                    let param_key = if let Some(ref sub_name) = current_sub {
-                        format!("{}::{}", sub_name, param_name)
-                    } else {
-                        param_name.clone()
-                    };
-                    self.doc_comments.insert(
-                        param_key.clone(),
-                        DocComment {
+                // Key parameter docs by "sub_name::param_name" to avoid
+                // collisions when the same param name appears in different subs
+                let param_key = if let Some(ref sub_name) = current_sub {
+                    format!("{}::{}", sub_name, param_name)
+                } else {
+                    param_name.clone()
+                };
+                let leading = pending_leading.take();
+                let has_leading = leading.is_some();
+                let has_inline_trailing = inline_trailing.is_some();
+                if has_leading || has_inline_trailing {
+                    let entry = self
+                        .doc_comments
+                        .entry(param_key.clone())
+                        .or_insert_with(|| DocComment {
                             wherefore_name: param_name.clone(),
-                            leading: Some(leading),
-                            trailing: None,
                             kind: super::DocDeclKind::Param,
-                            is_proto: false,
-                            return_type: None,
-                            source_line: Some((idx + 1) as u32),
-                        },
-                    );
+                            ..Default::default()
+                        });
+                    entry.source_line = Some((idx + 1) as u32);
+                    if has_leading {
+                        entry.leading = leading;
+                    }
+                    if let Some(ref trail) = inline_trailing {
+                        entry.trailing = append_doc_text(entry.trailing.take(), trail);
+                    }
                 }
-                last_declarant = None;
+                // Set last_declarant so trailing #= on the next line can attach
+                last_declarant = Some((param_key, super::DocDeclKind::Param));
             } else {
                 // Not a recognized declaration — discard pending leading
                 pending_leading = None;
@@ -3818,7 +3900,7 @@ impl Interpreter {
                 } else {
                     None
                 };
-                if let Some((name, is_cls, kind, dispatch)) =
+                if let Some((name, is_cls, kind, dispatch, _callable_type_ovr)) =
                     last_seg2.or_else(|| try_extract_declarant(ck, &cur_class2))
                 {
                     // Generate the same key as the first pass
@@ -3850,6 +3932,28 @@ impl Interpreter {
                             ai += 1;
                             if ai > 100 {
                                 break format!("&<anon>.{}", ai);
+                            }
+                        }
+                    } else if {
+                        let s_check = ck
+                            .strip_prefix("my ")
+                            .or_else(|| ck.strip_prefix("our "))
+                            .unwrap_or(ck);
+                        s_check.starts_with("role ")
+                    } && seen_names.contains(&name)
+                    {
+                        // Role re-declaration (parametric variant) — find the next role key
+                        let mut ri = 1usize;
+                        loop {
+                            let candidate_key = format!("{}/role.{}", name, ri);
+                            if !seen_names.contains(&candidate_key)
+                                && self.doc_comments.contains_key(&candidate_key)
+                            {
+                                break candidate_key;
+                            }
+                            ri += 1;
+                            if ri > 100 {
+                                break format!("{}/role.{}", name, ri);
                             }
                         }
                     } else {
@@ -3926,13 +4030,12 @@ impl Interpreter {
                     if dc.wherefore_name.starts_with("block:") {
                         Value::Package(crate::symbol::Symbol::intern("Block"))
                     } else {
-                        // Proto/only subs (not methods) have ^name "Routine",
-                        // regular subs and methods have "Sub" in mutsu.
-                        // Methods have wherefore_name containing "::" (e.g., "C::meth")
-                        // or not starting with "&".
+                        // Use callable_type_override if set (Method, Submethod)
                         let is_standalone_sub =
                             dc.wherefore_name.starts_with('&') || !dc.wherefore_name.contains("::");
-                        let base_type = if dc.is_proto && is_standalone_sub {
+                        let base_type = if let Some(ref ct) = dc.callable_type_override {
+                            ct.as_str()
+                        } else if dc.is_proto && is_standalone_sub {
                             "Routine"
                         } else {
                             "Sub"

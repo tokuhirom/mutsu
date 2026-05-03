@@ -27,6 +27,16 @@ impl Interpreter {
             }
             full_param_defs.extend(def.param_defs.iter().cloned());
             let mut env = crate::env::Env::new();
+            // Set callable type for .^name to return Method/Submethod
+            let callable_type = if def.is_submethod {
+                "Submethod"
+            } else {
+                "Method"
+            };
+            env.insert(
+                "__mutsu_callable_type".to_string(),
+                Value::str_from(callable_type),
+            );
             if has_multi {
                 env.insert(
                     "__mutsu_lookup_class".to_string(),
@@ -63,6 +73,16 @@ impl Interpreter {
             }
             full_param_defs.extend(def.param_defs.iter().cloned());
             let mut env = crate::env::Env::new();
+            // Set callable type for .^name to return Method/Submethod
+            let callable_type = if def.is_submethod {
+                "Submethod"
+            } else {
+                "Method"
+            };
+            env.insert(
+                "__mutsu_callable_type".to_string(),
+                Value::str_from(callable_type),
+            );
             if has_multi {
                 env.insert(
                     "__mutsu_lookup_class".to_string(),
@@ -149,6 +169,16 @@ impl Interpreter {
                 let mut full_param_defs = vec![Self::make_invocant_param(class_name)];
                 full_param_defs.extend(def.param_defs.iter().cloned());
                 let mut env = crate::env::Env::new();
+                // Set callable type for .^name to return Method/Submethod
+                let callable_type = if def.is_submethod {
+                    "Submethod"
+                } else {
+                    "Method"
+                };
+                env.insert(
+                    "__mutsu_callable_type".to_string(),
+                    Value::str_from(callable_type),
+                );
                 env.insert(
                     "__mutsu_lookup_class".to_string(),
                     Value::str(class_name.to_string()),
@@ -541,6 +571,7 @@ impl Interpreter {
                     delegation: None,
                     is_default: false,
                     deprecated_message: None,
+                    is_submethod: false,
                 };
                 // If the class doesn't exist yet (e.g. built-in types like Rat, Int, Str),
                 // create a stub ClassDef so methods can be added dynamically.
@@ -601,6 +632,7 @@ impl Interpreter {
                     delegation: None,
                     is_default: false,
                     deprecated_message: None,
+                    is_submethod: false,
                 };
                 if let Some(class_def) = self.classes.get_mut(&class_name) {
                     class_def.methods.entry(method_name).or_default().push(def);
@@ -714,7 +746,21 @@ impl Interpreter {
                 if let Some(candidates) = self.role_candidates.get(&base_name) {
                     let values = candidates
                         .iter()
-                        .map(|_| Value::Package(Symbol::intern(&base_name)))
+                        .enumerate()
+                        .map(|(idx, _)| {
+                            // Create Instance values with candidate index so
+                            // .WHY can look up per-candidate doc comments
+                            let mut attrs = std::collections::HashMap::new();
+                            attrs.insert(
+                                "__mutsu_role_candidate_idx".to_string(),
+                                Value::Int(idx as i64),
+                            );
+                            attrs.insert(
+                                "__mutsu_role_base_name".to_string(),
+                                Value::str(base_name.clone()),
+                            );
+                            Value::make_instance(Symbol::intern(&base_name), attrs)
+                        })
                         .collect::<Vec<_>>();
                     return Ok(Value::array(values));
                 }
