@@ -287,11 +287,12 @@ impl Compiler {
 
     /// Compile Index expression (target[index] or target{index}).
     pub(super) fn compile_expr_index(&mut self, target: &Expr, index: &Expr, is_positional: bool) {
-        // When in scalar bind context (`:=`), emit IndexAutovivify for
-        // associative indexing so that the VM auto-vivifies intermediate
-        // hashes and returns a HashSlotRef.
-        // This enables `my $b := %h<foo><baz>; $b = 42`.
-        let use_autovivify = self.scalar_bind_autovivify && !is_positional;
+        // When in scalar bind context (`:=`), emit IndexAutovivify so that
+        // the VM auto-vivifies intermediate hashes (returning HashSlotRef)
+        // or returns ArraySlotRef for positional indexing.
+        // This enables `my $b := %h<foo><baz>; $b = 42` and
+        // `my $b := @a[1]; $b = 42`.
+        let use_autovivify = self.scalar_bind_autovivify;
 
         // Special case: %*ENV<key> compiles to GetEnvIndex
         if let Expr::HashVar(name) = target {

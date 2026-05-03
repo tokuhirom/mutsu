@@ -36,31 +36,48 @@ impl VM {
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
-    /// Auto-vivifying index: creates intermediate Hash entries and returns
-    /// a `HashSlotRef` so that `:=` bind to nested hash elements works.
-    /// Stack: [target, key] -> [HashSlotRef]
+    /// Auto-vivifying index: creates intermediate Hash/Array entries and returns
+    /// a `HashSlotRef` or `ArraySlotRef` so that `:=` bind to nested elements works.
+    /// Stack: [target, key] -> [HashSlotRef | ArraySlotRef]
     pub(super) fn exec_index_autovivify_op(&mut self) -> Result<(), RuntimeError> {
         let index = self.stack.pop().unwrap();
         let target = self.stack.pop().unwrap();
-        let key = Value::hash_key_encode(&index);
 
-        // If the target is a HashSlotRef, resolve its value first.
-        let hash_val = match &target {
+        // Resolve slot refs to their underlying value for type dispatch.
+        let resolved = match &target {
             Value::HashSlotRef { .. } => target.hash_slot_read(),
+            Value::ArraySlotRef { .. } => target.array_slot_read(),
             other => other.clone(),
         };
 
-        match &hash_val {
+        match &resolved {
             Value::Hash(_) => {
-                if let Some(slot_ref) = hash_val.hash_autovivify(&key) {
+                let key = Value::hash_key_encode(&index);
+                if let Some(slot_ref) = resolved.hash_autovivify(&key) {
                     self.stack.push(slot_ref);
                 } else {
                     self.stack.push(Value::Nil);
                 }
             }
-            // If the target is Nil/Any (not yet vivified), create an empty hash
-            // inside the HashSlotRef and then auto-vivify the key.
+            Value::Array(..) => {
+                // Positional autovivify: return an ArraySlotRef
+                if let Some(idx) = Self::index_to_usize(&index) {
+                    if let Some(slot_ref) = resolved.array_slot_ref(idx) {
+                        self.stack.push(slot_ref);
+                    } else {
+                        self.stack.push(Value::Nil);
+                    }
+                } else {
+                    // Fallback for non-integer index
+                    self.stack.push(target);
+                    self.stack.push(index);
+                    return self.exec_index_op_with_positional(true);
+                }
+            }
+            // If the target is Nil/Any (not yet vivified) inside a HashSlotRef,
+            // create an empty hash and then auto-vivify the key.
             _ if matches!(&target, Value::HashSlotRef { .. }) => {
+                let key = Value::hash_key_encode(&index);
                 let new_hash = Value::hash(std::collections::HashMap::new());
                 target.hash_slot_write(new_hash.clone());
                 if let Some(slot_ref) = new_hash.hash_autovivify(&key) {
@@ -117,6 +134,13 @@ impl VM {
             let resolved = target.hash_slot_read();
             // If the resolved value is a Hash, push it as the target for indexing.
             // This supports chained autovivification (e.g. %h<a><b><c>).
+            self.stack.push(resolved);
+            self.stack.push(index);
+            return self.exec_index_op_with_positional(is_positional);
+        }
+        // If target is an ArraySlotRef, resolve it to the actual value and re-index.
+        if let Value::ArraySlotRef { .. } = &target {
+            let resolved = target.array_slot_read();
             self.stack.push(resolved);
             self.stack.push(index);
             return self.exec_index_op_with_positional(is_positional);
