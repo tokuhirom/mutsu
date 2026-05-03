@@ -2792,13 +2792,23 @@ impl VM {
         };
 
         // Wrap out-of-range values for smaller native types (like C semantics).
-        // Full-width types (int/int64/uint/uint64) throw on overflow.
+        // Full-width signed types (int/int64) throw on overflow.
+        // Unsigned types (uint/uint64) wrap negative values to unsigned range.
         let wrapped = if !native_types::is_in_native_range(type_name, &big_val) {
-            if matches!(type_name, "int" | "int64" | "uint" | "uint64") {
+            if matches!(type_name, "int" | "int64") {
                 return Err(RuntimeError::new(format!(
                     "Cannot unbox {} bit wide bigint into native integer",
                     big_val.bits()
                 )));
+            }
+            if matches!(type_name, "uint" | "uint64") {
+                // Positive values exceeding u64 range should throw
+                if big_val > NumBigInt::from(0u64) {
+                    return Err(RuntimeError::new(format!(
+                        "Cannot unbox {} bit wide bigint into native integer",
+                        big_val.bits()
+                    )));
+                }
             }
             native_types::wrap_native_int(type_name, &big_val)
         } else {
