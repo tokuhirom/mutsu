@@ -129,6 +129,7 @@ fn make_delegation_method(attr_var_name: &str, target_method: &str) -> MethodDef
         delegation: Some((attr_var_name.to_string(), target_method.to_string())),
         is_default: false,
         deprecated_message: None,
+        is_submethod: false,
     }
 }
 
@@ -256,6 +257,7 @@ fn substitute_type_params_in_method(
         delegation: method.delegation.clone(),
         is_default: method.is_default,
         deprecated_message: method.deprecated_message.clone(),
+        is_submethod: method.is_submethod,
     }
 }
 
@@ -1523,6 +1525,7 @@ impl Interpreter {
                         delegation: None,
                         is_default: *is_default_candidate,
                         deprecated_message: deprecated_message.clone(),
+                        is_submethod: *is_submethod,
                     };
                     // `my method` and `our method` are NOT part of the class
                     // method table — they are only callable as functions.
@@ -2033,6 +2036,7 @@ impl Interpreter {
                     is_rw,
                     is_private,
                     is_my,
+                    is_submethod,
                     return_type,
                     is_default_candidate,
                     ..
@@ -2099,6 +2103,7 @@ impl Interpreter {
                         delegation: None,
                         is_default: *is_default_candidate,
                         deprecated_message: None,
+                        is_submethod: *is_submethod,
                     };
                     if let Some(class_def) = self.classes.get_mut(name) {
                         if *multi {
@@ -2637,6 +2642,7 @@ impl Interpreter {
                         delegation: None,
                         is_default: *is_default_candidate,
                         deprecated_message: None,
+                        is_submethod: *is_submethod,
                     };
                     // `my method` in roles are role-private, skip method table.
                     // Submethods (is_submethod) DO get composed even though

@@ -110,6 +110,7 @@ impl Interpreter {
                     delegation: None,
                     is_default: *is_default_candidate,
                     deprecated_message: deprecated_message.clone(),
+                    is_submethod: false,
                 };
                 if let Some(class_def) = self.classes.get_mut(&class_name) {
                     if *multi {

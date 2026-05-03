@@ -234,6 +234,9 @@ pub(crate) struct DocComment {
     pub return_type: Option<String>,
     /// Source line number (1-based) where the declaration appears.
     pub source_line: Option<u32>,
+    /// For Sub kind: what type to use in $=pod WHEREFORE (e.g. "Method", "Submethod").
+    /// None means use default logic (Sub/Routine).
+    pub callable_type_override: Option<String>,
 }
 
 impl DocComment {
@@ -339,6 +342,8 @@ pub(crate) struct MethodDef {
     pub(crate) is_default: bool,
     /// `is DEPRECATED` message: None = not deprecated.
     pub(crate) deprecated_message: Option<String>,
+    /// Whether this is a submethod (not inherited by subclasses).
+    pub(crate) is_submethod: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -767,6 +772,8 @@ pub struct Interpreter {
     doc_comments: HashMap<String, DocComment>,
     /// Ordered list of doc comments for $=pod
     doc_comment_list: Vec<DocComment>,
+    /// Cache for .WHY results so identity checks (=:=) work
+    why_cache: HashMap<String, Value>,
     type_metadata: HashMap<String, HashMap<String, Value>>,
     when_matched: bool,
     gather_items: Vec<Vec<Value>>,
@@ -2599,6 +2606,7 @@ impl Interpreter {
             block_stack: Vec::new(),
             doc_comments: HashMap::new(),
             doc_comment_list: Vec::new(),
+            why_cache: HashMap::new(),
             type_metadata: HashMap::new(),
             when_matched: false,
             gather_items: Vec::new(),
@@ -2751,6 +2759,7 @@ impl Interpreter {
                         delegation: None,
                         is_default: false,
                         deprecated_message: None,
+                        is_submethod: false,
                     };
                     let mut methods = HashMap::new();
                     for name in ["id", "need", "load", "loaded"] {
@@ -4405,6 +4414,7 @@ impl Interpreter {
             block_stack: Vec::new(),
             doc_comments: HashMap::new(),
             doc_comment_list: Vec::new(),
+            why_cache: HashMap::new(),
             type_metadata: self.type_metadata.clone(),
             when_matched: false,
             gather_items: Vec::new(),

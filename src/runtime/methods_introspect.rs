@@ -73,6 +73,7 @@ impl Interpreter {
             Value::Routine { .. } => "Sub",
             Value::Sub(data) => match data.env.get("__mutsu_callable_type") {
                 Some(Value::Str(kind)) if kind.as_str() == "Method" => "Method",
+                Some(Value::Str(kind)) if kind.as_str() == "Submethod" => "Submethod",
                 Some(Value::Str(kind)) if kind.as_str() == "WhateverCode" => "WhateverCode",
                 _ => "Sub",
             },
@@ -298,7 +299,7 @@ impl Interpreter {
     }
 
     /// Dispatch .WHY method — returns a Pod::Block::Declarator instance
-    pub(super) fn dispatch_why(&self, target: &Value) -> Result<Value, RuntimeError> {
+    pub(super) fn dispatch_why(&mut self, target: &Value) -> Result<Value, RuntimeError> {
         // Return declarator doc comment attached to this type/package/sub
         let keys: Vec<String> = match target {
             Value::Package(name) => vec![name.resolve()],
@@ -307,7 +308,22 @@ impl Interpreter {
                 attributes,
                 ..
             } => {
-                if class_name == "Attribute" {
+                // Role candidate with index metadata
+                if let Some(Value::Int(idx)) = attributes.get("__mutsu_role_candidate_idx") {
+                    let base_name = attributes
+                        .get("__mutsu_role_base_name")
+                        .and_then(|v| match v {
+                            Value::Str(s) => Some(s.to_string()),
+                            _ => None,
+                        })
+                        .unwrap_or_else(|| class_name.resolve());
+                    let mut k = Vec::new();
+                    if *idx > 0 {
+                        k.push(format!("{}/role.{}", base_name, idx));
+                    }
+                    k.push(base_name);
+                    k
+                } else if class_name == "Attribute" {
                     // Attribute objects: look up by "ClassName::$!attrname"
                     let mut k = Vec::new();
                     if let Some(Value::Str(attr_name)) = attributes.get("name") {
@@ -415,9 +431,15 @@ impl Interpreter {
             }
             _ => vec![],
         };
+        // Try to find matching doc comment, checking cache first for each key
         for key in keys {
+            if let Some(cached) = self.why_cache.get(&key) {
+                return Ok(cached.clone());
+            }
             if let Some(doc) = self.doc_comments.get(&key) {
-                return Ok(Self::make_pod_declarator(doc, target.clone()));
+                let pod = Self::make_pod_declarator(doc, target.clone());
+                self.why_cache.insert(key, pod.clone());
+                return Ok(pod);
             }
         }
         // For anonymous subs/bare blocks, try to find a doc comment by source line proximity
