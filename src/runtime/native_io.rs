@@ -2489,6 +2489,11 @@ impl Interpreter {
             }
             "encoding" => {
                 if let Some(arg) = args.first() {
+                    // Nil means switch to binary mode (no encoding)
+                    if matches!(arg, Value::Nil) {
+                        self.set_handle_encoding(&target_val, Some("bin".to_string()))?;
+                        return Ok(Value::Nil);
+                    }
                     let encoding = arg.to_string_value();
                     if encoding == "bin" {
                         self.set_handle_encoding(&target_val, Some("bin".to_string()))?;

@@ -2507,6 +2507,9 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         || rest_trimmed.starts_with(']')
         || is_stmt_modifier_ahead(rest_trimmed)
         || rest_trimmed.is_empty();
+    // For zero-arg bare-word functions (e.g. slurp, set), a following '.'
+    // means a method call on the result, so treat it as a terminator too.
+    let is_terminator_or_dot = is_terminator || rest_trimmed.starts_with('.');
 
     // User-declared and imported subs can be called with no args as bare words
     // in statement position (e.g., `make-temp-dir;`).
@@ -2528,7 +2531,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     if matches!(
         name.as_str(),
         "await" | "slip" | "set" | "bag" | "mix" | "slurp"
-    ) && is_terminator
+    ) && is_terminator_or_dot
     {
         return Ok((rest, make_call_expr(name, input, vec![])));
     }
