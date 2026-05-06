@@ -72,6 +72,9 @@ impl Compiler {
         let mut sub_compiler = Compiler::new();
         sub_compiler.is_routine = true;
         sub_compiler.lexically_in_routine = true;
+        // Propagate last_source_line so the sub body knows which line
+        // the sub was defined at (for backtraces).
+        sub_compiler.last_source_line = self.last_source_line;
         let arity = param_defs
             .iter()
             .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))
@@ -132,6 +135,11 @@ impl Compiler {
         }
         // Hoist sub declarations within the sub body
         sub_compiler.hoist_sub_decls(body, true);
+        // Emit SetSourceLine at the start of the function body so that
+        // ?LINE is set to the sub's definition line on entry.
+        if let Some(line) = sub_compiler.last_source_line {
+            sub_compiler.code.emit(OpCode::SetSourceLine(line));
+        }
         // If sub body contains CATCH/CONTROL, wrap in implicit try
         if Self::has_catch_or_control(body) {
             sub_compiler.compile_try(body, &None);

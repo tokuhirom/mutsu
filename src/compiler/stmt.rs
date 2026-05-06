@@ -983,7 +983,11 @@ impl Compiler {
             } => {
                 let (pre_stmts, mut loop_body, post_stmts) =
                     self.expand_loop_phasers(body, label.as_deref());
-                let restore_topic = param.is_none() && params.is_empty() && body.len() == 1;
+                let non_setline_count = body
+                    .iter()
+                    .filter(|s| !matches!(s, Stmt::SetLine(_)))
+                    .count();
+                let restore_topic = param.is_none() && params.is_empty() && non_setline_count == 1;
                 for s in &pre_stmts {
                     self.compile_stmt(s);
                 }
@@ -1520,8 +1524,14 @@ impl Compiler {
             } => {
                 let qualified_name = self.qualify_package_name(&name.resolve());
                 // Detect stub body: `module Foo { ... }` — body is a stub operator
-                let is_stub_body = body.len() == 1
-                    && matches!(&body[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
+                // Filter out SetLine when checking, since the parser now emits
+                // line tracking statements in all block bodies.
+                let non_setline_body: Vec<_> = body
+                    .iter()
+                    .filter(|s| !matches!(s, Stmt::SetLine(_)))
+                    .collect();
+                let is_stub_body = non_setline_body.len() == 1
+                    && matches!(non_setline_body[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
                         if fn_name.resolve() == "__mutsu_stub_die"
                             || fn_name.resolve() == "__mutsu_stub_warn");
                 if *is_unit {

@@ -1066,8 +1066,12 @@ impl Interpreter {
             .last()
             .map(|(n, _)| n.clone())
             .unwrap_or_default();
-        self.routine_stack
-            .push((owner_class.to_string(), method_name_for_stack));
+        self.routine_stack.push(RoutineFrame {
+            package: owner_class.to_string(),
+            name: method_name_for_stack,
+            line: None,
+            file: None,
+        });
         // Set current_package to the receiver class so that the compiler
         // qualifies function calls with the correct package prefix,
         // allowing class-scoped subs (e.g. `sub helper` in a class body)

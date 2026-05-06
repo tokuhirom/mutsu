@@ -938,11 +938,11 @@ impl Interpreter {
                 .routine_stack
                 .iter()
                 .rev()
-                .find(|(_, name)| name != "<pointy-block>");
-            if let Some((package, routine)) = entry {
+                .find(|frame| frame.name != "<pointy-block>");
+            if let Some(frame) = entry {
                 return Value::Routine {
-                    package: Symbol::intern(package),
-                    name: Symbol::intern(routine),
+                    package: Symbol::intern(&frame.package),
+                    name: Symbol::intern(&frame.name),
                     is_regex: false,
                 };
             }
@@ -1112,16 +1112,29 @@ impl Interpreter {
         rest
     }
 
-    pub(crate) fn routine_stack_top(&self) -> Option<&(String, String)> {
+    pub(crate) fn routine_stack_top(&self) -> Option<&super::RoutineFrame> {
         self.routine_stack.last()
     }
 
-    pub(crate) fn routine_stack(&self) -> &[(String, String)] {
+    pub(crate) fn routine_stack(&self) -> &[super::RoutineFrame] {
         &self.routine_stack
     }
 
-    pub(crate) fn push_routine(&mut self, package: String, name: String) {
-        self.routine_stack.push((package, name));
+    /// Push a new routine frame. `line` and `file` record the call-site
+    /// in the *caller* (the line/file where this function was called from).
+    pub(crate) fn push_routine_with_location(
+        &mut self,
+        package: String,
+        name: String,
+        line: Option<u32>,
+        file: Option<String>,
+    ) {
+        self.routine_stack.push(super::RoutineFrame {
+            package,
+            name,
+            line,
+            file,
+        });
     }
 
     pub(crate) fn pop_routine(&mut self) {

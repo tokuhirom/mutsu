@@ -67,6 +67,8 @@ pub struct RuntimeError {
     pub container_name: Option<String>,
     /// Structured exception object (e.g. X::AdHoc, X::Promise::Vowed)
     pub exception: Option<Box<Value>>,
+    /// Formatted backtrace string from the call stack at the point of error.
+    pub backtrace: Option<String>,
 }
 
 impl RuntimeError {
@@ -100,6 +102,7 @@ impl RuntimeError {
             return_target_callable_id: None,
             container_name: None,
             exception: None,
+            backtrace: None,
         }
     }
 
@@ -154,6 +157,7 @@ impl RuntimeError {
             return_target_callable_id: None,
             container_name: None,
             exception: None,
+            backtrace: None,
         }
     }
 

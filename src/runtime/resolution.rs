@@ -1191,8 +1191,12 @@ impl Interpreter {
                 "__mutsu_callable_id".to_string(),
                 Value::Int(data.id as i64),
             );
-            self.routine_stack
-                .push((data.package.resolve(), data.name.resolve()));
+            self.routine_stack.push(RoutineFrame {
+                package: data.package.resolve(),
+                name: data.name.resolve(),
+                line: None,
+                file: None,
+            });
             self.block_stack.push(block_sub);
             let return_spec = data.env.get("__mutsu_return_type").and_then(|v| match v {
                 Value::Str(s) => Some(s.to_string()),
@@ -1433,8 +1437,8 @@ impl Interpreter {
         let mut compiler = crate::compiler::Compiler::new();
         compiler.is_routine = !self.routine_stack.is_empty();
         compiler.lexically_in_routine = !self.routine_stack.is_empty();
-        let scope = if let Some((pkg, routine)) = self.routine_stack.last() {
-            format!("{}::&{}", pkg, routine)
+        let scope = if let Some(frame) = self.routine_stack.last() {
+            format!("{}::&{}", frame.package, frame.name)
         } else {
             self.current_package.clone()
         };

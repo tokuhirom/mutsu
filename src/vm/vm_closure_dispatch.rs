@@ -198,12 +198,22 @@ impl VM {
         // Push routine info for leave/return/when targeting.
         // For pointy blocks, we push a special marker name so that
         // &?ROUTINE can skip it and see the enclosing routine.
+        let call_line = self.current_source_line();
+        let call_file = self.current_source_file();
         if cc.is_pointy_block {
-            self.interpreter
-                .push_routine(data.package.resolve(), "<pointy-block>".to_string());
+            self.interpreter.push_routine_with_location(
+                data.package.resolve(),
+                "<pointy-block>".to_string(),
+                call_line,
+                call_file,
+            );
         } else {
-            self.interpreter
-                .push_routine(data.package.resolve(), data.name.resolve());
+            self.interpreter.push_routine_with_location(
+                data.package.resolve(),
+                data.name.resolve(),
+                call_line,
+                call_file,
+            );
         }
         self.interpreter.env_mut().insert(
             "__mutsu_callable_id".to_string(),

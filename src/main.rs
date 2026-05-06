@@ -7,6 +7,16 @@ use std::io::{self, Read};
 use mutsu::{Interpreter, RuntimeError, Value};
 
 fn print_error(prefix: &str, err: &RuntimeError) {
+    // For runtime errors with a backtrace, use the Raku-style format:
+    // message\n  in sub foo at file line N\n  in block <unit> at file line N
+    if err.backtrace.is_some() && err.code.is_none() {
+        eprintln!("{}", err.message);
+        if let Some(ref bt) = err.backtrace {
+            eprintln!("{}", bt);
+        }
+        return;
+    }
+
     eprintln!("{}: {}", prefix, err.message);
     let mut meta = Vec::new();
     if let Some(code) = err.code {

@@ -721,6 +721,15 @@ pub(crate) struct CallFrameEntry {
     pub env: Env,
 }
 
+/// Entry in the routine stack, tracking the call chain for backtraces.
+#[derive(Clone, Debug)]
+pub(crate) struct RoutineFrame {
+    pub package: String,
+    pub name: String,
+    pub line: Option<u32>,
+    pub file: Option<String>,
+}
+
 pub struct Interpreter {
     env: Env,
     output: String,
@@ -757,7 +766,7 @@ pub struct Interpreter {
     next_handle_id: usize,
     program_path: Option<String>,
     current_package: String,
-    routine_stack: Vec<(String, String)>,
+    routine_stack: Vec<RoutineFrame>,
     callframe_stack: Vec<CallFrameEntry>,
     method_class_stack: Vec<String>,
     pending_call_arg_sources: Option<Vec<Option<String>>>,

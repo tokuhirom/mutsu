@@ -2559,7 +2559,19 @@ impl VM {
                 } else {
                     val
                 };
-                return Err(self.runtime_error_from_exception_value(val, "Died", false));
+                let backtrace = self.build_backtrace_string();
+                let mut err = self.runtime_error_from_exception_value(val, "Died", false);
+                if !backtrace.is_empty() {
+                    err.backtrace = Some(backtrace.clone());
+                }
+                // Attach backtrace to the exception value
+                if let Some(ref mut exc_box) = err.exception
+                    && let Value::Instance { attributes, .. } = exc_box.as_mut()
+                {
+                    std::sync::Arc::make_mut(attributes)
+                        .insert("backtrace".to_string(), Value::str(backtrace));
+                }
+                return Err(err);
             }
             OpCode::Fail => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);

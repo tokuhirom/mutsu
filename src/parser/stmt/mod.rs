@@ -540,11 +540,6 @@ fn has_statement_separator(rest: &str) -> bool {
     true
 }
 
-/// Parse a list of statements (inside a block or at program level).
-fn stmt_list(input: &str) -> PResult<'_, Vec<Stmt>> {
-    stmt_list_with_mode(input, true, false)
-}
-
 fn stmt_list_with_mode(
     input: &str,
     allow_mainline_capture: bool,
@@ -815,7 +810,9 @@ pub(super) fn program(input: &str) -> PResult<'_, Vec<Stmt>> {
     } else {
         input
     };
-    stmt_list(input)
+    // Enable SetLine emission so that source line tracking works for
+    // backtraces and $?LINE at the top level.
+    stmt_list_with_mode(input, true, true)
 }
 
 #[cfg(test)]
