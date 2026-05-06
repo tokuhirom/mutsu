@@ -330,10 +330,10 @@ impl VM {
         self.env_dirty = false;
         self.locals_dirty = false;
 
-        // Push caller env for callframe() introspection.
-        self.interpreter.push_caller_env();
-
-        self.locals = vec![Value::Nil; cf.code.locals.len()];
+        // Reuse locals vec to avoid per-call allocation
+        let num_locals = cf.code.locals.len();
+        self.locals.clear();
+        self.locals.resize(num_locals, Value::Nil);
         for (i, local_name) in cf.code.locals.iter().enumerate() {
             if let Some(val) = self.interpreter.env().get(local_name) {
                 self.locals[i] = val.clone();
@@ -395,7 +395,9 @@ impl VM {
 
         self.stack.truncate(saved_stack_depth);
 
-        // Sync state variables back to persistent storage.
+        // Sync state variables back to persistent storage. Prefer the env
+        // value over locals because methods like .push() mutate the Value
+        // in the env in-place, and the locals copy may be stale.
         for (slot, key) in &cf.code.state_locals {
             let local_name = &cf.code.locals[*slot];
             let val = self
@@ -408,7 +410,6 @@ impl VM {
         }
 
         // Restore state
-        self.interpreter.pop_caller_env();
         self.locals = saved_locals;
         self.env_dirty = saved_env_dirty;
         self.locals_dirty = saved_locals_dirty;
@@ -430,9 +431,6 @@ impl VM {
         match result {
             Ok(()) if fail_bypass => Ok(ret_val),
             Ok(()) => {
-                // In the fast path, explicit returns are handled locally.
-                // Unlike call_compiled_function_named, we don't re-throw the
-                // return as an error since there's no outer frame to catch it.
                 if let Some(v) = explicit_return {
                     Ok(v)
                 } else {
@@ -445,14 +443,14 @@ impl VM {
 
     /// Check if a compiled function is eligible for the fast call path.
     /// Returns true for simple functions that don't need the full call machinery.
-    /// Functions with state variables are excluded because PreIncrement/PostIncrement
-    /// use a separate state key namespace that conflicts with the compiled state save.
+    /// State variables are supported: both `state_locals` load/sync and anonymous
+    /// state variable sync (via `sync_anon_state_value` at the opcode level) work
+    /// correctly in the fast path.
     pub(super) fn is_fast_call_eligible(cf: &CompiledFunction, fn_name: &str) -> bool {
         cf.params.is_empty()
             && cf.param_defs.is_empty()
             && cf.return_type.is_none()
             && !fn_name.is_empty()
-            && cf.code.state_locals.is_empty()
     }
 
     pub(super) fn call_compiled_function_named(
