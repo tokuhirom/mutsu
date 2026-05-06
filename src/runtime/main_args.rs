@@ -51,8 +51,8 @@ impl Interpreter {
         // Check for --help flag
         if raw_args.iter().any(|a| a == "--help") {
             let usage = self.generate_usage_message(&main_def);
-            // --help prints to stdout
-            let text = format!("{}\n", usage);
+            // --help prints to stdout with "Usage:" prefix, exit 0
+            let text = format!("Usage:\n{}\n", usage);
             self.emit_output(&text);
             return Ok(());
         }
@@ -411,9 +411,23 @@ impl Interpreter {
         candidate: &FunctionDef,
         parsed: &ParsedMainArgs,
     ) -> Result<(), RuntimeError> {
+        // Coerce positional string args to match parameter type constraints.
+        // CLI args are always strings, but MAIN parameters may be typed as
+        // Int, Num, Rat, etc. and Raku coerces automatically.
+        let positional_params: Vec<&ParamDef> = candidate
+            .param_defs
+            .iter()
+            .filter(|p| !p.named && !p.slurpy && !p.double_slurpy)
+            .collect();
+
         let mut args = Vec::new();
-        for arg in &parsed.positional {
-            args.push(arg.clone());
+        for (i, arg) in parsed.positional.iter().enumerate() {
+            let coerced = if let Some(pd) = positional_params.get(i) {
+                Self::coerce_cli_arg(arg, pd)
+            } else {
+                arg.clone()
+            };
+            args.push(coerced);
         }
         for (name, value) in &parsed.named {
             args.push(Value::Pair(name.clone(), Box::new(value.clone())));
@@ -453,12 +467,10 @@ impl Interpreter {
             let result = self.call_function("GENERATE-USAGE", vec![])?;
             let msg = result.to_string_value();
             let output = format!("{}\n", msg);
-            self.stderr_output.push_str(&output);
-            eprint!("{}", output);
+            self.emit_stderr(&output);
         } else {
             let output = format!("Usage:\n{}\n", usage);
-            self.stderr_output.push_str(&output);
-            eprint!("{}", output);
+            self.emit_stderr(&output);
         }
 
         self.exit_code = 2;
@@ -479,7 +491,8 @@ impl Interpreter {
     fn generate_usage_from_candidates(&self, candidates: &[FunctionDef]) -> String {
         let program = self
             .env
-            .get("$*PROGRAM-NAME")
+            .get("*PROGRAM-NAME")
+            .or_else(|| self.env.get("$*PROGRAM-NAME"))
             .map(|v| v.to_string_value())
             .unwrap_or_else(|| "program".to_string());
 
@@ -503,6 +516,9 @@ impl Interpreter {
                     parts.push(format!("[<{}>...]", name));
                 } else if pd.double_slurpy {
                     // Skip slurpy hash in usage
+                } else if let Some(ref lit) = pd.literal_value {
+                    // Literal parameter — show the literal value
+                    parts.push(lit.to_string_value());
                 } else {
                     let name = pd.name.trim_start_matches(['$', '@', '%', '\\']);
                     if pd.default.is_some() || pd.optional_marker {
@@ -515,5 +531,34 @@ impl Interpreter {
             lines.push(parts.join(" "));
         }
         lines.join("\n")
+    }
+
+    /// Coerce a CLI argument (always a string) to the type required by a
+    /// MAIN parameter definition.  Returns the original value if no
+    /// coercion is needed or if coercion fails.
+    fn coerce_cli_arg(arg: &Value, pd: &ParamDef) -> Value {
+        let tc = match &pd.type_constraint {
+            Some(t) => t.as_str(),
+            None => return arg.clone(),
+        };
+        let s = arg.to_string_value();
+        match tc {
+            "Int" => s.parse::<i64>().map(Value::Int).unwrap_or_else(|_| {
+                // Try big-int style
+                arg.clone()
+            }),
+            "Num" => s
+                .parse::<f64>()
+                .map(Value::Num)
+                .unwrap_or_else(|_| arg.clone()),
+            "Rat" => {
+                if let Ok(n) = s.parse::<f64>() {
+                    Value::Num(n)
+                } else {
+                    arg.clone()
+                }
+            }
+            _ => arg.clone(),
+        }
     }
 }

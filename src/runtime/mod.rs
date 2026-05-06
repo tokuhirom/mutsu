@@ -3735,6 +3735,18 @@ impl Interpreter {
         self.is_thread_clone
     }
 
+    /// Write a message to stderr, respecting nested mode.
+    /// In nested mode the output is buffered for later inspection;
+    /// otherwise it is emitted directly so `flush_stderr_buffer` does
+    /// not duplicate it.
+    pub(crate) fn emit_stderr(&mut self, text: &str) {
+        if self.nested_mode {
+            self.stderr_output.push_str(text);
+        } else {
+            eprint!("{}", text);
+        }
+    }
+
     pub(crate) fn write_warn_to_stderr(&mut self, message: &str) {
         let msg = format!("{}\n", message);
         if self.is_thread_clone
