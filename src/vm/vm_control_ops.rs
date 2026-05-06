@@ -725,13 +725,29 @@ impl VM {
         self.env_dirty = true;
         let mut i = start;
 
+        // Pre-mark readonly before the loop to avoid per-iteration HashSet
+        // insertions. The for loop parameter is readonly for the duration.
+        if !spec.is_rw {
+            if let Some(ref name) = param_name {
+                self.interpreter.mark_readonly(name);
+            } else {
+                self.interpreter.mark_readonly("_");
+            }
+        }
+
+        // Check if we can skip the per-iteration env insert. When the loop
+        // has a local slot for the parameter AND the body doesn't reference
+        // the parameter from the env (closures, etc.), we can use just the
+        // local slot for much better performance in tight loops.
+        let use_local_only = spec.param_local.is_some() && param_name.is_none();
+
         // Use <= for inclusive ranges instead of end_val + 1 to avoid overflow
         // when end_val is i64::MAX
         'for_loop: while if inclusive { i <= end_val } else { i < end_val } {
             let item = Value::Int(i);
             self.topic_source_var = None;
 
-            if param_name.is_none() {
+            if !use_local_only && param_name.is_none() {
                 self.interpreter
                     .env_mut()
                     .insert("_".to_string(), item.clone());
@@ -752,13 +768,6 @@ impl VM {
             }
             if let Some(slot) = spec.param_local {
                 self.locals[slot as usize] = item.clone();
-            }
-            if !spec.is_rw {
-                if let Some(ref name) = param_name {
-                    self.interpreter.mark_readonly(name);
-                } else {
-                    self.interpreter.mark_readonly("_");
-                }
             }
             'body_redo: loop {
                 match self.run_range(code, body_start, loop_end, compiled_fns) {

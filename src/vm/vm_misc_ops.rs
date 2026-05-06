@@ -2205,14 +2205,23 @@ impl VM {
         };
         self.locals[slot_idx] = val.clone();
         let name = name.to_string();
-        self.interpreter.env_mut().insert(name.clone(), val);
+        // Only insert into env if the value differs from what's already there.
+        // This avoids triggering Arc::make_mut deep clone on the CoW env when
+        // the state variable is already initialized with the same value (common
+        // case in tight loops).
+        let needs_env_insert = self.interpreter.env().get(&name) != Some(&val);
+        if needs_env_insert {
+            self.interpreter.env_mut().insert(name.clone(), val);
+        }
         // Store metadata mapping variable name to its state storage key.
         // Closures that capture this variable can use this to update state
         // storage when they modify the variable.
         let meta_key = format!("__mutsu_state_key::{}", name);
-        self.interpreter
-            .env_mut()
-            .insert(meta_key, Value::str(scoped_key));
+        let scoped_key_val = Value::str(scoped_key.clone());
+        let needs_meta_insert = self.interpreter.env().get(&meta_key) != Some(&scoped_key_val);
+        if needs_meta_insert {
+            self.interpreter.env_mut().insert(meta_key, scoped_key_val);
+        }
     }
 
     pub(super) fn exec_block_scope_op(
