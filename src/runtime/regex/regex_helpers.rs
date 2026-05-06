@@ -284,6 +284,16 @@ pub(super) fn grapheme_end(chars: &[char], pos: usize) -> usize {
 /// Check if an atom is "simple" — it only advances position without producing
 /// any captures. Used to enable a fast path in ratcheted quantifier loops
 /// that avoids cloning RegexCaptures on every iteration.
+/// Returns true when a Named regex atom is "silent" (produces no implicit
+/// named capture).  Silent names start with `.` (e.g. `<.ws>`).
+pub(super) fn is_silent_named_atom(atom: &RegexAtom) -> bool {
+    if let RegexAtom::Named(name) = atom {
+        name.trim().starts_with('.')
+    } else {
+        false
+    }
+}
+
 pub(super) fn is_simple_atom(atom: &RegexAtom) -> bool {
     matches!(
         atom,

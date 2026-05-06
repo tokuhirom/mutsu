@@ -1,5 +1,7 @@
 use super::super::*;
-use super::regex_helpers::{count_capture_groups, fold_quantified_captures, is_simple_atom};
+use super::regex_helpers::{
+    count_capture_groups, fold_quantified_captures, is_silent_named_atom, is_simple_atom,
+};
 
 impl Interpreter {
     pub(super) fn regex_match_end_from_caps_in_pkg(
@@ -139,11 +141,14 @@ impl Interpreter {
                         stack.push((idx + 1, current, caps));
                     } else if token.ratchet
                         && token.named_capture.is_none()
+                        && is_silent_named_atom(&token.atom)
                         && let Some((resolved, resolved_pkg)) =
                             self.try_resolve_named_to_pattern(&token.atom, pkg)
                     {
                         // Fast path for ratcheted Named token: resolve pattern once,
-                        // match directly without creating new Interpreter per iteration
+                        // match directly without creating new Interpreter per iteration.
+                        // Only used for silent atoms (e.g. <.ws>) that don't produce
+                        // implicit named captures.
                         let mut current = pos;
                         while current < chars.len() {
                             if let Some(end) = self.regex_match_end_from_in_pkg(
@@ -236,10 +241,13 @@ impl Interpreter {
                         stack.push((idx + 1, current, caps));
                     } else if token.ratchet
                         && token.named_capture.is_none()
+                        && is_silent_named_atom(&token.atom)
                         && let Some((resolved, resolved_pkg)) =
                             self.try_resolve_named_to_pattern(&token.atom, pkg)
                     {
-                        // Fast path for ratcheted Named token
+                        // Fast path for ratcheted Named token.
+                        // Only used for silent atoms (e.g. <.ws>) that don't produce
+                        // implicit named captures.
                         let Some(mut current) =
                             self.regex_match_end_from_in_pkg(&resolved, chars, pos, &resolved_pkg)
                         else {
