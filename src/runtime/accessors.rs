@@ -1575,6 +1575,13 @@ impl Interpreter {
             {
                 continue;
             }
+            // Skip env entries hidden from package stash lookups (transitive deps)
+            if package_name != "MY"
+                && package_name != "GLOBAL"
+                && self.package_stash_hidden.contains(key)
+            {
+                continue;
+            }
             // Skip my-scoped items (they should not appear in the package stash)
             if self.is_my_scoped_package_item(key) {
                 continue;
@@ -1619,6 +1626,13 @@ impl Interpreter {
             {
                 continue;
             }
+            // Skip classes hidden from package stash lookups (transitive deps)
+            if package_name != "MY"
+                && package_name != "GLOBAL"
+                && self.package_stash_hidden.contains(class_name)
+            {
+                continue;
+            }
             // Skip my-scoped classes (they should not appear in the package stash)
             if self.is_my_scoped_package_item(class_name) {
                 continue;
@@ -1646,6 +1660,13 @@ impl Interpreter {
             });
         }
         for role_name in self.roles.keys() {
+            // Skip roles hidden from package stash lookups (transitive deps)
+            if package_name != "MY"
+                && package_name != "GLOBAL"
+                && self.package_stash_hidden.contains(role_name)
+            {
+                continue;
+            }
             let Some(rest) = Self::stash_member_tail(role_name, &package_name) else {
                 continue;
             };

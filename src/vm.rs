@@ -2770,6 +2770,9 @@ impl VM {
                 self.interpreter
                     .env_mut()
                     .insert(name.clone(), pkg_val.clone());
+                self.interpreter
+                    .chain_declared_packages
+                    .insert(name.clone());
                 self.update_local_if_exists(code, &name, &pkg_val);
                 self.env_dirty = true;
                 *ip += 1;
