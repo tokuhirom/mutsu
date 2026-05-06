@@ -525,6 +525,48 @@ impl VM {
                 self.env_dirty = true;
             }
             _ => {
+                // Array-subclass instance delegation: when the Instance's class
+                // inherits from Array, delegate non-mutating Array methods to the
+                // backing __mutsu_array_storage attribute.
+                if let Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } = &target
+                {
+                    let cn = class_name.resolve();
+                    if !self.interpreter.has_user_method(&cn, &method)
+                        && attributes.contains_key("__mutsu_array_storage")
+                        && self
+                            .interpreter
+                            .mro_readonly(&cn)
+                            .iter()
+                            .any(|n| n == "Array")
+                    {
+                        let storage = attributes
+                            .get("__mutsu_array_storage")
+                            .cloned()
+                            .unwrap_or(Value::real_array(Vec::new()));
+                        // For mutating methods, delegate and return the result
+                        // (the actual mutation is handled in the mut path)
+                        if !skip_native
+                            && let Some(native_result) =
+                                self.try_native_method(&storage, Symbol::intern(&method), &args)
+                        {
+                            self.stack.push(native_result?);
+                            self.env_dirty = true;
+                            return Ok(());
+                        }
+                        let result =
+                            self.try_compiled_method_or_interpret(storage, &method, args.clone());
+                        if let Ok(val) = result {
+                            self.stack.push(val);
+                            self.env_dirty = true;
+                            return Ok(());
+                        }
+                        // Fall through to normal dispatch if delegation failed
+                    }
+                }
                 // Nil method fallback: in Raku, calling most methods on Nil returns Nil.
                 // Certain mutating methods throw exceptions.
                 // This must be in the VM path (not the interpreter's call_method_with_values)

@@ -712,6 +712,10 @@ impl Value {
                             name.resolve().as_str(),
                             "Array" | "List" | "Range" | "Buf" | "Blob" | "Capture"
                         )
+                ) || matches!(
+                    self,
+                    Value::Instance { attributes, .. }
+                        if attributes.contains_key("__mutsu_array_storage")
                 )
             }
             "Map" | "Associative" => {

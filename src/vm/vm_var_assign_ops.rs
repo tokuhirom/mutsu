@@ -2951,7 +2951,11 @@ impl VM {
                     // Instance objects are Positional only if they implement
                     // the Positional role (or Array subclass etc.), but not
                     // Failure or arbitrary classes.
-                    Value::Instance { class_name, .. } => {
+                    Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } => {
                         let cn = class_name.resolve();
                         matches!(
                             cn.as_str(),
@@ -2970,6 +2974,7 @@ impl VM {
                             .interpreter
                             .class_composed_roles(&cn)
                             .is_some_and(|roles| roles.iter().any(|r| r == "Positional"))
+                            || attributes.contains_key("__mutsu_array_storage")
                     }
                     _ => false,
                 };
