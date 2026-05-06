@@ -4,6 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpreter called **mutsu**.
 
+## Project priorities
+
+See `PLAN.md` for the full roadmap. Current priority order:
+
+1. **Practical usability** — error messages with line numbers/stack traces, Grammar named captures, CLI quality
+2. **Documentation** — README, user guide, "what works" list
+3. **Module ecosystem** — `require`, external module compatibility
+4. **Roast spec tests** — regression detection and incremental coverage (secondary priority)
+
 ## Build & run
 
 - Build: `cargo build`
@@ -218,25 +227,24 @@ Per-type method documentation — consult when implementing methods on specific 
 ## Working on complex features
 
 - Do NOT fear complex cases. Every feature must eventually be implemented fully.
-- Deferring hard work does not make it go away — tackle difficult features head-on.
-- When a roast test requires a complex feature (e.g., attribute traits, arbitrary regex delimiters, module precompilation), implement it rather than skipping to easier tests.
-- When a single test requires implementing multiple unrelated features, implement them all in the same PR. Large PRs are acceptable when the test demands it.
+- When a task requires a complex feature, implement it rather than deferring.
+- When a task requires multiple unrelated features, assess scope: if it advances practical usability (PLAN.md Phase 1-4), large PRs are acceptable. Otherwise, split into focused PRs.
+- Prioritize features that improve **real-world script authoring** (error quality, Grammar, modules) over spec-corner-case features.
 
 ## Roast test prioritization
 
+Roast tests are a **secondary priority** — practical usability (PLAN.md) comes first. However, roast remains valuable for regression detection and incremental coverage.
+
 - Run `./scripts/roast-history.sh` to generate per-file category lists under `tmp/`:
-  - `tmp/roast-panic.txt` — Rust panics (highest priority)
+  - `tmp/roast-panic.txt` — Rust panics (highest priority when fixing roast)
   - `tmp/roast-timeout.txt` — timeouts
   - `tmp/roast-error.txt` — no valid TAP plan
   - `tmp/roast-fail.txt` — some subtests failing
   - `tmp/roast-pass.txt` — fully passing
-- Priority order: panic → timeout → error/fail.
-- **Raku filter**: Run `./scripts/roast-raku-check.sh` to generate `tmp/roast-raku-pass.txt` (tests listed in `roast/spectest.data`). When this file exists, `pick-next-roast.sh` only shows tests that are expected to pass on Rakudo, skipping tests that raku itself cannot pass. The file is cached — re-run the script to refresh.
-- **ALWAYS use `./scripts/pick-next-roast.sh -n N` to select the next test(s).** Do NOT manually browse, scan, or read roast test files to choose which test to work on. The script's selection is final — work on whatever it returns, regardless of perceived difficulty.
-- Do NOT skip a test because it looks hard or requires implementing a complex feature. If `pick-next-roast.sh` returns it, work on it.
-- Do NOT run multiple roast tests to "assess" which one is closest to passing. This is cherry-picking and is forbidden.
-- The goal is broad language coverage, not gaming the pass count.
-- After making changes, always run `./scripts/roast-history.sh` to regenerate category lists and check for newly passing tests. Compare the new `tmp/roast-pass.txt` against the whitelist to find tests to add.
+- When working on roast, use `./scripts/pick-next-roast.sh -n N` to select tests.
+- **Raku filter**: Run `./scripts/roast-raku-check.sh` to generate `tmp/roast-raku-pass.txt`. When this file exists, `pick-next-roast.sh` skips tests that raku itself cannot pass.
+- After making changes, run `./scripts/roast-history.sh` to check for newly passing tests.
+- Prefer roast tests that also improve practical usability (e.g., fixing a parser bug that blocks both roast tests and real scripts).
 
 ## Trust the main branch
 
