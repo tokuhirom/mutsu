@@ -2962,6 +2962,15 @@ impl Interpreter {
                         attrs.insert(qualified_key, val);
                     }
                 }
+                // If the class inherits from Array, add backing array storage
+                if self.class_mro(class_key).iter().any(|n| n == "Array")
+                    && !attrs.contains_key("__mutsu_array_storage")
+                {
+                    attrs.insert(
+                        "__mutsu_array_storage".to_string(),
+                        Value::real_array(Vec::new()),
+                    );
+                }
                 let instance = Value::make_instance(*class_name, attrs);
                 if let Some(type_args) = type_args.as_ref() {
                     if self.class_mro(class_key).iter().any(|n| n == "Array") {

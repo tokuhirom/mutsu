@@ -1081,6 +1081,108 @@ impl VM {
                 self.env_dirty = true;
             }
             _ => {
+                // Array-subclass instance delegation (mut path): when the Instance's
+                // class inherits from Array, delegate mutating Array methods to the
+                // backing __mutsu_array_storage attribute and write back.
+                if let Value::Instance {
+                    class_name: ref inst_class,
+                    ref attributes,
+                    id: inst_id,
+                } = target
+                {
+                    let cn = inst_class.resolve();
+                    let is_array_method = matches!(
+                        method.as_str(),
+                        "push"
+                            | "pop"
+                            | "shift"
+                            | "unshift"
+                            | "append"
+                            | "prepend"
+                            | "splice"
+                            | "join"
+                            | "elems"
+                            | "end"
+                            | "List"
+                            | "Array"
+                            | "Seq"
+                            | "Slip"
+                            | "sort"
+                            | "reverse"
+                            | "rotate"
+                            | "unique"
+                            | "squish"
+                            | "flat"
+                            | "map"
+                            | "grep"
+                            | "first"
+                            | "head"
+                            | "tail"
+                            | "AT-POS"
+                            | "ASSIGN-POS"
+                            | "EXISTS-POS"
+                            | "DELETE-POS"
+                            | "BIND-POS"
+                    );
+                    if is_array_method
+                        && !self.interpreter.has_user_method(&cn, &method)
+                        && attributes.contains_key("__mutsu_array_storage")
+                        && self
+                            .interpreter
+                            .mro_readonly(&cn)
+                            .iter()
+                            .any(|n| n == "Array")
+                    {
+                        let mut storage = attributes
+                            .get("__mutsu_array_storage")
+                            .cloned()
+                            .unwrap_or(Value::real_array(Vec::new()));
+                        // Perform the operation on the backing array
+                        let result = self
+                            .interpreter
+                            .call_method_mut_with_values(
+                                "__mutsu_array_tmp",
+                                storage.clone(),
+                                &method,
+                                args,
+                            )
+                            .or_else(|_| {
+                                // Try non-mut dispatch for read-only methods
+                                self.interpreter.call_method_with_values(
+                                    storage.clone(),
+                                    &method,
+                                    vec![],
+                                )
+                            })?;
+                        // Read back the (potentially mutated) storage
+                        if let Some(updated_storage) =
+                            self.interpreter.env().get("__mutsu_array_tmp").cloned()
+                        {
+                            storage = updated_storage;
+                        }
+                        self.interpreter.env_mut().remove("__mutsu_array_tmp");
+                        // Update the instance with the new storage
+                        let mut new_attrs = crate::value::InstanceAttrs::clone(attributes);
+                        new_attrs.insert("__mutsu_array_storage".to_string(), storage);
+                        let updated_instance = Value::Instance {
+                            class_name: *inst_class,
+                            attributes: Arc::new(crate::value::InstanceAttrs::new(
+                                *inst_class,
+                                new_attrs,
+                                inst_id,
+                                true,
+                            )),
+                            id: inst_id,
+                        };
+                        self.interpreter
+                            .env_mut()
+                            .insert(target_name.to_string(), updated_instance);
+                        self.env_dirty = true;
+                        self.stack.push(result);
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                }
                 // NOTE: No Nil absorber here for CallMethodMut. Unlike CallMethod
                 // (which handles direct Nil.method calls), CallMethodMut targets
                 // are from variables. Uninitialized variables in mutsu are Nil

@@ -805,6 +805,29 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
                 r = r2;
                 continue;
             }
+            // Unrecognized `is` trait with lowercase name — treat as a potential
+            // parent class so the runtime can validate and produce
+            // X::Inheritance::UnknownParent if it doesn't exist.
+            if !matches!(
+                parent.as_str(),
+                "rw" | "hidden"
+                    | "export"
+                    | "DEPRECATED"
+                    | "default"
+                    | "nodal"
+                    | "raw"
+                    | "required"
+                    | "built"
+                    | "cached"
+                    | "repr"
+            ) {
+                let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
+                parents.push(format!("{}{}", parent, bracket_suffix));
+                r = r2;
+                let (r2, _) = ws(r)?;
+                r = r2;
+                continue;
+            }
             let (r2, _) = ws(r2)?;
             r = r2;
             continue;

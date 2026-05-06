@@ -744,7 +744,9 @@ impl Interpreter {
             "Date",
             "DateTime",
             "Grammar",
+            "Parameter",
             "Proxy",
+            "Signature",
             "Stash",
             "Metamodel::ClassHOW",
             "Perl6::Metamodel::ClassHOW",
@@ -778,10 +780,20 @@ impl Interpreter {
                         resolved_parent_name
                     )));
                 }
-                return Err(RuntimeError::new(format!(
-                    "X::Inheritance::UnknownParent: class '{}' specifies unknown parent class '{}'",
-                    name, resolved_parent_name
-                )));
+                {
+                    let msg = format!(
+                        "class '{}' specifies unknown parent class '{}'",
+                        name, resolved_parent_name
+                    );
+                    let mut attrs = HashMap::new();
+                    attrs.insert("child-name".to_string(), Value::str(name.to_string()));
+                    attrs.insert(
+                        "parent-name".to_string(),
+                        Value::str(resolved_parent_name.to_string()),
+                    );
+                    attrs.insert("message".to_string(), Value::str(msg));
+                    return Err(RuntimeError::typed("X::Inheritance::UnknownParent", attrs));
+                }
             }
             // Check that `does` targets are actually roles, not classes
             if does_parents.contains(parent)
