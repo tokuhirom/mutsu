@@ -77,9 +77,12 @@ impl Interpreter {
                 .bind_function_args_values(&def.param_defs, &def.params, arg_values)
                 .is_ok()
             {
-                interp
-                    .routine_stack
-                    .push((def.package.resolve(), def.name.resolve()));
+                interp.routine_stack.push(super::super::RoutineFrame {
+                    package: def.package.resolve(),
+                    name: def.name.resolve(),
+                    line: None,
+                    file: None,
+                });
                 let result = interp.eval_block_value(&def.body);
                 interp.routine_stack.pop();
                 let value = match result {

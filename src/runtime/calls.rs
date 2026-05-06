@@ -186,8 +186,12 @@ impl Interpreter {
         );
         self.block_stack.push(sub_val);
         let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
-        self.routine_stack
-            .push((def.package.resolve(), def.name.resolve()));
+        self.routine_stack.push(RoutineFrame {
+            package: def.package.resolve(),
+            name: def.name.resolve(),
+            line: None,
+            file: None,
+        });
         // Set __mutsu_callable_id so blocks defined inside this routine
         // capture the correct target for non-local return.
         let callable_key = format!("__mutsu_callable_id::{}::{}", def.package, def.name);
@@ -334,8 +338,12 @@ impl Interpreter {
                     );
                     self.block_stack.push(sub_val);
                     let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
-                    self.routine_stack
-                        .push((def.package.resolve(), def.name.resolve()));
+                    self.routine_stack.push(RoutineFrame {
+                        package: def.package.resolve(),
+                        name: def.name.resolve(),
+                        line: None,
+                        file: None,
+                    });
                     self.prepare_definite_return_slot(return_spec.as_deref());
                     let result = self.run_block(&def.body);
                     self.routine_stack.pop();

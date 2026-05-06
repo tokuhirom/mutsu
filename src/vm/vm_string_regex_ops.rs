@@ -1383,8 +1383,8 @@ impl VM {
         if let Some(Value::Int(id)) = self.interpreter.env().get("__mutsu_callable_id") {
             return format!("callable:{id}");
         }
-        if let Some((package, name)) = self.interpreter.routine_stack_top() {
-            return format!("routine:{package}::{name}");
+        if let Some(frame) = self.interpreter.routine_stack_top() {
+            return format!("routine:{}::{}", frame.package, frame.name);
         }
         "top".to_string()
     }

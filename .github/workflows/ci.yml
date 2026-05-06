@@ -57,6 +57,11 @@ jobs:
       - name: Roast whitelist is sorted
         run: make check-roast-whitelist
 
+      - name: Clean precomp cache and restore roast files
+        run: |
+          rm -rf ~/.cache/mutsu/precomp
+          git checkout -- roast/
+
       - name: Roast tests (make roast)
         run: prove -e 'timeout 30 target/release/mutsu' $(cat roast-whitelist.txt)
 

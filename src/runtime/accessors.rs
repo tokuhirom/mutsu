@@ -938,11 +938,11 @@ impl Interpreter {
                 .routine_stack
                 .iter()
                 .rev()
-                .find(|(_, name)| name != "<pointy-block>");
-            if let Some((package, routine)) = entry {
+                .find(|frame| frame.name != "<pointy-block>");
+            if let Some(frame) = entry {
                 return Value::Routine {
-                    package: Symbol::intern(package),
-                    name: Symbol::intern(routine),
+                    package: Symbol::intern(&frame.package),
+                    name: Symbol::intern(&frame.name),
                     is_regex: false,
                 };
             }
@@ -1112,16 +1112,29 @@ impl Interpreter {
         rest
     }
 
-    pub(crate) fn routine_stack_top(&self) -> Option<&(String, String)> {
+    pub(crate) fn routine_stack_top(&self) -> Option<&super::RoutineFrame> {
         self.routine_stack.last()
     }
 
-    pub(crate) fn routine_stack(&self) -> &[(String, String)] {
+    pub(crate) fn routine_stack(&self) -> &[super::RoutineFrame] {
         &self.routine_stack
     }
 
-    pub(crate) fn push_routine(&mut self, package: String, name: String) {
-        self.routine_stack.push((package, name));
+    /// Push a new routine frame. `line` and `file` record the call-site
+    /// in the *caller* (the line/file where this function was called from).
+    pub(crate) fn push_routine_with_location(
+        &mut self,
+        package: String,
+        name: String,
+        line: Option<u32>,
+        file: Option<String>,
+    ) {
+        self.routine_stack.push(super::RoutineFrame {
+            package,
+            name,
+            line,
+            file,
+        });
     }
 
     pub(crate) fn pop_routine(&mut self) {
@@ -1562,6 +1575,13 @@ impl Interpreter {
             {
                 continue;
             }
+            // Skip env entries hidden from package stash lookups (transitive deps)
+            if package_name != "MY"
+                && package_name != "GLOBAL"
+                && self.package_stash_hidden.contains(key)
+            {
+                continue;
+            }
             // Skip my-scoped items (they should not appear in the package stash)
             if self.is_my_scoped_package_item(key) {
                 continue;
@@ -1606,6 +1626,13 @@ impl Interpreter {
             {
                 continue;
             }
+            // Skip classes hidden from package stash lookups (transitive deps)
+            if package_name != "MY"
+                && package_name != "GLOBAL"
+                && self.package_stash_hidden.contains(class_name)
+            {
+                continue;
+            }
             // Skip my-scoped classes (they should not appear in the package stash)
             if self.is_my_scoped_package_item(class_name) {
                 continue;
@@ -1633,6 +1660,13 @@ impl Interpreter {
             });
         }
         for role_name in self.roles.keys() {
+            // Skip roles hidden from package stash lookups (transitive deps)
+            if package_name != "MY"
+                && package_name != "GLOBAL"
+                && self.package_stash_hidden.contains(role_name)
+            {
+                continue;
+            }
             let Some(rest) = Self::stash_member_tail(role_name, &package_name) else {
                 continue;
             };

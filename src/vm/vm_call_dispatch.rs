@@ -489,8 +489,12 @@ impl VM {
 
         let mut callable_id: Option<u64> = None;
         if !fn_name.is_empty() {
-            self.interpreter
-                .push_routine(fn_package.to_string(), fn_name.to_string());
+            self.interpreter.push_routine_with_location(
+                fn_package.to_string(),
+                fn_name.to_string(),
+                self.current_source_line(),
+                self.current_source_file(),
+            );
             let callable_key = format!("__mutsu_callable_id::{fn_package}::{fn_name}");
             let resolved_callable_id = self
                 .interpreter

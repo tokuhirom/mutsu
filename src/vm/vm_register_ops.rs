@@ -4,7 +4,7 @@ use crate::symbol::Symbol;
 
 impl VM {
     /// Get the current source line number from the interpreter env.
-    fn current_source_line(&self) -> Option<u32> {
+    pub(super) fn current_source_line(&self) -> Option<u32> {
         self.interpreter.env().get("?LINE").and_then(|v| match v {
             Value::Int(n) => Some(*n as u32),
             _ => None,
@@ -12,7 +12,7 @@ impl VM {
     }
 
     /// Get the current source file from the interpreter env.
-    fn current_source_file(&self) -> Option<String> {
+    pub(super) fn current_source_file(&self) -> Option<String> {
         self.interpreter.env().get("?FILE").and_then(|v| match v {
             Value::Str(s) => Some(s.to_string()),
             _ => None,

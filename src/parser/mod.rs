@@ -578,6 +578,7 @@ is_run q<use lib '> ~ $pkg-path ~ q<'; use GH2897-B; (^3).map( { my-counter } ).
     fn parse_program_stops_user_sub_args_before_loose_and() {
         let src = r#"sub isfive(*@args) { }; isfive 5 and isfive 5;"#;
         let (stmts, _) = parse_program(src).unwrap();
+        let stmts = filter_setline(stmts);
         match &stmts[1] {
             Stmt::Expr(Expr::Binary { left, op, right }) => {
                 assert_eq!(*op, crate::token_kind::TokenKind::AndAnd);
@@ -606,6 +607,7 @@ is_run q<use lib '> ~ $pkg-path ~ q<'; use GH2897-B; (^3).map( { my-counter } ).
     fn parse_program_keeps_comparison_inside_user_sub_arg() {
         let src = r#"sub foo($x) { }; foo 3 != 3;"#;
         let (stmts, _) = parse_program(src).unwrap();
+        let stmts = filter_setline(stmts);
         match &stmts[1] {
             Stmt::Expr(Expr::Call { name, args }) => {
                 assert_eq!(name.resolve(), "foo");
@@ -626,6 +628,7 @@ is_run q<use lib '> ~ $pkg-path ~ q<'; use GH2897-B; (^3).map( { my-counter } ).
     fn parse_program_keeps_eq_inside_named_unary_arg() {
         let src = r#"uc "a" eq "A";"#;
         let (stmts, _) = parse_program(src).unwrap();
+        let stmts = filter_setline(stmts);
         match &stmts[0] {
             Stmt::Expr(Expr::Call { name, args }) => {
                 assert_eq!(name.resolve(), "uc");
@@ -652,6 +655,7 @@ import RT128042;
 is (1 + 2 § 3), 1, "x";
 "#;
         let (stmts, _) = parse_program(src).unwrap();
+        let stmts = filter_setline(stmts);
         match &stmts[2] {
             Stmt::Expr(Expr::Call { name, args }) => {
                 assert_eq!(name.resolve(), "is");

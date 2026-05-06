@@ -1879,11 +1879,11 @@ impl VM {
         let entry = routine_stack
             .iter()
             .rev()
-            .find(|(_, name)| name != "<pointy-block>");
-        if let Some((package, name)) = entry {
+            .find(|frame| frame.name != "<pointy-block>");
+        if let Some(frame) = entry {
             self.stack.push(Value::Routine {
-                package: Symbol::intern(package),
-                name: Symbol::intern(name),
+                package: Symbol::intern(&frame.package),
+                name: Symbol::intern(&frame.name),
                 is_regex: false,
             });
         } else {

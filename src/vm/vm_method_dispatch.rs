@@ -350,8 +350,12 @@ impl VM {
         }
 
         // Push routine_stack so &?ROUTINE can find the current method
-        self.interpreter
-            .push_routine(owner_class.to_string(), method_name.to_string());
+        self.interpreter.push_routine_with_location(
+            owner_class.to_string(),
+            method_name.to_string(),
+            self.current_source_line(),
+            self.current_source_file(),
+        );
 
         // Execute bytecode
         let let_mark = self.interpreter.let_saves_len();

@@ -721,6 +721,15 @@ pub(crate) struct CallFrameEntry {
     pub env: Env,
 }
 
+/// Entry in the routine stack, tracking the call chain for backtraces.
+#[derive(Clone, Debug)]
+pub(crate) struct RoutineFrame {
+    pub package: String,
+    pub name: String,
+    pub line: Option<u32>,
+    pub file: Option<String>,
+}
+
 pub struct Interpreter {
     env: Env,
     output: String,
@@ -757,7 +766,7 @@ pub struct Interpreter {
     next_handle_id: usize,
     program_path: Option<String>,
     current_package: String,
-    routine_stack: Vec<(String, String)>,
+    routine_stack: Vec<RoutineFrame>,
     callframe_stack: Vec<CallFrameEntry>,
     method_class_stack: Vec<String>,
     pending_call_arg_sources: Option<Vec<Option<String>>>,
@@ -819,6 +828,18 @@ pub struct Interpreter {
     chroot_root: Option<PathBuf>,
     loaded_modules: HashSet<String>,
     need_hidden_classes: HashSet<String>,
+    /// Classes/roles hidden from package stash lookups (e.g. `Example2::.keys`).
+    /// Populated when a `use X::Y` loads modules whose dependency chain neither
+    /// declares a class matching the module name nor includes a `package X {}`
+    /// declaration, hiding transitive dependencies from the namespace stash.
+    package_stash_hidden: HashSet<String>,
+    /// Package names declared via `package X {}` during the current module
+    /// loading chain. Saved/restored around each top-level `use_module_with_tags`
+    /// call so it only contains packages from the current loading chain.
+    pub(crate) chain_declared_packages: HashSet<String>,
+    /// Maps module names to the set of packages declared during their loading.
+    /// Used to propagate package declarations when a module is re-used.
+    module_packages: HashMap<String, HashSet<String>>,
     closure_env_overrides: HashMap<u64, Env>,
     protect_block_cache: ProtectBlockCache,
     private_zeroarg_method_cache: HashMap<(String, String), Option<(String, MethodDef)>>,
@@ -2803,6 +2824,9 @@ impl Interpreter {
             chroot_root: None,
             loaded_modules: HashSet::new(),
             need_hidden_classes: HashSet::new(),
+            package_stash_hidden: HashSet::new(),
+            chain_declared_packages: HashSet::new(),
+            module_packages: HashMap::new(),
             closure_env_overrides: HashMap::new(),
             protect_block_cache: HashMap::new(),
             private_zeroarg_method_cache: HashMap::new(),
@@ -3180,6 +3204,23 @@ impl Interpreter {
             } else if module == "fatal" {
                 self.fatal_mode = true;
             }
+            // Propagate package declarations from the already-loaded module
+            // into the current chain so that chain_has_package_decl checks
+            // correctly detect namespace contributions from transitive deps.
+            if let Some(pkgs) = self.module_packages.get(module).cloned() {
+                self.chain_declared_packages.extend(pkgs);
+            }
+            // When a module that declares a class/role matching its own name
+            // is directly `use`d at the top level, un-hide it and its related
+            // classes from the package stash. This handles the case where the
+            // module was first loaded transitively by a non-contributing module.
+            if self.module_load_stack.is_empty() && module.contains("::") {
+                let is_contributor =
+                    self.classes.contains_key(module) || self.roles.contains_key(module);
+                if is_contributor {
+                    self.package_stash_hidden.remove(module);
+                }
+            }
             return match self.import_module(module, tags) {
                 Ok(()) => Ok(()),
                 Err(err) if err.message.starts_with("No exports found for module:") => Ok(()),
@@ -3194,8 +3235,18 @@ impl Interpreter {
                 chain.join(" -> ")
             )));
         }
+        // At the top level (no modules currently loading), save and clear
+        // the chain-scoped package declarations so each top-level `use` gets
+        // a fresh chain. Nested uses inherit the parent's chain.
+        let is_top_level_use = self.module_load_stack.is_empty();
+        let saved_chain_pkgs = if is_top_level_use {
+            std::mem::take(&mut self.chain_declared_packages)
+        } else {
+            HashSet::new()
+        };
         self.module_load_stack.push(module.to_string());
         let class_snapshot: HashSet<String> = self.classes.keys().cloned().collect();
+        let role_snapshot: HashSet<String> = self.roles.keys().cloned().collect();
         let env_snapshot: HashSet<String> = self.env.keys().cloned().collect();
         let func_keys_before: HashSet<Symbol> = self.functions.keys().copied().collect();
 
@@ -3282,6 +3333,53 @@ impl Interpreter {
                     self.need_hidden_classes.insert(key_short.to_string());
                 }
             }
+            // Determine if new classes/roles from this module should be
+            // hidden from the parent namespace's package stash. This prevents
+            // transitive dependencies from leaking into namespace stash lookups
+            // (e.g. `Example2::.keys` should not show classes loaded only as
+            // transitive deps of a module that doesn't contribute to the namespace).
+            //
+            // A module "contributes" to namespace X if either:
+            //   (a) it registered a class/role matching its own FQ name (e.g.
+            //       `use Example2::F` and `class Example2::F` was registered), or
+            //   (b) its dependency chain includes a `package X {}` declaration
+            //       (tracked in `chain_declared_packages` which is scoped to this load).
+            // If neither condition holds, new classes/roles are hidden from X's stash.
+            if let Some((namespace, _)) = module.rsplit_once("::") {
+                let module_declares_own_class =
+                    self.classes.contains_key(module) || self.roles.contains_key(module);
+                let chain_has_package_decl = self.chain_declared_packages.contains(namespace);
+                if !module_declares_own_class && !chain_has_package_decl {
+                    // Hide newly registered classes/roles from the namespace stash
+                    for class_name in self.classes.keys() {
+                        if !class_snapshot.contains(class_name)
+                            && class_name.starts_with(namespace)
+                            && class_name.get(namespace.len()..namespace.len() + 2) == Some("::")
+                        {
+                            self.package_stash_hidden.insert(class_name.clone());
+                        }
+                    }
+                    for role_name in self.roles.keys() {
+                        if !role_snapshot.contains(role_name)
+                            && role_name.starts_with(namespace)
+                            && role_name.get(namespace.len()..namespace.len() + 2) == Some("::")
+                        {
+                            self.package_stash_hidden.insert(role_name.clone());
+                        }
+                    }
+                }
+            }
+            // Record which packages were declared during this module's chain
+            // so they can be propagated when the module is re-used.
+            if !self.chain_declared_packages.is_empty() {
+                self.module_packages
+                    .insert(module.to_string(), self.chain_declared_packages.clone());
+            }
+            // Restore the chain-scoped package declarations (top-level only)
+            if is_top_level_use {
+                self.chain_declared_packages = saved_chain_pkgs;
+            }
+
             if module == "strict" {
                 self.strict_mode = true;
             } else if module == "fatal" {
@@ -4478,6 +4576,9 @@ impl Interpreter {
             chroot_root: self.chroot_root.clone(),
             loaded_modules: self.loaded_modules.clone(),
             need_hidden_classes: self.need_hidden_classes.clone(),
+            package_stash_hidden: self.package_stash_hidden.clone(),
+            chain_declared_packages: self.chain_declared_packages.clone(),
+            module_packages: self.module_packages.clone(),
             closure_env_overrides: self.closure_env_overrides.clone(),
             protect_block_cache: HashMap::new(),
             private_zeroarg_method_cache: HashMap::new(),

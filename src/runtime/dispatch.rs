@@ -944,8 +944,12 @@ impl Interpreter {
                     return Err(e);
                 }
             };
-        self.routine_stack
-            .push((def.package.resolve(), def.name.resolve()));
+        self.routine_stack.push(RoutineFrame {
+            package: def.package.resolve(),
+            name: def.name.resolve(),
+            line: None,
+            file: None,
+        });
         let result = self.eval_block_value(&def.body);
         self.routine_stack.pop();
         let rendered = match result {
@@ -1083,8 +1087,12 @@ impl Interpreter {
                 return Err(e);
             }
         };
-        self.routine_stack
-            .push((def.package.resolve(), def.name.resolve()));
+        self.routine_stack.push(RoutineFrame {
+            package: def.package.resolve(),
+            name: def.name.resolve(),
+            line: None,
+            file: None,
+        });
         self.proto_dispatch_stack
             .push((proto_name.to_string(), args.to_vec()));
         let result = if def.body.is_empty() {
@@ -1182,8 +1190,12 @@ impl Interpreter {
                 .push((proto_name.clone(), remaining, args.clone()));
         }
         self.samewith_context_stack.push((proto_name.clone(), None));
-        self.routine_stack
-            .push((def.package.resolve(), def.name.resolve()));
+        self.routine_stack.push(RoutineFrame {
+            package: def.package.resolve(),
+            name: def.name.resolve(),
+            line: None,
+            file: None,
+        });
         let result = self.run_block(&def.body);
         self.routine_stack.pop();
         self.samewith_context_stack.pop();
@@ -1488,7 +1500,13 @@ impl Interpreter {
     fn rewrite_proto_dispatch_expr(expr: &Expr) -> Expr {
         match expr {
             Expr::AnonSub { body, .. }
-                if body.len() == 1 && matches!(body[0], Stmt::Expr(Expr::Whatever)) =>
+                if {
+                    let non_setline: Vec<_> = body
+                        .iter()
+                        .filter(|s| !matches!(s, Stmt::SetLine(_)))
+                        .collect();
+                    non_setline.len() == 1 && matches!(non_setline[0], Stmt::Expr(Expr::Whatever))
+                } =>
             {
                 Expr::Call {
                     name: Symbol::intern("__PROTO_DISPATCH__"),

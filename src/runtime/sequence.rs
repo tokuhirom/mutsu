@@ -781,8 +781,8 @@ impl Interpreter {
                         let mut compiler = crate::compiler::Compiler::new();
                         compiler.is_routine = !self.routine_stack.is_empty();
                         compiler.lexically_in_routine = !self.routine_stack.is_empty();
-                        let scope = if let Some((pkg, routine)) = self.routine_stack.last() {
-                            format!("{}::&{}", pkg, routine)
+                        let scope = if let Some(frame) = self.routine_stack.last() {
+                            format!("{}::&{}", frame.package, frame.name)
                         } else {
                             self.current_package.clone()
                         };

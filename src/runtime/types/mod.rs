@@ -48,10 +48,14 @@ pub(super) fn predicate_requires_defined(predicate: &Expr) -> bool {
                 && matches!(target.as_ref(), Expr::Var(v) if v == "_")
         }
         Expr::AnonSub { body, .. } => {
-            body.len() == 1
+            let non_setline: Vec<_> = body
+                .iter()
+                .filter(|s| !matches!(s, crate::ast::Stmt::SetLine(_)))
+                .collect();
+            non_setline.len() == 1
                 && matches!(
-                    &body[0],
-                    Stmt::Expr(expr) if predicate_requires_defined(expr)
+                    non_setline[0],
+                    crate::ast::Stmt::Expr(expr) if predicate_requires_defined(expr)
                 )
         }
         _ => false,

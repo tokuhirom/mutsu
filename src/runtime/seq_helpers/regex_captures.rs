@@ -505,9 +505,15 @@ impl Interpreter {
     pub(in crate::runtime) fn extract_token_regex_pattern(&self, name: &str) -> Option<String> {
         let defs = self.resolve_token_defs(name)?;
         let def = defs.first()?;
-        // Look for a body consisting of a single Expr(Literal(Regex(pat)))
-        if def.body.len() == 1
-            && let Stmt::Expr(Expr::Literal(Value::Regex(pat))) = &def.body[0]
+        // Look for a body consisting of a single Expr(Literal(Regex(pat))),
+        // skipping SetLine statements.
+        let effective: Vec<_> = def
+            .body
+            .iter()
+            .filter(|s| !matches!(s, Stmt::SetLine(_)))
+            .collect();
+        if effective.len() == 1
+            && let Stmt::Expr(Expr::Literal(Value::Regex(pat))) = effective[0]
         {
             return Some(pat.to_string());
         }

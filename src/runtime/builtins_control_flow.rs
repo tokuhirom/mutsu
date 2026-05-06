@@ -234,8 +234,8 @@ impl Interpreter {
                     });
                 if let Some(id) = caller_callable_id {
                     sig.leave_callable_id = Some(id);
-                } else if let Some((package, routine)) = self.routine_stack_top() {
-                    sig.leave_routine = Some(format!("{package}::{routine}"));
+                } else if let Some(frame) = self.routine_stack_top() {
+                    sig.leave_routine = Some(format!("{}::{}", frame.package, frame.name));
                 }
             }
             Some(Value::Package(name)) if name == "Block" => {}

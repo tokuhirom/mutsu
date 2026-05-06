@@ -1,19 +1,67 @@
 use super::*;
 
 impl VM {
-    /// Build a simple backtrace string from the interpreter's routine stack.
-    /// Each frame is formatted as "  in sub <name>" (or "  in method <name>").
+    /// Build a backtrace string from the interpreter's routine stack.
+    /// Each frame is formatted as "  in sub <name> at <file> line <N>".
+    ///
+    /// Each pushed frame stores the call-site (the line/file in the *caller*
+    /// where this function was invoked).  To display "where each frame was
+    /// executing when it called the next", we shift by one:
+    ///   - innermost frame (i=0): use current ?LINE/?FILE (the die/error line)
+    ///   - frame i>0: use the *next inner* frame's stored call-site
+    ///     (i.e. frame[i]'s displayed line = the line where frame[i] called
+    ///     frame[i-1])
+    ///   - <unit> (outermost): use the outermost routine frame's stored
+    ///     call-site (where <unit> called the first function)
     pub(super) fn build_backtrace_string(&self) -> String {
         let stack = self.interpreter.routine_stack();
+        let current_line = self.current_source_line();
+        let current_file = self.current_source_file();
+        // Build reversed list: stack[last] is innermost, stack[0] is outermost
+        let reversed: Vec<_> = stack.iter().rev().collect();
         let mut lines = Vec::new();
-        for (_package, name) in stack.iter().rev() {
-            if name.is_empty() || name == "<unit>" {
-                lines.push("  in block <unit>".to_string());
+        for (i, frame) in reversed.iter().enumerate() {
+            let (line, file) = if i == 0 {
+                // Innermost frame: use current ?LINE/?FILE
+                (current_line, current_file.clone())
             } else {
-                lines.push(format!("  in sub {}", name));
+                // Outer frame: the line where this frame called the next inner frame.
+                // That info is stored in the next-inner frame's call-site.
+                let inner_frame = reversed[i - 1];
+                (inner_frame.line, inner_frame.file.clone())
+            };
+            let location = Self::format_location(file.as_deref(), line);
+            if frame.name.is_empty() || frame.name == "<unit>" || frame.name == "<pointy-block>" {
+                lines.push(format!("  in block <unit>{}", location));
+            } else {
+                lines.push(format!("  in sub {}{}", frame.name, location));
             }
         }
+        // Add the <unit> frame at the bottom
+        if stack.is_empty() {
+            let location = Self::format_location(current_file.as_deref(), current_line);
+            lines.push(format!("  in block <unit>{}", location));
+        } else if !stack
+            .first()
+            .is_some_and(|f| f.name.is_empty() || f.name == "<unit>")
+        {
+            // The outermost routine frame's stored call-site is where
+            // <unit> called it.
+            let outermost = &stack[0];
+            let location = Self::format_location(outermost.file.as_deref(), outermost.line);
+            lines.push(format!("  in block <unit>{}", location));
+        }
         lines.join("\n")
+    }
+
+    /// Format a " at <file> line <N>" suffix for backtrace entries.
+    fn format_location(file: Option<&str>, line: Option<u32>) -> String {
+        match (file, line) {
+            (Some(f), Some(l)) => format!(" at {} line {}", f, l),
+            (Some(f), None) => format!(" at {}", f),
+            (None, Some(l)) => format!(" at line {}", l),
+            (None, None) => String::new(),
+        }
     }
 
     /// If the value is a `LazyIoLines`, force it into an eager array by reading
