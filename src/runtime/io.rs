@@ -2937,7 +2937,7 @@ impl Interpreter {
         self.doc_comment_list.clear();
         let mut pending_leading: Option<String> = None;
         // The last declaration that can receive trailing #= comments
-        let mut last_declarant: Option<(String, super::DocDeclKind)> = None;
+        let mut last_declarant: Option<(String, super::DocDeclKind, u32)> = None;
         // Track the current class scope for method doc keys
         let mut current_class: Option<String> = None;
         // Stack of class scopes for nested classes
@@ -3496,7 +3496,7 @@ impl Interpreter {
             // Trailing doc comment (#=) on its own line
             if let Some((text, next_idx, _is_block)) = parse_doc_comment(&lines, idx, "#=") {
                 if !text.is_empty()
-                    && let Some((ref name, ref kind)) = last_declarant
+                    && let Some((ref name, ref kind, decl_line)) = last_declarant
                 {
                     let entry =
                         self.doc_comments
@@ -3507,6 +3507,10 @@ impl Interpreter {
                                 ..Default::default()
                             });
                     entry.trailing = append_doc_text(entry.trailing.take(), &text);
+                    // Ensure source_line is set so proximity matching works
+                    if entry.source_line.is_none() {
+                        entry.source_line = Some(decl_line);
+                    }
                 }
                 idx = next_idx;
                 continue;
@@ -3708,7 +3712,7 @@ impl Interpreter {
                     }
                 }
                 // Always set last_declarant so trailing #= on the next line can attach
-                last_declarant = Some((doc_key, kind.clone()));
+                last_declarant = Some((doc_key, kind.clone(), (idx + 1) as u32));
                 // Track the current function for parameter scoping
                 if kind == super::DocDeclKind::Sub {
                     current_sub = Some(name.clone());
@@ -3775,7 +3779,7 @@ impl Interpreter {
                     }
                 }
                 // Set last_declarant so trailing #= on the next line can attach
-                last_declarant = Some((param_key, super::DocDeclKind::Param));
+                last_declarant = Some((param_key, super::DocDeclKind::Param, (idx + 1) as u32));
             } else {
                 // Not a recognized declaration — discard pending leading
                 pending_leading = None;
