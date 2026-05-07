@@ -580,6 +580,14 @@ impl Value {
                 class_name,
                 attributes,
                 ..
+            } if class_name == "Backtrace" => attributes
+                .get("text")
+                .map(|v: &Value| v.to_string_value())
+                .unwrap_or_default(),
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
             } if class_name == "IO::Path" => attributes
                 .get("path")
                 .map(|v: &Value| v.to_string_value())

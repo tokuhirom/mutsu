@@ -2568,19 +2568,20 @@ impl VM {
                 } else {
                     val
                 };
-                let backtrace = self.build_backtrace_string();
+                let backtrace_str = self.build_backtrace_string();
+                let backtrace_val = self.build_backtrace_value();
                 let current_line = self.current_source_line();
                 let current_file = self.current_source_file();
                 let mut err = self.runtime_error_from_exception_value(val, "Died", false);
-                if !backtrace.is_empty() {
-                    err.backtrace = Some(backtrace.clone());
+                if !backtrace_str.is_empty() {
+                    err.backtrace = Some(backtrace_str);
                 }
                 // Attach backtrace, line, and file to the exception value
                 if let Some(ref mut exc_box) = err.exception
                     && let Value::Instance { attributes, .. } = exc_box.as_mut()
                 {
                     let attrs = std::sync::Arc::make_mut(attributes);
-                    attrs.insert("backtrace".to_string(), Value::str(backtrace));
+                    attrs.insert("backtrace".to_string(), backtrace_val);
                     if let Some(line) = current_line {
                         attrs
                             .entry("line".to_string())
@@ -2615,7 +2616,7 @@ impl VM {
                 };
                 // Build a backtrace from the routine stack so that
                 // Exception.gist can show where the fail originated.
-                let backtrace = self.build_backtrace_string();
+                let backtrace_val = self.build_backtrace_value();
                 let current_line = self.current_source_line();
                 let current_file = self.current_source_file();
                 let mut err = self.runtime_error_from_exception_value(val, "Failed", true);
@@ -2624,7 +2625,7 @@ impl VM {
                     && let Value::Instance { attributes, .. } = exc_box.as_mut()
                 {
                     let attrs = std::sync::Arc::make_mut(attributes);
-                    attrs.insert("backtrace".to_string(), Value::str(backtrace));
+                    attrs.insert("backtrace".to_string(), backtrace_val);
                     if let Some(line) = current_line {
                         attrs
                             .entry("line".to_string())

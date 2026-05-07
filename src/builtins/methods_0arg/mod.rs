@@ -1133,6 +1133,92 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
 
+    // Backtrace methods: .Str, .gist, .list, .elems
+    if let Value::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target
+    {
+        let cn = class_name.resolve();
+        if cn == "Backtrace" {
+            match method {
+                "Str" | "Stringy" => {
+                    let text = attributes
+                        .get("text")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    return Some(Ok(Value::str(text)));
+                }
+                "gist" => {
+                    let count = attributes
+                        .get("frames")
+                        .map(|v| crate::runtime::utils::value_to_list(v).len())
+                        .unwrap_or(0);
+                    return Some(Ok(Value::str(format!("Backtrace({} frames)", count))));
+                }
+                "list" | "List" => {
+                    if let Some(frames) = attributes.get("frames") {
+                        return Some(Ok(frames.clone()));
+                    }
+                    return Some(Ok(Value::array(vec![])));
+                }
+                "elems" => {
+                    if let Some(frames) = attributes.get("frames") {
+                        let count = crate::runtime::utils::value_to_list(frames).len();
+                        return Some(Ok(Value::Int(count as i64)));
+                    }
+                    return Some(Ok(Value::Int(0)));
+                }
+                _ => {}
+            }
+        } else if cn == "Backtrace::Frame" {
+            match method {
+                "subname" => {
+                    return Some(Ok(attributes
+                        .get("subname")
+                        .cloned()
+                        .unwrap_or(Value::str(String::new()))));
+                }
+                "file" => {
+                    return Some(Ok(attributes
+                        .get("file")
+                        .cloned()
+                        .unwrap_or(Value::str(String::new()))));
+                }
+                "line" => {
+                    return Some(Ok(attributes.get("line").cloned().unwrap_or(Value::Int(0))));
+                }
+                "Str" | "gist" => {
+                    let subname = attributes
+                        .get("subname")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    let file = attributes
+                        .get("file")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    let line = attributes
+                        .get("line")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|| "0".to_string());
+                    if subname == "<unit>" {
+                        return Some(Ok(Value::str(format!(
+                            "  in block <unit> at {} line {}",
+                            file, line
+                        ))));
+                    } else {
+                        return Some(Ok(Value::str(format!(
+                            "  in sub {} at {} line {}",
+                            subname, file, line
+                        ))));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     // .resume on exception objects
     if method == "resume"
         && let Value::Instance { class_name, .. } = target
