@@ -40,6 +40,34 @@ impl VM {
         arg_sources_idx: Option<u32>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
+        // Ultra-fast path: light-call cache check before ANY other processing.
+        // This skips ensure_env_synced, lexical override checks, etc.
+        // Safe because the cache is only populated after confirming no lexical
+        // override exists, and is invalidated when fn_resolve_gen changes.
+        {
+            let name_str = Self::const_str(code, name_idx);
+            let name_sym = Symbol::intern(name_str);
+            if self.light_call_cache_gen == self.fn_resolve_gen {
+                if let Some((cached_key, cached_fp)) = self.light_call_cache.get(&name_sym)
+                    && let Some(cf) = compiled_fns.get(cached_key.as_str())
+                    && cf.fingerprint == *cached_fp
+                {
+                    let arity_usize = arity as usize;
+                    if self.stack.len() >= arity_usize {
+                        let start = self.stack.len() - arity_usize;
+                        let args: Vec<Value> = self.stack.drain(start..).collect();
+                        let result = self.call_compiled_function_light(cf, args, compiled_fns)?;
+                        self.stack.push(result);
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                }
+            } else {
+                self.light_call_cache.clear();
+                self.light_call_cache_gen = self.fn_resolve_gen;
+            }
+        }
+
         // If there's a lexical `&name` override — either as a compiled local
         // slot (e.g. from a `&foo` parameter binding) or in the env — it
         // shadows package-level subs. Skip the fast path and dispatch via
@@ -434,6 +462,29 @@ impl VM {
             };
             self.interpreter.set_pending_call_arg_sources(None);
             if let Some(cf) = compiled {
+                // Try light call path for simple functions in tight loops.
+                // This avoids the expensive env clone/restore cycle.
+                if Self::is_light_call_eligible(cf, name)
+                    && !self
+                        .interpreter
+                        .routine_is_test_assertion_by_name(name, &args)
+                    && self.interpreter.wrap_sub_id_for_name(name).is_none()
+                {
+                    // Populate light-call cache so subsequent calls skip resolution
+                    let name_sym = Symbol::intern(name);
+                    if !self.light_call_cache.contains_key(&name_sym) {
+                        // Find the compiled_fns key for this function
+                        for (key, func) in compiled_fns {
+                            if std::ptr::eq(func, cf) {
+                                self.light_call_cache
+                                    .insert(name_sym, (key.clone(), cf.fingerprint));
+                                break;
+                            }
+                        }
+                    }
+                    let result = self.call_compiled_function_light(cf, args, compiled_fns);
+                    return self.interpreter.maybe_fetch_rw_proxy(result?, true);
+                }
                 self.interpreter
                     .set_pending_call_arg_sources(arg_sources.clone());
                 let pushed_dispatch = self.interpreter.push_multi_dispatch_frame(name, &args);
