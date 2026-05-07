@@ -328,7 +328,7 @@ pub(crate) fn native_method_0arg(
     if matches!(target, Value::Nil)
         && matches!(
             method,
-            "message" | "payload" | "backtrace" | "exception" | "handled"
+            "message" | "payload" | "backtrace" | "exception" | "handled" | "line" | "file"
         )
     {
         return Some(Ok(Value::Nil));
@@ -1107,6 +1107,24 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         && let Some(payload) = attributes.get("payload")
                     {
                         return Some(Ok(payload.clone()));
+                    }
+                    return Some(Ok(Value::str(String::new())));
+                }
+                "line" => {
+                    if let Some(line) = attributes.get("line") {
+                        return Some(Ok(line.clone()));
+                    }
+                    return Some(Ok(Value::Nil));
+                }
+                "file" => {
+                    if let Some(file) = attributes.get("file") {
+                        return Some(Ok(file.clone()));
+                    }
+                    return Some(Ok(Value::Nil));
+                }
+                "backtrace" => {
+                    if let Some(bt) = attributes.get("backtrace") {
+                        return Some(Ok(bt.clone()));
                     }
                     return Some(Ok(Value::str(String::new())));
                 }

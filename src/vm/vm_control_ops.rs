@@ -1895,6 +1895,12 @@ impl VM {
                 } else {
                     let mut exc_attrs = std::collections::HashMap::new();
                     exc_attrs.insert("message".to_string(), Value::str(e.message.clone()));
+                    if let Some(line) = e.line {
+                        exc_attrs.insert("line".to_string(), Value::Int(line as i64));
+                    }
+                    if let Some(ref bt) = e.backtrace {
+                        exc_attrs.insert("backtrace".to_string(), Value::str(bt.clone()));
+                    }
                     Value::make_instance(Symbol::intern("Exception"), exc_attrs)
                 };
                 let saved_topic = self.interpreter.env().get("_").cloned();

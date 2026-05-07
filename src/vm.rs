@@ -2560,16 +2560,28 @@ impl VM {
                     val
                 };
                 let backtrace = self.build_backtrace_string();
+                let current_line = self.current_source_line();
+                let current_file = self.current_source_file();
                 let mut err = self.runtime_error_from_exception_value(val, "Died", false);
                 if !backtrace.is_empty() {
                     err.backtrace = Some(backtrace.clone());
                 }
-                // Attach backtrace to the exception value
+                // Attach backtrace, line, and file to the exception value
                 if let Some(ref mut exc_box) = err.exception
                     && let Value::Instance { attributes, .. } = exc_box.as_mut()
                 {
-                    std::sync::Arc::make_mut(attributes)
-                        .insert("backtrace".to_string(), Value::str(backtrace));
+                    let attrs = std::sync::Arc::make_mut(attributes);
+                    attrs.insert("backtrace".to_string(), Value::str(backtrace));
+                    if let Some(line) = current_line {
+                        attrs
+                            .entry("line".to_string())
+                            .or_insert(Value::Int(line as i64));
+                    }
+                    if let Some(ref file) = current_file {
+                        attrs
+                            .entry("file".to_string())
+                            .or_insert(Value::str_from(file));
+                    }
                 }
                 return Err(err);
             }
@@ -2595,13 +2607,25 @@ impl VM {
                 // Build a backtrace from the routine stack so that
                 // Exception.gist can show where the fail originated.
                 let backtrace = self.build_backtrace_string();
+                let current_line = self.current_source_line();
+                let current_file = self.current_source_file();
                 let mut err = self.runtime_error_from_exception_value(val, "Failed", true);
-                // Attach backtrace to the exception value
+                // Attach backtrace, line, and file to the exception value
                 if let Some(ref mut exc_box) = err.exception
                     && let Value::Instance { attributes, .. } = exc_box.as_mut()
                 {
-                    std::sync::Arc::make_mut(attributes)
-                        .insert("backtrace".to_string(), Value::str(backtrace));
+                    let attrs = std::sync::Arc::make_mut(attributes);
+                    attrs.insert("backtrace".to_string(), Value::str(backtrace));
+                    if let Some(line) = current_line {
+                        attrs
+                            .entry("line".to_string())
+                            .or_insert(Value::Int(line as i64));
+                    }
+                    if let Some(ref file) = current_file {
+                        attrs
+                            .entry("file".to_string())
+                            .or_insert(Value::str_from(file));
+                    }
                 }
                 return Err(err);
             }
