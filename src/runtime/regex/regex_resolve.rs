@@ -341,10 +341,17 @@ impl Interpreter {
         let mut token_lookup = false;
         let mut capture_name = None;
 
-        if let Some((lhs, rhs)) = raw.split_once('=') {
-            let lhs = lhs.trim();
-            let rhs = rhs.trim();
-            if !lhs.is_empty() {
+        // Look for alias syntax <name=.subrule>, <name=&subrule>, <name=subrule>.
+        // Only match `=` that is NOT part of `=>` (fat-arrow pair syntax in args)
+        // and where the LHS is a simple identifier (no parens, which would indicate
+        // we're inside an argument list like `<.foo(a => 1)>`).
+        if let Some(eq_pos) = raw.find('=')
+            && !raw[eq_pos + 1..].starts_with('>')
+        {
+            let lhs = raw[..eq_pos].trim();
+            let rhs = raw[eq_pos + 1..].trim();
+            // LHS must be a simple identifier (no parens, commas, colons, etc.)
+            if !lhs.is_empty() && !lhs.contains('(') && !lhs.contains(',') && !lhs.contains(':') {
                 if let Some(stripped) = rhs.strip_prefix('&') {
                     // <name=&subrule> — call &subrule, capture under name
                     capture_name = Some(lhs.to_string());
