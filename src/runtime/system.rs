@@ -211,10 +211,11 @@ impl Interpreter {
         for stmt in stmts {
             Self::check_self_referential_init(stmt)?;
             Self::collect_declared_vars(stmt, &mut declared);
-            if let Some(var_name) = self.find_undeclared_var_in_stmt(stmt, &declared) {
-                let symbol = format!("${}", var_name);
+            if let Some((sigil, var_name)) = self.find_undeclared_var_in_stmt(stmt, &declared) {
+                let symbol = format!("{}{}", sigil, var_name);
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("name".to_string(), Value::str(symbol.clone()));
+                attrs.insert("symbol".to_string(), Value::str(symbol.clone()));
                 attrs.insert(
                     "message".to_string(),
                     Value::str(format!("Variable '{}' is not declared.", symbol)),
@@ -329,12 +330,12 @@ impl Interpreter {
     }
 
     /// Find an undeclared Var reference in a statement.
-    /// Returns the variable name (without sigil) if undeclared, None otherwise.
+    /// Returns (sigil, name) if undeclared, None otherwise.
     fn find_undeclared_var_in_stmt(
         &self,
         stmt: &Stmt,
         declared: &HashSet<String>,
-    ) -> Option<String> {
+    ) -> Option<(&'static str, String)> {
         match stmt {
             Stmt::Say(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) | Stmt::Put(exprs) => {
                 for expr in exprs {
@@ -342,10 +343,10 @@ impl Interpreter {
                         && !self.has_function(name)
                         && !self.has_class(name)
                     {
-                        return Some(name.clone());
+                        return Some(("$", name.clone()));
                     }
-                    if let Some(name) = self.find_undeclared_var_in_expr(expr, declared) {
-                        return Some(name);
+                    if let Some(result) = self.find_undeclared_var_in_expr(expr, declared) {
+                        return Some(result);
                     }
                 }
                 None
@@ -356,11 +357,12 @@ impl Interpreter {
     }
 
     /// Find an undeclared Var reference in an expression.
+    /// Returns (sigil, name) if undeclared, None otherwise.
     fn find_undeclared_var_in_expr(
         &self,
         expr: &Expr,
         declared: &HashSet<String>,
-    ) -> Option<String> {
+    ) -> Option<(&'static str, String)> {
         match expr {
             Expr::Var(name) => {
                 // Skip special variables, variables with twigils, and capture vars ($0, $1, ...)
@@ -394,7 +396,50 @@ impl Interpreter {
                 if self.has_function(name) || self.has_class(name) {
                     return None;
                 }
-                Some(name.clone())
+                Some(("$", name.clone()))
+            }
+            Expr::ArrayVar(name) => {
+                let sigiled = format!("@{}", name);
+                if declared.contains(name) || declared.contains(&sigiled) {
+                    return None;
+                }
+                if self.env.contains_key(&sigiled) || self.env.contains_key(name) {
+                    return None;
+                }
+                Some(("@", name.clone()))
+            }
+            Expr::HashVar(name) => {
+                let sigiled = format!("%{}", name);
+                if declared.contains(name) || declared.contains(&sigiled) {
+                    return None;
+                }
+                if self.env.contains_key(&sigiled) || self.env.contains_key(name) {
+                    return None;
+                }
+                Some(("%", name.clone()))
+            }
+            // Recurse into string interpolation, indexing, and method calls
+            Expr::StringInterpolation(parts) => {
+                for part in parts {
+                    if let Some(result) = self.find_undeclared_var_in_expr(part, declared) {
+                        return Some(result);
+                    }
+                }
+                None
+            }
+            Expr::Index { target, index, .. } => self
+                .find_undeclared_var_in_expr(target, declared)
+                .or_else(|| self.find_undeclared_var_in_expr(index, declared)),
+            Expr::MethodCall { target, args, .. } => {
+                if let Some(result) = self.find_undeclared_var_in_expr(target, declared) {
+                    return Some(result);
+                }
+                for arg in args {
+                    if let Some(result) = self.find_undeclared_var_in_expr(arg, declared) {
+                        return Some(result);
+                    }
+                }
+                None
             }
             _ => None,
         }
@@ -606,6 +651,16 @@ impl Interpreter {
                 .or_else(|| self.find_undeclared_name_in_expr(right, local_classes, declared)),
             Expr::Unary { expr, .. } => {
                 self.find_undeclared_name_in_expr(expr, local_classes, declared)
+            }
+            Expr::StringInterpolation(parts) => {
+                for part in parts {
+                    if let Some(name) =
+                        self.find_undeclared_name_in_expr(part, local_classes, declared)
+                    {
+                        return Some(name);
+                    }
+                }
+                None
             }
             _ => None,
         }

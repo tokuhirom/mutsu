@@ -1560,6 +1560,141 @@ fn parse_shell_words_index(content: &str) -> Expr {
     Expr::Literal(Value::str(trimmed.to_string()))
 }
 
+/// Handle double-sigil interpolation patterns like `@$name[]`, `%$name{}`, `$$name[]`, etc.
+/// The outer sigil determines the context and expected postcircumfix, the inner sigil+name
+/// identifies the variable. Returns `Some(remaining_input)` on success.
+fn try_double_sigil_interp<'a, F>(
+    rest: &'a str,
+    parts: &mut Vec<Expr>,
+    current: &mut String,
+    parse_postcircumfix_index: F,
+) -> Option<&'a str>
+where
+    F: Fn(&'a str, Expr) -> (Expr, &'a str),
+{
+    let bytes = rest.as_bytes();
+    if bytes.len() < 3 {
+        return None;
+    }
+    let outer_sigil = bytes[0] as char;
+    let inner_sigil = bytes[1] as char;
+    if !matches!(outer_sigil, '$' | '@' | '%' | '&') {
+        return None;
+    }
+    if !matches!(inner_sigil, '$' | '@' | '%' | '&') {
+        return None;
+    }
+    // The char after the inner sigil must start a variable name
+    let after_inner = &rest[2..];
+    let first_name_char = after_inner.as_bytes().first().copied().unwrap_or(0) as char;
+    if !first_name_char.is_alphabetic() && first_name_char != '_' {
+        return None;
+    }
+    // Parse the variable name
+    let end = after_inner
+        .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+        .unwrap_or(after_inner.len());
+    let name = &after_inner[..end];
+    let after_name = &after_inner[end..];
+
+    // Build the inner variable expression
+    // For &name, use BareWord so the undeclared-name check catches it
+    let inner_expr = match inner_sigil {
+        '$' => Expr::Var(name.to_string()),
+        '@' => Expr::ArrayVar(name.to_string()),
+        '%' => Expr::HashVar(name.to_string()),
+        '&' => Expr::BareWord(name.to_string()),
+        _ => unreachable!(),
+    };
+
+    // Check for postcircumfix that matches the outer sigil's context
+    let mut remainder = after_name;
+    let mut consumed = false;
+    match outer_sigil {
+        '$' | '@' => {
+            // Expect [] for zen-slice or [expr]
+            if let Some(r) = remainder.strip_prefix("[]") {
+                remainder = r;
+                consumed = true;
+            } else if remainder.starts_with('[') {
+                let (expr, r) = parse_postcircumfix_index(remainder, inner_expr.clone());
+                if r.len() < remainder.len() {
+                    if !current.is_empty() {
+                        parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                    }
+                    parts.push(expr);
+                    return Some(r);
+                }
+            }
+        }
+        '%' => {
+            // Expect {} for zen-slice or {expr}
+            if let Some(r) = remainder.strip_prefix("{}") {
+                remainder = r;
+                consumed = true;
+            } else if remainder.starts_with('{') {
+                let (expr, r) = parse_postcircumfix_index(remainder, inner_expr.clone());
+                if r.len() < remainder.len() {
+                    if !current.is_empty() {
+                        parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                    }
+                    parts.push(expr);
+                    return Some(r);
+                }
+            }
+        }
+        '&' => {
+            // Expect () for call
+            if let Some(r) = remainder.strip_prefix("()") {
+                remainder = r;
+                consumed = true;
+            } else if remainder.starts_with('(') {
+                let mut depth = 0usize;
+                let mut paren_end = None;
+                for (idx, ch) in remainder.char_indices() {
+                    if ch == '(' {
+                        depth += 1;
+                    } else if ch == ')' {
+                        depth -= 1;
+                        if depth == 0 {
+                            paren_end = Some(idx);
+                            break;
+                        }
+                    }
+                }
+                if let Some(pe) = paren_end {
+                    consumed = true;
+                    remainder = &remainder[pe + 1..];
+                }
+            }
+        }
+        _ => {}
+    }
+
+    // For @/$ context without postcircumfix, also check for {} and method calls
+    if !consumed && matches!(outer_sigil, '$' | '@') {
+        let (expr, r) = parse_postcircumfix_index(remainder, inner_expr.clone());
+        if r.len() < remainder.len() {
+            if !current.is_empty() {
+                parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+            }
+            parts.push(expr);
+            return Some(r);
+        }
+        return None;
+    }
+
+    if !consumed {
+        return None;
+    }
+
+    if !current.is_empty() {
+        parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+    }
+    parts.push(inner_expr);
+    Some(remainder)
+}
+
 /// Try to interpolate a `$var` or `@var` at the current position.
 /// Returns `Some(remaining_input)` if interpolation was performed, `None` otherwise.
 pub(super) fn try_interpolate_var<'a>(
@@ -1829,9 +1964,22 @@ pub(super) fn try_interpolate_var<'a>(
                 }
             }
         }
+        // Double-sigil interpolation: $$name, $@name, $%name, $&name
+        if let Some(result) =
+            try_double_sigil_interp(rest, parts, current, parse_postcircumfix_index)
+        {
+            return Some(result);
+        }
     }
     if rest.starts_with('@') && rest.len() > 1 {
         let next = rest.as_bytes()[1] as char;
+        // Double-sigil interpolation: @$name, @@name, @%name, @&name
+        if matches!(next, '$' | '@' | '%' | '&')
+            && let Some(result) =
+                try_double_sigil_interp(rest, parts, current, parse_postcircumfix_index)
+        {
+            return Some(result);
+        }
         if next.is_alphabetic() || next == '_' {
             let var_rest = &rest[1..];
             let end = var_rest
@@ -1866,6 +2014,13 @@ pub(super) fn try_interpolate_var<'a>(
     }
     if rest.starts_with('%') && rest.len() > 1 {
         let next = rest.as_bytes()[1] as char;
+        // Double-sigil interpolation: %$name, %@name, %%name, %&name
+        if matches!(next, '$' | '@' | '%' | '&')
+            && let Some(result) =
+                try_double_sigil_interp(rest, parts, current, parse_postcircumfix_index)
+        {
+            return Some(result);
+        }
         if next.is_alphabetic() || next == '_' {
             let var_rest = &rest[1..];
             let end = var_rest
@@ -1915,6 +2070,13 @@ pub(super) fn try_interpolate_var<'a>(
     // &func() interpolation — only with parentheses
     if rest.starts_with('&') && rest.len() > 1 {
         let next = rest.as_bytes()[1] as char;
+        // Double-sigil interpolation: &$name, &@name, &%name
+        if matches!(next, '$' | '@' | '%')
+            && let Some(result) =
+                try_double_sigil_interp(rest, parts, current, parse_postcircumfix_index)
+        {
+            return Some(result);
+        }
         if next.is_alphabetic() || next == '_' {
             let var_rest = &rest[1..];
             let end = var_rest
