@@ -74,7 +74,7 @@ impl VM {
                 }
                 compiler.compile_routine_closure_body(&def.params, &def.param_defs, &def.body)
             };
-            let cf = CompiledFunction {
+            let mut cf = CompiledFunction {
                 code: cc,
                 params: def.params.clone(),
                 param_defs: def.param_defs.clone(),
@@ -83,7 +83,11 @@ impl VM {
                 empty_sig: def.empty_sig,
                 is_rw: def.is_rw,
                 is_raw: def.is_raw,
+                param_local_slots: None,
+                has_inner_subs: false,
             };
+            cf.precompute_param_local_slots();
+            cf.detect_inner_subs();
             self.otf_compile_cache.insert(fingerprint, cf.clone());
             cf
         };
@@ -489,6 +493,300 @@ impl VM {
                     && !pd.is_invocant
                     && pd.traits.is_empty()
             })
+    }
+
+    /// Check if eligible for the positional light call path.
+    /// This path avoids push_call_frame, Sub value creation, block/routine push,
+    /// callable_id lookup, and full bind_function_args_values. Parameters are
+    /// bound to pre-computed local slots and written to env.
+    pub(super) fn is_positional_light_call_eligible(cf: &CompiledFunction, fn_name: &str) -> bool {
+        !fn_name.is_empty()
+            && cf.code.state_locals.is_empty()
+            && !cf.is_rw
+            && !cf.is_raw
+            && !cf.empty_sig
+            && cf.param_local_slots.is_some()
+            // Exclude functions with inner closures/blocks (may use phasers, closures, etc.)
+            && !cf.has_inner_subs
+            // Only allow return types that light_return_type_check can handle
+            && cf
+                .return_type
+                .as_deref()
+                .is_none_or(Self::is_fast_type_name)
+            && !cf.param_defs.is_empty()
+            && cf.param_defs.iter().all(|pd| {
+                !pd.named
+                    && pd.where_constraint.is_none()
+                    && !pd.slurpy
+                    && !pd.double_slurpy
+                    && pd.default.is_none()
+                    && !pd.optional_marker
+                    && pd.code_signature.is_none()
+                    && !pd.sigilless
+                    && !pd.is_invocant
+                    && pd.traits.is_empty()
+                    && pd.sub_signature.is_none()
+                    // Only allow basic type constraints that fast_type_check handles.
+                    // Excludes subset types, type captures (::T), parametric roles, etc.
+                    && pd
+                        .type_constraint
+                        .as_deref()
+                        .is_none_or(Self::is_fast_type_name)
+                    // Exclude @/% params which need special collection semantics
+                    // and & params which need callable binding
+                    && !pd.name.starts_with('@')
+                    && !pd.name.starts_with('%')
+                    && !pd.name.starts_with('&')
+                    // Exclude internal/anonymous params (__ANON_STATE__, __type_only__, etc.)
+                    && !pd.name.starts_with("__")
+                    // Exclude dynamic variable params ($*var)
+                    && !pd.name.starts_with('*')
+                    // Exclude $_ topic param (used implicitly by regex, ff, etc.)
+                    && pd.name != "_"
+            })
+    }
+
+    /// Ultra-fast call for simple positional-only functions (e.g. `sub fib($n)`).
+    /// Avoids push_call_frame, Sub value creation, block/routine push,
+    /// callable_id lookup, and full bind_function_args_values. Parameters are
+    /// bound directly to pre-computed local slots AND written to env so that
+    /// closures and dynamic lookups work correctly.
+    pub(super) fn call_compiled_function_positional_light(
+        &mut self,
+        cf: &CompiledFunction,
+        args: &[Value],
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<Value, RuntimeError> {
+        let param_slots = cf.param_local_slots.as_ref().unwrap();
+        let positional_count = param_slots.len();
+        let actual_count = args.len();
+
+        if actual_count < positional_count {
+            let required = cf
+                .param_defs
+                .iter()
+                .filter(|pd| !pd.named && pd.required)
+                .count();
+            if actual_count < required {
+                return Err(RuntimeError::new(format!(
+                    "Too few positionals passed; expected {} arguments but got {}",
+                    positional_count, actual_count
+                )));
+            }
+        }
+
+        let saved_locals = std::mem::take(&mut self.locals);
+        let saved_locals_dirty = self.locals_dirty;
+        let saved_env_dirty = self.env_dirty;
+        self.locals_dirty = false;
+        self.env_dirty = false;
+
+        let num_locals = cf.code.locals.len();
+        self.locals.clear();
+        self.locals.resize(num_locals, Value::Nil);
+
+        for (i, local_name) in cf.code.locals.iter().enumerate() {
+            if let Some(val) = self.interpreter.env().get(local_name) {
+                self.locals[i] = val.clone();
+            }
+        }
+
+        // Save old env values for params so we can restore them later.
+        // Also write param values to both locals and env.
+        let mut saved_param_env: Vec<(String, Option<Value>)> =
+            Vec::with_capacity(positional_count);
+        // Save and restore readonly vars
+        let saved_readonly = self.interpreter.save_readonly_vars();
+        for (param_idx, slot) in param_slots.iter().enumerate() {
+            if param_idx < actual_count {
+                let val = crate::runtime::types::unwrap_varref_value(args[param_idx].clone());
+                // Type check param if constraint exists
+                if let Some(ref tc) = cf.param_defs[param_idx].type_constraint
+                    && !Self::fast_type_check(&val, tc)
+                {
+                    self.interpreter.restore_readonly_vars(saved_readonly);
+                    for (name, old_val) in saved_param_env {
+                        match old_val {
+                            Some(v) => {
+                                self.interpreter.env_mut().insert(name, v);
+                            }
+                            None => {
+                                self.interpreter.env_mut().remove(&name);
+                            }
+                        }
+                    }
+                    self.locals = saved_locals;
+                    self.locals_dirty = saved_locals_dirty;
+                    self.env_dirty = saved_env_dirty;
+                    return Err(RuntimeError::new(format!(
+                        "Type check failed in binding ${}: expected {}, got {}",
+                        cf.param_defs[param_idx].name,
+                        tc,
+                        runtime::value_type_name(&val)
+                    )));
+                }
+                self.locals[*slot] = val.clone();
+                let param_name = &cf.param_defs[param_idx].name;
+                saved_param_env.push((
+                    param_name.clone(),
+                    self.interpreter.env().get(param_name).cloned(),
+                ));
+                self.interpreter.env_mut().insert(param_name.clone(), val);
+                // Mark params as readonly by default (Raku semantics)
+                self.interpreter.mark_readonly(param_name);
+            }
+        }
+
+        let saved_stack_depth = self.stack.len();
+        let let_mark = self.interpreter.let_saves_len();
+
+        let mut ip = 0;
+        let mut result = Ok(());
+        let mut explicit_return: Option<Value> = None;
+        let mut fail_bypass = false;
+        while ip < cf.code.ops.len() {
+            match self.exec_one(&cf.code, &mut ip, compiled_fns) {
+                Ok(()) => {}
+                Err(e) if e.return_value.is_some() => {
+                    let ret_val = e.return_value.unwrap();
+                    explicit_return = Some(ret_val.clone());
+                    self.stack.truncate(saved_stack_depth);
+                    self.stack.push(ret_val);
+                    self.interpreter.discard_let_saves(let_mark);
+                    result = Ok(());
+                    break;
+                }
+                Err(e) if e.is_fail => {
+                    fail_bypass = true;
+                    let failure = self.interpreter.fail_error_to_failure_value(&e);
+                    self.interpreter.restore_let_saves(let_mark);
+                    self.stack.truncate(saved_stack_depth);
+                    self.stack.push(failure);
+                    result = Ok(());
+                    break;
+                }
+                Err(e) => {
+                    self.interpreter.restore_let_saves(let_mark);
+                    result = Err(e);
+                    break;
+                }
+            }
+            if self.interpreter.is_halted() {
+                break;
+            }
+        }
+
+        let ret_val = if result.is_ok() {
+            if self.stack.len() > saved_stack_depth {
+                self.stack.pop().unwrap_or(Value::Nil)
+            } else {
+                Value::Nil
+            }
+        } else {
+            Value::Nil
+        };
+
+        self.stack.truncate(saved_stack_depth);
+
+        // Return type check (if specified). Allows type objects, Nil, and Failure through.
+        if result.is_ok()
+            && let Some(ref rt) = cf.return_type
+        {
+            let check_val = explicit_return.as_ref().unwrap_or(&ret_val);
+            if !Self::light_return_type_check(check_val, rt) {
+                self.locals = saved_locals;
+                self.locals_dirty = saved_locals_dirty;
+                self.env_dirty = saved_env_dirty;
+                self.interpreter.restore_readonly_vars(saved_readonly);
+                for (name, old_val) in saved_param_env {
+                    match old_val {
+                        Some(v) => {
+                            self.interpreter.env_mut().insert(name, v);
+                        }
+                        None => {
+                            self.interpreter.env_mut().remove(&name);
+                        }
+                    }
+                }
+                return Err(RuntimeError::new(format!(
+                    "Type check failed for return value; expected {}, got {}",
+                    rt,
+                    runtime::value_type_name(check_val)
+                )));
+            }
+        }
+
+        self.locals = saved_locals;
+        self.locals_dirty = saved_locals_dirty;
+        self.env_dirty = saved_env_dirty;
+
+        // Restore readonly vars
+        self.interpreter.restore_readonly_vars(saved_readonly);
+        // Restore env param values
+        for (name, old_val) in saved_param_env {
+            match old_val {
+                Some(v) => {
+                    self.interpreter.env_mut().insert(name, v);
+                }
+                None => {
+                    self.interpreter.env_mut().remove(&name);
+                }
+            }
+        }
+
+        match result {
+            Ok(()) if fail_bypass => Ok(ret_val),
+            Ok(()) => {
+                if let Some(v) = explicit_return {
+                    Ok(v)
+                } else {
+                    Ok(ret_val)
+                }
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Check if a type name is one of the basic types that fast_type_check handles.
+    fn is_fast_type_name(name: &str) -> bool {
+        matches!(
+            name,
+            "Int" | "Str" | "Num" | "Bool" | "Rat" | "Any" | "Mu" | "Cool"
+        )
+    }
+
+    /// Return type check that handles type objects, Nil, and Failure passthrough.
+    fn light_return_type_check(val: &Value, type_name: &str) -> bool {
+        // Nil and Failure always pass return type checks
+        if matches!(val, Value::Nil) {
+            return true;
+        }
+        if let Value::Instance { class_name, .. } = val
+            && class_name.resolve() == "Failure"
+        {
+            return true;
+        }
+        // Type objects (Package values) that match the return type pass
+        if let Value::Package(sym) = val {
+            return sym.resolve() == type_name;
+        }
+        Self::fast_type_check(val, type_name)
+    }
+
+    /// Fast type check for common types.
+    fn fast_type_check(val: &Value, type_name: &str) -> bool {
+        match type_name {
+            "Int" => matches!(val, Value::Int(_) | Value::BigInt(_)),
+            "Str" => matches!(val, Value::Str(_)),
+            "Num" => matches!(val, Value::Num(_)),
+            "Bool" => matches!(val, Value::Bool(_)),
+            "Rat" => matches!(val, Value::Rat(_, _)),
+            "Any" | "Mu" | "Cool" => true,
+            _ => {
+                let actual = runtime::value_type_name(val);
+                actual == type_name
+            }
+        }
     }
 
     /// Lightweight compiled function call that avoids the heavyweight frame

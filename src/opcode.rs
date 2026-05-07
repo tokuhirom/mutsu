@@ -1151,4 +1151,57 @@ pub(crate) struct CompiledFunction {
     pub(crate) is_rw: bool,
     /// When true, this sub is declared `is raw` and Proxy values should NOT be auto-FETCHed.
     pub(crate) is_raw: bool,
+    /// Pre-computed mapping from positional parameter index to locals slot index.
+    /// Used by the positional light call fast path to avoid name-based lookup per call.
+    pub(crate) param_local_slots: Option<Vec<usize>>,
+    /// True if the function body contains inner sub declarations or closures.
+    /// When true, parameters must be written to env (not just locals) so that
+    /// nested functions can capture them via closure.
+    pub(crate) has_inner_subs: bool,
+}
+
+impl CompiledFunction {
+    /// Pre-compute the mapping from positional parameter index to locals slot index.
+    pub(crate) fn precompute_param_local_slots(&mut self) {
+        let mut slots = Vec::new();
+        if !self.param_defs.is_empty() {
+            for pd in &self.param_defs {
+                if pd.named {
+                    continue;
+                }
+                if let Some(slot) = self.code.locals.iter().position(|n| n == &pd.name) {
+                    slots.push(slot);
+                }
+            }
+        } else {
+            for param in &self.params {
+                if let Some(slot) = self.code.locals.iter().position(|n| n == param) {
+                    slots.push(slot);
+                }
+            }
+        }
+        if !slots.is_empty() {
+            self.param_local_slots = Some(slots);
+        }
+    }
+
+    /// Detect whether the function body contains inner sub declarations or closures.
+    pub(crate) fn detect_inner_subs(&mut self) {
+        self.has_inner_subs = !self.code.closure_compiled_codes.is_empty()
+            || self.code.ops.iter().any(|op| {
+                matches!(
+                    op,
+                    OpCode::RegisterSub(..)
+                        | OpCode::RegisterSubset(..)
+                        | OpCode::RegisterClass(..)
+                        | OpCode::RegisterRole(..)
+                        // CallOnValue/CallOnCodeVar may invoke closures that do `return`
+                        // targeting an outer routine, requiring the routine stack.
+                        | OpCode::CallOnValue { .. }
+                        | OpCode::CallOnCodeVar { .. }
+                        // ForLoop may have FIRST/NEXT/LAST phasers that need proper state
+                        | OpCode::ForLoop { .. }
+                )
+            });
+    }
 }
