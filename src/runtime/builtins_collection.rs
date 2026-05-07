@@ -1280,8 +1280,12 @@ impl Interpreter {
                 Value::Seq(elems) => items.extend(elems.iter().cloned()),
                 Value::Slip(elems) => items.extend(elems.iter().cloned()),
                 Value::LazyList(ll) => {
-                    let cached = ll.cache.lock().unwrap().clone().unwrap_or_default();
-                    items.extend(cached);
+                    if ll.scan_spec.is_some() {
+                        items.extend(ll.force_scan_to(200_000));
+                    } else {
+                        let cached = ll.cache.lock().unwrap().clone().unwrap_or_default();
+                        items.extend(cached);
+                    }
                 }
                 other => items.push(other.clone()),
             }
