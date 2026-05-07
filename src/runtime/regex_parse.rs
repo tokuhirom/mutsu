@@ -554,7 +554,9 @@ impl Interpreter {
             return None;
         }
         let last_body = body.chars().last()?;
-        if !matches!(last_body, '>' | ']' | ')' | '}') {
+        // Only handle angle-bracket subrule atoms like `<value>*`.
+        // Do NOT strip quantifiers from bracket groups like `[\w+]+`.
+        if last_body != '>' {
             return None;
         }
         let count_spec = match quant {
