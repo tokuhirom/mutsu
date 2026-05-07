@@ -1967,6 +1967,7 @@ pub(crate) fn parse_radix_number_body(body: &str, base: u32) -> Option<Value> {
 
 pub(crate) fn coerce_to_numeric(val: Value) -> Value {
     match val {
+        Value::Scalar(inner) => coerce_to_numeric(*inner),
         Value::Mixin(inner, _) => coerce_to_numeric(inner.as_ref().clone()),
         Value::Int(_)
         | Value::BigInt(_)

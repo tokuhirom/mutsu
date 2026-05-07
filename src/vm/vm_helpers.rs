@@ -325,6 +325,9 @@ impl VM {
         // Auto-FETCH Proxy containers in binary operations
         let left = self.interpreter.auto_fetch_proxy(&left)?;
         let right = self.interpreter.auto_fetch_proxy(&right)?;
+        // Decontainerize Scalar wrappers
+        let left = left.decontainerize().clone();
+        let right = right.decontainerize().clone();
         if let (
             Value::Junction {
                 kind: left_kind,
