@@ -6,7 +6,120 @@ use std::io::{self, Read};
 
 use mutsu::{Interpreter, RuntimeError, Value};
 
-fn print_error(prefix: &str, err: &RuntimeError) {
+/// Extract a short, human-readable summary from a verbose parse error message.
+/// The parser produces messages like:
+///   "Confused. parse error at line 1, column 1: expected expected statement ..."
+/// We extract a cleaner version for display.
+fn short_parse_message(msg: &str) -> String {
+    // Strip "Confused. " prefix
+    let body = msg.strip_prefix("Confused. ").unwrap_or(msg);
+
+    // Strip " \u{2014} near: ..." suffix (em-dash followed by near)
+    let body = body
+        .find("\u{2014} near:")
+        .map(|i| body[..i].trim_end())
+        .or_else(|| body.find(" — near:").map(|i| body[..i].trim_end()))
+        .unwrap_or(body);
+
+    // Strip "parse error at line N, column M: " prefix to get the core message
+    let core = if let Some(pos) = body.find(": expected ") {
+        &body[pos + 2..] // skip ": " to get "expected ..."
+    } else if let Some(pos) = body.find(": unparsed ") {
+        &body[pos + 2..]
+    } else {
+        body
+    };
+
+    // Remove duplicate "expected expected" from Display wrapping
+    let core = core
+        .strip_prefix("expected expected ")
+        .map(|rest| format!("expected {}", rest))
+        .unwrap_or_else(|| core.to_string());
+
+    // Strip internal location details like "at line N (after M stmts)"
+    let core = strip_internal_location(&core);
+
+    // Simplify long alternative lists
+    simplify_expected_list(&core)
+}
+
+/// Strip internal location details like "at line N (after M stmts)" from parse messages.
+fn strip_internal_location(msg: &str) -> String {
+    let mut result = msg.to_string();
+    while let Some(start) = result.find(" at line ") {
+        let rest = &result[start + " at line ".len()..];
+        let digit_end = rest
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(rest.len());
+        if digit_end == 0 {
+            break;
+        }
+        let mut end = start + " at line ".len() + digit_end;
+        // Check for optional " (after N stmts)"
+        let after_digits = &result[end..];
+        if after_digits.starts_with(" (after ")
+            && let Some(paren_close) = after_digits.find(')')
+        {
+            end += paren_close + 1;
+        }
+        result = format!("{}{}", &result[..start], &result[end..]);
+    }
+    result
+}
+
+/// Trim long "expected X or Y or Z or ..." lists to a reasonable length.
+fn simplify_expected_list(msg: &str) -> String {
+    if let Some(pos) = msg.rfind(": expected ") {
+        let prefix = &msg[..pos];
+        let alternatives = &msg[pos + 11..]; // after ": expected "
+        let parts: Vec<&str> = alternatives.split(" or ").collect();
+        if parts.len() > 5 {
+            let kept: Vec<&str> = parts[..5].to_vec();
+            return format!("{}: expected {} or ...", prefix, kept.join(" or "));
+        }
+    }
+    msg.to_string()
+}
+
+/// Format a parse error with a source code snippet and caret indicator,
+/// matching Raku's ===SORRY!=== format.
+fn format_parse_error(err: &RuntimeError, source: &str, program_name: &str) -> String {
+    let mut out = String::new();
+
+    out.push_str(&format!(
+        "===SORRY!=== Error while compiling {}\n",
+        program_name
+    ));
+
+    let short_msg = short_parse_message(&err.message);
+    out.push_str(&short_msg);
+    out.push('\n');
+
+    if let Some(line) = err.line {
+        out.push_str(&format!("at {}:{}\n", program_name, line));
+
+        let source_lines: Vec<&str> = source.lines().collect();
+        if line >= 1 && line <= source_lines.len() {
+            let src_line = source_lines[line - 1];
+            let col = err.column.unwrap_or(1);
+            let col_idx = col.saturating_sub(1).min(src_line.len());
+            let before = &src_line[..col_idx];
+            let after = &src_line[col_idx..];
+            out.push_str(&format!("------>{}{}\n", before, after));
+            let padding = " ".repeat(7 + col_idx);
+            out.push_str(&format!("{}^", padding));
+        }
+    }
+
+    if let Some(hint) = &err.hint {
+        out.push('\n');
+        out.push_str(hint);
+    }
+
+    out
+}
+
+fn print_error(prefix: &str, err: &RuntimeError, source: Option<&str>, program_name: Option<&str>) {
     // For runtime errors with a backtrace, use the Raku-style format:
     // message\n  in sub foo at file line N\n  in block <unit> at file line N
     if err.backtrace.is_some() && err.code.is_none() {
@@ -17,24 +130,25 @@ fn print_error(prefix: &str, err: &RuntimeError) {
         return;
     }
 
+    // For parse errors with source context, show a nice snippet
+    if let (Some(code), Some(src), Some(name)) = (err.code, source, program_name)
+        && code.is_parse()
+        && err.line.is_some()
+    {
+        eprintln!("{}", format_parse_error(err, src, name));
+        return;
+    }
+
     eprintln!("{}: {}", prefix, err.message);
-    let mut meta = Vec::new();
-    if let Some(code) = err.code {
-        meta.push(format!("code={}", code));
-        if code.is_parse() {
-            meta.push("kind=parse".to_string());
+    if let Some(line) = err.line {
+        if let Some(col) = err.column {
+            eprintln!("  at line {}, column {}", line, col);
+        } else {
+            eprintln!("  at line {}", line);
         }
     }
-    match (err.line, err.column) {
-        (Some(line), Some(column)) => meta.push(format!("line={}, column={}", line, column)),
-        (Some(line), None) => meta.push(format!("line={}", line)),
-        _ => {}
-    }
-    if !meta.is_empty() {
-        eprintln!("{} metadata: {}", prefix, meta.join(", "));
-    }
     if let Some(hint) = &err.hint {
-        eprintln!("{} hint: {}", prefix, hint);
+        eprintln!("  hint: {}", hint);
     }
 }
 
@@ -312,7 +426,7 @@ fn main() {
         match mutsu::dump_ast(&input) {
             Ok(ast) => println!("{}", ast),
             Err(err) => {
-                print_error("Parse error", &err);
+                print_error("Parse error", &err, Some(&input), Some(&program_name));
                 std::process::exit(1);
             }
         }
@@ -329,7 +443,7 @@ fn main() {
                 return;
             }
             Err(err) => {
-                print_error("Runtime error", &err);
+                print_error("Runtime error", &err, Some(&input), Some(&program_name));
                 std::process::exit(1);
             }
         }
@@ -345,7 +459,7 @@ fn main() {
     }
     for module in preload_modules {
         if let Err(err) = interpreter.use_module(&module) {
-            print_error("Runtime error", &err);
+            print_error("Runtime error", &err, Some(&input), Some(&program_name));
             std::process::exit(1);
         }
     }
@@ -365,7 +479,7 @@ fn main() {
             }
         }
         Err(err) => {
-            print_error("Runtime error", &err);
+            print_error("Runtime error", &err, Some(&input), Some(&program_name));
             interpreter.flush_all_handles();
             interpreter.flush_stderr_buffer();
             let code = interpreter.exit_code();
