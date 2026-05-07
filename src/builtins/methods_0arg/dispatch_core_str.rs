@@ -106,6 +106,10 @@ pub(super) fn dispatch(
                             compiled_code: list.compiled_code.clone(),
                             compiled_fns: list.compiled_fns.clone(),
                             elems_count: list.elems_count.clone(),
+                            scan_spec: list
+                                .scan_spec
+                                .as_ref()
+                                .map(|s| std::sync::Mutex::new(s.lock().unwrap().clone())),
                         },
                     )))));
                 }
@@ -146,6 +150,7 @@ pub(super) fn dispatch(
                     compiled_code: None,
                     compiled_fns: None,
                     elems_count: None,
+                    scan_spec: None,
                 },
             )))))
         }

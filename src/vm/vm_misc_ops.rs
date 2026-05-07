@@ -219,7 +219,7 @@ impl VM {
         }
     }
 
-    fn reduction_callable_for_op(&self, op: &str) -> Option<Value> {
+    pub(super) fn reduction_callable_for_op(&self, op: &str) -> Option<Value> {
         if let Some(name) = op.strip_prefix('&') {
             let callable = self.interpreter.resolve_code_var(name);
             if matches!(
@@ -311,7 +311,7 @@ impl VM {
         params.len().max(2)
     }
 
-    fn reduction_step_with_args(
+    pub(super) fn reduction_step_with_args(
         &mut self,
         base_op: &str,
         callable: Option<&Value>,
@@ -1726,149 +1726,29 @@ impl VM {
     }
 
     /// Lazily evaluate a triangle (scan) reduction on an infinite/lazy range.
-    /// Produces a `LazyList` so that `.is-lazy` returns True and only the
-    /// needed prefix is materialized when indexed.
+    /// Produces a `LazyList` with a `ScanSpec` so that additional elements
+    /// can be computed on demand. Pre-computes an initial batch of elements
+    /// so that common operations like `.Slip` and `.join` work immediately.
     fn exec_lazy_scan_reduction(
         &mut self,
         base_op: &str,
         negate: bool,
         list_value: &Value,
     ) -> Result<(), RuntimeError> {
-        const LAZY_SCAN_CAP: usize = 200_000;
-
-        let callable = self.reduction_callable_for_op(base_op);
-        let mut out = Vec::new();
-        let mut acc: Option<Value> = None;
-        #[allow(unused_assignments)]
-        let mut count = 0usize;
-
-        // Macro-like helper for processing a single element in the scan.
-        macro_rules! scan_step {
-            ($val:expr) => {
-                #[allow(unused_assignments)]
-                {
-                    acc = Some(match acc.take() {
-                        None => {
-                            out.push($val.clone());
-                            $val
-                        }
-                        Some(prev) => {
-                            let call_args = vec![prev, $val];
-                            let v = self.reduction_step_with_args(
-                                base_op,
-                                callable.as_ref(),
-                                call_args,
-                            )?;
-                            let v = if negate { Value::Bool(!v.truthy()) } else { v };
-                            out.push(v.clone());
-                            v
-                        }
-                    });
-                    count += 1;
-                }
-            };
-        }
-
-        match list_value {
-            Value::Range(a, b) => {
-                let end = if *b == i64::MAX {
-                    *a + LAZY_SCAN_CAP as i64
-                } else {
-                    *b
-                };
-                for i in *a..=end {
-                    if count >= LAZY_SCAN_CAP {
-                        break;
-                    }
-                    let val = Value::Int(i);
-                    scan_step!(val);
-                }
-            }
-            Value::RangeExcl(a, b) => {
-                let end = if *b == i64::MAX {
-                    *a + LAZY_SCAN_CAP as i64
-                } else {
-                    *b
-                };
-                for i in *a..end {
-                    if count >= LAZY_SCAN_CAP {
-                        break;
-                    }
-                    let val = Value::Int(i);
-                    scan_step!(val);
-                }
-            }
-            Value::RangeExclStart(a, b) => {
-                let start = *a + 1;
-                let end = if *b == i64::MAX {
-                    start + LAZY_SCAN_CAP as i64
-                } else {
-                    *b
-                };
-                for i in start..=end {
-                    if count >= LAZY_SCAN_CAP {
-                        break;
-                    }
-                    let val = Value::Int(i);
-                    scan_step!(val);
-                }
-            }
-            Value::RangeExclBoth(a, b) => {
-                let start = *a + 1;
-                let end = if *b == i64::MAX {
-                    start + LAZY_SCAN_CAP as i64
-                } else {
-                    *b
-                };
-                for i in start..end {
-                    if count >= LAZY_SCAN_CAP {
-                        break;
-                    }
-                    let val = Value::Int(i);
-                    scan_step!(val);
-                }
-            }
-            Value::GenericRange {
-                start,
-                end,
-                excl_start,
-                excl_end,
-            } => {
-                let end_f = end.to_f64();
-                let is_infinite = end_f.is_infinite() && end_f.is_sign_positive();
-                let start_i = start.as_ref().to_f64() as i64;
-                let first_i = if *excl_start { start_i + 1 } else { start_i };
-                // Use integer iteration when both endpoints are integer-like
-                for idx in 0..LAZY_SCAN_CAP {
-                    let i = first_i + idx as i64;
-                    if !is_infinite {
-                        if *excl_end && i as f64 >= end_f {
-                            break;
-                        }
-                        if !*excl_end && i as f64 > end_f {
-                            break;
-                        }
-                    }
-                    let val = Value::Int(i);
-                    scan_step!(val);
-                }
-            }
-            Value::LazyList(ll) => {
-                let items = self.force_lazy_list_vm(ll)?;
-                for val in items.into_iter().take(LAZY_SCAN_CAP) {
-                    scan_step!(val);
-                }
-            }
-            _ => {
-                let items = runtime::value_to_list(list_value);
-                for val in items.into_iter().take(LAZY_SCAN_CAP) {
-                    scan_step!(val);
-                }
-            }
-        }
-
-        let ll = crate::value::LazyList::new_cached(out);
-        self.stack.push(Value::LazyList(std::sync::Arc::new(ll)));
+        let spec = crate::value::ScanSpec {
+            op: base_op.to_string(),
+            negate,
+            source: list_value.clone(),
+            accumulator: None,
+            computed_count: 0,
+        };
+        let ll = crate::value::LazyList::new_scan(spec);
+        let ll = std::sync::Arc::new(ll);
+        // Pre-compute an initial batch so that eager consumers (e.g. .Slip,
+        // .join) that read the cache directly get a useful prefix.
+        const INITIAL_BATCH: usize = 1_000;
+        self.force_scan_lazy_list(&ll, INITIAL_BATCH)?;
+        self.stack.push(Value::LazyList(ll));
         Ok(())
     }
 

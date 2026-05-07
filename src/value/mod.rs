@@ -860,6 +860,22 @@ pub(crate) enum VersionPart {
     Whatever,
 }
 
+/// Specification for a lazy scan (triangle) reduction.
+/// Stored in `LazyList` to allow on-demand element computation.
+#[derive(Debug, Clone)]
+pub(crate) struct ScanSpec {
+    /// The base operator name (e.g. "+", "*", "~").
+    pub(crate) op: String,
+    /// Whether to negate the result of each step.
+    pub(crate) negate: bool,
+    /// The source value to iterate over (typically a Range variant).
+    pub(crate) source: Value,
+    /// The accumulator state after the last computed element.
+    pub(crate) accumulator: Option<Value>,
+    /// The number of elements already computed (matches cache length).
+    pub(crate) computed_count: usize,
+}
+
 #[derive(Debug)]
 pub(crate) struct LazyList {
     pub(crate) body: Vec<Stmt>,
@@ -872,6 +888,8 @@ pub(crate) struct LazyList {
     /// Known element count for combinatorial lazy sequences (e.g. n! for permutations).
     /// When set, numeric coercion uses this value instead of materializing all elements.
     pub(crate) elems_count: Option<Value>,
+    /// Scan (triangle reduce) specification for lazy on-demand computation.
+    pub(crate) scan_spec: Option<Mutex<ScanSpec>>,
 }
 
 impl Clone for LazyList {
@@ -883,6 +901,10 @@ impl Clone for LazyList {
             compiled_code: self.compiled_code.clone(),
             compiled_fns: self.compiled_fns.clone(),
             elems_count: self.elems_count.clone(),
+            scan_spec: self
+                .scan_spec
+                .as_ref()
+                .map(|s| Mutex::new(s.lock().unwrap().clone())),
         }
     }
 }
@@ -897,6 +919,20 @@ impl LazyList {
             compiled_code: None,
             compiled_fns: None,
             elems_count: None,
+            scan_spec: None,
+        }
+    }
+
+    /// Create a lazy scan (triangle reduce) list that computes elements on demand.
+    pub(crate) fn new_scan(spec: ScanSpec) -> Self {
+        Self {
+            body: Vec::new(),
+            env: crate::env::Env::new(),
+            cache: Mutex::new(Some(Vec::new())),
+            compiled_code: None,
+            compiled_fns: None,
+            elems_count: None,
+            scan_spec: Some(Mutex::new(spec)),
         }
     }
 }
