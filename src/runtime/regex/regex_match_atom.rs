@@ -101,6 +101,12 @@ impl Interpreter {
                 for (k, v) in inner_caps.named.drain() {
                     new_caps.named.entry(k).or_default().extend(v);
                 }
+                for (k, v) in inner_caps.named_subcaps.drain() {
+                    new_caps.named_subcaps.entry(k).or_default().extend(v);
+                }
+                new_caps
+                    .named_quantified
+                    .extend(inner_caps.named_quantified.drain());
                 for v in inner_caps.positional.drain(..) {
                     new_caps.positional.push(v);
                 }
@@ -153,6 +159,16 @@ impl Interpreter {
                 for (k, v) in inner_caps.named.drain() {
                     new_caps.named.entry(k).or_default().extend(v);
                 }
+                for (k, v) in &inner_caps.named_subcaps {
+                    new_caps
+                        .named_subcaps
+                        .entry(k.clone())
+                        .or_default()
+                        .extend(v.clone());
+                }
+                new_caps
+                    .named_quantified
+                    .extend(inner_caps.named_quantified.iter().cloned());
                 new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                 // Store inner captures as subcaptures of this group
                 let mut subcap = inner_caps;

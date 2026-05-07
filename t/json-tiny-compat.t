@@ -16,7 +16,7 @@ unless "tmp/json-tiny/lib/JSON/Tiny.pm".IO.e {
 use lib 'tmp/json-tiny/lib';
 use JSON::Tiny;
 
-plan 21;
+plan 26;
 
 # to-json: numbers
 is to-json(42), '42', 'to-json integer';
@@ -60,5 +60,12 @@ is from-json('true'), True, 'from-json true';
 is from-json('false'), False, 'from-json false';
 ok !from-json('null').defined, 'from-json null is undefined';
 
+# from-json: arrays
+is-deeply from-json('[1, 2, 3]'), [1, 2, 3], 'from-json array of ints';
+is-deeply from-json('[true, false, null]'), [True, False, Any], 'from-json array of mixed';
+is-deeply from-json('[[1, 2], [3]]'), [[1, 2], [3]], 'from-json nested arrays';
+
 # from-json: grammar parses JSON structures (smoke test)
 ok JSON::Tiny::Grammar.parse('{"a": 1}').defined, 'grammar parses JSON object';
+ok JSON::Tiny::Grammar.parse('[1, 2]').defined, 'grammar parses JSON array';
+ok JSON::Tiny::Grammar.parse('"hello"').defined, 'grammar parses JSON string';

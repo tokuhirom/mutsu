@@ -581,6 +581,8 @@ pub(crate) struct RegexCaptures {
     pub(crate) regex_vars: HashMap<String, Value>,
     /// The winning :sym<> variant name, if this match was from a protoregex.
     pub(crate) sym: Option<String>,
+    /// Named captures from quantified tokens — always stored as arrays in Match.
+    pub(crate) named_quantified: HashSet<String>,
 }
 
 #[derive(Clone)]
