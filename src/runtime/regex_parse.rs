@@ -281,6 +281,51 @@ fn split_prop_args(s: &str) -> (&str, Option<&str>) {
     (s, None)
 }
 
+/// Skip `<[...]>` character class content where quotes are literal.
+fn skip_char_class_content(
+    chars: &mut std::iter::Peekable<std::str::Chars>,
+    current: &mut String,
+    open_ch: char,
+) -> bool {
+    let is_char_class = {
+        let tmp = chars.clone();
+        let mut it = tmp;
+        let c1 = it.next();
+        let c2 = it.next();
+        matches!(
+            (c1, c2),
+            (Some('['), _) | (Some('-' | '+' | '!'), Some('['))
+        )
+    };
+    if !is_char_class {
+        return false;
+    }
+    current.push(open_ch);
+    let mut bracket_depth = 0u32;
+    while let Some(c) = chars.next() {
+        current.push(c);
+        match c {
+            '\\' => {
+                if let Some(esc) = chars.next() {
+                    current.push(esc);
+                }
+            }
+            '[' => bracket_depth += 1,
+            ']' => {
+                bracket_depth -= 1;
+                if bracket_depth == 0 {
+                    if chars.peek() == Some(&'>') {
+                        current.push(chars.next().unwrap());
+                    }
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    true
+}
+
 impl Interpreter {
     fn regex_alternation_separator(out: &str) -> Option<&'static str> {
         let trimmed = out.trim_end_matches(char::is_whitespace);
@@ -380,9 +425,11 @@ impl Interpreter {
                 }
                 '<' => {
                     if chars.peek() == Some(&'<') {
-                        // << is a word boundary, not an angle bracket pair
                         current.push(ch);
                         current.push(chars.next().unwrap());
+                        continue;
+                    }
+                    if skip_char_class_content(&mut chars, &mut current, ch) {
                         continue;
                     }
                     depth_angle += 1;
@@ -390,7 +437,6 @@ impl Interpreter {
                 }
                 '>' => {
                     if chars.peek() == Some(&'>') {
-                        // >> is a word boundary, not an angle bracket pair
                         current.push(ch);
                         current.push(chars.next().unwrap());
                         continue;
@@ -486,6 +532,9 @@ impl Interpreter {
                     current.push(ch);
                 }
                 '<' => {
+                    if skip_char_class_content(&mut chars, &mut current, ch) {
+                        continue;
+                    }
                     depth_angle += 1;
                     current.push(ch);
                 }

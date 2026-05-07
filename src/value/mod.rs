@@ -2253,6 +2253,17 @@ impl Value {
             if let Some(ref sym_val) = caps.sym {
                 attrs.insert("sym_variant".to_string(), Value::str(sym_val.clone()));
             }
+            if let Some(ref action_name) = caps.action_name {
+                attrs.insert("action_name".to_string(), Value::str(action_name.clone()));
+            }
+            if !caps.capture_alias_map.is_empty() {
+                let alias_hash: HashMap<String, Value> = caps
+                    .capture_alias_map
+                    .iter()
+                    .map(|(k, v)| (k.clone(), Value::str(v.clone())))
+                    .collect();
+                attrs.insert("capture_alias_map".to_string(), Value::hash(alias_hash));
+            }
             Value::make_instance(Symbol::intern("Match"), attrs)
         }
 

@@ -16,7 +16,7 @@ unless "tmp/json-tiny/lib/JSON/Tiny.pm".IO.e {
 use lib 'tmp/json-tiny/lib';
 use JSON::Tiny;
 
-plan 26;
+plan 30;
 
 # to-json: numbers
 is to-json(42), '42', 'to-json integer';
@@ -69,3 +69,14 @@ is-deeply from-json('[[1, 2], [3]]'), [[1, 2], [3]], 'from-json nested arrays';
 ok JSON::Tiny::Grammar.parse('{"a": 1}').defined, 'grammar parses JSON object';
 ok JSON::Tiny::Grammar.parse('[1, 2]').defined, 'grammar parses JSON array';
 ok JSON::Tiny::Grammar.parse('"hello"').defined, 'grammar parses JSON string';
+
+# from-json: strings
+is from-json('"hello"'), 'hello', 'from-json simple string';
+is from-json('"hello world"'), 'hello world', 'from-json string with space';
+
+# from-json: array of strings
+is-deeply from-json('["a", "b", "c"]'), ["a", "b", "c"], 'from-json array of strings';
+
+# Grammar str_escape token (used internally by string parsing)
+ok JSON::Tiny::Grammar.subparse('n', :rule<str_escape>).defined,
+   'grammar str_escape token matches n';

@@ -583,6 +583,11 @@ pub(crate) struct RegexCaptures {
     pub(crate) sym: Option<String>,
     /// Named captures from quantified tokens — always stored as arrays in Match.
     pub(crate) named_quantified: HashSet<String>,
+    /// For aliased captures like `<str=.str_escape>`, maps capture name to
+    /// original rule name for grammar action dispatch.
+    pub(crate) capture_alias_map: HashMap<String, String>,
+    /// The original rule name when this capture was stored under an alias.
+    pub(crate) action_name: Option<String>,
 }
 
 #[derive(Clone)]
