@@ -28,6 +28,7 @@ mod vm_dispatch_helpers;
 mod vm_env_helpers;
 mod vm_helpers;
 mod vm_hyper_method_ops;
+mod vm_hyper_race_parallel;
 mod vm_method_dispatch;
 mod vm_misc_ops;
 mod vm_native_dispatch;
