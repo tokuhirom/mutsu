@@ -126,6 +126,7 @@ mod call_helpers;
 mod calls;
 mod class;
 pub(crate) mod deprecation;
+pub(crate) mod did_you_mean;
 mod dispatch;
 mod handle;
 mod io;

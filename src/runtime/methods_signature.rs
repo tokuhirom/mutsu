@@ -28,12 +28,28 @@ pub(super) fn make_method_not_found_error(
     type_name: &str,
     private: bool,
 ) -> RuntimeError {
-    let msg = format!(
-        "No such {} method '{}' for invocant of type '{}'",
-        if private { "private" } else { "public" },
-        method_name,
-        type_name
-    );
+    use super::did_you_mean::{known_methods_for_type, suggest_method};
+
+    let mut msg = if private {
+        format!(
+            "No such private method '{}' for invocant of type '{}'",
+            method_name, type_name
+        )
+    } else {
+        format!(
+            "No such method '{}' for invocant of type '{}'",
+            method_name, type_name
+        )
+    };
+
+    // Append "Did you mean ...?" suggestion if a close match exists
+    if !private {
+        let candidates = known_methods_for_type(type_name);
+        if let Some(suggestion) = suggest_method(method_name, candidates) {
+            msg.push_str(&format!("\nDid you mean '{}'?", suggestion));
+        }
+    }
+
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("method".to_string(), Value::str(method_name.to_string()));
     attrs.insert("typename".to_string(), Value::str(type_name.to_string()));

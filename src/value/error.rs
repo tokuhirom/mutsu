@@ -106,6 +106,18 @@ impl RuntimeError {
         }
     }
 
+    /// Check if this error represents a method-not-found error.
+    pub(crate) fn is_method_not_found(&self) -> bool {
+        if let Some(ref ex) = self.exception
+            && let Value::Instance { class_name, .. } = ex.as_ref()
+        {
+            return class_name.resolve() == "X::Method::NotFound";
+        }
+        self.message.contains("X::Method::NotFound")
+            || self.message.contains("No such method '")
+            || self.message.contains("No such private method '")
+    }
+
     /// Create a RuntimeError from an exception Value.
     /// Extracts the message from the exception's attributes and wraps it.
     pub(crate) fn from_exception_value(ex: Value) -> Self {
@@ -512,10 +524,18 @@ impl RuntimeError {
     /// X::Method::NotFound - No such method
     #[allow(dead_code)]
     pub(crate) fn method_not_found(method: &str, typename: &str) -> Self {
-        let msg = format!(
+        use crate::runtime::did_you_mean::{known_methods_for_type, suggest_method};
+
+        let mut msg = format!(
             "No such method '{}' for invocant of type '{}'",
             method, typename
         );
+
+        let candidates = known_methods_for_type(typename);
+        if let Some(suggestion) = suggest_method(method, candidates) {
+            msg.push_str(&format!("\nDid you mean '{}'?", suggestion));
+        }
+
         let mut attrs = HashMap::new();
         attrs.insert("method".to_string(), Value::str(method.to_string()));
         attrs.insert("typename".to_string(), Value::str(typename.to_string()));

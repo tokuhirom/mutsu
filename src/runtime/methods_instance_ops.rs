@@ -1373,10 +1373,12 @@ impl Interpreter {
                     return self.proxy_subclass_array_mutate(&attrs_ref, &attr_name, method, &args);
                 }
 
-                Err(RuntimeError::new(format!(
-                    "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
-                    method
-                )))
+                let type_name = match &target {
+                    Value::Instance { class_name, .. } => class_name.resolve(),
+                    Value::Package(name) => name.resolve(),
+                    _ => crate::runtime::utils::value_type_name(&target).to_string(),
+                };
+                Err(make_method_not_found_error(method, &type_name, false))
             }
         }
     }

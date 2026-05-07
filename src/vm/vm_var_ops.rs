@@ -174,10 +174,7 @@ impl VM {
     }
 
     fn is_method_not_found(err: &RuntimeError) -> bool {
-        matches!(
-            err.exception.as_deref(),
-            Some(Value::Instance { class_name, .. }) if class_name == "X::Method::NotFound"
-        )
+        err.is_method_not_found()
     }
 
     fn call_exists_pos(&mut self, instance: &Value, idx: Value) -> Result<bool, RuntimeError> {

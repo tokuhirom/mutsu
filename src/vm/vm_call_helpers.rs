@@ -171,14 +171,7 @@ impl VM {
     /// multi-dispatch failure or other runtime error). Used by .* to
     /// suppress method-not-found but propagate dispatch failures.
     pub(super) fn is_method_not_found_error(e: &RuntimeError) -> bool {
-        if let Some(ref ex) = e.exception
-            && let Value::Instance { class_name, .. } = ex.as_ref()
-        {
-            return class_name.resolve() == "X::Method::NotFound";
-        }
-        // Also catch unstructured method-not-found messages
-        e.message.contains("X::Method::NotFound")
-            || e.message.contains("Unknown method value dispatch")
+        e.is_method_not_found()
     }
 
     pub(super) fn rewrite_method_name(method_raw: &str, modifier: Option<&str>) -> String {
