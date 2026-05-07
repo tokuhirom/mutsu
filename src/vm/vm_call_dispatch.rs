@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::types::unwrap_varref_value;
 use crate::symbol::Symbol;
 
 impl VM {
@@ -451,6 +452,380 @@ impl VM {
             && cf.param_defs.is_empty()
             && cf.return_type.is_none()
             && !fn_name.is_empty()
+    }
+
+    /// Check if a compiled function is eligible for the light call path.
+    /// Light calls avoid the expensive env clone/restore cycle by directly
+    /// binding parameters and restoring them after the call. This is safe
+    /// for simple functions that don't need callframe/caller introspection,
+    /// don't have where constraints, state variables, or return type checks.
+    /// Check if a compiled function is eligible for the light call path.
+    /// The light call skips the heavyweight env clone/restore, Sub value
+    /// creation, block/routine push, and callable_id lookup. It does inline
+    /// argument binding with minimal overhead.
+    ///
+    /// Currently restricted to functions where ALL param_defs are named
+    /// (no positional params) to avoid correctness issues with positional
+    /// argument binding edge cases (optional arrays, @_, VarRef unwrapping, etc.).
+    /// Also excludes functions with legacy placeholder params (cf.params).
+    pub(super) fn is_light_call_eligible(cf: &CompiledFunction, fn_name: &str) -> bool {
+        !fn_name.is_empty()
+            && cf.return_type.is_none()
+            && cf.code.state_locals.is_empty()
+            && !cf.is_rw
+            && !cf.is_raw
+            && !cf.empty_sig
+            && cf.params.is_empty()
+            && !cf.param_defs.is_empty()
+            && cf.param_defs.iter().all(|pd| {
+                pd.named
+                    && pd.where_constraint.is_none()
+                    && !pd.slurpy
+                    && !pd.double_slurpy
+                    && pd.default.is_none()
+                    && pd.type_constraint.is_none()
+                    && pd.code_signature.is_none()
+                    && !pd.sigilless
+                    && !pd.is_invocant
+                    && pd.traits.is_empty()
+            })
+    }
+
+    /// Lightweight compiled function call that avoids the heavyweight frame
+    /// management (push_call_frame/env clone, Sub value creation, block/routine
+    /// push, callable_id lookup). Binds parameters directly to locals slots
+    /// without touching the env HashMap, maximizing performance for hot loops.
+    pub(super) fn call_compiled_function_light(
+        &mut self,
+        cf: &CompiledFunction,
+        args: Vec<Value>,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<Value, RuntimeError> {
+        // Save caller locals and create callee locals
+        let saved_locals = std::mem::take(&mut self.locals);
+        let saved_locals_dirty = self.locals_dirty;
+        let saved_env_dirty = self.env_dirty;
+        self.locals_dirty = false;
+        self.env_dirty = false;
+
+        let num_locals = cf.code.locals.len();
+        self.locals = vec![Value::Nil; num_locals];
+
+        // Track which env keys we modify so we can restore them.
+        let mut modified_env_keys: Vec<(String, Option<Value>)> =
+            Vec::with_capacity(cf.param_defs.len());
+
+        // Bind parameters directly to locals slots and env.
+        let mut positional_idx = 0usize;
+        for pd in &cf.param_defs {
+            let param_name = &pd.name;
+            let value = if pd.named {
+                // Named parameter: search args for matching Pair
+                let match_key = pd
+                    .name
+                    .strip_prefix('@')
+                    .or_else(|| pd.name.strip_prefix('%'))
+                    .unwrap_or(&pd.name);
+                let match_key = match_key
+                    .strip_prefix('!')
+                    .or_else(|| match_key.strip_prefix('.'))
+                    .unwrap_or(match_key);
+
+                let mut found_val: Option<Value> = None;
+
+                // Try matching the param name directly
+                for arg in args.iter().rev() {
+                    let arg = unwrap_varref_value(arg.clone());
+                    if let Value::Pair(key, val) = arg
+                        && key == match_key
+                    {
+                        found_val = Some(*val.clone());
+                        break;
+                    }
+                }
+
+                // Try alias matching via sub_signature (e.g. :color(:$colour))
+                if found_val.is_none()
+                    && let Some(ref sub_params) = pd.sub_signature
+                {
+                    for sub_pd in sub_params {
+                        if found_val.is_some() {
+                            break;
+                        }
+                        if !sub_pd.named {
+                            continue;
+                        }
+                        let inner_key = sub_pd.name.strip_prefix(':').unwrap_or(&sub_pd.name);
+                        for arg in args.iter().rev() {
+                            let arg = unwrap_varref_value(arg.clone());
+                            if let Value::Pair(key, val) = arg
+                                && key == inner_key
+                            {
+                                found_val = Some(*val.clone());
+                                break;
+                            }
+                        }
+                    }
+                }
+                // Try outer_sub_signature aliases
+                if found_val.is_none()
+                    && let Some(ref outer) = pd.outer_sub_signature
+                {
+                    for outer_pd in outer {
+                        if found_val.is_some() {
+                            break;
+                        }
+                        let outer_name = outer_pd
+                            .name
+                            .trim_start_matches(|c: char| "$@%&".contains(c));
+                        for arg in args.iter().rev() {
+                            let arg = unwrap_varref_value(arg.clone());
+                            if let Value::Pair(key, val) = arg
+                                && key == outer_name
+                            {
+                                found_val = Some(*val.clone());
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if let Some(v) = found_val {
+                    // If there's a sub_signature (rename), also bind inner params.
+                    // e.g. :color(:$colour) — bind both "color" and "colour".
+                    if let Some(ref sub_params) = pd.sub_signature {
+                        for sub_pd in sub_params {
+                            let sub_name = &sub_pd.name;
+                            if let Some(slot) = cf.code.locals.iter().position(|n| n == sub_name) {
+                                self.locals[slot] = v.clone();
+                            }
+                            modified_env_keys.push((
+                                sub_name.clone(),
+                                self.interpreter.env().get(sub_name).cloned(),
+                            ));
+                            self.interpreter
+                                .env_mut()
+                                .insert(sub_name.clone(), v.clone());
+                        }
+                    }
+                    Some(v)
+                } else if pd.required {
+                    self.locals = saved_locals;
+                    self.locals_dirty = saved_locals_dirty;
+                    self.env_dirty = saved_env_dirty;
+                    return Err(RuntimeError::new(format!(
+                        "Required named parameter '{}' not passed",
+                        param_name
+                    )));
+                } else {
+                    None
+                }
+            } else {
+                // Positional parameter: skip Pair args (they are named)
+                while positional_idx < args.len() {
+                    let unwrapped = unwrap_varref_value(args[positional_idx].clone());
+                    if !matches!(&unwrapped, Value::Pair(..)) {
+                        break;
+                    }
+                    positional_idx += 1;
+                }
+                if positional_idx < args.len() {
+                    let val = unwrap_varref_value(args[positional_idx].clone());
+                    positional_idx += 1;
+                    Some(val)
+                } else if pd.required {
+                    self.locals = saved_locals;
+                    self.locals_dirty = saved_locals_dirty;
+                    self.env_dirty = saved_env_dirty;
+                    return Err(RuntimeError::new(format!(
+                        "Too few positionals passed; expected {} arguments but got {}",
+                        cf.param_defs.iter().filter(|p| !p.named).count(),
+                        args.iter()
+                            .filter(|a| !matches!(a, Value::Pair(..)))
+                            .count()
+                    )));
+                } else {
+                    None
+                }
+            };
+
+            // Set both locals slot and env for the param.
+            // Locals are needed for GetLocal (fast path), env is needed for
+            // closures that capture the variable and for GetLocal's Nil
+            // fallback check (which errors on undeclared variables).
+            let bound_val = value.unwrap_or(Value::Nil);
+            if let Some(slot) = cf.code.locals.iter().position(|n| n == param_name) {
+                self.locals[slot] = bound_val.clone();
+            }
+            modified_env_keys.push((
+                param_name.clone(),
+                self.interpreter.env().get(param_name).cloned(),
+            ));
+            self.interpreter
+                .env_mut()
+                .insert(param_name.clone(), bound_val);
+        }
+
+        // Mark parameters as readonly (by default, params are immutable in Raku).
+        // Save existing readonly state so we can restore it after the call.
+        let saved_readonly = self.interpreter.save_readonly_vars();
+        for pd in &cf.param_defs {
+            if !pd.name.is_empty()
+                && !pd.sigilless
+                && !pd.name.starts_with('!')
+                && !pd.name.starts_with('.')
+            {
+                let has_mutable_trait = pd
+                    .traits
+                    .iter()
+                    .any(|t| t == "rw" || t == "copy" || t == "raw");
+                if !has_mutable_trait {
+                    self.interpreter.mark_readonly(&pd.name);
+                }
+            }
+        }
+
+        // Set @_ only if the function body uses it (has @_ in locals)
+        if cf.code.locals.iter().any(|n| n == "@_") {
+            let plain_args: Vec<Value> = args
+                .iter()
+                .filter(|a| !matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)))
+                .map(|a| unwrap_varref_value(a.clone()))
+                .collect();
+            modified_env_keys.push(("@_".to_string(), self.interpreter.env().get("@_").cloned()));
+            self.interpreter
+                .env_mut()
+                .insert("@_".to_string(), Value::array(plain_args));
+        }
+
+        // Handle legacy placeholder params (e.g. $^a, $^b from cf.params)
+        if cf.param_defs.is_empty() && !cf.params.is_empty() {
+            let mut placeholder_pos = 0usize;
+            let plain_args: Vec<Value> = args
+                .iter()
+                .filter(|a| !matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)))
+                .map(|a| unwrap_varref_value(a.clone()))
+                .collect();
+            for param in &cf.params {
+                if placeholder_pos < plain_args.len() {
+                    let val = plain_args[placeholder_pos].clone();
+                    placeholder_pos += 1;
+                    // Set in locals
+                    if let Some(slot) = cf.code.locals.iter().position(|n| n == param) {
+                        self.locals[slot] = val.clone();
+                    }
+                    // Also set in env for the placeholder and its de-careted alias
+                    modified_env_keys
+                        .push((param.clone(), self.interpreter.env().get(param).cloned()));
+                    self.interpreter
+                        .env_mut()
+                        .insert(param.clone(), val.clone());
+                    // Create de-careted alias: ^foo -> foo, ^k -> k
+                    if let Some(bare) = param.strip_prefix('^') {
+                        let bare = bare.to_string();
+                        if let Some(slot) = cf.code.locals.iter().position(|n| *n == bare) {
+                            self.locals[slot] = val.clone();
+                        }
+                        modified_env_keys
+                            .push((bare.clone(), self.interpreter.env().get(&bare).cloned()));
+                        self.interpreter.env_mut().insert(bare, val);
+                    }
+                }
+            }
+        }
+
+        // For any locals not yet set from params, try to initialize from env
+        for (i, local_name) in cf.code.locals.iter().enumerate() {
+            if matches!(self.locals[i], Value::Nil)
+                && let Some(val) = self.interpreter.env().get(local_name)
+            {
+                self.locals[i] = val.clone();
+            }
+        }
+
+        let saved_stack_depth = self.stack.len();
+        let let_mark = self.interpreter.let_saves_len();
+
+        // Execute the function body
+        let mut ip = 0;
+        let mut result = Ok(());
+        let mut explicit_return: Option<Value> = None;
+        let mut fail_bypass = false;
+        while ip < cf.code.ops.len() {
+            match self.exec_one(&cf.code, &mut ip, compiled_fns) {
+                Ok(()) => {}
+                Err(e) if e.return_value.is_some() => {
+                    let ret_val = e.return_value.unwrap();
+                    explicit_return = Some(ret_val.clone());
+                    self.stack.truncate(saved_stack_depth);
+                    self.stack.push(ret_val);
+                    self.interpreter.discard_let_saves(let_mark);
+                    result = Ok(());
+                    break;
+                }
+                Err(e) if e.is_fail => {
+                    fail_bypass = true;
+                    let failure = self.interpreter.fail_error_to_failure_value(&e);
+                    self.interpreter.restore_let_saves(let_mark);
+                    self.stack.truncate(saved_stack_depth);
+                    self.stack.push(failure);
+                    result = Ok(());
+                    break;
+                }
+                Err(e) => {
+                    self.interpreter.restore_let_saves(let_mark);
+                    result = Err(e);
+                    break;
+                }
+            }
+            if self.interpreter.is_halted() {
+                break;
+            }
+        }
+
+        let ret_val = if result.is_ok() {
+            if self.stack.len() > saved_stack_depth {
+                self.stack.pop().unwrap_or(Value::Nil)
+            } else {
+                Value::Nil
+            }
+        } else {
+            Value::Nil
+        };
+
+        self.stack.truncate(saved_stack_depth);
+
+        // Restore locals
+        self.locals = saved_locals;
+        self.locals_dirty = saved_locals_dirty;
+        self.env_dirty = saved_env_dirty;
+
+        // Restore readonly vars
+        self.interpreter.restore_readonly_vars(saved_readonly);
+
+        // Restore modified env keys
+        for (name, old_val) in modified_env_keys {
+            match old_val {
+                Some(v) => {
+                    self.interpreter.env_mut().insert(name, v);
+                }
+                None => {
+                    self.interpreter.env_mut().remove(&name);
+                }
+            }
+        }
+
+        match result {
+            Ok(()) if fail_bypass => Ok(ret_val),
+            Ok(()) => {
+                if let Some(v) = explicit_return {
+                    Ok(v)
+                } else {
+                    Ok(ret_val)
+                }
+            }
+            Err(e) => Err(e),
+        }
     }
 
     pub(super) fn call_compiled_function_named(

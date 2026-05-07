@@ -125,6 +125,12 @@ pub(crate) struct VM {
     multi_candidates_cache: HashMap<Symbol, bool>,
     /// The generation at which multi_candidates_cache was last valid.
     multi_candidates_cache_gen: u64,
+    /// Light-call cache: maps function name symbol to (compiled_fns key, fingerprint).
+    /// Used by the light call fast path in exec_call_func_op to skip expensive
+    /// function resolution on repeated calls to the same function.
+    light_call_cache: HashMap<Symbol, (String, u64)>,
+    /// The generation at which light_call_cache was last valid.
+    light_call_cache_gen: u64,
     /// Stack of sets tracking variable names declared (via SetVarDynamic) within
     /// each active BlockScope. Used during BlockScope restoration to avoid
     /// propagating block-local variable values to the outer scope.
@@ -284,6 +290,8 @@ impl VM {
             fn_resolve_cache_gen: 0,
             multi_candidates_cache: HashMap::new(),
             multi_candidates_cache_gen: 0,
+            light_call_cache: HashMap::new(),
+            light_call_cache_gen: 0,
             block_declared_vars: Vec::new(),
             pending_alias_bind_names: Vec::new(),
         }

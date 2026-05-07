@@ -73,7 +73,7 @@ pub(in crate::runtime) fn wrap_native_int_for_binding(
         .unwrap_or_else(|| Value::bigint(wrapped)))
 }
 
-pub(in crate::runtime) fn unwrap_varref_value(value: Value) -> Value {
+pub(crate) fn unwrap_varref_value(value: Value) -> Value {
     if let Some((_, inner)) = varref_from_value(&value) {
         inner
     } else {
