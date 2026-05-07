@@ -2185,6 +2185,23 @@ impl Interpreter {
 
         // SetHash.grab / SetHash.grabpairs: remove random elements, mutating the Set
         if matches!(&target, Value::Set(_, true)) && matches!(method, "grab" | "grabpairs") {
+            // Resolve Callable args: call with .elems to get count
+            let args = if !args.is_empty() && args[0].as_sub().is_some() {
+                let callable = args[0].clone();
+                let method_sym = crate::symbol::Symbol::intern("elems");
+                let input = crate::builtins::native_method_0arg(&target, method_sym)
+                    .unwrap_or(Ok(Value::Int(0)))?;
+                let count = self.call_sub_value(callable, vec![input], false)?;
+                let count_int = match &count {
+                    Value::Int(n) => Value::Int(*n),
+                    Value::Num(f) => Value::Int(*f as i64),
+                    Value::Rat(n, d) if *d != 0 => Value::Int(*n / *d),
+                    _ => count.clone(),
+                };
+                vec![count_int]
+            } else {
+                args
+            };
             // NaN check for grab count
             if !args.is_empty()
                 && let Value::Num(f) = &args[0]
@@ -2241,6 +2258,29 @@ impl Interpreter {
 
         // BagHash.grab / BagHash.grabpairs: remove random elements, mutating the Bag
         if matches!(&target, Value::Bag(_, true)) && matches!(method, "grab" | "grabpairs") {
+            // Resolve Callable args: call with .total (grab) or .elems (grabpairs)
+            let args = if !args.is_empty() && args[0].as_sub().is_some() {
+                let callable = args[0].clone();
+                let input = if method == "grabpairs" {
+                    let method_sym = crate::symbol::Symbol::intern("elems");
+                    crate::builtins::native_method_0arg(&target, method_sym)
+                        .unwrap_or(Ok(Value::Int(0)))?
+                } else {
+                    let method_sym = crate::symbol::Symbol::intern("total");
+                    crate::builtins::native_method_0arg(&target, method_sym)
+                        .unwrap_or(Ok(Value::Int(0)))?
+                };
+                let count = self.call_sub_value(callable, vec![input], false)?;
+                let count_int = match &count {
+                    Value::Int(n) => Value::Int(*n),
+                    Value::Num(f) => Value::Int(*f as i64),
+                    Value::Rat(n, d) if *d != 0 => Value::Int(*n / *d),
+                    _ => count.clone(),
+                };
+                vec![count_int]
+            } else {
+                args
+            };
             // NaN check for grab/grabpairs count
             if !args.is_empty()
                 && let Value::Num(f) = &args[0]
@@ -2328,6 +2368,29 @@ impl Interpreter {
 
         // MixHash.grabpairs: remove random pairs and return them, mutating the Mix
         if matches!(&target, Value::Mix(_, _)) && matches!(method, "grabpairs" | "grab") {
+            // Resolve Callable args
+            let args = if !args.is_empty() && args[0].as_sub().is_some() {
+                let callable = args[0].clone();
+                let input = if method == "grabpairs" {
+                    let method_sym = crate::symbol::Symbol::intern("elems");
+                    crate::builtins::native_method_0arg(&target, method_sym)
+                        .unwrap_or(Ok(Value::Int(0)))?
+                } else {
+                    let method_sym = crate::symbol::Symbol::intern("total");
+                    crate::builtins::native_method_0arg(&target, method_sym)
+                        .unwrap_or(Ok(Value::Int(0)))?
+                };
+                let count = self.call_sub_value(callable, vec![input], false)?;
+                let count_int = match &count {
+                    Value::Int(n) => Value::Int(*n),
+                    Value::Num(f) => Value::Int(*f as i64),
+                    Value::Rat(n, d) if *d != 0 => Value::Int(*n / *d),
+                    _ => count.clone(),
+                };
+                vec![count_int]
+            } else {
+                args
+            };
             let mix = match &target {
                 Value::Mix(m, _) => (**m).clone(),
                 _ => unreachable!(),
