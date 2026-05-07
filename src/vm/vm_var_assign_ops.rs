@@ -141,9 +141,11 @@ impl VM {
             return Value::Array(Arc::new(indices), crate::value::ArrayKind::List);
         }
         if let Value::Sub(ref data) = idx {
-            let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
             let mut sub_env = data.env.clone();
-            sub_env.insert(param.to_string(), Value::Int(len));
+            // Pass length for ALL WhateverCode parameters (e.g. *-4 .. *-2 has 2 params)
+            for p in &data.params {
+                sub_env.insert(p.to_string(), Value::Int(len));
+            }
             let saved_env = std::mem::take(self.interpreter.env_mut());
             *self.interpreter.env_mut() = sub_env;
             let result = self
@@ -166,9 +168,10 @@ impl VM {
                 let mut resolved = Vec::with_capacity(items.len());
                 for item in items.iter() {
                     if let Value::Sub(data) = item {
-                        let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
                         let mut sub_env = data.env.clone();
-                        sub_env.insert(param.to_string(), Value::Int(len));
+                        for p in &data.params {
+                            sub_env.insert(p.to_string(), Value::Int(len));
+                        }
                         let saved_env = std::mem::take(self.interpreter.env_mut());
                         *self.interpreter.env_mut() = sub_env;
                         let result = self
@@ -823,9 +826,10 @@ impl VM {
                 match val {
                     Value::Int(i) => *i,
                     Value::Sub(data) => {
-                        let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
                         let mut sub_env = data.env.clone();
-                        sub_env.insert(param.to_string(), Value::Int(len));
+                        for p in &data.params {
+                            sub_env.insert(p.to_string(), Value::Int(len));
+                        }
                         let saved_env = std::mem::take(vm.interpreter.env_mut());
                         *vm.interpreter.env_mut() = sub_env;
                         let result = vm

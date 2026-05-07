@@ -134,9 +134,10 @@ impl VM {
                 Value::Array(items, ..) => items.len() as i64,
                 _ => 0,
             };
-            let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
             let mut sub_env = data.env.clone();
-            sub_env.insert(param.to_string(), Value::Int(len));
+            for p in &data.params {
+                sub_env.insert(p.to_string(), Value::Int(len));
+            }
             let saved_env = std::mem::take(self.interpreter.env_mut());
             *self.interpreter.env_mut() = sub_env;
             let result = self
