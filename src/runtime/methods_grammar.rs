@@ -349,10 +349,7 @@ impl Interpreter {
                             self.invoke_grammar_actions(item.clone(), actions, &child_name)?;
                         updated_items.push(updated_item);
                     }
-                    updated_named.insert(
-                        child_name,
-                        Value::Array(Arc::new(updated_items), *meta),
-                    );
+                    updated_named.insert(child_name, Value::Array(Arc::new(updated_items), *meta));
                 } else {
                     let updated_child =
                         self.invoke_grammar_actions(child_match, actions, &child_name)?;
