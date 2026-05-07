@@ -282,7 +282,7 @@ impl Compiler {
         // Named subs are always routines — mark the compiled code so
         // call_compiled_closure catches CX::Return at the right boundary.
         sub_compiler.code.is_routine = true;
-        let cf = CompiledFunction {
+        let mut cf = CompiledFunction {
             code: sub_compiler.code,
             params: params.to_vec(),
             param_defs: param_defs.to_vec(),
@@ -295,7 +295,11 @@ impl Compiler {
                 && !Self::body_uses_legacy_args(body),
             is_rw,
             is_raw,
+            param_local_slots: None,
+            has_inner_subs: false,
         };
+        cf.precompute_param_local_slots();
+        cf.detect_inner_subs();
         self.compiled_functions.insert(key, cf);
     }
 

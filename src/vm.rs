@@ -132,6 +132,10 @@ pub(crate) struct VM {
     light_call_cache: HashMap<Symbol, (String, u64)>,
     /// The generation at which light_call_cache was last valid.
     light_call_cache_gen: u64,
+    /// Positional light-call cache for simple positional-only functions.
+    pos_light_call_cache: HashMap<Symbol, (String, u64)>,
+    /// The generation at which pos_light_call_cache was last valid.
+    pos_light_call_cache_gen: u64,
     /// Stack of sets tracking variable names declared (via SetVarDynamic) within
     /// each active BlockScope. Used during BlockScope restoration to avoid
     /// propagating block-local variable values to the outer scope.
@@ -293,6 +297,8 @@ impl VM {
             multi_candidates_cache_gen: 0,
             light_call_cache: HashMap::new(),
             light_call_cache_gen: 0,
+            pos_light_call_cache: HashMap::new(),
+            pos_light_call_cache_gen: 0,
             block_declared_vars: Vec::new(),
             pending_alias_bind_names: Vec::new(),
         }
