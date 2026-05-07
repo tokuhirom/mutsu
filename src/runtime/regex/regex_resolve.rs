@@ -113,7 +113,10 @@ impl Interpreter {
             .map(|(end, _)| end)
     }
 
-    pub(super) fn instantiate_token_pattern(def: &FunctionDef, pattern: &str) -> String {
+    pub(in crate::runtime) fn instantiate_token_pattern(
+        def: &FunctionDef,
+        pattern: &str,
+    ) -> String {
         let Some(sym) = Self::extract_sym_adverb(&def.name.resolve()) else {
             return pattern.to_string();
         };
@@ -338,16 +341,34 @@ impl Interpreter {
         let mut token_lookup = false;
         let mut capture_name = None;
 
-        if let Some((lhs, rhs)) = raw.split_once('=') {
-            let lhs = lhs.trim();
-            let rhs = rhs.trim();
-            if !lhs.is_empty()
-                && let Some(stripped) = rhs.strip_prefix('&')
-            {
-                capture_name = Some(lhs.to_string());
-                raw = stripped.trim();
-                token_lookup = true;
-                silent = false;
+        // Look for alias syntax <name=.subrule>, <name=&subrule>, <name=subrule>.
+        // Only match `=` that is NOT part of `=>` (fat-arrow pair syntax in args)
+        // and where the LHS is a simple identifier (no parens, which would indicate
+        // we're inside an argument list like `<.foo(a => 1)>`).
+        if let Some(eq_pos) = raw.find('=')
+            && !raw[eq_pos + 1..].starts_with('>')
+        {
+            let lhs = raw[..eq_pos].trim();
+            let rhs = raw[eq_pos + 1..].trim();
+            // LHS must be a simple identifier (no parens, commas, colons, etc.)
+            if !lhs.is_empty() && !lhs.contains('(') && !lhs.contains(',') && !lhs.contains(':') {
+                if let Some(stripped) = rhs.strip_prefix('&') {
+                    // <name=&subrule> — call &subrule, capture under name
+                    capture_name = Some(lhs.to_string());
+                    raw = stripped.trim();
+                    token_lookup = true;
+                    silent = false;
+                } else if let Some(stripped) = rhs.strip_prefix('.') {
+                    // <name=.subrule> — call .subrule (non-capturing), capture under name
+                    capture_name = Some(lhs.to_string());
+                    raw = stripped.trim();
+                    silent = false;
+                } else {
+                    // <name=subrule> — call subrule, capture under name
+                    capture_name = Some(lhs.to_string());
+                    raw = rhs;
+                    silent = false;
+                }
             }
         }
         if !token_lookup && let Some(stripped) = raw.strip_prefix('&') {

@@ -534,6 +534,11 @@ fn inject_implicit_rule_ws(pattern: &str) -> String {
                 | (_, '$')
                 | ('<', _)
                 | (_, '>')
+                | (_, '*')
+                | (_, '+')
+                | (_, '?')
+                | (_, '%')
+                | ('%', _)
         )
     }
 
@@ -622,6 +627,136 @@ fn inject_implicit_rule_ws(pattern: &str) -> String {
         i += 1;
     }
     out.trim().to_string()
+}
+
+/// In a `rule`, the `%` separator quantifier should allow optional whitespace
+/// around the separator. This function finds `% SEPARATOR` patterns and wraps
+/// the separator with `[ <.ws>? SEPARATOR <.ws>? ]`.
+fn inject_separator_ws(pattern: &str) -> String {
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut out = String::new();
+    let mut i = 0usize;
+    let mut escaped = false;
+    let mut in_single = false;
+    let mut in_double = false;
+    while i < chars.len() {
+        let c = chars[i];
+        if escaped {
+            out.push(c);
+            escaped = false;
+            i += 1;
+            continue;
+        }
+        if c == '\\' {
+            out.push(c);
+            escaped = true;
+            i += 1;
+            continue;
+        }
+        if c == '\'' && !in_double {
+            in_single = !in_single;
+            out.push(c);
+            i += 1;
+            continue;
+        }
+        if c == '"' && !in_single {
+            in_double = !in_double;
+            out.push(c);
+            i += 1;
+            continue;
+        }
+        if in_single || in_double {
+            out.push(c);
+            i += 1;
+            continue;
+        }
+        // Look for `%` followed by a separator expression
+        if c == '%' {
+            out.push('%');
+            i += 1;
+            // Skip whitespace after %
+            while i < chars.len() && chars[i].is_whitespace() {
+                out.push(chars[i]);
+                i += 1;
+            }
+            if i >= chars.len() {
+                continue;
+            }
+            // Extract the separator expression
+            let sep_start = i;
+            if chars[i] == '[' {
+                // Bracketed separator: % [ ... ]
+                // Scan to matching ]
+                let mut depth = 1usize;
+                i += 1;
+                while i < chars.len() && depth > 0 {
+                    if chars[i] == '[' {
+                        depth += 1;
+                    } else if chars[i] == ']' {
+                        depth -= 1;
+                    } else if chars[i] == '\\' {
+                        i += 1; // skip escaped char
+                    }
+                    i += 1;
+                }
+                let sep: String = chars[sep_start..i].iter().collect();
+                out.push_str(&format!("[ <.ws>? {} <.ws>? ]", sep.trim()));
+            } else {
+                // Non-bracketed separator: % \, or % ","
+                // Collect the separator atom (could be \X, 'str', "str", or a single char)
+                let atom_start = i;
+                if chars[i] == '\'' {
+                    // Single-quoted string
+                    i += 1;
+                    while i < chars.len() && chars[i] != '\'' {
+                        if chars[i] == '\\' {
+                            i += 1;
+                        }
+                        i += 1;
+                    }
+                    if i < chars.len() {
+                        i += 1;
+                    } // skip closing '
+                } else if chars[i] == '"' {
+                    // Double-quoted string
+                    i += 1;
+                    while i < chars.len() && chars[i] != '"' {
+                        if chars[i] == '\\' {
+                            i += 1;
+                        }
+                        i += 1;
+                    }
+                    if i < chars.len() {
+                        i += 1;
+                    } // skip closing "
+                } else if chars[i] == '\\' {
+                    // Backslash-escaped char
+                    i += 2;
+                } else if chars[i] == '<' {
+                    // Angle-bracket assertion
+                    let mut depth = 1usize;
+                    i += 1;
+                    while i < chars.len() && depth > 0 {
+                        if chars[i] == '<' {
+                            depth += 1;
+                        } else if chars[i] == '>' {
+                            depth -= 1;
+                        }
+                        i += 1;
+                    }
+                } else {
+                    // Single character separator
+                    i += 1;
+                }
+                let sep: String = chars[atom_start..i].iter().collect();
+                out.push_str(&format!("[ <.ws>? {} <.ws>? ]", sep.trim()));
+            }
+            continue;
+        }
+        out.push(c);
+        i += 1;
+    }
+    out
 }
 
 fn normalize_token_pattern(pattern: &str) -> String {
@@ -1372,6 +1507,7 @@ pub(super) fn token_decl(input: &str) -> PResult<'_, Stmt> {
     pattern = normalize_token_pattern(&pattern);
     if is_rule {
         pattern = inject_implicit_rule_ws(&pattern);
+        pattern = inject_separator_ws(&pattern);
         if name.contains(":sym<") || name.contains(":sym\u{ab}") {
             if !pattern.ends_with(' ') {
                 pattern.push(' ');
@@ -1606,6 +1742,63 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 export_tags: Vec::new(),
                 body: Vec::new(),
                 is_rw: false,
+                language_version: super::simple::current_language_version(),
+            },
+        ));
+    }
+    // unit grammar Name;  — declare a grammar at the file scope.
+    // unit grammar Name is Parent;
+    if let Some(r) = keyword("grammar", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, name) = qualified_ident(r)?;
+        let (r, _) = ws(r)?;
+        let mut r = r;
+        let mut parents = Vec::new();
+        let mut does_parents = Vec::new();
+        loop {
+            if let Some(r2) = keyword("is", r) {
+                let (r2, _) = ws1(r2)?;
+                let (r2, parent) = if let Some(stripped) = r2.strip_prefix("::") {
+                    let (r3, ident_part) = qualified_ident(stripped)?;
+                    (r3, format!("::{}", ident_part))
+                } else {
+                    qualified_ident(r2)?
+                };
+                parents.push(parent);
+                let (r2, _) = ws(r2)?;
+                r = r2;
+                continue;
+            }
+            if let Some(r2) = keyword("does", r) {
+                let (r2, _) = ws1(r2)?;
+                let (r2, role_name) = qualified_ident(r2)?;
+                parents.push(role_name.clone());
+                does_parents.push(role_name);
+                let (r2, _) = ws(r2)?;
+                r = r2;
+                continue;
+            }
+            break;
+        }
+        // Default parent is Grammar if no `is` clause
+        if parents.is_empty() && name != "Grammar" {
+            parents.push("Grammar".to_string());
+        }
+        let (r, _) = opt_char(r, ';');
+        super::simple::register_user_type(&name);
+        return Ok((
+            r,
+            Stmt::ClassDecl {
+                name: Symbol::intern(&name),
+                name_expr: None,
+                parents,
+                class_is_rw: false,
+                is_hidden: false,
+                is_lexical: false,
+                hidden_parents: vec![],
+                does_parents,
+                repr: None,
+                body: Vec::new(),
                 language_version: super::simple::current_language_version(),
             },
         ));

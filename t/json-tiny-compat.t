@@ -13,9 +13,10 @@ unless "tmp/json-tiny/lib/JSON/Tiny.pm".IO.e {
     exit 0;
 }
 
+use lib 'tmp/json-tiny/lib';
 use JSON::Tiny;
 
-plan 14;
+plan 21;
 
 # to-json: numbers
 is to-json(42), '42', 'to-json integer';
@@ -48,3 +49,16 @@ is to-json(["a", "b"]), '[ "a", "b" ]', 'to-json array of strings';
     ok $json.contains('[ 1, 2 ]'), 'to-json nested array in hash';
     ok $json.contains('true'), 'to-json nested bool in hash';
 }
+
+# from-json: numbers
+is from-json('42'), 42, 'from-json integer';
+is from-json('3.14'), 3.14, 'from-json decimal';
+is from-json('-7'), -7, 'from-json negative integer';
+
+# from-json: booleans and null
+is from-json('true'), True, 'from-json true';
+is from-json('false'), False, 'from-json false';
+ok !from-json('null').defined, 'from-json null is undefined';
+
+# from-json: grammar parses JSON structures (smoke test)
+ok JSON::Tiny::Grammar.parse('{"a": 1}').defined, 'grammar parses JSON object';
