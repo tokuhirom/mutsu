@@ -1,6 +1,7 @@
 use super::super::*;
 use super::regex_helpers::{
-    count_capture_groups, fold_quantified_captures, is_silent_named_atom, is_simple_atom,
+    count_capture_groups, fold_quantified_captures, is_named_atom_no_args, is_silent_named_atom,
+    is_simple_atom,
 };
 
 impl Interpreter {
@@ -166,6 +167,55 @@ impl Interpreter {
                             }
                         }
                         stack.push((idx + 1, current, caps));
+                    } else if token.ratchet
+                        && token.named_capture.is_none()
+                        && is_named_atom_no_args(&token.atom)
+                        && let Some((resolved, resolved_pkg)) =
+                            self.try_resolve_named_to_pattern(&token.atom, pkg)
+                    {
+                        // Fast path for ratcheted non-silent Named token (e.g. <huge>*).
+                        // Resolve the pattern once and loop directly, accumulating
+                        // named captures without re-parsing on each iteration.
+                        let capture_name = if let RegexAtom::Named(name) = &token.atom {
+                            name.trim().to_string()
+                        } else {
+                            String::new()
+                        };
+                        let mut current = pos;
+                        let mut current_caps = caps;
+                        while current < chars.len() {
+                            if let Some((end, inner_caps)) = self.regex_match_end_from_caps_in_pkg(
+                                &resolved,
+                                chars,
+                                current,
+                                &resolved_pkg,
+                            ) {
+                                if end == current {
+                                    break;
+                                }
+                                if !capture_name.is_empty() {
+                                    let captured: String = chars[current..end].iter().collect();
+                                    let mut subcap = inner_caps;
+                                    subcap.matched = captured.clone();
+                                    subcap.from = current;
+                                    subcap.to = end;
+                                    current_caps
+                                        .named_subcaps
+                                        .entry(capture_name.clone())
+                                        .or_default()
+                                        .push(subcap);
+                                    current_caps
+                                        .named
+                                        .entry(capture_name.clone())
+                                        .or_default()
+                                        .push(captured);
+                                }
+                                current = end;
+                            } else {
+                                break;
+                            }
+                        }
+                        stack.push((idx + 1, current, current_caps));
                     } else {
                         let base_len = caps.positional.len();
                         let stride = count_capture_groups(&token.atom);
@@ -269,6 +319,79 @@ impl Interpreter {
                             }
                         }
                         stack.push((idx + 1, current, caps));
+                    } else if token.ratchet
+                        && token.named_capture.is_none()
+                        && is_named_atom_no_args(&token.atom)
+                        && let Some((resolved, resolved_pkg)) =
+                            self.try_resolve_named_to_pattern(&token.atom, pkg)
+                    {
+                        // Fast path for ratcheted non-silent Named token (e.g. <huge>+).
+                        // Resolve the pattern once and loop directly.
+                        let capture_name = if let RegexAtom::Named(name) = &token.atom {
+                            name.trim().to_string()
+                        } else {
+                            String::new()
+                        };
+                        let Some((first_end, first_inner)) = self.regex_match_end_from_caps_in_pkg(
+                            &resolved,
+                            chars,
+                            pos,
+                            &resolved_pkg,
+                        ) else {
+                            continue;
+                        };
+                        let mut current = first_end;
+                        let mut current_caps = caps;
+                        if !capture_name.is_empty() {
+                            let captured: String = chars[pos..first_end].iter().collect();
+                            let mut subcap = first_inner;
+                            subcap.matched = captured.clone();
+                            subcap.from = pos;
+                            subcap.to = first_end;
+                            current_caps
+                                .named_subcaps
+                                .entry(capture_name.clone())
+                                .or_default()
+                                .push(subcap);
+                            current_caps
+                                .named
+                                .entry(capture_name.clone())
+                                .or_default()
+                                .push(captured);
+                        }
+                        while current < chars.len() {
+                            if let Some((end, inner_caps)) = self.regex_match_end_from_caps_in_pkg(
+                                &resolved,
+                                chars,
+                                current,
+                                &resolved_pkg,
+                            ) {
+                                if end == current {
+                                    break;
+                                }
+                                if !capture_name.is_empty() {
+                                    let captured: String = chars[current..end].iter().collect();
+                                    let mut subcap = inner_caps;
+                                    subcap.matched = captured.clone();
+                                    subcap.from = current;
+                                    subcap.to = end;
+                                    current_caps
+                                        .named_subcaps
+                                        .entry(capture_name.clone())
+                                        .or_default()
+                                        .push(subcap);
+                                    current_caps
+                                        .named
+                                        .entry(capture_name.clone())
+                                        .or_default()
+                                        .push(captured);
+                                }
+                                current = end;
+                            } else {
+                                break;
+                            }
+                        }
+                        stack.push((idx + 1, current, current_caps));
                     } else {
                         let base_len = caps.positional.len();
                         let stride = count_capture_groups(&token.atom);

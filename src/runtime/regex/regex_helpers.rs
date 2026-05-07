@@ -294,6 +294,21 @@ pub(super) fn is_silent_named_atom(atom: &RegexAtom) -> bool {
     }
 }
 
+/// Check if a Named atom is non-silent (produces named captures) and has no arguments.
+/// Such atoms can use a fast path for ratcheted quantifiers.
+pub(super) fn is_named_atom_no_args(atom: &RegexAtom) -> bool {
+    if let RegexAtom::Named(name) = atom {
+        let trimmed = name.trim();
+        !trimmed.starts_with('.')
+            && !trimmed.starts_with('&')
+            && !trimmed.contains('(')
+            && !trimmed.contains(':')
+            && !trimmed.contains('=')
+    } else {
+        false
+    }
+}
+
 pub(super) fn is_simple_atom(atom: &RegexAtom) -> bool {
     matches!(
         atom,
