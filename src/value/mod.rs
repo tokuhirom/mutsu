@@ -2119,6 +2119,34 @@ impl Value {
         positional_quantified: &[Option<Vec<crate::runtime::QuantifiedCaptureEntry>>],
         orig: Option<&str>,
     ) -> Self {
+        Self::make_match_object_full_q(
+            matched,
+            from,
+            to,
+            positional,
+            named,
+            named_subcaps,
+            positional_subcaps,
+            positional_quantified,
+            orig,
+            &HashSet::new(),
+        )
+    }
+
+    /// Like make_match_object_full but with named_quantified tracking.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn make_match_object_full_q(
+        matched: String,
+        from: i64,
+        to: i64,
+        positional: &[String],
+        named: &HashMap<String, Vec<String>>,
+        named_subcaps: &HashMap<String, Vec<crate::runtime::RegexCaptures>>,
+        positional_subcaps: &[Option<crate::runtime::RegexCaptures>],
+        positional_quantified: &[Option<Vec<crate::runtime::QuantifiedCaptureEntry>>],
+        orig: Option<&str>,
+        named_quantified: &HashSet<String>,
+    ) -> Self {
         fn make_capture_match(s: &str, orig: Option<&str>, search_from: usize) -> Value {
             let mut attrs = HashMap::new();
             attrs.insert("str".to_string(), Value::str(s.to_string()));
@@ -2206,7 +2234,7 @@ impl Value {
                         make_capture_match(s, orig, search_start)
                     })
                     .collect();
-                if vals.len() == 1 {
+                if vals.len() == 1 && !caps.named_quantified.contains(key) {
                     sub_named.insert(key.clone(), vals[0].clone());
                 } else {
                     sub_named.insert(key.clone(), Value::array(vals));
@@ -2286,7 +2314,7 @@ impl Value {
                     make_capture_match(s, orig, search_start)
                 })
                 .collect();
-            if vals.len() == 1 {
+            if vals.len() == 1 && !named_quantified.contains(key) {
                 named_caps_map.insert(key.clone(), vals[0].clone());
             } else {
                 named_caps_map.insert(key.clone(), Value::array(vals));

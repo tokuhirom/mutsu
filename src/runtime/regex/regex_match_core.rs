@@ -3,8 +3,54 @@ use super::regex_helpers::{
     count_capture_groups, fold_quantified_captures, is_named_atom_no_args, is_silent_named_atom,
     is_simple_atom,
 };
+use std::collections::HashSet;
 
 impl Interpreter {
+    /// Collect all named capture names inside a regex atom (recursively).
+    fn collect_named_captures_in_atom(atom: &RegexAtom, out: &mut HashSet<String>) {
+        match atom {
+            RegexAtom::Named(name) => {
+                let spec = Self::parse_named_regex_lookup_spec(name);
+                if !spec.silent {
+                    let cap = spec
+                        .capture_name
+                        .unwrap_or_else(|| spec.lookup_name.clone());
+                    if !cap.is_empty() {
+                        out.insert(cap);
+                    }
+                }
+            }
+            RegexAtom::Group(pat) | RegexAtom::CaptureGroup(pat) => {
+                for tok in &pat.tokens {
+                    if let Some(name) = tok.named_capture.as_ref() {
+                        out.insert(name.clone());
+                    }
+                    Self::collect_named_captures_in_atom(&tok.atom, out);
+                }
+            }
+            RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => {
+                for alt in alts {
+                    for tok in &alt.tokens {
+                        if let Some(name) = tok.named_capture.as_ref() {
+                            out.insert(name.clone());
+                        }
+                        Self::collect_named_captures_in_atom(&tok.atom, out);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Collect all named capture names from a regex token.
+    fn collect_quantified_names_for_token(token: &RegexToken) -> HashSet<String> {
+        let mut names = HashSet::new();
+        if let Some(name) = token.named_capture.as_ref() {
+            names.insert(name.clone());
+        }
+        Self::collect_named_captures_in_atom(&token.atom, &mut names);
+        names
+    }
     pub(super) fn regex_match_end_from_caps_in_pkg(
         &self,
         pattern: &RegexPattern,
@@ -183,6 +229,9 @@ impl Interpreter {
                         };
                         let mut current = pos;
                         let mut current_caps = caps;
+                        if !capture_name.is_empty() {
+                            current_caps.named_quantified.insert(capture_name.clone());
+                        }
                         while current < chars.len() {
                             if let Some((end, inner_caps)) = self.regex_match_end_from_caps_in_pkg(
                                 &resolved,
@@ -219,6 +268,9 @@ impl Interpreter {
                     } else {
                         let base_len = caps.positional.len();
                         let stride = count_capture_groups(&token.atom);
+                        let mut caps = caps;
+                        caps.named_quantified
+                            .extend(Self::collect_quantified_names_for_token(token));
                         let mut positions = Vec::new();
                         positions.push((pos, caps.clone()));
                         let mut current = pos;
@@ -343,6 +395,7 @@ impl Interpreter {
                         let mut current = first_end;
                         let mut current_caps = caps;
                         if !capture_name.is_empty() {
+                            current_caps.named_quantified.insert(capture_name.clone());
                             let captured: String = chars[pos..first_end].iter().collect();
                             let mut subcap = first_inner;
                             subcap.matched = captured.clone();
@@ -395,6 +448,9 @@ impl Interpreter {
                     } else {
                         let base_len = caps.positional.len();
                         let stride = count_capture_groups(&token.atom);
+                        let mut caps = caps;
+                        caps.named_quantified
+                            .extend(Self::collect_quantified_names_for_token(token));
                         let (mut current, mut current_caps) = match self
                             .regex_match_atom_with_capture_in_pkg(
                                 &token.atom,
@@ -466,6 +522,9 @@ impl Interpreter {
                     };
                     let base_len = caps.positional.len();
                     let stride = count_capture_groups(&token.atom);
+                    let mut caps = caps;
+                    caps.named_quantified
+                        .extend(Self::collect_quantified_names_for_token(token));
                     let mut positions = Vec::new();
                     if min == 0 {
                         positions.push((pos, caps.clone()));

@@ -543,6 +543,29 @@ impl Interpreter {
         false
     }
 
+    /// Strip a quantifier from a bracket-delimited atom like `<value>*`.
+    fn strip_bracket_quantifier(atom: &str) -> Option<(String, String)> {
+        let quant = atom.chars().last()?;
+        if !matches!(quant, '?' | '+' | '*') {
+            return None;
+        }
+        let body = &atom[..atom.len() - quant.len_utf8()];
+        if body.is_empty() {
+            return None;
+        }
+        let last_body = body.chars().last()?;
+        if !matches!(last_body, '>' | ']' | ')' | '}') {
+            return None;
+        }
+        let count_spec = match quant {
+            '*' => "0..*",
+            '+' => "1..*",
+            '?' => "0..1",
+            _ => return None,
+        };
+        Some((body.to_string(), count_spec.to_string()))
+    }
+
     fn split_simple_quantified_atom(atom: &str) -> Option<(String, String)> {
         let quant = atom.chars().last()?;
         if !matches!(quant, '?' | '+' | '*') {
@@ -618,6 +641,10 @@ impl Interpreter {
                     prefix,
                     Self::build_ltm_expansion(&quantified_tail, "1..*", sep_mode, sep)
                 );
+            }
+            // Handle bracket-delimited atoms with quantifiers (e.g. `<value>*`)
+            if let Some((base, count_spec)) = Self::strip_bracket_quantifier(&atom) {
+                return Self::build_ltm_expansion(&base, &count_spec, sep_mode, sep);
             }
             return Self::build_ltm_expansion(&atom, "1..*", sep_mode, sep);
         }
@@ -722,12 +749,21 @@ impl Interpreter {
                 }
             }
             None => {
-                let mut out = build_exact_list(min);
-                out.push_str(&format!("({sep}{atom})*"));
-                if allow_trailing_sep {
-                    out.push_str(&format!("({sep})?"));
+                if min == 0 {
+                    // 0..* with separator: [atom(sep atom)*]?
+                    let mut inner = format!("{atom}({sep}{atom})*");
+                    if allow_trailing_sep {
+                        inner.push_str(&format!("({sep})?"));
+                    }
+                    format!("[{inner}]?")
+                } else {
+                    let mut out = build_exact_list(min);
+                    out.push_str(&format!("({sep}{atom})*"));
+                    if allow_trailing_sep {
+                        out.push_str(&format!("({sep})?"));
+                    }
+                    out
                 }
-                out
             }
         }
     }

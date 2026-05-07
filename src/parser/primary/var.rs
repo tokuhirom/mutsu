@@ -620,11 +620,23 @@ pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
     };
     // Contextualized scalar specials (e.g., @$/, @$_): parse `$...` then lift
     // to an array variable targeting the same underlying name.
-    if twigil.is_empty()
-        && rest.starts_with('$')
-        && let Ok((r2, Expr::Var(name))) = scalar_var(rest)
-    {
-        return Ok((r2, Expr::ArrayVar(name)));
+    if twigil.is_empty() && rest.starts_with('$') {
+        // Handle @$<name> — list coercion of a named capture variable
+        if let Ok((r2, expr @ Expr::CaptureVar(_))) = scalar_var(rest) {
+            return Ok((
+                r2,
+                Expr::MethodCall {
+                    target: Box::new(expr),
+                    name: crate::symbol::Symbol::intern("list"),
+                    args: vec![],
+                    modifier: None,
+                    quoted: false,
+                },
+            ));
+        }
+        if let Ok((r2, Expr::Var(name))) = scalar_var(rest) {
+            return Ok((r2, Expr::ArrayVar(name)));
+        }
     }
     // Bare @ (anonymous array variable) — each occurrence gets a unique name
     let next_is_ident =

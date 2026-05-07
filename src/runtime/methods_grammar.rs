@@ -218,7 +218,7 @@ impl Interpreter {
             for (i, v) in captures.positional.iter().enumerate() {
                 self.env.insert(i.to_string(), Value::str(v.clone()));
             }
-            let match_obj = Value::make_match_object_full(
+            let match_obj = Value::make_match_object_full_q(
                 captures.matched,
                 captures.from as i64,
                 captures.to as i64,
@@ -228,6 +228,7 @@ impl Interpreter {
                 &captures.positional_subcaps,
                 &captures.positional_quantified,
                 Some(&text),
+                &captures.named_quantified,
             );
             let match_obj = if let Value::Instance {
                 class_name,
@@ -341,9 +342,22 @@ impl Interpreter {
                 0
             });
             for (child_name, child_match) in children {
-                let updated_child =
-                    self.invoke_grammar_actions(child_match, actions, &child_name)?;
-                updated_named.insert(child_name, updated_child);
+                if let Value::Array(items, meta) = &child_match {
+                    let mut updated_items = Vec::with_capacity(items.len());
+                    for item in items.as_ref() {
+                        let updated_item =
+                            self.invoke_grammar_actions(item.clone(), actions, &child_name)?;
+                        updated_items.push(updated_item);
+                    }
+                    updated_named.insert(
+                        child_name,
+                        Value::Array(Arc::new(updated_items), *meta),
+                    );
+                } else {
+                    let updated_child =
+                        self.invoke_grammar_actions(child_match, actions, &child_name)?;
+                    updated_named.insert(child_name, updated_child);
+                }
             }
             updated_attrs.insert("named".to_string(), Value::hash(updated_named));
         }
