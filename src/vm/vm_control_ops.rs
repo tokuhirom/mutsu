@@ -1899,7 +1899,10 @@ impl VM {
                         exc_attrs.insert("line".to_string(), Value::Int(line as i64));
                     }
                     if let Some(ref bt) = e.backtrace {
-                        exc_attrs.insert("backtrace".to_string(), Value::str(bt.clone()));
+                        // Build a Backtrace object from the string for
+                        // legacy errors that only have a string backtrace.
+                        let bt_val = Self::backtrace_value_from_string(bt);
+                        exc_attrs.insert("backtrace".to_string(), bt_val);
                     }
                     Value::make_instance(Symbol::intern("Exception"), exc_attrs)
                 };
