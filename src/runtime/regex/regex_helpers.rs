@@ -333,6 +333,9 @@ pub(super) fn merge_regex_captures(
         dst.named_subcaps.entry(k).or_default().extend(v);
     }
     dst.named_quantified.extend(src.named_quantified.drain());
+    for (k, v) in src.capture_alias_map.drain() {
+        dst.capture_alias_map.insert(k, v);
+    }
     dst.positional.append(&mut src.positional);
     dst.positional_subcaps.append(&mut src.positional_subcaps);
     dst.positional_quantified

@@ -181,7 +181,7 @@ impl Interpreter {
             if let Some(err) = Self::take_pending_regex_error() {
                 return Err(err);
             }
-            let Some(captures) = captures else {
+            let Some(mut captures) = captures else {
                 let goal = Self::take_pending_goal_failure().or_else(|| {
                     self.parse_regex(&pattern)
                         .and_then(|p| Self::first_goal_name(&p))
@@ -218,6 +218,7 @@ impl Interpreter {
             for (i, v) in captures.positional.iter().enumerate() {
                 self.env.insert(i.to_string(), Value::str(v.clone()));
             }
+            let alias_map = std::mem::take(&mut captures.capture_alias_map);
             let match_obj = Value::make_match_object_full_q(
                 captures.matched,
                 captures.from as i64,
@@ -242,6 +243,13 @@ impl Interpreter {
                 }
                 if let Some(ref act) = actions_obj {
                     attrs.insert("actions".to_string(), act.clone());
+                }
+                if !alias_map.is_empty() {
+                    let alias_hash: HashMap<String, Value> = alias_map
+                        .iter()
+                        .map(|(k, v)| (k.clone(), Value::str(v.clone())))
+                        .collect();
+                    attrs.insert("capture_alias_map".to_string(), Value::hash(alias_hash));
                 }
                 Value::make_instance(*class_name, attrs)
             } else {
@@ -306,6 +314,16 @@ impl Interpreter {
         result
     }
 
+    /// Extract `action_name` from a Match object (set for aliased captures).
+    fn get_action_name(match_obj: &Value) -> Option<String> {
+        if let Value::Instance { attributes, .. } = match_obj
+            && let Some(Value::Str(action_name)) = attributes.get("action_name")
+        {
+            return Some(action_name.to_string());
+        }
+        None
+    }
+
     /// Walk the match tree bottom-up and invoke action methods on the actions object.
     fn invoke_grammar_actions(
         &mut self,
@@ -328,7 +346,6 @@ impl Interpreter {
         let mut updated_attrs = attributes.clone();
         if let Some(Value::Hash(named_hash)) = attributes.get("named") {
             let mut updated_named = named_hash.as_ref().clone();
-            // Sort children by their match position (from attribute) to preserve grammar order
             let mut children: Vec<(String, Value)> = named_hash
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone()))
@@ -345,14 +362,18 @@ impl Interpreter {
                 if let Value::Array(items, meta) = &child_match {
                     let mut updated_items = Vec::with_capacity(items.len());
                     for item in items.as_ref() {
+                        let dispatch_name =
+                            Self::get_action_name(item).unwrap_or_else(|| child_name.clone());
                         let updated_item =
-                            self.invoke_grammar_actions(item.clone(), actions, &child_name)?;
+                            self.invoke_grammar_actions(item.clone(), actions, &dispatch_name)?;
                         updated_items.push(updated_item);
                     }
                     updated_named.insert(child_name, Value::Array(Arc::new(updated_items), *meta));
                 } else {
+                    let dispatch_name =
+                        Self::get_action_name(&child_match).unwrap_or_else(|| child_name.clone());
                     let updated_child =
-                        self.invoke_grammar_actions(child_match, actions, &child_name)?;
+                        self.invoke_grammar_actions(child_match, actions, &dispatch_name)?;
                     updated_named.insert(child_name, updated_child);
                 }
             }

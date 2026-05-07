@@ -270,6 +270,17 @@ impl Interpreter {
                                     .entry(capture_name.to_string())
                                     .or_default()
                                     .push(captured);
+                                if spec.capture_name.is_some() && capture_name != spec.lookup_name {
+                                    new_caps
+                                        .capture_alias_map
+                                        .insert(capture_name.to_string(), spec.lookup_name.clone());
+                                    if let Some(subcaps) =
+                                        new_caps.named_subcaps.get_mut(capture_name)
+                                        && let Some(last) = subcaps.last_mut()
+                                    {
+                                        last.action_name = Some(spec.lookup_name.clone());
+                                    }
+                                }
                             } else {
                                 // Silent subrule — merge named captures only (not positional).
                                 let mut inner_caps = inner_caps;

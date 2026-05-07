@@ -28,6 +28,9 @@ impl Interpreter {
                         new_caps
                             .named_quantified
                             .extend(inner_caps.named_quantified.drain());
+                        for (k, v) in inner_caps.capture_alias_map.drain() {
+                            new_caps.capture_alias_map.insert(k, v);
+                        }
                         new_caps.positional.extend(inner_caps.positional);
                         new_caps
                             .positional_subcaps
@@ -69,6 +72,15 @@ impl Interpreter {
                         let mut new_caps = current_caps.clone();
                         for (k, v) in inner_caps.named.drain() {
                             new_caps.named.entry(k).or_default().extend(v);
+                        }
+                        for (k, v) in inner_caps.named_subcaps.drain() {
+                            new_caps.named_subcaps.entry(k).or_default().extend(v);
+                        }
+                        new_caps
+                            .named_quantified
+                            .extend(inner_caps.named_quantified.drain());
+                        for (k, v) in inner_caps.capture_alias_map.drain() {
+                            new_caps.capture_alias_map.insert(k, v);
                         }
                         new_caps.positional.append(&mut inner_caps.positional);
                         new_caps
@@ -446,6 +458,16 @@ impl Interpreter {
                             .entry(capture_name.to_string())
                             .or_default()
                             .push(captured);
+                        if spec.capture_name.is_some() && capture_name != spec.lookup_name {
+                            new_caps
+                                .capture_alias_map
+                                .insert(capture_name.to_string(), spec.lookup_name.clone());
+                            if let Some(subcaps) = new_caps.named_subcaps.get_mut(capture_name)
+                                && let Some(last) = subcaps.last_mut()
+                            {
+                                last.action_name = Some(spec.lookup_name.clone());
+                            }
+                        }
                     } else {
                         // No capture name — merge inner captures flat
                         let mut inner_caps = inner_caps;
