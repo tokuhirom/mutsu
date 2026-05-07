@@ -156,6 +156,22 @@ impl Interpreter {
             "reduce" => Some(self.dispatch_reduce_method(target, args)),
             "elems" => self.dispatch_elems_method(target, args),
             "map" => Some(self.dispatch_map_method(target, args)),
+            "flatmap" => {
+                // flatmap is equivalent to .map(...).flat
+                Some(self.dispatch_map_method(target, args).map(|mapped| {
+                    let items = Self::value_to_list(&mapped);
+                    let mut flat_items = Vec::new();
+                    for item in items {
+                        match item {
+                            Value::Array(sub_items, _) | Value::Seq(sub_items) => {
+                                flat_items.extend(sub_items.iter().cloned());
+                            }
+                            other => flat_items.push(other),
+                        }
+                    }
+                    Value::Seq(std::sync::Arc::new(flat_items))
+                }))
+            }
             "duckmap" => {
                 let block = args.first().cloned().unwrap_or(Value::Nil);
                 Some(self.duckmap_iterate(&block, &target))

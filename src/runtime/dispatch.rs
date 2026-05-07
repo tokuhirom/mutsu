@@ -1685,7 +1685,7 @@ impl Interpreter {
         let current = self.env.clone();
         let mut restored = saved_env.clone();
         for key in saved_env.keys() {
-            if params.iter().any(|p| p == key) || key == "@_" {
+            if params.iter().any(|p| p == key) || key == "_" || key == "@_" || key == "%_" {
                 continue;
             }
             if let Some(v) = current.get(key) {

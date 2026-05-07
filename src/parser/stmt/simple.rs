@@ -1139,22 +1139,27 @@ fn find_and_extract_exports(module: &str) -> Vec<InlineModuleExport> {
     }
 }
 
-/// Search lib_paths and program directory for a `.rakumod` file matching the module name.
+/// Search lib_paths and program directory for a `.rakumod` / `.pm6` / `.pm` file
+/// matching the module name.
 fn find_module_file(module: &str) -> Option<String> {
-    let filename = format!("{}.rakumod", module.replace("::", "/"));
+    let base_name = module.replace("::", "/");
+    let extensions = [".rakumod", ".pm6", ".pm"];
     // First, search configured lib paths
     let result = LIB_PATHS.with(|paths| {
         let paths = paths.borrow();
-        for base in paths.iter() {
-            let base_path = std::path::Path::new(base);
-            let candidate = base_path.join(&filename);
-            if candidate.exists() {
-                return Some(candidate.to_string_lossy().into_owned());
-            }
-            // Also check lib/ subdirectory
-            let candidate = base_path.join("lib").join(&filename);
-            if candidate.exists() {
-                return Some(candidate.to_string_lossy().into_owned());
+        for ext in &extensions {
+            let filename = format!("{}{}", base_name, ext);
+            for base in paths.iter() {
+                let base_path = std::path::Path::new(base);
+                let candidate = base_path.join(&filename);
+                if candidate.exists() {
+                    return Some(candidate.to_string_lossy().into_owned());
+                }
+                // Also check lib/ subdirectory
+                let candidate = base_path.join("lib").join(&filename);
+                if candidate.exists() {
+                    return Some(candidate.to_string_lossy().into_owned());
+                }
             }
         }
         None
@@ -1165,18 +1170,21 @@ fn find_module_file(module: &str) -> Option<String> {
     // Fall back: search relative to program file (same as runtime's load_module)
     PROGRAM_PATH.with(|pp| {
         let pp = pp.borrow();
-        if let Some(path) = pp.as_ref()
-            && let Some(parent) = std::path::Path::new(path).parent()
-        {
-            let candidate = parent.join(&filename);
+        for ext in &extensions {
+            let filename = format!("{}{}", base_name, ext);
+            if let Some(path) = pp.as_ref()
+                && let Some(parent) = std::path::Path::new(path).parent()
+            {
+                let candidate = parent.join(&filename);
+                if candidate.exists() {
+                    return Some(candidate.to_string_lossy().into_owned());
+                }
+            }
+            // Last resort: current directory
+            let candidate = std::path::Path::new(".").join(&filename);
             if candidate.exists() {
                 return Some(candidate.to_string_lossy().into_owned());
             }
-        }
-        // Last resort: current directory
-        let candidate = std::path::Path::new(".").join(&filename);
-        if candidate.exists() {
-            return Some(candidate.to_string_lossy().into_owned());
         }
         None
     })

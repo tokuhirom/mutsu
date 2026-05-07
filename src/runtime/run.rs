@@ -934,13 +934,18 @@ impl Interpreter {
 
     /// Resolve a module name to a file path by searching lib paths and standard locations.
     pub(super) fn resolve_module_path(&self, module: &str) -> Option<std::path::PathBuf> {
-        let filename = format!("{}.rakumod", module.replace("::", "/"));
+        let base_name = module.replace("::", "/");
+        // Try .rakumod first, then .pm6, then .pm (Raku module resolution order)
+        let extensions = [".rakumod", ".pm6", ".pm"];
         let mut candidates: Vec<std::path::PathBuf> = Vec::new();
-        for base in &self.lib_paths {
-            let base_path = Path::new(base);
-            candidates.push(base_path.join(&filename));
-            // Also check lib/ subdirectory (Raku distribution layout)
-            candidates.push(base_path.join("lib").join(&filename));
+        for ext in &extensions {
+            let filename = format!("{}{}", base_name, ext);
+            for base in &self.lib_paths {
+                let base_path = Path::new(base);
+                candidates.push(base_path.join(&filename));
+                // Also check lib/ subdirectory (Raku distribution layout)
+                candidates.push(base_path.join("lib").join(&filename));
+            }
         }
         if candidates.is_empty()
             && let Some(path) = &self.program_path
@@ -948,7 +953,10 @@ impl Interpreter {
             && !parent.as_os_str().is_empty()
             && parent.is_dir()
         {
-            candidates.push(parent.join(&filename));
+            for ext in &extensions {
+                let filename = format!("{}{}", base_name, ext);
+                candidates.push(parent.join(&filename));
+            }
         }
         if let Some(path) = &self.program_path {
             let top_module = module.split("::").next().unwrap_or(module);
@@ -956,21 +964,24 @@ impl Interpreter {
                 if ancestor.as_os_str().is_empty() {
                     continue;
                 }
-                candidates.push(
-                    ancestor
-                        .join("packages")
-                        .join(top_module)
-                        .join("lib")
-                        .join(&filename),
-                );
-                candidates.push(
-                    ancestor
-                        .join("roast")
-                        .join("packages")
-                        .join(top_module)
-                        .join("lib")
-                        .join(&filename),
-                );
+                for ext in &extensions {
+                    let filename = format!("{}{}", base_name, ext);
+                    candidates.push(
+                        ancestor
+                            .join("packages")
+                            .join(top_module)
+                            .join("lib")
+                            .join(&filename),
+                    );
+                    candidates.push(
+                        ancestor
+                            .join("roast")
+                            .join("packages")
+                            .join(top_module)
+                            .join("lib")
+                            .join(&filename),
+                    );
+                }
             }
         }
         candidates.into_iter().find(|path| path.exists())

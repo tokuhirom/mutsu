@@ -41,6 +41,21 @@ fn make_solitary_tilde_quantifier_error() -> RuntimeError {
     err
 }
 
+/// Check if a regex token is a whitespace-like token (WsRule or <.ws> subrule call).
+fn is_ws_like_token(token: &RegexToken) -> bool {
+    match &token.atom {
+        RegexAtom::WsRule => true,
+        RegexAtom::Named(name) => {
+            let mut raw = name.trim();
+            if let Some(stripped) = raw.strip_prefix('.') {
+                raw = stripped.trim();
+            }
+            raw == "ws" || raw == "ws?"
+        }
+        _ => false,
+    }
+}
+
 fn rewrite_tilde_tokens(
     tokens: Vec<RegexToken>,
     ignore_case: bool,
@@ -53,15 +68,62 @@ fn rewrite_tilde_tokens(
             if !matches!(tokens[i].quant, RegexQuant::One) {
                 return Err(make_solitary_tilde_quantifier_error());
             }
-            if out.is_empty() || i + 2 >= tokens.len() {
+            if out.is_empty() {
                 return Ok(tokens);
             }
-            let goal_token = tokens[i + 1].clone();
-            let inner_token = tokens[i + 2].clone();
+            // Remove trailing ws-like token from out (before tilde) — inserted
+            // by sigspace between the opener and `~`.
+            let had_pre_ws = out.last().is_some_and(is_ws_like_token);
+            if had_pre_ws {
+                out.pop();
+            }
+            // Skip ws-like tokens after the tilde to find the goal (closer)
+            let mut j = i + 1;
+            while j < tokens.len() && is_ws_like_token(&tokens[j]) {
+                j += 1;
+            }
+            if j >= tokens.len() {
+                return Ok(tokens);
+            }
+            let goal_token = tokens[j].clone();
+            // Skip ws-like tokens after the goal to find the inner (content)
+            let mut k = j + 1;
+            while k < tokens.len() && is_ws_like_token(&tokens[k]) {
+                k += 1;
+            }
+            if k >= tokens.len() {
+                return Ok(tokens);
+            }
+            let inner_token = tokens[k].clone();
+            // Build the inner pattern: the single content token, optionally
+            // surrounded by WsRule so `rule` sigspace allows whitespace between
+            // opener/content and content/closer.
+            let mut inner_tokens = Vec::new();
+            if had_pre_ws {
+                let ws_tok = RegexToken {
+                    atom: RegexAtom::WsRule,
+                    quant: RegexQuant::One,
+                    named_capture: None,
+                    ratchet: false,
+                    frugal: false,
+                };
+                inner_tokens.push(ws_tok.clone());
+                inner_tokens.push(inner_token);
+                inner_tokens.push(ws_tok);
+            } else {
+                inner_tokens.push(inner_token);
+            }
+            let inner_pattern = RegexPattern {
+                tokens: inner_tokens,
+                anchor_start: false,
+                anchor_end: false,
+                ignore_case,
+                ignore_mark,
+            };
             out.push(RegexToken {
                 atom: RegexAtom::GoalMatch {
                     goal: single_token_pattern(goal_token.clone(), ignore_case, ignore_mark),
-                    inner: single_token_pattern(inner_token, ignore_case, ignore_mark),
+                    inner: inner_pattern,
                     goal_text: goal_text_for_token(&goal_token),
                 },
                 quant: RegexQuant::One,
@@ -69,7 +131,11 @@ fn rewrite_tilde_tokens(
                 ratchet: false,
                 frugal: false,
             });
-            i += 3;
+            // Skip past the inner token and any trailing ws-like tokens
+            i = k + 1;
+            while i < tokens.len() && is_ws_like_token(&tokens[i]) {
+                i += 1;
+            }
             continue;
         }
         out.push(tokens[i].clone());
@@ -3164,6 +3230,25 @@ impl Interpreter {
                                 all_negated_escapes = false;
                             }
                             EscResult::Multi
+                        } else if chars.peek().is_some_and(|c| c.is_ascii_digit()) {
+                            // \c32 — decimal codepoint
+                            let mut num_str = String::new();
+                            while chars.peek().is_some_and(|c| c.is_ascii_digit()) {
+                                num_str.push(chars.next().unwrap());
+                            }
+                            if let Ok(cp) = num_str.parse::<u32>() {
+                                if let Some(ch) = char::from_u32(cp) {
+                                    if is_neg {
+                                        EscResult::NegChar(ch)
+                                    } else {
+                                        EscResult::Char(ch)
+                                    }
+                                } else {
+                                    EscResult::Char(esc)
+                                }
+                            } else {
+                                EscResult::Char(esc)
+                            }
                         } else {
                             EscResult::Char(esc)
                         }
@@ -3542,6 +3627,29 @@ impl Interpreter {
                 'r' => Some('\r'),
                 'f' => Some('\u{000C}'),
                 '0' => Some('\0'),
+                'c' => {
+                    if chars.peek() == Some(&'[') {
+                        chars.next();
+                        let mut cname = String::new();
+                        while let Some(&c) = chars.peek() {
+                            if c == ']' {
+                                chars.next();
+                                break;
+                            }
+                            cname.push(c);
+                            chars.next();
+                        }
+                        crate::token_kind::lookup_unicode_char_by_name(cname.trim())
+                    } else if chars.peek().is_some_and(|c| c.is_ascii_digit()) {
+                        let mut num_str = String::new();
+                        while chars.peek().is_some_and(|c| c.is_ascii_digit()) {
+                            num_str.push(chars.next().unwrap());
+                        }
+                        num_str.parse::<u32>().ok().and_then(char::from_u32)
+                    } else {
+                        Some(esc)
+                    }
+                }
                 'x' => {
                     if chars.peek() == Some(&'[') {
                         chars.next();
