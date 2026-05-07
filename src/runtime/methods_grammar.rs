@@ -361,6 +361,12 @@ impl Interpreter {
                 self.env.insert(format!("<{}>", k), v.clone());
             }
         }
+        // Set positional capture env vars ($0, $1, ...) so they work inside action methods
+        if let Some(Value::Array(pos_arr, _)) = updated_attrs.get("list") {
+            for (i, v) in pos_arr.iter().enumerate() {
+                self.env.insert(i.to_string(), v.clone());
+            }
+        }
         // Also set $_ to the match (for `.make:` syntax)
         let saved_topic = self.env.get("_").cloned();
         self.env.insert("_".to_string(), match_obj.clone());

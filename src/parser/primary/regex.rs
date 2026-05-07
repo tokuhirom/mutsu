@@ -765,10 +765,25 @@ fn scan_to_delim_inner(
         } else if !p5_mode && c == '>' && input[i + 1..].starts_with('>') {
             // >> is a right word boundary assertion — skip both chars
             chars.next(); // consume second >
-        } else if !p5_mode && c == '<' && input[i + 1..].starts_with('[') {
-            // Skip character class <[...]> content without interpreting quotes
-            // Handles <['"]>, <[\s]>, etc.
-            chars.next(); // consume the '[' we already checked
+        } else if !p5_mode
+            && c == '<'
+            && (input[i + 1..].starts_with('[')
+                || input[i + 1..].starts_with("-[")
+                || input[i + 1..].starts_with("+[")
+                || input[i + 1..].starts_with("!["))
+        {
+            // Skip character class <[...]>, <-[...]>, <+[...]>, <![...]> content
+            // without interpreting quotes. Handles <['"]>, <-["\\\t]>, etc.
+            // Advance past any prefix chars before '['
+            loop {
+                if let Some((_, ch)) = chars.next() {
+                    if ch == '[' {
+                        break;
+                    }
+                } else {
+                    return None;
+                }
+            }
             let mut bracket_depth = 1u32;
             loop {
                 match chars.next() {

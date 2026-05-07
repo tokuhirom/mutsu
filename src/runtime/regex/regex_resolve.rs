@@ -113,7 +113,10 @@ impl Interpreter {
             .map(|(end, _)| end)
     }
 
-    pub(super) fn instantiate_token_pattern(def: &FunctionDef, pattern: &str) -> String {
+    pub(in crate::runtime) fn instantiate_token_pattern(
+        def: &FunctionDef,
+        pattern: &str,
+    ) -> String {
         let Some(sym) = Self::extract_sym_adverb(&def.name.resolve()) else {
             return pattern.to_string();
         };
@@ -341,13 +344,24 @@ impl Interpreter {
         if let Some((lhs, rhs)) = raw.split_once('=') {
             let lhs = lhs.trim();
             let rhs = rhs.trim();
-            if !lhs.is_empty()
-                && let Some(stripped) = rhs.strip_prefix('&')
-            {
-                capture_name = Some(lhs.to_string());
-                raw = stripped.trim();
-                token_lookup = true;
-                silent = false;
+            if !lhs.is_empty() {
+                if let Some(stripped) = rhs.strip_prefix('&') {
+                    // <name=&subrule> — call &subrule, capture under name
+                    capture_name = Some(lhs.to_string());
+                    raw = stripped.trim();
+                    token_lookup = true;
+                    silent = false;
+                } else if let Some(stripped) = rhs.strip_prefix('.') {
+                    // <name=.subrule> — call .subrule (non-capturing), capture under name
+                    capture_name = Some(lhs.to_string());
+                    raw = stripped.trim();
+                    silent = false;
+                } else {
+                    // <name=subrule> — call subrule, capture under name
+                    capture_name = Some(lhs.to_string());
+                    raw = rhs;
+                    silent = false;
+                }
             }
         }
         if !token_lookup && let Some(stripped) = raw.strip_prefix('&') {

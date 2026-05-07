@@ -952,22 +952,36 @@ impl Interpreter {
         });
         let result = self.eval_block_value(&def.body);
         self.routine_stack.pop();
+        // Apply <sym> instantiation for proto token :sym<> variants
+        let instantiate_sym = |pat: &str| -> String { Self::instantiate_token_pattern(def, pat) };
         let rendered = match result {
-            Ok(Value::Regex(pat)) => self
-                .instantiate_named_regex_arg_calls(&self.interpolate_bound_regex_scalars(&pat))
-                .map(Some),
-            Ok(Value::Str(s)) => self
-                .instantiate_named_regex_arg_calls(&self.interpolate_bound_regex_scalars(&s))
-                .map(Some),
+            Ok(Value::Regex(pat)) => {
+                let pat = instantiate_sym(&pat);
+                self.instantiate_named_regex_arg_calls(&self.interpolate_bound_regex_scalars(&pat))
+                    .map(Some)
+            }
+            Ok(Value::Str(s)) => {
+                let s = instantiate_sym(&s);
+                self.instantiate_named_regex_arg_calls(&self.interpolate_bound_regex_scalars(&s))
+                    .map(Some)
+            }
             Ok(Value::Nil) => Ok(None),
             Ok(other) => Ok(Some(other.to_string_value())),
             Err(e) if e.return_value.is_some() => match e.return_value.unwrap() {
-                Value::Regex(pat) => self
-                    .instantiate_named_regex_arg_calls(&self.interpolate_bound_regex_scalars(&pat))
-                    .map(Some),
-                Value::Str(s) => self
-                    .instantiate_named_regex_arg_calls(&self.interpolate_bound_regex_scalars(&s))
-                    .map(Some),
+                Value::Regex(pat) => {
+                    let pat = instantiate_sym(&pat);
+                    self.instantiate_named_regex_arg_calls(
+                        &self.interpolate_bound_regex_scalars(&pat),
+                    )
+                    .map(Some)
+                }
+                Value::Str(s) => {
+                    let s = instantiate_sym(&s);
+                    self.instantiate_named_regex_arg_calls(
+                        &self.interpolate_bound_regex_scalars(&s),
+                    )
+                    .map(Some)
+                }
                 Value::Nil => Ok(None),
                 other => Ok(Some(other.to_string_value())),
             },
