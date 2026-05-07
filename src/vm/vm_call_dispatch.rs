@@ -1156,6 +1156,9 @@ impl VM {
                 .collect();
             let local_names: std::collections::HashSet<&String> = cf.code.locals.iter().collect();
             for (k, v) in self.interpreter.env().iter() {
+                if k == "_" || k == "@_" || k == "%_" {
+                    continue;
+                }
                 if restored_env.contains_key(k)
                     && !local_names.contains(k)
                     && !rw_sources.contains(k)
