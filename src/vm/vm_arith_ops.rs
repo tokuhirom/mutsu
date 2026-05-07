@@ -399,7 +399,13 @@ impl VM {
                 .iter()
                 .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
                 .collect(),
-            Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
+            Value::LazyList(ll) => {
+                if ll.scan_spec.is_some() {
+                    ll.force_scan_to(200_000)
+                } else {
+                    ll.cache.lock().unwrap().clone().unwrap_or_default()
+                }
+            }
             Value::Range(..)
             | Value::RangeExcl(..)
             | Value::RangeExclStart(..)

@@ -42,6 +42,7 @@ impl VM {
                 compiled_code: Some(std::sync::Arc::new(compiled_code)),
                 compiled_fns: Some(std::sync::Arc::new(compiled_fns)),
                 elems_count: None,
+                scan_spec: None,
             };
             let val = Value::LazyList(std::sync::Arc::new(list));
             self.stack.push(val);

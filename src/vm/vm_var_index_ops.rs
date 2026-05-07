@@ -154,7 +154,19 @@ impl VM {
             target = self.force_if_lazy_io_lines(target)?;
         }
         if let Value::LazyList(ref ll) = target {
-            let forced = if matches!(
+            let forced = if ll.scan_spec.is_some() {
+                // Scan-based lazy list: compute only as many elements as needed
+                let needed = match &index {
+                    Value::Int(i) if *i >= 0 => Some((*i as usize).saturating_add(1)),
+                    Value::Range(_, end) if *end >= 0 => Some((*end as usize).saturating_add(1)),
+                    Value::RangeExcl(_, end) if *end > 0 => Some(*end as usize),
+                    _ => None,
+                };
+                match needed {
+                    Some(n) => self.force_scan_lazy_list(ll, n)?,
+                    None => self.force_lazy_list_vm(ll)?,
+                }
+            } else if matches!(
                 ll.env.get("__mutsu_lazylist_from_gather"),
                 Some(Value::Bool(true))
             ) {

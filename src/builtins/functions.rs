@@ -197,6 +197,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                             compiled_code: None,
                             compiled_fns: None,
                             elems_count: Some(Value::BigInt(factorial)),
+                            scan_spec: None,
                         };
                         return Some(Ok(Value::LazyList(std::sync::Arc::new(ll))));
                     }
@@ -217,6 +218,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                     compiled_code: None,
                     compiled_fns: None,
                     elems_count: Some(Value::BigInt(factorial)),
+                    scan_spec: None,
                 };
                 return Some(Ok(Value::LazyList(std::sync::Arc::new(ll))));
             }

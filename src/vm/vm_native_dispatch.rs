@@ -120,6 +120,29 @@ impl VM {
             return None;
         };
 
+        // Handle .Slip/.List/.Seq on scan-based LazyList by forcing elements via VM.
+        if result.is_none()
+            && let Value::LazyList(ll) = target
+            && ll.scan_spec.is_some()
+            && matches!(method_name.as_str(), "Slip" | "List" | "Seq" | "Array")
+        {
+            match self.force_lazy_list_vm(ll) {
+                Ok(items) => {
+                    let val = match method_name.as_str() {
+                        "Slip" => Value::Slip(std::sync::Arc::new(items)),
+                        "List" => {
+                            Value::Array(std::sync::Arc::new(items), crate::value::ArrayKind::List)
+                        }
+                        "Seq" => Value::Seq(std::sync::Arc::new(items)),
+                        "Array" => Value::real_array(items),
+                        _ => unreachable!(),
+                    };
+                    return Some(Ok(val));
+                }
+                Err(e) => return Some(Err(e)),
+            }
+        }
+
         if method_name == "decode" {
             return result.map(|res| {
                 res.map(|value| match value {

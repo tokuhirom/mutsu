@@ -1001,6 +1001,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     compiled_code: None,
                     compiled_fns: None,
                     elems_count: Some(Value::BigInt(factorial)),
+                    scan_spec: None,
                 };
                 return Some(Ok(Value::LazyList(std::sync::Arc::new(ll))));
             }

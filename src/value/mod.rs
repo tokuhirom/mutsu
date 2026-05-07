@@ -860,6 +860,22 @@ pub(crate) enum VersionPart {
     Whatever,
 }
 
+/// Specification for a lazy scan (triangle) reduction.
+/// Stored in `LazyList` to allow on-demand element computation.
+#[derive(Debug, Clone)]
+pub(crate) struct ScanSpec {
+    /// The base operator name (e.g. "+", "*", "~").
+    pub(crate) op: String,
+    /// Whether to negate the result of each step.
+    pub(crate) negate: bool,
+    /// The source value to iterate over (typically a Range variant).
+    pub(crate) source: Value,
+    /// The accumulator state after the last computed element.
+    pub(crate) accumulator: Option<Value>,
+    /// The number of elements already computed (matches cache length).
+    pub(crate) computed_count: usize,
+}
+
 #[derive(Debug)]
 pub(crate) struct LazyList {
     pub(crate) body: Vec<Stmt>,
@@ -872,6 +888,8 @@ pub(crate) struct LazyList {
     /// Known element count for combinatorial lazy sequences (e.g. n! for permutations).
     /// When set, numeric coercion uses this value instead of materializing all elements.
     pub(crate) elems_count: Option<Value>,
+    /// Scan (triangle reduce) specification for lazy on-demand computation.
+    pub(crate) scan_spec: Option<Mutex<ScanSpec>>,
 }
 
 impl Clone for LazyList {
@@ -883,6 +901,10 @@ impl Clone for LazyList {
             compiled_code: self.compiled_code.clone(),
             compiled_fns: self.compiled_fns.clone(),
             elems_count: self.elems_count.clone(),
+            scan_spec: self
+                .scan_spec
+                .as_ref()
+                .map(|s| Mutex::new(s.lock().unwrap().clone())),
         }
     }
 }
@@ -897,6 +919,121 @@ impl LazyList {
             compiled_code: None,
             compiled_fns: None,
             elems_count: None,
+            scan_spec: None,
+        }
+    }
+
+    /// Create a lazy scan (triangle reduce) list that computes elements on demand.
+    pub(crate) fn new_scan(spec: ScanSpec) -> Self {
+        Self {
+            body: Vec::new(),
+            env: crate::env::Env::new(),
+            cache: Mutex::new(Some(Vec::new())),
+            compiled_code: None,
+            compiled_fns: None,
+            elems_count: None,
+            scan_spec: Some(Mutex::new(spec)),
+        }
+    }
+
+    /// Force a scan-based lazy list to compute up to `needed` elements.
+    /// Uses builtin arithmetic for common operators. Returns the cached elements.
+    /// This can be called from contexts without VM access (builtins, interpreter).
+    pub(crate) fn force_scan_to(&self, needed: usize) -> Vec<Value> {
+        let scan_mutex = match &self.scan_spec {
+            Some(s) => s,
+            None => return self.cache.lock().unwrap().clone().unwrap_or_default(),
+        };
+
+        let mut spec = scan_mutex.lock().unwrap();
+        let mut cache_guard = self.cache.lock().unwrap();
+        let out = cache_guard.get_or_insert_with(Vec::new);
+
+        if out.len() >= needed {
+            return out[..needed].to_vec();
+        }
+
+        let remaining = needed - out.len();
+        let already = spec.computed_count;
+        let source = spec.source.clone();
+        let base_op = spec.op.clone();
+        let negate = spec.negate;
+
+        // Generate source values
+        let new_values: Vec<Value> = match &source {
+            Value::Range(a, b) => {
+                let start = *a + already as i64;
+                let end = if *b == i64::MAX {
+                    *a + needed as i64
+                } else {
+                    *b
+                };
+                (start..=end).take(remaining).map(Value::Int).collect()
+            }
+            Value::RangeExcl(a, b) => {
+                let start = *a + already as i64;
+                let end = if *b == i64::MAX {
+                    *a + needed as i64
+                } else {
+                    *b
+                };
+                (start..end).take(remaining).map(Value::Int).collect()
+            }
+            _ => {
+                let items = crate::runtime::utils::value_to_list(&source);
+                items.into_iter().skip(already).take(remaining).collect()
+            }
+        };
+
+        let mut acc = spec.accumulator.clone();
+        for val in new_values {
+            acc = Some(match acc.take() {
+                None => {
+                    out.push(val.clone());
+                    val
+                }
+                Some(prev) => {
+                    let v = Self::scan_binary_op(&base_op, prev, val);
+                    let v = if negate { Value::Bool(!v.truthy()) } else { v };
+                    out.push(v.clone());
+                    v
+                }
+            });
+            spec.computed_count += 1;
+        }
+        spec.accumulator = acc;
+        out.clone()
+    }
+
+    /// Apply a binary operator for scan reduction. Supports common builtin ops.
+    fn scan_binary_op(op: &str, left: Value, right: Value) -> Value {
+        match op {
+            "+" => crate::builtins::arith::arith_add(left, right).unwrap_or(Value::Nil),
+            "-" => crate::builtins::arith::arith_sub(left, right),
+            "*" => crate::builtins::arith::arith_mul(left, right),
+            "/" => crate::builtins::arith::arith_div(left, right).unwrap_or(Value::Nil),
+            "%" | "mod" => crate::builtins::arith::arith_mod(left, right).unwrap_or(Value::Nil),
+            "**" => crate::builtins::arith::arith_pow(left, right),
+            "~" => Value::str(format!(
+                "{}{}",
+                left.to_string_value(),
+                right.to_string_value()
+            )),
+            "max" => {
+                if left.to_f64() >= right.to_f64() {
+                    left
+                } else {
+                    right
+                }
+            }
+            "min" => {
+                if left.to_f64() <= right.to_f64() {
+                    left
+                } else {
+                    right
+                }
+            }
+            _ => Value::Nil, // Unsupported op — VM path handles these
         }
     }
 }
