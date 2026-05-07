@@ -1,127 +1,81 @@
-# PLAN.md — mutsu 実用化ロードマップ (2026-05-06)
+# PLAN.md — mutsu 実用化ロードマップ
 
-## 方針転換
+## 方針
 
-roast テスト通過率の追求から、**実用的な Raku インタープリタとしての品質向上**にシフトする。
-roast は引き続き回帰検知に使うが、セカンドプライオリティとする。
+**実用的な Raku インタープリタとしての品質向上**を最優先とする。
+roast は回帰検知に使うが、セカンドプライオリティ。
 
-## 現状 (2026-05-06)
+## 完了済み Phase (2026-05)
 
-- Whitelist: 1145 / 1296 (88.3%)
-- 基本的なスクリプトは動く: クラス、ファイルI/O、regex、try/CATCH、start/await、qqx、型チェック、MAIN
-- **実用上の致命的な穴**がいくつかある
+詳細は [news/2026-05.md](news/2026-05.md) 参照。
 
-## Phase 1: デバッガビリティ (最優先)
+- **Phase 1: デバッガビリティ** ✅ — 行番号、バックトレース、$!.line/$!.file, Backtrace オブジェクト
+- **Phase 2: Grammar/Match** ✅ — 名前付きキャプチャ、Grammar Actions (make/.made)
+- **Phase 3: CLI 品質** ✅ — MAIN 修正、===SORRY!===、Did you mean?
+- **Phase 4: ドキュメント** ✅ — README 拡充、ユーザーガイド
+- **Phase 5: モジュール (部分)** — require 動作、JSON::Tiny to-json 動作、from-json 部分的
+- **Phase 6: パフォーマンス (部分)** — ベンチマーク作成、起動 25 倍速い
 
-### 1-1. ランタイムエラーに行番号を付与
+## 現在の課題 (2026-05〜)
 
-現状:
-```
-Runtime error: oops
-```
+### P1: from-json 完全対応
 
-目標:
-```
-Runtime error: oops
-  in sub bar at script.raku line 3
-  in sub foo at script.raku line 2
-  in block <unit> at script.raku line 4
-```
+JSON は実用スクリプティングの基本。`to-json` は動くが `from-json` は数値/bool/null のみ。
 
-- [ ] コンパイラが各 OpCode にソース行番号を埋め込む
-- [ ] VM がエラー発生時に行番号を報告
-- [ ] コールスタックを RuntimeError に記録
+- [ ] grammar の量指定子付き名前付きキャプチャ (`<value>* % ','`) を action に正しく伝搬
+- [ ] `+@$<str>` 等のリスト強制が action メソッド内で動作
+- [ ] `from-json('{"key": "value"}')` が動く
 
-### 1-2. `.backtrace` メソッド実装
+### P2: 関数呼び出しパフォーマンス
 
-- [ ] `$!.backtrace` が Backtrace オブジェクトを返す
-- [ ] `try { die "x" }; say $!.backtrace` が動く
+再帰 fib が raku の 79 倍遅い。起動速度の優位性を活かすために計算性能も改善が必要。
 
-### 1-3. CATCH ブロック内の `$!` 改善
+- [ ] 単純な positional-only 関数の軽量呼び出しパス
+- [ ] 環境 HashMap の clone 回避 (save/restore 方式)
+- [ ] 関数解決のキャッシュ
+- [ ] 目標: 79x → 10x 以下
 
-- [ ] `$!.line`, `$!.file` が動く
-- [ ] `warn` の位置情報も改善
+### P3: Container semantics
 
-## Phase 2: Grammar / Match の実用性
+roast で最も多い失敗原因。実用コードでも予期しないバグの原因。
 
-### 2-1. 名前付きキャプチャの修正
+- [ ] `@a[0] = 42` 等の代入が正しく動く
+- [ ] Scalar コンテナの生成・束縛が raku 互換
+- [ ] 関連 roast テストの通過率改善
 
-現状:
-```raku
-grammar G { token TOP { <word>+ % \s+ }; token word { \w+ } }
-my $m = G.parse("hello world");
-$m<word>[0]  # → Nil  ← 壊れている
-```
+### P4: warn の位置情報
 
-- [ ] 繰り返しの名前付きキャプチャが Array として格納される
-- [ ] `$m<word>` が Match の Array を返す
+Phase 1 の残り。
 
-### 2-2. Grammar Action クラス
+- [ ] `warn "msg"` にファイル名・行番号を表示
 
-- [ ] `G.parse($str, actions => Actions)` が動く
-- [ ] `make` / `$/.made` (`.ast`) が動く
+### P5: バイナリ配布・インストール
 
-## Phase 3: CLI ツール品質
+- [ ] mise GitHub バックエンドでのインストール検証
+- [ ] `mise install mutsu` が動く
+- [ ] リリースタグ作成の自動化
 
-### 3-1. MAIN 引数パースの修正
+### P6: 他モジュール互換性
 
-- [ ] Usage が二重表示されるバグを修正
-- [ ] `--help` 自動生成
-- [ ] multi MAIN のサポート確認
+- [ ] File::Temp, File::Directory::Tree 等の互換性確認
+- [ ] 足りない機能の特定と実装
 
-### 3-2. エラーメッセージの一貫性
+### P7: 配列操作パフォーマンス
 
-- [ ] パースエラーにコード箇所のスニペット表示
-- [ ] 「Did you mean ...?」サジェスション
+map/grep/sort が 46 倍遅い。データ処理系スクリプトでボトルネック。
 
-## Phase 4: ドキュメント
-
-### 4-1. README 拡充
-
-- [ ] 「何が動くか」セクション (スクリプト例付き)
-- [ ] インストール方法
-- [ ] 既知の制限事項
-
-### 4-2. ユーザーガイド
-
-- [ ] 基本的な使い方 (CLI, REPL, スクリプト実行)
-- [ ] サポートする構文の概要
-- [ ] raku との差異一覧
-
-## Phase 5: モジュールエコシステム
-
-### 5-1. `require` 実装
-
-- [ ] 動的モジュールロード
-- [ ] `require Module; Module.new(...)` が動く
-
-### 5-2. 外部モジュール対応
-
-- [ ] `RAKULIB` / `-I` によるモジュール検索パス
-- [ ] 既存の Raku モジュール (JSON::Tiny 等) の互換性確認
-- [ ] 最小限のモジュールインストーラ検討
-
-## Phase 6: パフォーマンス
-
-- [ ] 起動時間の計測と改善
-- [ ] 大きなファイルの処理速度
-- [ ] ベンチマーク (vs raku) の公開
-
-## Phase R: Roast (継続的・セカンドプライオリティ)
-
-引き続き roast テスト通過率を上げるが、実用性に寄与する修正を優先する。
-
-- Container semantics — 実用性にも影響大
-- Exception X::* クラス — エラー品質にも影響大
-- native array — 実用影響は小さい (後回し)
-- Threading — 実用影響は中程度 (後回し)
+- [ ] map/grep のイテレーション最適化
+- [ ] sort の比較関数呼び出し最適化
 
 ## メトリクス
 
-| 指標 | 現在 | Phase 1 後 | Phase 2 後 |
-|------|------|-----------|-----------|
-| エラーに行番号 | なし | あり | あり |
-| .backtrace | 未実装 | 実装済 | 実装済 |
-| Grammar 名前付きキャプチャ | 壊れ | 壊れ | 修正済 |
-| README | 最小 | 最小 | 拡充済 |
-| Whitelist | 1145 | 1145+ | 1150+ |
+| 指標 | 2026-05-06 | 現在 |
+|------|-----------|------|
+| Whitelist | 1103 | 1148 |
+| エラーに行番号 | なし | ✅ |
+| .backtrace | 未実装 | ✅ オブジェクト |
+| Did you mean? | なし | ✅ |
+| JSON::Tiny to-json | 不可 | ✅ |
+| JSON::Tiny from-json | 不可 | ⚠️ 部分的 |
+| 起動時間 vs raku | 未計測 | 0.04x (25倍速い) |
+| fib(25) vs raku | 未計測 | 79x 遅い |
