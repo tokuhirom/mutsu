@@ -424,7 +424,37 @@ impl VM {
                     self.env_dirty = true;
                     return Ok(());
                 }
-                "map" | "grep" => Some(matches!(&target, Value::HyperSeq(_))),
+                "map" | "grep" => {
+                    let items_arc = match &target {
+                        Value::HyperSeq(items) | Value::RaceSeq(items) => items.clone(),
+                        _ => unreachable!(),
+                    };
+                    // For small lists, use parallel execution so inter-item
+                    // synchronization (e.g. Promise await chains) works.
+                    // For large lists, fall through to the sequential array
+                    // map/grep path which is more efficient.
+                    if items_arc.len() < 1000 {
+                        let is_hyper = matches!(&target, Value::HyperSeq(_));
+                        let block = if !args.is_empty() {
+                            args[0].clone()
+                        } else {
+                            Value::Nil
+                        };
+                        let is_map = method == "map";
+                        let result =
+                            self.exec_hyper_race_map_grep(&items_arc, block, is_map, is_hyper)?;
+                        let wrapped = if is_hyper {
+                            Value::HyperSeq(Arc::new(result))
+                        } else {
+                            Value::RaceSeq(Arc::new(result))
+                        };
+                        self.stack.push(wrapped);
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                    // Large list: fall through to array-based dispatch
+                    Some(matches!(&target, Value::HyperSeq(_)))
+                }
                 _ => None,
             }
         } else {

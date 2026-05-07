@@ -3766,6 +3766,16 @@ impl Interpreter {
         self.output_emitted = false;
     }
 
+    /// Take the output buffer, leaving it empty.
+    pub(crate) fn take_output(&mut self) -> String {
+        std::mem::take(&mut self.output)
+    }
+
+    /// Take the stderr buffer, leaving it empty.
+    pub(crate) fn take_stderr_output(&mut self) -> String {
+        std::mem::take(&mut self.stderr_output)
+    }
+
     /// Returns true if any output was emitted since the last `clear_output`.
     pub fn has_output_emitted(&self) -> bool {
         self.output_emitted
