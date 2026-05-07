@@ -1037,7 +1037,7 @@ impl Interpreter {
                     if !err
                         .message
                         .starts_with("No matching candidates for method:")
-                        && !err.message.starts_with("X::Method::NotFound:")
+                        && !err.is_method_not_found()
                     {
                         return Err(err);
                     }

@@ -106,6 +106,18 @@ impl RuntimeError {
         }
     }
 
+    /// Check if this error represents a method-not-found error.
+    pub(crate) fn is_method_not_found(&self) -> bool {
+        if let Some(ref ex) = self.exception
+            && let Value::Instance { class_name, .. } = ex.as_ref()
+        {
+            return class_name.resolve() == "X::Method::NotFound";
+        }
+        self.message.contains("X::Method::NotFound")
+            || self.message.contains("No such method '")
+            || self.message.contains("No such private method '")
+    }
+
     /// Create a RuntimeError from an exception Value.
     /// Extracts the message from the exception's attributes and wraps it.
     pub(crate) fn from_exception_value(ex: Value) -> Self {

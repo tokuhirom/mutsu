@@ -197,7 +197,7 @@ impl Interpreter {
                             self.env.insert("/".to_string(), Value::Nil);
                             return Ok(self.make_goal_failure_value(&goal, pos));
                         }
-                        Err(err) if err.message.contains("X::Method::NotFound") => {}
+                        Err(err) if err.is_method_not_found() => {}
                         Err(err) => return Err(err),
                     }
                     self.env.insert("/".to_string(), Value::Nil);
@@ -382,7 +382,7 @@ impl Interpreter {
             let result =
                 self.call_method_with_values(actions.clone(), sym_name, vec![match_obj.clone()]);
             match result {
-                Err(e) if e.message.contains("X::Method::NotFound") => {
+                Err(e) if e.is_method_not_found() => {
                     // Fall back to plain rule name
                     self.call_method_with_values(
                         actions.clone(),
@@ -434,7 +434,7 @@ impl Interpreter {
 
         match method_result {
             Ok(_) => {}
-            Err(e) if e.message.contains("X::Method::NotFound") => {
+            Err(e) if e.is_method_not_found() => {
                 // No action method for this rule — silently skip
             }
             Err(e) => return Err(e),
