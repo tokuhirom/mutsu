@@ -412,3 +412,10 @@ Each slang has its own grammar rules (e.g., `+` means repetition in Regex slang 
 - Use Rust unit tests (`#[test]`) for internal components like parser and runtime helpers.
 - Every feature addition must include tests.
 - When implementing a temporary workaround or shortcut instead of the correct solution, always leave a `// TODO:` comment explaining what the correct approach would be and why the current implementation is insufficient. This ensures technical debt is visible and trackable.
+
+## Project planning and news
+
+- **PLAN.md** contains only **future tasks**. Keep it slim — no completed items. When a task is done, remove it from PLAN.md.
+- **news/YYYY-MM.md** (e.g. `news/2026-05.md`) records what was accomplished each month. When completing a PLAN.md task, move its description and results to the current month's news file.
+- PLAN.md links to `news/` for historical context. Do not duplicate completed work in both files.
+- When starting a new month's work, create `news/YYYY-MM.md` if it doesn't exist.
