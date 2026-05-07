@@ -270,9 +270,10 @@ impl VM {
                     for idx in indices.iter() {
                         // Resolve WhateverCode indices (e.g. *-1, *-3)
                         let resolved_idx = if let Value::Sub(data) = idx {
-                            let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
                             let mut sub_env = data.env.clone();
-                            sub_env.insert(param.to_string(), Value::Int(len));
+                            for p in &data.params {
+                                sub_env.insert(p.to_string(), Value::Int(len));
+                            }
                             let saved_env = std::mem::take(self.interpreter.env_mut());
                             *self.interpreter.env_mut() = sub_env;
                             let result = self
@@ -433,9 +434,10 @@ impl VM {
             // WhateverCode index on Seq: (1,2,3).Seq[*-1]
             (Value::Seq(items), Value::Sub(ref data)) => {
                 let len = items.len() as i64;
-                let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
                 let mut sub_env = data.env.clone();
-                sub_env.insert(param.to_string(), Value::Int(len));
+                for p in &data.params {
+                    sub_env.insert(p.to_string(), Value::Int(len));
+                }
                 let saved_env = std::mem::take(self.interpreter.env_mut());
                 *self.interpreter.env_mut() = sub_env;
                 let idx = self
@@ -525,9 +527,10 @@ impl VM {
             // Treat hash as a list of pairs with elems = hash.len()
             (Value::Hash(items), Value::Sub(ref data)) => {
                 let len = items.len() as i64;
-                let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
                 let mut sub_env = data.env.clone();
-                sub_env.insert(param.to_string(), Value::Int(len));
+                for p in &data.params {
+                    sub_env.insert(p.to_string(), Value::Int(len));
+                }
                 let saved_env = std::mem::take(self.interpreter.env_mut());
                 *self.interpreter.env_mut() = sub_env;
                 let idx = self
@@ -830,9 +833,10 @@ impl VM {
             // WhateverCode index on Range: (1..8)[*-1]
             (ref range, Value::Sub(ref data)) if range.is_range() => {
                 let len = crate::runtime::Interpreter::range_elems_f64(range) as i64;
-                let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
                 let mut sub_env = data.env.clone();
-                sub_env.insert(param.to_string(), Value::Int(len));
+                for p in &data.params {
+                    sub_env.insert(p.to_string(), Value::Int(len));
+                }
                 let saved_env = std::mem::take(self.interpreter.env_mut());
                 *self.interpreter.env_mut() = sub_env;
                 let idx = self
@@ -998,9 +1002,11 @@ impl VM {
             // WhateverCode index: @a[*-1] → evaluate the lambda with array length
             (Value::Array(ref items, ..), Value::Sub(ref data)) => {
                 let len = items.len() as i64;
-                let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
                 let mut sub_env = data.env.clone();
-                sub_env.insert(param.to_string(), Value::Int(len));
+                // Pass array length for ALL WhateverCode parameters (e.g. *-4 .. *-2 has 2 params)
+                for p in &data.params {
+                    sub_env.insert(p.to_string(), Value::Int(len));
+                }
                 let saved_env = std::mem::take(self.interpreter.env_mut());
                 *self.interpreter.env_mut() = sub_env;
                 let idx = self
@@ -1062,9 +1068,10 @@ impl VM {
                 } else {
                     0
                 };
-                let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
                 let mut sub_env = data.env.clone();
-                sub_env.insert(param.to_string(), Value::Int(len));
+                for p in &data.params {
+                    sub_env.insert(p.to_string(), Value::Int(len));
+                }
                 let saved_env = std::mem::take(self.interpreter.env_mut());
                 *self.interpreter.env_mut() = sub_env;
                 let idx = self
@@ -1111,9 +1118,10 @@ impl VM {
                         Value::Int(i) => *i,
                         Value::Whatever => len,
                         Value::Sub(data) => {
-                            let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
                             let mut sub_env = data.env.clone();
-                            sub_env.insert(param.to_string(), Value::Int(len));
+                            for p in &data.params {
+                                sub_env.insert(p.to_string(), Value::Int(len));
+                            }
                             let saved_env = std::mem::take(self.interpreter.env_mut());
                             *self.interpreter.env_mut() = sub_env;
                             let result = self
@@ -1156,9 +1164,10 @@ impl VM {
             (Value::Uni { ref text, .. }, Value::Sub(ref data)) => {
                 let chars: Vec<char> = text.chars().collect();
                 let len = chars.len() as i64;
-                let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
                 let mut sub_env = data.env.clone();
-                sub_env.insert(param.to_string(), Value::Int(len));
+                for p in &data.params {
+                    sub_env.insert(p.to_string(), Value::Int(len));
+                }
                 let saved_env = std::mem::take(self.interpreter.env_mut());
                 *self.interpreter.env_mut() = sub_env;
                 let idx = self
@@ -1329,9 +1338,10 @@ impl VM {
                     Value::Array(..) | Value::Hash(_) | Value::Instance { .. }
                 ) =>
             {
-                let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
                 let mut sub_env = data.env.clone();
-                sub_env.insert(param.to_string(), Value::Int(1)); // elems = 1
+                for p in &data.params {
+                    sub_env.insert(p.to_string(), Value::Int(1)); // elems = 1
+                }
                 let saved_env = std::mem::take(self.interpreter.env_mut());
                 *self.interpreter.env_mut() = sub_env;
                 let idx = self
