@@ -1327,6 +1327,10 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
     let (mut rest, (type_params, type_param_defs)) = parse_optional_role_type_params(rest)?;
+    // Parse optional type adverbs (:ver<...>, :auth<...>, :api<...>)
+    let (rest2, traits) = parse_declarator_traits(rest)?;
+    let (rest2, _) = ws(rest2)?;
+    rest = rest2;
     let mut parent_roles: Vec<String> = Vec::new();
     let mut is_hidden_role = false;
     let mut role_is_rw = false;
@@ -1431,19 +1435,28 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
     }
     super::simple::register_user_type(&name);
 
-    Ok((
-        rest,
-        Stmt::RoleDecl {
-            name: Symbol::intern(&name),
-            type_params,
-            type_param_defs,
-            is_export,
-            export_tags,
-            body,
-            is_rw: role_is_rw,
-            language_version: super::simple::current_language_version(),
-        },
-    ))
+    let role_stmt = Stmt::RoleDecl {
+        name: Symbol::intern(&name),
+        type_params,
+        type_param_defs,
+        is_export,
+        export_tags,
+        body,
+        is_rw: role_is_rw,
+        language_version: super::simple::current_language_version(),
+    };
+    // Emit __MUTSU_SET_META__ calls for ver/auth traits (like class declarations)
+    let mut meta_stmts = Vec::new();
+    for (trait_name, trait_value) in traits {
+        if trait_name == "ver" || trait_name == "auth" {
+            meta_stmts.push(meta_setter_stmt(&name, &trait_name, trait_value));
+        }
+    }
+    if meta_stmts.is_empty() {
+        return Ok((rest, role_stmt));
+    }
+    meta_stmts.push(role_stmt);
+    Ok((rest, Stmt::Block(meta_stmts)))
 }
 
 /// Parse `does` declaration.
