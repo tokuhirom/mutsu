@@ -273,6 +273,14 @@ impl VM {
             }
         }
 
+        // Raku: routines get their own $_ initialized to (Any).
+        if cc.is_routine && !data.param_defs.iter().any(|pd| pd.name == "_") {
+            self.interpreter.env_mut().insert(
+                "_".to_string(),
+                Value::Package(crate::symbol::Symbol::intern("Any")),
+            );
+        }
+
         // Raku: $! is scoped per routine — fresh Nil on entry
         if !data.name.resolve().is_empty() {
             self.interpreter
