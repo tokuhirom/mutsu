@@ -3678,6 +3678,15 @@ impl VM {
             self.stack.push(Value::Hash(Arc::new(entries)));
             return;
         }
+        if name.strip_suffix("::") == Some("OUR") {
+            let mut entries: HashMap<String, Value> = HashMap::new();
+            for (key, val) in self.interpreter.our_vars_iter() {
+                let display_key = Self::add_sigil_prefix(key);
+                entries.insert(display_key, val.clone());
+            }
+            self.stack.push(Value::Hash(Arc::new(entries)));
+            return;
+        }
         if let Some(package) = name.strip_suffix("::")
             && package != "MY"
         {

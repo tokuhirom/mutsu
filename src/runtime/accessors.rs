@@ -582,6 +582,10 @@ impl Interpreter {
         self.our_vars.get(key)
     }
 
+    pub(crate) fn our_vars_iter(&self) -> impl Iterator<Item = (&String, &Value)> {
+        self.our_vars.iter()
+    }
+
     pub(crate) fn set_our_var(&mut self, key: String, value: Value) {
         self.our_vars.insert(key, value);
     }
