@@ -1496,7 +1496,7 @@ impl Interpreter {
                 // Basic smartmatch fallback: value equality
                 Ok(Value::Bool(left == right))
             }
-            "eqv" => Ok(Value::Bool(left.eqv(right))),
+            "eqv" => Ok(Value::Bool(left.eqv_checked(right)?)),
             "=:=" => Ok(Value::Bool(super::values_identical(left, right))),
             "!=:=" => Ok(Value::Bool(!super::values_identical(left, right))),
             "===" => Ok(Value::Bool(super::values_identical(left, right))),

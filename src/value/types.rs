@@ -1,6 +1,60 @@
 use super::*;
 
 impl Value {
+    /// Check if a value represents a lazy/infinite iterable for eqv.
+    pub(crate) fn is_lazy_for_eqv(&self) -> bool {
+        match self {
+            Value::Scalar(inner) => inner.is_lazy_for_eqv(),
+            Value::LazyList(_) => true,
+            Value::Array(_, kind) if kind.is_lazy() => true,
+            Value::GenericRange { end, .. } => Self::is_infinite_endpoint_eqv(end),
+            Value::Range(_, end)
+            | Value::RangeExcl(_, end)
+            | Value::RangeExclStart(_, end)
+            | Value::RangeExclBoth(_, end) => *end == i64::MAX,
+            _ => false,
+        }
+    }
+
+    fn is_infinite_endpoint_eqv(v: &Value) -> bool {
+        match v {
+            Value::Num(n) => n.is_infinite(),
+            Value::Rat(_, d) | Value::FatRat(_, d) => *d == 0,
+            Value::BigInt(n) => **n == num_bigint::BigInt::from(i64::MAX),
+            _ => false,
+        }
+    }
+
+    /// Returns the "eqv type category" for lazy checking.
+    pub(crate) fn eqv_type_category(&self) -> &'static str {
+        match self {
+            Value::Scalar(inner) => inner.eqv_type_category(),
+            Value::Seq(_)
+            | Value::GenericRange { .. }
+            | Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::LazyList(_) => "Seq",
+            Value::Array(_, kind) if !kind.is_real_array() => "List",
+            Value::Array(..) => "Array",
+            _ => "Other",
+        }
+    }
+
+    /// Type-strict structural equivalence that throws X::Cannot::Lazy when
+    /// both operands are lazy and the same type.
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn eqv_checked(&self, other: &Self) -> Result<bool, RuntimeError> {
+        if self.is_lazy_for_eqv()
+            && other.is_lazy_for_eqv()
+            && self.eqv_type_category() == other.eqv_type_category()
+        {
+            return Err(RuntimeError::cannot_lazy("eqv"));
+        }
+        Ok(self.eqv(other))
+    }
+
     /// Type-strict structural equivalence (Raku `eqv` operator).
     /// See raku-doc: Language/operators.rakudoc "infix eqv"
     ///
@@ -117,13 +171,39 @@ impl Value {
             // Rat/FatRat: structural equality (n == n, d == d), including NaN (0/0)
             (Value::Rat(n1, d1), Value::Rat(n2, d2))
             | (Value::FatRat(n1, d1), Value::FatRat(n2, d2)) => n1 == n2 && d1 == d2,
+            // Set/Bag/Mix: eqv requires same mutability (Set vs SetHash) AND
+            // type-aware element comparison (IntStr != Int != Str)
+            (Value::Set(a, a_mut), Value::Set(b, b_mut)) => {
+                if a_mut != b_mut || a.elements != b.elements {
+                    return false;
+                }
+                a.elements
+                    .iter()
+                    .all(|key| a.typed_key(key).eqv(&b.typed_key(key)))
+            }
+            (Value::Bag(a, a_mut), Value::Bag(b, b_mut)) => {
+                if a_mut != b_mut || a.counts != b.counts {
+                    return false;
+                }
+                a.counts
+                    .keys()
+                    .all(|key| a.typed_key(key).eqv(&b.typed_key(key)))
+            }
+            (Value::Mix(a, a_mut), Value::Mix(b, b_mut)) => {
+                if a_mut != b_mut || a.weights.len() != b.weights.len() {
+                    return false;
+                }
+                a.weights.iter().all(|(key, aw)| {
+                    b.weights
+                        .get(key)
+                        .is_some_and(|bw| (aw - bw).abs() < f64::EPSILON)
+                        && a.typed_key(key).eqv(&b.typed_key(key))
+                })
+            }
             (Value::Int(_), Value::Int(_))
             | (Value::Str(_), Value::Str(_))
             | (Value::Bool(_), Value::Bool(_))
             | (Value::BigRat(_, _), Value::BigRat(_, _))
-            | (Value::Set(_, _), Value::Set(_, _))
-            | (Value::Bag(_, _), Value::Bag(_, _))
-            | (Value::Mix(_, _), Value::Mix(_, _))
             | (Value::Enum { .. }, Value::Enum { .. })
             | (Value::Regex(_), Value::Regex(_))
             | (Value::RegexWithAdverbs { .. }, Value::RegexWithAdverbs { .. })

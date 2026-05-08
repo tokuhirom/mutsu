@@ -986,8 +986,26 @@ impl VM {
     pub(super) fn exec_eqv_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result =
-            self.eval_binary_with_junctions(left, right, |_, l, r| Ok(Value::Bool(l.eqv(&r))))?;
+        // Check for lazy values BEFORE eval_binary_with_junctions forces them.
+        // Raku throws X::Cannot::Lazy when both eqv operands are lazy and the
+        // same type category, UNLESS they are the same object.
+        let left_deref = left.decontainerize();
+        let right_deref = right.decontainerize();
+        if left_deref.is_lazy_for_eqv()
+            && right_deref.is_lazy_for_eqv()
+            && left_deref.eqv_type_category() == right_deref.eqv_type_category()
+        {
+            if let (Value::LazyList(a), Value::LazyList(b)) = (left_deref, right_deref)
+                && Arc::ptr_eq(a, b)
+            {
+                self.stack.push(Value::Bool(true));
+                return Ok(());
+            }
+            return Err(RuntimeError::cannot_lazy("eqv"));
+        }
+        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+            Ok(Value::Bool(l.eqv_checked(&r)?))
+        })?;
         self.stack.push(result);
         Ok(())
     }
