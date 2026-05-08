@@ -1557,6 +1557,48 @@ impl VM {
         {
             self.set_env_with_main_alias(&var_name, self.locals[slot].clone());
         }
+        // Junction autothreading: when writing back with a junction index,
+        // expand the junction and assign each element separately.
+        if let Value::Junction {
+            values: junc_keys, ..
+        } = &idx
+        {
+            let junc_vals = if let Value::Junction { values: jv, .. } = &val {
+                jv.clone()
+            } else {
+                // Same value for all junction elements
+                Arc::new(vec![val.clone(); junc_keys.len()])
+            };
+            for (i, key) in junc_keys.iter().enumerate() {
+                let v = junc_vals.get(i).cloned().unwrap_or(Value::Nil);
+                let k = key.to_string_value();
+                if var_name.starts_with('%') {
+                    if !matches!(self.interpreter.env().get(&var_name), Some(Value::Hash(_))) {
+                        self.interpreter.env_mut().insert(
+                            var_name.clone(),
+                            Value::hash(std::collections::HashMap::new()),
+                        );
+                    }
+                    if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(&var_name) {
+                        let h = Arc::make_mut(hash);
+                        h.insert(k, v);
+                    }
+                } else if let Some(idx_usize) = Self::index_to_usize(key) {
+                    // For array variables with junction index, use numeric indices
+                    if let Some(Value::Array(items, ..)) =
+                        self.interpreter.env_mut().get_mut(&var_name)
+                    {
+                        let arr = Arc::make_mut(items);
+                        if idx_usize >= arr.len() {
+                            arr.resize(idx_usize + 1, Value::Package(Symbol::intern("Any")));
+                        }
+                        arr[idx_usize] = v;
+                    }
+                }
+            }
+            self.stack.push(val);
+            return Ok(());
+        }
         match &idx {
             Value::Array(keys, ..) => {
                 let mut vals = self.assignment_rhs_values(&val)?;

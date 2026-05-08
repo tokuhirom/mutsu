@@ -51,6 +51,29 @@ impl VM {
             other => other.clone(),
         };
 
+        // Junction autothreading: when indexing a hash with a junction key,
+        // expand the junction and create a slot ref for each element.
+        if let Value::Junction { kind, values } = &index
+            && matches!(&resolved, Value::Hash(_))
+        {
+            let kind = kind.clone();
+            let junction_values = values.clone();
+            let mut results = Vec::with_capacity(junction_values.len());
+            for val in junction_values.iter() {
+                let key = Value::hash_key_encode(val);
+                if let Some(slot_ref) = resolved.hash_autovivify(&key) {
+                    results.push(slot_ref);
+                } else {
+                    results.push(Value::Nil);
+                }
+            }
+            self.stack.push(Value::Junction {
+                kind,
+                values: Arc::new(results),
+            });
+            return Ok(());
+        }
+
         match &resolved {
             Value::Hash(_) => {
                 let key = Value::hash_key_encode(&index);
