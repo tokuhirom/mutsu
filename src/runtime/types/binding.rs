@@ -1260,9 +1260,9 @@ impl Interpreter {
             }
         }
         // Check for extra positional arguments when no array/capture slurpy is present
-        let has_array_slurpy = param_defs.iter().any(|pd| {
-            pd.onearg || (pd.slurpy && (!pd.name.starts_with('%') || pd.sigilless))
-        });
+        let has_array_slurpy = param_defs
+            .iter()
+            .any(|pd| pd.onearg || (pd.slurpy && (!pd.name.starts_with('%') || pd.sigilless)));
         if !has_array_slurpy && !has_positional_sub_sig {
             let positional_param_count = param_defs
                 .iter()
