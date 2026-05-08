@@ -3479,11 +3479,62 @@ impl Interpreter {
             None
         }
 
+        /// Extract heredoc terminators from a line containing `:to/DELIM/` patterns.
+        fn extract_heredoc_terminators(line: &str) -> Vec<String> {
+            let mut terminators = Vec::new();
+            let mut search = line;
+            while let Some(pos) = search.find(":to").or_else(|| search.find(":heredoc")) {
+                let kw_len = if search[pos..].starts_with(":heredoc") {
+                    8
+                } else {
+                    3
+                };
+                let after = &search[pos + kw_len..];
+                if let Some(open) = after.chars().next() {
+                    let close = match open {
+                        '/' => '/',
+                        '<' => '>',
+                        '\u{00AB}' => '\u{00BB}',
+                        '(' => ')',
+                        '[' => ']',
+                        '{' => '}',
+                        _ => {
+                            search = &search[pos + kw_len..];
+                            continue;
+                        }
+                    };
+                    let body = &after[open.len_utf8()..];
+                    if let Some(end) = body.find(close) {
+                        let term = body[..end].to_string();
+                        if !term.is_empty() {
+                            terminators.push(term);
+                        }
+                    }
+                    search = if after.len() > open.len_utf8() {
+                        &after[open.len_utf8()..]
+                    } else {
+                        ""
+                    };
+                } else {
+                    break;
+                }
+            }
+            terminators
+        }
+
         let lines: Vec<&str> = input.lines().collect();
         let mut idx = 0usize;
+        let mut heredoc_terminators: Vec<String> = Vec::new();
         while idx < lines.len() {
             let line = lines[idx];
             let trimmed = line.trim_start();
+
+            // Skip heredoc body lines -- do not scan for doc comments
+            if !heredoc_terminators.is_empty() {
+                heredoc_terminators.retain(|t| trimmed != t.as_str());
+                idx += 1;
+                continue;
+            }
 
             // Leading doc comment (#|)
             if let Some((text, next_idx, _is_block)) = parse_doc_comment(&lines, idx, "#|") {
@@ -3784,6 +3835,12 @@ impl Interpreter {
                 // Not a recognized declaration — discard pending leading
                 pending_leading = None;
                 last_declarant = None;
+            }
+
+            // Detect heredoc starters on the current line so body lines are skipped
+            let hd_terms = extract_heredoc_terminators(line);
+            if !hd_terms.is_empty() {
+                heredoc_terminators = hd_terms;
             }
 
             idx += 1;
