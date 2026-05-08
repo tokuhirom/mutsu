@@ -1081,6 +1081,10 @@ impl Interpreter {
         let saved_package = self.current_package.clone();
         if self.has_class_scoped_subs(receiver_class_name) {
             self.current_package = receiver_class_name.to_string();
+        } else if self.current_package != "GLOBAL" {
+            // Reset to GLOBAL so class-level `my` variables are not falsely
+            // qualified with the caller's package (e.g. grammar name).
+            self.current_package = "GLOBAL".to_string();
         }
         let block_result = self.run_block(&method_def.body);
         self.current_package = saved_package;

@@ -1500,6 +1500,7 @@ impl Interpreter {
                         .flat_map(|a| match a {
                             Value::Int(i) => vec![Value::Int(*i)],
                             Value::Array(items, ..) => items.to_vec(),
+                            Value::Seq(items) | Value::Slip(items) => items.to_vec(),
                             Value::Range(start, end) => (*start..=*end).map(Value::Int).collect(),
                             Value::RangeExcl(start, end) => {
                                 (*start..*end).map(Value::Int).collect()
