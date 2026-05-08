@@ -206,7 +206,68 @@ impl Interpreter {
             .collect();
         let mut positional_idx = 0usize;
         for pd in param_defs {
-            if pd.slurpy {
+            if pd.onearg {
+                // +@ (single-argument rule slurpy): if exactly one remaining positional
+                // arg is Iterable (Array, List, etc.), use its elements directly.
+                // Otherwise, collect remaining args like *@ (flattening slurpy).
+                let remaining_positional: Vec<_> = args[positional_idx..]
+                    .iter()
+                    .filter(|a| !matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)))
+                    .cloned()
+                    .collect();
+                let items = if remaining_positional.len() == 1 {
+                    let single = unwrap_varref_value(remaining_positional[0].clone());
+                    match single {
+                        Value::Array(arr, kind) if !kind.is_itemized() => arr.to_vec(),
+                        Value::Slip(arr) => arr.to_vec(),
+                        Value::Seq(arr) => arr.to_vec(),
+                        other => vec![other],
+                    }
+                } else {
+                    // Multiple args: collect like *@ (flattening slurpy)
+                    let mut items = Vec::new();
+                    for val in remaining_positional {
+                        let val = unwrap_varref_value(val);
+                        match val {
+                            Value::Pair(..) => {} // skip named args
+                            Value::Array(arr, kind) => {
+                                if kind.is_itemized() {
+                                    items.push(Value::Array(arr, kind));
+                                } else {
+                                    flatten_into_slurpy(&arr, &mut items);
+                                }
+                            }
+                            val @ (Value::Range(..)
+                            | Value::RangeExcl(..)
+                            | Value::RangeExclStart(..)
+                            | Value::RangeExclBoth(..)
+                            | Value::GenericRange { .. }
+                            | Value::Seq(..)
+                            | Value::Slip(..)) => {
+                                flatten_into_slurpy(&[val], &mut items);
+                            }
+                            other => {
+                                items.push(other);
+                            }
+                        }
+                    }
+                    items
+                };
+                positional_idx = args.len(); // consume all remaining args
+                let slurpy_value = Value::real_array(items);
+                if !pd.name.is_empty() {
+                    let key = if pd.name.starts_with('@') {
+                        pd.name.clone()
+                    } else {
+                        format!("@{}", pd.name)
+                    };
+                    self.bind_param_value(&key, slurpy_value.clone());
+                    self.set_var_type_constraint(&key, pd.type_constraint.clone());
+                }
+                if let Some(sub_params) = &pd.sub_signature {
+                    bind_sub_signature_from_value(self, sub_params, &slurpy_value)?;
+                }
+            } else if pd.slurpy {
                 let is_hash_slurpy = pd.name.starts_with('%');
                 if pd.sigilless {
                     // |c -- capture parameter: preserve positional and named parts.
@@ -1125,7 +1186,11 @@ impl Interpreter {
                     let total_positional = param_defs
                         .iter()
                         .filter(|p| {
-                            !p.named && !p.slurpy && !p.double_slurpy && !p.name.starts_with(':')
+                            !p.named
+                                && !p.slurpy
+                                && !p.double_slurpy
+                                && !p.onearg
+                                && !p.name.starts_with(':')
                         })
                         .count();
                     let positional_arg_count = args
@@ -1195,13 +1260,13 @@ impl Interpreter {
             }
         }
         // Check for extra positional arguments when no array/capture slurpy is present
-        let has_array_slurpy = param_defs
-            .iter()
-            .any(|pd| pd.slurpy && (!pd.name.starts_with('%') || pd.sigilless));
+        let has_array_slurpy = param_defs.iter().any(|pd| {
+            pd.onearg || (pd.slurpy && (!pd.name.starts_with('%') || pd.sigilless))
+        });
         if !has_array_slurpy && !has_positional_sub_sig {
             let positional_param_count = param_defs
                 .iter()
-                .filter(|pd| !pd.named && !pd.slurpy)
+                .filter(|pd| !pd.named && !pd.slurpy && !pd.onearg)
                 .count();
             let positional_arg_count = plain_args
                 .iter()

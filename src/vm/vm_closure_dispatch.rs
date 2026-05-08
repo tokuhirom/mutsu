@@ -14,7 +14,7 @@ impl VM {
         let positional_params: Vec<&crate::ast::ParamDef> = data
             .param_defs
             .iter()
-            .filter(|pd| !pd.named && !pd.slurpy && !pd.double_slurpy)
+            .filter(|pd| !pd.named && !pd.slurpy && !pd.double_slurpy && !pd.onearg)
             .collect();
 
         // Also filter out named args from the args list to get positional args
