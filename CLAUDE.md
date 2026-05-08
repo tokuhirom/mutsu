@@ -419,3 +419,9 @@ Each slang has its own grammar rules (e.g., `+` means repetition in Regex slang 
 - **news/YYYY-MM.md** (e.g. `news/2026-05.md`) records what was accomplished each month. When completing a PLAN.md task, move its description and results to the current month's news file.
 - PLAN.md links to `news/` for historical context. Do not duplicate completed work in both files.
 - When starting a new month's work, create `news/YYYY-MM.md` if it doesn't exist.
+
+## Agent workflow
+
+- **Do not ask before launching agents.** When an agent completes, immediately launch the next task from PLAN.md or roast tests. Asking "should I continue?" wastes time.
+- Always maintain 3 concurrent agents when possible.
+- Pick tasks from PLAN.md priorities first, then roast fail tests.
