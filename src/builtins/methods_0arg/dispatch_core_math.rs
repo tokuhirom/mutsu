@@ -350,6 +350,9 @@ pub(super) fn dispatch(
         "item" => Some(match target {
             Value::Array(items, kind) => Some(Ok(Value::Array(items.clone(), kind.itemize()))),
             Value::LazyList(_) => None, // fall through to runtime to force
+            // Hash.item returns the Hash itself (it's already an item/scalar value).
+            // Wrapping in Scalar would break subscript access like $h<key>.
+            Value::Hash(..) => Some(Ok(target.clone())),
             other => Some(Ok(Value::Scalar(Box::new(other.clone())))),
         }),
         "race" | "hyper" => {

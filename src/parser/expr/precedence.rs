@@ -67,23 +67,18 @@ fn comparison_nonassoc_key(op: &TokenKind) -> Option<&'static str> {
         TokenKind::Ident(name) if name == "leg" => Some("leg"),
         TokenKind::Ident(name) if name == "cmp" => Some("cmp"),
         TokenKind::Ident(name) if name == "coll" => Some("coll"),
-        TokenKind::Ident(name) if name == "eqv" => Some("eqv"),
-        TokenKind::Ident(name) if name == "before" => Some("before"),
-        TokenKind::Ident(name) if name == "after" => Some("after"),
+        // eqv, before, after are chaining operators (not non-associative)
         _ => None,
     }
 }
 
 fn is_structural_comparison_op(op: ComparisonOp) -> bool {
+    // Only truly non-associative operators that return Order (not Bool).
+    // eqv, before, after are chaining operators and handled by the
+    // regular comparison chaining path.
     matches!(
         op,
-        ComparisonOp::Spaceship
-            | ComparisonOp::Leg
-            | ComparisonOp::Cmp
-            | ComparisonOp::Coll
-            | ComparisonOp::Eqv
-            | ComparisonOp::Before
-            | ComparisonOp::After
+        ComparisonOp::Spaceship | ComparisonOp::Leg | ComparisonOp::Cmp | ComparisonOp::Coll
     )
 }
 
@@ -272,11 +267,6 @@ pub(super) fn multiplicative_operand(input: &str) -> PResult<'_, Expr> {
 /// Parse an operand at power level.
 pub(super) fn power_operand(input: &str) -> PResult<'_, Expr> {
     power_expr(input)
-}
-
-/// Low-precedence: or / xor / orelse
-pub(super) fn or_expr(input: &str) -> PResult<'_, Expr> {
-    or_expr_mode(input, ExprMode::Full)
 }
 
 fn or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
