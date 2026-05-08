@@ -288,7 +288,22 @@ impl Interpreter {
         ignore_case: bool,
     ) -> bool {
         if ignore_case {
-            // When ignore_case is set, check if any case variant of c matches the class
+            if class.negated {
+                // For negated classes with :i, char matches only if ALL case
+                // variants are NOT in the positive set. If any variant IS in the
+                // positive set the char should be excluded by the negation.
+                let pos_class = CharClass {
+                    negated: false,
+                    items: class.items.clone(),
+                };
+                for variant in CaseFoldIter::new(c) {
+                    if self.regex_match_class(&pos_class, variant) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            // For positive classes, any case variant matching is sufficient
             for variant in CaseFoldIter::new(c) {
                 if self.regex_match_class(class, variant) {
                     return true;

@@ -661,6 +661,19 @@ fn is_syntax_conflicting_infix(op: &str) -> bool {
     )
 }
 
+/// Check whether a given operator symbol is registered as a user-defined
+/// `infix:<...>` in the current lexical scope.
+pub(in crate::parser) fn is_user_defined_infix(symbol: &str) -> bool {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        let canonical = format!("infix:<{symbol}>");
+        scopes
+            .iter()
+            .rev()
+            .any(|scope| scope.user_subs.contains(&canonical))
+    })
+}
+
 /// Match a user-declared infix operator (symbol form) against the current input.
 /// Returns `(symbol, consumed_len)` when input begins with an in-scope
 /// `infix:<...>` operator symbol. This handles both non-alphabetic symbols
