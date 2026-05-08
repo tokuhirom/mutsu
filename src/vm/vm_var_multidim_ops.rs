@@ -336,18 +336,26 @@ impl VM {
         rest: &[Value],
         value: Value,
     ) -> Result<(), RuntimeError> {
-        // Check if the dimension is a string key (for hash access)
+        // Check if the dimension is a string key (for hash access),
+        // but only when the target is actually a Hash (not an Array).
+        // Strings like "0" should be coerced to numeric indices for arrays.
         if let Value::Str(key) = dim {
-            // Hash assignment
-            Self::ensure_hash(target);
-            if let Value::Hash(map, ..) = target {
-                let map = std::sync::Arc::make_mut(map);
-                let entry = map
-                    .entry(key.as_str().to_string())
-                    .or_insert_with(|| Value::Package(crate::symbol::Symbol::intern("Any")));
-                Self::multi_dim_assign(entry, rest, value)?;
+            let target_is_hash = matches!(target, Value::Hash(..));
+            let target_is_array =
+                matches!(target, Value::Array(..) | Value::Nil | Value::Package(..));
+            if target_is_hash || !target_is_array {
+                // Hash assignment
+                Self::ensure_hash(target);
+                if let Value::Hash(map, ..) = target {
+                    let map = std::sync::Arc::make_mut(map);
+                    let entry = map
+                        .entry(key.as_str().to_string())
+                        .or_insert_with(|| Value::Package(crate::symbol::Symbol::intern("Any")));
+                    Self::multi_dim_assign(entry, rest, value)?;
+                }
+                return Ok(());
             }
-            return Ok(());
+            // Fall through to numeric index path for array targets
         }
 
         // Numeric index (for array access)
