@@ -1099,6 +1099,10 @@ fn native_function_2arg(
                 None => Value::Nil,
             }))
         }
+        "indices" => {
+            // Fall through to runtime -- handles named params, overlap, etc.
+            None
+        }
         "rindex" => {
             // Fall through to runtime for arrays (list of needles)
             if matches!(arg2, Value::Array(..)) {

@@ -67,23 +67,18 @@ fn comparison_nonassoc_key(op: &TokenKind) -> Option<&'static str> {
         TokenKind::Ident(name) if name == "leg" => Some("leg"),
         TokenKind::Ident(name) if name == "cmp" => Some("cmp"),
         TokenKind::Ident(name) if name == "coll" => Some("coll"),
-        TokenKind::Ident(name) if name == "eqv" => Some("eqv"),
-        TokenKind::Ident(name) if name == "before" => Some("before"),
-        TokenKind::Ident(name) if name == "after" => Some("after"),
+        // eqv, before, after are chaining operators (not non-associative)
         _ => None,
     }
 }
 
 fn is_structural_comparison_op(op: ComparisonOp) -> bool {
+    // Only truly non-associative operators that return Order (not Bool).
+    // eqv, before, after are chaining operators and handled by the
+    // regular comparison chaining path.
     matches!(
         op,
-        ComparisonOp::Spaceship
-            | ComparisonOp::Leg
-            | ComparisonOp::Cmp
-            | ComparisonOp::Coll
-            | ComparisonOp::Eqv
-            | ComparisonOp::Before
-            | ComparisonOp::After
+        ComparisonOp::Spaceship | ComparisonOp::Leg | ComparisonOp::Cmp | ComparisonOp::Coll
     )
 }
 
