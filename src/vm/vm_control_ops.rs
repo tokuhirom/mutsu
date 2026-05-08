@@ -1504,7 +1504,7 @@ impl VM {
                             if pd.named || pd.traits.iter().any(|t| t == "invocant") {
                                 continue;
                             }
-                            if pd.slurpy || pd.double_slurpy {
+                            if pd.slurpy || pd.double_slurpy || pd.onearg {
                                 positional_total = positional_total.max(1);
                                 continue;
                             }

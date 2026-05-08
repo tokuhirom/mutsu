@@ -291,6 +291,7 @@ impl VM {
                 if pd.named
                     || pd.slurpy
                     || pd.double_slurpy
+                    || pd.onearg
                     || pd.traits.iter().any(|t| t == "invocant")
                 {
                     continue;
