@@ -2038,7 +2038,9 @@ impl VM {
                 return Err(RuntimeError::typed("X::Undeclared", attrs));
             }
         }
-        if !matches!(value, Value::Nil) && !self.interpreter.type_matches_value(constraint, &value)
+        if !matches!(value, Value::Nil)
+            && !self.interpreter.type_matches_value(constraint, &value)
+            && !self.interpreter.is_container_subclass(constraint)
         {
             return Err(RuntimeError::typecheck_assignment(
                 constraint,

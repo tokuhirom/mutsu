@@ -3236,7 +3236,9 @@ impl Interpreter {
                 if *sigil == '@' || *sigil == '%' {
                     // Skip container-level type check for @ and % attributes;
                     // element-level checking happens at assignment time.
-                } else if !self.type_matches_value(constraint, value) {
+                } else if !self.type_matches_value(constraint, value)
+                    && !self.is_container_subclass(constraint)
+                {
                     return Err(RuntimeError::new(format!(
                         "Type check failed in assignment to $!{}; expected {}, got {}",
                         attr_name,

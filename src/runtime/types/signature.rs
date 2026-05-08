@@ -365,7 +365,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
         }
         let Some(mut candidate) = candidate else {
             // If the param is required (not optional, no default), error
-            if !sub_pd.optional_marker && sub_pd.default.is_none() {
+            if !sub_pd.optional_marker && sub_pd.default.is_none() && !sub_pd.named {
                 return Err(RuntimeError::new(
                     "Too few positional arguments in sub-signature binding".to_string(),
                 ));

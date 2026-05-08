@@ -1145,6 +1145,7 @@ impl Interpreter {
                     && let Some(type_constraint) =
                         self.get_attr_type_constraint(&class_name.resolve(), method)
                     && !self.type_matches_value(&type_constraint, &value)
+                    && !self.is_container_subclass(&type_constraint)
                 {
                     return Err(RuntimeError::new(format!(
                         "Type check failed in assignment to $!{}; expected {}, got {} ({})",

@@ -4430,6 +4430,33 @@ impl Interpreter {
         self.classes.contains_key(name)
     }
 
+    /// Check if a class name refers to a user-defined class that inherits from
+    /// a container type (Hash, Array, etc.). Used to skip element-level type
+    /// checking for container subclasses.
+    pub(crate) fn is_container_subclass(&self, name: &str) -> bool {
+        const CONTAINER_TYPES: &[&str] = &[
+            "Hash", "Array", "Map", "List", "Bag", "Set", "Mix", "BagHash", "SetHash", "MixHash",
+            "Seq",
+        ];
+        let class_def = self.classes.get(name).or_else(|| {
+            self.classes
+                .iter()
+                .find(|(k, _)| k.rsplit_once("::").is_some_and(|(_, short)| short == name))
+                .map(|(_, v)| v)
+        });
+        if let Some(class_def) = class_def {
+            for parent in &class_def.parents {
+                if CONTAINER_TYPES.contains(&parent.as_str()) {
+                    return true;
+                }
+                if self.is_container_subclass(parent) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     /// Check if a class has scoped subs declared in its body.
     pub(crate) fn has_class_scoped_subs(&self, class_name: &str) -> bool {
         self.class_subs
