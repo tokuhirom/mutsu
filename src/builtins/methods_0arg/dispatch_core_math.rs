@@ -8,6 +8,79 @@ use num_traits::ToPrimitive;
 
 use super::complex_math::complex_trig;
 
+/// Convert a string to Rat, handling integer, decimal, scientific notation, and complex forms.
+fn str_to_rat(s: &str) -> Value {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return make_rat(0, 1);
+    }
+    if let Some((n_str, d_str)) = trimmed.split_once('/') {
+        let n = n_str.trim().parse::<i64>().unwrap_or(0);
+        let d = d_str.trim().parse::<i64>().unwrap_or(1);
+        return make_rat(n, if d == 0 { 1 } else { d });
+    }
+    let real_str = if let Some(pos) = trimmed
+        .find('+')
+        .or_else(|| trimmed[1..].find('-').map(|p| p + 1))
+    {
+        let after = &trimmed[pos + 1..];
+        if after.ends_with('i') {
+            &trimmed[..pos]
+        } else {
+            trimmed
+        }
+    } else if trimmed.ends_with('i') {
+        return make_rat(0, 1);
+    } else {
+        trimmed
+    };
+    if real_str.contains('.') {
+        let negative = real_str.starts_with('-');
+        let abs_str = if negative { &real_str[1..] } else { real_str };
+        let (decimal_part, exp_part) = if let Some(e_pos) = abs_str.find(['e', 'E']) {
+            (&abs_str[..e_pos], abs_str[e_pos + 1..].parse::<i32>().ok())
+        } else {
+            (abs_str, None)
+        };
+        if let Some((int_part, frac_part)) = decimal_part.split_once('.') {
+            let frac_digits = frac_part.len() as u32;
+            if let Some(denom) = 10i64.checked_pow(frac_digits) {
+                let int_val = int_part.parse::<i64>().unwrap_or(0);
+                let frac_val = frac_part.parse::<i64>().unwrap_or(0);
+                let mut numer = int_val * denom + frac_val;
+                if negative {
+                    numer = -numer;
+                }
+                if let Some(exp) = exp_part {
+                    if exp >= 0 {
+                        if let Some(factor) = 10i64.checked_pow(exp as u32) {
+                            return make_rat(numer * factor, denom);
+                        }
+                    } else if let Some(factor) = 10i64.checked_pow((-exp) as u32) {
+                        return make_rat(numer, denom * factor);
+                    }
+                }
+                return make_rat(numer, denom);
+            }
+        }
+    }
+    if let Some(e_pos) = real_str.find(['e', 'E']) {
+        let base = &real_str[..e_pos];
+        let exp = real_str[e_pos + 1..].parse::<i32>().unwrap_or(0);
+        if let Ok(base_val) = base.parse::<i64>() {
+            if exp >= 0 {
+                if let Some(factor) = 10i64.checked_pow(exp as u32) {
+                    return make_rat(base_val * factor, 1);
+                }
+            } else if let Some(factor) = 10i64.checked_pow((-exp) as u32) {
+                return make_rat(base_val, factor);
+            }
+        }
+    }
+    let n = real_str.parse::<i64>().unwrap_or(0);
+    make_rat(n, 1)
+}
+
 /// Recursively apply `.tree` to nested arrays.
 fn tree_recursive(items: &[Value]) -> Vec<Value> {
     items
@@ -240,45 +313,62 @@ pub(super) fn dispatch(
                 }
             }
             Value::FatRat(n, d) => Some(Ok(make_rat(*n, *d))),
-            Value::Str(s) => {
-                if let Some((n_str, d_str)) = s.split_once('/') {
-                    let n = n_str.trim().parse::<i64>().unwrap_or(0);
-                    let d = d_str.trim().parse::<i64>().unwrap_or(1);
-                    Some(Ok(make_rat(n, if d == 0 { 1 } else { d })))
-                } else if s.contains('.') {
-                    let trimmed = s.trim();
-                    let negative = trimmed.starts_with('-');
-                    let abs_str = if negative { &trimmed[1..] } else { trimmed };
-                    if let Some((int_part, frac_part)) = abs_str.split_once('.') {
-                        let frac_digits = frac_part.len() as u32;
-                        let denom = 10i64.pow(frac_digits);
-                        let int_val = int_part.parse::<i64>().unwrap_or(0);
-                        let frac_val = frac_part.parse::<i64>().unwrap_or(0);
-                        let numer = int_val * denom + frac_val;
-                        let numer = if negative { -numer } else { numer };
-                        Some(Ok(make_rat(numer, denom)))
-                    } else {
-                        Some(Ok(make_rat(0, 1)))
-                    }
-                } else {
-                    let n = s.trim().parse::<i64>().unwrap_or(0);
-                    Some(Ok(make_rat(n, 1)))
-                }
-            }
+            Value::Str(s) => Some(Ok(str_to_rat(s))),
             Value::Complex(r, im) => {
                 if im.abs() <= 1e-15 {
-                    let denom = 1_000_000i64;
-                    let numer = (r * denom as f64).round() as i64;
-                    Some(Ok(make_rat(numer, denom)))
+                    Some(Ok(crate::builtins::num_to_rat_with_epsilon(*r, 1e-6)))
                 } else {
                     Some(Err(RuntimeError::new(
                         "Cannot convert Complex to Real: imaginary part not zero",
                     )))
                 }
             }
+            Value::Array(items, ..) => Some(Ok(make_rat(items.len() as i64, 1))),
+            Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => {
+                Some(Ok(make_rat(items.len() as i64, 1)))
+            }
+            Value::Hash(map) => Some(Ok(make_rat(map.len() as i64, 1))),
+            Value::Range(a, b) | Value::RangeExclStart(a, b) => {
+                let n = if *b >= *a { *b - *a + 1 } else { 0 };
+                Some(Ok(make_rat(n, 1)))
+            }
+            Value::RangeExcl(a, b) | Value::RangeExclBoth(a, b) => {
+                let n = if *b > *a { *b - *a } else { 0 };
+                Some(Ok(make_rat(n, 1)))
+            }
+            Value::GenericRange {
+                start,
+                end,
+                excl_end,
+                ..
+            } => {
+                let s = start.to_f64();
+                let e = end.to_f64();
+                if s.is_finite() && e.is_finite() {
+                    let mut count = (e - s).floor() as i64 + 1;
+                    if *excl_end {
+                        count -= 1;
+                    }
+                    if count < 0 {
+                        count = 0;
+                    }
+                    Some(Ok(make_rat(count, 1)))
+                } else {
+                    Some(Ok(make_rat(0, 1)))
+                }
+            }
             Value::Instance { .. } => None,
             Value::Package(_) => Some(Ok(make_rat(0, 1))),
-            _ => Some(Ok(make_rat(0, 1))),
+            _ => {
+                let n = target.to_f64();
+                if n.fract() == 0.0 && n.is_finite() {
+                    Some(Ok(make_rat(n as i64, 1)))
+                } else if n.is_finite() {
+                    Some(Ok(crate::builtins::num_to_rat_with_epsilon(n, 1e-6)))
+                } else {
+                    Some(Ok(make_rat(0, 1)))
+                }
+            }
         }),
         "FatRat" => Some(match target {
             Value::FatRat(_, _) => Some(Ok(target.clone())),
@@ -304,8 +394,67 @@ pub(super) fn dispatch(
                 }
             }
             Value::Str(s) => {
-                if let Ok(f) = s.parse::<f64>() {
-                    let rat = crate::builtins::num_to_rat_with_epsilon(f, 1e-6);
+                let rat = str_to_rat(s);
+                match rat {
+                    Value::Rat(n, d) => Some(Ok(Value::FatRat(n, d))),
+                    Value::BigRat(n, d) => Some(Ok(crate::value::make_big_fat_rat(n, d))),
+                    _ => Some(Ok(Value::FatRat(0, 1))),
+                }
+            }
+            Value::Complex(r, im) => {
+                if im.abs() <= 1e-15 {
+                    let rat = crate::builtins::num_to_rat_with_epsilon(*r, 1e-6);
+                    match rat {
+                        Value::Rat(n, d) => Some(Ok(Value::FatRat(n, d))),
+                        _ => Some(Ok(Value::FatRat(0, 1))),
+                    }
+                } else {
+                    Some(Err(RuntimeError::new(
+                        "Cannot convert Complex to Real: imaginary part not zero",
+                    )))
+                }
+            }
+            Value::Array(items, ..) => Some(Ok(Value::FatRat(items.len() as i64, 1))),
+            Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => {
+                Some(Ok(Value::FatRat(items.len() as i64, 1)))
+            }
+            Value::Hash(map) => Some(Ok(Value::FatRat(map.len() as i64, 1))),
+            Value::Range(a, b) | Value::RangeExclStart(a, b) => {
+                let n = if *b >= *a { *b - *a + 1 } else { 0 };
+                Some(Ok(Value::FatRat(n, 1)))
+            }
+            Value::RangeExcl(a, b) | Value::RangeExclBoth(a, b) => {
+                let n = if *b > *a { *b - *a } else { 0 };
+                Some(Ok(Value::FatRat(n, 1)))
+            }
+            Value::GenericRange {
+                start,
+                end,
+                excl_end,
+                ..
+            } => {
+                let s = start.to_f64();
+                let e = end.to_f64();
+                if s.is_finite() && e.is_finite() {
+                    let mut count = (e - s).floor() as i64 + 1;
+                    if *excl_end {
+                        count -= 1;
+                    }
+                    if count < 0 {
+                        count = 0;
+                    }
+                    Some(Ok(Value::FatRat(count, 1)))
+                } else {
+                    Some(Ok(Value::FatRat(0, 1)))
+                }
+            }
+            Value::Package(_) => Some(Ok(Value::FatRat(0, 1))),
+            _ => {
+                let n = target.to_f64();
+                if n.fract() == 0.0 && n.is_finite() {
+                    Some(Ok(Value::FatRat(n as i64, 1)))
+                } else if n.is_finite() {
+                    let rat = crate::builtins::num_to_rat_with_epsilon(n, 1e-6);
                     match rat {
                         Value::Rat(n, d) => Some(Ok(Value::FatRat(n, d))),
                         _ => Some(Ok(Value::FatRat(0, 1))),
@@ -314,8 +463,6 @@ pub(super) fn dispatch(
                     Some(Ok(Value::FatRat(0, 1)))
                 }
             }
-            Value::Package(_) => Some(Ok(Value::FatRat(0, 1))),
-            _ => Some(Ok(Value::FatRat(0, 1))),
         }),
         "tree" => Some(match target {
             Value::Array(items, ..) => Some(Ok(Value::array(tree_recursive(items)))),
