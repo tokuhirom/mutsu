@@ -186,6 +186,15 @@ fn looks_like_type_arg_expr(input: &str) -> bool {
 
 fn should_treat_role_arg_as_type_expr(input: &str) -> bool {
     let trimmed = input.trim();
+    // Colonpair syntax like `:a(1)` or `:foo(42)` is a named argument, not a type.
+    if trimmed.starts_with(':')
+        && trimmed
+            .chars()
+            .nth(1)
+            .is_some_and(|c| c.is_ascii_lowercase())
+    {
+        return false;
+    }
     looks_like_type_arg_expr(trimmed)
         && (trimmed.contains(':') || trimmed.contains('(') || trimmed.contains("::"))
 }
@@ -544,7 +553,35 @@ impl Interpreter {
 
         matches.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)));
         let selected = matches.remove(0).0;
-        Ok(Some((selected.role_def, selected.type_params, arg_values)))
+        // Properly bind args (handling named params, defaults, etc.) and extract
+        // resolved values per param name, instead of using raw positional zip.
+        let resolved_values = if !selected.type_param_defs.is_empty() {
+            let saved_env = self.env.clone();
+            let candidate_param_names: Vec<String> = selected
+                .type_param_defs
+                .iter()
+                .map(|pd| pd.name.clone())
+                .collect();
+            let _ = self.bind_function_args_values(
+                &selected.type_param_defs,
+                &candidate_param_names,
+                &arg_values,
+            );
+            let mut resolved = Vec::with_capacity(selected.type_params.len());
+            for param_name in &selected.type_params {
+                let value = self.env.get(param_name).cloned().unwrap_or(Value::Nil);
+                resolved.push(value);
+            }
+            self.env = saved_env;
+            resolved
+        } else {
+            arg_values
+        };
+        Ok(Some((
+            selected.role_def,
+            selected.type_params,
+            resolved_values,
+        )))
     }
 
     fn resolve_declared_type_name(&self, name: &str) -> String {
@@ -2482,24 +2519,46 @@ impl Interpreter {
                         .entry(name.to_string())
                         .or_default()
                         .push(role_name_str.clone());
-                    let type_subs: Vec<(String, String)> = if let Some(parent_type_params) =
-                        self.role_type_params.get(base_role_name)
-                    {
-                        if let Some(bracket_start) = role_name_str.find('[') {
-                            let args_str =
-                                &role_name_str[bracket_start + 1..role_name_str.len() - 1];
-                            let type_args = parse_role_type_args(args_str);
-                            parent_type_params
+                    // Use resolve_role_candidate to properly handle named
+                    // arguments and default values in parameterized role
+                    // composition.
+                    let type_subs: Vec<(String, String)> =
+                        if let Some((_, resolved_param_names, resolved_values)) =
+                            self.resolve_role_candidate(&role_name_str)?
+                        {
+                            // Store the resolved param bindings so they are
+                            // available when the child role is punned to a class
+                            // and methods referencing role params are dispatched.
+                            let bindings = self
+                                .class_role_param_bindings
+                                .entry(name.to_string())
+                                .or_default();
+                            for (p, v) in resolved_param_names.iter().zip(resolved_values.iter()) {
+                                bindings.insert(p.clone(), v.clone());
+                            }
+                            resolved_param_names
                                 .iter()
-                                .zip(type_args.iter())
-                                .map(|(p, a)| (p.clone(), a.clone()))
+                                .zip(resolved_values.iter())
+                                .map(|(p, v)| (p.clone(), type_value_name(v)))
                                 .collect()
+                        } else if let Some(parent_type_params) =
+                            self.role_type_params.get(base_role_name)
+                        {
+                            if let Some(bracket_start) = role_name_str.find('[') {
+                                let args_str =
+                                    &role_name_str[bracket_start + 1..role_name_str.len() - 1];
+                                let type_args = parse_role_type_args(args_str);
+                                parent_type_params
+                                    .iter()
+                                    .zip(type_args.iter())
+                                    .map(|(p, a)| (p.clone(), a.clone()))
+                                    .collect()
+                            } else {
+                                Vec::new()
+                            }
                         } else {
                             Vec::new()
-                        }
-                    } else {
-                        Vec::new()
-                    };
+                        };
                     for attr in &role.attributes {
                         if role_def.attributes.iter().any(|(n, ..)| n == &attr.0) {
                             // Already present. Only a real conflict if both
