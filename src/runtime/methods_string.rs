@@ -776,6 +776,97 @@ impl Interpreter {
         }
     }
 
+    /// Str.indices(needle, pos?, :overlap, :i, :ignorecase, :m, :ignoremark)
+    pub(super) fn dispatch_indices(
+        &self,
+        target: Value,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if let Some(Value::Package(type_name)) = args.first() {
+            return Err(RuntimeError::new(format!(
+                "Cannot resolve caller indices({}:U)",
+                type_name
+            )));
+        }
+        let mut positional: Vec<Value> = Vec::new();
+        let mut ignore_case = false;
+        let mut ignore_mark = false;
+        let mut overlap = false;
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                match key.as_str() {
+                    "i" | "ignorecase" => ignore_case = value.truthy(),
+                    "m" | "ignoremark" => ignore_mark = value.truthy(),
+                    "overlap" => overlap = value.truthy(),
+                    _ => {}
+                }
+            } else {
+                positional.push(arg.clone());
+            }
+        }
+        let needle = positional
+            .first()
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let start = if let Some(pos) = positional.get(1) {
+            match self.value_to_position(pos) {
+                Ok(v) => v,
+                Err(err) => {
+                    return Ok(Self::runtime_error_to_failure(err));
+                }
+            }
+        } else {
+            0
+        };
+        let text = target.to_string_value();
+        let len = text.chars().count() as i64;
+        if start < 0 {
+            return Ok(RuntimeError::out_of_range_failure(
+                "start",
+                Value::Int(start),
+                &format!("0..{}", len),
+            ));
+        }
+        let text_chars: Vec<char> = text.chars().collect();
+        let mut results: Vec<Value> = Vec::new();
+        if needle.is_empty() {
+            for i in (start as usize)..=text_chars.len() {
+                results.push(Value::Int(i as i64));
+            }
+        } else {
+            let needle_len = needle.chars().count();
+            let mut pos = start as usize;
+            while pos <= text_chars.len() {
+                let hay: String = text_chars[pos..].iter().collect();
+                let found = if ignore_case && ignore_mark {
+                    self.index_ignorecase_ignoremark(&hay, &needle)
+                } else if ignore_case {
+                    self.index_ignorecase(&hay, &needle)
+                } else if ignore_mark {
+                    self.index_ignoremark(&hay, &needle)
+                } else {
+                    hay.find(needle.as_str()).map(|p| hay[..p].chars().count())
+                };
+                match found {
+                    Some(char_pos) => {
+                        let absolute_pos = pos + char_pos;
+                        results.push(Value::Int(absolute_pos as i64));
+                        if overlap {
+                            pos = absolute_pos + 1;
+                        } else {
+                            pos = absolute_pos + needle_len;
+                        }
+                    }
+                    None => break,
+                }
+            }
+        }
+        Ok(Value::Array(
+            std::sync::Arc::new(results),
+            crate::value::ArrayKind::List,
+        ))
+    }
+
     pub(super) fn dispatch_rindex(
         &self,
         target: Value,
@@ -971,6 +1062,13 @@ impl Interpreter {
                     Err(self.out_of_range_error(Value::Num(*f)))
                 } else {
                     Ok(*f as i64)
+                }
+            }
+            Value::Rat(n, d) => {
+                if *d == 0 {
+                    Err(self.out_of_range_error(Value::Rat(*n, *d)))
+                } else {
+                    Ok(*n / *d)
                 }
             }
             Value::Str(s) => Ok(s.parse::<i64>().unwrap_or(0)),

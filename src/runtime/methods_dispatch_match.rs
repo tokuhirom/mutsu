@@ -152,6 +152,7 @@ impl Interpreter {
             "starts-with" => Some(self.dispatch_starts_with(target, &args)),
             "ends-with" => Some(self.dispatch_ends_with(target, &args)),
             "index" => Some(self.dispatch_index(target, &args)),
+            "indices" => Some(self.dispatch_indices(target, &args)),
             "rindex" => Some(self.dispatch_rindex(target, &args)),
             "substr-eq" => Some(self.dispatch_substr_eq(target, &args)),
             "substr" => Some(self.dispatch_substr(target, &args)),

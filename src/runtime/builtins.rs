@@ -573,6 +573,14 @@ impl Interpreter {
                 }
                 self.call_method_with_values(target, "index", method_args)
             }
+            "indices" => {
+                if args.is_empty() {
+                    return Err(RuntimeError::new("Too few positionals passed to 'indices'"));
+                }
+                let target = args[0].clone();
+                let method_args = args[1..].to_vec();
+                self.call_method_with_values(target, "indices", method_args)
+            }
             "rindex" => {
                 if args.is_empty() {
                     return Err(RuntimeError::new("Too few positionals passed to 'rindex'"));
