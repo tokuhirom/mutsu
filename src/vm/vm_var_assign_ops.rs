@@ -1557,6 +1557,48 @@ impl VM {
         {
             self.set_env_with_main_alias(&var_name, self.locals[slot].clone());
         }
+        // Junction autothreading: when writing back with a junction index,
+        // expand the junction and assign each element separately.
+        if let Value::Junction {
+            values: junc_keys, ..
+        } = &idx
+        {
+            let junc_vals = if let Value::Junction { values: jv, .. } = &val {
+                jv.clone()
+            } else {
+                // Same value for all junction elements
+                Arc::new(vec![val.clone(); junc_keys.len()])
+            };
+            for (i, key) in junc_keys.iter().enumerate() {
+                let v = junc_vals.get(i).cloned().unwrap_or(Value::Nil);
+                let k = key.to_string_value();
+                if var_name.starts_with('%') {
+                    if !matches!(self.interpreter.env().get(&var_name), Some(Value::Hash(_))) {
+                        self.interpreter.env_mut().insert(
+                            var_name.clone(),
+                            Value::hash(std::collections::HashMap::new()),
+                        );
+                    }
+                    if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(&var_name) {
+                        let h = Arc::make_mut(hash);
+                        h.insert(k, v);
+                    }
+                } else if let Some(idx_usize) = Self::index_to_usize(key) {
+                    // For array variables with junction index, use numeric indices
+                    if let Some(Value::Array(items, ..)) =
+                        self.interpreter.env_mut().get_mut(&var_name)
+                    {
+                        let arr = Arc::make_mut(items);
+                        if idx_usize >= arr.len() {
+                            arr.resize(idx_usize + 1, Value::Package(Symbol::intern("Any")));
+                        }
+                        arr[idx_usize] = v;
+                    }
+                }
+            }
+            self.stack.push(val);
+            return Ok(());
+        }
         match &idx {
             Value::Array(keys, ..) => {
                 let mut vals = self.assignment_rhs_values(&val)?;
@@ -1623,7 +1665,7 @@ impl VM {
                     vals.push(Value::Nil);
                 }
                 // Check value type constraint for hash slice assignment
-                if let Some(constraint) = self.interpreter.var_type_constraint(&var_name) {
+                if let Some(constraint) = self.interpreter.var_type_constraint(&var_name) && !self.interpreter.is_container_subclass(&constraint) {
                     for v in &vals {
                         if !matches!(v, Value::Nil)
                             && !self.interpreter.type_matches_value(&constraint, v)
@@ -1697,6 +1739,7 @@ impl VM {
                         "Hash" | "Array" | "Map" | "List" | "Bag" | "Set" | "Mix"
                             | "BagHash" | "SetHash" | "MixHash" | "Seq"
                     )
+                    && !self.interpreter.is_container_subclass(&constraint)
                 {
                     return Err(RuntimeError::new(runtime::utils::type_check_element_error(
                         &var_name,
@@ -1822,6 +1865,25 @@ impl VM {
                         let mut err = RuntimeError::new(msg);
                         err.exception = Some(Box::new(ex));
                         return Err(err);
+                    }
+                }
+                // When the container is an Instance of a Hash subclass (e.g.
+                // `class MyHash is Hash {}`), convert it to a plain Hash
+                // before element assignment so hash operations work correctly.
+                if let Some(Value::Instance { class_name, .. }) =
+                    self.interpreter.env().get(&var_name)
+                    && self
+                        .interpreter
+                        .is_container_subclass(&class_name.resolve())
+                {
+                    if let Some(Value::Instance { attributes, .. }) =
+                        self.interpreter.env().get(&var_name)
+                    {
+                        let hash_map: HashMap<String, Value> = HashMap::clone(&**attributes);
+                        let hash_val = Value::hash(hash_map);
+                        self.interpreter
+                            .env_mut()
+                            .insert(var_name.clone(), hash_val);
                     }
                 }
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
