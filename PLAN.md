@@ -4,6 +4,7 @@
 
 **実用的な Raku インタープリタ**として使ってもらえる品質を目指す。
 起動 25 倍速い強みを活かし、CLI ツール・スクリプティング用途をメインターゲットとする。
+最終的には **mutsu でウェブブログが作れる** レベルのライブラリ互換性を実現する。
 
 過去の実装状況は [news/](news/) を参照。
 
@@ -13,53 +14,63 @@
 
 目標: **「簡単なスクリプトなら raku の代わりに使える」レベルに到達**
 
-### 関数呼び出しパフォーマンス 🔥
+### 関数呼び出しパフォーマンス ✅
 
-fib(25) が raku の 79 倍遅い。map/grep/sort にも波及するため最優先。
+- [x] positional-only 関数の軽量呼び出しパス (#2229)
+- [x] fib(25): 79x → 8x に改善
+- [ ] さらなる改善（環境 HashMap clone 回避、関数解決キャッシュ）
 
-- [ ] positional-only 関数の軽量呼び出しパス
-- [ ] 環境 HashMap の clone 回避 (save/restore 方式)
-- [ ] 関数解決キャッシュ
-- 目標: 79x → 10x 以下
+### JSON::Tiny 完全対応
 
-### from-json 完全対応
-
-- [x] `from-json('[1,2,3]')` — 配列
-- [ ] `from-json('"hello"')` — 文字列
-- [ ] `from-json('{"key": "value"}')` — オブジェクト
+- [x] `to-json` (#2216)
+- [x] `from-json` 配列 (#2227)
+- [x] `from-json` 文字列 (#2231)
+- [x] `from-json` オブジェクト (#2233)
+- [ ] JSON::Tiny テストスイート全 pass（エスケープ文字列、Unicode エスケープ、surrogate pair）
 
 ### Container semantics
 
-roast で最も多い失敗原因。
-
+- [x] WhateverCode 複数引数 (#2232)
 - [ ] Scalar コンテナの生成・束縛が raku 互換
-- [ ] `@a[0] = 42` 等の代入
+- [ ] 関連 roast テストの通過率改善
 
 ---
 
-## Q3 (7〜9月): モジュール互換性とエコシステム
+## Q3 (7〜9月): ウェブアプリに必要なモジュール互換性
 
-目標: **実在する pure-Raku モジュールが 5 個以上動く**
+目標: **mutsu でウェブブログシステムが構築できる**
 
-### モジュール互換性
+### ウェブブログに必要なスタック
 
-- [ ] JSON::Tiny 完全動作 (to-json + from-json)
+| レイヤー | モジュール | 状態 | 備考 |
+|----------|-----------|------|------|
+| JSON | JSON::Tiny | ⚠️ 基本動作、テスト残り | エスケープ/Unicode |
+| テンプレート | Template::Mustache | ❌ `.meta` 未対応 | pure Raku grammar ベース |
+| HTTP サーバー | HTTP::Server::Tiny | ❌ 依存未解決 | HTTP::Parser, IO::Blob, HTTP::Status |
+| DB | (検討中) | ❌ | NativeCall 不可。JSON file / SQLite CLI wrapper |
+
+### モジュール対応の進め方
+
+1. **JSON::Tiny** テストスイート全 pass
+2. **Template::Mustache** — `.meta` メソッド等を修正してテスト通過
+3. **HTTP::Server::Tiny** の依存モジュール群（HTTP::Parser, IO::Blob, HTTP::Status）
+4. **HTTP::Server::Tiny** 本体
+5. DB アクセス — pure Raku の簡易実装 or qqx ベースの SQLite wrapper
+
+### その他モジュール
+
 - [ ] File::Temp
-- [ ] File::Directory::Tree
 - [ ] MIME::Base64 (pure Raku)
-- [ ] Template::Mustache or similar
-- 動かないモジュールごとに足りない機能を特定し、汎用的に実装
+- [ ] File::Directory::Tree
 
 ### バイナリ配布
 
 - [ ] mise GitHub バックエンドでのインストール検証
-- [ ] `mise use mutsu` で入る状態にする
-- [ ] GitHub Releases の自動化 (タグ push → バイナリ生成)
+- [ ] GitHub Releases の自動化
 
 ### Roast 90% 突破
 
-- [ ] Whitelist 1148 → 1170+ (roast 90%)
-- [ ] Container semantics 改善で fail テスト減少
+- [ ] Whitelist → 1170+ (roast 90%)
 
 ---
 
@@ -70,8 +81,7 @@ roast で最も多い失敗原因。
 ### 安定性
 
 - [ ] エッジケースでの panic/crash を 0 にする
-- [ ] エラーメッセージの品質向上 (残りの X::* 例外クラス)
-- [ ] warn の位置情報
+- [ ] エラーメッセージの品質向上
 
 ### パフォーマンス Phase 2
 
@@ -80,14 +90,13 @@ roast で最も多い失敗原因。
 
 ### ドキュメントとコミュニティ
 
-- [ ] 「mutsu で書く CLI ツール」チュートリアル
+- [ ] 「mutsu でウェブブログを作る」チュートリアル
 - [ ] raku との互換性マトリクス公開
-- [ ] WASM playground の公開 (既存の wasm-demo を拡張)
+- [ ] WASM playground の公開
 
 ### Roast
 
 - [ ] Whitelist 1200+ 目標
-- [ ] 残りの主要な言語機能ギャップを埋める
 
 ---
 
@@ -95,9 +104,11 @@ roast で最も多い失敗原因。
 
 | 指標 | 現在 (5月) | Q2 目標 | Q3 目標 | Q4 目標 |
 |------|-----------|---------|---------|---------|
-| Whitelist | 1148 | 1155+ | 1170+ | 1200+ |
-| fib(25) vs raku | 79x | <10x | <10x | <10x |
+| Whitelist | 1151 | 1155+ | 1170+ | 1200+ |
+| fib(25) vs raku | 8x | <10x ✅ | <10x | <10x |
 | 起動時間 vs raku | 0.04x | 0.04x | 0.04x | 0.04x |
-| JSON::Tiny | to-json✅ | 完全✅ | 完全✅ | 完全✅ |
-| 動作モジュール数 | 1 | 1 | 5+ | 5+ |
+| JSON::Tiny | ⚠️ 基本動作 | テスト全pass | ✅ | ✅ |
+| Template::Mustache | ❌ | - | ✅ | ✅ |
+| HTTP::Server::Tiny | ❌ | - | ✅ | ✅ |
+| 動作モジュール数 | 1 | 2 | 5+ | 5+ |
 | mise install | ❌ | ❌ | ✅ | ✅ |

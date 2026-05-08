@@ -335,6 +335,18 @@ impl VM {
         self.env_dirty = false;
         self.locals_dirty = false;
 
+        // Raku: routines get their own $_ initialized to (Any).
+        let saved_topic = if cf.code.is_routine {
+            let old = self.interpreter.env().get("_").cloned();
+            self.interpreter.env_mut().insert(
+                "_".to_string(),
+                Value::Package(crate::symbol::Symbol::intern("Any")),
+            );
+            old
+        } else {
+            None
+        };
+
         // Reuse locals vec to avoid per-call allocation
         let num_locals = cf.code.locals.len();
         self.locals.clear();
@@ -431,6 +443,18 @@ impl VM {
                 }
             }
             *self.interpreter.env_mut() = restored_env;
+        }
+
+        // Restore caller's $_ after routine call.
+        if cf.code.is_routine {
+            match saved_topic {
+                Some(v) => {
+                    self.interpreter.env_mut().insert("_".to_string(), v);
+                }
+                None => {
+                    self.interpreter.env_mut().remove("_");
+                }
+            }
         }
 
         match result {
@@ -1287,6 +1311,14 @@ impl VM {
                     .env_mut()
                     .insert("!".to_string(), Value::Nil);
             }
+        }
+
+        // Raku: routines get their own $_ initialized to (Any).
+        if cf.code.is_routine && !cf.param_defs.iter().any(|pd| pd.name == "_") {
+            self.interpreter.env_mut().insert(
+                "_".to_string(),
+                Value::Package(crate::symbol::Symbol::intern("Any")),
+            );
         }
 
         self.locals = vec![Value::Nil; cf.code.locals.len()];
