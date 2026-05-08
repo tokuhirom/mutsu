@@ -408,8 +408,9 @@ impl Compiler {
             rhs_end: 0,
             negate: false,
             lhs_var,
-            // m// standalone (not in ~~ context) behaves like m// for result purposes
-            rhs_is_match_regex: true,
+            // Standalone m// (not in ~~ context) returns Nil on failure, not False.
+            // Setting this to false makes smart_match_op return $/ (Nil) on failure.
+            rhs_is_match_regex: false,
         });
         // RHS: load the regex constant
         let idx = self.code.add_constant(v.clone());

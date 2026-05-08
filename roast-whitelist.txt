@@ -386,6 +386,7 @@ roast/S05-modifier/counted-match.t
 roast/S05-modifier/counted.t
 roast/S05-modifier/exhaustive.t
 roast/S05-modifier/global.t
+roast/S05-modifier/ignorecase-and-ignoremark.t
 roast/S05-modifier/ignoremark.t
 roast/S05-modifier/ii.t
 roast/S05-modifier/my.t
