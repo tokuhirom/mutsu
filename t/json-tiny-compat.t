@@ -16,7 +16,7 @@ unless "tmp/json-tiny/lib/JSON/Tiny.pm".IO.e {
 use lib 'tmp/json-tiny/lib';
 use JSON::Tiny;
 
-plan 30;
+plan 41;
 
 # to-json: numbers
 is to-json(42), '42', 'to-json integer';
@@ -80,3 +80,39 @@ is-deeply from-json('["a", "b", "c"]'), ["a", "b", "c"], 'from-json array of str
 # Grammar str_escape token (used internally by string parsing)
 ok JSON::Tiny::Grammar.subparse('n', :rule<str_escape>).defined,
    'grammar str_escape token matches n';
+
+# from-json: objects (hashes)
+{
+    my $d = from-json('{"name":"test","age":42}');
+    is $d.WHAT.gist, '(Hash)', 'from-json object returns Hash';
+    is $d<name>, 'test', 'from-json object string value';
+    is $d<age>, 42, 'from-json object integer value';
+}
+
+# from-json: nested objects
+{
+    my $d = from-json('{"a":[1,2],"b":{"c":3}}');
+    is-deeply $d<a>, [1, 2], 'from-json nested array in object';
+    is $d<b><c>, 3, 'from-json nested object access';
+}
+
+# from-json: object with boolean/null values
+{
+    my $d = from-json('{"flag":true,"empty":null,"off":false}');
+    is $d<flag>, True, 'from-json object bool true';
+    is $d<off>, False, 'from-json object bool false';
+    ok !$d<empty>.defined, 'from-json object null value';
+}
+
+# from-json: empty object
+{
+    my $d = from-json('{}');
+    is $d.WHAT.gist, '(Hash)', 'from-json empty object is Hash';
+    is $d.elems, 0, 'from-json empty object has no elements';
+}
+
+# from-json: object with array values
+{
+    my $d = from-json('{"items":[10,20,30]}');
+    is-deeply $d<items>, [10, 20, 30], 'from-json object with array value';
+}

@@ -15,7 +15,7 @@ use crate::value::Value;
 use super::helpers::ws;
 pub(in crate::parser) use postfix::postfix_expr_continue;
 pub(in crate::parser) use postfix::{QuotedMethodName, parse_quoted_method_name};
-use precedence::{or_expr, ternary};
+use precedence::ternary;
 
 thread_local! {
     static EXPR_MEMO_TLS: RefCell<HashMap<(usize, usize), MemoEntry<Expr>>> = RefCell::new(HashMap::new());
@@ -472,10 +472,6 @@ fn make_wc_param(name: String) -> crate::ast::ParamDef {
         is_invocant: false,
         shape_constraints: None,
     }
-}
-
-pub(super) fn or_expr_pub(input: &str) -> PResult<'_, Expr> {
-    or_expr(input)
 }
 
 /// Try to detect and fix a chain of MethodCalls leading to a CallOn whose target

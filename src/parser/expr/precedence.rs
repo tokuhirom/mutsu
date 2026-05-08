@@ -269,11 +269,6 @@ pub(super) fn power_operand(input: &str) -> PResult<'_, Expr> {
     power_expr(input)
 }
 
-/// Low-precedence: or / xor / orelse
-pub(super) fn or_expr(input: &str) -> PResult<'_, Expr> {
-    or_expr_mode(input, ExprMode::Full)
-}
-
 fn or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let (mut rest, mut left) = assign_or_and_expr(input, mode)?;
     loop {

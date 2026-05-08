@@ -15,7 +15,7 @@ fn is_superscript_digit(c: char) -> bool {
     )
 }
 
-use super::super::expr::{expression, expression_no_sequence, or_expr_pub};
+use super::super::expr::{expression, expression_no_sequence};
 use super::super::helpers::{
     consume_unspace, is_loop_label_name, is_raku_identifier_start, normalize_raku_identifier, ws,
     ws1,
@@ -1010,7 +1010,9 @@ fn is_unspace_before_postfix(input: &str) -> bool {
 /// Stops at statement modifiers, semicolons, and closing brackets.
 fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
     if name == "make" {
-        let (r, arg) = or_expr_pub(input).map_err(|err| PError {
+        // Use expression_no_sequence so that `make X => Y` parses the entire
+        // Pair as the argument (fat-arrow has lower precedence than or_expr).
+        let (r, arg) = expression_no_sequence(input).map_err(|err| PError {
             messages: merge_expected_messages("expected listop argument expression", &err.messages),
             remaining_len: err.remaining_len.or(Some(input.len())),
             exception: None,
