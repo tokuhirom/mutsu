@@ -909,14 +909,23 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
             }
         }
         Ok(match (&l, &r) {
-            (Value::Num(_), Value::Num(b)) if *b == 0.0 => {
-                return Err(RuntimeError::numeric_divide_by_zero());
+            (Value::Num(a), Value::Num(b)) if *b == 0.0 => {
+                return Ok(RuntimeError::divide_by_zero_failure(
+                    Some(Value::Num(*a)),
+                    Some("/"),
+                ));
             }
-            (Value::Int(_), Value::Num(b)) if *b == 0.0 => {
-                return Ok(RuntimeError::divide_by_zero_failure(None, None));
+            (Value::Int(a), Value::Num(b)) if *b == 0.0 => {
+                return Ok(RuntimeError::divide_by_zero_failure(
+                    Some(Value::Int(*a)),
+                    Some("/"),
+                ));
             }
             (Value::Num(_), Value::Int(b)) if *b == 0 => {
-                return Ok(RuntimeError::divide_by_zero_failure(None, None));
+                return Ok(RuntimeError::divide_by_zero_failure(
+                    Some(l.clone()),
+                    Some("/"),
+                ));
             }
             (Value::Num(a), Value::Num(b)) => Value::Num(a / b),
             (Value::Int(a), Value::Num(b)) => Value::Num(*a as f64 / b),
@@ -924,13 +933,19 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
             (Value::Num(a), Value::BigInt(b)) => {
                 let bf = runtime::to_float_value(&Value::BigInt(b.clone())).unwrap_or(1.0);
                 if bf == 0.0 {
-                    return Err(RuntimeError::numeric_divide_by_zero());
+                    return Ok(RuntimeError::divide_by_zero_failure(
+                        Some(Value::Num(*a)),
+                        Some("/"),
+                    ));
                 }
                 Value::Num(a / bf)
             }
             (Value::BigInt(a), Value::Num(b)) => {
                 if *b == 0.0 {
-                    return Err(RuntimeError::numeric_divide_by_zero());
+                    return Ok(RuntimeError::divide_by_zero_failure(
+                        Some(Value::BigInt(a.clone())),
+                        Some("/"),
+                    ));
                 }
                 let af = runtime::to_float_value(&Value::BigInt(a.clone())).unwrap_or(0.0);
                 Value::Num(af / b)
@@ -1014,12 +1029,18 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
                 (Value::BigInt(a), Value::BigInt(b)) => {
                     Value::from_bigint(num_integer::Integer::mod_floor(a.as_ref(), b.as_ref()))
                 }
-                (Value::Num(_), Value::Num(0.0)) => {
-                    return Err(RuntimeError::numeric_divide_by_zero_full(None, Some("%")));
+                (Value::Num(a), Value::Num(0.0)) => {
+                    return Ok(RuntimeError::divide_by_zero_failure(
+                        Some(Value::Num(a)),
+                        Some("%"),
+                    ));
                 }
                 (Value::Num(a), Value::Num(b)) => Value::Num(float_mod_floor(a, b)),
-                (_, Value::Num(0.0)) => {
-                    return Err(RuntimeError::numeric_divide_by_zero_full(None, Some("%")));
+                (ref lv, Value::Num(0.0)) => {
+                    return Ok(RuntimeError::divide_by_zero_failure(
+                        Some(lv.clone()),
+                        Some("%"),
+                    ));
                 }
                 (Value::Int(a), Value::Num(b)) => Value::Num(float_mod_floor(a as f64, b)),
                 (Value::Num(a), Value::Int(b)) => Value::Num(float_mod_floor(a, b as f64)),
@@ -1052,12 +1073,18 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
             (Value::BigInt(a), Value::BigInt(b)) => {
                 Value::from_bigint(num_integer::Integer::mod_floor(a.as_ref(), b.as_ref()))
             }
-            (Value::Num(_), Value::Num(0.0)) => {
-                return Err(RuntimeError::numeric_divide_by_zero_full(None, Some("%")));
+            (Value::Num(a), Value::Num(0.0)) => {
+                return Ok(RuntimeError::divide_by_zero_failure(
+                    Some(Value::Num(a)),
+                    Some("%"),
+                ));
             }
             (Value::Num(a), Value::Num(b)) => Value::Num(float_mod_floor(a, b)),
-            (_, Value::Num(0.0)) => {
-                return Err(RuntimeError::numeric_divide_by_zero_full(None, Some("%")));
+            (ref lv, Value::Num(0.0)) => {
+                return Ok(RuntimeError::divide_by_zero_failure(
+                    Some(lv.clone()),
+                    Some("%"),
+                ));
             }
             (Value::Int(a), Value::Num(b)) => Value::Num(float_mod_floor(a as f64, b)),
             (Value::Num(a), Value::Int(b)) => Value::Num(float_mod_floor(a, b as f64)),
@@ -1282,7 +1309,14 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                     Value::Num(a.powf(b.as_ref().to_f64().unwrap_or(f64::INFINITY)))
                 }
             }
-            (Value::Num(a), Value::Num(b)) => Value::Num(a.powf(b)),
+            (Value::Num(a), Value::Num(b)) => {
+                let result = a.powf(b);
+                if result == 0.0 && a != 0.0 && b.is_finite() && b < 0.0 {
+                    RuntimeError::numeric_underflow_failure()
+                } else {
+                    Value::Num(result)
+                }
+            }
             (base, exp) => powf_or_zero(&base, &exp),
         }
     }

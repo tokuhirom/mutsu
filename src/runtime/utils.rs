@@ -1105,6 +1105,7 @@ pub(crate) fn is_known_compound_type(name: &str) -> bool {
             | "X::NotParametric"
             | "X::Numeric::DivideByZero"
             | "X::Numeric::Real"
+            | "X::Numeric::Underflow"
             | "X::Obsolete"
             | "X::OutOfRange"
             | "X::Package::Stubbed"
