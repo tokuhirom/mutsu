@@ -174,8 +174,28 @@ impl Interpreter {
                 self.supply_emit_buffer.push(Vec::new());
                 self.supply_emit_timed_buffer.push(Vec::new());
                 let _ = self.call_sub_value(after_tap_cb, vec![], false);
-                let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
+                let raw_emitted = self.supply_emit_buffer.pop().unwrap_or_default();
                 let timed_emitted = self.supply_emit_timed_buffer.pop().unwrap_or_default();
+
+                // For supplier-backed supplies (batch, flat, etc.), the raw
+                // supply_emit_buffer contains upstream values before transformation.
+                // The properly transformed values (batched lists, flattened items,
+                // etc.) are emitted to the downstream supplier. Use the downstream
+                // supplier snapshot instead of raw emissions.
+                let emitted = if let Value::Instance { ref attributes, .. } = supply
+                    && let Some(Value::Int(sid)) = attributes.get("supplier_id")
+                {
+                    let (snap_values, _, _) =
+                        crate::runtime::native_methods::supplier_snapshot(*sid as u64);
+                    if !snap_values.is_empty() {
+                        snap_values
+                    } else {
+                        raw_emitted
+                    }
+                } else {
+                    raw_emitted
+                };
+
                 let emitted = if let Value::Instance { ref attributes, .. } = supply {
                     if matches!(attributes.get("elems_filter"), Some(Value::Bool(true))) {
                         let interval = attributes
