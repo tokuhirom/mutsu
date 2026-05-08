@@ -16,7 +16,7 @@ unless "tmp/json-tiny/lib/JSON/Tiny.pm".IO.e {
 use lib 'tmp/json-tiny/lib';
 use JSON::Tiny;
 
-plan 41;
+plan 48;
 
 # to-json: numbers
 is to-json(42), '42', 'to-json integer';
@@ -116,3 +116,20 @@ ok JSON::Tiny::Grammar.subparse('n', :rule<str_escape>).defined,
     my $d = from-json('{"items":[10,20,30]}');
     is-deeply $d<items>, [10, 20, 30], 'from-json object with array value';
 }
+
+# from-json: escaped characters in strings (requires class-level my %h fix)
+is-deeply from-json('["\""]'), ['"'], 'from-json escaped quote';
+is-deeply from-json('["\\\\" ]'), ['\\'], 'from-json escaped backslash';
+is-deeply from-json('["\\/"]'), ['/'], 'from-json escaped slash';
+is-deeply from-json('["\\t\\n"]'), ["\t\n"], 'from-json escaped tab and newline';
+
+# from-json: unicode escapes (requires utf16.new Seq fix)
+is-deeply from-json('["\\u2685"]'), ["\x[2685]"], 'from-json \\uXXXX unicode escape';
+{
+    my $d = from-json('{ "a" : "b\\u00E5" }');
+    is $d<a>, "b\x[E5]", 'from-json unicode escape in object value';
+}
+
+# Grammar parse: deeply nested structures (requires larger stack)
+ok JSON::Tiny::Grammar.parse('[[[[[[[[[[[[[[[[[[["deep"]]]]]]]]]]]]]]]]]]]').defined,
+   'grammar parses deeply nested arrays without stack overflow';

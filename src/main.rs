@@ -229,6 +229,19 @@ fn handle_negated_long_option(
 }
 
 fn main() {
+    // Spawn the real entry point on a thread with a larger stack to avoid
+    // stack overflows during deeply-recursive grammar matching.
+    let builder = std::thread::Builder::new().stack_size(32 * 1024 * 1024);
+    let handler = builder
+        .spawn(run_main)
+        .expect("failed to spawn main thread");
+    match handler.join() {
+        Ok(()) => {}
+        Err(payload) => std::panic::resume_unwind(payload),
+    }
+}
+
+fn run_main() {
     let args: Vec<String> = env::args().collect();
 
     let mut dump_ast = false;
