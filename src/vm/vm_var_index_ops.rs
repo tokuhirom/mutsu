@@ -43,10 +43,11 @@ impl VM {
         let index = self.stack.pop().unwrap();
         let target = self.stack.pop().unwrap();
 
-        // Resolve slot refs to their underlying value for type dispatch.
+        // Resolve slot refs and Scalar containers to their underlying value for type dispatch.
         let resolved = match &target {
             Value::HashSlotRef { .. } => target.hash_slot_read(),
             Value::ArraySlotRef { .. } => target.array_slot_read(),
+            Value::Scalar(inner) => inner.as_ref().clone(),
             other => other.clone(),
         };
 
@@ -142,6 +143,13 @@ impl VM {
         if let Value::ArraySlotRef { .. } = &target {
             let resolved = target.array_slot_read();
             self.stack.push(resolved);
+            self.stack.push(index);
+            return self.exec_index_op_with_positional(is_positional);
+        }
+        // Unwrap Scalar containers so subscript access works through itemized
+        // values (e.g. `$hash.item<key>` or `from-json(…)<key>`).
+        if let Value::Scalar(inner) = &target {
+            self.stack.push(inner.as_ref().clone());
             self.stack.push(index);
             return self.exec_index_op_with_positional(is_positional);
         }
