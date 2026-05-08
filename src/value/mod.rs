@@ -514,10 +514,6 @@ pub fn make_big_rat(num: NumBigInt, den: NumBigInt) -> Value {
     if let (Some(n_i64), Some(d_i64)) = (n.to_i64(), d.to_i64()) {
         Value::Rat(n_i64, d_i64)
     } else {
-        // Check if denominator exceeds uint64 range — if so, degrade to Num
-        if d.to_u64().is_none() {
-            return Value::Num(bigrat_to_f64(&n, &d));
-        }
         Value::BigRat(n, d)
     }
 }
