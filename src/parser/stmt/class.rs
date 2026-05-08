@@ -1673,6 +1673,8 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     if let Some(r) = keyword("class", rest) {
         let (r, _) = ws1(r)?;
         let (r, name) = qualified_ident(r)?;
+        // Skip optional type adverbs (:ver<...>, :auth<...>, :api<...>)
+        let (r, _traits) = parse_declarator_traits(r)?;
         let (r, _) = ws(r)?;
         // Parse `is Parent` and `does Role` clauses before the semicolon
         let mut parents = Vec::new();

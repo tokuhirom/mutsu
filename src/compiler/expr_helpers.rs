@@ -371,6 +371,11 @@ impl Compiler {
             let idx = self.code.add_constant(Value::str(slang_name.to_string()));
             self.code.emit(OpCode::LoadConst(idx));
         }
+        // $?DISTRIBUTION is Nil outside of a distribution context
+        else if name == "?DISTRIBUTION" {
+            let idx = self.code.add_constant(Value::Nil);
+            self.code.emit(OpCode::LoadConst(idx));
+        }
         // Compile-time package/module variables
         else if name == "?PACKAGE" || name == "?MODULE" {
             let pkg = self
