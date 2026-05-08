@@ -194,6 +194,7 @@ impl Interpreter {
             "leave" => self.builtin_leave(&args),
             "return-rw" => self.builtin_return_rw(&args),
             "__mutsu_assign_method_lvalue" => self.builtin_assign_method_lvalue(&args),
+            "__mutsu_push_through_accessor" => self.builtin_push_through_accessor(&args),
             "__mutsu_index_assign_method_lvalue" => self.builtin_index_assign_method_lvalue(&args),
             "__mutsu_assign_named_sub_lvalue" => self.builtin_assign_named_sub_lvalue(&args),
             "__mutsu_assign_callable_lvalue" => self.builtin_assign_callable_lvalue(&args),

@@ -225,6 +225,38 @@ impl Compiler {
             };
             self.compile_expr(&method_call);
         }
+        // Rewrite push($obj.attr, val...)/unshift/append/prepend on method call targets.
+        // Compile as __mutsu_push_through_accessor($obj, "attr", "push", vals...) so the
+        // mutation propagates to all instances sharing the same array container.
+        else if args.len() >= 2
+            && matches!(
+                name.resolve().as_str(),
+                "push" | "unshift" | "append" | "prepend"
+            )
+            && matches!(&args[0], Expr::MethodCall { args: mc_args, .. } if mc_args.is_empty())
+        {
+            if let Expr::MethodCall {
+                target: mc_target,
+                name: mc_name,
+                ..
+            } = &args[0]
+            {
+                let builtin_name = Symbol::intern("__mutsu_push_through_accessor");
+                let mut new_args: Vec<Expr> = vec![
+                    (**mc_target).clone(),
+                    Expr::Literal(Value::str(mc_name.resolve())),
+                    Expr::Literal(Value::str(name.resolve())),
+                ];
+                for arg in &args[1..] {
+                    new_args.push(arg.clone());
+                }
+                let call = Expr::Call {
+                    name: builtin_name,
+                    args: new_args,
+                };
+                self.compile_expr(&call);
+            }
+        }
         // Rewrite push(@arr, val...)/unshift(@arr, val...)/append/prepend/splice -> @arr.method(val...)
         // splice needs only 1 arg (the array); others need at least 2
         else if !args.is_empty()

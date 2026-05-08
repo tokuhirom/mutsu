@@ -336,6 +336,79 @@ impl Interpreter {
         }
     }
 
+    /// Find all Instance values in the env whose attributes contain an array
+    /// with the same Arc pointer as `needle`, and replace that attribute with
+    /// `replacement`. This handles clone semantics where multiple instances
+    /// share the same array container.
+    pub(crate) fn propagate_shared_array_in_instances(
+        &mut self,
+        needle: &std::sync::Arc<Vec<Value>>,
+        replacement: &Value,
+    ) {
+        let mut updates: Vec<(String, Symbol, u64, String)> = Vec::new();
+        for (var_name, value) in self.env.iter() {
+            if let Value::Instance {
+                class_name,
+                attributes,
+                id,
+            } = value
+            {
+                for (attr_key, attr_val) in attributes.iter() {
+                    if let Value::Array(arc, ..) = attr_val
+                        && std::sync::Arc::ptr_eq(arc, needle)
+                    {
+                        updates.push((var_name.clone(), *class_name, *id, attr_key.clone()));
+                    }
+                }
+            }
+        }
+        for (var_name, class_name, id, attr_key) in updates {
+            if let Some(Value::Instance { attributes, .. }) = self.env.get(&var_name) {
+                let mut updated = (**attributes).clone();
+                updated.insert(attr_key, replacement.clone());
+                self.env.insert(
+                    var_name,
+                    Value::make_instance_with_id(class_name, updated, id),
+                );
+            }
+        }
+    }
+
+    /// Same as `propagate_shared_array_in_instances` but for Hash attributes.
+    pub(crate) fn propagate_shared_hash_in_instances(
+        &mut self,
+        needle: &std::sync::Arc<std::collections::HashMap<String, Value>>,
+        replacement: &Value,
+    ) {
+        let mut updates: Vec<(String, Symbol, u64, String)> = Vec::new();
+        for (var_name, value) in self.env.iter() {
+            if let Value::Instance {
+                class_name,
+                attributes,
+                id,
+            } = value
+            {
+                for (attr_key, attr_val) in attributes.iter() {
+                    if let Value::Hash(arc) = attr_val
+                        && std::sync::Arc::ptr_eq(arc, needle)
+                    {
+                        updates.push((var_name.clone(), *class_name, *id, attr_key.clone()));
+                    }
+                }
+            }
+        }
+        for (var_name, class_name, id, attr_key) in updates {
+            if let Some(Value::Instance { attributes, .. }) = self.env.get(&var_name) {
+                let mut updated = (**attributes).clone();
+                updated.insert(attr_key, replacement.clone());
+                self.env.insert(
+                    var_name,
+                    Value::make_instance_with_id(class_name, updated, id),
+                );
+            }
+        }
+    }
+
     pub(crate) fn overwrite_instance_bindings_by_identity(
         &mut self,
         class_name: &str,
@@ -1203,12 +1276,17 @@ impl Interpreter {
                     assigned_value = def;
                 }
                 updated.insert(attr_key.clone(), assigned_value.clone());
+                // Always propagate the change to all env bindings referencing
+                // this instance (by identity). This handles chained accessor
+                // assignment like `$outer.inner.arr = ...` where target_var
+                // may be None but the instance is reachable through other
+                // env bindings.
+                self.overwrite_instance_bindings_by_identity(
+                    &class_name.resolve(),
+                    target_id,
+                    updated.clone(),
+                );
                 if let Some(var_name) = target_var {
-                    self.overwrite_instance_bindings_by_identity(
-                        &class_name.resolve(),
-                        target_id,
-                        updated.clone(),
-                    );
                     self.env.insert(
                         var_name.to_string(),
                         Value::make_instance_with_id(class_name, updated, target_id),
