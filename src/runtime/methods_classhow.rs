@@ -464,7 +464,43 @@ impl Interpreter {
             }
             "does" if args.len() >= 2 => {
                 let invocant = &args[args.len() - 2];
-                let type_name = match args.last().unwrap() {
+                let role_arg = args.last().unwrap();
+                // Handle ParametricRole directly to compare type args properly
+                if let Value::ParametricRole {
+                    base_name,
+                    type_args,
+                } = role_arg
+                {
+                    let base = base_name.resolve();
+                    if let Value::Mixin(_, mixins) = invocant {
+                        let key = format!("__mutsu_role_typeargs__{}", base);
+                        let has_role = invocant.does_check(&base);
+                        let args_match =
+                            if let Some(Value::Array(actual_args, ..)) = mixins.get(&key) {
+                                actual_args.len() == type_args.len()
+                                    && actual_args
+                                        .iter()
+                                        .zip(type_args.iter())
+                                        .all(|(a, e)| self.parametric_arg_subtypes(a, e))
+                            } else {
+                                type_args.is_empty()
+                            };
+                        return Ok(Value::Bool(has_role && args_match));
+                    }
+                    return Ok(Value::Bool(self.type_matches_value(
+                        &format!(
+                                "{}[{}]",
+                                base,
+                                type_args
+                                    .iter()
+                                    .map(|a| a.to_string_value())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            ),
+                        invocant,
+                    )));
+                }
+                let type_name = match role_arg {
                     Value::Package(name) => name.resolve(),
                     Value::Str(name) => name.to_string(),
                     Value::Instance { class_name, .. } => class_name.resolve(),

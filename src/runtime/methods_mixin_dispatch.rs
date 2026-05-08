@@ -162,10 +162,36 @@ impl Interpreter {
                     mixins.get(&enum_type.resolve()),
                     Some(Value::Enum { key, .. }) if key == probe_key
                 ),
+                Value::ParametricRole {
+                    base_name,
+                    type_args,
+                } => {
+                    let base = base_name.resolve();
+                    let has_role = target.does_check(&base)
+                        || mixins.contains_key(&base)
+                        || mixins.contains_key(&format!("__mutsu_role__{}", base));
+                    if has_role {
+                        let key = format!("__mutsu_role_typeargs__{}", base);
+                        if let Some(Value::Array(actual_args, ..)) = mixins.get(&key) {
+                            actual_args.len() == type_args.len()
+                                && actual_args
+                                    .iter()
+                                    .zip(type_args.iter())
+                                    .all(|(a, e)| self.parametric_arg_subtypes(a, e))
+                        } else {
+                            type_args.is_empty()
+                        }
+                    } else {
+                        false
+                    }
+                }
                 Value::Package(name) => {
                     let n = name.resolve();
+                    let base = n.split('[').next().unwrap_or(&n);
                     mixins.contains_key(&n)
+                        || mixins.contains_key(base)
                         || mixins.contains_key(&format!("__mutsu_role__{}", n))
+                        || mixins.contains_key(&format!("__mutsu_role__{}", base))
                         || self.type_matches_value(&n, target)
                 }
                 Value::Str(name) => {

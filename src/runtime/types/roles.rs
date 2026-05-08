@@ -252,6 +252,27 @@ impl Interpreter {
             other => (other, HashMap::new()),
         };
         mixins.insert(format!("__mutsu_role__{}", role_name), Value::Bool(true));
+        // Store the type arguments so that `.does(Role[args])` can check them.
+        if !role_args.is_empty() {
+            mixins.insert(
+                format!("__mutsu_role_typeargs__{}", role_name),
+                Value::array(role_args.to_vec()),
+            );
+            // Store per-parameter bindings so that methods with type-parameterized
+            // constraints (e.g. `method hi(vartype $foo)`) can resolve the type
+            // variables during dispatch.
+            let param_names = self
+                .role_type_params
+                .get(role_name)
+                .cloned()
+                .unwrap_or_default();
+            for (param_name, type_arg) in param_names.iter().zip(role_args.iter()) {
+                mixins.insert(
+                    format!("__mutsu_role_param__{}", param_name),
+                    type_arg.clone(),
+                );
+            }
+        }
         // Store the role's unique ID so that different lexical roles with the
         // same name (e.g. two `my role A { }` in different scopes) produce
         // distinct mixin maps, making `===` return False for values mixed with
