@@ -282,7 +282,15 @@ impl Interpreter {
             .program_path
             .clone()
             .unwrap_or_else(|| "-e".to_string());
-        let line = self.test_pending_callsite_line.unwrap_or(1);
+        let line = self
+            .test_pending_callsite_line
+            .or_else(|| {
+                self.env().get("?LINE").and_then(|v| match v {
+                    Value::Int(n) => Some(*n),
+                    _ => None,
+                })
+            })
+            .unwrap_or(1);
         message.push_str(&format!("\n  in block <unit> at {} line {}", file, line));
         Err(RuntimeError::warn_signal(message))
     }
