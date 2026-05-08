@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value, make_big_fat_rat, make_big_rat, make_rat};
+use crate::value::{RuntimeError, Value, make_big_fat_rat, make_big_rat_arith, make_rat};
 use num_bigint::{BigInt as NumBigInt, Sign};
 use num_traits::{Signed, ToPrimitive, Zero};
 
@@ -207,7 +207,7 @@ fn instance_instant_raw(value: &Value) -> Option<Value> {
 fn value_sub(a: Value, b: Value) -> Value {
     let (l, r) = runtime::coerce_numeric(a, b);
     if let (Some((an, ad)), Some((bn, bd))) = (to_big_rat_parts(&l), to_big_rat_parts(&r)) {
-        return crate::value::make_big_rat(an * &bd - bn * &ad, ad * bd);
+        return crate::value::make_big_rat_arith(an * &bd - bn * &ad, ad * bd);
     }
     Value::Num(
         runtime::to_float_value(&l).unwrap_or(0.0) - runtime::to_float_value(&r).unwrap_or(0.0),
@@ -536,7 +536,7 @@ fn arith_add_coerced(l: Value, r: Value) -> Value {
                 other => other,
             }
         } else {
-            make_big_rat(an * bd.clone() + bn * ad.clone(), ad * bd)
+            make_big_rat_arith(an * bd.clone() + bn * ad.clone(), ad * bd)
         }
     } else if let (Some((an, ad)), Some((bn, bd))) =
         (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
@@ -693,7 +693,7 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
                 other => other,
             }
         } else {
-            make_big_rat(an * bd.clone() - bn * ad.clone(), ad * bd)
+            make_big_rat_arith(an * bd.clone() - bn * ad.clone(), ad * bd)
         }
     } else if let (Some((an, ad)), Some((bn, bd))) =
         (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
@@ -773,7 +773,7 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
                 other => other,
             }
         } else {
-            make_big_rat(an * bn, ad * bd)
+            make_big_rat_arith(an * bn, ad * bd)
         }
     } else if let (Some((an, ad)), Some((bn, bd))) =
         (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
@@ -866,7 +866,7 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
             let result = if has_fat_rat {
                 make_big_fat_rat(an * bd, ad * bn)
             } else {
-                make_big_rat(an * bd, ad * bn)
+                make_big_rat_arith(an * bd, ad * bn)
             };
             return Ok(match result {
                 Value::Rat(n, d) if has_fat_rat => Value::FatRat(n, d),
@@ -882,7 +882,7 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
             if (&a % &b).is_zero() {
                 return Ok(Value::from_bigint(a / b));
             }
-            return Ok(make_big_rat(a, b));
+            return Ok(make_big_rat_arith(a, b));
         }
         if let (Some((an, ad)), Some((bn, bd))) =
             (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
@@ -1164,7 +1164,7 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                     // Overflow in i64: use BigInt, then check if denom fits
                     let nn = NumBigInt::from(n).pow(p);
                     let dd = NumBigInt::from(d).pow(p);
-                    match make_big_rat(nn, dd) {
+                    match make_big_rat_arith(nn, dd) {
                         // If make_big_rat reduced it to fit in i64, keep as Rat
                         Value::Rat(rn, rd) => Value::Rat(rn, rd),
                         // BigRat means denom exceeds i64: degrade to Num
@@ -1187,7 +1187,7 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                 } else {
                     let nn = NumBigInt::from(d).pow(p);
                     let dd = NumBigInt::from(n).pow(p);
-                    match make_big_rat(nn, dd) {
+                    match make_big_rat_arith(nn, dd) {
                         Value::Rat(rn, rd) => Value::Rat(rn, rd),
                         Value::BigRat(bn, bd) => {
                             if let Some(d64) = bd.to_i64() {
@@ -1228,11 +1228,11 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
             }
             (Value::BigRat(n, d), Value::Int(b)) if b >= 0 => {
                 let p = b as u32;
-                make_big_rat(n.pow(p), d.pow(p))
+                make_big_rat_arith(n.pow(p), d.pow(p))
             }
             (Value::BigRat(n, d), Value::Int(b)) => {
                 let p = (-b) as u32;
-                make_big_rat(d.pow(p), n.pow(p))
+                make_big_rat_arith(d.pow(p), n.pow(p))
             }
             (Value::Num(a), Value::Int(b)) => Value::Num(a.powi(b as i32)),
             (Value::BigInt(a), Value::Int(b)) if b >= 0 => {
@@ -1353,7 +1353,7 @@ pub(crate) fn arith_negate(val: Value) -> Result<Value, RuntimeError> {
             if is_fat_rat_like(&val) {
                 Ok(make_big_fat_rat(-n.clone(), d.clone()))
             } else {
-                Ok(make_big_rat(-n.clone(), d.clone()))
+                Ok(make_big_rat_arith(-n.clone(), d.clone()))
             }
         }
         Value::Complex(r, i) => {

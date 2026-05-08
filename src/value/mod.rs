@@ -518,6 +518,39 @@ pub fn make_big_rat(num: NumBigInt, den: NumBigInt) -> Value {
     }
 }
 
+/// Create a Rat from BigInt numerator/denominator, used for arithmetic results.
+/// Per Raku spec, Rat denominators are limited to uint64 range after reduction.
+/// When the reduced denominator exceeds this, degrade to Num.
+/// This is different from `make_big_rat` which preserves BigRat for literal values.
+pub fn make_big_rat_arith(num: NumBigInt, den: NumBigInt) -> Value {
+    if den.is_zero() {
+        if num.is_zero() {
+            return Value::Rat(0, 0);
+        }
+        return if num.is_positive() {
+            Value::Rat(1, 0)
+        } else {
+            Value::Rat(-1, 0)
+        };
+    }
+    let g = num.gcd(&den);
+    let mut n = num / &g;
+    let mut d = den / &g;
+    if d.is_negative() {
+        n = -n;
+        d = -d;
+    }
+    if let (Some(n_i64), Some(d_i64)) = (n.to_i64(), d.to_i64()) {
+        Value::Rat(n_i64, d_i64)
+    } else if d.to_u64().is_none() {
+        // Per Raku spec, Rat denominators are limited to uint64 range.
+        // When arithmetic produces a denominator exceeding this, degrade to Num.
+        Value::Num(bigrat_to_f64(&n, &d))
+    } else {
+        Value::BigRat(n, d)
+    }
+}
+
 /// Create a FatRat from BigInt numerator/denominator.
 /// Unlike `make_big_rat`, this never degrades to Num — FatRat has unlimited precision.
 pub fn make_big_fat_rat(num: NumBigInt, den: NumBigInt) -> Value {
