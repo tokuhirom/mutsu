@@ -542,9 +542,10 @@ pub fn make_big_rat_arith(num: NumBigInt, den: NumBigInt) -> Value {
     }
     if let (Some(n_i64), Some(d_i64)) = (n.to_i64(), d.to_i64()) {
         Value::Rat(n_i64, d_i64)
-    } else if d.to_u64().is_none() {
+    } else if d.to_u64().is_none() || d.bits() > 64 {
         // Per Raku spec, Rat denominators are limited to uint64 range.
         // When arithmetic produces a denominator exceeding this, degrade to Num.
+        // The bits() check is a redundant safety net for d.to_u64().
         Value::Num(bigrat_to_f64(&n, &d))
     } else {
         Value::BigRat(n, d)
