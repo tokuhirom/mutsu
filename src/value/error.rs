@@ -481,6 +481,19 @@ impl RuntimeError {
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
+    /// Create a Failure wrapping an X::Numeric::Underflow exception.
+    pub(crate) fn numeric_underflow_failure() -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "message".to_string(),
+            Value::str("Numeric underflow".to_string()),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::Numeric::Underflow"), attrs);
+        let mut failure_attrs = HashMap::new();
+        failure_attrs.insert("exception".to_string(), ex);
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+    }
+
     /// X::Undeclared - Undeclared name
     #[allow(dead_code)]
     pub(crate) fn undeclared(what: &str, name: &str) -> Self {
