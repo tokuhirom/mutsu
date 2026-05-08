@@ -450,16 +450,92 @@ impl VM {
     pub(super) fn exec_concat_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        // Thread over junctions
+        // Thread over junctions — concat uses left-first threading
+        // (unlike arithmetic/comparison which uses right-first for tighter
+        // junctions). When both operands are junctions and the right is
+        // tighter, we thread left first and swap the junction kinds.
         if matches!(left, Value::Junction { .. }) || matches!(right, Value::Junction { .. }) {
-            let result = self
-                .eval_binary_with_junctions(left, right, |vm, l, r| Ok(vm.concat_values(l, r)))
-                .unwrap_or(Value::Nil);
+            let result = self.eval_concat_with_junctions(left, right);
             self.stack.push(result);
             return;
         }
         let result = self.concat_values(left, right);
         self.stack.push(result);
+    }
+
+    fn eval_concat_with_junctions(&mut self, left: Value, right: Value) -> Value {
+        // Auto-FETCH and decontainerize
+        let left = self
+            .interpreter
+            .auto_fetch_proxy(&left)
+            .unwrap_or(left)
+            .decontainerize()
+            .clone();
+        let right = self
+            .interpreter
+            .auto_fetch_proxy(&right)
+            .unwrap_or(right)
+            .decontainerize()
+            .clone();
+        // Both junctions: thread left first, swap kinds if right is tighter
+        if let (Value::Junction { kind: lk, .. }, Value::Junction { kind: rk, .. }) =
+            (&left, &right)
+        {
+            let need_swap = Self::thread_right_first(lk, rk);
+            let rk = rk.clone();
+            let lk = lk.clone();
+            if let Value::Junction { kind, values } = left {
+                let results: Vec<Value> = values
+                    .iter()
+                    .cloned()
+                    .map(|v| self.eval_concat_with_junctions(v, right.clone()))
+                    .collect();
+                let mut result = Value::junction(kind, results);
+                if need_swap {
+                    result = Self::swap_junction_kinds(result, &rk, &lk);
+                }
+                return result;
+            }
+        }
+        if let Value::Junction { kind, values } = left {
+            let results: Vec<Value> = values
+                .iter()
+                .cloned()
+                .map(|v| self.eval_concat_with_junctions(v, right.clone()))
+                .collect();
+            return Value::junction(kind, results);
+        }
+        if let Value::Junction { kind, values } = right {
+            let results: Vec<Value> = values
+                .iter()
+                .cloned()
+                .map(|v| self.eval_concat_with_junctions(left.clone(), v))
+                .collect();
+            return Value::junction(kind, results);
+        }
+        self.concat_values(left, right)
+    }
+
+    fn swap_junction_kinds(
+        value: Value,
+        new_outer: &crate::value::JunctionKind,
+        new_inner: &crate::value::JunctionKind,
+    ) -> Value {
+        if let Value::Junction { values, .. } = value {
+            let swapped: Vec<Value> = values
+                .iter()
+                .map(|v| {
+                    if let Value::Junction { values: inner, .. } = v {
+                        Value::junction(new_inner.clone(), inner.to_vec())
+                    } else {
+                        v.clone()
+                    }
+                })
+                .collect();
+            Value::junction(new_outer.clone(), swapped)
+        } else {
+            value
+        }
     }
 
     fn concat_values(&self, left: Value, right: Value) -> Value {

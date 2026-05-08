@@ -265,7 +265,7 @@ impl VM {
         }
     }
 
-    fn thread_right_first(
+    pub(super) fn thread_right_first(
         left: &crate::value::JunctionKind,
         right: &crate::value::JunctionKind,
     ) -> bool {
