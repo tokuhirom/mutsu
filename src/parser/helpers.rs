@@ -182,14 +182,13 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
     if keyword == "begin" {
         // =begin IDENTIFIER ... =end IDENTIFIER
         // Match the identifier and ignore nested matching begin/end blocks.
-        // TODO: validate =begin table content (empty tables, consecutive row
-        // separators, mixed column separators) once BEGIN block timing is fixed
-        // so that tests generating tables at runtime don't regress.
         let begin_line_end = rest.find('\n').unwrap_or(rest.len());
         let begin_line = &rest[..begin_line_end];
         let target = begin_line.split_whitespace().next().unwrap_or("");
+        let is_table = target == "table";
         let mut remaining = rest.get(begin_line_end + 1..).unwrap_or_default();
         let mut depth = 1usize;
+        let mut content_lines: Vec<&str> = Vec::new();
 
         while !remaining.is_empty() {
             let line_end = remaining.find('\n').unwrap_or(remaining.len());
@@ -202,9 +201,19 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
                 } else if directive == "end" && directive_target == target {
                     depth -= 1;
                     if depth == 0 {
+                        if is_table {
+                            // Only check for empty tables in =begin table blocks;
+                            // skip separator checks since cell content can contain
+                            // arbitrary whitespace characters.
+                            validate_pod_table_not_empty(&content_lines)?;
+                        }
                         return Ok((next, ""));
                     }
                 }
+            }
+
+            if is_table && depth == 1 {
+                content_lines.push(line);
             }
 
             remaining = next;
@@ -248,7 +257,16 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
     }
 }
 
-/// Validate Pod table content lines.
+/// Check that a Pod table has at least some data lines (not all blank).
+fn validate_pod_table_not_empty(lines: &[&str]) -> PResult<'static, ()> {
+    let has_data = lines.iter().any(|l| !l.trim().is_empty());
+    if !has_data {
+        return Err(PError::expected("Pod table has no data"));
+    }
+    Ok(("", ()))
+}
+
+/// Validate Pod table content lines for =table (paragraph form).
 /// Checks for: empty tables, consecutive row separators, mixed column separator types.
 fn validate_pod_table(lines: &[&str]) -> PResult<'static, ()> {
     // Filter out blank lines
@@ -285,8 +303,8 @@ fn validate_pod_table(lines: &[&str]) -> PResult<'static, ()> {
             prev_was_separator = true;
         } else {
             prev_was_separator = false;
-            // Check column separator type: visible (`|`) vs whitespace-only
-            if trimmed.contains('|') {
+            // Check column separator type: visible (`|` or `+`) vs whitespace-only
+            if trimmed.contains('|') || trimmed.contains('+') {
                 has_visible_sep = true;
             } else if trimmed.contains("  ") {
                 // Two or more consecutive spaces indicate whitespace column separator
