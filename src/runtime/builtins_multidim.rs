@@ -250,6 +250,16 @@ impl Interpreter {
         // Get the current container via the accessor
         let current = self.call_method_with_values(target.clone(), &method, Vec::new())?;
 
+        // Save Arc pointers before modifying (for shared container propagation)
+        let old_array_arc = match &current {
+            Value::Array(arc, ..) => Some(arc.clone()),
+            _ => None,
+        };
+        let old_hash_arc = match &current {
+            Value::Hash(arc) => Some(arc.clone()),
+            _ => None,
+        };
+
         // Check if index is multi-dimensional (array of indices like [2, 1] from [2;1])
         let dims: Vec<usize> = if let Value::Array(ref items, ..) = index {
             items
@@ -290,6 +300,16 @@ impl Interpreter {
                 _ => return Ok(value),
             }
         };
+
+        // Propagate container changes to all instances sharing the same
+        // Arc (handles clone semantics where multiple instances share the
+        // same array/hash container).
+        if let Some(old_arc) = &old_array_arc {
+            self.propagate_shared_array_in_instances(old_arc, &updated);
+        }
+        if let Some(old_arc) = &old_hash_arc {
+            self.propagate_shared_hash_in_instances(old_arc, &updated);
+        }
 
         // Write back via the setter
         self.assign_method_lvalue_with_values(
@@ -395,6 +415,75 @@ impl Interpreter {
             method_args,
             value,
         )
+    }
+
+    /// Handle push/unshift/append/prepend through an instance accessor.
+    /// Called as __mutsu_push_through_accessor(instance, attr_name, method, vals...).
+    /// Mutates the array/hash attribute in-place and propagates the change to all
+    /// env bindings that share the same Arc (e.g. after clone).
+    pub(super) fn builtin_push_through_accessor(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if args.len() < 3 {
+            return Err(RuntimeError::new(
+                "__mutsu_push_through_accessor expects instance, attr_name, method, and values",
+            ));
+        }
+        let target = args[0].clone();
+        let attr_name = args[1].to_string_value();
+        let method = args[2].to_string_value();
+        let push_args: Vec<Value> = args[3..].to_vec();
+
+        let Value::Instance {
+            class_name,
+            attributes,
+            id: target_id,
+        } = &target
+        else {
+            // Fallback: just call the method on the accessor result
+            let accessor_val = self.call_method_with_values(target, &attr_name, vec![])?;
+            return self.call_method_with_values(accessor_val, &method, push_args);
+        };
+
+        let attr_key = attr_name.clone();
+        let current = attributes.get(&attr_key).cloned().unwrap_or(Value::Nil);
+        let old_array_arc = match &current {
+            Value::Array(arc, ..) => Some(arc.clone()),
+            _ => None,
+        };
+        let old_hash_arc = match &current {
+            Value::Hash(arc) => Some(arc.clone()),
+            _ => None,
+        };
+
+        // Call the mutating method via a temp variable
+        let temp_var = format!("__mutsu_push_accessor_tmp_{}", target_id);
+        self.env.insert(temp_var.clone(), current.clone());
+        let result =
+            self.call_method_mut_with_values(&temp_var, current.clone(), &method, push_args)?;
+        let new_value = self.env.get(&temp_var).cloned().unwrap_or(result.clone());
+        self.env.remove(&temp_var);
+
+        // Update the instance attribute
+        let mut updated = (**attributes).clone();
+        updated.insert(attr_key, new_value.clone());
+        let cn = *class_name;
+        let tid = *target_id;
+
+        // Propagate to all env bindings referencing this instance
+        self.overwrite_instance_bindings_by_identity(&cn.resolve(), tid, updated);
+
+        // Also propagate the array/hash change to all instances sharing
+        // the same Arc (handles clone semantics).
+        if let Some(old_arc) = &old_array_arc {
+            self.propagate_shared_array_in_instances(old_arc, &new_value);
+        }
+        if let Some(old_arc) = &old_hash_arc {
+            self.propagate_shared_hash_in_instances(old_arc, &new_value);
+        }
+
+        Ok(result)
     }
 
     pub(super) fn builtin_subscript_adverb(
