@@ -544,6 +544,69 @@ fn build_topic_subst_expr(
     })
 }
 
+/// Build a non-destructive substitution expression from `S[pattern] = expr`.
+/// This is equivalent to `$_.subst(pattern, { expr })` without modifying `$_`.
+fn build_non_destructive_subst_expr(
+    pattern: String,
+    replacement: Expr,
+    adverbs: &MatchAdverbs,
+) -> Result<Expr, PError> {
+    let pattern = if adverbs.perl5 {
+        pattern
+    } else {
+        let p = apply_inline_match_adverbs(pattern, adverbs);
+        validate_regex_pattern_or_perror(&p)?;
+        p
+    };
+
+    let regex_value = if adverbs.perl5 {
+        build_regex_with_adverbs(pattern, adverbs)
+    } else {
+        Value::Regex(Arc::new(pattern))
+    };
+
+    let mut args = vec![
+        Expr::Literal(regex_value),
+        Expr::AnonSub {
+            body: vec![Stmt::Expr(replacement)],
+            is_rw: false,
+            is_block: true,
+        },
+    ];
+    if adverbs.global {
+        args.push(Expr::Literal(Value::Pair(
+            "g".to_string(),
+            Box::new(Value::Bool(true)),
+        )));
+    }
+    if adverbs.samecase {
+        args.push(Expr::Literal(Value::Pair(
+            "samecase".to_string(),
+            Box::new(Value::Bool(true)),
+        )));
+    }
+    if adverbs.samemark {
+        args.push(Expr::Literal(Value::Pair(
+            "samemark".to_string(),
+            Box::new(Value::Bool(true)),
+        )));
+    }
+    if adverbs.samespace {
+        args.push(Expr::Literal(Value::Pair(
+            "samespace".to_string(),
+            Box::new(Value::Bool(true)),
+        )));
+    }
+
+    Ok(Expr::MethodCall {
+        target: Box::new(Expr::Var("_".to_string())),
+        name: Symbol::intern("subst"),
+        args,
+        modifier: None,
+        quoted: false,
+    })
+}
+
 fn apply_inline_match_adverbs(mut pattern: String, adverbs: &MatchAdverbs) -> String {
     if adverbs.ignore_case {
         pattern = format!(":i {pattern}");
@@ -1373,33 +1436,46 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     }
                     let (after_pat_ws, _) = ws(after_pat)?;
                     if let Some(after_eq) = after_pat_ws.strip_prefix('=') {
-                        let (rest, replacement) = parse_subst_replacement_expr(after_eq)?;
-                        if !is_paired
-                            && open_ch == '-'
-                            && (has_unescaped_statement_boundary(pattern)
-                                || has_unescaped_statement_boundary(&replacement))
-                        {
-                            return Err(PError::expected("substitution"));
+                        // Try literal replacement first; fall back to expression
+                        if let Ok((rest, replacement)) = parse_subst_replacement_expr(after_eq) {
+                            if !is_paired
+                                && open_ch == '-'
+                                && (has_unescaped_statement_boundary(pattern)
+                                    || has_unescaped_statement_boundary(&replacement))
+                            {
+                                return Err(PError::expected("substitution"));
+                            }
+                            let pattern = if adverbs.perl5 {
+                                pattern.to_string()
+                            } else {
+                                apply_inline_match_adverbs(pattern.to_string(), &adverbs)
+                            };
+                            return Ok((
+                                rest,
+                                Expr::NonDestructiveSubst {
+                                    pattern,
+                                    replacement,
+                                    samecase: adverbs.samecase,
+                                    sigspace: adverbs.sigspace,
+                                    samemark: adverbs.samemark,
+                                    samespace: adverbs.samespace,
+                                    global: adverbs.global,
+                                    nth: adverbs.nth.clone(),
+                                    x: adverbs.repeat,
+                                    perl5: adverbs.perl5,
+                                },
+                            ));
                         }
-                        let pattern = if adverbs.perl5 {
-                            pattern.to_string()
-                        } else {
-                            apply_inline_match_adverbs(pattern.to_string(), &adverbs)
-                        };
+                        // Expression-based replacement (e.g. S[(o)] = $0.uc)
+                        let (after_eq_ws, _) = ws(after_eq)?;
+                        let (rest, replacement) = expression(after_eq_ws)?;
                         return Ok((
                             rest,
-                            Expr::NonDestructiveSubst {
-                                pattern,
+                            build_non_destructive_subst_expr(
+                                pattern.to_string(),
                                 replacement,
-                                samecase: adverbs.samecase,
-                                sigspace: adverbs.sigspace,
-                                samemark: adverbs.samemark,
-                                samespace: adverbs.samespace,
-                                global: adverbs.global,
-                                nth: adverbs.nth.clone(),
-                                x: adverbs.repeat,
-                                perl5: adverbs.perl5,
-                            },
+                                &adverbs,
+                            )?,
                         ));
                     }
                 }
@@ -1687,6 +1763,86 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("topic method call"));
     }
     let r = &input[1..];
+    // .=method — mutating topic method call: $_ = $_.method(args)
+    if let Some(stripped) = r.strip_prefix('=') {
+        let (r, _) = ws(stripped)?;
+        if let Ok((r, method_name)) =
+            crate::parser::parse_result::take_while1(r, |c: char| {
+                c.is_alphanumeric() || c == '_' || c == '-'
+            })
+        {
+            let method_name = method_name.to_string();
+            let r_before_ws = r;
+            let (r, _) = ws(r)?;
+            // Parse optional args
+            let (r, args) = if r.starts_with('(') {
+                let (r, _) = parse_char(r, '(')?;
+                let (r, _) = ws(r)?;
+                let (r, args) = parse_call_arg_list(r)?;
+                let (r, _) = ws(r)?;
+                let (r, _) = parse_char(r, ')')?;
+                (r, args)
+            } else if r_before_ws.starts_with(':') && !r_before_ws.starts_with("::") {
+                // Colon-arg form: .=method: arg
+                let r = &r_before_ws[1..];
+                let (r, _) = ws(r)?;
+                let (r, first_arg) = crate::parser::expr::expression(r)?;
+                let mut args = vec![first_arg];
+                let mut r_inner = r;
+                loop {
+                    let (r2, _) = ws(r_inner)?;
+                    if r2.starts_with(':')
+                        && !r2.starts_with("::")
+                        && let Ok((r3, arg)) = crate::parser::primary::misc::colonpair_expr(r2)
+                    {
+                        args.push(arg);
+                        r_inner = r3;
+                        continue;
+                    }
+                    if !r2.starts_with(',') {
+                        r_inner = r2;
+                        break;
+                    }
+                    let r2 = &r2[1..];
+                    let (r2, _) = ws(r2)?;
+                    let (r2, next) = crate::parser::expr::expression(r2)?;
+                    args.push(next);
+                    r_inner = r2;
+                }
+                (r_inner, args)
+            } else if r.starts_with(':') && !r.starts_with("::") {
+                // Fake-infix adverb form: .=method :key<val>
+                let mut args = Vec::new();
+                let mut r_inner = r;
+                while r_inner.starts_with(':') && !r_inner.starts_with("::") {
+                    if let Ok((r2, arg)) = crate::parser::primary::misc::colonpair_expr(r_inner) {
+                        args.push(arg);
+                        let (r3, _) = ws(r2)?;
+                        r_inner = r3;
+                    } else {
+                        break;
+                    }
+                }
+                (r_inner, args)
+            } else {
+                (r, Vec::new())
+            };
+            let method_call = Expr::MethodCall {
+                target: Box::new(Expr::Var("_".to_string())),
+                name: crate::symbol::Symbol::intern(&method_name),
+                args,
+                modifier: None,
+                quoted: false,
+            };
+            return Ok((
+                r,
+                Expr::AssignExpr {
+                    name: "_".to_string(),
+                    expr: Box::new(method_call),
+                },
+            ));
+        }
+    }
     // .++ and .-- — postfix increment/decrement on $_
     if let Some(rest) = r.strip_prefix("++") {
         return Ok((

@@ -4,6 +4,7 @@ use super::super::super::parse_result::{PError, PResult, take_while1};
 use super::super::{keyword, qualified_ident};
 use super::constant_subset::constant_decl;
 use super::helpers::{parse_sigilless_decl_name, register_term_symbol_from_decl_name};
+use super::my_decl_assign::parse_colon_args;
 use super::{parse_decl_type_constraint, parse_statement_modifier, typed_default_expr};
 use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
@@ -45,6 +46,61 @@ pub(super) fn parse_sigilless_decl(
         } else {
             decl
         };
+        if apply_modifier {
+            return parse_statement_modifier(r, stmt);
+        }
+        return Ok((r, stmt));
+    }
+    // .= mutating method call: my \foo .= new => my \foo = Type.new
+    if let Some(stripped) = r.strip_prefix(".=") {
+        let (r, _) = ws(stripped)?;
+        let (r, method_name) =
+            take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+        let method_name = method_name.to_string();
+        let r_before_ws = r;
+        let (r, _) = ws(r)?;
+        // Parse optional args (parenthesized, colon-form, or fake-infix adverbs)
+        let (r, args) = if r.starts_with('(') {
+            let r = &r[1..];
+            let (r, _) = ws(r)?;
+            let (r, args) = super::super::super::primary::parse_call_arg_list(r)?;
+            let (r, _) = ws(r)?;
+            let r = r.strip_prefix(')').ok_or_else(|| PError::expected(")"))?;
+            (r, args)
+        } else if r_before_ws.starts_with(':') && !r_before_ws.starts_with("::") {
+            // Colon invocant form (no space before ':'): .=method: arg
+            parse_colon_args(r_before_ws)?
+        } else if r.starts_with(':') && !r.starts_with("::") {
+            // Fake-infix adverb form (space before ':'): .=method :key<val>
+            super::my_decl_assign::parse_fake_infix_adverbs(r)?
+        } else {
+            (r, Vec::new())
+        };
+        // Build: Type.method(args) where Type comes from type_constraint or defaults to "Mu"
+        let target_name = type_constraint
+            .as_deref()
+            .unwrap_or("Mu")
+            .to_string();
+        let expr = Expr::MethodCall {
+            target: Box::new(Expr::BareWord(target_name)),
+            name: Symbol::intern(&method_name),
+            args,
+            modifier: None,
+            quoted: false,
+        };
+        let decl = Stmt::VarDecl {
+            name: name.clone(),
+            expr,
+            type_constraint: type_constraint.clone(),
+            is_state,
+            is_our,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: Vec::new(),
+            where_constraint: None,
+        };
+        let stmt = Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigillessReadonly(name)]);
         if apply_modifier {
             return parse_statement_modifier(r, stmt);
         }

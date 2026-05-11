@@ -752,6 +752,11 @@ fn atomic_var_name(expr: &Expr) -> Option<String> {
 /// For index expressions, generates an `IndexAssign` wrapped in a `DoBlock`.
 /// For non-lvalue targets, returns the method call as-is.
 fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) -> Expr) -> Expr {
+    // Unwrap Grouped to get at the inner expression
+    let target = match target {
+        Expr::Grouped(inner) => *inner,
+        other => other,
+    };
     match &target {
         Expr::Var(name) => Expr::AssignExpr {
             name: name.clone(),
@@ -806,6 +811,28 @@ fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) -> Expr) -> E
                 label: None,
             }
         }
+        // ($var = expr).=method => evaluate the assignment, then $var = $var.method
+        Expr::AssignExpr { name, .. } => {
+            let assign_name = name.clone();
+            let var_expr = if assign_name.starts_with('@') {
+                Expr::ArrayVar(assign_name[1..].to_string())
+            } else if assign_name.starts_with('%') {
+                Expr::HashVar(assign_name[1..].to_string())
+            } else {
+                Expr::Var(assign_name.clone())
+            };
+            let method_result = method_call_fn(var_expr);
+            Expr::DoBlock {
+                body: vec![
+                    Stmt::Expr(target),
+                    Stmt::Expr(Expr::AssignExpr {
+                        name: assign_name,
+                        expr: Box::new(method_result),
+                    }),
+                ],
+                label: None,
+            }
+        }
         _ => method_call_fn(target),
     }
 }
@@ -853,6 +880,7 @@ fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Expr> {
     }
     // Parse regular method name
     let (r, method_name) = crate::parser::primary::var::parse_ident_with_hyphens(r)?;
+    let r_before_ws = r;
     let (r, _) = ws(r)?;
     let (r_final, args) = if r.starts_with('(') {
         let (r2, _) = parse_char(r, '(')?;
@@ -861,8 +889,8 @@ fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Expr> {
         let (r2, _) = ws(r2)?;
         let (r2, _) = parse_char(r2, ')')?;
         (r2, a)
-    } else if r.starts_with(':') && !r.starts_with("::") {
-        // Colon-arg syntax: .=method: arg
+    } else if r_before_ws.starts_with(':') && !r_before_ws.starts_with("::") {
+        // Colon-arg syntax: .=method: arg (no space before colon)
         let r2 = &r[1..];
         let (r2, _) = ws(r2)?;
         let (r2, first_arg) = expression(r2)?;
@@ -891,6 +919,20 @@ fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Expr> {
             let (r3, next) = expression(r3)?;
             args.push(next);
             r_inner = r3;
+        }
+        (r_inner, args)
+    } else if r.starts_with(':') && !r.starts_with("::") {
+        // Fake-infix adverb form (space before ':'): .=method :key<val>
+        let mut args = Vec::new();
+        let mut r_inner = r;
+        while r_inner.starts_with(':') && !r_inner.starts_with("::") {
+            if let Ok((r2, arg)) = crate::parser::primary::misc::colonpair_expr(r_inner) {
+                args.push(arg);
+                let (r3, _) = ws(r2)?;
+                r_inner = r3;
+            } else {
+                break;
+            }
         }
         (r_inner, args)
     } else {
