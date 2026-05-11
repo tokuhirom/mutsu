@@ -1114,6 +1114,11 @@ fn try_parse_no_paren_invocant_colon_call<'a>(
     if !r_ws.starts_with(':') || r_ws.starts_with("::") {
         return Ok((rest_after_first_arg, None));
     }
+    // If the first arg is a colonpair (FatArrow Pair like :r, :!d, :name(val)),
+    // a following ':' is another colonpair, not an invocant colon.
+    if matches!(&first_arg, Expr::Binary { op: crate::token_kind::TokenKind::FatArrow, .. }) {
+        return Ok((rest_after_first_arg, None));
+    }
 
     let after_colon = &r_ws[1..];
     let (mut r, _) = ws(after_colon)?;
@@ -2566,6 +2571,14 @@ fn make_call_expr_from_listop_args<'a>(
     let mut r = r;
     loop {
         let (r2, _) = ws(r)?;
+        // Adjacent colonpairs without commas: foo :a :b :c or foo :a:b:c
+        if r2.starts_with(':') && !r2.starts_with("::") {
+            if let Ok((r3, arg)) = parse_listop_arg(r2) {
+                args.push(arg);
+                r = r3;
+                continue;
+            }
+        }
         if !r2.starts_with(',') || r2.starts_with(",,") {
             break;
         }

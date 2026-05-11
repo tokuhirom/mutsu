@@ -671,7 +671,7 @@ impl Interpreter {
             self.resolve_path(&Self::stringify_path(&path_buf))
         };
         if !absolute_target.exists() {
-            return Err(io_exception_error(
+            return Ok(io_exception_failure(
                 "X::IO::Chdir",
                 format!(
                     "Failed to chdir to '{}': no such file or directory",
@@ -680,13 +680,13 @@ impl Interpreter {
             ));
         }
         if require_dir && !absolute_target.is_dir() {
-            return Err(io_exception_error(
+            return Ok(io_exception_failure(
                 "X::IO::Chdir",
                 format!("Failed to chdir to '{}': not a directory", requested),
             ));
         }
         if !has_required_mode_bits(&absolute_target, require_read, require_write, require_exec) {
-            return Err(io_exception_error(
+            return Ok(io_exception_failure(
                 "X::IO::Chdir",
                 format!("Failed to chdir to '{}': permission denied", requested),
             ));
