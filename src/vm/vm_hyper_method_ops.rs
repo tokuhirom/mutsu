@@ -263,6 +263,15 @@ impl VM {
                             | "append"
                             | "prepend"
                             | "splice"
+                            | "all"
+                            | "any"
+                            | "one"
+                            | "none"
+                            | "duckmap"
+                            | "deepmap"
+                            | "nodemap"
+                            | "flatmap"
+                            | "pairup"
                     );
                     if is_iterable_item && !is_list_native_method {
                         let sub_items = crate::runtime::value_to_list(item);
@@ -419,11 +428,8 @@ impl VM {
             }
             _ => {}
         }
-        // Preserve the container type of the target: Array->Array, List->List
-        let result_kind = match &target {
-            Value::Array(_, kind) if kind.is_real_array() => ArrayKind::Array,
-            _ => ArrayKind::List,
-        };
+        // Hyper method calls always return a List in Raku
+        let result_kind = ArrayKind::List;
         self.stack
             .push(Value::Array(std::sync::Arc::new(results), result_kind));
         Ok(())
@@ -634,11 +640,8 @@ impl VM {
             }
             _ => {}
         }
-        // Preserve the container type of the target
-        let result_kind = match &target {
-            Value::Array(_, kind) if kind.is_real_array() => ArrayKind::Array,
-            _ => ArrayKind::List,
-        };
+        // Hyper method calls always return a List in Raku
+        let result_kind = ArrayKind::List;
         self.stack
             .push(Value::Array(std::sync::Arc::new(results), result_kind));
         Ok(())

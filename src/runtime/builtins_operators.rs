@@ -47,6 +47,8 @@ impl Interpreter {
                 "?" => Ok(Value::Bool(arg.truthy())),
                 "so" => Ok(Value::Bool(arg.truthy())),
                 "not" => Ok(Value::Bool(!arg.truthy())),
+                "++" => crate::builtins::arith_add(arg.clone(), Value::Int(1)),
+                "--" => Ok(crate::builtins::arith_sub(arg.clone(), Value::Int(1))),
                 _ => {
                     // Auto-generated reduction prefix: prefix:<[op]>
                     // e.g. prefix:<[**]>(2,3,4) is equivalent to [**] 2,3,4

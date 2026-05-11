@@ -2895,6 +2895,42 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 continue;
             }
 
+            // Hyper with quoted method name: ».""() / »."name"() / »."{expr}"()
+            if let Some((r_after, qname)) = parse_quoted_method_name(r) {
+                let (r_after, _) = ws(r_after)?;
+                let (r_final, args) = if r_after.starts_with('(') {
+                    let (r2, _) = parse_char(r_after, '(')?;
+                    let (r2, _) = ws(r2)?;
+                    let (r2, a) = parse_call_arg_list(r2)?;
+                    let (r2, _) = ws(r2)?;
+                    let (r2, _) = parse_char(r2, ')')?;
+                    (r2, a)
+                } else {
+                    (r_after, vec![])
+                };
+                match qname {
+                    QuotedMethodName::Static(mname) => {
+                        expr = Expr::HyperMethodCall {
+                            target: Box::new(expr),
+                            name: Symbol::intern(&mname),
+                            args: args,
+                            modifier,
+                            quoted: true,
+                        };
+                    }
+                    QuotedMethodName::Dynamic(name_expr) => {
+                        expr = Expr::HyperMethodCallDynamic {
+                            target: Box::new(expr),
+                            name_expr: Box::new(name_expr),
+                            args: args,
+                            modifier,
+                        };
+                    }
+                }
+                rest = r_final;
+                continue;
+            }
+
             // Static method names (includes private owner qualification in `!Type::method`)
             let parsed_static_name = if modifier == Some('!') {
                 parse_private_method_name(r)
