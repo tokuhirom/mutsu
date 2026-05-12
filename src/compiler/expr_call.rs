@@ -25,7 +25,16 @@ impl Compiler {
         } else if name == "__mutsu_assign_callable_lvalue"
             && args.len() == 3
             && let Expr::ArrayLiteral(targets) = &args[0]
-            && targets.iter().all(|t| matches!(t, Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::Whatever | Expr::Index { .. }))
+            && targets.iter().all(|t| {
+                matches!(
+                    t,
+                    Expr::Var(_)
+                        | Expr::ArrayVar(_)
+                        | Expr::HashVar(_)
+                        | Expr::Whatever
+                        | Expr::Index { .. }
+                )
+            })
         {
             // ($a, $b, ...) = expr -- list assignment to existing variables
             // 1. Compile the RHS and flatten to a list
@@ -45,7 +54,9 @@ impl Compiler {
                         self.code.emit(OpCode::GetGlobal(tmp_idx));
                         let idx = self.code.add_constant(Value::Int(i as i64));
                         self.code.emit(OpCode::LoadConst(idx));
-                        self.code.emit(OpCode::Index { is_positional: true });
+                        self.code.emit(OpCode::Index {
+                            is_positional: true,
+                        });
                         let name_idx = self.code.add_constant(Value::str(var_name.clone()));
                         self.code.emit(OpCode::AssignExpr(name_idx));
                     }
@@ -69,11 +80,17 @@ impl Compiler {
                         self.code.emit(OpCode::GetGlobal(tmp_idx));
                         let idx = self.code.add_constant(Value::Int(i as i64));
                         self.code.emit(OpCode::LoadConst(idx));
-                        self.code.emit(OpCode::Index { is_positional: true });
+                        self.code.emit(OpCode::Index {
+                            is_positional: true,
+                        });
                         let name_idx = self.code.add_constant(Value::str(format!("%{}", var_name)));
                         self.code.emit(OpCode::AssignExpr(name_idx));
                     }
-                    Expr::Index { target, index, is_positional } => {
+                    Expr::Index {
+                        target,
+                        index,
+                        is_positional,
+                    } => {
                         let rhs_item = Expr::Index {
                             target: Box::new(Expr::Var(tmp_name.clone())),
                             index: Box::new(Expr::Literal(Value::Int(i as i64))),
@@ -226,7 +243,12 @@ impl Compiler {
             } else if matches!(&args[0], Expr::Index { target, .. } if matches!(**target, Expr::HashVar(_) | Expr::ArrayVar(_) | Expr::Var(_)))
             {
                 // undefine %hash<key> or undefine @arr[idx] -> target[index] = Nil
-                if let Expr::Index { target, index, is_positional } = &args[0] {
+                if let Expr::Index {
+                    target,
+                    index,
+                    is_positional,
+                } = &args[0]
+                {
                     let assign_expr = Expr::IndexAssign {
                         target: target.clone(),
                         index: index.clone(),
@@ -409,7 +431,11 @@ impl Compiler {
             // For array element CAS: cas(@arr[idx], $expected, $new)
             // Emit __mutsu_cas_array_elem("@arr_name", idx, expected, new)
             // Single-dim array element CAS: cas(@arr[idx], $expected, $new)
-            if let Expr::Index { target, index, is_positional } = &args[0]
+            if let Expr::Index {
+                target,
+                index,
+                is_positional,
+            } = &args[0]
                 && let Some(arr_name) = match target.as_ref() {
                     Expr::ArrayVar(n) => Some(format!("@{}", n)),
                     Expr::Var(n) if n.starts_with('@') => Some(n.clone()),
@@ -464,7 +490,11 @@ impl Compiler {
                         expr: args[2].clone(),
                         op: AssignOp::Assign,
                     }),
-                    Expr::Index { target, index, is_positional } => Some(Stmt::Expr(Expr::IndexAssign {
+                    Expr::Index {
+                        target,
+                        index,
+                        is_positional,
+                    } => Some(Stmt::Expr(Expr::IndexAssign {
                         target: target.clone(),
                         index: index.clone(),
                         value: Box::new(args[2].clone()),
