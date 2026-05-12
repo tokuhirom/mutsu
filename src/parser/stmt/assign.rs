@@ -1337,10 +1337,10 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
             }
         }
         Expr::ArrayLiteral(items) => {
-            if let Some(expr) = list_lvalue_assign_expr(items, rhs) {
+            if let Some(expr) = list_lvalue_assign_expr(items.clone(), rhs.clone()) {
                 expr
             } else {
-                return Err(PError::expected("assignment expression"));
+                callable_lvalue_assign_expr(Expr::ArrayLiteral(items), Vec::new(), rhs)
             }
         }
         Expr::BareWord(name) => Expr::AssignExpr {
