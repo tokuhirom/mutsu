@@ -653,7 +653,7 @@ impl Interpreter {
                     self.execute_regex_code_blocks(&captures.code_blocks);
                     // Merge hash captures into named for Match object
                     let mut named_with_hash = captures.named.clone();
-                    for (hash_name, _entries) in &captures.hash_captures {
+                    for hash_name in captures.hash_captures.keys() {
                         // Don't overwrite existing named captures
                         if !named_with_hash.contains_key(hash_name) {
                             // Store placeholder so make_match_object_full creates the key
@@ -672,25 +672,24 @@ impl Interpreter {
                         Some(&text),
                     );
                     // Apply hash captures: set named entries to Hash values
-                    if !captures.hash_captures.is_empty() {
-                        if let Value::Instance {
+                    if !captures.hash_captures.is_empty()
+                        && let Value::Instance {
                             ref mut attributes, ..
                         } = match_obj
-                        {
-                            let attrs = std::sync::Arc::make_mut(attributes);
-                            if let Some(Value::Hash(named_hash)) = attrs.get_mut("named") {
-                                let named_hash = std::sync::Arc::make_mut(named_hash);
-                                for (hash_name, entries) in &captures.hash_captures {
-                                    let mut hash_map: HashMap<String, Value> = HashMap::new();
-                                    for (key, value) in entries {
-                                        let val = match value {
-                                            Some(v) => Value::str(v.clone()),
-                                            None => Value::Nil,
-                                        };
-                                        hash_map.insert(key.clone(), val);
-                                    }
-                                    named_hash.insert(hash_name.clone(), Value::hash(hash_map));
+                    {
+                        let attrs = std::sync::Arc::make_mut(attributes);
+                        if let Some(Value::Hash(named_hash)) = attrs.get_mut("named") {
+                            let named_hash = std::sync::Arc::make_mut(named_hash);
+                            for (hash_name, entries) in &captures.hash_captures {
+                                let mut hash_map: HashMap<String, Value> = HashMap::new();
+                                for (key, value) in entries {
+                                    let val = match value {
+                                        Some(v) => Value::str(v.clone()),
+                                        None => Value::Nil,
+                                    };
+                                    hash_map.insert(key.clone(), val);
                                 }
+                                named_hash.insert(hash_name.clone(), Value::hash(hash_map));
                             }
                         }
                     }

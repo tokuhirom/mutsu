@@ -56,7 +56,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                     match lookahead.peek() {
                         Some(&'<') => {
                             lookahead.next();
-                            while let Some(ch) = lookahead.next() {
+                            for ch in lookahead.by_ref() {
                                 if ch == '>' {
                                     break;
                                 }
