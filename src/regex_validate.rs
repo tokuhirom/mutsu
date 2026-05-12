@@ -171,9 +171,40 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                 // ** is the general quantifier (e.g., ** 2, ** 2..5)
                 if c == '*' && chars.peek() == Some(&'*') {
                     chars.next(); // consume second *
+                    // Skip modifiers: **? (frugal), **! (greedy), **: (ratchet),
+                    // **:? (ratchet+frugal), **:! (ratchet+greedy)
+                    match chars.peek() {
+                        Some(&'?') | Some(&'!') => {
+                            chars.next();
+                        }
+                        Some(&':') => {
+                            chars.next();
+                            if matches!(chars.peek(), Some(&'?') | Some(&'!')) {
+                                chars.next();
+                            }
+                        }
+                        _ => {}
+                    }
                     // Skip whitespace, then skip the quantifier argument
                     while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
                         chars.next();
+                    }
+                    // Skip {code} block quantifier argument (e.g., **{2..*})
+                    if chars.peek() == Some(&'{') {
+                        chars.next(); // skip '{'
+                        let mut depth = 1u32;
+                        for ch in chars.by_ref() {
+                            if ch == '{' {
+                                depth += 1;
+                            } else if ch == '}' {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                        }
+                        prev_was_quantifier = false;
+                        continue;
                     }
                     // Skip digits, ranges (..), etc.
                     while chars
@@ -798,9 +829,24 @@ fn check_missing_operator(content: &str) -> Result<(), RuntimeError> {
             return Err(RuntimeError::new(msg));
         } else if first.is_alphanumeric() {
             // Named class (e.g., alpha, digit, xdigit)
-            let end = remaining
-                .find(|c: char| !c.is_alphanumeric() && c != '-' && c != '_')
-                .unwrap_or(remaining.len());
+            // Scan alphanumeric/underscore chars. A hyphen is part of the name
+            // only if it is NOT followed by '[' (possibly with whitespace),
+            // because `-[...]` is the subtraction operator.
+            let mut end = 0;
+            let mut citer = remaining.chars();
+            while let Some(ch) = citer.next() {
+                if ch.is_alphanumeric() || ch == '_' {
+                    end += ch.len_utf8();
+                } else if ch == '-' {
+                    let after = citer.as_str().trim_start();
+                    if after.starts_with('[') || after.starts_with(':') || after.is_empty() {
+                        break; // `-` is a subtraction operator
+                    }
+                    end += 1;
+                } else {
+                    break;
+                }
+            }
             remaining = remaining[end..].trim_start();
             had_part = true;
         } else {
