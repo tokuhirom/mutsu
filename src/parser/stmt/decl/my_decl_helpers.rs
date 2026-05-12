@@ -77,10 +77,7 @@ pub(super) fn parse_sigilless_decl(
             (r, Vec::new())
         };
         // Build: Type.method(args) where Type comes from type_constraint or defaults to "Mu"
-        let target_name = type_constraint
-            .as_deref()
-            .unwrap_or("Mu")
-            .to_string();
+        let target_name = type_constraint.as_deref().unwrap_or("Mu").to_string();
         let expr = Expr::MethodCall {
             target: Box::new(Expr::BareWord(target_name)),
             name: Symbol::intern(&method_name),

@@ -69,10 +69,9 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
     // .= mutating method call: constant foo .= new => constant foo = Mu.new
     if let Some(stripped) = rest.strip_prefix(".=") {
         let (r, _) = ws(stripped)?;
-        let (r, method_name) =
-            crate::parser::parse_result::take_while1(r, |c: char| {
-                c.is_alphanumeric() || c == '_' || c == '-'
-            })?;
+        let (r, method_name) = crate::parser::parse_result::take_while1(r, |c: char| {
+            c.is_alphanumeric() || c == '_' || c == '-'
+        })?;
         let method_name = method_name.to_string();
         let r_before_ws = r;
         let (r, _) = ws(r)?;
@@ -82,9 +81,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
             let (r, _) = ws(r)?;
             let (r, args) = crate::parser::primary::parse_call_arg_list(r)?;
             let (r, _) = ws(r)?;
-            let r = r
-                .strip_prefix(')')
-                .ok_or_else(|| PError::expected(")"))?;
+            let r = r.strip_prefix(')').ok_or_else(|| PError::expected(")"))?;
             (r, args)
         } else if r_before_ws.starts_with(':') && !r_before_ws.starts_with("::") {
             super::my_decl_assign::parse_colon_args(r_before_ws)?

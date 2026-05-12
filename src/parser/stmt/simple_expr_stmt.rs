@@ -597,8 +597,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 let (r3, _) = ws(r_inner)?;
                 if r3.starts_with(':')
                     && !r3.starts_with("::")
-                    && let Ok((r4, arg)) =
-                        crate::parser::primary::misc::colonpair_expr(r3)
+                    && let Ok((r4, arg)) = crate::parser::primary::misc::colonpair_expr(r3)
                 {
                     args.push(arg);
                     r_inner = r4;
@@ -624,9 +623,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             let mut args = Vec::new();
             let mut r_inner = r;
             while r_inner.starts_with(':') && !r_inner.starts_with("::") {
-                if let Ok((r2, arg)) =
-                    crate::parser::primary::misc::colonpair_expr(r_inner)
-                {
+                if let Ok((r2, arg)) = crate::parser::primary::misc::colonpair_expr(r_inner) {
                     args.push(arg);
                     let (r3, _) = ws(r2)?;
                     r_inner = r3;

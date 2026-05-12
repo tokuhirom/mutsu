@@ -1766,11 +1766,9 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
     // .=method — mutating topic method call: $_ = $_.method(args)
     if let Some(stripped) = r.strip_prefix('=') {
         let (r, _) = ws(stripped)?;
-        if let Ok((r, method_name)) =
-            crate::parser::parse_result::take_while1(r, |c: char| {
-                c.is_alphanumeric() || c == '_' || c == '-'
-            })
-        {
+        if let Ok((r, method_name)) = crate::parser::parse_result::take_while1(r, |c: char| {
+            c.is_alphanumeric() || c == '_' || c == '-'
+        }) {
             let method_name = method_name.to_string();
             let r_before_ws = r;
             let (r, _) = ws(r)?;
