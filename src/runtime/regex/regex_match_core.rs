@@ -84,6 +84,55 @@ impl Interpreter {
                     .push(captured);
                 updated
             };
+        let apply_hash_capture = |token: &RegexToken,
+                                  _from: usize,
+                                  _to: usize,
+                                  pos_base: usize,
+                                  caps: RegexCaptures|
+         -> RegexCaptures {
+            let Some(name) = token.hash_capture.as_ref() else {
+                return caps;
+            };
+            let mut updated = caps;
+            // Count how many new positional captures this atom produced
+            let new_count = updated.positional.len().saturating_sub(pos_base);
+            // Look for inner subcaptures in positional_subcaps
+            let subcap_idx = if new_count >= 1 {
+                pos_base
+            } else {
+                updated.positional_subcaps.len()
+            };
+            let inner_positionals = if subcap_idx < updated.positional_subcaps.len() {
+                updated.positional_subcaps[subcap_idx]
+                    .as_ref()
+                    .map(|sc| &sc.positional)
+            } else {
+                None
+            };
+            let (key, value) = if let Some(inner) = inner_positionals {
+                if inner.len() >= 2 {
+                    // Two+ inner subcaptures: first = key, second = value
+                    (inner[0].clone(), Some(inner[1].clone()))
+                } else if inner.len() == 1 {
+                    // One inner subcapture: it is the key, no value
+                    (inner[0].clone(), None)
+                } else {
+                    // No inner subcaptures in subcaps: use matched text
+                    let k: String = chars[_from.._to].iter().collect();
+                    (k, None)
+                }
+            } else {
+                // No subcaptures: use matched text
+                let k: String = chars[_from.._to].iter().collect();
+                (k, None)
+            };
+            updated
+                .hash_captures
+                .entry(name.clone())
+                .or_default()
+                .push((key, value));
+            updated
+        };
         let mut stack = Vec::new();
         let init_caps = RegexCaptures {
             match_from: start,
@@ -99,6 +148,7 @@ impl Interpreter {
                 continue;
             }
             let token = &pattern.tokens[idx];
+            let pos_base = caps.positional.len();
             match token.quant {
                 RegexQuant::One => {
                     let mut candidates = self.regex_match_atom_all_with_capture_in_pkg(
@@ -120,7 +170,13 @@ impl Interpreter {
                         stack.push((
                             idx + 1,
                             next,
-                            apply_named_capture(token, pos, next, new_caps),
+                            apply_hash_capture(
+                                token,
+                                pos,
+                                next,
+                                pos_base,
+                                apply_named_capture(token, pos, next, new_caps),
+                            ),
                         ));
                     }
                 }
@@ -151,7 +207,13 @@ impl Interpreter {
                             stack.push((
                                 idx + 1,
                                 *next,
-                                apply_named_capture(token, pos, *next, new_caps.clone()),
+                                apply_hash_capture(
+                                    token,
+                                    pos,
+                                    *next,
+                                    pos_base,
+                                    apply_named_capture(token, pos, *next, new_caps.clone()),
+                                ),
                             ));
                         }
                         stack.push((idx + 1, pos, caps.clone()));
@@ -163,7 +225,13 @@ impl Interpreter {
                         stack.push((
                             idx + 1,
                             next,
-                            apply_named_capture(token, pos, next, new_caps),
+                            apply_hash_capture(
+                                token,
+                                pos,
+                                next,
+                                pos_base,
+                                apply_named_capture(token, pos, next, new_caps),
+                            ),
                         ));
                     }
                 }
@@ -288,7 +356,14 @@ impl Interpreter {
                             if next == current {
                                 break;
                             }
-                            let new_caps = apply_named_capture(token, current, next, new_caps);
+                            let iter_pos_base = current_caps.positional.len();
+                            let new_caps = apply_hash_capture(
+                                token,
+                                current,
+                                next,
+                                iter_pos_base,
+                                apply_named_capture(token, current, next, new_caps),
+                            );
                             current_caps = new_caps.clone();
                             positions.push((next, new_caps));
                             current = next;
@@ -461,7 +536,13 @@ impl Interpreter {
                                 pattern.ignore_case,
                             ) {
                             Some((next, new_caps)) => {
-                                let new_caps = apply_named_capture(token, pos, next, new_caps);
+                                let new_caps = apply_hash_capture(
+                                    token,
+                                    pos,
+                                    next,
+                                    pos_base,
+                                    apply_named_capture(token, pos, next, new_caps),
+                                );
                                 (next, new_caps)
                             }
                             None => continue,
@@ -481,7 +562,14 @@ impl Interpreter {
                             if next == current {
                                 break;
                             }
-                            let new_caps = apply_named_capture(token, current, next, new_caps);
+                            let iter_pos_base = current_caps.positional.len();
+                            let new_caps = apply_hash_capture(
+                                token,
+                                current,
+                                next,
+                                iter_pos_base,
+                                apply_named_capture(token, current, next, new_caps),
+                            );
                             current_caps = new_caps.clone();
                             positions.push((next, new_caps));
                             current = next;
@@ -543,7 +631,13 @@ impl Interpreter {
                         ) {
                             Some((next, new_caps)) if next != current => {
                                 count += 1;
-                                let new_caps = apply_named_capture(token, current, next, new_caps);
+                                let new_caps = apply_hash_capture(
+                                    token,
+                                    current,
+                                    next,
+                                    pos_base,
+                                    apply_named_capture(token, current, next, new_caps),
+                                );
                                 current_caps = new_caps.clone();
                                 current = next;
                                 if count >= min {

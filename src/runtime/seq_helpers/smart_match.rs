@@ -651,17 +651,48 @@ impl Interpreter {
                     self.env.remove("made");
                     // Execute code blocks from regex for side effects
                     self.execute_regex_code_blocks(&captures.code_blocks);
+                    // Merge hash captures into named for Match object
+                    let mut named_with_hash = captures.named.clone();
+                    for hash_name in captures.hash_captures.keys() {
+                        // Don't overwrite existing named captures
+                        if !named_with_hash.contains_key(hash_name) {
+                            // Store placeholder so make_match_object_full creates the key
+                            named_with_hash.insert(hash_name.clone(), Vec::new());
+                        }
+                    }
                     let mut match_obj = Value::make_match_object_full(
                         captures.matched.clone(),
                         captures.from as i64,
                         captures.to as i64,
                         &captures.positional,
-                        &captures.named,
+                        &named_with_hash,
                         &captures.named_subcaps,
                         &captures.positional_subcaps,
                         &captures.positional_quantified,
                         Some(&text),
                     );
+                    // Apply hash captures: set named entries to Hash values
+                    if !captures.hash_captures.is_empty()
+                        && let Value::Instance {
+                            ref mut attributes, ..
+                        } = match_obj
+                    {
+                        let attrs = std::sync::Arc::make_mut(attributes);
+                        if let Some(Value::Hash(named_hash)) = attrs.get_mut("named") {
+                            let named_hash = std::sync::Arc::make_mut(named_hash);
+                            for (hash_name, entries) in &captures.hash_captures {
+                                let mut hash_map: HashMap<String, Value> = HashMap::new();
+                                for (key, value) in entries {
+                                    let val = match value {
+                                        Some(v) => Value::str(v.clone()),
+                                        None => Value::Nil,
+                                    };
+                                    hash_map.insert(key.clone(), val);
+                                }
+                                named_hash.insert(hash_name.clone(), Value::hash(hash_map));
+                            }
+                        }
+                    }
                     // If the original value is not a Str, store the original value
                     // as the `orig` attribute so .orig preserves the type
                     if !matches!(left, Value::Str(_))
