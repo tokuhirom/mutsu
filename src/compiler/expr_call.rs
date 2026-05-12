@@ -246,7 +246,7 @@ impl Compiler {
                 if let Expr::Index {
                     target,
                     index,
-                    is_positional,
+                    is_positional: _,
                 } = &args[0]
                 {
                     let assign_expr = Expr::IndexAssign {
@@ -434,7 +434,7 @@ impl Compiler {
             if let Expr::Index {
                 target,
                 index,
-                is_positional,
+                is_positional: _,
             } = &args[0]
                 && let Some(arr_name) = match target.as_ref() {
                     Expr::ArrayVar(n) => Some(format!("@{}", n)),
@@ -493,7 +493,7 @@ impl Compiler {
                     Expr::Index {
                         target,
                         index,
-                        is_positional,
+                        is_positional: _,
                     } => Some(Stmt::Expr(Expr::IndexAssign {
                         target: target.clone(),
                         index: index.clone(),
