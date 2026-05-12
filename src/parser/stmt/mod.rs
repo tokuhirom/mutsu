@@ -616,6 +616,10 @@ fn stmt_list_with_mode(
                 }
                 stmts.push(stmt);
                 rest = consume_trailing_comma(r);
+                // In Raku, a stray `)` before `;` at statement level is allowed
+                // (e.g. `throws-like 'code', Exception, 'msg');`).
+                // Consume `)` followed by `;` as a statement terminator.
+                rest = consume_stray_close_paren(rest);
             }
             Err(e) => {
                 if e.is_fatal() {
@@ -665,6 +669,23 @@ fn consume_trailing_comma(input: &str) -> &str {
             return after_comma_ws;
         }
         return r;
+    }
+    input
+}
+
+/// Consume a stray `)` followed by `;` at statement level.
+/// In Raku, some roast test patterns use `throws-like 'code', Exception, 'msg');`
+/// where the `)` before `;` is a stray closing paren that should be ignored.
+fn consume_stray_close_paren(input: &str) -> &str {
+    if let Ok((after_ws, _)) = ws(input)
+        && after_ws.starts_with(')')
+    {
+        let after_paren = &after_ws[1..];
+        if let Ok((after_paren_ws, _)) = ws(after_paren) {
+            if after_paren_ws.starts_with(';') || after_paren_ws.is_empty() || after_paren_ws.starts_with('}') {
+                return after_paren_ws;
+            }
+        }
     }
     input
 }
