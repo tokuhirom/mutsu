@@ -2578,12 +2578,13 @@ fn make_call_expr_from_listop_args<'a>(
     loop {
         let (r2, _) = ws(r)?;
         // Adjacent colonpairs without commas: foo :a :b :c or foo :a:b:c
-        if r2.starts_with(':') && !r2.starts_with("::") {
-            if let Ok((r3, arg)) = parse_listop_arg(r2) {
-                args.push(arg);
-                r = r3;
-                continue;
-            }
+        if r2.starts_with(':')
+            && !r2.starts_with("::")
+            && let Ok((r3, arg)) = parse_listop_arg(r2)
+        {
+            args.push(arg);
+            r = r3;
+            continue;
         }
         if !r2.starts_with(',') || r2.starts_with(",,") {
             break;

@@ -278,12 +278,13 @@ pub(super) fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>
     loop {
         let (r, _) = ws(rest)?;
         // Adjacent colonpairs without commas: foo :a :b :c or foo :a:b:c
-        if r.starts_with(':') && !r.starts_with("::") {
-            if let Ok((r2, arg)) = parse_single_call_arg(r) {
-                args.extend(expand_call_arg(arg));
-                rest = r2;
-                continue;
-            }
+        if r.starts_with(':')
+            && !r.starts_with("::")
+            && let Ok((r2, arg)) = parse_single_call_arg(r)
+        {
+            args.extend(expand_call_arg(arg));
+            rest = r2;
+            continue;
         }
         if !r.starts_with(',') {
             return Ok((r, args));
