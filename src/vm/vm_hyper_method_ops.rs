@@ -428,8 +428,11 @@ impl VM {
             }
             _ => {}
         }
-        // Hyper method calls always return a List in Raku
-        let result_kind = ArrayKind::List;
+        // Preserve the container type of the target: Array->Array, List->List
+        let result_kind = match &target {
+            Value::Array(_, kind) if kind.is_real_array() => ArrayKind::Array,
+            _ => ArrayKind::List,
+        };
         self.stack
             .push(Value::Array(std::sync::Arc::new(results), result_kind));
         Ok(())
@@ -640,8 +643,11 @@ impl VM {
             }
             _ => {}
         }
-        // Hyper method calls always return a List in Raku
-        let result_kind = ArrayKind::List;
+        // Preserve the container type of the target: Array->Array, List->List
+        let result_kind = match &target {
+            Value::Array(_, kind) if kind.is_real_array() => ArrayKind::Array,
+            _ => ArrayKind::List,
+        };
         self.stack
             .push(Value::Array(std::sync::Arc::new(results), result_kind));
         Ok(())
