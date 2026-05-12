@@ -502,10 +502,8 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
         Some((r, TokenKind::NotAndThen))
     } else if let Some(r) = keyword("and", rest) {
         Some((r, TokenKind::AndAnd))
-    } else if let Some(r) = keyword("or", rest) {
-        Some((r, TokenKind::OrWord))
     } else {
-        None
+        keyword("or", rest).map(|r| (r, TokenKind::OrWord))
     };
     if let Some((r, op_kind)) = loose_op {
         let (r, _) = ws(r)?;
