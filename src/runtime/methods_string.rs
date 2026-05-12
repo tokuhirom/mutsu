@@ -318,15 +318,13 @@ impl Interpreter {
                 match key.as_str() {
                     "g" | "global" => global = value.truthy(),
                     "x" => x_count = Some(*value.clone()),
-                    "nth" => {
-                        match value.as_ref() {
-                            Value::Int(n) => nth = Some(vec![*n]),
-                            Value::Array(items, _) => {
-                                nth = Some(items.iter().map(|v: &Value| v.to_f64() as i64).collect());
-                            }
-                            _ => nth = Some(vec![value.to_f64() as i64]),
+                    "nth" => match value.as_ref() {
+                        Value::Int(n) => nth = Some(vec![*n]),
+                        Value::Array(items, _) => {
+                            nth = Some(items.iter().map(|v: &Value| v.to_f64() as i64).collect());
                         }
-                    }
+                        _ => nth = Some(vec![value.to_f64() as i64]),
+                    },
                     "1st" | "first" if value.truthy() => nth = Some(vec![1]),
                     "2nd" | "second" if value.truthy() => nth = Some(vec![2]),
                     "3rd" | "third" if value.truthy() => nth = Some(vec![3]),
@@ -416,8 +414,10 @@ impl Interpreter {
                 }
                 let chars: Vec<char> = text.chars().collect();
 
-                let has_adverbs = nth.is_some() || x_count.is_some()
-                    || pos_start.is_some() || continue_from.is_some();
+                let has_adverbs = nth.is_some()
+                    || x_count.is_some()
+                    || pos_start.is_some()
+                    || continue_from.is_some();
 
                 if has_adverbs || pat_global {
                     let mut selected = self.select_non_overlapping_matches(all_captures);
@@ -541,8 +541,10 @@ impl Interpreter {
                 }
             }
             Value::Str(pat) => {
-                let has_adverbs = nth.is_some() || x_count.is_some()
-                    || pos_start.is_some() || continue_from.is_some();
+                let has_adverbs = nth.is_some()
+                    || x_count.is_some()
+                    || pos_start.is_some()
+                    || continue_from.is_some();
                 if has_adverbs || global {
                     let pat_str = pat.as_str();
                     let mut str_matches: Vec<(usize, usize)> = Vec::new();
