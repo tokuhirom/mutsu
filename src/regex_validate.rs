@@ -57,11 +57,16 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                         Some(&'<') => {
                             lookahead.next();
                             while let Some(ch) = lookahead.next() {
-                                if ch == '>' { break; }
+                                if ch == '>' {
+                                    break;
+                                }
                             }
                         }
                         Some(&c) if c.is_alphabetic() || c == '_' => {
-                            while lookahead.peek().is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-') {
+                            while lookahead
+                                .peek()
+                                .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-')
+                            {
                                 lookahead.next();
                             }
                         }

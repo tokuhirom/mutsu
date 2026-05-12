@@ -601,20 +601,34 @@ impl Interpreter {
                 if j < chars_vec.len() && chars_vec[j] == '<' {
                     // Skip to >
                     j += 1;
-                    while j < chars_vec.len() && chars_vec[j] != '>' { j += 1; }
-                    if j < chars_vec.len() { j += 1; } // skip >
+                    while j < chars_vec.len() && chars_vec[j] != '>' {
+                        j += 1;
+                    }
+                    if j < chars_vec.len() {
+                        j += 1;
+                    } // skip >
                     // Skip whitespace
-                    while j < chars_vec.len() && chars_vec[j].is_whitespace() { j += 1; }
+                    while j < chars_vec.len() && chars_vec[j].is_whitespace() {
+                        j += 1;
+                    }
                     if j < chars_vec.len() && chars_vec[j] == '=' {
                         // This is hash aliasing, not a separator
                         i += 1;
                         continue;
                     }
-                } else if j < chars_vec.len() && (chars_vec[j].is_alphabetic() || chars_vec[j] == '_') {
-                    while j < chars_vec.len() && (chars_vec[j].is_alphanumeric() || chars_vec[j] == '_' || chars_vec[j] == '-') {
+                } else if j < chars_vec.len()
+                    && (chars_vec[j].is_alphabetic() || chars_vec[j] == '_')
+                {
+                    while j < chars_vec.len()
+                        && (chars_vec[j].is_alphanumeric()
+                            || chars_vec[j] == '_'
+                            || chars_vec[j] == '-')
+                    {
                         j += 1;
                     }
-                    while j < chars_vec.len() && chars_vec[j].is_whitespace() { j += 1; }
+                    while j < chars_vec.len() && chars_vec[j].is_whitespace() {
+                        j += 1;
+                    }
                     if j < chars_vec.len() && chars_vec[j] == '=' {
                         // This is hash aliasing, not a separator
                         i += 1;
@@ -1270,29 +1284,45 @@ impl Interpreter {
                     chars.next();
                     let mut hash_name = String::new();
                     for ch in chars.by_ref() {
-                        if ch == '>' { break; }
+                        if ch == '>' {
+                            break;
+                        }
                         hash_name.push(ch);
                     }
                     if !hash_name.is_empty() {
-                        while chars.peek().is_some_and(|ch| ch.is_whitespace()) { chars.next(); }
+                        while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+                            chars.next();
+                        }
                         if chars.peek() == Some(&'=') {
                             chars.next();
-                            while chars.peek().is_some_and(|ch| ch.is_whitespace()) { chars.next(); }
+                            while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+                                chars.next();
+                            }
                             pending_hash_capture = Some(hash_name);
                             continue;
                         }
                     }
                     continue;
-                } else if chars.peek().is_some_and(|ch| ch.is_alphabetic() || *ch == '_') {
+                } else if chars
+                    .peek()
+                    .is_some_and(|ch| ch.is_alphabetic() || *ch == '_')
+                {
                     let mut hash_name = String::new();
-                    while chars.peek().is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-') {
+                    while chars
+                        .peek()
+                        .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-')
+                    {
                         hash_name.push(chars.next().unwrap());
                     }
                     if !hash_name.is_empty() {
-                        while chars.peek().is_some_and(|ch| ch.is_whitespace()) { chars.next(); }
+                        while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+                            chars.next();
+                        }
                         if chars.peek() == Some(&'=') {
                             chars.next();
-                            while chars.peek().is_some_and(|ch| ch.is_whitespace()) { chars.next(); }
+                            while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+                                chars.next();
+                            }
                             pending_hash_capture = Some(hash_name);
                             continue;
                         }

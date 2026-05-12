@@ -673,7 +673,10 @@ impl Interpreter {
                     );
                     // Apply hash captures: set named entries to Hash values
                     if !captures.hash_captures.is_empty() {
-                        if let Value::Instance { ref mut attributes, .. } = match_obj {
+                        if let Value::Instance {
+                            ref mut attributes, ..
+                        } = match_obj
+                        {
                             let attrs = std::sync::Arc::make_mut(attributes);
                             if let Some(Value::Hash(named_hash)) = attrs.get_mut("named") {
                                 let named_hash = std::sync::Arc::make_mut(named_hash);
