@@ -1,5 +1,6 @@
+use super::super::unicode::check_unicode_property;
 use super::super::*;
-use super::regex_helpers::{is_word_char, merge_regex_captures};
+use super::regex_helpers::{is_word_char, matches_named_builtin, merge_regex_captures};
 
 impl Interpreter {
     pub(super) fn regex_match_atom_with_capture_in_pkg(
@@ -519,6 +520,133 @@ impl Interpreter {
                     new_caps
                         .named
                         .entry(spec.lookup_name.to_string())
+                        .or_default()
+                        .push(captured);
+                }
+                return Some((end, new_caps));
+            }
+            // Fallback: check if lookup_name is a builtin character class
+            // (e.g., alpha, digit, etc.). This handles <foo=alpha> aliases
+            // where "alpha" is not a user-defined token but a builtin.
+            let is_builtin_class = matches!(
+                spec.lookup_name.as_str(),
+                "alpha"
+                    | "upper"
+                    | "lower"
+                    | "digit"
+                    | "xdigit"
+                    | "space"
+                    | "alnum"
+                    | "blank"
+                    | "cntrl"
+                    | "punct"
+                    | "graph"
+                    | "print"
+            );
+            if is_builtin_class
+                && (pos >= chars.len() || !matches_named_builtin(&spec.lookup_name, chars[pos]))
+            {
+                return None; // builtin class doesn't match here — no error, just no match
+            }
+            if is_builtin_class
+                && pos < chars.len()
+                && matches_named_builtin(&spec.lookup_name, chars[pos])
+            {
+                let end = pos + 1;
+                let mut new_caps = current_caps.clone();
+                let captured: String = chars[pos..end].iter().collect();
+                let capture_name = spec
+                    .capture_name
+                    .as_deref()
+                    .or_else(|| (!spec.silent).then_some(spec.lookup_name.as_str()));
+                if let Some(capture_name) = capture_name {
+                    let subcap = RegexCaptures {
+                        matched: captured.clone(),
+                        from: pos,
+                        to: end,
+                        ..Default::default()
+                    };
+                    new_caps
+                        .named_subcaps
+                        .entry(capture_name.to_string())
+                        .or_default()
+                        .push(subcap);
+                    new_caps
+                        .named
+                        .entry(capture_name.to_string())
+                        .or_default()
+                        .push(captured.clone());
+                    // For <foo=alpha>, also capture under the original name.
+                    // For <foo=.alpha>, the dot suppresses the original name.
+                    if spec.capture_name.is_some()
+                        && capture_name != spec.lookup_name
+                        && !spec.alias_replaces_original
+                    {
+                        new_caps
+                            .capture_alias_map
+                            .insert(capture_name.to_string(), spec.lookup_name.clone());
+                        let subcap2 = RegexCaptures {
+                            matched: captured.clone(),
+                            from: pos,
+                            to: end,
+                            ..Default::default()
+                        };
+                        new_caps
+                            .named_subcaps
+                            .entry(spec.lookup_name.to_string())
+                            .or_default()
+                            .push(subcap2);
+                        new_caps
+                            .named
+                            .entry(spec.lookup_name.to_string())
+                            .or_default()
+                            .push(captured);
+                    }
+                }
+                return Some((end, new_caps));
+            }
+            // Fallback: check if lookup_name is a Unicode property assertion
+            // (e.g., :Letter, :!Letter, -:Letter). Handles <foo=:Letter> aliases.
+            let (uni_prop, uni_negated) = if let Some(prop) = spec.lookup_name.strip_prefix(":!") {
+                (Some(prop), true)
+            } else if let Some(prop) = spec.lookup_name.strip_prefix("-:") {
+                (Some(prop), true)
+            } else if let Some(prop) = spec.lookup_name.strip_prefix(':') {
+                (Some(prop), false)
+            } else {
+                (None, false)
+            };
+            if let Some(prop_name) = uni_prop {
+                if pos >= chars.len() {
+                    return None;
+                }
+                let matches = check_unicode_property(prop_name, chars[pos]);
+                let matches = if uni_negated { !matches } else { matches };
+                if !matches {
+                    return None;
+                }
+                let end = pos + 1;
+                let mut new_caps = current_caps.clone();
+                let captured: String = chars[pos..end].iter().collect();
+                let capture_name = spec
+                    .capture_name
+                    .as_deref()
+                    .or_else(|| (!spec.silent).then_some(spec.lookup_name.as_str()));
+                if let Some(capture_name) = capture_name {
+                    let subcap = RegexCaptures {
+                        matched: captured.clone(),
+                        from: pos,
+                        to: end,
+                        ..Default::default()
+                    };
+                    new_caps
+                        .named_subcaps
+                        .entry(capture_name.to_string())
+                        .or_default()
+                        .push(subcap);
+                    new_caps
+                        .named
+                        .entry(capture_name.to_string())
                         .or_default()
                         .push(captured);
                 }

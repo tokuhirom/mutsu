@@ -323,10 +323,17 @@ impl Interpreter {
             return (name, args);
         }
         if let Some(colon_idx) = Self::find_top_level_call_colon(trimmed) {
-            let name = trimmed[..colon_idx].trim().to_string();
-            let arg_src = trimmed[colon_idx + 1..].trim();
-            let args = Self::split_regex_arg_list(arg_src);
-            return (name, args);
+            // Don't split on colon that's part of a Unicode property prefix
+            // (e.g., ":Letter", ":!Letter", "-:Letter"), not a method call colon.
+            let is_unicode_prop_colon = colon_idx == 0
+                || (colon_idx == 1 && trimmed.starts_with('-'))
+                || (colon_idx == 1 && trimmed.starts_with('!'));
+            if !is_unicode_prop_colon {
+                let name = trimmed[..colon_idx].trim().to_string();
+                let arg_src = trimmed[colon_idx + 1..].trim();
+                let args = Self::split_regex_arg_list(arg_src);
+                return (name, args);
+            }
         }
         (trimmed.to_string(), Vec::new())
     }
@@ -340,6 +347,7 @@ impl Interpreter {
         }
         let mut token_lookup = false;
         let mut capture_name = None;
+        let mut alias_replaces_original = false;
 
         // Look for alias syntax <name=.subrule>, <name=&subrule>, <name=subrule>.
         // Only match `=` that is NOT part of `=>` (fat-arrow pair syntax in args)
@@ -358,16 +366,19 @@ impl Interpreter {
                     raw = stripped.trim();
                     token_lookup = true;
                     silent = false;
+                    alias_replaces_original = true;
                 } else if let Some(stripped) = rhs.strip_prefix('.') {
                     // <name=.subrule> — call .subrule (non-capturing), capture under name
                     capture_name = Some(lhs.to_string());
                     raw = stripped.trim();
                     silent = false;
+                    alias_replaces_original = true;
                 } else {
-                    // <name=subrule> — call subrule, capture under name
+                    // <name=subrule> — call subrule, capture under name AND original
                     capture_name = Some(lhs.to_string());
                     raw = rhs;
                     silent = false;
+                    alias_replaces_original = false;
                 }
             }
         }
@@ -384,6 +395,7 @@ impl Interpreter {
             lookup_name,
             capture_name,
             arg_exprs,
+            alias_replaces_original,
         }
     }
 

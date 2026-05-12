@@ -847,27 +847,48 @@ fn scan_to_delim_inner(
                     return None;
                 }
             }
-            let mut bracket_depth = 1u32;
-            loop {
-                match chars.next() {
-                    Some((_, '\\')) => {
-                        chars.next(); // skip escaped char
+            // Inside a Raku character class like <[...]>, <-[...]+[...]>, etc.
+            // We scan bracket groups sequentially. Inside each [...], an
+            // unescaped '[' is a literal character (only '\]' escapes ']').
+            // After ']', we check for compound class operators (+[, -[) or
+            // the closing '>'.
+            'char_class: loop {
+                // Scan inside a [...] group until unescaped ']'
+                loop {
+                    match chars.next() {
+                        Some((_, '\\')) => {
+                            chars.next(); // skip escaped char
+                        }
+                        Some((_, ']')) => {
+                            break; // end of this bracket group
+                        }
+                        Some(_) => {}
+                        None => return None,
                     }
-                    Some((_, ']')) => {
-                        bracket_depth -= 1;
-                        if bracket_depth == 0 {
-                            // Consume the closing >
-                            if let Some((_, '>')) = chars.next() {
-                                // done
-                            }
+                }
+                // After ']', check for compound class or closing '>'
+                let saved = chars.clone();
+                match chars.next() {
+                    Some((_, '>')) => break, // done
+                    Some((_, '+' | '-')) => {
+                        if let Some((_, '[')) = chars.next() {
+                            continue 'char_class;
+                        }
+                        // Not a compound group; try consuming '>'
+                        chars = saved;
+                        if let Some((_, '>')) = chars.next() {
                             break;
                         }
+                        break;
                     }
-                    Some((_, '[')) => {
-                        bracket_depth += 1;
+                    Some((_, '[')) => continue 'char_class,
+                    _ => {
+                        chars = saved;
+                        if let Some((_, '>')) = chars.next() {
+                            break;
+                        }
+                        break;
                     }
-                    Some(_) => {}
-                    None => return None,
                 }
             }
         } else if !p5_mode

@@ -247,6 +247,9 @@ pub(super) struct NamedRegexLookupSpec {
     pub(super) lookup_name: String,
     pub(super) capture_name: Option<String>,
     pub(super) arg_exprs: Vec<String>,
+    /// When true, the alias replaces the original capture name (dot-call alias).
+    /// `<foo=.alpha>` sets this to true; `<foo=alpha>` leaves it false.
+    pub(super) alias_replaces_original: bool,
 }
 
 /// Check if a character is a "word" character for word boundary purposes.
