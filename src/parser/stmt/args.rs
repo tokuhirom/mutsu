@@ -249,30 +249,28 @@ pub(super) fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>
         exception: None,
     })?;
     let (rest_ws, _) = ws(rest)?;
-    // Only attempt the invocant-colon path when the first arg is positional.
-    // If it's a Named arg (colonpair like :r), a following ':' is another
-    // colonpair, not an invocant colon.
-    if rest_ws.starts_with(':')
-        && !rest_ws.starts_with("::")
-        && matches!(&first, CallArg::Positional(_))
-    {
-        let invocant_expr = match first {
-            CallArg::Positional(expr) => expr,
-            _ => unreachable!(),
-        };
-        args.push(CallArg::Invocant(invocant_expr));
-        let after_colon = &rest_ws[1..];
-        let (after_colon, _) = ws(after_colon)?;
-        if after_colon.starts_with(';')
-            || after_colon.is_empty()
-            || after_colon.starts_with('}')
-            || after_colon.starts_with(')')
-        {
-            return Ok((after_colon, args));
+    if rest_ws.starts_with(':') && !rest_ws.starts_with("::") {
+        // Only treat as invocant colon if the first arg was positional.
+        // If the first arg was a colonpair (Named), the next `:` is another colonpair.
+        if matches!(first, CallArg::Positional(_)) {
+            let invocant_expr = match first {
+                CallArg::Positional(expr) => expr,
+                _ => unreachable!(),
+            };
+            args.push(CallArg::Invocant(invocant_expr));
+            let after_colon = &rest_ws[1..];
+            let (after_colon, _) = ws(after_colon)?;
+            if after_colon.starts_with(';')
+                || after_colon.is_empty()
+                || after_colon.starts_with('}')
+                || after_colon.starts_with(')')
+            {
+                return Ok((after_colon, args));
+            }
+            let (after_args, mut more) = parse_remaining_call_args(after_colon)?;
+            args.append(&mut more);
+            return Ok((after_args, args));
         }
-        let (after_args, mut more) = parse_remaining_call_args(after_colon)?;
-        args.append(&mut more);
-        return Ok((after_args, args));
     }
     args.extend(expand_call_arg(first));
     loop {
@@ -280,10 +278,10 @@ pub(super) fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>
         // Adjacent colonpairs without commas: foo :a :b :c or foo :a:b:c
         if r.starts_with(':')
             && !r.starts_with("::")
-            && let Ok((r2, arg)) = parse_single_call_arg(r)
+            && let Ok((r3, arg)) = parse_single_call_arg(r)
         {
             args.extend(expand_call_arg(arg));
-            rest = r2;
+            rest = r3;
             continue;
         }
         if !r.starts_with(',') {

@@ -389,6 +389,7 @@ impl Interpreter {
                 }
             }
         }
+        let dir_from_cwd = requested_opt.is_none();
         let requested = requested_opt.unwrap_or_else(|| {
             self.get_dynamic_string("$*CWD")
                 .unwrap_or_else(|| ".".to_string())
@@ -409,10 +410,12 @@ impl Interpreter {
             {
                 return;
             }
-            let out_path = if requested_is_absolute {
-                path_buf.join(basename)
-            } else if requested == "." {
+            // When dir() is called with no explicit path (using $*CWD) or with ".",
+            // return just basenames. Otherwise prefix with the requested path.
+            let out_path = if dir_from_cwd || requested == "." {
                 PathBuf::from(basename)
+            } else if requested_is_absolute {
+                path_buf.join(basename)
             } else {
                 requested_path.join(basename)
             };
@@ -421,10 +424,12 @@ impl Interpreter {
                 "path".to_string(),
                 Value::str(Self::stringify_path(&out_path)),
             );
-            if let Some(cwd) = &requested_cwd_opt
-                && !out_path.is_absolute()
-            {
-                attrs.insert("cwd".to_string(), Value::str(cwd.clone()));
+            if !out_path.is_absolute() {
+                if let Some(cwd) = &requested_cwd_opt {
+                    attrs.insert("cwd".to_string(), Value::str(cwd.clone()));
+                } else if dir_from_cwd && requested_is_absolute {
+                    attrs.insert("cwd".to_string(), Value::str(Self::stringify_path(&path_buf)));
+                }
             }
             entries.push(Value::make_instance(Symbol::intern("IO::Path"), attrs));
         };
@@ -748,7 +753,7 @@ impl Interpreter {
             self.resolve_path(&Self::stringify_path(&path_buf))
         };
         if !absolute_target.exists() {
-            return Err(io_exception_error(
+            return Ok(io_exception_failure(
                 "X::IO::Chdir",
                 format!(
                     "Failed to chdir to '{}': no such file or directory",
@@ -757,13 +762,13 @@ impl Interpreter {
             ));
         }
         if require_dir && !absolute_target.is_dir() {
-            return Err(io_exception_error(
+            return Ok(io_exception_failure(
                 "X::IO::Chdir",
                 format!("Failed to chdir to '{}': not a directory", requested),
             ));
         }
         if !has_required_mode_bits(&absolute_target, require_read, require_write, require_exec) {
-            return Err(io_exception_error(
+            return Ok(io_exception_failure(
                 "X::IO::Chdir",
                 format!("Failed to chdir to '{}': permission denied", requested),
             ));

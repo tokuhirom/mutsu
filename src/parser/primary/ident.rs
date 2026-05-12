@@ -1127,6 +1127,14 @@ fn try_parse_no_paren_invocant_colon_call<'a>(
     }
 
     let after_colon = &r_ws[1..];
+
+    // If the colon is immediately followed by an identifier char, `!`, or a sigil,
+    // it's a colonpair (e.g. `:r`, `:!d`, `:$var`), not an invocant colon.
+    if let Some(c) = after_colon.chars().next() {
+        if c.is_alphabetic() || c == '_' || c == '!' || c == '$' || c == '@' || c == '%' || c == '&' {
+            return Ok((rest_after_first_arg, None));
+        }
+    }
     let (mut r, _) = ws(after_colon)?;
 
     if let Some(after_comma) = r.strip_prefix(',') {
