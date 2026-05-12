@@ -311,7 +311,7 @@ fn skip_char_class_content(
     'char_class: loop {
         if !entered_first {
             // Consume chars until we hit the first '['
-            while let Some(c) = chars.next() {
+            for c in chars.by_ref() {
                 current.push(c);
                 if c == '[' {
                     break;

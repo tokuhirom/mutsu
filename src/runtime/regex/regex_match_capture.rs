@@ -1,5 +1,5 @@
-use super::super::*;
 use super::super::unicode::check_unicode_property;
+use super::super::*;
 use super::regex_helpers::{is_word_char, matches_named_builtin, merge_regex_captures};
 
 impl Interpreter {
@@ -528,16 +528,30 @@ impl Interpreter {
             // Fallback: check if lookup_name is a builtin character class
             // (e.g., alpha, digit, etc.). This handles <foo=alpha> aliases
             // where "alpha" is not a user-defined token but a builtin.
-            let is_builtin_class = matches!(spec.lookup_name.as_str(),
-                "alpha" | "upper" | "lower" | "digit" | "xdigit"
-                | "space" | "alnum" | "blank" | "cntrl" | "punct"
-                | "graph" | "print");
-            if is_builtin_class {
-                if pos >= chars.len() || !matches_named_builtin(&spec.lookup_name, chars[pos]) {
-                    return None; // builtin class doesn't match here — no error, just no match
-                }
+            let is_builtin_class = matches!(
+                spec.lookup_name.as_str(),
+                "alpha"
+                    | "upper"
+                    | "lower"
+                    | "digit"
+                    | "xdigit"
+                    | "space"
+                    | "alnum"
+                    | "blank"
+                    | "cntrl"
+                    | "punct"
+                    | "graph"
+                    | "print"
+            );
+            if is_builtin_class
+                && (pos >= chars.len() || !matches_named_builtin(&spec.lookup_name, chars[pos]))
+            {
+                return None; // builtin class doesn't match here — no error, just no match
             }
-            if is_builtin_class && pos < chars.len() && matches_named_builtin(&spec.lookup_name, chars[pos]) {
+            if is_builtin_class
+                && pos < chars.len()
+                && matches_named_builtin(&spec.lookup_name, chars[pos])
+            {
                 let end = pos + 1;
                 let mut new_caps = current_caps.clone();
                 let captured: String = chars[pos..end].iter().collect();
@@ -546,10 +560,12 @@ impl Interpreter {
                     .as_deref()
                     .or_else(|| (!spec.silent).then_some(spec.lookup_name.as_str()));
                 if let Some(capture_name) = capture_name {
-                    let mut subcap = RegexCaptures::default();
-                    subcap.matched = captured.clone();
-                    subcap.from = pos;
-                    subcap.to = end;
+                    let subcap = RegexCaptures {
+                        matched: captured.clone(),
+                        from: pos,
+                        to: end,
+                        ..Default::default()
+                    };
                     new_caps
                         .named_subcaps
                         .entry(capture_name.to_string())
@@ -562,14 +578,19 @@ impl Interpreter {
                         .push(captured.clone());
                     // For <foo=alpha>, also capture under the original name.
                     // For <foo=.alpha>, the dot suppresses the original name.
-                    if spec.capture_name.is_some() && capture_name != spec.lookup_name && !spec.alias_replaces_original {
+                    if spec.capture_name.is_some()
+                        && capture_name != spec.lookup_name
+                        && !spec.alias_replaces_original
+                    {
                         new_caps
                             .capture_alias_map
                             .insert(capture_name.to_string(), spec.lookup_name.clone());
-                        let mut subcap2 = RegexCaptures::default();
-                        subcap2.matched = captured.clone();
-                        subcap2.from = pos;
-                        subcap2.to = end;
+                        let subcap2 = RegexCaptures {
+                            matched: captured.clone(),
+                            from: pos,
+                            to: end,
+                            ..Default::default()
+                        };
                         new_caps
                             .named_subcaps
                             .entry(spec.lookup_name.to_string())
@@ -612,10 +633,12 @@ impl Interpreter {
                     .as_deref()
                     .or_else(|| (!spec.silent).then_some(spec.lookup_name.as_str()));
                 if let Some(capture_name) = capture_name {
-                    let mut subcap = RegexCaptures::default();
-                    subcap.matched = captured.clone();
-                    subcap.from = pos;
-                    subcap.to = end;
+                    let subcap = RegexCaptures {
+                        matched: captured.clone(),
+                        from: pos,
+                        to: end,
+                        ..Default::default()
+                    };
                     new_caps
                         .named_subcaps
                         .entry(capture_name.to_string())

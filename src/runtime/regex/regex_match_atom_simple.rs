@@ -1,5 +1,5 @@
-use super::super::*;
 use super::super::unicode::check_unicode_property;
+use super::super::*;
 use super::regex_helpers::{
     CaseFoldIter, class_has_only_exact_chars, grapheme_end, is_word_char, matches_named_builtin,
 };
@@ -400,10 +400,21 @@ impl Interpreter {
                 return Some(next);
             }
             // Fallback: check if lookup_name is a builtin character class
-            let is_builtin_class = matches!(spec.lookup_name.as_str(),
-                "alpha" | "upper" | "lower" | "digit" | "xdigit"
-                | "space" | "alnum" | "blank" | "cntrl" | "punct"
-                | "graph" | "print");
+            let is_builtin_class = matches!(
+                spec.lookup_name.as_str(),
+                "alpha"
+                    | "upper"
+                    | "lower"
+                    | "digit"
+                    | "xdigit"
+                    | "space"
+                    | "alnum"
+                    | "blank"
+                    | "cntrl"
+                    | "punct"
+                    | "graph"
+                    | "print"
+            );
             if is_builtin_class {
                 if pos < chars.len() && matches_named_builtin(&spec.lookup_name, chars[pos]) {
                     return Some(pos + 1);
