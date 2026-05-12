@@ -681,10 +681,12 @@ fn consume_stray_close_paren(input: &str) -> &str {
         && after_ws.starts_with(')')
     {
         let after_paren = &after_ws[1..];
-        if let Ok((after_paren_ws, _)) = ws(after_paren) {
-            if after_paren_ws.starts_with(';') || after_paren_ws.is_empty() || after_paren_ws.starts_with('}') {
-                return after_paren_ws;
-            }
+        if let Ok((after_paren_ws, _)) = ws(after_paren)
+            && (after_paren_ws.starts_with(';')
+                || after_paren_ws.is_empty()
+                || after_paren_ws.starts_with('}'))
+        {
+            return after_paren_ws;
         }
     }
     input
