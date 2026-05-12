@@ -76,8 +76,8 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         let r_before_ws = r;
         let (r, _) = ws(r)?;
         // Parse optional args (parenthesized, colon-form, or fake-infix adverbs)
-        let (r, args) = if r.starts_with('(') {
-            let r = &r[1..];
+        let (r, args) = if let Some(inner) = r.strip_prefix('(') {
+            let r = inner;
             let (r, _) = ws(r)?;
             let (r, args) = crate::parser::primary::parse_call_arg_list(r)?;
             let (r, _) = ws(r)?;

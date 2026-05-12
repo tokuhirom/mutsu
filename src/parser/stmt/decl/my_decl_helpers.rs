@@ -60,8 +60,8 @@ pub(super) fn parse_sigilless_decl(
         let r_before_ws = r;
         let (r, _) = ws(r)?;
         // Parse optional args (parenthesized, colon-form, or fake-infix adverbs)
-        let (r, args) = if r.starts_with('(') {
-            let r = &r[1..];
+        let (r, args) = if let Some(inner) = r.strip_prefix('(') {
+            let r = inner;
             let (r, _) = ws(r)?;
             let (r, args) = super::super::super::primary::parse_call_arg_list(r)?;
             let (r, _) = ws(r)?;

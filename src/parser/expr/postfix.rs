@@ -814,10 +814,10 @@ fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) -> Expr) -> E
         // ($var = expr).=method => evaluate the assignment, then $var = $var.method
         Expr::AssignExpr { name, .. } => {
             let assign_name = name.clone();
-            let var_expr = if assign_name.starts_with('@') {
-                Expr::ArrayVar(assign_name[1..].to_string())
-            } else if assign_name.starts_with('%') {
-                Expr::HashVar(assign_name[1..].to_string())
+            let var_expr = if let Some(rest) = assign_name.strip_prefix('@') {
+                Expr::ArrayVar(rest.to_string())
+            } else if let Some(rest) = assign_name.strip_prefix('%') {
+                Expr::HashVar(rest.to_string())
             } else {
                 Expr::Var(assign_name.clone())
             };

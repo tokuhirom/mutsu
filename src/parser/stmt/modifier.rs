@@ -124,6 +124,20 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
             return Ok((stripped, current_stmt));
         }
 
+        // In Raku, a stray `)` before `;` or at end of statement is allowed
+        // (e.g. `throws-like 'code', Exception, 'msg');`).
+        // Consume the `)` and treat the following `;` as the statement terminator.
+        if let Some(rest_after) = rest.strip_prefix(')') {
+            let after = rest_after;
+            let (after, _) = ws(after)?;
+            if let Some(stripped) = after.strip_prefix(';') {
+                return Ok((stripped, current_stmt));
+            }
+            if after.is_empty() || after.starts_with('}') {
+                return Ok((after, current_stmt));
+            }
+        }
+
         // If at end of input or block, return as-is
         if rest.is_empty() || rest.starts_with('}') {
             return Ok((rest, current_stmt));
