@@ -1044,6 +1044,33 @@ fn autoincrement_expr(
         parse_prefix_unary_op(input)
     {
         let rest = &input[len..];
+        // Check for hyper prefix: ++<< / --<< / ++« / --«
+        {
+            let hm_len = if rest.starts_with('\u{00AB}') {
+                Some('\u{00AB}'.len_utf8())
+            } else if rest.starts_with("<<") {
+                Some(2)
+            } else {
+                None
+            };
+            if let Some(marker_len) = hm_len {
+                let symbol = match op {
+                    PrefixUnaryOp::PreInc => "++",
+                    PrefixUnaryOp::PreDec => "--",
+                    _ => unreachable!(),
+                };
+                let r = &rest[marker_len..];
+                let (r, _) = ws(r)?;
+                let (r, arg) = prefix_expr(r)?;
+                return Ok((
+                    r,
+                    Expr::Call {
+                        name: Symbol::intern("__mutsu_hyper_prefix"),
+                        args: vec![Expr::Literal(Value::str(symbol.to_string())), arg],
+                    },
+                ));
+            }
+        }
         // Recurse to allow nested ++/-- (e.g. ++++$x)
         let (rest, expr) = autoincrement_expr(rest, base_parser)?;
         if matches!(

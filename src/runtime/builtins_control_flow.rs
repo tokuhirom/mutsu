@@ -376,6 +376,15 @@ impl Interpreter {
                 other => interp.call_function(routine, vec![other]),
             }
         }
+        // Handle hashes: apply the operation to values, preserving hash structure
+        if let Value::Hash(map) = &args[1] {
+            let mut result_map = std::collections::HashMap::new();
+            for (k, v) in map.iter() {
+                let new_val = apply_hyper_prefix(self, &routine, v.clone())?;
+                result_map.insert(k.clone(), new_val);
+            }
+            return Ok(Value::Hash(std::sync::Arc::new(result_map)));
+        }
         let items = crate::runtime::value_to_list(&args[1]);
         let mut results = Vec::with_capacity(items.len());
         for item in items {
