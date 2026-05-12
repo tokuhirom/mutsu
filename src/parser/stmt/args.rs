@@ -252,7 +252,10 @@ pub(super) fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>
     // Only attempt the invocant-colon path when the first arg is positional.
     // If it's a Named arg (colonpair like :r), a following ':' is another
     // colonpair, not an invocant colon.
-    if rest_ws.starts_with(':') && !rest_ws.starts_with("::") && matches!(&first, CallArg::Positional(_)) {
+    if rest_ws.starts_with(':')
+        && !rest_ws.starts_with("::")
+        && matches!(&first, CallArg::Positional(_))
+    {
         let invocant_expr = match first {
             CallArg::Positional(expr) => expr,
             _ => unreachable!(),

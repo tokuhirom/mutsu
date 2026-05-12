@@ -1116,7 +1116,13 @@ fn try_parse_no_paren_invocant_colon_call<'a>(
     }
     // If the first arg is a colonpair (FatArrow Pair like :r, :!d, :name(val)),
     // a following ':' is another colonpair, not an invocant colon.
-    if matches!(&first_arg, Expr::Binary { op: crate::token_kind::TokenKind::FatArrow, .. }) {
+    if matches!(
+        &first_arg,
+        Expr::Binary {
+            op: crate::token_kind::TokenKind::FatArrow,
+            ..
+        }
+    ) {
         return Ok((rest_after_first_arg, None));
     }
 
