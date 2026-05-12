@@ -2913,7 +2913,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         expr = Expr::HyperMethodCall {
                             target: Box::new(expr),
                             name: Symbol::intern(&mname),
-                            args: args,
+                            args,
                             modifier,
                             quoted: true,
                         };
@@ -2922,7 +2922,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         expr = Expr::HyperMethodCallDynamic {
                             target: Box::new(expr),
                             name_expr: Box::new(name_expr),
-                            args: args,
+                            args,
                             modifier,
                         };
                     }
