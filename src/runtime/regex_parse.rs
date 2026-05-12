@@ -104,6 +104,7 @@ fn rewrite_tilde_tokens(
                     atom: RegexAtom::WsRule,
                     quant: RegexQuant::One,
                     named_capture: None,
+                    hash_capture: None,
                     ratchet: false,
                     frugal: false,
                 };
@@ -128,6 +129,7 @@ fn rewrite_tilde_tokens(
                 },
                 quant: RegexQuant::One,
                 named_capture: None,
+                hash_capture: None,
                 ratchet: false,
                 frugal: false,
             });
@@ -251,6 +253,7 @@ fn regex_single_quote_atom(literal: String, ignore_case: bool) -> RegexAtom {
                 atom: RegexAtom::Literal(ch),
                 quant: RegexQuant::One,
                 named_capture: None,
+                hash_capture: None,
                 ratchet: false,
                 frugal: false,
             })
@@ -568,26 +571,59 @@ impl Interpreter {
         let mut in_single = false;
         let mut in_double = false;
         let mut escaped = false;
-        for ch in pattern.chars() {
+        let chars_vec: Vec<char> = pattern.chars().collect();
+        let mut i = 0;
+        while i < chars_vec.len() {
+            let ch = chars_vec[i];
             if escaped {
                 escaped = false;
+                i += 1;
                 continue;
             }
             if ch == '\\' {
                 escaped = true;
+                i += 1;
                 continue;
             }
             if ch == '\'' && !in_double {
                 in_single = !in_single;
+                i += 1;
                 continue;
             }
             if ch == '"' && !in_single {
                 in_double = !in_double;
+                i += 1;
                 continue;
             }
             if !in_single && !in_double && ch == '%' {
+                // Check if this is hash aliasing: %<name>= or %ident=
+                let mut j = i + 1;
+                if j < chars_vec.len() && chars_vec[j] == '<' {
+                    // Skip to >
+                    j += 1;
+                    while j < chars_vec.len() && chars_vec[j] != '>' { j += 1; }
+                    if j < chars_vec.len() { j += 1; } // skip >
+                    // Skip whitespace
+                    while j < chars_vec.len() && chars_vec[j].is_whitespace() { j += 1; }
+                    if j < chars_vec.len() && chars_vec[j] == '=' {
+                        // This is hash aliasing, not a separator
+                        i += 1;
+                        continue;
+                    }
+                } else if j < chars_vec.len() && (chars_vec[j].is_alphabetic() || chars_vec[j] == '_') {
+                    while j < chars_vec.len() && (chars_vec[j].is_alphanumeric() || chars_vec[j] == '_' || chars_vec[j] == '-') {
+                        j += 1;
+                    }
+                    while j < chars_vec.len() && chars_vec[j].is_whitespace() { j += 1; }
+                    if j < chars_vec.len() && chars_vec[j] == '=' {
+                        // This is hash aliasing, not a separator
+                        i += 1;
+                        continue;
+                    }
+                }
                 return true;
             }
+            i += 1;
         }
         false
     }
@@ -1022,6 +1058,7 @@ impl Interpreter {
                         atom,
                         quant: RegexQuant::One,
                         named_capture: None,
+                        hash_capture: None,
                         ratchet: false,
                         frugal: false,
                     }],
@@ -1061,6 +1098,7 @@ impl Interpreter {
                         atom: RegexAtom::Conjunction(conj_patterns),
                         quant: RegexQuant::One,
                         named_capture: None,
+                        hash_capture: None,
                         ratchet: false,
                         frugal: false,
                     }],
@@ -1081,6 +1119,7 @@ impl Interpreter {
         let mut anchor_end = false;
         let mut pending_named_capture: Option<String> = None;
         let mut pending_builtin_named_capture: Option<String> = None;
+        let mut pending_hash_capture: Option<String> = None;
         while let Some(c) = chars.next() {
             // In Raku, unescaped whitespace in regex is insignificant
             if c.is_whitespace() {
@@ -1097,6 +1136,7 @@ impl Interpreter {
                                 }),
                                 quant: RegexQuant::ZeroOrMore,
                                 named_capture: None,
+                                hash_capture: None,
                                 ratchet,
                                 frugal: false,
                             });
@@ -1121,6 +1161,7 @@ impl Interpreter {
                                 RegexQuant::One
                             },
                             named_capture: None,
+                            hash_capture: None,
                             ratchet,
                             frugal: false,
                         });
@@ -1145,6 +1186,7 @@ impl Interpreter {
                         atom: RegexAtom::StartOfLine,
                         quant: RegexQuant::One,
                         named_capture: None,
+                        hash_capture: None,
                         ratchet,
                         frugal: false,
                     });
@@ -1161,6 +1203,7 @@ impl Interpreter {
                     atom: RegexAtom::EndOfLine,
                     quant: RegexQuant::One,
                     named_capture: None,
+                    hash_capture: None,
                     ratchet,
                     frugal: false,
                 });
@@ -1181,6 +1224,7 @@ impl Interpreter {
                         atom: RegexAtom::Backref(idx),
                         quant: RegexQuant::One,
                         named_capture: pending_named_capture.take(),
+                        hash_capture: None,
                         ratchet,
                         frugal: false,
                     });
@@ -1214,10 +1258,47 @@ impl Interpreter {
                     atom: RegexAtom::NamedBackref(capture_name),
                     quant: RegexQuant::One,
                     named_capture: None,
+                    hash_capture: None,
                     ratchet,
                     frugal: false,
                 });
                 continue;
+            }
+            // Handle %<name>= and %ident= hash aliasing in regex
+            if c == '%' {
+                if chars.peek() == Some(&'<') {
+                    chars.next();
+                    let mut hash_name = String::new();
+                    for ch in chars.by_ref() {
+                        if ch == '>' { break; }
+                        hash_name.push(ch);
+                    }
+                    if !hash_name.is_empty() {
+                        while chars.peek().is_some_and(|ch| ch.is_whitespace()) { chars.next(); }
+                        if chars.peek() == Some(&'=') {
+                            chars.next();
+                            while chars.peek().is_some_and(|ch| ch.is_whitespace()) { chars.next(); }
+                            pending_hash_capture = Some(hash_name);
+                            continue;
+                        }
+                    }
+                    continue;
+                } else if chars.peek().is_some_and(|ch| ch.is_alphabetic() || *ch == '_') {
+                    let mut hash_name = String::new();
+                    while chars.peek().is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-') {
+                        hash_name.push(chars.next().unwrap());
+                    }
+                    if !hash_name.is_empty() {
+                        while chars.peek().is_some_and(|ch| ch.is_whitespace()) { chars.next(); }
+                        if chars.peek() == Some(&'=') {
+                            chars.next();
+                            while chars.peek().is_some_and(|ch| ch.is_whitespace()) { chars.next(); }
+                            pending_hash_capture = Some(hash_name);
+                            continue;
+                        }
+                    }
+                    continue;
+                }
             }
             // Handle :my, :our, :constant variable declarations in regex
             if c == ':' {
@@ -1238,6 +1319,7 @@ impl Interpreter {
                         atom: RegexAtom::VarDecl { code: decl_code },
                         quant: RegexQuant::One,
                         named_capture: pending_named_capture.take(),
+                        hash_capture: None,
                         ratchet,
                         frugal: false,
                     });
@@ -1468,6 +1550,7 @@ impl Interpreter {
                                         atom: RegexAtom::Literal(c),
                                         quant: RegexQuant::One,
                                         named_capture: None,
+                                        hash_capture: None,
                                         ratchet: false,
                                         frugal: false,
                                     });
@@ -1739,6 +1822,7 @@ impl Interpreter {
                                         atom: RegexAtom::CharClass(class),
                                         quant: RegexQuant::One,
                                         named_capture: None,
+                                        hash_capture: None,
                                         ratchet: false,
                                         frugal: false,
                                     }],
@@ -1955,6 +2039,7 @@ impl Interpreter {
                                                     atom: RegexAtom::Literal(ch),
                                                     quant: RegexQuant::One,
                                                     named_capture: None,
+                                                    hash_capture: None,
                                                     ratchet: false,
                                                     frugal: false,
                                                 })
@@ -2038,6 +2123,7 @@ impl Interpreter {
                                                             }),
                                                             quant: RegexQuant::One,
                                                             named_capture: None,
+                                                            hash_capture: None,
                                                             ratchet: false,
                                                             frugal: false,
                                                         },
@@ -2052,6 +2138,7 @@ impl Interpreter {
                                                             }),
                                                             quant: RegexQuant::ZeroOrMore,
                                                             named_capture: None,
+                                                            hash_capture: None,
                                                             ratchet: false,
                                                             frugal: false,
                                                         },
@@ -2074,6 +2161,7 @@ impl Interpreter {
                                                     atom: inner_atom,
                                                     quant: RegexQuant::One,
                                                     named_capture: None,
+                                                    hash_capture: None,
                                                     ratchet: false,
                                                     frugal: false,
                                                 }],
@@ -2232,6 +2320,7 @@ impl Interpreter {
                                                         }),
                                                         quant: RegexQuant::One,
                                                         named_capture: None,
+                                                        hash_capture: None,
                                                         ratchet: false,
                                                         frugal: false,
                                                     },
@@ -2244,6 +2333,7 @@ impl Interpreter {
                                                         }),
                                                         quant: RegexQuant::ZeroOrMore,
                                                         named_capture: None,
+                                                        hash_capture: None,
                                                         ratchet: false,
                                                         frugal: false,
                                                     },
@@ -2410,6 +2500,7 @@ impl Interpreter {
                                 atom: group_atom,
                                 quant: RegexQuant::One,
                                 named_capture: None,
+                                hash_capture: None,
                                 ratchet: false,
                                 frugal: false,
                             }],
@@ -2696,6 +2787,7 @@ impl Interpreter {
                 named_capture: pending_named_capture
                     .take()
                     .or(pending_builtin_named_capture.take()),
+                hash_capture: pending_hash_capture.take(),
                 ratchet: token_ratchet,
                 frugal: token_frugal,
             });

@@ -46,19 +46,42 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                 prev_was_anchor = false;
                 prev_was_tilde = c == '~';
             }
-            // % is a separator quantifier modifier, but %var is a hash interpolation (reserved)
+            // % can be separator quantifier or hash aliasing (%<name>=, %foo=)
             '%' => {
                 if chars
                     .peek()
-                    .is_some_and(|ch| ch.is_alphabetic() || *ch == '_')
+                    .is_some_and(|ch| ch.is_alphabetic() || *ch == '_' || *ch == '<')
                 {
-                    let msg = "The use of hash variables in regexes is reserved";
-                    let mut attrs = HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(msg.to_string()));
-                    let ex = Value::make_instance(Symbol::intern("X::Syntax::Reserved"), attrs);
-                    let mut err = RuntimeError::new(msg);
-                    err.exception = Some(Box::new(ex));
-                    return Err(err);
+                    let mut lookahead = chars.clone();
+                    match lookahead.peek() {
+                        Some(&'<') => {
+                            lookahead.next();
+                            while let Some(ch) = lookahead.next() {
+                                if ch == '>' { break; }
+                            }
+                        }
+                        Some(&c) if c.is_alphabetic() || c == '_' => {
+                            while lookahead.peek().is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-') {
+                                lookahead.next();
+                            }
+                        }
+                        _ => {}
+                    }
+                    while lookahead.peek().is_some_and(|ch| ch.is_whitespace()) {
+                        lookahead.next();
+                    }
+                    if lookahead.peek() == Some(&'=') {
+                        // Hash aliasing: %<name>=(...) or %foo=(...)
+                        skip_variable_ref(&mut chars);
+                    } else {
+                        let msg = "The use of hash variables in regexes is reserved";
+                        let mut attrs = HashMap::new();
+                        attrs.insert("message".to_string(), Value::str(msg.to_string()));
+                        let ex = Value::make_instance(Symbol::intern("X::Syntax::Reserved"), attrs);
+                        let mut err = RuntimeError::new(msg);
+                        err.exception = Some(Box::new(ex));
+                        return Err(err);
+                    }
                 }
                 prev_was_quantifier = false;
                 prev_was_anchor = false;

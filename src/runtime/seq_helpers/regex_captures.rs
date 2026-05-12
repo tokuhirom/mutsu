@@ -57,7 +57,7 @@ impl Interpreter {
                 .collect()
         };
         attrs.insert("list".to_string(), Value::array(positional));
-        let mut named = HashMap::new();
+        eprintln!("DEBUG_MATCHED: {} named={} positional={} hash_captures={}", captures.matched, captures.named.len(), captures.positional.len(), captures.hash_captures.len()); let mut named = HashMap::new();
         for (k, v) in &captures.named {
             let vals: Vec<Value> = v
                 .iter()
@@ -68,6 +68,19 @@ impl Interpreter {
             } else {
                 named.insert(k.clone(), Value::array(vals));
             }
+        }
+        eprintln!("REGEX_CAPTURES: hash_captures len = {}", captures.hash_captures.len()); for (k, v) in &captures.hash_captures { eprintln!("  hash {}: {:?}", k, v); }
+        // Add hash captures from %<name>=(...) aliasing
+        for (hash_name, entries) in &captures.hash_captures {
+            let mut hash_map: HashMap<String, Value> = HashMap::new();
+            for (key, value) in entries {
+                let val: Value = match value {
+                    Some(v) => Value::str(v.clone()),
+                    None => Value::Nil,
+                };
+                hash_map.insert(key.clone(), val);
+            }
+            named.insert(hash_name.clone(), Value::hash(hash_map));
         }
         attrs.insert("named".to_string(), Value::hash(named));
         let match_obj = Value::make_instance(Symbol::intern("Match"), attrs);

@@ -588,6 +588,8 @@ pub(crate) struct RegexCaptures {
     pub(crate) capture_alias_map: HashMap<String, String>,
     /// The original rule name when this capture was stored under an alias.
     pub(crate) action_name: Option<String>,
+    /// Hash captures from `%<name>=(...)` aliasing in regex.
+    pub(crate) hash_captures: HashMap<String, Vec<(String, Option<String>)>>,
 }
 
 #[derive(Clone)]
@@ -595,6 +597,8 @@ struct RegexToken {
     atom: RegexAtom,
     quant: RegexQuant,
     named_capture: Option<String>,
+    /// Hash aliasing: `%<name>=(...)` captures build a hash
+    hash_capture: Option<String>,
     ratchet: bool,
     /// Frugal (non-greedy) quantifier modifier: `*?`, `+?`, `??`
     frugal: bool,
