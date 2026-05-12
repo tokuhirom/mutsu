@@ -100,6 +100,17 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
     result
 }
 
+/// Parse an expression that stops before `=>` (fat arrow).
+/// Used by `subtest` parsing where the `=>` separates name from body.
+pub(in crate::parser) fn expression_no_fat_arrow(input: &str) -> PResult<'_, Expr> {
+    let (rest, mut expr) = precedence::ternary(input)?;
+    expr = wrap_composition_operands(expr);
+    if should_wrap_whatevercode(&expr) {
+        expr = wrap_whatevercode(&expr);
+    }
+    Ok((rest, expr))
+}
+
 pub(in crate::parser) fn expression_no_sequence(input: &str) -> PResult<'_, Expr> {
     // Same as expression but skip memo and don't include sequence
     let (rest, mut expr) = precedence::ternary_mode(input, operators::ExprMode::NoSequence)?;

@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicUsize;
 use regex::Regex;
 
 use super::super::add_parse_warning;
-use super::super::expr::expression;
+use super::super::expr::{expression, expression_no_fat_arrow};
 use super::super::helpers::{is_loop_label_name, ws, ws1};
 use super::super::parse_result::{PError, PResult, merge_expected_messages, opt_char, parse_char};
 
@@ -1892,7 +1892,7 @@ pub(super) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
 pub(super) fn subtest_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("subtest", input).ok_or_else(|| PError::expected("subtest statement"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, name) = expression(rest)?;
+    let (rest, name) = expression_no_fat_arrow(rest)?;
     let (rest, _) = ws(rest)?;
     // Expect =>
     if !rest.starts_with("=>") {

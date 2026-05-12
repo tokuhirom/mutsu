@@ -343,7 +343,7 @@ pub(super) fn class_literal(input: &str) -> PResult<'_, Expr> {
         && let Some(end) = after_bracket.find('>')
     {
         let symbol = &after_bracket[..end];
-        if matches!(symbol.chars().next(), Some('$' | '@' | '%' | '&')) {
+        if !symbol.is_empty() {
             return Ok((
                 &after_bracket[end + 1..],
                 Expr::Index {
