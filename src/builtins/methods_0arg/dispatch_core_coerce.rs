@@ -6,7 +6,7 @@ use crate::value::{RuntimeError, Value};
 use num_traits::{ToPrimitive, Zero};
 use std::sync::Arc;
 
-use super::{normalize_unicode_digits, parse_raku_int_from_str};
+use super::parse_raku_int_from_str;
 
 pub(super) fn dispatch(
     target: &Value,
@@ -634,22 +634,10 @@ pub(super) fn dispatch(
                 }
                 Value::Rat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
                 Value::Str(s) => {
-                    let trimmed = s.trim();
-                    if let Ok(i) = trimmed.parse::<i64>() {
-                        Value::Int(i)
-                    } else if let Ok(f) = trimmed.parse::<f64>() {
-                        Value::Num(f)
-                    } else if let Some(normalized) = normalize_unicode_digits(trimmed) {
-                        if let Ok(i) = normalized.parse::<i64>() {
-                            Value::Int(i)
-                        } else if let Ok(f) = normalized.parse::<f64>() {
-                            Value::Num(f)
-                        } else {
-                            return Some(Some(Err(RuntimeError::new(format!(
-                                "X::Str::Numeric: Cannot convert string '{}' to a number",
-                                s
-                            )))));
-                        }
+                    // Use the comprehensive Raku string-to-numeric parser which
+                    // handles empty strings, underscores, radix prefixes, etc.
+                    if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(s) {
+                        v
                     } else {
                         return Some(Some(Err(RuntimeError::new(format!(
                             "X::Str::Numeric: Cannot convert string '{}' to a number",

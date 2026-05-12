@@ -392,105 +392,57 @@ pub(crate) fn builtin_val(args: &[Value]) -> Value {
         Value::mixin(val, mixins)
     }
 
-    // Try complex (must end with 'i')
-    if let Some(complex) = try_parse_complex(word) {
-        return make_allomorphic(complex, &original);
+    // Empty / whitespace-only string produces IntStr.new(0, original)
+    if word.is_empty() {
+        return make_allomorphic(Value::Int(0), &original);
     }
 
-    // Try integer
-    if let Ok(i) = word.parse::<i64>() {
-        return make_allomorphic(Value::Int(i), &original);
-    }
-
-    // Try Num (scientific notation with e/E)
-    if (word.contains('e') || word.contains('E')) && !word.ends_with('i') {
-        // Normalize U+2212 MINUS SIGN to ASCII minus
-        let normalized = word.replace('\u{2212}', "-");
-        if let Ok(f) = normalized.parse::<f64>() {
-            return make_allomorphic(Value::Num(f), &original);
-        }
-    }
-
-    // Try Rat (fraction notation like "1/5")
-    if word.contains('/') && !word.contains('.') && !word.contains('e') && !word.contains('E') {
-        let parts: Vec<&str> = word.splitn(2, '/').collect();
-        if parts.len() == 2
-            && let (Ok(n), Ok(d)) = (
-                parts[0].trim().parse::<i64>(),
-                parts[1].trim().parse::<i64>(),
-            )
-            && d != 0
-        {
-            return make_allomorphic(crate::value::make_rat(n, d), &original);
-        }
-    }
-
-    // Try Rat (decimal without exponent)
-    if word.contains('.') && !word.contains('e') && !word.contains('E') {
-        let normalized = word.replace('\u{2212}', "-");
-        if let Ok(f) = normalized.parse::<f64>() {
-            // Approximate as Rat: use fixed denominator approach
-            let scale = 10i64.pow(
-                normalized
-                    .find('.')
-                    .map(|p| normalized.len() - p - 1)
-                    .unwrap_or(0) as u32,
-            );
-            let numer = (f * scale as f64).round() as i64;
-            return make_allomorphic(crate::value::make_rat(numer, scale), &original);
-        }
-    }
-
-    // Plain string
-    Value::str(original.to_string())
-}
-
-fn try_parse_complex(word: &str) -> Option<Value> {
-    // Handle both "1+2i" and "1+Inf\i" / "1-Inf\i" / "1+NaN\i" forms
-    let (without_i, backslash_i) = if let Some(stripped) = word.strip_suffix("\\i") {
-        (stripped, true)
-    } else if let Some(stripped) = word.strip_suffix('i') {
-        (stripped, false)
+    // Handle leading sign: val("+42") → IntStr, val("-42") → IntStr
+    // The angle-bracket parser doesn't handle leading +/- signs, but val() does.
+    let (negate, unsigned_word) = if let Some(rest) = word.strip_prefix('-') {
+        (true, rest)
+    } else if let Some(rest) = word.strip_prefix('\u{2212}') {
+        (true, rest)
+    } else if let Some(rest) = word.strip_prefix('+') {
+        (false, rest)
     } else {
-        return None;
+        (false, word)
     };
 
-    // Pure imaginary
-    if let Ok(imag) = without_i.parse::<f64>() {
-        return Some(Value::Complex(0.0, imag));
-    }
-    // Handle pure imaginary with special values: "Inf\i", "-Inf\i", "NaN\i"
-    if backslash_i && let Some(imag) = parse_special_float(without_i) {
-        return Some(Value::Complex(0.0, imag));
-    }
-
-    // real+imag i
-    let bytes = without_i.as_bytes();
-    let mut split_pos = None;
-    for i in 1..bytes.len() {
-        if (bytes[i] == b'+' || bytes[i] == b'-') && bytes[i - 1] != b'e' && bytes[i - 1] != b'E' {
-            split_pos = Some(i);
+    // Delegate to the angle-bracket allomorphic parser which handles:
+    //   - underscored integers (4_2), radix prefixes (0x, 0b, 0o, 0d),
+    //   - radix decimals (0b111.11), :base<digits> notation,
+    //   - fraction notation (42/15), scientific notation (42e2),
+    //   - complex numbers (42+34i), dot-decimals (.13)
+    // Parse the unsigned word, then negate if needed, then set the Str to original.
+    let parsed = crate::parser::angle_word_value_full_allomorphic(unsigned_word);
+    match &parsed {
+        Value::Mixin(inner, _overrides) => {
+            let val = if negate {
+                negate_value(inner.as_ref())
+            } else {
+                inner.as_ref().clone()
+            };
+            make_allomorphic(val, &original)
+        }
+        _ => {
+            // Not numeric — return the original string unchanged.
+            Value::str(original.to_string())
         }
     }
-    let split_pos = split_pos?;
-    let real_str = &without_i[..split_pos];
-    let imag_str = &without_i[split_pos..];
-    let real: f64 = real_str.parse().ok()?;
-    let imag: f64 = if backslash_i {
-        // For \i form, imaginary part may be special float like "+Inf", "-Inf", "+NaN"
-        parse_special_float(imag_str).or_else(|| imag_str.parse().ok())?
-    } else {
-        imag_str.parse().ok()?
-    };
-    Some(Value::Complex(real, imag))
 }
 
-fn parse_special_float(s: &str) -> Option<f64> {
-    match s {
-        "Inf" | "+Inf" => Some(f64::INFINITY),
-        "-Inf" => Some(f64::NEG_INFINITY),
-        "NaN" | "+NaN" | "-NaN" => Some(f64::NAN),
-        _ => None,
+/// Negate a numeric value for val() sign handling.
+fn negate_value(v: &Value) -> Value {
+    match v {
+        Value::Int(i) => Value::Int(-i),
+        Value::BigInt(n) => Value::bigint(-(**n).clone()),
+        Value::Num(f) => Value::Num(-f),
+        Value::Rat(n, d) => Value::Rat(-n, *d),
+        Value::FatRat(n, d) => Value::FatRat(-n, *d),
+        Value::BigRat(n, d) => Value::BigRat(-n.clone(), d.clone()),
+        Value::Complex(r, i) => Value::Complex(-r, -i),
+        _ => v.clone(),
     }
 }
 
