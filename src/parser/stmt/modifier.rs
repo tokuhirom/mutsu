@@ -490,6 +490,40 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
         return Ok(Some((r_tail, given_stmt)));
     }
 
+    // Loose logical operators as statement continuations.
+    // In Raku, `my $to = expr andthen { block }` parses as
+    // `(my $to = expr) andthen { block }` because andthen/orelse/and/or
+    // have lower precedence than declaration assignment.
+    let loose_op = if let Some(r) = keyword("andthen", rest) {
+        Some((r, TokenKind::AndThen))
+    } else if let Some(r) = keyword("orelse", rest) {
+        Some((r, TokenKind::OrElse))
+    } else if let Some(r) = keyword("notandthen", rest) {
+        Some((r, TokenKind::NotAndThen))
+    } else if let Some(r) = keyword("and", rest) {
+        Some((r, TokenKind::AndAnd))
+    } else if let Some(r) = keyword("or", rest) {
+        Some((r, TokenKind::OrWord))
+    } else {
+        None
+    };
+    if let Some((r, op_kind)) = loose_op {
+        let (r, _) = ws(r)?;
+        let (r, rhs) = expression(r)?;
+        let lhs_expr = match stmt {
+            Stmt::Expr(e) => e,
+            other => Expr::DoStmt(Box::new(other)),
+        };
+        return Ok(Some((
+            r,
+            Stmt::Expr(Expr::Binary {
+                left: Box::new(lhs_expr),
+                op: op_kind,
+                right: Box::new(rhs),
+            }),
+        )));
+    }
+
     Ok(None)
 }
 
