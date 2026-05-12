@@ -428,7 +428,10 @@ impl Interpreter {
                 if let Some(cwd) = &requested_cwd_opt {
                     attrs.insert("cwd".to_string(), Value::str(cwd.clone()));
                 } else if dir_from_cwd && requested_is_absolute {
-                    attrs.insert("cwd".to_string(), Value::str(Self::stringify_path(&path_buf)));
+                    attrs.insert(
+                        "cwd".to_string(),
+                        Value::str(Self::stringify_path(&path_buf)),
+                    );
                 }
             }
             entries.push(Value::make_instance(Symbol::intern("IO::Path"), attrs));

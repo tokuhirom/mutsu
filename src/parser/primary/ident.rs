@@ -1131,7 +1131,8 @@ fn try_parse_no_paren_invocant_colon_call<'a>(
     // If the colon is immediately followed by an identifier char, `!`, or a sigil,
     // it's a colonpair (e.g. `:r`, `:!d`, `:$var`), not an invocant colon.
     if let Some(c) = after_colon.chars().next() {
-        if c.is_alphabetic() || c == '_' || c == '!' || c == '$' || c == '@' || c == '%' || c == '&' {
+        if c.is_alphabetic() || c == '_' || c == '!' || c == '$' || c == '@' || c == '%' || c == '&'
+        {
             return Ok((rest_after_first_arg, None));
         }
     }
