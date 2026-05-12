@@ -304,26 +304,62 @@ fn skip_char_class_content(
         return false;
     }
     current.push(open_ch);
-    let mut bracket_depth = 0u32;
-    while let Some(c) = chars.next() {
-        current.push(c);
-        match c {
-            '\\' => {
-                if let Some(esc) = chars.next() {
-                    current.push(esc);
-                }
-            }
-            '[' => bracket_depth += 1,
-            ']' => {
-                bracket_depth -= 1;
-                if bracket_depth == 0 {
-                    if chars.peek() == Some(&'>') {
-                        current.push(chars.next().unwrap());
-                    }
+    // Scan bracket groups sequentially. Inside each [...], an unescaped '['
+    // is a literal character. After ']', check for compound operators (+[, -[)
+    // or the closing '>'.
+    let mut entered_first = false;
+    'char_class: loop {
+        if !entered_first {
+            // Consume chars until we hit the first '['
+            while let Some(c) = chars.next() {
+                current.push(c);
+                if c == '[' {
                     break;
                 }
             }
-            _ => {}
+            entered_first = true;
+        }
+        // Scan inside a [...] group until unescaped ']'
+        loop {
+            match chars.next() {
+                Some('\\') => {
+                    current.push('\\');
+                    if let Some(esc) = chars.next() {
+                        current.push(esc);
+                    }
+                }
+                Some(']') => {
+                    current.push(']');
+                    break;
+                }
+                Some(c) => current.push(c),
+                None => break 'char_class,
+            }
+        }
+        // After ']', check for compound class or closing '>'
+        match chars.peek() {
+            Some(&'>') => {
+                current.push(chars.next().unwrap());
+                break;
+            }
+            Some(&('+' | '-')) => {
+                let op = chars.next().unwrap();
+                current.push(op);
+                if chars.peek() == Some(&'[') {
+                    current.push(chars.next().unwrap());
+                    continue 'char_class;
+                }
+                // Not a compound group
+                if chars.peek() == Some(&'>') {
+                    current.push(chars.next().unwrap());
+                }
+                break;
+            }
+            Some(&'[') => {
+                current.push(chars.next().unwrap());
+                continue 'char_class;
+            }
+            _ => break,
         }
     }
     true

@@ -1,4 +1,5 @@
 use super::super::*;
+use super::super::unicode::check_unicode_property;
 use super::regex_helpers::{
     CaseFoldIter, class_has_only_exact_chars, grapheme_end, is_word_char, matches_named_builtin,
 };
@@ -397,6 +398,37 @@ impl Interpreter {
                     return None;
                 }
                 return Some(next);
+            }
+            // Fallback: check if lookup_name is a builtin character class
+            let is_builtin_class = matches!(spec.lookup_name.as_str(),
+                "alpha" | "upper" | "lower" | "digit" | "xdigit"
+                | "space" | "alnum" | "blank" | "cntrl" | "punct"
+                | "graph" | "print");
+            if is_builtin_class {
+                if pos < chars.len() && matches_named_builtin(&spec.lookup_name, chars[pos]) {
+                    return Some(pos + 1);
+                }
+                return None; // builtin class doesn't match — no error
+            }
+            // Unicode property fallback: :Letter, :!Letter, -:Letter
+            let (uni_prop, uni_negated) = if let Some(prop) = spec.lookup_name.strip_prefix(":!") {
+                (Some(prop), true)
+            } else if let Some(prop) = spec.lookup_name.strip_prefix("-:") {
+                (Some(prop), true)
+            } else if let Some(prop) = spec.lookup_name.strip_prefix(':') {
+                (Some(prop), false)
+            } else {
+                (None, false)
+            };
+            if let Some(prop_name) = uni_prop {
+                if pos < chars.len() {
+                    let matches = check_unicode_property(prop_name, chars[pos]);
+                    let matches = if uni_negated { !matches } else { matches };
+                    if matches {
+                        return Some(pos + 1);
+                    }
+                }
+                return None;
             }
             // Named rule not found — report error for valid identifier names.
             // Skip error for names containing special chars (likely parser
