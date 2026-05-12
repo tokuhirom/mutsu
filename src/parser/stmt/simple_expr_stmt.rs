@@ -577,6 +577,8 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             exception: None,
         })?;
         let method_name = method_name.to_string();
+        let r_before_ws = r;
+        let (r, _) = ws(r)?;
         let (r, method_args) = if r.starts_with('(') {
             let (r, _) = parse_char(r, '(')?;
             let (r, _) = ws(r)?;
@@ -584,6 +586,52 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ')')?;
             (r, args)
+        } else if r_before_ws.starts_with(':') && !r_before_ws.starts_with("::") {
+            // Colon-arg syntax: .=method: arg
+            let r2 = &r_before_ws[1..];
+            let (r2, _) = ws(r2)?;
+            let (r2, first_arg) = crate::parser::expr::expression(r2)?;
+            let mut args = vec![first_arg];
+            let mut r_inner = r2;
+            loop {
+                let (r3, _) = ws(r_inner)?;
+                if r3.starts_with(':')
+                    && !r3.starts_with("::")
+                    && let Ok((r4, arg)) = crate::parser::primary::misc::colonpair_expr(r3)
+                {
+                    args.push(arg);
+                    r_inner = r4;
+                    continue;
+                }
+                if !r3.starts_with(',') {
+                    r_inner = r3;
+                    break;
+                }
+                let r3 = &r3[1..];
+                let (r3, _) = ws(r3)?;
+                if r3.starts_with(';') || r3.starts_with('}') || r3.is_empty() {
+                    r_inner = r3;
+                    break;
+                }
+                let (r3, next) = crate::parser::expr::expression(r3)?;
+                args.push(next);
+                r_inner = r3;
+            }
+            (r_inner, args)
+        } else if r.starts_with(':') && !r.starts_with("::") {
+            // Fake-infix adverb form: .=method :key<val>
+            let mut args = Vec::new();
+            let mut r_inner = r;
+            while r_inner.starts_with(':') && !r_inner.starts_with("::") {
+                if let Ok((r2, arg)) = crate::parser::primary::misc::colonpair_expr(r_inner) {
+                    args.push(arg);
+                    let (r3, _) = ws(r2)?;
+                    r_inner = r3;
+                } else {
+                    break;
+                }
+            }
+            (r_inner, args)
         } else {
             (r, Vec::new())
         };

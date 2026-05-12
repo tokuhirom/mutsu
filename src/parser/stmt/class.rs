@@ -955,6 +955,9 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
                     | "built"
                     | "cached"
                     | "repr"
+                    | "open"
+                    | "closed"
+                    | "final"
             ) {
                 let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
                 parents.push(format!("{}{}", parent, bracket_suffix));

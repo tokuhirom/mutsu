@@ -337,18 +337,24 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     let (rest, method_name) =
         super::take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
     let method_name = method_name.to_string();
-    // Parse optional args (parenthesized or colon-form)
-    let (rest, args) = if rest.starts_with('(') {
-        let (r, _) = parse_char(rest, '(')?;
+    // Strip whitespace before checking for args
+    let (rest_ws, _) = ws(rest)?;
+    // Parse optional args (parenthesized, colon-form, or fake-infix adverbs)
+    let (rest, args) = if rest_ws.starts_with('(') {
+        let (r, _) = parse_char(rest_ws, '(')?;
         let (r, _) = ws(r)?;
         let (r, args) = super::super::super::primary::parse_call_arg_list(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
         (r, args)
     } else if rest.starts_with(':') && !rest.starts_with("::") {
+        // Colon invocant form (no space before ':'): .=method: arg
         parse_colon_args(rest)?
+    } else if rest_ws.starts_with(':') && !rest_ws.starts_with("::") {
+        // Fake-infix adverb form (space before ':'): .=method :key<val> :key2<val2>
+        parse_fake_infix_adverbs(rest_ws)?
     } else {
-        (rest, Vec::new())
+        (rest_ws, Vec::new())
     };
     // Build: Type.method(args)
     let target_name = s.type_constraint.clone().unwrap_or_else(|| s.name.clone());
@@ -415,7 +421,7 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
 }
 
 /// Parse colon-style method arguments.
-fn parse_colon_args(input: &str) -> PResult<'_, Vec<Expr>> {
+pub(super) fn parse_colon_args(input: &str) -> PResult<'_, Vec<Expr>> {
     let r = &input[1..];
     let (r, _) = ws(r)?;
     let (r, first_arg) = parse_colon_method_arg(r)?;
@@ -447,6 +453,22 @@ fn parse_colon_args(input: &str) -> PResult<'_, Vec<Expr>> {
         r_inner = r2;
     }
     Ok((r_inner, args))
+}
+
+/// Parse fake-infix adverb arguments: `:key<val> :key2<val2>`.
+pub(super) fn parse_fake_infix_adverbs(input: &str) -> PResult<'_, Vec<Expr>> {
+    let mut args = Vec::new();
+    let mut r = input;
+    while r.starts_with(':') && !r.starts_with("::") {
+        if let Ok((r2, arg)) = crate::parser::primary::misc::colonpair_expr(r) {
+            args.push(arg);
+            let (r3, _) = ws(r2)?;
+            r = r3;
+        } else {
+            break;
+        }
+    }
+    Ok((r, args))
 }
 
 /// Handle binding `:=` or `::=`.

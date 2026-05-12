@@ -66,6 +66,55 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         }
         rest = r3;
     }
+    // .= mutating method call: constant foo .= new => constant foo = Mu.new
+    if let Some(stripped) = rest.strip_prefix(".=") {
+        let (r, _) = ws(stripped)?;
+        let (r, method_name) = crate::parser::parse_result::take_while1(r, |c: char| {
+            c.is_alphanumeric() || c == '_' || c == '-'
+        })?;
+        let method_name = method_name.to_string();
+        let r_before_ws = r;
+        let (r, _) = ws(r)?;
+        // Parse optional args (parenthesized, colon-form, or fake-infix adverbs)
+        let (r, args) = if let Some(inner) = r.strip_prefix('(') {
+            let r = inner;
+            let (r, _) = ws(r)?;
+            let (r, args) = crate::parser::primary::parse_call_arg_list(r)?;
+            let (r, _) = ws(r)?;
+            let r = r.strip_prefix(')').ok_or_else(|| PError::expected(")"))?;
+            (r, args)
+        } else if r_before_ws.starts_with(':') && !r_before_ws.starts_with("::") {
+            super::my_decl_assign::parse_colon_args(r_before_ws)?
+        } else if r.starts_with(':') && !r.starts_with("::") {
+            super::my_decl_assign::parse_fake_infix_adverbs(r)?
+        } else {
+            (r, Vec::new())
+        };
+        let expr = crate::ast::Expr::MethodCall {
+            target: Box::new(crate::ast::Expr::BareWord("Mu".to_string())),
+            name: crate::symbol::Symbol::intern(&method_name),
+            args,
+            modifier: None,
+            quoted: false,
+        };
+        let (r, _) = ws(r)?;
+        let (r, _) = opt_char(r, ';');
+        return Ok((
+            r,
+            Stmt::VarDecl {
+                name,
+                expr,
+                type_constraint: None,
+                is_state: false,
+                is_our: true,
+                is_dynamic: false,
+                is_export,
+                export_tags: export_tags.clone(),
+                custom_traits: vec![("__constant".to_string(), None)],
+                where_constraint: None,
+            },
+        ));
+    }
     if rest.starts_with('=') || rest.starts_with("::=") || rest.starts_with(":=") {
         let rest = if let Some(stripped) = rest.strip_prefix("::=") {
             stripped
