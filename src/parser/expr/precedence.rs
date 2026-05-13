@@ -124,7 +124,7 @@ fn structural_comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
 }
 
 /// Ternary: expr ?? expr !! expr
-pub(in crate::parser) fn ternary(input: &str) -> PResult<'_, Expr> {
+pub(super) fn ternary(input: &str) -> PResult<'_, Expr> {
     ternary_mode(input, ExprMode::Full)
 }
 
