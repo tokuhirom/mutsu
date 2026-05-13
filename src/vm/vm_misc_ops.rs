@@ -797,7 +797,7 @@ impl VM {
         let val = if let Some(v) = self.interpreter.env().get(name).cloned() {
             v
         } else if let Some(key) = name.strip_prefix('<').and_then(|s| s.strip_suffix('>'))
-            && let Some(match_val) = self.interpreter.env().get("$/").cloned()
+            && let Some(match_val) = self.interpreter.env().get("/").cloned()
         {
             match &match_val {
                 Value::Hash(map) => map.get(key).cloned().unwrap_or(Value::Nil),

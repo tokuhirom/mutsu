@@ -387,7 +387,7 @@ impl Interpreter {
         self.env.insert("/".to_string(), match_obj.clone());
         self.env.remove("made");
         self.action_made = None;
-        // Save and clear old named capture env vars so parent captures don't leak
+        // Save old named capture env vars so parent captures don't leak into child actions
         let saved_named_captures: Vec<(String, Value)> = self
             .env
             .iter()
@@ -395,7 +395,7 @@ impl Interpreter {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         for (k, _) in &saved_named_captures {
-            self.env.remove(k);
+            self.env.remove(k.as_str());
         }
         // Set named capture env vars (<a>, <b>, etc.) so $<a> works inside action methods
         if let Some(Value::Hash(named_hash)) = updated_attrs.get("named") {
@@ -479,15 +479,15 @@ impl Interpreter {
         } else {
             self.env.remove("_");
         }
-        // Restore saved named capture env vars from parent scope
+        // Restore named capture env vars from parent scope
         {
-            let current_named: Vec<String> = self
+            let current_angle_keys: Vec<String> = self
                 .env
                 .keys()
                 .filter(|k| k.starts_with('<') && k.ends_with('>'))
                 .cloned()
                 .collect();
-            for k in current_named {
+            for k in current_angle_keys {
                 self.env.remove(&k);
             }
             for (k, v) in saved_named_captures {

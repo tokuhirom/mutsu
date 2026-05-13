@@ -2270,6 +2270,12 @@ impl Value {
                     sub_named.insert(key.clone(), Value::array(vals));
                 }
             }
+            // For quantified named captures that matched zero times, insert empty arrays
+            for qname in &caps.named_quantified {
+                sub_named
+                    .entry(qname.clone())
+                    .or_insert_with(|| Value::array(Vec::new()));
+            }
             let mut attrs = HashMap::new();
             attrs.insert("str".to_string(), Value::str(caps.matched.clone()));
             attrs.insert("from".to_string(), Value::Int(caps.from as i64));
@@ -2360,6 +2366,12 @@ impl Value {
             } else {
                 named_caps_map.insert(key.clone(), Value::array(vals));
             }
+        }
+        // For quantified named captures that matched zero times, insert empty arrays
+        for qname in named_quantified {
+            named_caps_map
+                .entry(qname.clone())
+                .or_insert_with(|| Value::array(Vec::new()));
         }
         attrs.insert("named".to_string(), Value::hash(named_caps_map));
         Value::make_instance(Symbol::intern("Match"), attrs)
