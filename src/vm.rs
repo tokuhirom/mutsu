@@ -74,6 +74,7 @@ pub(crate) struct VM {
     substitution_in_smartmatch: bool,
     /// Tracks the last value passed to SetTopic, used as the REPL display value.
     last_topic_value: Option<Value>,
+    topic_save_stack: Vec<Value>,
     /// Container name from when/default body (for Scalar container binding)
     container_ref_var: Option<String>,
     /// When true, the container ref is reversed (e.g. `for @a.reverse`)
@@ -275,6 +276,7 @@ impl VM {
             transliterate_in_smartmatch: false,
             substitution_in_smartmatch: false,
             last_topic_value: None,
+            topic_save_stack: Vec::new(),
             container_ref_var: None,
             container_ref_reversed: false,
             topic_source_var: None,
@@ -1255,6 +1257,17 @@ impl VM {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
                 self.last_topic_value = Some(val.clone());
                 self.interpreter.env_mut().insert("_".to_string(), val);
+                *ip += 1;
+            }
+            OpCode::SaveTopic => {
+                let current = self.interpreter.env().get("_").cloned().unwrap_or(Value::Nil);
+                self.topic_save_stack.push(current);
+                *ip += 1;
+            }
+            OpCode::RestoreTopic => {
+                if let Some(saved) = self.topic_save_stack.pop() {
+                    self.interpreter.env_mut().insert("_".to_string(), saved);
+                }
                 *ip += 1;
             }
 

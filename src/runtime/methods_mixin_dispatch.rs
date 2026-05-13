@@ -18,6 +18,23 @@ impl Interpreter {
             if let Some(mixin_val) = mixins.get(method) {
                 return Some(Ok(mixin_val.clone()));
             }
+            // Check role attribute accessors: has $.foo stores as __mutsu_attr__foo
+            let attr_key = format!("__mutsu_attr__{}", method);
+            if let Some(attr_val) = mixins.get(&attr_key) {
+                let is_public = mixins
+                    .keys()
+                    .filter_map(|k| k.strip_prefix("__mutsu_role__"))
+                    .any(|role_name| {
+                        self.roles.get(role_name).is_some_and(|role| {
+                            role.attributes
+                                .iter()
+                                .any(|(name, is_pub, ..)| name == method && *is_pub)
+                        })
+                    });
+                if is_public {
+                    return Some(Ok(attr_val.clone()));
+                }
+            }
             for mixin_val in mixins.values() {
                 if let Value::Enum { enum_type, key, .. } = mixin_val {
                     if method == key.resolve() {

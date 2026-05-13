@@ -211,6 +211,16 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     } else {
         expression(rest)?
     };
+    // In Raku, andthen/orelse/notandthen have lower precedence than declaration
+    // assignment. If the expression is `expr andthen { block }`, split it so
+    // the declaration assigns `expr` and the andthen runs as a side effect.
+    let (expr, post_andthen) = match expr {
+        Expr::Binary { left, op: op @ (crate::token_kind::TokenKind::AndThen
+            | crate::token_kind::TokenKind::OrElse
+            | crate::token_kind::TokenKind::NotAndThen), right }
+        => (*left, Some((op, *right))),
+        other => (other, None),
+    };
     let expr = match expr {
         Expr::MetaOp {
             meta,
@@ -290,6 +300,17 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         } else {
             (rest, stmt)
         };
+        let stmt = if let Some((op, rhs)) = post_andthen.clone() {
+            let var_ref = Expr::Var(s.name.clone());
+            let andthen_expr = Expr::Binary {
+                left: Box::new(var_ref),
+                op,
+                right: Box::new(rhs),
+            };
+            Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(andthen_expr)])
+        } else {
+            stmt
+        };
         if s.apply_modifier {
             return parse_statement_modifier(rest, stmt);
         }
@@ -323,6 +344,17 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         consume_scalar_decl_trailing_comma(rest, stmt)?
     } else {
         (rest, stmt)
+    };
+    let stmt = if let Some((op, rhs)) = post_andthen {
+        let var_ref = Expr::Var(s.name.clone());
+        let andthen_expr = Expr::Binary {
+            left: Box::new(var_ref),
+            op,
+            right: Box::new(rhs),
+        };
+        Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(andthen_expr)])
+    } else {
+        stmt
     };
     if s.apply_modifier {
         return parse_statement_modifier(rest, stmt);

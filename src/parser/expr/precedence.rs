@@ -787,6 +787,7 @@ fn parse_assignment_rhs_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     }
 }
 
+
 fn not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     if input.starts_with("not")
         && !is_ident_char(input.as_bytes().get(3).copied())
