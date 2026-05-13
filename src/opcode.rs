@@ -38,6 +38,8 @@ pub(crate) enum OpCode {
         tc_idx: u32,
     },
     SetTopic,
+    SaveTopic,
+    RestoreTopic,
     GetArrayVar(u32),
     GetHashVar(u32),
     GetBareWord(u32),

@@ -179,9 +179,11 @@ impl Compiler {
             }
             TokenKind::OrElse => {
                 self.compile_expr(left);
+                self.code.emit(OpCode::SaveTopic);
                 self.code.emit(OpCode::Dup);
                 self.code.emit(OpCode::CallDefined);
                 let jump_undef = self.code.emit(OpCode::JumpIfFalse(0));
+                self.code.emit(OpCode::RestoreTopic);
                 let jump_end = self.code.emit(OpCode::Jump(0));
                 self.code.patch_jump(jump_undef);
                 self.code.emit(OpCode::Dup);
@@ -195,11 +197,13 @@ impl Compiler {
                     arity: 2,
                     arg_sources_idx: None,
                 });
+                self.code.emit(OpCode::RestoreTopic);
                 self.code.patch_jump(jump_end);
                 return;
             }
             TokenKind::AndThen => {
                 self.compile_expr(left);
+                self.code.emit(OpCode::SaveTopic);
                 self.code.emit(OpCode::Dup);
                 self.code.emit(OpCode::CallDefined);
                 let jump_undef = self.code.emit(OpCode::JumpIfFalse(0));
@@ -214,11 +218,13 @@ impl Compiler {
                     arity: 2,
                     arg_sources_idx: None,
                 });
+                self.code.emit(OpCode::RestoreTopic);
                 let jump_end = self.code.emit(OpCode::Jump(0));
                 self.code.patch_jump(jump_undef);
                 self.code.emit(OpCode::Pop);
                 let empty_idx = self.code.add_constant(Value::slip(vec![]));
                 self.code.emit(OpCode::LoadConst(empty_idx));
+                self.code.emit(OpCode::RestoreTopic);
                 self.code.patch_jump(jump_end);
                 return;
             }
@@ -311,6 +317,8 @@ impl Compiler {
                 let var_name = match left {
                     Expr::Var(name) => Some(name.clone()),
                     Expr::BareWord(name) => Some(name.clone()),
+                    Expr::HashVar(name) => Some(format!("%{}", name)),
+                    Expr::ArrayVar(name) => Some(format!("@{}", name)),
                     _ => None,
                 };
                 if let Some(name) = var_name {
