@@ -243,6 +243,15 @@ impl VM {
 
     pub(super) fn sync_locals_from_env(&mut self, code: &CompiledCode) {
         for (i, name) in code.locals.iter().enumerate() {
+            // Don't overwrite ArraySlotRef/HashSlotRef locals with env values.
+            // These are live container references from `:=` binding and must
+            // not be replaced by stale env copies.
+            if matches!(
+                self.locals[i],
+                Value::ArraySlotRef { .. } | Value::HashSlotRef { .. }
+            ) {
+                continue;
+            }
             if let Some(val) = self.interpreter.env().get(name) {
                 self.locals[i] = val.clone();
                 continue;

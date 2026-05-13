@@ -1260,7 +1260,12 @@ impl VM {
                 *ip += 1;
             }
             OpCode::SaveTopic => {
-                let current = self.interpreter.env().get("_").cloned().unwrap_or(Value::Nil);
+                let current = self
+                    .interpreter
+                    .env()
+                    .get("_")
+                    .cloned()
+                    .unwrap_or(Value::Nil);
                 self.topic_save_stack.push(current);
                 *ip += 1;
             }

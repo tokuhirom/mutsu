@@ -215,10 +215,14 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     // assignment. If the expression is `expr andthen { block }`, split it so
     // the declaration assigns `expr` and the andthen runs as a side effect.
     let (expr, post_andthen) = match expr {
-        Expr::Binary { left, op: op @ (crate::token_kind::TokenKind::AndThen
-            | crate::token_kind::TokenKind::OrElse
-            | crate::token_kind::TokenKind::NotAndThen), right }
-        => (*left, Some((op, *right))),
+        Expr::Binary {
+            left,
+            op:
+                op @ (crate::token_kind::TokenKind::AndThen
+                | crate::token_kind::TokenKind::OrElse
+                | crate::token_kind::TokenKind::NotAndThen),
+            right,
+        } => (*left, Some((op, *right))),
         other => (other, None),
     };
     let expr = match expr {
