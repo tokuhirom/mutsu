@@ -386,12 +386,22 @@ fn try_parse_decimal_rat(body: &str, sign: i32) -> Option<Value> {
     }
 
     // Construct as Rat: integer_part * 10^frac_len + frac_part / 10^frac_len
-    let int_val: i64 = int_clean.parse().ok()?;
-    let frac_val: i64 = frac_clean.parse().ok()?;
-    let denom: i64 = 10i64.checked_pow(frac_clean.len() as u32)?;
-    let numer = int_val * denom + frac_val;
-    let numer = if sign < 0 { -numer } else { numer };
-    Some(crate::value::make_rat(numer, denom))
+    // Use checked arithmetic to avoid overflow for large inputs; fall back to Num.
+    if let (Ok(int_val), Ok(frac_val), Some(denom)) = (
+        int_clean.parse::<i64>(),
+        frac_clean.parse::<i64>(),
+        10i64.checked_pow(frac_clean.len() as u32),
+    ) {
+        if let Some(numer) = int_val.checked_mul(denom).and_then(|v| v.checked_add(frac_val)) {
+            let numer = if sign < 0 { -numer } else { numer };
+            return Some(crate::value::make_rat(numer, denom));
+        }
+    }
+    // Overflow or too many digits: fall back to f64 approximation
+    let combined = format!("{}.{}", int_clean, frac_clean);
+    let f: f64 = combined.parse().ok()?;
+    let f = if sign < 0 { -f } else { f };
+    Some(Value::Num(f))
 }
 
 /// Parse plain integer with underscores.
