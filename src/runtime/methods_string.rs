@@ -648,8 +648,10 @@ impl Interpreter {
         // Use call_sub_value to properly bind $_ for closures
         let sub_val = match replacement_val {
             Some(v @ Value::Sub(_)) => v.clone(),
-            Some(Value::WeakSub(weak)) => Value::Sub(weak.upgrade()
-                .ok_or_else(|| RuntimeError::new("subst closure has been garbage collected"))?),
+            Some(Value::WeakSub(weak)) => Value::Sub(
+                weak.upgrade()
+                    .ok_or_else(|| RuntimeError::new("subst closure has been garbage collected"))?,
+            ),
             _ => return Ok(replacement_str.to_string()),
         };
         let match_obj = if let Some(captures) = captures {
@@ -695,7 +697,8 @@ impl Interpreter {
             self.env.insert("/".to_string(), match_val.clone());
             match_val
         };
-        let result = self.call_sub_value(sub_val, vec![match_obj], false)
+        let result = self
+            .call_sub_value(sub_val, vec![match_obj], false)
             .unwrap_or(Value::Nil);
         Ok(result.to_string_value())
     }
