@@ -30,7 +30,9 @@ impl VM {
         if let Some(&cached) = self.test_assertion_cache.get(&sym) {
             return cached;
         }
-        let result = self.interpreter.routine_is_test_assertion_by_name(name, &[]);
+        let result = self
+            .interpreter
+            .routine_is_test_assertion_by_name(name, &[]);
         self.test_assertion_cache.insert(sym, result);
         result
     }
