@@ -671,6 +671,7 @@ impl Interpreter {
             );
             self.env.insert("/".to_string(), match_obj.clone());
             self.env.insert("$_".to_string(), match_obj.clone());
+            self.env.insert("_".to_string(), match_obj.clone());
             let positional_len = captures
                 .positional_slots
                 .len()
@@ -698,7 +699,8 @@ impl Interpreter {
         } else {
             let match_val = Value::str(matched_text.to_string());
             self.env.insert("/".to_string(), match_val.clone());
-            self.env.insert("$_".to_string(), match_val);
+            self.env.insert("$_".to_string(), match_val.clone());
+            self.env.insert("_".to_string(), match_val);
         }
         let result = self.eval_block_value(&sub_data.body).unwrap_or(Value::Nil);
         self.env = saved;

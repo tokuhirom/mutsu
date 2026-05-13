@@ -1,6 +1,6 @@
 mod operators;
 mod postfix;
-mod precedence;
+pub(crate) mod precedence;
 mod precedence_meta_ops;
 
 use super::memo::{MemoEntry, MemoStats, ParseMemo};
