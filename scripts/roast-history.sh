@@ -25,8 +25,8 @@ per_file_timeout() {
   case "$test_file" in
     roast/S17-supply/batch.t)
       # This test uses sleep 5 in after-tap blocks (4 time-based subtests x2 schedulers).
-      # Even raku takes ~37s to run it. Needs >10s.
-      echo 60
+      # Even raku takes ~37s. CI can be slower.
+      echo 120
       ;;
     roast/S17-supply/unique.t)
       # This test intentionally uses multiple sleep 1 calls and needs >10s.
