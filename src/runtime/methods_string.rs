@@ -645,17 +645,20 @@ impl Interpreter {
             }
             return Ok(replacement_str.to_string());
         }
-        // Use call_sub_value to properly bind $_ for closures
-        let sub_val = match replacement_val {
-            Some(v @ Value::Sub(_)) => v.clone(),
-            Some(Value::WeakSub(weak)) => Value::Sub(
-                weak.upgrade()
-                    .ok_or_else(|| RuntimeError::new("subst closure has been garbage collected"))?,
-            ),
+        let sub_data = match replacement_val {
+            Some(Value::Sub(data)) => data.clone(),
+            Some(Value::WeakSub(weak)) => weak
+                .upgrade()
+                .ok_or_else(|| RuntimeError::new("subst closure has been garbage collected"))?,
             _ => return Ok(replacement_str.to_string()),
         };
-        let match_obj = if let Some(captures) = captures {
-            let mo = Value::make_match_object_full(
+        let saved = self.env.clone();
+        // Set up closure environment
+        for (k, v) in &sub_data.env {
+            self.env.insert(k.clone(), v.clone());
+        }
+        if let Some(captures) = captures {
+            let match_obj = Value::make_match_object_full(
                 captures.matched.clone(),
                 captures.from as i64,
                 captures.to as i64,
@@ -666,7 +669,9 @@ impl Interpreter {
                 &captures.positional_quantified,
                 orig_text,
             );
-            self.env.insert("/".to_string(), mo.clone());
+            self.env.insert("/".to_string(), match_obj.clone());
+            self.env.insert("$_".to_string(), match_obj.clone());
+            self.env.insert("_".to_string(), match_obj.clone());
             let positional_len = captures
                 .positional_slots
                 .len()
@@ -684,22 +689,21 @@ impl Interpreter {
             if positional_len == 0 {
                 self.env.insert("0".to_string(), Value::Nil);
             }
-            if let Value::Instance { ref attributes, .. } = mo
+            if let Value::Instance { ref attributes, .. } = match_obj
                 && let Some(Value::Hash(named_hash)) = attributes.get("named")
             {
                 for (k, v) in named_hash.iter() {
                     self.env.insert(format!("<{}>", k), v.clone());
                 }
             }
-            mo
         } else {
             let match_val = Value::str(matched_text.to_string());
             self.env.insert("/".to_string(), match_val.clone());
-            match_val
-        };
-        let result = self
-            .call_sub_value(sub_val, vec![match_obj], false)
-            .unwrap_or(Value::Nil);
+            self.env.insert("$_".to_string(), match_val.clone());
+            self.env.insert("_".to_string(), match_val);
+        }
+        let result = self.eval_block_value(&sub_data.body).unwrap_or(Value::Nil);
+        self.env = saved;
         Ok(result.to_string_value())
     }
 
