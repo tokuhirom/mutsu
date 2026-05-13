@@ -136,6 +136,10 @@ pub(crate) struct VM {
     pos_light_call_cache: HashMap<Symbol, (String, u64)>,
     /// The generation at which pos_light_call_cache was last valid.
     pos_light_call_cache_gen: u64,
+    /// Cache for routine_is_test_assertion results, invalidated by fn_resolve_gen.
+    test_assertion_cache: HashMap<Symbol, bool>,
+    /// The generation at which test_assertion_cache was last valid.
+    test_assertion_cache_gen: u64,
     /// Stack of sets tracking variable names declared (via SetVarDynamic) within
     /// each active BlockScope. Used during BlockScope restoration to avoid
     /// propagating block-local variable values to the outer scope.
@@ -299,6 +303,8 @@ impl VM {
             light_call_cache_gen: 0,
             pos_light_call_cache: HashMap::new(),
             pos_light_call_cache_gen: 0,
+            test_assertion_cache: HashMap::new(),
+            test_assertion_cache_gen: 0,
             block_declared_vars: Vec::new(),
             pending_alias_bind_names: Vec::new(),
         }

@@ -31,6 +31,11 @@ per_file_timeout() {
       # This test uses sleep 2*$_ with $_ up to 9, parallel start blocks take ~18s.
       echo 30
       ;;
+    roast/S04-declarations/state.t)
+      # This test has a 2M-iteration loop (lives-ok { for ^2000000 { ... } })
+      # that takes ~4s CPU but may need more wall-clock time under load.
+      echo 15
+      ;;
     *)
       echo "$TIMEOUT"
       ;;

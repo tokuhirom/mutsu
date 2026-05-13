@@ -19,6 +19,22 @@ impl VM {
         result
     }
 
+    /// Cached version of `interpreter.routine_is_test_assertion_by_name()`.
+    /// Uses `fn_resolve_gen` for invalidation so it's O(1) on cache hit.
+    pub(super) fn is_test_assertion_cached(&mut self, name: &str) -> bool {
+        if self.test_assertion_cache_gen != self.fn_resolve_gen {
+            self.test_assertion_cache.clear();
+            self.test_assertion_cache_gen = self.fn_resolve_gen;
+        }
+        let sym = Symbol::intern(name);
+        if let Some(&cached) = self.test_assertion_cache.get(&sym) {
+            return cached;
+        }
+        let result = self.interpreter.routine_is_test_assertion_by_name(name, &[]);
+        self.test_assertion_cache.insert(sym, result);
+        result
+    }
+
     /// Try compiled function dispatch first, then native, then on-the-fly compile,
     /// then interpreter fallback. Returns the result of whichever path succeeds.
     pub(super) fn call_function_compiled_first(
@@ -327,7 +343,19 @@ impl VM {
         cf: &CompiledFunction,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
-        let saved_env = self.interpreter.clone_env();
+        // Instead of cloning the entire env (which triggers an O(env_size)
+        // merge on restore), save only the env entries that this function's
+        // locals will shadow, plus the topic ($_) for routines.  After the
+        // call we restore just those entries — O(locals) instead of O(env).
+        // Save only the Option<Value> for each local; we'll iterate
+        // cf.code.locals again during restore to get the names.
+        let saved_local_env: Vec<Option<Value>> = cf
+            .code
+            .locals
+            .iter()
+            .map(|name| self.interpreter.env().get(name).cloned())
+            .collect();
+
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_stack_depth = self.stack.len();
         let saved_env_dirty = self.env_dirty;
@@ -431,18 +459,18 @@ impl VM {
         self.env_dirty = saved_env_dirty;
         self.locals_dirty = saved_locals_dirty;
 
-        // Restore env: if env was mutated, merge non-local changes back
-        if saved_env.ptr_eq(self.interpreter.env()) {
-            // No env changes, nothing to merge
-        } else {
-            let local_names: std::collections::HashSet<&String> = cf.code.locals.iter().collect();
-            let mut restored_env = saved_env;
-            for (k, v) in self.interpreter.env().iter() {
-                if !local_names.contains(k) {
-                    restored_env.insert(k.clone(), v.clone());
+        // Restore env: undo only the local-name entries that the function
+        // may have written, instead of iterating the entire env.
+        for (i, old_val) in saved_local_env.into_iter().enumerate() {
+            let name = &cf.code.locals[i];
+            match old_val {
+                Some(v) => {
+                    self.interpreter.env_mut().insert(name.clone(), v);
+                }
+                None => {
+                    self.interpreter.env_mut().remove(name);
                 }
             }
-            *self.interpreter.env_mut() = restored_env;
         }
 
         // Restore caller's $_ after routine call.

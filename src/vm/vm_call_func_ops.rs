@@ -141,9 +141,7 @@ impl VM {
             if use_cache
                 && self.fn_resolve_cache_gen == self.fn_resolve_gen
                 && self.interpreter.wrap_sub_id_for_name(name_str).is_none()
-                && !self
-                    .interpreter
-                    .routine_is_test_assertion_by_name(name_str, &[])
+                && !self.is_test_assertion_cached(name_str)
                 && let Some((cached_key, cached_fp, _)) = self.fn_resolve_cache.get(&cache_key)
                 && let Some(cf) = compiled_fns.get(cached_key.as_str())
                 && cf.fingerprint == *cached_fp
