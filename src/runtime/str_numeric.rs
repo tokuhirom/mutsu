@@ -18,6 +18,16 @@ pub(crate) fn parse_raku_str_to_numeric(input: &str) -> Option<Value> {
     let normalized = normalize_minus(s);
     let s = normalized.as_str();
 
+    // If the string contains Unicode decimal digits (Nd category), normalize
+    // them to their ASCII equivalents before further parsing.
+    if s.chars().any(|c| {
+        !c.is_ascii() && crate::builtins::unicode::unicode_decimal_digit_value(c).is_some()
+    }) {
+        if let Some(ascii_str) = normalize_unicode_decimal_digits(s) {
+            return parse_raku_str_to_numeric(&ascii_str);
+        }
+    }
+
     // Try Complex first (contains `i`)
     if let Some(v) = try_parse_complex(s) {
         return Some(v);
@@ -70,6 +80,22 @@ fn normalize_minus(s: &str) -> String {
     } else {
         s.to_string()
     }
+}
+
+/// Normalize a string of Unicode decimal digits (Nd category) to ASCII digits.
+/// Returns None if any non-ASCII character is NOT a decimal digit (Nd).
+fn normalize_unicode_decimal_digits(s: &str) -> Option<String> {
+    let mut result = String::with_capacity(s.len());
+    for ch in s.chars() {
+        if ch.is_ascii() {
+            result.push(ch);
+        } else if let Some(d) = crate::builtins::unicode::unicode_decimal_digit_value(ch) {
+            result.push(char::from_digit(d, 10).unwrap());
+        } else {
+            return None;
+        }
+    }
+    Some(result)
 }
 
 /// Strip leading sign, returning (sign_multiplier, remaining_body).
@@ -389,7 +415,7 @@ fn try_parse_plain_int(body: &str, sign: i32) -> Option<Value> {
     }
 }
 
-/// Parse complex number strings like `1+2i`, `-1-2i`, `3+Inf\i`, etc.
+/// Parse complex number strings like `1+2i`, `-1-2i`, `3+Inf\i`, `42i`, `42\i`, etc.
 fn try_parse_complex(s: &str) -> Option<Value> {
     // Must end with 'i' (or `\i`)
     if !s.ends_with('i') {
@@ -404,39 +430,55 @@ fn try_parse_complex(s: &str) -> Option<Value> {
         &s[..s.len() - 1]
     };
 
-    // Find the split point between real and imaginary parts.
-    // The imaginary part starts with a `+` or `-` that is NOT:
-    // - at position 0
-    // - right after an 'e' or 'E' (part of exponent)
-    let split = find_complex_split(without_i)?;
+    if let Some(split) = find_complex_split(without_i) {
+        // Has both real and imaginary parts: "42+34i", "-1-2i", etc.
+        let real_str = &without_i[..split];
+        let imag_str = &without_i[split..]; // includes the sign
 
-    let real_str = &without_i[..split];
-    let imag_str = &without_i[split..]; // includes the sign
+        // Parse real part
+        let real_val = parse_real_component(real_str)?;
 
-    // Parse real part
-    let real_val = parse_real_component(real_str)?;
-
-    // Parse imaginary part (strip leading sign)
-    let (imag_sign, imag_body) = strip_sign(imag_str);
-    let imag_val = if imag_body.is_empty() {
-        // bare +i or -i: not handled here (rakudo skips these too)
-        return None;
-    } else if imag_body == "Inf" || imag_body == "NaN" {
-        // Inf/NaN as imaginary component requires `\i` suffix
-        if !has_backslash_i {
+        // Parse imaginary part (strip leading sign)
+        let (imag_sign, imag_body) = strip_sign(imag_str);
+        let imag_val = if imag_body.is_empty() {
+            // bare +i or -i: not handled here (rakudo skips these too)
             return None;
-        }
-        if imag_body == "Inf" {
-            f64::INFINITY
+        } else if imag_body == "Inf" || imag_body == "NaN" {
+            // Inf/NaN as imaginary component requires `\i` suffix
+            if !has_backslash_i {
+                return None;
+            }
+            if imag_body == "Inf" {
+                f64::INFINITY
+            } else {
+                f64::NAN
+            }
         } else {
-            f64::NAN
-        }
+            parse_real_component_to_f64(imag_body)?
+        };
+        let imag_val = if imag_sign < 0 { -imag_val } else { imag_val };
+        Some(Value::Complex(real_val, imag_val))
     } else {
-        parse_real_component_to_f64(imag_body)?
-    };
-    let imag_val = if imag_sign < 0 { -imag_val } else { imag_val };
-
-    Some(Value::Complex(real_val, imag_val))
+        // Pure imaginary: "42i", "-3.5i", "4_2i", "Inf\i", etc.
+        let (imag_sign, imag_body) = strip_sign(without_i);
+        let imag_val = if imag_body == "Inf" {
+            if has_backslash_i {
+                f64::INFINITY
+            } else {
+                return None;
+            }
+        } else if imag_body == "NaN" {
+            if has_backslash_i {
+                f64::NAN
+            } else {
+                return None;
+            }
+        } else {
+            parse_real_component_to_f64(imag_body)?
+        };
+        let imag_val = if imag_sign < 0 { -imag_val } else { imag_val };
+        Some(Value::Complex(0.0, imag_val))
+    }
 }
 
 /// Find the index where the imaginary part starts (a `+` or `-` not part of exponent).
