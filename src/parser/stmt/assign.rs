@@ -808,7 +808,7 @@ pub(crate) fn build_compound_assign_expr(
         Expr::AssignExpr {
             name,
             expr,
-            is_bind,
+            is_bind: _,
         } => {
             // ($x += 2) *= 3 → first evaluate inner assign, then apply outer op
             // to the variable's value and assign back.
