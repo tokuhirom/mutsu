@@ -1450,6 +1450,12 @@ impl Interpreter {
                     false
                 }
             }
+            // IO::Path ~~ Str: compare path string representation with string.
+            // In Raku, Str.ACCEPTS(IO::Path) stringifies the IO::Path and compares.
+            // This handles cases like `dir().grep("filename")` after chdir.
+            (Value::Instance { class_name: cn, .. }, Value::Str(_)) if cn == "IO::Path" => {
+                left.to_string_value() == right.to_string_value()
+            }
             // Instance ~~ Type or other: identity check (false)
             (Value::Instance { .. }, _) | (_, Value::Instance { .. }) => false,
             // Range ~~ Range: LHS is subset of RHS.
