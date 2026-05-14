@@ -392,7 +392,10 @@ fn try_parse_decimal_rat(body: &str, sign: i32) -> Option<Value> {
         frac_clean.parse::<i64>(),
         10i64.checked_pow(frac_clean.len() as u32),
     ) {
-        if let Some(numer) = int_val.checked_mul(denom).and_then(|v| v.checked_add(frac_val)) {
+        if let Some(numer) = int_val
+            .checked_mul(denom)
+            .and_then(|v| v.checked_add(frac_val))
+        {
             let numer = if sign < 0 { -numer } else { numer };
             return Some(crate::value::make_rat(numer, denom));
         }
