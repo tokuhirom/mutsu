@@ -133,9 +133,19 @@ impl Interpreter {
                         return Ok(Value::Complex(0.0, num_val));
                     }
                     _ => {
-                        // Fall through to the generic unknown function error below
+                        // Unknown postfix operator is a syntax error in Raku (X::Syntax::Confused)
+                        return Err(RuntimeError::syntax_confused_with_reason(format!(
+                            "Bogus postfix: {}",
+                            op
+                        )));
                     }
                 }
+            } else {
+                // Unknown postfix operator with no args is still a syntax error
+                return Err(RuntimeError::syntax_confused_with_reason(format!(
+                    "Bogus postfix: {}",
+                    op
+                )));
             }
         }
         if (self.loaded_modules.contains("Test")

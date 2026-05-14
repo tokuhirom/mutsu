@@ -1653,10 +1653,9 @@ impl VM {
                         attrs.insert("of".to_string(), Value::Package(Symbol::intern("Mu")));
                         return Ok(Value::make_instance(Symbol::intern("Method"), attrs));
                     }
-                    Err(RuntimeError::new(format!(
-                        "Confused: two terms in a row (unknown infix function: {})",
-                        name
-                    )))
+                    Err(RuntimeError::syntax_confused_with_reason(
+                        "Two terms in a row",
+                    ))
                 } else {
                     if let Some(op_name) = infix_name {
                         let op_env_name = format!("&{}", op_name);
@@ -1692,10 +1691,9 @@ impl VM {
                             attrs.insert("of".to_string(), Value::Package(Symbol::intern("Mu")));
                             return Ok(Value::make_instance(Symbol::intern("Method"), attrs));
                         }
-                        Err(RuntimeError::new(format!(
-                            "Confused: two terms in a row (unknown infix function: {})",
-                            name
-                        )))
+                        Err(RuntimeError::syntax_confused_with_reason(
+                            "Two terms in a row",
+                        ))
                     }
                 }
             }
