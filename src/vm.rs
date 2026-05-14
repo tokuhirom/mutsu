@@ -1340,6 +1340,14 @@ impl VM {
                 self.stack.push(itemized);
                 *ip += 1;
             }
+            OpCode::WrapScalar => {
+                // Wrap the top-of-stack value in a Value::Scalar container.
+                // Used for `my $ = expr` (anonymous scalar) in argument position
+                // so the container is preserved when stored in an immutable List.
+                let val = self.stack.pop().unwrap_or(Value::Nil);
+                self.stack.push(Value::Scalar(Box::new(val)));
+                *ip += 1;
+            }
             OpCode::FlattenSlurpy => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
                 let mut items = Vec::new();
