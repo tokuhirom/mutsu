@@ -148,10 +148,12 @@ impl Compiler {
                     name_idx,
                     dynamic: is_dynamic,
                 });
-                // `my $ = expr` (anonymous scalar) returns a Scalar container so
-                // the caller can store it in an immutable List and later mutate
-                // the element via index assignment.
-                if name == "__ANON_STATE__" {
+                // `my $ = expr` (anonymous scalar without type constraint) returns
+                // a Scalar container so the caller can store it in an immutable
+                // List and later mutate the element via index assignment.
+                // Typed anonymous scalars (`my num $`, `my int $`, etc.) must NOT
+                // be wrapped -- their value must be used directly for numeric ops.
+                if name == "__ANON_STATE__" && type_constraint.is_none() {
                     self.code.emit(OpCode::WrapScalar);
                 }
             }
