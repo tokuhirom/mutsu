@@ -1978,15 +1978,17 @@ impl Compiler {
                         let target_expr = if let Some(stripped) = name.strip_prefix('@') {
                             Expr::ArrayVar(stripped.to_string())
                         } else if let Some(stripped) = name.strip_prefix('%') {
-                            Expr::Var(stripped.to_string())
+                            Expr::HashVar(stripped.to_string())
                         } else {
                             Expr::Var(name.to_string())
                         };
+                        // Array subscript uses positional index; hash subscript does not.
+                        let is_positional = name.starts_with('@');
                         let assign_expr = Expr::IndexAssign {
                             target: Box::new(target_expr),
                             index: Box::new(index.as_ref().unwrap().as_ref().clone()),
                             value: Box::new(val_expr.as_ref().clone()),
-                            is_positional: true,
+                            is_positional,
                         };
                         self.compile_expr(&assign_expr);
                         self.code.emit(OpCode::Pop);

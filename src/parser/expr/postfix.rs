@@ -812,6 +812,7 @@ fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) -> Expr) -> E
                     }),
                 ],
                 label: None,
+                dollar_paren: false,
             }
         }
         // ($var = expr).=method => evaluate the assignment, then $var = $var.method
@@ -835,6 +836,7 @@ fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) -> Expr) -> E
                     }),
                 ],
                 label: None,
+                dollar_paren: false,
             }
         }
         _ => method_call_fn(target),

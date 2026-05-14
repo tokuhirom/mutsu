@@ -249,6 +249,7 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
                     }),
                 ],
                 label: None,
+                dollar_paren: false,
             }),
             then_expr: Box::new(tmp_var),
             else_expr: Box::new(rhs),
@@ -281,6 +282,7 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
                     }),
                 ],
                 label: None,
+                dollar_paren: false,
             }),
             then_expr: Box::new(rhs),
             else_expr: Box::new(tmp_var),
@@ -792,6 +794,7 @@ where
             }),
         ],
         label: None,
+        dollar_paren: false,
     }
 }
 
@@ -926,6 +929,7 @@ pub(crate) fn build_compound_assign_expr(
                             }),
                         ],
                         label: None,
+                        dollar_paren: false,
                     }),
                 }
             } else {
@@ -939,6 +943,7 @@ pub(crate) fn build_compound_assign_expr(
                         }),
                     ],
                     label: None,
+                    dollar_paren: false,
                 }
             }
         }

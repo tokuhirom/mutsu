@@ -371,6 +371,7 @@ impl Compiler {
                 let do_block = Expr::DoBlock {
                     body: vec![Stmt::Expr(viv_assign), Stmt::Expr(method_call)],
                     label: None,
+                    dollar_paren: false,
                 };
                 self.compile_expr(&do_block);
             } else {
@@ -392,6 +393,7 @@ impl Compiler {
                     let do_block = Expr::DoBlock {
                         body: body.clone(),
                         label: None,
+                        dollar_paren: false,
                     };
                     self.compile_expr(&do_block);
                     // Discard the block result and push Nil
@@ -534,6 +536,7 @@ impl Compiler {
                             Stmt::Expr(Expr::Var(seen_name)),
                         ],
                         label: None,
+                        dollar_paren: false,
                     };
                     self.compile_expr(&cas_expr);
                 } else {
@@ -584,6 +587,37 @@ impl Compiler {
                 };
                 self.compile_expr(&assign_expr);
             } else {
+                let arity = args.len() as u32;
+                let arg_sources_idx = self.add_arg_sources_constant(args);
+                for arg in args {
+                    self.compile_expr(arg);
+                }
+                let name_idx = self.code.add_constant(Value::str(name.resolve()));
+                self.code.emit(OpCode::CallFunc {
+                    name_idx,
+                    arity,
+                    arg_sources_idx,
+                });
+            }
+        } else if name == "temp" && args.len() == 1 {
+            // Expression-context `temp $var` / `temp @var` / `temp %var`:
+            // emit LetSave so the outer LetBlock restores the variable on exit.
+            let var_name = match &args[0] {
+                Expr::Var(n) => n.clone(),
+                Expr::ArrayVar(n) => format!("@{}", n),
+                Expr::HashVar(n) => format!("%{}", n),
+                _ => String::new(),
+            };
+            if !var_name.is_empty() {
+                let name_idx = self.code.add_constant(Value::str(var_name));
+                self.code.emit(OpCode::LetSave {
+                    name_idx,
+                    index_mode: false,
+                    is_temp: true,
+                });
+                self.compile_expr(&args[0]);
+            } else {
+                // Fallthrough: compile as regular function call
                 let arity = args.len() as u32;
                 let arg_sources_idx = self.add_arg_sources_constant(args);
                 for arg in args {

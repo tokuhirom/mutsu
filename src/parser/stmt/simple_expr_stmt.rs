@@ -558,6 +558,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                         }),
                     ],
                     label: None,
+                    dollar_paren: false,
                 });
                 return parse_statement_modifier(r, stmt);
             }
@@ -706,6 +707,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                         }),
                     ],
                     label: None,
+                    dollar_paren: false,
                 });
                 return parse_statement_modifier(r, stmt);
             }
@@ -1345,6 +1347,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     }),
                 ],
                 label: None,
+                dollar_paren: false,
             });
             return parse_statement_modifier(r, stmt);
         }
@@ -1408,6 +1411,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                         }),
                     ],
                     label: None,
+                    dollar_paren: false,
                 }),
             })
         } else {
@@ -1421,6 +1425,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     }),
                 ],
                 label: None,
+                dollar_paren: false,
             })
         };
         return parse_statement_modifier(r, stmt);
@@ -1691,6 +1696,110 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
         format!("{}{}{}", sigil, twigil, var_name)
     };
     let (rest, _) = ws(rest)?;
+    // Check for index: @arr[idx] or %hash<key>
+    if let Some(idx_rest) = rest.strip_prefix('[') {
+        let (idx_rest, _) = ws(idx_rest)?;
+        let (idx_rest, idx_expr) = expression(idx_rest)?;
+        let (idx_rest, _) = ws(idx_rest)?;
+        let (idx_rest, _) = parse_char(idx_rest, ']')?;
+        let (idx_rest, _) = ws(idx_rest)?;
+        if idx_rest.starts_with('=') && !idx_rest.starts_with("==") {
+            let val_rest = &idx_rest[1..];
+            let (val_rest, _) = ws(val_rest)?;
+            let (val_rest, val_expr) = expression(val_rest)?;
+            return parse_statement_modifier(
+                val_rest,
+                Stmt::Let {
+                    name: full_name,
+                    index: Some(Box::new(idx_expr)),
+                    value: Some(Box::new(val_expr)),
+                    is_temp: true,
+                },
+            );
+        }
+        return parse_statement_modifier(
+            idx_rest,
+            Stmt::Let {
+                name: full_name,
+                index: Some(Box::new(idx_expr)),
+                value: None,
+                is_temp: true,
+            },
+        );
+    }
+    // Check for hash key: %hash<key> or $hash<key>
+    if let Some(idx_rest) = rest.strip_prefix('<') {
+        // Find the matching '>'
+        if let Some(end_pos) = idx_rest.find('>') {
+            let key_str = &idx_rest[..end_pos];
+            // Only use this path for simple word keys (no spaces or special chars inside)
+            if !key_str.is_empty()
+                && key_str
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+            {
+                let idx_rest2 = &idx_rest[end_pos + 1..];
+                let (idx_rest2, _) = ws(idx_rest2)?;
+                let key_expr = Expr::Literal(crate::value::Value::str(key_str.to_string()));
+                if idx_rest2.starts_with('=') && !idx_rest2.starts_with("==") {
+                    let val_rest = &idx_rest2[1..];
+                    let (val_rest, _) = ws(val_rest)?;
+                    let (val_rest, val_expr) = expression(val_rest)?;
+                    return parse_statement_modifier(
+                        val_rest,
+                        Stmt::Let {
+                            name: full_name,
+                            index: Some(Box::new(key_expr)),
+                            value: Some(Box::new(val_expr)),
+                            is_temp: true,
+                        },
+                    );
+                }
+                return parse_statement_modifier(
+                    idx_rest2,
+                    Stmt::Let {
+                        name: full_name,
+                        index: Some(Box::new(key_expr)),
+                        value: None,
+                        is_temp: true,
+                    },
+                );
+            }
+        }
+    }
+    // Check for hash key with braces: %hash{expr}
+    if let Some(idx_rest) = rest.strip_prefix('{') {
+        let (idx_rest, _) = ws(idx_rest)?;
+        if let Ok((idx_rest, idx_expr)) = expression(idx_rest) {
+            let (idx_rest, _) = ws(idx_rest)?;
+            if let Ok((idx_rest, _)) = parse_char(idx_rest, '}') {
+                let (idx_rest, _) = ws(idx_rest)?;
+                if idx_rest.starts_with('=') && !idx_rest.starts_with("==") {
+                    let val_rest = &idx_rest[1..];
+                    let (val_rest, _) = ws(val_rest)?;
+                    let (val_rest, val_expr) = expression(val_rest)?;
+                    return parse_statement_modifier(
+                        val_rest,
+                        Stmt::Let {
+                            name: full_name,
+                            index: Some(Box::new(idx_expr)),
+                            value: Some(Box::new(val_expr)),
+                            is_temp: true,
+                        },
+                    );
+                }
+                return parse_statement_modifier(
+                    idx_rest,
+                    Stmt::Let {
+                        name: full_name,
+                        index: Some(Box::new(idx_expr)),
+                        value: None,
+                        is_temp: true,
+                    },
+                );
+            }
+        }
+    }
     // Check for assignment: temp $*CWD = expr
     if rest.starts_with('=') && !rest.starts_with("==") {
         let val_rest = &rest[1..];

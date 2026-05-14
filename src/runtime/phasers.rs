@@ -223,7 +223,11 @@ fn extract_phasers_from_stmts(
                 };
                 let assign = Stmt::Assign {
                     name: temp_name,
-                    expr: Expr::DoBlock { body, label: None },
+                    expr: Expr::DoBlock {
+                        body,
+                        label: None,
+                        dollar_paren: false,
+                    },
                     op: AssignOp::Assign,
                 };
                 match kind {
@@ -276,7 +280,11 @@ fn extract_begin_from_stmts(stmts: &mut [Stmt], begin: &mut Vec<Stmt>) {
                 };
                 let assign = Stmt::Assign {
                     name: temp_name,
-                    expr: Expr::DoBlock { body, label: None },
+                    expr: Expr::DoBlock {
+                        body,
+                        label: None,
+                        dollar_paren: false,
+                    },
                     op: AssignOp::Assign,
                 };
                 begin.push(var_decl);
@@ -318,7 +326,11 @@ fn lift_phasers_from_expr(
             };
             let assign = Stmt::Assign {
                 name: temp_name,
-                expr: Expr::DoBlock { body, label: None },
+                expr: Expr::DoBlock {
+                    body,
+                    label: None,
+                    dollar_paren: false,
+                },
                 op: AssignOp::Assign,
             };
             match kind {

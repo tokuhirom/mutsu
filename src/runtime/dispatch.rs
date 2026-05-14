@@ -1608,9 +1608,14 @@ impl Interpreter {
                 is_bind: *is_bind,
             },
             Expr::Block(stmts) => Expr::Block(Self::rewrite_proto_dispatch_stmts(stmts)),
-            Expr::DoBlock { body, label } => Expr::DoBlock {
+            Expr::DoBlock {
+                body,
+                label,
+                dollar_paren,
+            } => Expr::DoBlock {
                 body: Self::rewrite_proto_dispatch_stmts(body),
                 label: label.clone(),
+                dollar_paren: *dollar_paren,
             },
             Expr::Try { body, catch } => Expr::Try {
                 body: Self::rewrite_proto_dispatch_stmts(body),

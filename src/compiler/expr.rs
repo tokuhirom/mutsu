@@ -332,8 +332,13 @@ impl Compiler {
                 self.compile_try(body, catch);
             }
             Expr::DoBlock { .. } => {
-                if let Expr::DoBlock { body, label } = expr {
-                    self.compile_do_block_expr(body, label);
+                if let Expr::DoBlock {
+                    body,
+                    label,
+                    dollar_paren,
+                } = expr
+                {
+                    self.compile_do_block_expr(body, label, *dollar_paren);
                 }
             }
             Expr::DoStmt(stmt) => {

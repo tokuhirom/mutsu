@@ -34,6 +34,16 @@ impl Compiler {
                         }
                     }
                 }
+                Stmt::VarDecl { expr, .. } => {
+                    if Self::expr_has_let_deep(expr) {
+                        return true;
+                    }
+                }
+                Stmt::Assign { expr, .. } => {
+                    if Self::expr_has_let_deep(expr) {
+                        return true;
+                    }
+                }
                 _ => {}
             }
         }
@@ -75,6 +85,16 @@ impl Compiler {
                         }
                     }
                 }
+                Stmt::VarDecl { expr, .. } => {
+                    if Self::expr_has_real_let_deep(expr) {
+                        return true;
+                    }
+                }
+                Stmt::Assign { expr, .. } => {
+                    if Self::expr_has_real_let_deep(expr) {
+                        return true;
+                    }
+                }
                 _ => {}
             }
         }
@@ -84,7 +104,13 @@ impl Compiler {
     /// Check if an expression contains actual `let` (not `temp`) deep inside.
     fn expr_has_real_let_deep(expr: &Expr) -> bool {
         match expr {
-            Expr::DoBlock { body, .. } => Self::has_real_let_deep(body),
+            // Only propagate through dollar_paren DoBlocks; plain do{} manages its own scope.
+            Expr::DoBlock {
+                body,
+                dollar_paren: true,
+                ..
+            } => Self::has_real_let_deep(body),
+            Expr::DoBlock { .. } => false,
             Expr::Try { body, .. } => Self::has_real_let_deep(body),
             Expr::Call { args, .. } => args.iter().any(Self::expr_has_real_let_deep),
             Expr::MethodCall { args, target, .. }
@@ -107,8 +133,16 @@ impl Compiler {
 
     pub(super) fn expr_has_let_deep(expr: &Expr) -> bool {
         match expr {
-            Expr::DoBlock { body, .. } => Self::has_let_deep(body),
+            // Only propagate through dollar_paren DoBlocks; plain do{} manages its own scope.
+            Expr::DoBlock {
+                body,
+                dollar_paren: true,
+                ..
+            } => Self::has_let_deep(body),
+            Expr::DoBlock { .. } => false,
             Expr::Try { body, .. } => Self::has_let_deep(body),
+            // `temp $x` / `temp @x` / `temp %x` in expression context
+            Expr::Call { name, .. } if name == "temp" => true,
             Expr::Call { args, .. } => args.iter().any(Self::expr_has_let_deep),
             Expr::MethodCall { args, target, .. }
             | Expr::DynamicMethodCall { args, target, .. }
@@ -116,6 +150,21 @@ impl Compiler {
             | Expr::HyperMethodCallDynamic { args, target, .. } => {
                 Self::expr_has_let_deep(target) || args.iter().any(Self::expr_has_let_deep)
             }
+            // IndexAssign: check if the target is a temp expression
+            Expr::IndexAssign {
+                target,
+                value,
+                index,
+                ..
+            } => {
+                Self::expr_has_let_deep(target)
+                    || Self::expr_has_let_deep(value)
+                    || Self::expr_has_let_deep(index)
+            }
+            // AssignExpr: check the rhs
+            Expr::AssignExpr { expr, .. } => Self::expr_has_let_deep(expr),
+            // Unary: check the inner expression (e.g., ++temp $c)
+            Expr::Unary { expr, .. } => Self::expr_has_let_deep(expr),
             _ => false,
         }
     }

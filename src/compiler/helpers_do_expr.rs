@@ -1,7 +1,12 @@
 use super::*;
 
 impl Compiler {
-    pub(super) fn compile_do_block_expr(&mut self, body: &[Stmt], label: &Option<String>) {
+    pub(super) fn compile_do_block_expr(
+        &mut self,
+        body: &[Stmt],
+        label: &Option<String>,
+        dollar_paren: bool,
+    ) {
         // If the do block contains CATCH/CONTROL, compile as try so exceptions are handled.
         if Self::has_catch_or_control(body) {
             self.compile_try(body, &None);
@@ -131,7 +136,37 @@ impl Compiler {
             label: label.clone(),
             scope_isolate: false,
         });
-        self.compile_block_inline(body);
+        // For plain `do { }` (not `$()`): wrap in LetBlock so that any `temp`
+        // saves made inside are restored when *this* do-block exits.
+        // For `$(...)` (dollar_paren=true): skip the inner LetBlock so the
+        // temp saves are captured by the *enclosing* block's LetBlock instead.
+        if Self::has_let_deep(body) && !dollar_paren {
+            let let_idx = self.code.emit(OpCode::LetBlock { body_end: 0 });
+            let needs_topic = Self::has_real_let_deep(body);
+            for (i, s) in body.iter().enumerate() {
+                let is_last = i == body.len() - 1;
+                if is_last && needs_topic {
+                    self.compile_last_stmt_as_topic(s);
+                    self.compile_expr(&crate::ast::Expr::Var("_".to_string()));
+                } else if is_last {
+                    match s {
+                        crate::ast::Stmt::Expr(expr) => {
+                            self.compile_expr(expr);
+                        }
+                        _ => {
+                            self.compile_stmt(s);
+                            let true_idx = self.code.add_constant(crate::value::Value::Bool(true));
+                            self.code.emit(OpCode::LoadConst(true_idx));
+                        }
+                    }
+                } else {
+                    self.compile_stmt(s);
+                }
+            }
+            self.code.patch_let_block_end(let_idx);
+        } else {
+            self.compile_block_inline(body);
+        }
         self.code.patch_body_end(idx);
     }
 
@@ -204,7 +239,7 @@ impl Compiler {
                         && matches!(items[0], Expr::Literal(Value::Nil))
             )
         {
-            self.compile_do_block_expr(body, label);
+            self.compile_do_block_expr(body, label, false);
             return;
         }
 

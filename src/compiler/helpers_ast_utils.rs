@@ -79,7 +79,12 @@ impl Compiler {
     }
 
     pub(super) fn index_assign_target_requires_eval(target: &Expr) -> bool {
-        matches!(target, Expr::AssignExpr { .. } | Expr::DoStmt(_))
+        match target {
+            Expr::AssignExpr { .. } | Expr::DoStmt(_) => true,
+            // `temp %hash` / `temp @arr` needs eval to emit LetSave
+            Expr::Call { name, .. } if name == "temp" => true,
+            _ => false,
+        }
     }
 
     /// Extract the variable name from a method call target (e.g., `$foo.bar` → "foo").

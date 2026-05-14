@@ -1908,6 +1908,7 @@ pub(super) fn try_interpolate_var<'a>(
                         Some(Expr::DoBlock {
                             body: stmts,
                             label: None,
+                            dollar_paren: false,
                         })
                     }
                 } else if let Ok((leftover, expr)) = expression(inner.trim())

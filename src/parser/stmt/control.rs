@@ -1733,6 +1733,7 @@ pub(super) fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
                     Some(Expr::DoBlock {
                         body: stmts,
                         label: None,
+                        dollar_paren: false,
                     }),
                 )
             }

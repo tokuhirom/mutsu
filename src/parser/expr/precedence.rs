@@ -537,6 +537,7 @@ fn assignment_ro_expr(lhs: Expr, rhs: Expr) -> Expr {
             }),
         ],
         label: None,
+        dollar_paren: false,
     }
 }
 
@@ -2441,6 +2442,7 @@ fn build_chain_cmp_expr(
             }),
         ],
         label: None,
+        dollar_paren: false,
     }
 }
 

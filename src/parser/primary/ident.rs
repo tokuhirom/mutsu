@@ -1492,7 +1492,14 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         ));
                     }
                 }
-                return Ok((r, Expr::DoBlock { body, label: None }));
+                return Ok((
+                    r,
+                    Expr::DoBlock {
+                        body,
+                        label: None,
+                        dollar_paren: false,
+                    },
+                ));
             }
             // do if/unless/given/for/while — wrap the control flow statement
             {
@@ -1841,6 +1848,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         Expr::DoBlock {
                             body: vec![stmt, Stmt::Expr(anon_sub)],
                             label: None,
+                            dollar_paren: false,
                         },
                     ));
                 }

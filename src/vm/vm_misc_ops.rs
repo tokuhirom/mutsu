@@ -2578,22 +2578,30 @@ impl VM {
         name_idx: u32,
         index_mode: bool,
         is_temp: bool,
-    ) {
+    ) -> Result<(), RuntimeError> {
         self.ensure_env_synced(code);
         let name = Self::const_str(code, name_idx).to_string();
         if index_mode {
             let _idx_val = self.stack.pop().unwrap_or(Value::Int(0));
         }
-        let old_val = self
-            .get_env_with_main_alias(&name)
-            .or_else(|| {
-                code.locals
-                    .iter()
-                    .position(|n| n == &name)
-                    .map(|i| self.locals[i].clone())
-            })
-            .unwrap_or(Value::Nil);
+        let found_val = self.get_env_with_main_alias(&name).or_else(|| {
+            code.locals
+                .iter()
+                .position(|n| n == &name)
+                .map(|i| self.locals[i].clone())
+        });
+        // If temp-ing a dynamic variable that doesn't exist, throw X::Dynamic::NotFound
+        if is_temp && found_val.is_none() && name.starts_with('*') {
+            let symbol = format!("${}", name);
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("name".to_string(), Value::str(symbol.clone()));
+            let err =
+                Value::make_instance(crate::symbol::Symbol::intern("X::Dynamic::NotFound"), attrs);
+            return Err(RuntimeError::from_exception_value(err));
+        }
+        let old_val = found_val.unwrap_or(Value::Nil);
         self.interpreter.let_saves_push(name, old_val, is_temp);
+        Ok(())
     }
 
     pub(super) fn exec_let_block_op(

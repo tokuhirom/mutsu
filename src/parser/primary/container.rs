@@ -591,6 +591,13 @@ pub(super) fn itemized_paren_expr(input: &str) -> PResult<'_, Expr> {
     if !rest.starts_with('(') {
         return Err(PError::expected("itemized parenthesized expression"));
     }
+    // First, try to parse as a statement block: $(stmt; expr)
+    // This handles `$(temp $a = 23; $a)` and similar constructs where
+    // the content contains statements with semicolons.
+    let inner = &rest[1..]; // strip the leading '('
+    if let Ok(result) = super::var::parse_dollar_paren_block_pub(inner) {
+        return Ok(result);
+    }
     let (rest, inner) = paren_expr(rest)?;
     // Lower $(expr) to expr.item — wraps the value in a Scalar container
     Ok((

@@ -33,7 +33,24 @@ impl Compiler {
                 self.code.emit(OpCode::BoolCoerce);
             }
             TokenKind::PlusPlus => {
-                if let Expr::Var(name) = expr {
+                // Handle ++temp $var: save $var then increment it
+                if let Expr::Call {
+                    name: call_name,
+                    args: call_args,
+                } = expr
+                    && call_name == "temp"
+                    && call_args.len() == 1
+                    && let Expr::Var(var_name) = &call_args[0]
+                {
+                    let save_name_idx = self.code.add_constant(Value::str(var_name.clone()));
+                    self.code.emit(OpCode::LetSave {
+                        name_idx: save_name_idx,
+                        index_mode: false,
+                        is_temp: true,
+                    });
+                    let inc_name_idx = self.code.add_constant(Value::str(var_name.clone()));
+                    self.code.emit(OpCode::PreIncrement(inc_name_idx));
+                } else if let Expr::Var(name) = expr {
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::PreIncrement(name_idx));
                 } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
@@ -58,7 +75,24 @@ impl Compiler {
                 }
             }
             TokenKind::MinusMinus => {
-                if let Expr::Var(name) = expr {
+                // Handle --temp $var: save $var then decrement it
+                if let Expr::Call {
+                    name: call_name,
+                    args: call_args,
+                } = expr
+                    && call_name == "temp"
+                    && call_args.len() == 1
+                    && let Expr::Var(var_name) = &call_args[0]
+                {
+                    let save_name_idx = self.code.add_constant(Value::str(var_name.clone()));
+                    self.code.emit(OpCode::LetSave {
+                        name_idx: save_name_idx,
+                        index_mode: false,
+                        is_temp: true,
+                    });
+                    let dec_name_idx = self.code.add_constant(Value::str(var_name.clone()));
+                    self.code.emit(OpCode::PreDecrement(dec_name_idx));
+                } else if let Expr::Var(name) = expr {
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::PreDecrement(name_idx));
                 } else if let Some(var_name) = Self::extract_vardecl_name(expr) {

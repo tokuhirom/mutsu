@@ -248,7 +248,17 @@ impl Compiler {
             Self::compile_post_phasers(&mut sub_compiler, body);
             sub_compiler.code.patch_loop_end(idx);
         } else if sink_last_expr {
-            Self::compile_routine_body_stmts(&mut sub_compiler, body, true);
+            if Self::has_let_deep(body) {
+                let let_idx = sub_compiler.code.emit(OpCode::LetBlock { body_end: 0 });
+                Self::compile_routine_body_stmts(&mut sub_compiler, body, true);
+                sub_compiler.code.patch_let_block_end(let_idx);
+            } else {
+                Self::compile_routine_body_stmts(&mut sub_compiler, body, true);
+            }
+        } else if Self::has_let_deep(body) {
+            let let_idx = sub_compiler.code.emit(OpCode::LetBlock { body_end: 0 });
+            Self::compile_routine_body_stmts(&mut sub_compiler, body, false);
+            sub_compiler.code.patch_let_block_end(let_idx);
         } else {
             Self::compile_routine_body_stmts(&mut sub_compiler, body, false);
         }

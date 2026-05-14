@@ -357,6 +357,9 @@ pub(crate) enum Expr {
     DoBlock {
         body: Vec<Stmt>,
         label: Option<String>,
+        /// True when created from `$(...)` syntax.
+        /// In that case, `temp` saves propagate to the enclosing block scope.
+        dollar_paren: bool,
     },
     DoStmt(Box<Stmt>),
     ControlFlow {
