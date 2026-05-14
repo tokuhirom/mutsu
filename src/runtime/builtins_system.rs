@@ -119,7 +119,19 @@ impl Interpreter {
                     } else {
                         Value::str(e.message)
                     };
-                    promise.break_with(error_val, output, stderr);
+                    promise.break_with(error_val.clone(), output, stderr);
+                    // Call uncaught_handler if set, running in a helper thread
+                    // so we don't block the promise thread.
+                    if let Some(handler) =
+                        crate::runtime::native_methods::state_scheduler::get_uncaught_handler()
+                    {
+                        let handler_interp = thread_interp.clone_for_thread();
+                        let ex_val = error_val;
+                        std::thread::spawn(move || {
+                            let vm = crate::vm::VM::new(handler_interp);
+                            let (_interp, _result) = vm.call_value(handler, vec![ex_val]);
+                        });
+                    }
                 }
             }
         });

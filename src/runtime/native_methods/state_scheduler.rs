@@ -2,6 +2,29 @@ use crate::runtime::*;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+// --- Global uncaught_handler for $*SCHEDULER ---
+
+type UncaughtHandlerStore = std::sync::Mutex<Option<Value>>;
+
+fn uncaught_handler_store() -> &'static UncaughtHandlerStore {
+    static HANDLER: OnceLock<UncaughtHandlerStore> = OnceLock::new();
+    HANDLER.get_or_init(|| std::sync::Mutex::new(None))
+}
+
+/// Get the current uncaught_handler value (None if not set).
+pub(in crate::runtime) fn get_uncaught_handler() -> Option<Value> {
+    uncaught_handler_store().lock().unwrap().clone()
+}
+
+/// Set the uncaught_handler. Pass Value::Nil to clear it.
+pub(in crate::runtime) fn set_uncaught_handler(handler: Value) {
+    let mut guard = uncaught_handler_store().lock().unwrap();
+    match &handler {
+        Value::Nil => *guard = None,
+        _ => *guard = Some(handler),
+    }
+}
+
 // --- FakeScheduler support (for Test::Tap) ---
 
 /// A scheduled item in a FakeScheduler.

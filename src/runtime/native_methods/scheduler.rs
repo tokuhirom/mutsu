@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering;
 
 use super::state::*;
 use super::state_lock::*;
-use super::state_scheduler::*;
+use super::state_scheduler::{self, *};
 use super::state_supplier::close_supplier_tap;
 
 /// Parameters for a scheduled cue operation.
@@ -228,8 +228,32 @@ impl Interpreter {
                 }
                 Ok(cancellation)
             }
+            "uncaught_handler" => {
+                // Getter: return current uncaught_handler or Nil
+                Ok(state_scheduler::get_uncaught_handler().unwrap_or(Value::Nil))
+            }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on Scheduler",
+                method
+            ))),
+        }
+    }
+
+    /// Mutable dispatch for Scheduler: handles uncaught_handler setter.
+    /// Returns (result_value, updated_attributes).
+    pub(in crate::runtime) fn native_scheduler_mut(
+        attributes: HashMap<String, Value>,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+        match method {
+            "uncaught_handler" => {
+                let handler = args.into_iter().next().unwrap_or(Value::Nil);
+                state_scheduler::set_uncaught_handler(handler.clone());
+                Ok((handler, attributes))
+            }
+            _ => Err(RuntimeError::new(format!(
+                "No native mutable method '{}' on Scheduler",
                 method
             ))),
         }

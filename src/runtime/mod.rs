@@ -1489,7 +1489,10 @@ impl Interpreter {
                 parents: vec!["Scheduler".to_string()],
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: ["cue"].iter().map(|s| s.to_string()).collect(),
+                native_methods: ["cue", "uncaught_handler"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
                 mro: vec!["ThreadPoolScheduler".to_string()],
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
@@ -1504,7 +1507,10 @@ impl Interpreter {
                 parents: vec!["Scheduler".to_string()],
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: ["cue"].iter().map(|s| s.to_string()).collect(),
+                native_methods: ["cue", "uncaught_handler"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
                 mro: vec!["CurrentThreadScheduler".to_string()],
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),

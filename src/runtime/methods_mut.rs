@@ -1300,6 +1300,37 @@ impl Interpreter {
                 }
                 return Ok(assigned_value);
             }
+            // Try native mutable method dispatch for native classes (e.g. Scheduler.uncaught_handler)
+            if self.is_native_method(&class_name.resolve(), method) {
+                let mut all_args = method_args.clone();
+                all_args.push(value.clone());
+                match self.call_native_instance_method_mut(
+                    &class_name.resolve(),
+                    (*attributes).clone(),
+                    method,
+                    all_args,
+                ) {
+                    Ok((result, updated_attrs)) => {
+                        self.overwrite_instance_bindings_by_identity(
+                            &class_name.resolve(),
+                            target_id,
+                            updated_attrs.clone(),
+                        );
+                        if let Some(var_name) = target_var {
+                            self.env.insert(
+                                var_name.to_string(),
+                                Value::make_instance_with_id(class_name, updated_attrs, target_id),
+                            );
+                        }
+                        return Ok(result);
+                    }
+                    Err(err) => {
+                        if !err.message.starts_with("No native mutable method") {
+                            return Err(err);
+                        }
+                    }
+                }
+            }
             return Err(super::methods_signature::make_multi_no_match_error(method));
         } else {
             return Err(super::methods_signature::make_multi_no_match_error(method));
