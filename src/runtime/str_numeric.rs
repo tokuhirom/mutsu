@@ -22,10 +22,9 @@ pub(crate) fn parse_raku_str_to_numeric(input: &str) -> Option<Value> {
     // them to their ASCII equivalents before further parsing.
     if s.chars().any(|c| {
         !c.is_ascii() && crate::builtins::unicode::unicode_decimal_digit_value(c).is_some()
-    }) {
-        if let Some(ascii_str) = normalize_unicode_decimal_digits(s) {
-            return parse_raku_str_to_numeric(&ascii_str);
-        }
+    }) && let Some(ascii_str) = normalize_unicode_decimal_digits(s)
+    {
+        return parse_raku_str_to_numeric(&ascii_str);
     }
 
     // Try Complex first (contains `i`)
@@ -391,14 +390,12 @@ fn try_parse_decimal_rat(body: &str, sign: i32) -> Option<Value> {
         int_clean.parse::<i64>(),
         frac_clean.parse::<i64>(),
         10i64.checked_pow(frac_clean.len() as u32),
-    ) {
-        if let Some(numer) = int_val
-            .checked_mul(denom)
-            .and_then(|v| v.checked_add(frac_val))
-        {
-            let numer = if sign < 0 { -numer } else { numer };
-            return Some(crate::value::make_rat(numer, denom));
-        }
+    ) && let Some(numer) = int_val
+        .checked_mul(denom)
+        .and_then(|v| v.checked_add(frac_val))
+    {
+        let numer = if sign < 0 { -numer } else { numer };
+        return Some(crate::value::make_rat(numer, denom));
     }
     // Overflow or too many digits: fall back to f64 approximation
     let combined = format!("{}.{}", int_clean, frac_clean);
