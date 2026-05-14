@@ -327,7 +327,17 @@ impl VM {
         cf: &CompiledFunction,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
-        let saved_env = self.interpreter.clone_env();
+        // Only save env when there are local variables to clean up.
+        // When the function has no locals, the env save/restore is a
+        // no-op (nothing to remove), but still causes an Arc clone that
+        // raises the refcount and triggers O(env_size) deep clones on
+        // any env write inside the function body (e.g. `$ = expr`).
+        let has_locals = !cf.code.locals.is_empty();
+        let saved_env = if has_locals {
+            Some(self.interpreter.clone_env())
+        } else {
+            None
+        };
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_stack_depth = self.stack.len();
         let saved_env_dirty = self.env_dirty;
@@ -431,18 +441,24 @@ impl VM {
         self.env_dirty = saved_env_dirty;
         self.locals_dirty = saved_locals_dirty;
 
-        // Restore env: if env was mutated, merge non-local changes back
-        if saved_env.ptr_eq(self.interpreter.env()) {
-            // No env changes, nothing to merge
-        } else {
-            let local_names: std::collections::HashSet<&String> = cf.code.locals.iter().collect();
-            let mut restored_env = saved_env;
-            for (k, v) in self.interpreter.env().iter() {
-                if !local_names.contains(k) {
-                    restored_env.insert(k.clone(), v.clone());
+        // Restore env: if env was mutated, merge non-local changes back.
+        // When has_locals is false, saved_env is None and no restore is needed
+        // (functions without locals cannot leak local variables into the
+        // caller's env — any env writes they do are intentional global state).
+        if let Some(saved_env) = saved_env {
+            if saved_env.ptr_eq(self.interpreter.env()) {
+                // No env changes, nothing to merge
+            } else {
+                let local_names: std::collections::HashSet<&String> =
+                    cf.code.locals.iter().collect();
+                let mut restored_env = saved_env;
+                for (k, v) in self.interpreter.env().iter() {
+                    if !local_names.contains(k) {
+                        restored_env.insert(k.clone(), v.clone());
+                    }
                 }
+                *self.interpreter.env_mut() = restored_env;
             }
-            *self.interpreter.env_mut() = restored_env;
         }
 
         // Restore caller's $_ after routine call.
