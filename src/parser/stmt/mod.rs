@@ -1194,7 +1194,7 @@ mod tests {
                 assert_eq!(stmts.len(), 2);
                 assert!(matches!(
                     &stmts[0],
-                    Stmt::Expr(Expr::AssignExpr { name, expr })
+                    Stmt::Expr(Expr::AssignExpr { name, expr, .. })
                         if name == "x" && matches!(expr.as_ref(), Expr::Var(n) if n == "y")
                 ));
                 assert!(matches!(
@@ -1899,7 +1899,7 @@ mod tests {
         let (rest, expr) = assign::try_parse_assign_expr("$y [R/]= 1").unwrap();
         assert_eq!(rest, "");
         match expr {
-            Expr::AssignExpr { name, expr } => {
+            Expr::AssignExpr { name, expr, .. } => {
                 assert_eq!(name, "y");
                 match *expr {
                     Expr::MetaOp {
@@ -1947,7 +1947,7 @@ mod tests {
         let (rest, expr) = assign::try_parse_assign_expr("@a X*= 10").unwrap();
         assert_eq!(rest, "");
         match expr {
-            Expr::AssignExpr { name, expr } => {
+            Expr::AssignExpr { name, expr, .. } => {
                 assert_eq!(name, "@a");
                 match *expr {
                     Expr::MetaOp {

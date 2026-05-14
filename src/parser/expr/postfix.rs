@@ -761,14 +761,17 @@ fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) -> Expr) -> E
         Expr::Var(name) => Expr::AssignExpr {
             name: name.clone(),
             expr: Box::new(method_call_fn(target)),
+            is_bind: false,
         },
         Expr::ArrayVar(name) => Expr::AssignExpr {
             name: format!("@{}", name),
             expr: Box::new(method_call_fn(target)),
+            is_bind: false,
         },
         Expr::HashVar(name) => Expr::AssignExpr {
             name: format!("%{}", name),
             expr: Box::new(method_call_fn(target)),
+            is_bind: false,
         },
         Expr::Index {
             target: idx_target,
@@ -828,6 +831,7 @@ fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) -> Expr) -> E
                     Stmt::Expr(Expr::AssignExpr {
                         name: assign_name,
                         expr: Box::new(method_result),
+                        is_bind: false,
                     }),
                 ],
                 label: None,

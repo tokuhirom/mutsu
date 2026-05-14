@@ -489,6 +489,7 @@ fn build_topic_subst_compound_expr(
             modifier: None,
             quoted: false,
         }),
+        is_bind: false,
     })
 }
 
@@ -541,6 +542,7 @@ fn build_topic_subst_expr(
             modifier: None,
             quoted: false,
         }),
+        is_bind: false,
     })
 }
 
@@ -1858,6 +1860,7 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
                 Expr::AssignExpr {
                     name: "_".to_string(),
                     expr: Box::new(method_call),
+                    is_bind: false,
                 },
             ));
         }

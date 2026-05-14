@@ -278,6 +278,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 label: None,
                 mode: crate::ast::ForMode::Normal,
                 rw_block: false,
+                explicit_zero_params: false,
             },
         )));
     }

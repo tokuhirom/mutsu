@@ -1298,7 +1298,7 @@ mod tests {
         let (rest, expr) = expression("($x += 2) *= 3").unwrap();
         assert_eq!(rest, "");
         match expr {
-            Expr::AssignExpr { name, expr } => {
+            Expr::AssignExpr { name, expr, .. } => {
                 assert_eq!(name, "x");
                 assert!(matches!(*expr, Expr::Binary { .. }));
             }
@@ -1311,7 +1311,7 @@ mod tests {
         let (rest, expr) = expression("(@a ||= 42) += 10").unwrap();
         assert_eq!(rest, "");
         match expr {
-            Expr::AssignExpr { name, expr } => {
+            Expr::AssignExpr { name, expr, .. } => {
                 assert_eq!(name, "@a");
                 assert!(matches!(*expr, Expr::Binary { .. }));
             }

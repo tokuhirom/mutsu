@@ -10,16 +10,21 @@ use crate::value::Value;
 use super::{ident, is_stmt_modifier_keyword, try_parse_assign_expr};
 
 fn regroup_assign_expr_metaop_rhs(expr: Expr) -> Expr {
-    let Expr::AssignExpr { name, expr } = expr else {
+    let Expr::AssignExpr { name, expr, .. } = expr else {
         return expr;
     };
     let Expr::ArrayLiteral(mut items) = *expr else {
-        return Expr::AssignExpr { name, expr };
+        return Expr::AssignExpr {
+            name,
+            expr,
+            is_bind: false,
+        };
     };
     let Some(last) = items.pop() else {
         return Expr::AssignExpr {
             name,
             expr: Box::new(Expr::ArrayLiteral(items)),
+            is_bind: false,
         };
     };
     match last {
@@ -38,6 +43,7 @@ fn regroup_assign_expr_metaop_rhs(expr: Expr) -> Expr {
                     left: Box::new(Expr::ArrayLiteral(items)),
                     right,
                 }),
+                is_bind: false,
             }
         }
         other => {
@@ -45,6 +51,7 @@ fn regroup_assign_expr_metaop_rhs(expr: Expr) -> Expr {
             Expr::AssignExpr {
                 name,
                 expr: Box::new(Expr::ArrayLiteral(items)),
+                is_bind: false,
             }
         }
     }
@@ -52,12 +59,13 @@ fn regroup_assign_expr_metaop_rhs(expr: Expr) -> Expr {
 
 fn split_assignment_rhs_call_args(expr: Expr) -> (Expr, Vec<Expr>) {
     match expr {
-        Expr::AssignExpr { name, expr } => {
+        Expr::AssignExpr { name, expr, .. } => {
             let (rhs, extras) = split_assignment_rhs_call_args(*expr);
             (
                 Expr::AssignExpr {
                     name,
                     expr: Box::new(rhs),
+                    is_bind: false,
                 },
                 extras,
             )
@@ -716,7 +724,7 @@ mod tests {
         let (rest, args) = parse_stmt_call_args("(@d = 1,3 Z 2,4), \"desc\";").unwrap();
         assert_eq!(rest, ";");
         match &args[0] {
-            CallArg::Positional(Expr::AssignExpr { name, expr }) => {
+            CallArg::Positional(Expr::AssignExpr { name, expr, .. }) => {
                 assert_eq!(name, "@d");
                 match expr.as_ref() {
                     Expr::MetaOp {

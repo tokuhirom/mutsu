@@ -138,7 +138,7 @@ impl Compiler {
     pub(super) fn body_mutates_topic(stmts: &[Stmt]) -> bool {
         fn expr_mutates_topic(expr: &Expr) -> bool {
             match expr {
-                Expr::AssignExpr { name, .. } => name == "_",
+                Expr::AssignExpr { .. } => false,
                 Expr::Unary { expr, .. } => expr_mutates_topic(expr),
                 Expr::Binary { left, right, .. } => {
                     expr_mutates_topic(left) || expr_mutates_topic(right)
@@ -163,7 +163,9 @@ impl Compiler {
 
         fn stmt_mutates_topic(stmt: &Stmt) -> bool {
             match stmt {
-                Stmt::Assign { name, .. } => name == "_",
+                Stmt::Assign { name, op, .. } => {
+                    name == "_" && matches!(op, crate::ast::AssignOp::Bind)
+                }
                 Stmt::Expr(expr) => expr_mutates_topic(expr),
                 Stmt::If {
                     then_branch,

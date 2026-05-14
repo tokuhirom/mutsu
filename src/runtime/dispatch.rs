@@ -1476,6 +1476,7 @@ impl Interpreter {
                 params,
                 mode,
                 rw_block,
+                explicit_zero_params,
             } => Stmt::For {
                 iterable: Self::rewrite_proto_dispatch_expr(iterable),
                 body: Self::rewrite_proto_dispatch_stmts(body),
@@ -1485,6 +1486,7 @@ impl Interpreter {
                 params: params.clone(),
                 mode: *mode,
                 rw_block: *rw_block,
+                explicit_zero_params: *explicit_zero_params,
             },
             Stmt::Loop {
                 init,
@@ -1596,9 +1598,14 @@ impl Interpreter {
                 value: Box::new(Self::rewrite_proto_dispatch_expr(value)),
                 is_positional: *is_positional,
             },
-            Expr::AssignExpr { name, expr } => Expr::AssignExpr {
+            Expr::AssignExpr {
+                name,
+                expr,
+                is_bind,
+            } => Expr::AssignExpr {
                 name: name.clone(),
                 expr: Box::new(Self::rewrite_proto_dispatch_expr(expr)),
+                is_bind: *is_bind,
             },
             Expr::Block(stmts) => Expr::Block(Self::rewrite_proto_dispatch_stmts(stmts)),
             Expr::DoBlock { body, label } => Expr::DoBlock {

@@ -123,6 +123,7 @@ impl Compiler {
                 label,
                 mode,
                 rw_block,
+                explicit_zero_params,
             } => Stmt::For {
                 iterable: iterable.clone(),
                 param: param.clone(),
@@ -138,6 +139,7 @@ impl Compiler {
                 label: label.clone(),
                 mode: *mode,
                 rw_block: *rw_block,
+                explicit_zero_params: *explicit_zero_params,
             },
             Stmt::Loop {
                 init,

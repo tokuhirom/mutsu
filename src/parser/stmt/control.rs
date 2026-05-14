@@ -457,7 +457,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, iterable) = parse_comma_or_expr(r)?;
         let (r, _) = ws(r)?;
-        let (r, (param, param_def, params, rw_block)) = parse_for_params(r)?;
+        let (r, (param, param_def, params, rw_block, explicit_zero_params)) = parse_for_params(r)?;
         let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
         return Ok((
@@ -471,6 +471,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 label: Some(label),
                 mode: crate::ast::ForMode::Normal,
                 rw_block,
+                explicit_zero_params,
             },
         ));
     }
@@ -540,6 +541,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 label: Some(label),
                 mode: crate::ast::ForMode::Normal,
                 rw_block: false,
+                explicit_zero_params: false,
             },
         ));
     }
@@ -559,6 +561,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 label: Some(label),
                 mode: crate::ast::ForMode::Normal,
                 rw_block: false,
+                explicit_zero_params: false,
             },
         ));
     }
@@ -574,8 +577,8 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
     ))
 }
 
-/// Parsed for-loop parameter info: `(param, param_def, params, rw_block)`.
-type ForParams = (Option<String>, Option<ParamDef>, Vec<String>, bool);
+/// Parsed for-loop parameter info: `(param, param_def, params, rw_block, explicit_zero_params)`.
+type ForParams = (Option<String>, Option<ParamDef>, Vec<String>, bool, bool);
 
 /// Parse for loop parameters: -> $param or -> $a, $b
 /// Returns `(param, param_def, params, rw_block)`.
@@ -603,8 +606,9 @@ pub(super) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
     if let Some(stripped) = pointy_stripped {
         let (r, _) = ws(stripped)?;
         // Zero-parameter pointy block: for @a -> { ... }
+        // Explicitly declares zero params — passing any arg should throw.
         if r.starts_with('{') {
-            return Ok((r, (None, None, Vec::new(), rw_block)));
+            return Ok((r, (None, None, Vec::new(), rw_block, true)));
         }
         // Parenthesized destructuring pointy param:
         //   -> ($a, $b) { ... }
@@ -640,7 +644,13 @@ pub(super) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             };
             return Ok((
                 r,
-                (Some(unpack_name), Some(unpack_def), Vec::new(), rw_block),
+                (
+                    Some(unpack_name),
+                    Some(unpack_def),
+                    Vec::new(),
+                    rw_block,
+                    false,
+                ),
             ));
         }
         // Parenthesized pointy parameter list: -> ($a, $b) { ... }
@@ -652,7 +662,7 @@ pub(super) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             let (r, _) = parse_char(r, ')')?;
             let (r, _) = skip_pointy_return_type(r)?;
             if sub_params.is_empty() {
-                return Ok((r, (None, None, Vec::new(), rw_block)));
+                return Ok((r, (None, None, Vec::new(), rw_block, false)));
             }
             let unpack_name = "__for_unpack".to_string();
             let unpack_def = ParamDef {
@@ -678,7 +688,13 @@ pub(super) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             };
             return Ok((
                 r,
-                (Some(unpack_name), Some(unpack_def), Vec::new(), rw_block),
+                (
+                    Some(unpack_name),
+                    Some(unpack_def),
+                    Vec::new(),
+                    rw_block,
+                    false,
+                ),
             ));
         }
         // Positional destructuring pointy param: -> [$a, $b] { ... }
@@ -726,7 +742,13 @@ pub(super) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             };
             return Ok((
                 r,
-                (Some(unpack_name), Some(unpack_def), Vec::new(), rw_block),
+                (
+                    Some(unpack_name),
+                    Some(unpack_def),
+                    Vec::new(),
+                    rw_block,
+                    false,
+                ),
             ));
         }
         let (r, mut first_def) = parse_for_pointy_param(r)?;
@@ -772,13 +794,16 @@ pub(super) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                 r = r2;
             }
             let (r, _) = skip_pointy_return_type(r)?;
-            Ok((r, (None, None, params, any_rw)))
+            Ok((r, (None, None, params, any_rw, false)))
         } else {
             let (r, _) = skip_pointy_return_type(r)?;
-            Ok((r, (Some(first), Some(first_def), Vec::new(), rw_block)))
+            Ok((
+                r,
+                (Some(first), Some(first_def), Vec::new(), rw_block, false),
+            ))
         }
     } else {
-        Ok((input, (None, None, Vec::new(), false)))
+        Ok((input, (None, None, Vec::new(), false, false)))
     }
 }
 
@@ -1013,7 +1038,8 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
         (r, iterable, false)
     };
     let (rest, _) = ws(rest)?;
-    let (rest, (param, param_def, params, rw_block)) = parse_for_params(rest)?;
+    let (rest, (param, param_def, params, rw_block, explicit_zero_params)) =
+        parse_for_params(rest)?;
     let rw_block = rw_block || rw_detected;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
@@ -1042,6 +1068,7 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
             label: None,
             mode,
             rw_block,
+            explicit_zero_params,
         },
     ))
 }
@@ -1450,7 +1477,8 @@ pub(super) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, param_binding) = if rest.starts_with("->") {
-        let (rest, (param, _param_def, params, _rw_block)) = parse_for_params(rest)?;
+        let (rest, (param, _param_def, params, _rw_block, _explicit_zero)) =
+            parse_for_params(rest)?;
         if !params.is_empty() {
             return Err(PError::expected_at("single while pointy parameter", rest));
         }
@@ -1465,6 +1493,7 @@ pub(super) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
             Expr::AssignExpr {
                 name: param.clone(),
                 expr: Box::new(cond),
+                is_bind: false,
             }
         } else {
             cond
@@ -1503,7 +1532,8 @@ pub(super) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, param_binding) = if rest.starts_with("->") {
-        let (rest, (param, _param_def, params, _rw_block)) = parse_for_params(rest)?;
+        let (rest, (param, _param_def, params, _rw_block, _explicit_zero)) =
+            parse_for_params(rest)?;
         if !params.is_empty() {
             return Err(PError::expected_at("single until pointy parameter", rest));
         }
@@ -1517,6 +1547,7 @@ pub(super) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
         Expr::AssignExpr {
             name: param.clone(),
             expr: Box::new(cond),
+            is_bind: false,
         }
     } else {
         cond
@@ -1756,7 +1787,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, cond) = condition_expr(r)?;
         let (r, _) = ws(r)?;
-        let (r, (param, _param_def, params, _rw_block)) = parse_for_params(r)?;
+        let (r, (param, _param_def, params, _rw_block, _explicit_zero)) = parse_for_params(r)?;
         let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
         let (r, _) = ws(r)?;
@@ -1779,6 +1810,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
         let step = repeat_param.map(|name| Expr::AssignExpr {
             name,
             expr: Box::new(Expr::Literal(crate::value::Value::Bool(true))),
+            is_bind: false,
         });
         return Ok((
             r,
@@ -1796,7 +1828,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, cond) = condition_expr(r)?;
         let (r, _) = ws(r)?;
-        let (r, (param, _param_def, params, _rw_block)) = parse_for_params(r)?;
+        let (r, (param, _param_def, params, _rw_block, _explicit_zero)) = parse_for_params(r)?;
         let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
         let (r, _) = ws(r)?;
@@ -1819,6 +1851,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
         let step = repeat_param.map(|name| Expr::AssignExpr {
             name,
             expr: Box::new(Expr::Literal(crate::value::Value::Bool(true))),
+            is_bind: false,
         });
         return Ok((
             r,
@@ -1948,7 +1981,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     // Check for optional pointy block: -> $param { ... }, -> \param { ... },
     // or -> (SIGNATURE) { ... } (sub-signature destructuring)
     let (rest, param_name, param_def) = if rest.starts_with("->") || rest.starts_with("<->") {
-        let (r, (param, param_def, _params, _rw_block)) = parse_for_params(rest)?;
+        let (r, (param, param_def, _params, _rw_block, _explicit_zero)) = parse_for_params(rest)?;
         (r, param, param_def)
     } else {
         (rest, None, None)

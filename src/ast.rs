@@ -294,6 +294,10 @@ pub(crate) enum Expr {
     AssignExpr {
         name: String,
         expr: Box<Expr>,
+        /// True when parsed from `:=` (bind) rather than `=` (assign).
+        /// When `true`, the expression should rebind the variable rather
+        /// than write through any existing alias.
+        is_bind: bool,
     },
     Unary {
         op: TokenKind,
@@ -531,6 +535,9 @@ pub(crate) enum Stmt {
         mode: ForMode,
         /// True when `<->` is used, making all params rw.
         rw_block: bool,
+        /// True when `-> {}` (empty pointy block) was used, meaning the block
+        /// explicitly declares zero parameters. Passing any argument should throw.
+        explicit_zero_params: bool,
     },
     Say(Vec<Expr>),
     Put(Vec<Expr>),

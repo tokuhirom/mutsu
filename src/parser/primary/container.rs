@@ -55,6 +55,7 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
                     Expr::AssignExpr {
                         name: assign_name,
                         expr: Box::new(rhs),
+                        is_bind: false,
                     },
                 )
             } else if let Some(stripped) = r2.strip_prefix("::=").or_else(|| r2.strip_prefix(":="))
@@ -67,6 +68,7 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
                     Expr::AssignExpr {
                         name: assign_name,
                         expr: Box::new(rhs),
+                        is_bind: false,
                     },
                 )
             } else if let Some((stripped, op)) =
@@ -84,6 +86,7 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
                             op: op.token_kind(),
                             right: Box::new(rhs),
                         }),
+                        is_bind: false,
                     },
                 )
             } else {

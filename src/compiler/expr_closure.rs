@@ -232,6 +232,7 @@ impl Compiler {
                     modifier: None,
                     quoted: false,
                 }),
+                is_bind: false,
             };
             self.compile_expr(&rewritten);
             return;

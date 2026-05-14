@@ -420,6 +420,7 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             Expr::AssignExpr {
                 name,
                 expr: Box::new(rhs),
+                is_bind: false,
             },
         )),
         Expr::ArrayVar(name) => Ok((
@@ -427,6 +428,7 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             Expr::AssignExpr {
                 name: format!("@{}", name),
                 expr: Box::new(rhs),
+                is_bind: false,
             },
         )),
         Expr::HashVar(name) => Ok((
@@ -434,6 +436,7 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             Expr::AssignExpr {
                 name: format!("%{}", name),
                 expr: Box::new(rhs),
+                is_bind: false,
             },
         )),
         Expr::Index {
@@ -491,6 +494,7 @@ fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             Expr::AssignExpr {
                 name,
                 expr: Box::new(rhs),
+                is_bind: false,
             },
         )),
         Expr::CallOn { target, args } => Ok((
@@ -548,14 +552,17 @@ fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
         Expr::Var(name) => Expr::AssignExpr {
             name,
             expr: Box::new(value),
+            is_bind: false,
         },
         Expr::ArrayVar(name) => Expr::AssignExpr {
             name: format!("@{}", name),
             expr: Box::new(value),
+            is_bind: false,
         },
         Expr::HashVar(name) => Expr::AssignExpr {
             name: format!("%{}", name),
             expr: Box::new(value),
+            is_bind: false,
         },
         Expr::Index {
             target,
@@ -639,6 +646,7 @@ fn build_compound_assign_target_expr(target: Expr, op_name: &str, value: Expr) -
         Expr::Var(name) => Expr::AssignExpr {
             name: name.clone(),
             expr: Box::new(compound_assigned_value_expr(Expr::Var(name), op, value)),
+            is_bind: false,
         },
         Expr::ArrayVar(name) => Expr::AssignExpr {
             name: format!("@{}", name.clone()),
@@ -647,10 +655,12 @@ fn build_compound_assign_target_expr(target: Expr, op_name: &str, value: Expr) -
                 op,
                 value,
             )),
+            is_bind: false,
         },
         Expr::HashVar(name) => Expr::AssignExpr {
             name: format!("%{}", name.clone()),
             expr: Box::new(compound_assigned_value_expr(Expr::HashVar(name), op, value)),
+            is_bind: false,
         },
         Expr::Index {
             target,
@@ -681,23 +691,40 @@ fn build_compound_assign_target_expr(target: Expr, op_name: &str, value: Expr) -
                 value: Box::new(compound_assigned_value_expr(lhs_expr, op, value)),
             }
         }
-        Expr::AssignExpr { name, expr } => {
+        Expr::AssignExpr {
+            name,
+            expr,
+            is_bind: _,
+        } => {
             if op_name == "=" {
                 return Expr::AssignExpr {
                     name,
                     expr: Box::new(value),
+                    is_bind: false,
                 };
             }
             let Some(op) = compound_assign_op_from_name(op_name) else {
-                return assignment_ro_expr(Expr::AssignExpr { name, expr }, value);
+                return assignment_ro_expr(
+                    Expr::AssignExpr {
+                        name,
+                        expr,
+                        is_bind: false,
+                    },
+                    value,
+                );
             };
             Expr::AssignExpr {
                 name: name.clone(),
                 expr: Box::new(compound_assigned_value_expr(
-                    Expr::AssignExpr { name, expr },
+                    Expr::AssignExpr {
+                        name,
+                        expr,
+                        is_bind: false,
+                    },
                     op,
                     value,
                 )),
+                is_bind: false,
             }
         }
         Expr::MethodCall {
@@ -739,14 +766,17 @@ fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Expr> {
         Expr::Var(name) => Some(Expr::AssignExpr {
             name,
             expr: Box::new(rhs),
+            is_bind: false,
         }),
         Expr::ArrayVar(name) => Some(Expr::AssignExpr {
             name: format!("@{}", name),
             expr: Box::new(rhs),
+            is_bind: false,
         }),
         Expr::HashVar(name) => Some(Expr::AssignExpr {
             name: format!("%{}", name),
             expr: Box::new(rhs),
+            is_bind: false,
         }),
         Expr::Index {
             target,
@@ -1649,6 +1679,7 @@ fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
         Expr::Var(name) => Expr::AssignExpr {
             name,
             expr: Box::new(source),
+            is_bind: false,
         },
         Expr::ArrayVar(name) => Expr::AssignExpr {
             name: format!("@{}", name),
@@ -1656,14 +1687,17 @@ fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
                 name: Symbol::intern("__mutsu_feed_array_assign"),
                 args: vec![source],
             }),
+            is_bind: false,
         },
         Expr::HashVar(name) => Expr::AssignExpr {
             name: format!("%{}", name),
             expr: Box::new(source),
+            is_bind: false,
         },
         Expr::CodeVar(name) => Expr::AssignExpr {
             name: format!("&{}", name),
             expr: Box::new(source),
+            is_bind: false,
         },
         Expr::Index {
             target,
@@ -1711,6 +1745,7 @@ fn build_append_feed_expr(source: Expr, sink: Expr) -> Expr {
                 name: Symbol::intern("__mutsu_feed_append"),
                 args: vec![Expr::Var(name), source],
             }),
+            is_bind: false,
         },
         Expr::ArrayVar(name) => Expr::AssignExpr {
             name: format!("@{}", name.clone()),
@@ -1718,6 +1753,7 @@ fn build_append_feed_expr(source: Expr, sink: Expr) -> Expr {
                 name: Symbol::intern("__mutsu_feed_append"),
                 args: vec![Expr::ArrayVar(name), source],
             }),
+            is_bind: false,
         },
         Expr::HashVar(name) => Expr::AssignExpr {
             name: format!("%{}", name.clone()),
@@ -1725,6 +1761,7 @@ fn build_append_feed_expr(source: Expr, sink: Expr) -> Expr {
                 name: Symbol::intern("__mutsu_feed_append"),
                 args: vec![Expr::HashVar(name), source],
             }),
+            is_bind: false,
         },
         Expr::Index {
             target,
