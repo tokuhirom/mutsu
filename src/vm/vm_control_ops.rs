@@ -16,6 +16,8 @@ pub(super) struct ForLoopSpec {
     pub(super) kv_mode: bool,
     pub(super) source_var_names: Vec<String>,
     pub(super) autothread_junctions: bool,
+    /// When true, `-> {}` was used — throw on any items.
+    pub(super) explicit_zero_params: bool,
 }
 
 pub(super) struct WhileLoopSpec {
@@ -312,6 +314,13 @@ impl VM {
         } else {
             raw_items
         };
+        // When `-> {}` was used (explicit zero params), throw if any items would be passed.
+        if spec.explicit_zero_params && !items.is_empty() {
+            return Err(RuntimeError::new(format!(
+                "Too many positionals passed; expected 0 arguments but got {}",
+                items.len()
+            )));
+        }
         self.env_dirty = true;
         let body_start = *ip + 1;
         let loop_end = spec.body_end as usize;

@@ -685,14 +685,17 @@ fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Expr> {
         Expr::Var(name) => Some(Expr::AssignExpr {
             name,
             expr: Box::new(rhs),
+            is_bind: false,
         }),
         Expr::ArrayVar(name) => Some(Expr::AssignExpr {
             name: format!("@{}", name),
             expr: Box::new(rhs),
+            is_bind: false,
         }),
         Expr::HashVar(name) => Some(Expr::AssignExpr {
             name: format!("%{}", name),
             expr: Box::new(rhs),
+            is_bind: false,
         }),
         Expr::Index {
             target,
@@ -718,7 +721,11 @@ pub(crate) fn rewrite_scalar_assignment_rhs_as_sink(name: String, rhs: Expr) -> 
         } if name.starts_with('$') && matches!(meta.as_str(), "X" | "Z") => Some(Expr::MetaOp {
             meta,
             op,
-            left: Box::new(Expr::AssignExpr { name, expr: left }),
+            left: Box::new(Expr::AssignExpr {
+                name,
+                expr: left,
+                is_bind: false,
+            }),
             right,
         }),
         _ => None,
@@ -798,30 +805,42 @@ pub(crate) fn build_compound_assign_expr(
         other => other,
     };
     Ok(match lhs {
-        Expr::AssignExpr { name, expr } => {
+        Expr::AssignExpr {
+            name,
+            expr,
+            is_bind: _,
+        } => {
             // ($x += 2) *= 3 → first evaluate inner assign, then apply outer op
             // to the variable's value and assign back.
             // This becomes: { let _ = ($x = $x + 2); $x = $x * 3 }
             Expr::AssignExpr {
                 name: name.clone(),
                 expr: Box::new(Expr::Binary {
-                    left: Box::new(Expr::AssignExpr { name, expr }),
+                    left: Box::new(Expr::AssignExpr {
+                        name,
+                        expr,
+                        is_bind: false,
+                    }),
                     op: op.token_kind(),
                     right: Box::new(rhs),
                 }),
+                is_bind: false,
             }
         }
         Expr::Var(name) => Expr::AssignExpr {
             name: name.clone(),
             expr: Box::new(compound_assigned_value_expr(Expr::Var(name), op, rhs)),
+            is_bind: false,
         },
         Expr::ArrayVar(name) => Expr::AssignExpr {
             name: format!("@{}", name),
             expr: Box::new(compound_assigned_value_expr(Expr::ArrayVar(name), op, rhs)),
+            is_bind: false,
         },
         Expr::HashVar(name) => Expr::AssignExpr {
             name: format!("%{}", name),
             expr: Box::new(compound_assigned_value_expr(Expr::HashVar(name), op, rhs)),
+            is_bind: false,
         },
         Expr::Index { target, index, .. } => {
             return Ok(compound_index_assign_expr(*target, *index, |lhs_expr| {
@@ -873,6 +892,7 @@ pub(crate) fn build_compound_assign_expr(
         Expr::BareWord(name) => Expr::AssignExpr {
             name: name.clone(),
             expr: Box::new(compound_assigned_value_expr(Expr::BareWord(name), op, rhs)),
+            is_bind: false,
         },
         Expr::BracketArray(items, tc) => Expr::Binary {
             left: Box::new(Expr::BracketArray(items, tc)),
@@ -943,6 +963,7 @@ fn build_custom_compound_assign_expr(
                 right: vec![rhs],
                 modifier: None,
             }),
+            is_bind: false,
         },
         Expr::ArrayVar(name) => Expr::AssignExpr {
             name: format!("@{}", name.clone()),
@@ -952,6 +973,7 @@ fn build_custom_compound_assign_expr(
                 right: vec![rhs],
                 modifier: None,
             }),
+            is_bind: false,
         },
         Expr::HashVar(name) => Expr::AssignExpr {
             name: format!("%{}", name.clone()),
@@ -961,6 +983,7 @@ fn build_custom_compound_assign_expr(
                 right: vec![rhs],
                 modifier: None,
             }),
+            is_bind: false,
         },
         Expr::Index { target, index, .. } => {
             return Ok(compound_index_assign_expr(*target, *index, |lhs_expr| {
@@ -992,6 +1015,7 @@ fn build_meta_assign_expr(lhs: Expr, meta: String, op: String, rhs: Expr) -> Res
                 left: Box::new(Expr::Var(name)),
                 right: Box::new(rhs),
             }),
+            is_bind: false,
         },
         Expr::ArrayVar(name) => Expr::AssignExpr {
             name: format!("@{}", name.clone()),
@@ -1001,6 +1025,7 @@ fn build_meta_assign_expr(lhs: Expr, meta: String, op: String, rhs: Expr) -> Res
                 left: Box::new(Expr::ArrayVar(name)),
                 right: Box::new(rhs),
             }),
+            is_bind: false,
         },
         Expr::HashVar(name) => Expr::AssignExpr {
             name: format!("%{}", name.clone()),
@@ -1010,6 +1035,7 @@ fn build_meta_assign_expr(lhs: Expr, meta: String, op: String, rhs: Expr) -> Res
                 left: Box::new(Expr::HashVar(name)),
                 right: Box::new(rhs),
             }),
+            is_bind: false,
         },
         Expr::Index {
             target,
@@ -1081,7 +1107,7 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                         is_positional,
                     },
                 ));
-            } else if let Expr::AssignExpr { name, expr } = inner_assign {
+            } else if let Expr::AssignExpr { name, expr, .. } = inner_assign {
                 let mut items = vec![*expr];
                 let mut r = rest_inner;
                 while r.starts_with(',') && !r.starts_with(",,") {
@@ -1102,6 +1128,7 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                     Expr::AssignExpr {
                         name,
                         expr: Box::new(Expr::ArrayLiteral(items)),
+                        is_bind: false,
                     },
                 ));
             }
@@ -1193,14 +1220,17 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Var(name) => Expr::AssignExpr {
                 name,
                 expr: Box::new(rhs),
+                is_bind: true,
             },
             Expr::ArrayVar(name) => Expr::AssignExpr {
                 name: format!("@{}", name),
                 expr: Box::new(rhs),
+                is_bind: true,
             },
             Expr::HashVar(name) => Expr::AssignExpr {
                 name: format!("%{}", name),
                 expr: Box::new(rhs),
+                is_bind: true,
             },
             Expr::Index {
                 target,
@@ -1271,14 +1301,17 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         Expr::Var(name) => Expr::AssignExpr {
             name,
             expr: Box::new(rhs),
+            is_bind: false,
         },
         Expr::ArrayVar(name) => Expr::AssignExpr {
             name: format!("@{}", name),
             expr: Box::new(rhs),
+            is_bind: false,
         },
         Expr::HashVar(name) => Expr::AssignExpr {
             name: format!("%{}", name),
             expr: Box::new(rhs),
+            is_bind: false,
         },
         Expr::Index {
             target,
@@ -1346,12 +1379,13 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         Expr::BareWord(name) => Expr::AssignExpr {
             name,
             expr: Box::new(rhs),
+            is_bind: false,
         },
         // Fallback for other lvalue expressions (e.g. HyperIndex %h{|| @a})
         other => callable_lvalue_assign_expr(other, Vec::new(), rhs),
     };
     if is_atomic {
-        if let Expr::AssignExpr { name, expr } = expr {
+        if let Expr::AssignExpr { name, expr, .. } = expr {
             return Ok((
                 rest,
                 Expr::Call {
@@ -1573,6 +1607,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 Expr::AssignExpr {
                     name,
                     expr: Box::new(method_expr),
+                    is_bind: false,
                 },
             ));
         }
@@ -1653,6 +1688,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     modifier: None,
                     quoted: false,
                 }),
+                is_bind: false,
             },
         ));
     }
@@ -1673,6 +1709,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     op,
                     rhs,
                 )),
+                is_bind: false,
             },
         ));
     }
@@ -1699,6 +1736,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                         compound_op,
                         rhs,
                     )),
+                    is_bind: false,
                 },
             ));
         }
@@ -1717,6 +1755,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     left: Box::new(var_expr),
                     right: Box::new(rhs),
                 }),
+                is_bind: false,
             },
         ));
     }
@@ -1742,6 +1781,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     left: Box::new(var_expr),
                     right: Box::new(rhs),
                 }),
+                is_bind: false,
             },
         ));
     }
@@ -1763,6 +1803,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     right: vec![rhs],
                     modifier: None,
                 }),
+                is_bind: false,
             },
         ));
     }
@@ -1778,6 +1819,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             Expr::AssignExpr {
                 name,
                 expr: Box::new(rhs),
+                is_bind: true,
             },
         ));
     }
@@ -1835,6 +1877,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 None => Expr::AssignExpr {
                     name,
                     expr: Box::new(rhs),
+                    is_bind: false,
                 },
             },
         ));

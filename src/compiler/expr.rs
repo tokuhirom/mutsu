@@ -258,8 +258,12 @@ impl Compiler {
                 self.compile_expr_postfix_dec(expr);
             }
             // Assignment as expression
-            Expr::AssignExpr { name, expr } => {
-                self.compile_expr_assign(name, expr);
+            Expr::AssignExpr {
+                name,
+                expr,
+                is_bind,
+            } => {
+                self.compile_expr_assign(name, expr, *is_bind);
             }
             // Capture variable ($0, $1, etc.)
             Expr::CaptureVar(name) => {

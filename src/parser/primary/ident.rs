@@ -164,6 +164,7 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
             label,
             mode,
             rw_block,
+            explicit_zero_params,
         } => Stmt::For {
             iterable,
             param,
@@ -173,6 +174,7 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
             label,
             mode,
             rw_block,
+            explicit_zero_params,
         },
         Stmt::Given { topic, body } => Stmt::Given {
             topic,

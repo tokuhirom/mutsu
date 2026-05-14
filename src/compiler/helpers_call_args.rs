@@ -100,7 +100,7 @@ impl Compiler {
     /// Compile a method call argument. Named args (AssignExpr) are
     /// compiled as Pair values so they survive VM execution.
     pub(super) fn compile_method_arg(&mut self, arg: &Expr) {
-        if let Expr::AssignExpr { name, expr } = arg {
+        if let Expr::AssignExpr { name, expr, .. } = arg {
             // `foo(arg = 1)` in method-call argument position is treated as a named
             // argument only for sigilless identifiers. Sigiled targets (`$x = ...`,
             // `@x = ...`, `%x = ...`) are real assignment expressions.

@@ -539,6 +539,9 @@ pub(crate) enum OpCode {
         /// When true, Junction items are expanded into their eigenstates
         /// (parameter type is Any or more specific, not Mu or Junction).
         autothread_junctions: bool,
+        /// When true, the block explicitly declared zero parameters (`-> {}`).
+        /// Passing any argument should throw "Too many positionals passed".
+        explicit_zero_params: bool,
     },
     /// C-style loop: [cond opcodes][body opcodes][step opcodes].
     /// Layout after CStyleLoop: cond at [ip+1..cond_end), body at [cond_end..step_start),

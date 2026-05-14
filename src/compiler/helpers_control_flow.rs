@@ -136,42 +136,50 @@ impl Compiler {
     }
 
     pub(super) fn body_mutates_topic(stmts: &[Stmt]) -> bool {
-        fn expr_mutates_topic(expr: &Expr) -> bool {
+        // Only check if the *first* statement assigns `$_` directly.
+        // This detects `with`-style topic switches (where the parser inserts a
+        // `$_ = <expr>` as the first statement of the then-branch) but avoids
+        // falsely triggering on user code like `if COND { ...; $_ = 2 }` where
+        // the assignment is NOT at the start. The Block wrapping created when
+        // this returns true causes BlockScope to save/restore `$_`, isolating
+        // the `with` topic from the outer scope.
+        matches!(stmts.first(), Some(Stmt::Assign { name, .. }) if name == "_")
+    }
+
+    /// Returns true only if the body contains a `$_ :=` rebind — used by the
+    /// `while` loop to decide whether to wrap the body in a `Stmt::Block` so
+    /// that the rebind is lexically scoped per iteration, without clobbering
+    /// the outer topic. Unlike `body_mutates_topic`, plain `$_ =` (assignment)
+    /// does NOT trigger Block wrapping for while loops.
+    pub(super) fn body_rebinds_topic(stmts: &[Stmt]) -> bool {
+        fn expr_rebinds_topic(expr: &Expr) -> bool {
             match expr {
-                Expr::AssignExpr { name, .. } => name == "_",
-                Expr::Unary { expr, .. } => expr_mutates_topic(expr),
+                Expr::AssignExpr { name, is_bind, .. } => name == "_" && *is_bind,
+                Expr::Unary { expr, .. } => expr_rebinds_topic(expr),
                 Expr::Binary { left, right, .. } => {
-                    expr_mutates_topic(left) || expr_mutates_topic(right)
+                    expr_rebinds_topic(left) || expr_rebinds_topic(right)
                 }
                 Expr::MethodCall { target, args, .. } => {
-                    expr_mutates_topic(target) || args.iter().any(expr_mutates_topic)
+                    expr_rebinds_topic(target) || args.iter().any(expr_rebinds_topic)
                 }
-                Expr::Call { args, .. } => args.iter().any(expr_mutates_topic),
-                Expr::IndexAssign {
-                    target,
-                    index,
-                    value,
-                    ..
-                } => {
-                    expr_mutates_topic(target)
-                        || expr_mutates_topic(index)
-                        || expr_mutates_topic(value)
-                }
+                Expr::Call { args, .. } => args.iter().any(expr_rebinds_topic),
                 _ => false,
             }
         }
 
-        fn stmt_mutates_topic(stmt: &Stmt) -> bool {
+        fn stmt_rebinds_topic(stmt: &Stmt) -> bool {
             match stmt {
-                Stmt::Assign { name, .. } => name == "_",
-                Stmt::Expr(expr) => expr_mutates_topic(expr),
+                Stmt::Assign { name, op, .. } => {
+                    name == "_" && matches!(op, crate::ast::AssignOp::Bind)
+                }
+                Stmt::Expr(expr) => expr_rebinds_topic(expr),
                 Stmt::If {
                     then_branch,
                     else_branch,
                     ..
                 } => {
-                    super::Compiler::body_mutates_topic(then_branch)
-                        || super::Compiler::body_mutates_topic(else_branch)
+                    super::Compiler::body_rebinds_topic(then_branch)
+                        || super::Compiler::body_rebinds_topic(else_branch)
                 }
                 Stmt::While { body, .. }
                 | Stmt::Block(body)
@@ -180,13 +188,13 @@ impl Compiler {
                 | Stmt::Control(body)
                 | Stmt::When { body, .. }
                 | Stmt::Given { body, .. }
-                | Stmt::Default(body) => super::Compiler::body_mutates_topic(body),
-                Stmt::For { body, .. } => super::Compiler::body_mutates_topic(body),
+                | Stmt::Default(body) => super::Compiler::body_rebinds_topic(body),
+                Stmt::For { body, .. } => super::Compiler::body_rebinds_topic(body),
                 _ => false,
             }
         }
 
-        stmts.iter().any(stmt_mutates_topic)
+        stmts.iter().any(stmt_rebinds_topic)
     }
 
     /// Compile a block body, automatically wrapping in implicit try if it contains

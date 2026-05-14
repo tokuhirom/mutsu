@@ -2,7 +2,29 @@ use super::*;
 
 impl Compiler {
     /// Compile AssignExpr: assignment as expression.
-    pub(super) fn compile_expr_assign(&mut self, name: &str, expr: &Expr) {
+    pub(super) fn compile_expr_assign(&mut self, name: &str, expr: &Expr, is_bind: bool) {
+        // When `is_bind` is true, this is a `:=` rebind in expression context
+        // (e.g., `if $_ := $c { }`). We compile it like `Stmt::Assign { op: Bind }`
+        // so the old alias is broken and a new one is set up.
+        if is_bind {
+            // Signal rebind context for cleanup of old bind pairs / aliases.
+            self.code.emit(OpCode::MarkRebindContext);
+            self.compile_call_arg(expr);
+            self.emit_set_named_var(name);
+            // Leave the assigned value on the stack (expression context).
+            if let Some(&slot) = self.local_map.get(name) {
+                self.code.emit(OpCode::GetLocal(slot));
+            } else {
+                let name_idx = self
+                    .code
+                    .add_constant(Value::str(self.qualify_variable_name(name)));
+                self.code.emit(OpCode::GetGlobal(name_idx));
+            }
+            // Tag for container-ref consumers.
+            let name_idx = self.code.add_constant(Value::str(name.to_string()));
+            self.code.emit(OpCode::TagContainerRef(name_idx));
+            return;
+        }
         // $.attr = expr — In Raku, this first resolves self.attr (method call),
         // then assigns to the resulting lvalue container. If the accessor doesn't
         // exist, the method call throws. Compile as: first call self.attr() to

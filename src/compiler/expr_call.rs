@@ -580,6 +580,7 @@ impl Compiler {
                         target: Box::new(args[1].clone()),
                         args: vec![args[0].clone()],
                     }),
+                    is_bind: false,
                 };
                 self.compile_expr(&assign_expr);
             } else {

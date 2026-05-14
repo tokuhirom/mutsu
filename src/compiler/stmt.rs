@@ -956,16 +956,26 @@ impl Compiler {
                 for s in &pre_stmts {
                     self.compile_stmt(s);
                 }
+                // When the loop body contains `$_ := expr` (topic rebind via `:=`), wrap
+                // the body in a BlockScope so the rebind is lexically scoped per iteration.
+                // BlockScope naturally prevents `$_` from propagating out.
+                // Note: plain `$_ =` does NOT trigger wrapping — that would break `with`-block
+                // topic restoration which relies on `body_mutates_topic` for isolation.
+                let body_rebinds_topic = Self::body_rebinds_topic(&loop_body);
                 let loop_idx = self.code.emit(OpCode::WhileLoop {
                     cond_end: 0,
                     body_end: 0,
                     label: label.clone(),
                     collect: false,
-                    isolate_topic: Self::body_mutates_topic(&loop_body),
+                    isolate_topic: false,
                 });
                 self.compile_condition_expr(cond);
                 self.code.patch_while_cond_end(loop_idx);
-                self.compile_body_with_implicit_try(&loop_body);
+                if body_rebinds_topic {
+                    self.compile_stmt(&Stmt::Block(loop_body.clone()));
+                } else {
+                    self.compile_body_with_implicit_try(&loop_body);
+                }
                 self.code.patch_loop_end(loop_idx);
                 for s in &post_stmts {
                     self.compile_stmt(s);
@@ -980,6 +990,7 @@ impl Compiler {
                 label,
                 mode,
                 rw_block,
+                explicit_zero_params,
             } => {
                 let (pre_stmts, mut loop_body, post_stmts) =
                     self.expand_loop_phasers(body, label.as_deref());
@@ -1069,6 +1080,7 @@ impl Compiler {
                     kv_mode,
                     source_var_names,
                     autothread_junctions,
+                    explicit_zero_params: *explicit_zero_params,
                 });
                 self.compile_body_with_implicit_try(&loop_body);
                 self.code.patch_loop_end(loop_idx);
