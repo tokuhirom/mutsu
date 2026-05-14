@@ -404,8 +404,46 @@ fn range_divide_float(range_val: &Value, n: f64) -> Option<Value> {
     })
 }
 
+// ── Mixin-Range arithmetic helper ────────────────────────────────────
+/// If the left operand is a Mixin wrapping a Range (e.g. `(2..^5) but Meows`),
+/// perform the arithmetic on the inner Range and re-wrap the result with the
+/// same Mixin. Returns `None` if neither operand is a Mixin-wrapped Range.
+fn mixin_range_arith<F>(left: Value, right: Value, op: F) -> Option<Result<Value, RuntimeError>>
+where
+    F: Fn(Value, Value) -> Result<Value, RuntimeError>,
+{
+    match &left {
+        Value::Mixin(inner, mixins) if inner.is_range() => {
+            let inner_val = (**inner).clone();
+            let mix_clone = (**mixins).clone();
+            Some(op(inner_val, right).map(|r| Value::mixin(r, mix_clone)))
+        }
+        _ => None,
+    }
+}
+
+/// Same as `mixin_range_arith` but for non-Result arithmetic functions.
+fn mixin_range_arith_val<F>(left: Value, right: Value, op: F) -> Option<Value>
+where
+    F: Fn(Value, Value) -> Value,
+{
+    match &left {
+        Value::Mixin(inner, mixins) if inner.is_range() => {
+            let result = op((**inner).clone(), right);
+            Some(Value::mixin(result, (**mixins).clone()))
+        }
+        _ => None,
+    }
+}
+
 // ── Arithmetic operators ─────────────────────────────────────────────
 pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError> {
+    // Mixin-wrapped Range + Real (or Real + Mixin Range): perform Range arithmetic and re-wrap
+    if let Some(result) = mixin_range_arith(left.clone(), right.clone(), arith_add)
+        .or_else(|| mixin_range_arith(right.clone(), left.clone(), arith_add))
+    {
+        return result;
+    }
     // Range + Int: shift both bounds
     match (&left, &right) {
         (Value::Range(a, b), Value::Int(n)) => return Ok(Value::Range(a + n, b + n)),
@@ -652,6 +690,10 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
         let (y, m, d) = temporal::epoch_days_to_civil(new_days);
         return temporal::make_date(y, m, d);
     }
+    // Mixin-wrapped Range - Real: perform Range arithmetic and re-wrap
+    if let Some(result) = mixin_range_arith_val(left.clone(), right.clone(), arith_sub) {
+        return result;
+    }
     match (&left, &right) {
         (Value::Range(a, b), Value::Int(n)) => return Value::Range(a - n, b - n),
         (Value::RangeExcl(a, b), Value::Int(n)) => return Value::RangeExcl(a - n, b - n),
@@ -750,6 +792,12 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
 }
 
 pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
+    // Mixin-wrapped Range * Real: perform Range arithmetic and re-wrap
+    if let Some(result) = mixin_range_arith_val(left.clone(), right.clone(), arith_mul)
+        .or_else(|| mixin_range_arith_val(right.clone(), left.clone(), arith_mul))
+    {
+        return result;
+    }
     // Range * Numeric: scale both bounds, preserving exclusivity
     if let Some(range) = range_scale(&left, &right).or_else(|| range_scale(&right, &left)) {
         return range;
@@ -829,6 +877,10 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
 }
 
 pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError> {
+    // Mixin-wrapped Range / Real: perform Range arithmetic and re-wrap
+    if let Some(result) = mixin_range_arith(left.clone(), right.clone(), arith_div) {
+        return result;
+    }
     // Range / Numeric: scale both bounds down
     if let Some(range) = range_divide(&left, &right) {
         return Ok(range);
