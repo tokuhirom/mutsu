@@ -392,106 +392,33 @@ pub(crate) fn builtin_val(args: &[Value]) -> Value {
         Value::mixin(val, mixins)
     }
 
-    // Try complex (must end with 'i')
-    if let Some(complex) = try_parse_complex(word) {
-        return make_allomorphic(complex, &original);
+    // Try Unicode vulgar fractions (single character like ½, ⅓, ¼, etc.)
+    if let Some(rat_val) = try_parse_unicode_fraction(word) {
+        return make_allomorphic(rat_val, &original);
     }
 
-    // Try integer
-    if let Ok(i) = word.parse::<i64>() {
-        return make_allomorphic(Value::Int(i), &original);
+    // Use the comprehensive Raku numeric string parser
+    if let Some(numeric) = crate::runtime::str_numeric::parse_raku_str_to_numeric(word) {
+        return make_allomorphic(numeric, &original);
     }
 
-    // Try Num (scientific notation with e/E)
-    if (word.contains('e') || word.contains('E')) && !word.ends_with('i') {
-        // Normalize U+2212 MINUS SIGN to ASCII minus
-        let normalized = word.replace('\u{2212}', "-");
-        if let Ok(f) = normalized.parse::<f64>() {
-            return make_allomorphic(Value::Num(f), &original);
-        }
-    }
-
-    // Try Rat (fraction notation like "1/5")
-    if word.contains('/') && !word.contains('.') && !word.contains('e') && !word.contains('E') {
-        let parts: Vec<&str> = word.splitn(2, '/').collect();
-        if parts.len() == 2
-            && let (Ok(n), Ok(d)) = (
-                parts[0].trim().parse::<i64>(),
-                parts[1].trim().parse::<i64>(),
-            )
-            && d != 0
-        {
-            return make_allomorphic(crate::value::make_rat(n, d), &original);
-        }
-    }
-
-    // Try Rat (decimal without exponent)
-    if word.contains('.') && !word.contains('e') && !word.contains('E') {
-        let normalized = word.replace('\u{2212}', "-");
-        if let Ok(f) = normalized.parse::<f64>() {
-            // Approximate as Rat: use fixed denominator approach
-            let scale = 10i64.pow(
-                normalized
-                    .find('.')
-                    .map(|p| normalized.len() - p - 1)
-                    .unwrap_or(0) as u32,
-            );
-            let numer = (f * scale as f64).round() as i64;
-            return make_allomorphic(crate::value::make_rat(numer, scale), &original);
-        }
-    }
-
-    // Plain string
+    // Plain string (not parseable as a number)
     Value::str(original.to_string())
 }
 
-fn try_parse_complex(word: &str) -> Option<Value> {
-    // Handle both "1+2i" and "1+Inf\i" / "1-Inf\i" / "1+NaN\i" forms
-    let (without_i, backslash_i) = if let Some(stripped) = word.strip_suffix("\\i") {
-        (stripped, true)
-    } else if let Some(stripped) = word.strip_suffix('i') {
-        (stripped, false)
-    } else {
+/// Try to parse a single Unicode vulgar fraction character (½, ⅓, ¼, etc.)
+fn try_parse_unicode_fraction(s: &str) -> Option<Value> {
+    let mut chars = s.chars();
+    let ch = chars.next()?;
+    // Must be exactly one character
+    if chars.next().is_some() {
         return None;
-    };
-
-    // Pure imaginary
-    if let Ok(imag) = without_i.parse::<f64>() {
-        return Some(Value::Complex(0.0, imag));
     }
-    // Handle pure imaginary with special values: "Inf\i", "-Inf\i", "NaN\i"
-    if backslash_i && let Some(imag) = parse_special_float(without_i) {
-        return Some(Value::Complex(0.0, imag));
+    let (n, d) = crate::builtins::unicode::unicode_rat_value(ch)?;
+    if d == 0 {
+        return None;
     }
-
-    // real+imag i
-    let bytes = without_i.as_bytes();
-    let mut split_pos = None;
-    for i in 1..bytes.len() {
-        if (bytes[i] == b'+' || bytes[i] == b'-') && bytes[i - 1] != b'e' && bytes[i - 1] != b'E' {
-            split_pos = Some(i);
-        }
-    }
-    let split_pos = split_pos?;
-    let real_str = &without_i[..split_pos];
-    let imag_str = &without_i[split_pos..];
-    let real: f64 = real_str.parse().ok()?;
-    let imag: f64 = if backslash_i {
-        // For \i form, imaginary part may be special float like "+Inf", "-Inf", "+NaN"
-        parse_special_float(imag_str).or_else(|| imag_str.parse().ok())?
-    } else {
-        imag_str.parse().ok()?
-    };
-    Some(Value::Complex(real, imag))
-}
-
-fn parse_special_float(s: &str) -> Option<f64> {
-    match s {
-        "Inf" | "+Inf" => Some(f64::INFINITY),
-        "-Inf" => Some(f64::NEG_INFINITY),
-        "NaN" | "+NaN" | "-NaN" => Some(f64::NAN),
-        _ => None,
-    }
+    Some(crate::value::make_rat(n, d))
 }
 
 impl Interpreter {

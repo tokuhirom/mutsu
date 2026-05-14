@@ -18,6 +18,15 @@ pub(crate) fn parse_raku_str_to_numeric(input: &str) -> Option<Value> {
     let normalized = normalize_minus(s);
     let s = normalized.as_str();
 
+    // If the string contains Unicode decimal digits (Nd category), normalize
+    // them to their ASCII equivalents before further parsing.
+    if s.chars().any(|c| {
+        !c.is_ascii() && crate::builtins::unicode::unicode_decimal_digit_value(c).is_some()
+    }) && let Some(ascii_str) = normalize_unicode_decimal_digits(s)
+    {
+        return parse_raku_str_to_numeric(&ascii_str);
+    }
+
     // Try Complex first (contains `i`)
     if let Some(v) = try_parse_complex(s) {
         return Some(v);
@@ -70,6 +79,22 @@ fn normalize_minus(s: &str) -> String {
     } else {
         s.to_string()
     }
+}
+
+/// Normalize a string of Unicode decimal digits (Nd category) to ASCII digits.
+/// Returns None if any non-ASCII character is NOT a decimal digit (Nd).
+fn normalize_unicode_decimal_digits(s: &str) -> Option<String> {
+    let mut result = String::with_capacity(s.len());
+    for ch in s.chars() {
+        if ch.is_ascii() {
+            result.push(ch);
+        } else if let Some(d) = crate::builtins::unicode::unicode_decimal_digit_value(ch) {
+            result.push(char::from_digit(d, 10).unwrap());
+        } else {
+            return None;
+        }
+    }
+    Some(result)
 }
 
 /// Strip leading sign, returning (sign_multiplier, remaining_body).
@@ -306,8 +331,17 @@ fn try_parse_scientific(body: &str, sign: i32) -> Option<Value> {
     };
     let exp = exp_sign * exp_val;
 
-    let result = mantissa * 10f64.powi(exp);
-    let result = if sign < 0 { -result } else { result };
+    // Parse the full normalized string as f64 directly for best precision.
+    // Computing mantissa * 10^exp compounds floating-point rounding errors.
+    let mantissa_clean = mantissa_str.replace('_', "");
+    let full_str = format!("{}e{}", mantissa_clean, exp);
+    let result = if let Ok(f) = full_str.parse::<f64>() {
+        if sign < 0 { -f } else { f }
+    } else {
+        // Fallback (should not normally happen)
+        let r = mantissa * 10f64.powi(exp);
+        if sign < 0 { -r } else { r }
+    };
     Some(Value::Num(result))
 }
 
@@ -360,12 +394,23 @@ fn try_parse_decimal_rat(body: &str, sign: i32) -> Option<Value> {
     }
 
     // Construct as Rat: integer_part * 10^frac_len + frac_part / 10^frac_len
-    let int_val: i64 = int_clean.parse().ok()?;
-    let frac_val: i64 = frac_clean.parse().ok()?;
-    let denom: i64 = 10i64.checked_pow(frac_clean.len() as u32)?;
-    let numer = int_val * denom + frac_val;
-    let numer = if sign < 0 { -numer } else { numer };
-    Some(crate::value::make_rat(numer, denom))
+    // Use checked arithmetic to avoid overflow for large inputs; fall back to Num.
+    if let (Ok(int_val), Ok(frac_val), Some(denom)) = (
+        int_clean.parse::<i64>(),
+        frac_clean.parse::<i64>(),
+        10i64.checked_pow(frac_clean.len() as u32),
+    ) && let Some(numer) = int_val
+        .checked_mul(denom)
+        .and_then(|v| v.checked_add(frac_val))
+    {
+        let numer = if sign < 0 { -numer } else { numer };
+        return Some(crate::value::make_rat(numer, denom));
+    }
+    // Overflow or too many digits: fall back to f64 approximation
+    let combined = format!("{}.{}", int_clean, frac_clean);
+    let f: f64 = combined.parse().ok()?;
+    let f = if sign < 0 { -f } else { f };
+    Some(Value::Num(f))
 }
 
 /// Parse plain integer with underscores.
@@ -389,7 +434,7 @@ fn try_parse_plain_int(body: &str, sign: i32) -> Option<Value> {
     }
 }
 
-/// Parse complex number strings like `1+2i`, `-1-2i`, `3+Inf\i`, etc.
+/// Parse complex number strings like `1+2i`, `-1-2i`, `3+Inf\i`, `42i`, `42\i`, etc.
 fn try_parse_complex(s: &str) -> Option<Value> {
     // Must end with 'i' (or `\i`)
     if !s.ends_with('i') {
@@ -404,39 +449,55 @@ fn try_parse_complex(s: &str) -> Option<Value> {
         &s[..s.len() - 1]
     };
 
-    // Find the split point between real and imaginary parts.
-    // The imaginary part starts with a `+` or `-` that is NOT:
-    // - at position 0
-    // - right after an 'e' or 'E' (part of exponent)
-    let split = find_complex_split(without_i)?;
+    if let Some(split) = find_complex_split(without_i) {
+        // Has both real and imaginary parts: "42+34i", "-1-2i", etc.
+        let real_str = &without_i[..split];
+        let imag_str = &without_i[split..]; // includes the sign
 
-    let real_str = &without_i[..split];
-    let imag_str = &without_i[split..]; // includes the sign
+        // Parse real part
+        let real_val = parse_real_component(real_str)?;
 
-    // Parse real part
-    let real_val = parse_real_component(real_str)?;
-
-    // Parse imaginary part (strip leading sign)
-    let (imag_sign, imag_body) = strip_sign(imag_str);
-    let imag_val = if imag_body.is_empty() {
-        // bare +i or -i: not handled here (rakudo skips these too)
-        return None;
-    } else if imag_body == "Inf" || imag_body == "NaN" {
-        // Inf/NaN as imaginary component requires `\i` suffix
-        if !has_backslash_i {
+        // Parse imaginary part (strip leading sign)
+        let (imag_sign, imag_body) = strip_sign(imag_str);
+        let imag_val = if imag_body.is_empty() {
+            // bare +i or -i: not handled here (rakudo skips these too)
             return None;
-        }
-        if imag_body == "Inf" {
-            f64::INFINITY
+        } else if imag_body == "Inf" || imag_body == "NaN" {
+            // Inf/NaN as imaginary component requires `\i` suffix
+            if !has_backslash_i {
+                return None;
+            }
+            if imag_body == "Inf" {
+                f64::INFINITY
+            } else {
+                f64::NAN
+            }
         } else {
-            f64::NAN
-        }
+            parse_real_component_to_f64(imag_body)?
+        };
+        let imag_val = if imag_sign < 0 { -imag_val } else { imag_val };
+        Some(Value::Complex(real_val, imag_val))
     } else {
-        parse_real_component_to_f64(imag_body)?
-    };
-    let imag_val = if imag_sign < 0 { -imag_val } else { imag_val };
-
-    Some(Value::Complex(real_val, imag_val))
+        // Pure imaginary: "42i", "-3.5i", "4_2i", "Inf\i", etc.
+        let (imag_sign, imag_body) = strip_sign(without_i);
+        let imag_val = if imag_body == "Inf" {
+            if has_backslash_i {
+                f64::INFINITY
+            } else {
+                return None;
+            }
+        } else if imag_body == "NaN" {
+            if has_backslash_i {
+                f64::NAN
+            } else {
+                return None;
+            }
+        } else {
+            parse_real_component_to_f64(imag_body)?
+        };
+        let imag_val = if imag_sign < 0 { -imag_val } else { imag_val };
+        Some(Value::Complex(0.0, imag_val))
+    }
 }
 
 /// Find the index where the imaginary part starts (a `+` or `-` not part of exponent).
@@ -486,7 +547,14 @@ fn parse_real_component_to_f64(s: &str) -> Option<f64> {
         }
         let exp_val: i32 = exp_clean.parse().ok()?;
         let exp = exp_sign * exp_val;
-        let result = mantissa * 10f64.powi(exp);
+        // Parse the full normalized string for best precision.
+        let mantissa_clean = mantissa_str.replace('_', "");
+        let full_str = format!("{}e{}", mantissa_clean, exp);
+        let result = if let Ok(f) = full_str.parse::<f64>() {
+            f
+        } else {
+            mantissa * 10f64.powi(exp)
+        };
         return Some(if sign < 0 { -result } else { result });
     }
 
