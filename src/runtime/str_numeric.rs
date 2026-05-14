@@ -331,8 +331,17 @@ fn try_parse_scientific(body: &str, sign: i32) -> Option<Value> {
     };
     let exp = exp_sign * exp_val;
 
-    let result = mantissa * 10f64.powi(exp);
-    let result = if sign < 0 { -result } else { result };
+    // Parse the full normalized string as f64 directly for best precision.
+    // Computing mantissa * 10^exp compounds floating-point rounding errors.
+    let mantissa_clean = mantissa_str.replace('_', "");
+    let full_str = format!("{}e{}", mantissa_clean, exp);
+    let result = if let Ok(f) = full_str.parse::<f64>() {
+        if sign < 0 { -f } else { f }
+    } else {
+        // Fallback (should not normally happen)
+        let r = mantissa * 10f64.powi(exp);
+        if sign < 0 { -r } else { r }
+    };
     Some(Value::Num(result))
 }
 
@@ -538,7 +547,14 @@ fn parse_real_component_to_f64(s: &str) -> Option<f64> {
         }
         let exp_val: i32 = exp_clean.parse().ok()?;
         let exp = exp_sign * exp_val;
-        let result = mantissa * 10f64.powi(exp);
+        // Parse the full normalized string for best precision.
+        let mantissa_clean = mantissa_str.replace('_', "");
+        let full_str = format!("{}e{}", mantissa_clean, exp);
+        let result = if let Ok(f) = full_str.parse::<f64>() {
+            f
+        } else {
+            mantissa * 10f64.powi(exp)
+        };
         return Some(if sign < 0 { -result } else { result });
     }
 
