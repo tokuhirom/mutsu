@@ -959,7 +959,9 @@ impl Compiler {
                 // When the loop body contains `$_ := expr` (topic rebind via `:=`), wrap
                 // the body in a BlockScope so the rebind is lexically scoped per iteration.
                 // BlockScope naturally prevents `$_` from propagating out.
-                let body_rebinds_topic = Self::body_mutates_topic(&loop_body);
+                // Note: plain `$_ =` does NOT trigger wrapping — that would break `with`-block
+                // topic restoration which relies on `body_mutates_topic` for isolation.
+                let body_rebinds_topic = Self::body_rebinds_topic(&loop_body);
                 let loop_idx = self.code.emit(OpCode::WhileLoop {
                     cond_end: 0,
                     body_end: 0,
