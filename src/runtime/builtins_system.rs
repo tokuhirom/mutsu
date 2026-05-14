@@ -1190,6 +1190,10 @@ impl Interpreter {
                     thread::sleep(duration);
                 }
                 self.sync_shared_vars_to_env();
+                // Flush any output produced by concurrent start blocks
+                // that ran while we were sleeping so it appears before
+                // subsequent TAP output from the main thread.
+                self.flush_shared_thread_output();
                 Ok(Value::Nil)
             }
         }

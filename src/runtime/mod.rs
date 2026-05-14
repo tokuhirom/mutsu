@@ -3831,6 +3831,29 @@ impl Interpreter {
         self.immediate_stdout = val;
     }
 
+    /// Flush any output buffered by concurrent start-block threads to stdout
+    /// (or to self.output if not in immediate_stdout mode).  Call this at
+    /// synchronisation points (e.g. after sleep, before emitting TAP lines)
+    /// so that thread output appears in chronological order.
+    pub(crate) fn flush_shared_thread_output(&mut self) {
+        let drained = if let Some(ref shared) = self.shared_thread_output {
+            let mut lock = shared.lock().unwrap();
+            if lock.is_empty() {
+                return;
+            }
+            std::mem::take(&mut *lock)
+        } else {
+            return;
+        };
+        if self.subtest_depth == 0 && self.immediate_stdout {
+            use std::io::Write;
+            let _ = std::io::stdout().write_all(drained.as_bytes());
+            let _ = std::io::stdout().flush();
+        } else {
+            self.output.push_str(&drained);
+        }
+    }
+
     pub fn flush_stderr_buffer(&mut self) {
         if !self.stderr_output.is_empty() {
             eprint!("{}", self.stderr_output);

@@ -61,8 +61,16 @@ impl Interpreter {
                     err.exception = Some(Box::new(ex));
                     Err(err)
                 } else {
-                    // Planned blocks, Kept returns value
-                    let result = shared.result_blocking();
+                    // Planned blocks, Kept returns value.
+                    // Use wait() instead of result_blocking() so we can emit
+                    // the thread's buffered output (including TAP lines from
+                    // `pass`/`ok` etc. inside the start block) at the right time.
+                    let (result, output, stderr) = shared.wait();
+                    // emit_output drains shared_thread_output BEFORE writing
+                    // `output`, so any TAP lines produced by the start block
+                    // appear in chronological order.
+                    self.emit_output(&output);
+                    self.stderr_output.push_str(&stderr);
                     self.sync_shared_vars_to_env();
                     // Replay deferred taps for Proc::Async results
                     if let Value::Instance {
