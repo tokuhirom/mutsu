@@ -703,6 +703,57 @@ impl Interpreter {
         Some((body.to_string(), count_spec.to_string()))
     }
 
+    /// Split `'u'<cp>+` into `("'u'", "<cp>", "1..*")`.
+    /// Returns `(prefix, bracket_atom, count_spec)` when the atom ends with a
+    /// bracket-delimited sub-rule + simple quantifier, and there is a non-empty
+    /// prefix before the opening `<`.  Used by `expand_ltm_pattern` so that a
+    /// pattern like `'u' <utf16_codepoint>+ % '\u'` expands to
+    /// `'u'<utf16_codepoint>('\u'<utf16_codepoint>)*` rather than incorrectly
+    /// repeating the prefix with every separator element.
+    fn split_prefix_and_quantified_bracket(atom: &str) -> Option<(String, String, String)> {
+        let quant = atom.chars().last()?;
+        if !matches!(quant, '?' | '+' | '*') {
+            return None;
+        }
+        let body = &atom[..atom.len() - quant.len_utf8()];
+        if body.is_empty() || !body.ends_with('>') {
+            return None;
+        }
+        let char_indices: Vec<(usize, char)> = body.char_indices().collect();
+        let len = char_indices.len();
+        let mut depth = 0usize;
+        let mut open_byte: Option<usize> = None;
+        let mut i = len;
+        while i > 0 {
+            i -= 1;
+            let (byte_pos, ch) = char_indices[i];
+            match ch {
+                '>' => depth += 1,
+                '<' => {
+                    if depth == 1 {
+                        open_byte = Some(byte_pos);
+                        break;
+                    }
+                    depth = depth.saturating_sub(1);
+                }
+                _ => {}
+            }
+        }
+        let open = open_byte?;
+        if open == 0 {
+            return None; // no prefix before the bracket atom
+        }
+        let prefix = body[..open].to_string();
+        let bracket_atom = body[open..].to_string();
+        let count_spec = match quant {
+            '*' => "0..*",
+            '+' => "1..*",
+            '?' => "0..1",
+            _ => return None,
+        };
+        Some((prefix, bracket_atom, count_spec.to_string()))
+    }
+
     fn split_simple_quantified_atom(atom: &str) -> Option<(String, String)> {
         let quant = atom.chars().last()?;
         if !matches!(quant, '?' | '+' | '*') {
@@ -777,6 +828,17 @@ impl Interpreter {
                     "{}{}",
                     prefix,
                     Self::build_ltm_expansion(&quantified_tail, "1..*", sep_mode, sep)
+                );
+            }
+            // Handle prefix + quantified bracket: e.g. `'u'<cp>+` where 'u' is a
+            // non-repeating prefix and only the bracket atom repeats with the separator.
+            if let Some((prefix, bracket_atom, count_spec)) =
+                Self::split_prefix_and_quantified_bracket(&atom)
+            {
+                return format!(
+                    "{}{}",
+                    prefix,
+                    Self::build_ltm_expansion(&bracket_atom, &count_spec, sep_mode, sep)
                 );
             }
             // Handle bracket-delimited atoms with quantifiers (e.g. `<value>*`)
