@@ -544,6 +544,13 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
             )
         }
 
+        // IO::Path ~~ Str: compare path string representation with string.
+        // In Raku, Str.ACCEPTS(IO::Path) stringifies the IO::Path and compares.
+        // This handles cases like `dir().grep("filename")` after chdir.
+        (Value::Instance { class_name: cn, .. }, Value::Str(s)) if cn == "IO::Path" => {
+            Some(left.to_string_value() == s.as_str())
+        }
+
         // Instance ~~ Instance identity check (generic, after all specific instance checks).
         // Exclude Signature (needs special ACCEPTS logic) and X::AdHoc (needs payload delegation).
         (
