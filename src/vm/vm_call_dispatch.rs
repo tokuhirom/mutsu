@@ -289,8 +289,9 @@ impl VM {
                                     }
                                 }
                             }
-                        } else {
-                            found_key = None;
+                        } else if found_key.is_none() {
+                            // pkg == "GLOBAL" and no key found via pos_arity fallback
+                            // Leave found_key as None; do not override a Some value.
                         }
                     }
                 }
