@@ -627,6 +627,15 @@ impl RuntimeError {
         Self::typed_msg("X::Syntax::Confused", message)
     }
 
+    /// X::Syntax::Confused with a reason attribute (for "Two terms in a row" etc.)
+    pub(crate) fn syntax_confused_with_reason(reason: impl Into<String>) -> Self {
+        let reason = reason.into();
+        let mut attrs = HashMap::new();
+        attrs.insert("message".to_string(), Value::str(reason.clone()));
+        attrs.insert("reason".to_string(), Value::str(reason));
+        Self::typed("X::Syntax::Confused", attrs)
+    }
+
     /// X::Syntax::Malformed - Malformed syntax
     #[allow(dead_code)]
     pub(crate) fn syntax_malformed(what: &str, message: impl Into<String>) -> Self {
