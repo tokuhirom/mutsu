@@ -81,7 +81,16 @@ impl Interpreter {
                     .named
                     .entry(name.clone())
                     .or_default()
-                    .push(captured);
+                    .push(captured.clone());
+                // Also capture under the secondary name (e.g., original builtin class name
+                // when using `$<alias>=<builtin_class>` syntax).
+                if let Some(secondary) = token.secondary_named_capture.as_ref() {
+                    updated
+                        .named
+                        .entry(secondary.clone())
+                        .or_default()
+                        .push(captured);
+                }
                 updated
             };
         let apply_hash_capture = |token: &RegexToken,
@@ -599,7 +608,19 @@ impl Interpreter {
                 }
                 RegexQuant::Repeat(..) | RegexQuant::RepeatCode(_) => {
                     let (min, max) = match &token.quant {
-                        RegexQuant::Repeat(min, max) => (*min, *max),
+                        RegexQuant::Repeat(min, max) => {
+                            // Block-less empty range: /x ** 2..1/ should throw
+                            if let Some(max_val) = *max
+                                && *min > max_val
+                            {
+                                Self::set_quantifier_value_error(
+                                    "empty-range",
+                                    "Quantifier range is empty",
+                                );
+                                continue;
+                            }
+                            (*min, *max)
+                        }
                         RegexQuant::RepeatCode(code) => {
                             match self.eval_regex_repeat_code(code, &caps) {
                                 Some((min, max)) => (min, max),

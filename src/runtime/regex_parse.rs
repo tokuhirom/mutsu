@@ -105,6 +105,7 @@ fn rewrite_tilde_tokens(
                     quant: RegexQuant::One,
                     named_capture: None,
                     hash_capture: None,
+                    secondary_named_capture: None,
                     ratchet: false,
                     frugal: false,
                 };
@@ -130,6 +131,7 @@ fn rewrite_tilde_tokens(
                 quant: RegexQuant::One,
                 named_capture: None,
                 hash_capture: None,
+                secondary_named_capture: None,
                 ratchet: false,
                 frugal: false,
             });
@@ -254,6 +256,7 @@ fn regex_single_quote_atom(literal: String, ignore_case: bool) -> RegexAtom {
                 quant: RegexQuant::One,
                 named_capture: None,
                 hash_capture: None,
+                secondary_named_capture: None,
                 ratchet: false,
                 frugal: false,
             })
@@ -808,6 +811,16 @@ impl Interpreter {
             // quoted string, or backslash escape.
             let is_single_atom = Self::is_single_regex_atom(atom);
             if is_single_atom {
+                // Detect empty range (e.g. 2..1) before LTM expansion: skip expansion
+                // so the normal Repeat quantifier match arm can detect and throw the error.
+                if let Some((min_str, max_str)) = count_spec.split_once("..")
+                    && max_str != "*"
+                    && let (Ok(min_val), Some(max_val)) =
+                        (min_str.parse::<usize>(), max_str.parse::<usize>().ok())
+                    && min_val > max_val
+                {
+                    return pattern.to_string();
+                }
                 return Self::build_ltm_expansion(atom, count_spec, sep_mode, sep);
             }
             // Fall through to let the normal parser handle ** quantifiers
@@ -1171,6 +1184,7 @@ impl Interpreter {
                         quant: RegexQuant::One,
                         named_capture: None,
                         hash_capture: None,
+                        secondary_named_capture: None,
                         ratchet: false,
                         frugal: false,
                     }],
@@ -1211,6 +1225,7 @@ impl Interpreter {
                         quant: RegexQuant::One,
                         named_capture: None,
                         hash_capture: None,
+                        secondary_named_capture: None,
                         ratchet: false,
                         frugal: false,
                     }],
@@ -1249,6 +1264,7 @@ impl Interpreter {
                                 quant: RegexQuant::ZeroOrMore,
                                 named_capture: None,
                                 hash_capture: None,
+                                secondary_named_capture: None,
                                 ratchet,
                                 frugal: false,
                             });
@@ -1274,6 +1290,7 @@ impl Interpreter {
                             },
                             named_capture: None,
                             hash_capture: None,
+                            secondary_named_capture: None,
                             ratchet,
                             frugal: false,
                         });
@@ -1299,6 +1316,7 @@ impl Interpreter {
                         quant: RegexQuant::One,
                         named_capture: None,
                         hash_capture: None,
+                        secondary_named_capture: None,
                         ratchet,
                         frugal: false,
                     });
@@ -1316,6 +1334,7 @@ impl Interpreter {
                     quant: RegexQuant::One,
                     named_capture: None,
                     hash_capture: None,
+                    secondary_named_capture: None,
                     ratchet,
                     frugal: false,
                 });
@@ -1337,6 +1356,7 @@ impl Interpreter {
                         quant: RegexQuant::One,
                         named_capture: pending_named_capture.take(),
                         hash_capture: None,
+                        secondary_named_capture: None,
                         ratchet,
                         frugal: false,
                     });
@@ -1371,6 +1391,7 @@ impl Interpreter {
                     quant: RegexQuant::One,
                     named_capture: None,
                     hash_capture: None,
+                    secondary_named_capture: None,
                     ratchet,
                     frugal: false,
                 });
@@ -1448,6 +1469,7 @@ impl Interpreter {
                         quant: RegexQuant::One,
                         named_capture: pending_named_capture.take(),
                         hash_capture: None,
+                        secondary_named_capture: None,
                         ratchet,
                         frugal: false,
                     });
@@ -1679,6 +1701,7 @@ impl Interpreter {
                                         quant: RegexQuant::One,
                                         named_capture: None,
                                         hash_capture: None,
+                                        secondary_named_capture: None,
                                         ratchet: false,
                                         frugal: false,
                                     });
@@ -1951,6 +1974,7 @@ impl Interpreter {
                                         quant: RegexQuant::One,
                                         named_capture: None,
                                         hash_capture: None,
+                                        secondary_named_capture: None,
                                         ratchet: false,
                                         frugal: false,
                                     }],
@@ -2168,6 +2192,7 @@ impl Interpreter {
                                                     quant: RegexQuant::One,
                                                     named_capture: None,
                                                     hash_capture: None,
+                                                    secondary_named_capture: None,
                                                     ratchet: false,
                                                     frugal: false,
                                                 })
@@ -2252,6 +2277,7 @@ impl Interpreter {
                                                             quant: RegexQuant::One,
                                                             named_capture: None,
                                                             hash_capture: None,
+                                                            secondary_named_capture: None,
                                                             ratchet: false,
                                                             frugal: false,
                                                         },
@@ -2267,6 +2293,7 @@ impl Interpreter {
                                                             quant: RegexQuant::ZeroOrMore,
                                                             named_capture: None,
                                                             hash_capture: None,
+                                                            secondary_named_capture: None,
                                                             ratchet: false,
                                                             frugal: false,
                                                         },
@@ -2290,6 +2317,7 @@ impl Interpreter {
                                                     quant: RegexQuant::One,
                                                     named_capture: None,
                                                     hash_capture: None,
+                                                    secondary_named_capture: None,
                                                     ratchet: false,
                                                     frugal: false,
                                                 }],
@@ -2449,6 +2477,7 @@ impl Interpreter {
                                                         quant: RegexQuant::One,
                                                         named_capture: None,
                                                         hash_capture: None,
+                                                        secondary_named_capture: None,
                                                         ratchet: false,
                                                         frugal: false,
                                                     },
@@ -2462,6 +2491,7 @@ impl Interpreter {
                                                         quant: RegexQuant::ZeroOrMore,
                                                         named_capture: None,
                                                         hash_capture: None,
+                                                        secondary_named_capture: None,
                                                         ratchet: false,
                                                         frugal: false,
                                                     },
@@ -2629,6 +2659,7 @@ impl Interpreter {
                                 quant: RegexQuant::One,
                                 named_capture: None,
                                 hash_capture: None,
+                                secondary_named_capture: None,
                                 ratchet: false,
                                 frugal: false,
                             }],
@@ -2909,13 +2940,22 @@ impl Interpreter {
             } else {
                 ratchet // inherit from pattern-level :ratchet flag
             };
+            // When both a user alias ($<name>=) and a builtin class name are pending,
+            // the alias becomes the primary capture and the builtin name becomes secondary.
+            let primary_named = pending_named_capture.take();
+            let secondary_named = if primary_named.is_some() {
+                // Alias takes precedence; builtin name (if any) becomes secondary capture.
+                pending_builtin_named_capture.take()
+            } else {
+                None
+            };
+            let primary_named = primary_named.or_else(|| pending_builtin_named_capture.take());
             tokens.push(RegexToken {
                 atom,
                 quant,
-                named_capture: pending_named_capture
-                    .take()
-                    .or(pending_builtin_named_capture.take()),
+                named_capture: primary_named,
                 hash_capture: pending_hash_capture.take(),
+                secondary_named_capture: secondary_named,
                 ratchet: token_ratchet,
                 frugal: token_frugal,
             });

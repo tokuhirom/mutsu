@@ -597,6 +597,9 @@ struct RegexToken {
     atom: RegexAtom,
     quant: RegexQuant,
     named_capture: Option<String>,
+    /// Secondary named capture for capturing subrule aliases like `$<alias>=<builtin_class>`.
+    /// When set, the matched text is also stored under this name (the original rule name).
+    secondary_named_capture: Option<String>,
     /// Hash aliasing: `%<name>=(...)` captures build a hash
     hash_capture: Option<String>,
     ratchet: bool,
@@ -2519,6 +2522,7 @@ impl Interpreter {
         register_x("X::Syntax::Regex::SolitaryQuantifier", "X::Syntax");
         register_x("X::Syntax::Regex::NullRegex", "X::Syntax");
         register_x("X::Syntax::Regex::NonQuantifiable", "X::Syntax");
+        register_x("X::Syntax::Regex::QuantifierValue", "X::Syntax");
         register_x("X::Syntax::Term::MissingInitializer", "X::Syntax");
         register_x("X::Syntax::WithoutElse", "X::Syntax");
         register_x("X::Syntax::UnlessElse", "X::Syntax");
