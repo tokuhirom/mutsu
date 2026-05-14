@@ -9,14 +9,25 @@ impl Interpreter {
         let ok = match &block {
             Value::Sub(data) => {
                 self.push_caller_env();
-                let saved_topic = self.env.get("$_").cloned();
+                // Save both "$_" (sigiled) and "_" (bare) since the block's
+                // eval_block_value sets "_" via SetTopic and we must restore it.
+                let saved_topic_sigil = self.env.get("$_").cloned();
+                let saved_topic_bare = self.env.get("_").cloned();
                 let result = self.eval_block_value(&data.body).is_ok();
-                match saved_topic {
+                match saved_topic_sigil {
                     Some(v) => {
                         self.env.insert("$_".to_string(), v);
                     }
                     None => {
                         self.env.remove("$_");
+                    }
+                }
+                match saved_topic_bare {
+                    Some(v) => {
+                        self.env.insert("_".to_string(), v);
+                    }
+                    None => {
+                        self.env.remove("_");
                     }
                 }
                 self.pop_caller_env();
@@ -35,7 +46,9 @@ impl Interpreter {
         let ok = match &block {
             Value::Sub(data) => {
                 self.push_caller_env();
-                let saved_topic = self.env.get("$_").cloned();
+                // Save both "$_" (sigiled) and "_" (bare) since eval_block_value sets "_".
+                let saved_topic_sigil = self.env.get("$_").cloned();
+                let saved_topic_bare = self.env.get("_").cloned();
                 let result = self.eval_block_value(&data.body);
                 let died = match &result {
                     Err(_) => true,
@@ -44,12 +57,20 @@ impl Interpreter {
                         Self::is_failure_value(val)
                     }
                 };
-                match saved_topic {
+                match saved_topic_sigil {
                     Some(v) => {
                         self.env.insert("$_".to_string(), v);
                     }
                     None => {
                         self.env.remove("$_");
+                    }
+                }
+                match saved_topic_bare {
+                    Some(v) => {
+                        self.env.insert("_".to_string(), v);
+                    }
+                    None => {
+                        self.env.remove("_");
                     }
                 }
                 self.pop_caller_env();
