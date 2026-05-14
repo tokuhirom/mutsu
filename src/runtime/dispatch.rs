@@ -1210,7 +1210,18 @@ impl Interpreter {
             line: None,
             file: None,
         });
+        // Set current_package to the multi candidate's defining package so that
+        // the body is compiled/run in the correct namespace context. Without this,
+        // calling a GLOBAL multi from inside a non-GLOBAL function (e.g. a module
+        // function) would compile the body with the caller's package, causing
+        // variable lookups like $y to silently resolve as $Module::y.
+        let saved_package = self.current_package.clone();
+        let def_pkg = def.package.resolve();
+        if !def_pkg.is_empty() {
+            self.current_package = def_pkg;
+        }
         let result = self.run_block(&def.body);
+        self.current_package = saved_package;
         self.routine_stack.pop();
         self.samewith_context_stack.pop();
         if pushed_dispatch {

@@ -3684,7 +3684,44 @@ impl Interpreter {
             } else {
                 (format!("{module}::{name}"), name.clone())
             };
-            if let Some(value) = self.env.get(&source).cloned() {
+            // Look up the value to import.  The primary key is the
+            // qualified source name (e.g. `&GH2897-B::my-counter`), but
+            // when that is absent or Nil (e.g. because a `unit module`
+            // VarDecl initialised it to Nil before a BEGIN block set the
+            // unqualified name), fall back to the persistent `our_vars`
+            // entry for the *target* (unqualified) name.  This preserves
+            // BEGIN-block-assigned closures that are stored under the bare
+            // sigiled name.
+            let value_opt = self
+                .env
+                .get(&source)
+                .cloned()
+                .and_then(|v| {
+                    if matches!(v, Value::Nil) {
+                        None
+                    } else {
+                        Some(v)
+                    }
+                })
+                .or_else(|| {
+                    self.our_vars.get(&target).cloned().and_then(|v| {
+                        if matches!(v, Value::Nil) {
+                            None
+                        } else {
+                            Some(v)
+                        }
+                    })
+                })
+                .or_else(|| {
+                    self.env.get(&target).cloned().and_then(|v| {
+                        if matches!(v, Value::Nil) {
+                            None
+                        } else {
+                            Some(v)
+                        }
+                    })
+                });
+            if let Some(value) = value_opt {
                 if !target.contains("::") {
                     self.unsuppress_name(&target);
                 }

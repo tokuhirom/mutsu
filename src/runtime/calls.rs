@@ -117,7 +117,7 @@ impl Interpreter {
         let saved_package = self.current_package().to_string();
         let def_package = def.package.resolve();
         if !def_package.is_empty() && def_package != "GLOBAL" {
-            self.set_current_package(def_package);
+            self.set_current_package(def_package.clone());
         }
         let return_spec = self.routine_return_spec_by_name(&def.name.resolve());
         let rw_bindings = match self.bind_function_args_values(&def.param_defs, &def.params, &args)
@@ -139,8 +139,10 @@ impl Interpreter {
         // When the function's package is not GLOBAL, the Compiler qualifies
         // bare variable references as $Package::name.  Ensure parameter bindings
         // are also reachable via those qualified names.
+        // Only add aliases for the function's own package (not for the caller's
+        // package when calling a GLOBAL function from a non-GLOBAL context).
         let cur_pkg = self.current_package().to_string();
-        if cur_pkg != "GLOBAL" {
+        if !def_package.is_empty() && def_package != "GLOBAL" {
             let qualified_aliases: Vec<(String, Value)> = def
                 .param_defs
                 .iter()
@@ -308,7 +310,7 @@ impl Interpreter {
                     let saved_package = self.current_package().to_string();
                     let def_package = def.package.resolve();
                     if !def_package.is_empty() && def_package != "GLOBAL" {
-                        self.set_current_package(def_package);
+                        self.set_current_package(def_package.clone());
                     }
                     let return_spec = self.routine_return_spec_by_name(&def.name.resolve());
                     let rw_bindings =
@@ -330,8 +332,11 @@ impl Interpreter {
                     // When the function's package is not GLOBAL, the Compiler qualifies
                     // bare variable references as $Package::name. Ensure parameter
                     // bindings are also reachable via those qualified names.
+                    // Only add aliases for the function's own package (not for the
+                    // caller's package when calling a GLOBAL function from a
+                    // non-GLOBAL context).
                     let cur_pkg = self.current_package().to_string();
-                    if cur_pkg != "GLOBAL" {
+                    if !def_package.is_empty() && def_package != "GLOBAL" {
                         let qualified_aliases: Vec<(String, Value)> = def
                             .param_defs
                             .iter()
