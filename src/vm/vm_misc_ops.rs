@@ -1762,6 +1762,17 @@ impl VM {
             .rev()
             .find(|frame| frame.name != "<pointy-block>");
         if let Some(frame) = entry {
+            // Anonymous subs are pushed with "<anon>" as the sentinel name.
+            // Return the block_stack Sub directly so callers can invoke it.
+            if frame.name.is_empty() || frame.name == "<anon>" {
+                if let Some(val) = self.interpreter.block_stack_top().cloned()
+                    && matches!(val, Value::Sub(_))
+                {
+                    self.stack.push(val);
+                    return Ok(());
+                }
+                return Err(RuntimeError::undeclared_symbols("Undeclared name"));
+            }
             self.stack.push(Value::Routine {
                 package: Symbol::intern(&frame.package),
                 name: Symbol::intern(&frame.name),

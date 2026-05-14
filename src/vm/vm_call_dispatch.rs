@@ -1184,14 +1184,21 @@ impl VM {
         );
         self.interpreter.push_block(sub_val);
 
+        // Always push a routine frame so that &?ROUTINE works inside anonymous
+        // subs too. Use "<anon>" as a sentinel name when fn_name is empty.
+        let routine_push_name = if fn_name.is_empty() {
+            "<anon>".to_string()
+        } else {
+            fn_name.to_string()
+        };
+        self.interpreter.push_routine_with_location(
+            fn_package.to_string(),
+            routine_push_name,
+            self.current_source_line(),
+            self.current_source_file(),
+        );
         let mut callable_id: Option<u64> = None;
         if !fn_name.is_empty() {
-            self.interpreter.push_routine_with_location(
-                fn_package.to_string(),
-                fn_name.to_string(),
-                self.current_source_line(),
-                self.current_source_file(),
-            );
             let callable_key = format!("__mutsu_callable_id::{fn_package}::{fn_name}");
             let resolved_callable_id = self
                 .interpreter
@@ -1224,9 +1231,7 @@ impl VM {
             .push_test_assertion_context(is_test_assertion);
 
         if cf.empty_sig && !args.is_empty() {
-            if !fn_name.is_empty() {
-                self.interpreter.pop_routine();
-            }
+            self.interpreter.pop_routine();
             self.interpreter
                 .pop_test_assertion_context(pushed_assertion);
             self.interpreter.pop_caller_env();
@@ -1276,9 +1281,7 @@ impl VM {
                 Ok(bindings) => bindings,
                 Err(e) => {
                     self.interpreter.set_current_package(saved_package);
-                    if !fn_name.is_empty() {
-                        self.interpreter.pop_routine();
-                    }
+                    self.interpreter.pop_routine();
                     self.interpreter
                         .pop_test_assertion_context(pushed_assertion);
                     self.interpreter.pop_caller_env();
@@ -1458,9 +1461,7 @@ impl VM {
         }
 
         self.interpreter.set_current_package(saved_package);
-        if !fn_name.is_empty() {
-            self.interpreter.pop_routine();
-        }
+        self.interpreter.pop_routine();
         self.interpreter
             .pop_test_assertion_context(pushed_assertion);
         self.interpreter.pop_block();
