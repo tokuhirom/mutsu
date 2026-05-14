@@ -1493,6 +1493,29 @@ impl VM {
                             .collect(),
                     ));
                 }
+                // For List containers: allow assignment through a Scalar element.
+                // `my $l := List.new: 1, 2, my $ = 3` stores a Value::Scalar at
+                // position 2; `$l[2] = 42` should update that Scalar in-place.
+                let list_scalar_hit = if let Value::Array(items, kind) = target_val
+                    && (kind == &crate::value::ArrayKind::List
+                        || kind == &crate::value::ArrayKind::ItemList)
+                    && let Some(i) = Self::index_to_usize(&idx)
+                    && matches!(items.get(i), Some(Value::Scalar(_)))
+                {
+                    Some((items.clone(), i))
+                } else {
+                    None
+                };
+                if let Some((items, i)) = list_scalar_hit {
+                    // Update the Scalar element in-place.
+                    // SAFETY: mutsu is single-threaded; we have exclusive
+                    // access to self, so no other thread can read this Arc.
+                    let arr: &mut Vec<Value> =
+                        unsafe { &mut *(std::sync::Arc::as_ptr(&items) as *mut _) };
+                    arr[i] = Value::Scalar(Box::new(val.clone()));
+                    self.stack.push(val);
+                    return Ok(());
+                }
                 let type_name = match target_val {
                     Value::Array(..) => "List",
                     _ => "Range",

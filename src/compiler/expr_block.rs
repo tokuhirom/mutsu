@@ -148,6 +148,12 @@ impl Compiler {
                     name_idx,
                     dynamic: is_dynamic,
                 });
+                // `my $ = expr` (anonymous scalar) returns a Scalar container so
+                // the caller can store it in an immutable List and later mutate
+                // the element via index assignment.
+                if name == "__ANON_STATE__" {
+                    self.code.emit(OpCode::WrapScalar);
+                }
             }
             Stmt::Expr(inner_expr) => {
                 self.compile_expr(inner_expr);

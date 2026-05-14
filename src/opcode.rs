@@ -62,6 +62,10 @@ pub(crate) enum OpCode {
     /// item in list context. Emitted when `$` variable values are used inside
     /// `ArrayLiteral` or assigned to `@`/`%` targets.
     Itemize,
+    /// Wrap the top-of-stack value in a Value::Scalar container.
+    /// Used for `my $ = expr` (anonymous scalar) in argument position,
+    /// so the anonymous container is preserved in immutable List contexts.
+    WrapScalar,
     /// Recursively flatten a list value into a real Array (like *@ slurpy).
     /// Used to populate @_ in bare if blocks.
     FlattenSlurpy,
