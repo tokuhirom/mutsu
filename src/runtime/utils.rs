@@ -1200,6 +1200,7 @@ pub(crate) fn is_known_compound_type(name: &str) -> bool {
             | "X::Syntax::Regex::Adverb"
             | "X::Syntax::Regex::MalformedRange"
             | "X::Syntax::Regex::NonQuantifiable"
+            | "X::Syntax::Regex::QuantifierValue"
             | "X::Syntax::Regex::NullRegex"
             | "X::Syntax::Regex::SolitaryBacktrackControl"
             | "X::Syntax::Regex::SolitaryQuantifier"

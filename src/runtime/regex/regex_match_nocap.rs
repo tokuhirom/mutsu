@@ -99,7 +99,18 @@ impl Interpreter {
                 }
                 RegexQuant::Repeat(..) | RegexQuant::RepeatCode(_) => {
                     let (min, max) = match &token.quant {
-                        RegexQuant::Repeat(min, max) => (*min, *max),
+                        RegexQuant::Repeat(min, max) => {
+                            if let Some(max_val) = *max
+                                && *min > max_val
+                            {
+                                Self::set_quantifier_value_error(
+                                    "empty-range",
+                                    "Quantifier range is empty",
+                                );
+                                continue;
+                            }
+                            (*min, *max)
+                        }
                         RegexQuant::RepeatCode(code) => {
                             match self.eval_regex_repeat_code(code, &RegexCaptures::default()) {
                                 Some((min, max)) => (min, max),

@@ -117,8 +117,32 @@ impl Interpreter {
         }
     }
 
+    /// Create an X::Syntax::Regex::QuantifierValue exception with the given flag attribute set to True.
+    pub(super) fn make_quantifier_value_error(flag: &str, message: &str) -> RuntimeError {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::str(message.to_string()));
+        attrs.insert(flag.to_string(), Value::Bool(true));
+        let ex = Value::make_instance(
+            crate::symbol::Symbol::intern("X::Syntax::Regex::QuantifierValue"),
+            attrs,
+        );
+        let mut err = RuntimeError::new(message);
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
+    /// Set a pending quantifier-value error in the thread-local error store.
+    pub(super) fn set_quantifier_value_error(flag: &str, message: &str) {
+        let err = Self::make_quantifier_value_error(flag, message);
+        crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|e| {
+            *e.borrow_mut() = Some(err);
+        });
+    }
+
     /// Evaluate a `** {code}` quantifier code block and return (min, max).
     /// The code should return either a numeric value (exact count) or a Range.
+    /// Returns None if the code fails to evaluate or produces an invalid/infinite value;
+    /// in invalid cases a pending error is set via PENDING_REGEX_ERROR for the caller to propagate.
     pub(super) fn eval_regex_repeat_code(
         &self,
         code: &str,
@@ -137,6 +161,22 @@ impl Interpreter {
             Ok(v) => v,
             Err(_) => return None,
         };
+
+        /// Helper: check if a Value is a non-numeric type (Str/Bool/etc.) for range endpoints.
+        fn is_non_numeric_value(v: &Value) -> bool {
+            matches!(v, Value::Str(_) | Value::Bool(_))
+        }
+
+        /// Helper: extract f64 from a Value, treating NaN/Inf specially.
+        fn endpoint_to_f64(v: &Value) -> f64 {
+            match v {
+                Value::Num(n) => *n,
+                Value::Int(i) => *i as f64,
+                Value::Rat(n, d) => *n as f64 / *d as f64,
+                _ => v.to_f64(),
+            }
+        }
+
         match &val {
             Value::Range(start, end) => {
                 let min = (*start).max(0) as usize;
@@ -145,6 +185,13 @@ impl Interpreter {
                 } else {
                     Some((*end).max(0) as usize)
                 };
+                // Check for empty range (min > max)
+                if let Some(max_val) = max
+                    && min > max_val
+                {
+                    Self::set_quantifier_value_error("empty-range", "Quantifier range is empty");
+                    return None;
+                }
                 Some((min, max))
             }
             Value::RangeExcl(start, end) => {
@@ -154,6 +201,12 @@ impl Interpreter {
                 } else {
                     Some(((*end) - 1).max(0) as usize)
                 };
+                if let Some(max_val) = max
+                    && min > max_val
+                {
+                    Self::set_quantifier_value_error("empty-range", "Quantifier range is empty");
+                    return None;
+                }
                 Some((min, max))
             }
             Value::RangeExclStart(start, end) => {
@@ -163,6 +216,12 @@ impl Interpreter {
                 } else {
                     Some((*end).max(0) as usize)
                 };
+                if let Some(max_val) = max
+                    && min > max_val
+                {
+                    Self::set_quantifier_value_error("empty-range", "Quantifier range is empty");
+                    return None;
+                }
                 Some((min, max))
             }
             Value::RangeExclBoth(start, end) => {
@@ -172,11 +231,117 @@ impl Interpreter {
                 } else {
                     Some(((*end) - 1).max(0) as usize)
                 };
+                if let Some(max_val) = max
+                    && min > max_val
+                {
+                    Self::set_quantifier_value_error("empty-range", "Quantifier range is empty");
+                    return None;
+                }
                 Some((min, max))
+            }
+            Value::GenericRange {
+                start,
+                end,
+                excl_start,
+                excl_end,
+            } => {
+                // Check for non-numeric range endpoints (e.g., strings, NaN endpoints)
+                if is_non_numeric_value(start.as_ref()) || is_non_numeric_value(end.as_ref()) {
+                    Self::set_quantifier_value_error(
+                        "non-numeric-range",
+                        "Quantifier range has non-numeric endpoint",
+                    );
+                    return None;
+                }
+                let start_f = endpoint_to_f64(start.as_ref());
+                let end_f = endpoint_to_f64(end.as_ref());
+                // NaN in either endpoint → non-numeric-range
+                if start_f.is_nan() || end_f.is_nan() {
+                    Self::set_quantifier_value_error(
+                        "non-numeric-range",
+                        "Quantifier range has non-numeric (NaN) endpoint",
+                    );
+                    return None;
+                }
+                // Inf as start → error (infinite lower bound)
+                if start_f.is_infinite() && start_f > 0.0 {
+                    Self::set_quantifier_value_error("inf", "Quantifier lower bound is Inf");
+                    return None;
+                }
+                // Compute min and max.
+                // For float ranges, Raku uses floor for the inclusive bound
+                // and floor+1 for the exclusive bound.
+                let min_f = if start_f.is_infinite() && start_f < 0.0 {
+                    // -Inf start: effective min is 0
+                    0.0
+                } else if *excl_start {
+                    start_f.floor() + 1.0
+                } else {
+                    start_f.floor()
+                };
+                let min = if min_f < 0.0 { 0 } else { min_f as usize };
+
+                let max = if end_f.is_infinite() && end_f > 0.0 {
+                    None // +Inf end → unbounded
+                } else {
+                    let max_f = if *excl_end {
+                        end_f.ceil() - 1.0
+                    } else {
+                        end_f.floor()
+                    };
+                    let max_val = if max_f < 0.0 { 0 } else { max_f as usize };
+                    Some(max_val)
+                };
+                // Empty range check
+                if let Some(max_val) = max
+                    && min > max_val
+                {
+                    Self::set_quantifier_value_error("empty-range", "Quantifier range is empty");
+                    return None;
+                }
+                Some((min, max))
+            }
+            Value::Str(s) => {
+                // String values that cannot parse as a number are non-numeric
+                match s.trim().parse::<f64>() {
+                    Ok(n) if n.is_nan() => {
+                        Self::set_quantifier_value_error(
+                            "non-numeric",
+                            "Quantifier value is not numeric",
+                        );
+                        None
+                    }
+                    Ok(n) if n.is_infinite() && n > 0.0 => {
+                        Self::set_quantifier_value_error("inf", "Quantifier value is Inf");
+                        None
+                    }
+                    Ok(n) => {
+                        let n = n.max(0.0) as usize;
+                        Some((n, Some(n)))
+                    }
+                    Err(_) => {
+                        // Non-parseable string like "meow"
+                        Self::set_quantifier_value_error(
+                            "non-numeric",
+                            "Quantifier value is not numeric",
+                        );
+                        None
+                    }
+                }
             }
             _ => {
                 let n = val.to_f64();
-                if n.is_nan() || n.is_infinite() {
+                // Non-numeric value (NaN)
+                if n.is_nan() {
+                    Self::set_quantifier_value_error(
+                        "non-numeric",
+                        "Quantifier value is not numeric",
+                    );
+                    return None;
+                }
+                // Positive Inf is an error; negative Inf is treated as 0.
+                if n.is_infinite() && n > 0.0 {
+                    Self::set_quantifier_value_error("inf", "Quantifier value is Inf");
                     return None;
                 }
                 let n = n.max(0.0) as usize;

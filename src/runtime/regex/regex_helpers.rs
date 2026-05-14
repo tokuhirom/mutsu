@@ -101,6 +101,7 @@ fn strip_marks_token(token: &RegexToken) -> RegexToken {
         atom: strip_marks_atom(&token.atom),
         quant: token.quant.clone(),
         named_capture: token.named_capture.clone(),
+        secondary_named_capture: token.secondary_named_capture.clone(),
         hash_capture: token.hash_capture.clone(),
         ratchet: token.ratchet,
         frugal: token.frugal,

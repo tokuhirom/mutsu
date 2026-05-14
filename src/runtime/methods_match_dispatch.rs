@@ -182,6 +182,10 @@ impl Interpreter {
             self.env.insert("/".to_string(), match_obj.clone());
             Ok(match_obj)
         } else {
+            // Propagate any pending quantifier-value error (e.g., from ** {code} quantifiers)
+            if let Some(err) = Self::take_pending_regex_error() {
+                return Err(err);
+            }
             Ok(Value::Nil)
         }
     }
