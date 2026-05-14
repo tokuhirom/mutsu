@@ -23,6 +23,11 @@ per_file_timeout() {
       # This test uses sleep 2*$_ with $_ up to 9, parallel start blocks take ~18s.
       echo 60
       ;;
+    roast/S29-context/sleep.t)
+      # This test has four 3-second sleep calls plus a subprocess, totalling ~18s locally
+      # and potentially more on slower CI machines.
+      echo 60
+      ;;
     *)
       echo "$DEFAULT_TIMEOUT"
       ;;
