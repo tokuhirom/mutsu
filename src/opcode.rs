@@ -654,6 +654,12 @@ pub(crate) enum OpCode {
     RegisterPackage {
         name_idx: u32,
     },
+    /// Set the interpreter's current_package at runtime.
+    /// Emitted for `unit module/package` declarations so that subsequent
+    /// sub registrations use the module's namespace rather than GLOBAL.
+    SetCurrentPackage {
+        name_idx: u32,
+    },
     /// Register a package as a stub (body is `...`, `!!!`, or `???`).
     RegisterPackageStub {
         name_idx: u32,

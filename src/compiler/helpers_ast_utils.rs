@@ -151,7 +151,35 @@ impl Compiler {
     /// would cause the compiled_functions map (which is flat) to be overwritten
     /// by later hoists from other scopes.
     pub(super) fn hoist_sub_decls(&mut self, stmts: &[Stmt], lexical_hoist: bool) {
-        for stmt in stmts {
+        // If there is a `unit module/package` declaration, emit a
+        // SetCurrentPackage before hoisting subs that follow it so they
+        // are registered in the module's namespace rather than GLOBAL.
+        let unit_pkg_idx = stmts
+            .iter()
+            .position(|s| matches!(s, Stmt::Package { is_unit: true, .. }));
+        let unit_pkg_name = unit_pkg_idx.and_then(|idx| {
+            if let Stmt::Package { name, .. } = &stmts[idx] {
+                Some(self.qualify_package_name(&name.resolve()))
+            } else {
+                None
+            }
+        });
+        let mut emitted_set_pkg = false;
+        for (i, stmt) in stmts.iter().enumerate() {
+            // Emit SetCurrentPackage before the first hoisted sub after `unit module`
+            if !emitted_set_pkg
+                && let Some(ref pkg_name) = unit_pkg_name
+                && let Some(pkg_idx) = unit_pkg_idx
+                && i > pkg_idx
+                && matches!(stmt, Stmt::SubDecl { .. })
+            {
+                let name_idx = self
+                    .code
+                    .add_constant(crate::value::Value::str(pkg_name.clone()));
+                self.code.emit(OpCode::RegisterPackage { name_idx });
+                self.code.emit(OpCode::SetCurrentPackage { name_idx });
+                emitted_set_pkg = true;
+            }
             if let Stmt::SubDecl { .. } = stmt {
                 let mut hoisted = stmt.clone();
                 if lexical_hoist
