@@ -495,8 +495,8 @@ pub(crate) enum Stmt {
         export_tags: Vec<String>,
         is_test_assertion: bool,
         supersede: bool,
-        /// Custom `is` traits (non-builtin trait names like `me'd`)
-        custom_traits: Vec<String>,
+        /// Custom `is` traits (non-builtin trait names like `me'd`) with optional argument expression
+        custom_traits: Vec<(String, Option<Expr>)>,
     },
     TokenDecl {
         name: Symbol,

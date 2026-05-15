@@ -1657,8 +1657,8 @@ fn method_decl_body_with_my(
             is_submethod,
             our_variable_form: false,
             return_type,
-            is_default_candidate: traits.custom_traits.contains(&"default".to_string()),
-            deprecated_message: traits.custom_traits.iter().find_map(|t| {
+            is_default_candidate: traits.custom_traits.iter().any(|(t, _)| t == "default"),
+            deprecated_message: traits.custom_traits.iter().find_map(|(t, _)| {
                 if t == "DEPRECATED" {
                     Some(String::new())
                 } else {

@@ -1972,7 +1972,11 @@ pub(super) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
                 param_defs,
                 body,
                 is_export: traits.is_export,
-                custom_traits: traits.custom_traits.clone(),
+                custom_traits: traits
+                    .custom_traits
+                    .iter()
+                    .map(|(n, _)| n.clone())
+                    .collect(),
             },
         ));
     }
@@ -1985,7 +1989,11 @@ pub(super) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
             param_defs,
             body,
             is_export: traits.is_export,
-            custom_traits: traits.custom_traits,
+            custom_traits: traits
+                .custom_traits
+                .iter()
+                .map(|(n, _)| n.clone())
+                .collect(),
         },
     ))
 }

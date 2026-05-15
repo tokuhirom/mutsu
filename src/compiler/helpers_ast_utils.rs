@@ -154,13 +154,21 @@ impl Compiler {
         for stmt in stmts {
             if let Stmt::SubDecl { .. } = stmt {
                 let mut hoisted = stmt.clone();
-                if lexical_hoist
-                    && let Stmt::SubDecl { custom_traits, .. } = &mut hoisted
-                    && !custom_traits
-                        .iter()
-                        .any(|trait_name| trait_name == "__lexical_hoist")
-                {
-                    custom_traits.push("__lexical_hoist".to_string());
+                if let Stmt::SubDecl { custom_traits, .. } = &mut hoisted {
+                    if lexical_hoist
+                        && !custom_traits
+                            .iter()
+                            .any(|(trait_name, _)| trait_name == "__lexical_hoist")
+                    {
+                        custom_traits.push(("__lexical_hoist".to_string(), None));
+                    }
+                    // Strip user-defined custom traits during hoisting.
+                    // Traits like `is description(...)` require types/roles to be
+                    // registered first; they will be applied during the normal pass.
+                    // Keep internal (__) and well-known traits (default, DEPRECATED).
+                    custom_traits.retain(|(t, _)| {
+                        t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED")
+                    });
                 }
                 let idx = self.code.add_stmt(hoisted);
                 self.code.emit(OpCode::RegisterSub(idx));

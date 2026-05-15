@@ -1079,8 +1079,9 @@ pub(crate) struct SubTraits {
     pub is_raw: bool,
     pub return_type: Option<String>,
     pub associativity: Option<String>,
-    /// Non-builtin trait names (e.g. `me'd`) for custom `trait_mod:<is>` dispatch.
-    pub custom_traits: Vec<String>,
+    /// Non-builtin trait names (e.g. `me'd`) for custom `trait_mod:<is>` dispatch,
+    /// with optional argument expression.
+    pub custom_traits: Vec<(String, Option<crate::ast::Expr>)>,
     /// Precedence trait: (trait_name, reference_operator).
     /// trait_name is one of "tighter", "looser", "equiv".
     /// reference_operator is the operator symbol or full name (e.g. "*", "+", "infix:<+>", "prefix:<foo>").
@@ -1100,7 +1101,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
     let mut is_raw = false;
     let mut return_type = None;
     let mut associativity = None;
-    let mut custom_traits: Vec<String> = Vec::new();
+    let mut custom_traits: Vec<(String, Option<crate::ast::Expr>)> = Vec::new();
     let mut seen_traits: Vec<String> = Vec::new();
     let mut precedence_trait: Option<(String, String)> = None;
     let mut handles: Vec<crate::ast::HandleSpec> = Vec::new();
@@ -1167,7 +1168,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 associativity = Some(trait_name.to_string());
             } else if trait_name == "DEPRECATED" {
                 // Will capture parenthesized arg below
-                custom_traits.push("DEPRECATED".to_string());
+                custom_traits.push(("DEPRECATED".to_string(), None));
             } else if trait_name != "assoc"
                 && trait_name != "equiv"
                 && trait_name != "tighter"
@@ -1178,7 +1179,8 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 && trait_name != "nodal"
                 && trait_name != "pure"
             {
-                custom_traits.push(trait_name.to_string());
+                // Placeholder — will be updated with arg below if present
+                custom_traits.push((trait_name.to_string(), None));
             }
             let (mut r, _) = ws(r)?;
             if r.starts_with('<') {
@@ -1190,8 +1192,8 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                     precedence_trait = Some((trait_name.to_string(), arg));
                 } else if trait_name == "DEPRECATED" {
                     // `is DEPRECATED<msg>` — set the deprecation message
-                    if let Some(pos) = custom_traits.iter().position(|t| t == "DEPRECATED") {
-                        custom_traits[pos] = format!("DEPRECATED:{}", arg);
+                    if let Some(pos) = custom_traits.iter().position(|(t, _)| t == "DEPRECATED") {
+                        custom_traits[pos] = (format!("DEPRECATED:{}", arg), None);
                     }
                 }
                 r = r2;
@@ -1213,8 +1215,8 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                         msg
                     };
                     // Replace the plain "DEPRECATED" with "DEPRECATED:msg"
-                    if let Some(pos) = custom_traits.iter().position(|t| t == "DEPRECATED") {
-                        custom_traits[pos] = format!("DEPRECATED:{}", msg);
+                    if let Some(pos) = custom_traits.iter().position(|(t, _)| t == "DEPRECATED") {
+                        custom_traits[pos] = (format!("DEPRECATED:{}", msg), None);
                     }
                 } else if (trait_name == "tighter"
                     || trait_name == "looser"
@@ -1225,6 +1227,19 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                     let paren_content = &before_parens[1..before_parens.len() - r.len() - 1];
                     let ref_op = paren_content.trim().to_string();
                     precedence_trait = Some((trait_name.to_string(), ref_op));
+                } else {
+                    // For custom traits, parse the parenthesized content as an expression
+                    let paren_content = &before_parens[1..before_parens.len() - r.len() - 1];
+                    let paren_content = paren_content.trim();
+                    if !paren_content.is_empty()
+                        && let Ok((_, expr)) = expression(paren_content)
+                    {
+                        // Update the last custom trait entry with the parsed argument
+                        if let Some(pos) = custom_traits.iter().rposition(|(t, _)| t == trait_name)
+                        {
+                            custom_traits[pos].1 = Some(expr);
+                        }
+                    }
                 }
             }
             input = r;

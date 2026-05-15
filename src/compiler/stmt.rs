@@ -394,9 +394,19 @@ impl Compiler {
                     // Hoist sub declarations: register subs first so forward
                     // references like `&fa` work before the sub is textually
                     // declared (Raku sub hoisting semantics).
+                    // Strip non-internal custom traits during hoisting — types/roles
+                    // may not be registered yet; traits are applied during the normal pass.
                     for s in stmts.iter() {
-                        if matches!(s, Stmt::SubDecl { .. }) {
-                            self.compile_stmt(s);
+                        if let Stmt::SubDecl { .. } = s {
+                            let mut hoisted = s.clone();
+                            if let Stmt::SubDecl { custom_traits, .. } = &mut hoisted {
+                                custom_traits.retain(|(t, _)| {
+                                    t.starts_with("__")
+                                        || t == "default"
+                                        || t.starts_with("DEPRECATED")
+                                });
+                            }
+                            self.compile_stmt(&hoisted);
                         }
                     }
                     for s in stmts {
@@ -1771,7 +1781,7 @@ impl Compiler {
                     export_tags: Vec::new(),
                     is_test_assertion: false,
                     supersede: false,
-                    custom_traits: vec!["__mutsu_method_decl".to_string()],
+                    custom_traits: vec![("__mutsu_method_decl".to_string(), None)],
                 };
                 let idx = self.code.add_stmt(lowered);
                 self.code.emit(OpCode::RegisterSub(idx));
