@@ -2637,7 +2637,6 @@ impl VM {
                 return Ok(());
             }
         }
-        // Disabled: GetLocal alias following for cross-scope binding
         let atomic_name = name.strip_prefix('$').unwrap_or(&name);
         let atomic_name_key = format!("__mutsu_atomic_name::{atomic_name}");
         // Only use the scalar atomic fast path for scalar ($) variables.
@@ -2874,6 +2873,19 @@ impl VM {
                 for &(source, target) in &self.local_bind_pairs {
                     if source == idx {
                         self.locals[target] = new_val.clone();
+                    }
+                }
+            }
+            // Propagate to env-based alias targets (for `:=` bindings where
+            // the source is an env variable like `$_`).
+            {
+                let alias_key = format!("__mutsu_sigilless_alias::{}", name);
+                if let Some(Value::Str(target)) = self.interpreter.env().get(&alias_key).cloned() {
+                    let is_co_local = code.locals.iter().any(|n| n == target.as_str());
+                    if !is_co_local {
+                        self.interpreter
+                            .env_mut()
+                            .insert(target.to_string(), self.locals[idx].clone());
                     }
                 }
             }

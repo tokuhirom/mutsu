@@ -2344,6 +2344,23 @@ impl VM {
             }
         }
         *self.interpreter.env_mut() = restored_env;
+        // After block scope restoration, sync `:=` alias bindings.
+        // If a local variable was modified inside the block and has a
+        // sigilless alias (e.g. `my $a := $_`), propagate the local's
+        // current value to the alias target in env so they stay in sync.
+        for (idx, name) in code.locals.iter().enumerate() {
+            let alias_key = format!("__mutsu_sigilless_alias::{}", name);
+            if let Some(Value::Str(target)) = self.interpreter.env().get(&alias_key).cloned() {
+                let local_val = &self.locals[idx];
+                if let Some(env_val) = self.interpreter.env().get(target.as_str())
+                    && local_val != env_val
+                {
+                    self.interpreter
+                        .env_mut()
+                        .insert(target.to_string(), local_val.clone());
+                }
+            }
+        }
         // Drop readonly flags for block-declared variables so a later outer
         // `my` redeclaration of the same name is not marked as readonly by
         // the now-gone binding (`my %h := SetHash.new(...)` inside a block

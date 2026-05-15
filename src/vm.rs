@@ -1217,6 +1217,31 @@ impl VM {
                     self.set_env_with_main_alias(&source_name, val.clone());
                     self.update_local_if_exists(code, &source_name, &val);
                 }
+                // Reverse alias propagation: find all variables that are
+                // bound TO this variable (i.e. `my $x := $name`) and update
+                // them so the alias stays in sync.
+                {
+                    let prefix = "__mutsu_sigilless_alias::";
+                    let reverse_targets: Vec<String> = self
+                        .interpreter
+                        .env()
+                        .iter()
+                        .filter_map(|(k, v)| {
+                            if let Some(var_name) = k.strip_prefix(prefix)
+                                && let Value::Str(target) = v
+                                && target.as_str() == name
+                            {
+                                Some(var_name.to_string())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    for target_var in reverse_targets {
+                        self.set_env_with_main_alias(&target_var, val.clone());
+                        self.update_local_if_exists(code, &target_var, &val);
+                    }
+                }
                 *ip += 1;
             }
             OpCode::SetVarType { name_idx, tc_idx } => {
