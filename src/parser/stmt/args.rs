@@ -10,6 +10,10 @@ use crate::value::Value;
 use super::{ident, is_stmt_modifier_keyword, try_parse_assign_expr};
 
 fn regroup_assign_expr_metaop_rhs(expr: Expr) -> Expr {
+    // Handle Grouped(AssignExpr{...}) from parenthesized assignments
+    if let Expr::Grouped(inner) = expr {
+        return Expr::Grouped(Box::new(regroup_assign_expr_metaop_rhs(*inner)));
+    }
     let Expr::AssignExpr { name, expr, .. } = expr else {
         return expr;
     };
