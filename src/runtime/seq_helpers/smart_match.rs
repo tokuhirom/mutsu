@@ -634,8 +634,7 @@ impl Interpreter {
                 let pat = pat.to_string();
                 // Set $_ to the match target so $( $_ ) works inside regex
                 let saved_topic = self.env.get("_").cloned();
-                self.env
-                    .insert("_".to_string(), Value::str(text.clone()));
+                self.env.insert("_".to_string(), Value::str(text.clone()));
                 let match_result = self.regex_match_with_captures(&pat, &text);
                 if let Some(v) = &saved_topic {
                     self.env.insert("_".to_string(), v.clone());

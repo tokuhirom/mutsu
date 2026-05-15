@@ -2367,15 +2367,10 @@ impl Interpreter {
                                         None => {
                                             // Variable not declared — X::Undeclared
                                             let symbol = format!("${var_name}");
-                                            let msg = format!(
-                                                "Variable '{symbol}' is not declared"
-                                            );
-                                            let mut attrs =
-                                                std::collections::HashMap::new();
-                                            attrs.insert(
-                                                "symbol".to_string(),
-                                                Value::str(symbol),
-                                            );
+                                            let msg =
+                                                format!("Variable '{symbol}' is not declared");
+                                            let mut attrs = std::collections::HashMap::new();
+                                            attrs.insert("symbol".to_string(), Value::str(symbol));
                                             attrs.insert(
                                                 "message".to_string(),
                                                 Value::str(msg.clone()),
@@ -3301,21 +3296,11 @@ impl Interpreter {
                         None => {
                             // Variable not declared — signal X::Undeclared
                             let symbol = format!("${name}");
-                            let msg =
-                                format!("Variable '{symbol}' is not declared");
+                            let msg = format!("Variable '{symbol}' is not declared");
                             let mut attrs = std::collections::HashMap::new();
-                            attrs.insert(
-                                "symbol".to_string(),
-                                Value::str(symbol),
-                            );
-                            attrs.insert(
-                                "message".to_string(),
-                                Value::str(msg.clone()),
-                            );
-                            let ex = Value::make_instance(
-                                Symbol::intern("X::Undeclared"),
-                                attrs,
-                            );
+                            attrs.insert("symbol".to_string(), Value::str(symbol));
+                            attrs.insert("message".to_string(), Value::str(msg.clone()));
+                            let ex = Value::make_instance(Symbol::intern("X::Undeclared"), attrs);
                             let mut err = RuntimeError::new(&msg);
                             err.exception = Some(Box::new(ex));
                             return Err(err);
