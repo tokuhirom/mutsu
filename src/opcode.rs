@@ -1187,6 +1187,9 @@ pub(crate) struct CompiledFunction {
     /// Used by the OTF named call fast path to avoid name-based lookup per call.
     #[allow(clippy::type_complexity)]
     pub(crate) named_param_slots: Option<Vec<(String, usize, Vec<(String, usize)>)>>,
+    /// Deprecation info: (kind, name, package, message).
+    /// When set, every call records a deprecation event.
+    pub(crate) deprecated_info: Option<(String, String, String, String)>,
 }
 
 impl CompiledFunction {

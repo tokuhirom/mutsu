@@ -1373,6 +1373,7 @@ impl Interpreter {
                     is_my,
                     is_default,
                     is_type,
+                    deprecated_message,
                 } => {
                     let attr_name_str = attr_name.resolve();
 
@@ -1450,6 +1451,10 @@ impl Interpreter {
                     if let Some(it) = is_type {
                         self.class_attribute_is_types
                             .insert((name.to_string(), attr_name_str.clone()), it.clone());
+                    }
+                    if let Some(dm) = deprecated_message {
+                        self.class_attribute_deprecated
+                            .insert((name.to_string(), attr_name_str.clone()), dm.clone());
                     }
                     let attr_var_name = if *is_public {
                         format!(".{}", attr_name_str)
@@ -2212,6 +2217,7 @@ impl Interpreter {
                     is_my: _,
                     is_default: _,
                     is_type: _,
+                    deprecated_message: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     let attr_var_name = if *is_public {
@@ -2427,6 +2433,7 @@ impl Interpreter {
                     is_my: _,
                     is_default: _,
                     is_type: _,
+                    deprecated_message: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     role_def.own_attribute_names.insert(attr_name_str.clone());

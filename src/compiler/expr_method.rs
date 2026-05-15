@@ -65,6 +65,7 @@ impl Compiler {
         let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
         // Use CallMethod (non-mut) for read-only special variables like $!
         // so they benefit from the Nil dispatch path in CallMethod.
+        self.emit_source_line_if_known();
         if target_name == "!" {
             self.code.emit(OpCode::CallMethod {
                 name_idx,
@@ -126,6 +127,7 @@ impl Compiler {
                 for arg in args {
                     self.compile_method_arg(arg);
                 }
+                self.emit_source_line_if_known();
                 self.code.emit(OpCode::CallMethodMut {
                     name_idx,
                     arity,
@@ -149,6 +151,7 @@ impl Compiler {
                     self.compile_method_arg(arg);
                 }
                 let name_idx = self.code.add_constant(Value::str(name_resolved));
+                self.emit_source_line_if_known();
                 self.code.emit(OpCode::CallMethod {
                     name_idx,
                     arity,
@@ -273,6 +276,7 @@ impl Compiler {
         }
         let name_idx = self.code.add_constant(Value::str(name.resolve()));
         let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
+        self.emit_source_line_if_known();
         self.code.emit(OpCode::CallMethod {
             name_idx,
             arity,
@@ -303,6 +307,7 @@ impl Compiler {
             self.compile_method_arg(arg);
         }
         let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
+        self.emit_source_line_if_known();
         if let Some(var_name) = target_var_name {
             let target_name_idx = self.code.add_constant(Value::str(var_name));
             self.code.emit(OpCode::CallMethodDynamicMut {

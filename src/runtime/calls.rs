@@ -4,18 +4,28 @@ use crate::ast::FunctionDef;
 impl Interpreter {
     /// Check if a function has the `is DEPRECATED` trait and record a deprecation event.
     pub(crate) fn check_deprecation_for_def(&self, def: &FunctionDef) {
+        self.check_deprecation_for_def_with_line(def, None);
+    }
+
+    /// Check if a function has the `is DEPRECATED` trait and record a deprecation event,
+    /// using an explicit callsite line if provided.
+    pub(crate) fn check_deprecation_for_def_with_line(
+        &self,
+        def: &FunctionDef,
+        callsite_line: Option<i64>,
+    ) {
         if let Some(ref msg) = def.deprecated_message {
             let file = self
                 .env
                 .get("*PROGRAM-NAME")
                 .map(|v| v.to_string_value())
                 .unwrap_or_default();
-            let line = self
-                .env
-                .get("?LINE")
-                .and_then(|v| match v {
-                    Value::Int(i) => Some(*i),
-                    _ => None,
+            let line = callsite_line
+                .or_else(|| {
+                    self.env.get("?LINE").and_then(|v| match v {
+                        Value::Int(i) => Some(*i),
+                        _ => None,
+                    })
                 })
                 .unwrap_or(0);
             let kind = if def.is_method { "Method" } else { "Sub" };
@@ -33,17 +43,28 @@ impl Interpreter {
 
     /// Check deprecation for a method call using name, package, and message.
     pub(crate) fn check_deprecation_for_method(&self, name: &str, package: &str, message: &str) {
+        self.check_deprecation_for_method_with_line(name, package, message, None);
+    }
+
+    /// Check deprecation for a method call, using an explicit callsite line if provided.
+    pub(crate) fn check_deprecation_for_method_with_line(
+        &self,
+        name: &str,
+        package: &str,
+        message: &str,
+        callsite_line: Option<i64>,
+    ) {
         let file = self
             .env
             .get("*PROGRAM-NAME")
             .map(|v| v.to_string_value())
             .unwrap_or_default();
-        let line = self
-            .env
-            .get("?LINE")
-            .and_then(|v| match v {
-                Value::Int(i) => Some(*i),
-                _ => None,
+        let line = callsite_line
+            .or_else(|| {
+                self.env.get("?LINE").and_then(|v| match v {
+                    Value::Int(i) => Some(*i),
+                    _ => None,
+                })
             })
             .unwrap_or(0);
         super::deprecation::record_deprecation("Method", name, package, message, &file, line);

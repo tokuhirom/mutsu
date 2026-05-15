@@ -101,6 +101,15 @@ impl Compiler {
         }
     }
 
+    /// Emit a SetSourceLine opcode for the current source line, if known.
+    /// Used before method/function calls to ensure ?LINE is up-to-date for
+    /// deprecation tracking and error reporting.
+    pub(super) fn emit_source_line_if_known(&mut self) {
+        if let Some(line) = self.last_source_line {
+            self.code.emit(OpCode::SetSourceLine(line));
+        }
+    }
+
     pub(crate) fn set_current_package(&mut self, package: String) {
         self.current_package = package;
     }

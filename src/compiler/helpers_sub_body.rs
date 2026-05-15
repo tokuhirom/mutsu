@@ -57,6 +57,34 @@ impl Compiler {
         is_rw: bool,
         is_raw: bool,
     ) {
+        self.compile_sub_body_with_deprecation(
+            name,
+            params,
+            param_defs,
+            return_type,
+            body,
+            multi,
+            state_group,
+            is_rw,
+            is_raw,
+            None,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn compile_sub_body_with_deprecation(
+        &mut self,
+        name: &str,
+        params: &[String],
+        param_defs: &[crate::ast::ParamDef],
+        return_type: Option<&String>,
+        body: &[Stmt],
+        multi: bool,
+        state_group: Option<&str>,
+        is_rw: bool,
+        is_raw: bool,
+        deprecated_info: Option<(String, String, String, String)>,
+    ) {
         // Before compiling the sub body, check for heredoc interpolations
         // that reference variables not visible at the outer scope (where the
         // heredoc terminator physically appears in Raku).
@@ -298,6 +326,7 @@ impl Compiler {
             param_local_slots: None,
             has_inner_subs: false,
             named_param_slots: None,
+            deprecated_info,
         };
         cf.precompute_param_local_slots();
         cf.precompute_named_param_slots();

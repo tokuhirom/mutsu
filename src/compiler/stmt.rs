@@ -1686,6 +1686,7 @@ impl Compiler {
                 multi,
                 is_rw,
                 is_raw,
+                custom_traits,
                 ..
             } => {
                 // Validate placeholder conflicts for subs with implicit params
@@ -1726,7 +1727,27 @@ impl Compiler {
                     None
                 };
                 let name_str = name.resolve();
-                self.compile_sub_body(
+                // Extract deprecation info from custom_traits
+                let deprecated_info = custom_traits.iter().find_map(|(t, _)| {
+                    if t == "DEPRECATED" {
+                        Some((
+                            "Sub".to_string(),
+                            name_str.clone(),
+                            self.current_package.clone(),
+                            String::new(),
+                        ))
+                    } else {
+                        t.strip_prefix("DEPRECATED:").map(|msg| {
+                            (
+                                "Sub".to_string(),
+                                name_str.clone(),
+                                self.current_package.clone(),
+                                msg.to_string(),
+                            )
+                        })
+                    }
+                });
+                self.compile_sub_body_with_deprecation(
                     &name_str,
                     params,
                     param_defs,
@@ -1736,9 +1757,10 @@ impl Compiler {
                     state_group.as_deref(),
                     *is_rw,
                     *is_raw,
+                    deprecated_info.clone(),
                 );
                 for (alt_params, alt_param_defs) in signature_alternates {
-                    self.compile_sub_body(
+                    self.compile_sub_body_with_deprecation(
                         &name_str,
                         alt_params,
                         alt_param_defs,
@@ -1748,6 +1770,7 @@ impl Compiler {
                         state_group.as_deref(),
                         *is_rw,
                         *is_raw,
+                        deprecated_info.clone(),
                     );
                 }
             }

@@ -698,14 +698,24 @@ impl Interpreter {
             }
             // Fallback: auto-generated accessor for public attributes
             if args.is_empty() {
-                let class_attrs = self.collect_class_attributes(&class_name.resolve());
+                let cn = class_name.resolve();
+                let class_attrs = self.collect_class_attributes(&cn);
                 if class_attrs.is_empty() {
                     if let Some(val) = attributes.get(method) {
+                        // Check for deprecated attribute accessor
+                        if let Some(msg) = self.class_attribute_deprecated(&cn, method).cloned() {
+                            self.check_deprecation_for_method(method, &cn, &msg);
+                        }
                         return Ok(val.clone());
                     }
                 } else {
                     for (attr_name, is_public, ..) in &class_attrs {
                         if *is_public && attr_name == method {
+                            // Check for deprecated attribute accessor
+                            if let Some(msg) = self.class_attribute_deprecated(&cn, method).cloned()
+                            {
+                                self.check_deprecation_for_method(method, &cn, &msg);
+                            }
                             return Ok(attributes.get(method).cloned().unwrap_or(Value::Nil));
                         }
                     }

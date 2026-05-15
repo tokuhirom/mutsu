@@ -842,6 +842,9 @@ pub struct Interpreter {
     /// `is Type` traits on `@`/`%` class attributes (e.g. `has @.a is Buf`, `has %.h is BagHash`).
     /// Maps (class_name, attr_name) to the type name.
     class_attribute_is_types: HashMap<(String, String), String>,
+    /// `is DEPRECATED` messages on class attributes.
+    /// Maps (class_name, attr_name) to the deprecation message.
+    class_attribute_deprecated: HashMap<(String, String), String>,
     subsets: HashMap<String, SubsetDef>,
     proto_subs: HashSet<String>,
     proto_tokens: HashSet<String>,
@@ -2853,6 +2856,7 @@ impl Interpreter {
             attribute_build_overrides: HashMap::new(),
             class_attribute_defaults: HashMap::new(),
             class_attribute_is_types: HashMap::new(),
+            class_attribute_deprecated: HashMap::new(),
             subsets: HashMap::new(),
             proto_subs: HashSet::new(),
             proto_tokens: HashSet::new(),
@@ -4108,6 +4112,16 @@ impl Interpreter {
             .get(&(class_name.to_string(), attr_name.to_string()))
     }
 
+    /// Get the `is DEPRECATED` message for a class attribute accessor.
+    pub(crate) fn class_attribute_deprecated(
+        &self,
+        class_name: &str,
+        attr_name: &str,
+    ) -> Option<&String> {
+        self.class_attribute_deprecated
+            .get(&(class_name.to_string(), attr_name.to_string()))
+    }
+
     /// Set the element default for a container (Array/Hash) by Arc pointer identity.
     pub(crate) fn set_container_default(&mut self, value: &Value, default: Value) {
         let id = match value {
@@ -4687,6 +4701,7 @@ impl Interpreter {
             attribute_build_overrides: self.attribute_build_overrides.clone(),
             class_attribute_defaults: self.class_attribute_defaults.clone(),
             class_attribute_is_types: self.class_attribute_is_types.clone(),
+            class_attribute_deprecated: self.class_attribute_deprecated.clone(),
             subsets: self.subsets.clone(),
             proto_subs: self.proto_subs.clone(),
             proto_tokens: self.proto_tokens.clone(),

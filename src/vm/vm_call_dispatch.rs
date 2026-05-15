@@ -3,6 +3,28 @@ use crate::runtime::types::unwrap_varref_value;
 use crate::symbol::Symbol;
 
 impl VM {
+    /// Record a deprecation event for a compiled function if it has deprecation info.
+    fn record_cf_deprecation(&self, cf: &CompiledFunction) {
+        if let Some((ref kind, ref name, ref package, ref msg)) = cf.deprecated_info {
+            let cl = self.interpreter.pending_callsite_line();
+            let file = self
+                .interpreter
+                .env()
+                .get("*PROGRAM-NAME")
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            let line = cl
+                .or_else(|| {
+                    self.interpreter.env().get("?LINE").and_then(|v| match v {
+                        Value::Int(i) => Some(*i),
+                        _ => None,
+                    })
+                })
+                .unwrap_or(0);
+            crate::runtime::deprecation::record_deprecation(kind, name, package, msg, &file, line);
+        }
+    }
+
     /// Cached version of `interpreter.has_multi_candidates()`.
     /// Uses `fn_resolve_gen` for invalidation so it's O(1) on cache hit.
     pub(super) fn has_multi_candidates_cached(&mut self, name: &str) -> bool {
@@ -55,7 +77,12 @@ impl VM {
         args: Vec<Value>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
-        self.interpreter.check_deprecation_for_def(def);
+        // Use the pending callsite line for deprecation tracking,
+        // since ?LINE in env may not reflect the call site yet.
+        let callsite_line = crate::runtime::Interpreter::peek_callsite_line(&args)
+            .or_else(|| self.interpreter.pending_callsite_line());
+        self.interpreter
+            .check_deprecation_for_def_with_line(def, callsite_line);
         let name = def.name.resolve();
         let pkg = def.package.resolve();
 
@@ -82,6 +109,15 @@ impl VM {
                 }
                 compiler.compile_routine_closure_body(&def.params, &def.param_defs, &def.body)
             };
+            let deprecated_info = def.deprecated_message.as_ref().map(|msg| {
+                let kind = if def.is_method { "Method" } else { "Sub" };
+                (
+                    kind.to_string(),
+                    def.name.resolve(),
+                    def.package.resolve(),
+                    msg.clone(),
+                )
+            });
             let mut cf = CompiledFunction {
                 code: cc,
                 params: def.params.clone(),
@@ -94,6 +130,7 @@ impl VM {
                 param_local_slots: None,
                 has_inner_subs: false,
                 named_param_slots: None,
+                deprecated_info,
             };
             cf.precompute_param_local_slots();
             cf.precompute_named_param_slots();
@@ -375,6 +412,7 @@ impl VM {
         cf: &CompiledFunction,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
+        self.record_cf_deprecation(cf);
         // Only save env when there are local variables to clean up.
         // When the function has no locals, the env save/restore is a
         // no-op (nothing to remove), but still causes an Arc clone that
@@ -644,6 +682,7 @@ impl VM {
         args: &[Value],
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
+        self.record_cf_deprecation(cf);
         let param_slots = cf.param_local_slots.as_ref().unwrap();
         let positional_count = param_slots.len();
         let actual_count = args.len();
@@ -886,6 +925,7 @@ impl VM {
         args: Vec<Value>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<Value, RuntimeError> {
+        self.record_cf_deprecation(cf);
         // Save caller locals and create callee locals
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_locals_dirty = self.locals_dirty;
@@ -1225,6 +1265,8 @@ impl VM {
         if callsite_line.is_some() {
             self.interpreter.set_pending_callsite_line(callsite_line);
         }
+        // Record deprecation for cached compiled functions
+        self.record_cf_deprecation(cf);
         // Inject callsite line BEFORE push_call_frame so the parent env
         // contains the updated ?LINE. This avoids triggering Arc::make_mut
         // deep clone after the env Arc is shared with the call frame.
