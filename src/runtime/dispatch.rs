@@ -153,10 +153,11 @@ impl Interpreter {
             return matches.into_iter().next();
         }
 
-        // Sort matches by specificity rank (primary, DESC) then type hierarchy
-        // distance (secondary, ASC) so that subset types win over plain types,
-        // and among equal-rank candidates, more specific types (e.g. Bool:D)
-        // are preferred over less specific ones (e.g. Numeric:D).
+        // Sort matches by specificity rank (primary, DESC), type hierarchy
+        // distance (secondary, ASC), then required named count (tertiary, DESC)
+        // so that subset types win over plain types, more specific types
+        // (e.g. Str:D) beat less specific ones (e.g. Any), and among
+        // equally-specific candidates, those with required named params win.
         {
             let mut ranked: Vec<(usize, _)> = matches
                 .iter()
@@ -164,12 +165,16 @@ impl Interpreter {
                 .map(|(i, def)| {
                     let rank = self.candidate_specificity_rank(def);
                     let dist = self.candidate_type_distance(args, def);
-                    (i, (rank, dist))
+                    let req_named = Self::candidate_required_named_count(def);
+                    (i, (rank, dist, req_named))
                 })
                 .collect();
             ranked.sort_by(|a, b| {
-                // Higher rank first, then lower distance
-                b.1.0.cmp(&a.1.0).then(a.1.1.cmp(&b.1.1))
+                // Higher rank first, then lower distance, then higher required named
+                b.1.0
+                    .cmp(&a.1.0)
+                    .then(a.1.1.cmp(&b.1.1))
+                    .then(b.1.2.cmp(&a.1.2))
             });
             let sorted_matches: Vec<FunctionDef> =
                 ranked.iter().map(|(i, _)| matches[*i].clone()).collect();
@@ -179,11 +184,13 @@ impl Interpreter {
         let best_rank = self.candidate_specificity_rank(&matches[0]);
         let best_shape = self.candidate_dispatch_shape(&matches[0]);
         let best_distance = self.candidate_type_distance(args, &matches[0]);
+        let best_req_named = Self::candidate_required_named_count(&matches[0]);
         let tied: Vec<FunctionDef> = matches
             .iter()
             .filter(|def| {
                 self.candidate_specificity_rank(def) == best_rank
                     && self.candidate_type_distance(args, def) == best_distance
+                    && Self::candidate_required_named_count(def) == best_req_named
             })
             .cloned()
             .collect();
@@ -267,6 +274,16 @@ impl Interpreter {
             named_count,
             trait_count,
         )
+    }
+
+    /// Count required named parameters — used as a tertiary tiebreaker
+    /// AFTER rank and type distance, so it only matters when type constraints
+    /// are equally specific.
+    fn candidate_required_named_count(def: &FunctionDef) -> usize {
+        def.param_defs
+            .iter()
+            .filter(|p| p.named && p.required)
+            .count()
     }
 
     /// Compute the total type hierarchy distance between a candidate's type
