@@ -297,8 +297,10 @@ impl Compiler {
             is_raw,
             param_local_slots: None,
             has_inner_subs: false,
+            named_param_slots: None,
         };
         cf.precompute_param_local_slots();
+        cf.precompute_named_param_slots();
         cf.detect_inner_subs();
         self.compiled_functions.insert(key, cf);
     }

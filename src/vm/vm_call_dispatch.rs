@@ -93,12 +93,19 @@ impl VM {
                 is_raw: def.is_raw,
                 param_local_slots: None,
                 has_inner_subs: false,
+                named_param_slots: None,
             };
             cf.precompute_param_local_slots();
+            cf.precompute_named_param_slots();
             cf.detect_inner_subs();
             self.otf_compile_cache.insert(cache_key, cf.clone());
             cf
         };
+
+        // Cache by name for fast lookup in exec_call_func_op
+        let name_sym = Symbol::intern(&name);
+        self.otf_call_cache.insert(name_sym, cf.clone());
+        self.otf_call_cache_gen = self.fn_resolve_gen;
 
         // Set up samewith and multi-dispatch context that call_compiled_function_named
         // expects the caller to manage (mirrors exec_call_fn_op).
@@ -560,7 +567,6 @@ impl VM {
             && !cf.is_rw
             && !cf.is_raw
             && !cf.empty_sig
-            && cf.params.is_empty()
             && !cf.param_defs.is_empty()
             && cf.param_defs.iter().all(|pd| {
                 pd.named

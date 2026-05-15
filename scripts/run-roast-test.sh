@@ -28,6 +28,10 @@ per_file_timeout() {
       # and potentially more on slower CI machines.
       echo 60
       ;;
+    roast/S06-signature/named-parameters.t)
+      # This test has a 1M-iteration hot loop (test 100) that takes ~8s on release builds.
+      echo 60
+      ;;
     *)
       echo "$DEFAULT_TIMEOUT"
       ;;
