@@ -534,16 +534,6 @@ pub(super) fn is_whatever(expr: &Expr) -> bool {
 pub(super) fn contains_whatever(expr: &Expr) -> bool {
     match expr {
         e if is_whatever(e) => true,
-        // A parenthesized WhateverCode (e.g. `(*-1)`) that appears inside a
-        // larger expression should propagate: `1 +< (*-1) - 1` is a WhateverCode.
-        Expr::Lambda {
-            is_whatever_code: true,
-            ..
-        }
-        | Expr::AnonSubParams {
-            is_whatever_code: true,
-            ..
-        } => true,
         // Don't treat bare * inside range/sequence operators as WhateverCode.
         // `1..*` is a Range, but `1..*-1` is a WhateverCode.
         // If an endpoint contains a non-bare Whatever (e.g. `*-1`), the whole
@@ -573,6 +563,21 @@ pub(super) fn contains_whatever(expr: &Expr) -> bool {
             left,
             ..
         } => contains_whatever(left),
+        // Named FatArrow pairs (colonpairs): `:as(*)` produces `"as" => *` which should
+        // be Pair("as", Whatever), NOT a WhateverCode.  When the left side is a string
+        // literal, skip WhateverCode propagation so the Pair is not auto-curried.
+        Expr::Binary {
+            op: TokenKind::FatArrow,
+            left,
+            ..
+        } if matches!(left.as_ref(), Expr::Literal(Value::Str(_))) => false,
+        // Composition operators `o` and `∘` never auto-curry: their operands are
+        // always treated as callables, so `(* + 1) o (* * 2)` should compose
+        // two WhateverCodes rather than becoming a WhateverCode itself.
+        Expr::Binary {
+            op: TokenKind::Ident(name),
+            ..
+        } if name == "o" || name == "\u{2218}" => false,
         Expr::Binary { left, right, .. } => contains_whatever(left) || contains_whatever(right),
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => contains_whatever(expr),
         // Pseudo-methods (.WHAT, .WHO, .HOW, etc.) are always evaluated immediately
@@ -639,17 +644,6 @@ pub(super) fn contains_whatever(expr: &Expr) -> bool {
 fn count_whatever(expr: &Expr) -> usize {
     match expr {
         e if is_whatever(e) => 1,
-        // Nested single-arg WhateverCode: counts as 1 Whatever placeholder.
-        Expr::Lambda {
-            is_whatever_code: true,
-            ..
-        } => 1,
-        // Nested multi-arg WhateverCode: counts as the number of params.
-        Expr::AnonSubParams {
-            is_whatever_code: true,
-            params,
-            ..
-        } => params.len(),
         Expr::Binary {
             left,
             op: TokenKind::AndAnd,
