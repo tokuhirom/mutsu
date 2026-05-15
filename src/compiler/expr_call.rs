@@ -362,14 +362,32 @@ impl Compiler {
                     },
                 };
                 let method_call = Expr::MethodCall {
-                    target: Box::new(slot),
+                    target: Box::new(slot.clone()),
                     name: *name,
                     args: args[1..].to_vec(),
                     modifier: None,
                     quoted: false,
                 };
+                // Write the method call result back to the slot so that
+                // nested hash mutations (e.g. `push %h<a><b>, 1, 2`)
+                // are visible through the parent hash.
+                let writeback = Expr::IndexAssign {
+                    target: match &slot {
+                        Expr::Index { target, .. } => target.clone(),
+                        _ => unreachable!(),
+                    },
+                    index: match &slot {
+                        Expr::Index { index, .. } => index.clone(),
+                        _ => unreachable!(),
+                    },
+                    value: Box::new(method_call),
+                    is_positional: match &slot {
+                        Expr::Index { is_positional, .. } => *is_positional,
+                        _ => true,
+                    },
+                };
                 let do_block = Expr::DoBlock {
-                    body: vec![Stmt::Expr(viv_assign), Stmt::Expr(method_call)],
+                    body: vec![Stmt::Expr(viv_assign), Stmt::Expr(writeback)],
                     label: None,
                 };
                 self.compile_expr(&do_block);
@@ -664,6 +682,9 @@ impl Compiler {
                     arity,
                     arg_sources_idx,
                 });
+                // Emit writeback for any Index expressions that were passed
+                // as `is rw` arguments (temp variable -> original slot).
+                self.emit_index_rw_writebacks();
             }
         }
     }

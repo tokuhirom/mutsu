@@ -84,6 +84,7 @@ pub(crate) fn value_is_defined(value: &Value) -> bool {
         Value::Nil | Value::Package(_) => false,
         Value::Slip(items) if items.is_empty() => false,
         Value::Instance { class_name, .. } if class_name == "Failure" => false,
+        Value::DeferredHashAccess { .. } => false,
         _ => true,
     }
 }

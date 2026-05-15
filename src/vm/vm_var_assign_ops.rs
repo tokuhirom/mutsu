@@ -2676,6 +2676,11 @@ impl VM {
             return Ok(());
         }
         let val = self.locals[idx].clone();
+        // Resolve DeferredHashAccess to its current value (Any if path doesn't exist)
+        if let Value::DeferredHashAccess { .. } = &val {
+            self.stack.push(val.deferred_hash_read());
+            return Ok(());
+        }
         // Force lazy thunks transparently on access
         if let Value::LazyThunk(ref thunk_data) = val {
             let forced = self.force_lazy_thunk(thunk_data)?;
@@ -2769,6 +2774,13 @@ impl VM {
             // (unless rebinding, which replaces the ref with a new value).
             if !is_rebind && let Value::HashSlotRef { .. } = &self.locals[idx] {
                 self.locals[idx].hash_slot_write(val);
+                self.locals_dirty = true;
+                return Ok(());
+            }
+            // If the current value is a DeferredHashAccess (from lazy binding),
+            // autovivify the path and write the value.
+            if !is_rebind && let Value::DeferredHashAccess { .. } = &self.locals[idx] {
+                self.locals[idx].deferred_hash_write(val);
                 self.locals_dirty = true;
                 return Ok(());
             }
@@ -3337,6 +3349,16 @@ impl VM {
             && let Value::HashSlotRef { .. } = &self.locals[idx]
         {
             self.locals[idx].hash_slot_write(val);
+            self.locals_dirty = true;
+            return Ok(());
+        }
+        // If the current value is a DeferredHashAccess (from lazy binding),
+        // autovivify the path and write the value.
+        if !is_bind
+            && !is_rebind
+            && let Value::DeferredHashAccess { .. } = &self.locals[idx]
+        {
+            self.locals[idx].deferred_hash_write(val);
             self.locals_dirty = true;
             return Ok(());
         }

@@ -168,6 +168,48 @@ impl Compiler {
         }
     }
 
+    /// Compile mutating method on a nested Index target by rewriting as
+    /// IndexAssign writeback. E.g. `%h<a><b>.push(1,2)` becomes
+    /// `do { my $__tmp = %h<a><b>.push(1,2); %h<a><b> = $__tmp }`.
+    /// Uses compile_expr_method_generic for the method call to avoid
+    /// infinite recursion.
+    pub(super) fn compile_expr_nested_method_writeback(
+        &mut self,
+        target: &Expr,
+        name: &Symbol,
+        args: &[Expr],
+        modifier: &Option<char>,
+        quoted: bool,
+    ) {
+        if let Expr::Index {
+            target: idx_target,
+            index: idx_key,
+            is_positional,
+        } = target
+        {
+            // Compile the method call (generic path, no recursion risk)
+            self.compile_expr_method_generic(target, name, args, modifier, quoted);
+            // Now stack has the method result. Write it back to the slot.
+            // Create an IndexAssign expression: target[key] = <stack top>.
+            // We store the result in a temp global, then compile the assignment.
+            let tmp_name = format!("__mutsu_nested_method_wb_{}", self.code.constants.len());
+            let tmp_idx = self.code.add_constant(Value::str(tmp_name.clone()));
+            self.code.emit(OpCode::SetGlobal(tmp_idx));
+            // Now compile the IndexAssign
+            let tmp_var = Expr::Var(tmp_name);
+            let writeback = Expr::IndexAssign {
+                target: idx_target.clone(),
+                index: idx_key.clone(),
+                value: Box::new(tmp_var),
+                is_positional: *is_positional,
+            };
+            self.compile_expr(&writeback);
+        } else {
+            // Fallback: compile normally
+            self.compile_expr_method_generic(target, name, args, modifier, quoted);
+        }
+    }
+
     /// Compile method call on non-variable target (no writeback needed).
     pub(super) fn compile_expr_method_generic(
         &mut self,

@@ -881,6 +881,15 @@ pub enum Value {
         array: Arc<Vec<Value>>,
         index: usize,
     },
+    /// A deferred hash access path for binding. Acts as Any for reads.
+    /// When written to, it creates all intermediate hashes and inserts the value.
+    /// Used for `my $b := %h<a><b>` to defer autovivification until assignment.
+    DeferredHashAccess {
+        /// The parent HashSlotRef (points to the first-level key in the root hash)
+        parent_slot: Box<Value>,
+        /// The key for the nested access
+        key: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1790,6 +1799,21 @@ impl Value {
         }
     }
 
+    /// Like `hash_autovivify` but does NOT create the entry if missing.
+    /// Returns a HashSlotRef that can be used for deferred autovivification:
+    /// reading from it returns Any/Nil for missing keys, writing to it
+    /// inserts the entry.
+    pub fn hash_slot_ref_lazy(&self, key: &str) -> Option<Value> {
+        if let Value::Hash(arc) = self {
+            Some(Value::HashSlotRef {
+                hash: arc.clone(),
+                key: key.to_string(),
+            })
+        } else {
+            None
+        }
+    }
+
     /// Autovivify a hash entry with a scalar value (for binding/assignment).
     /// Inserts the given value at the key if missing, or replaces the existing value.
     /// Returns the value stored at the key after the operation.
@@ -1830,6 +1854,51 @@ impl Value {
             unsafe {
                 (*ptr).insert(key.clone(), val);
             }
+        }
+    }
+
+    /// Write a value through a DeferredHashAccess, autovivifying the path.
+    /// Creates intermediate hashes as needed and inserts the final value.
+    pub fn deferred_hash_write(&self, val: Value) {
+        if let Value::DeferredHashAccess { parent_slot, key } = self {
+            // First, ensure the parent slot has a hash
+            let parent_value = parent_slot.hash_slot_read();
+            let inner_hash = if let Value::Hash(_) = &parent_value {
+                parent_value
+            } else {
+                // Create a new hash and write it to the parent slot
+                let new_hash = Value::hash(HashMap::new());
+                parent_slot.hash_slot_write(new_hash.clone());
+                new_hash
+            };
+            // Now write the value to the inner hash at the given key
+            if let Value::Hash(arc) = &inner_hash {
+                let ptr = Arc::as_ptr(arc) as *mut HashMap<String, Value>;
+                unsafe {
+                    (*ptr).insert(key.clone(), val);
+                }
+            }
+        }
+    }
+
+    /// Read the current value from a DeferredHashAccess.
+    /// Returns Any if the path doesn't exist yet.
+    pub fn deferred_hash_read(&self) -> Value {
+        if let Value::DeferredHashAccess { parent_slot, key } = self {
+            let parent_value = parent_slot.hash_slot_read();
+            if let Value::Hash(arc) = &parent_value {
+                let ptr = Arc::as_ptr(arc);
+                unsafe {
+                    (*ptr)
+                        .get(key.as_str())
+                        .cloned()
+                        .unwrap_or(Value::Package(crate::symbol::Symbol::intern("Any")))
+                }
+            } else {
+                Value::Package(crate::symbol::Symbol::intern("Any"))
+            }
+        } else {
+            self.clone()
         }
     }
 

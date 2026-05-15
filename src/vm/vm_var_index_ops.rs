@@ -120,6 +120,50 @@ impl VM {
         Ok(())
     }
 
+    /// Lazy variant of IndexAutovivify: returns a HashSlotRef without creating
+    /// the hash entry if it doesn't exist. Used for `:=` bind expressions
+    /// so that `my $b := %h<a><b>` doesn't autovivify until assignment.
+    pub(super) fn exec_index_autovivify_lazy_op(&mut self) -> Result<(), RuntimeError> {
+        let index = self.stack.pop().unwrap();
+        let target = self.stack.pop().unwrap();
+
+        let resolved = match &target {
+            Value::HashSlotRef { .. } => target.hash_slot_read(),
+            Value::ArraySlotRef { .. } => target.array_slot_read(),
+            Value::Scalar(inner) => inner.as_ref().clone(),
+            other => other.clone(),
+        };
+
+        match &resolved {
+            Value::Hash(_) => {
+                let key = Value::hash_key_encode(&index);
+                // Use lazy ref: don't create the entry
+                if let Some(slot_ref) = resolved.hash_slot_ref_lazy(&key) {
+                    self.stack.push(slot_ref);
+                } else {
+                    self.stack.push(Value::Nil);
+                }
+            }
+            // When the target is a HashSlotRef pointing to a non-existent key
+            // (resolved to Any/Nil), in lazy mode create a DeferredHashAccess
+            // that will autovivify on write.
+            _ if matches!(&target, Value::HashSlotRef { .. }) => {
+                let key = Value::hash_key_encode(&index);
+                self.stack.push(Value::DeferredHashAccess {
+                    parent_slot: Box::new(target),
+                    key,
+                });
+            }
+            _ => {
+                // Fallback to normal autovivify for non-hash targets
+                self.stack.push(target);
+                self.stack.push(index);
+                return self.exec_index_autovivify_op();
+            }
+        }
+        Ok(())
+    }
+
     /// Backward-compatible wrapper: defaults to associative indexing.
     pub(super) fn exec_index_op(&mut self) -> Result<(), RuntimeError> {
         self.exec_index_op_with_positional(false)

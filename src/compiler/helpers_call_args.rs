@@ -161,9 +161,76 @@ impl Compiler {
             Expr::AssignExpr { name, .. } => Some(name.clone()),
             _ => None,
         };
-        if let Some(name) = source_name {
+        // For Index expressions, create temp variables for `is rw` writeback
+        // and wrap with VarRef so `is rw` parameters can bind through.
+        if matches!(arg, Expr::Index { .. }) {
+            let tmp = format!("__mutsu_index_rw_arg_{}", self.code.constants.len());
+            let orig = format!("__mutsu_index_rw_orig_{}", self.code.constants.len());
+            let tmp_idx = self.code.add_constant(Value::str(tmp.clone()));
+            let orig_idx = self.code.add_constant(Value::str(orig.clone()));
+            self.code.emit(OpCode::Dup);
+            self.code.emit(OpCode::SetGlobal(tmp_idx));
+            self.code.emit(OpCode::Dup);
+            self.code.emit(OpCode::SetGlobal(orig_idx));
+            self.pending_index_rw_writebacks
+                .push((arg.clone(), tmp.clone(), orig.clone()));
+            let name_idx = self.code.add_constant(Value::str(tmp));
+            self.code.emit(OpCode::WrapVarRef(name_idx));
+        } else if let Some(name) = source_name {
             let name_idx = self.code.add_constant(Value::str(name));
             self.code.emit(OpCode::WrapVarRef(name_idx));
+        }
+    }
+
+    /// Emit writeback code for Index expressions passed as function arguments.
+    /// After a function call, if any `is rw` parameter modified the temp variable,
+    /// we write the new value back to the original hash/array slot.
+    /// Only writes back when the temp value differs from the original value
+    /// (using `===` identity check).
+    pub(super) fn emit_index_rw_writebacks(&mut self) {
+        let writebacks = std::mem::take(&mut self.pending_index_rw_writebacks);
+        if writebacks.is_empty() {
+            return;
+        }
+        for (index_expr, tmp_name, orig_name) in writebacks {
+            if let Expr::Index {
+                target,
+                index,
+                is_positional,
+            } = &index_expr
+            {
+                // Save the call result
+                let result_tmp = format!("__mutsu_call_result_{}", self.code.constants.len());
+                let result_idx = self.code.add_constant(Value::str(result_tmp));
+                self.code.emit(OpCode::SetGlobal(result_idx));
+
+                // Compare current temp value with original value.
+                // If they're identical (===), skip writeback.
+                let tmp_idx = self.code.add_constant(Value::str(tmp_name.clone()));
+                let orig_idx = self.code.add_constant(Value::str(orig_name));
+                self.code.emit(OpCode::GetGlobal(tmp_idx));
+                self.code.emit(OpCode::GetGlobal(orig_idx));
+                self.code.emit(OpCode::StrictEq);
+                // If equal (True), skip writeback
+                let skip_idx = self.code.emit(OpCode::JumpIfTrue(0));
+                // Values differ: pop comparison result and do the writeback
+                self.code.emit(OpCode::Pop); // pop False from StrictEq
+                let writeback = Expr::IndexAssign {
+                    target: target.clone(),
+                    index: index.clone(),
+                    value: Box::new(Expr::Var(tmp_name)),
+                    is_positional: *is_positional,
+                };
+                self.compile_expr(&writeback);
+                self.code.emit(OpCode::Pop); // discard assignment result
+                let jump_to_restore = self.code.emit(OpCode::Jump(0));
+                // Skip target: pop True from StrictEq
+                self.code.patch_jump(skip_idx);
+                self.code.emit(OpCode::Pop); // pop True from StrictEq
+                // Restore point
+                self.code.patch_jump(jump_to_restore);
+                self.code.emit(OpCode::GetGlobal(result_idx));
+            }
         }
     }
 
