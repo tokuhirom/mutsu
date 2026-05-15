@@ -307,6 +307,22 @@ impl Compiler {
                 });
                 return;
             }
+            // When both sides are index expressions, use ContainerEqIndexed
+            // to check binding metadata on array/hash elements.
+            if let (Some(left_encoded), Some(right_encoded)) = (
+                Self::encode_index_source(left),
+                Self::encode_index_source(right),
+            ) {
+                self.compile_expr(left);
+                self.compile_expr(right);
+                let left_idx = self.code.add_constant(Value::str(left_encoded));
+                let right_idx = self.code.add_constant(Value::str(right_encoded));
+                self.code.emit(OpCode::ContainerEqIndexed {
+                    left_name_idx: left_idx,
+                    right_name_idx: right_idx,
+                });
+                return;
+            }
             let left_fresh = Self::expr_is_fresh_container(left);
             let right_fresh = Self::expr_is_fresh_container(right);
             let flags =

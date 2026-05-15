@@ -107,6 +107,14 @@ pub(crate) enum OpCode {
         left_name_idx: u32,
         right_name_idx: u32,
     },
+    /// Container identity (`=:=`) when one or both operands are array/hash
+    /// index expressions.  Carries encoded source names (e.g. "@a\0idx\01")
+    /// for both sides.  The VM checks if one side has a binding sentinel
+    /// pointing to the other's source.
+    ContainerEqIndexed {
+        left_name_idx: u32,
+        right_name_idx: u32,
+    },
 
     // -- String comparison --
     StrEq,

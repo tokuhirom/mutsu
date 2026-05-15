@@ -253,7 +253,7 @@ impl Interpreter {
         }
 
         let mut output = String::new();
-        let mut pending_todo: Option<(String, usize)> = None; // (reason, remaining_count)
+        let mut pending_todo: Option<(String, usize, bool)> = None; // (reason, count, explicit)
         let mut skip_lines_remaining: usize = 0;
         let mut skip_reason: String = String::new();
         // Block-level skip: skip the next { ... } block
@@ -301,7 +301,8 @@ impl Interpreter {
             "priming-fails-bind-ok",
         ];
 
-        for line in input.lines() {
+        let all_lines: Vec<&str> = input.lines().collect();
+        for (line_idx, line) in all_lines.iter().enumerate() {
             let trimmed = line.trim_start();
 
             // Skip continuation lines of a multi-line skipped statement.
@@ -489,15 +490,16 @@ impl Interpreter {
             {
                 let after = trimmed.trim_start_matches("#?rakudo").trim_start();
                 // Check for count: #?rakudo N todo "reason"
-                let (count, after_count) = if let Some(first_char) = after.chars().next()
+                let (count, explicit_count, after_count) = if let Some(first_char) =
+                    after.chars().next()
                     && first_char.is_ascii_digit()
                 {
                     let num_str: String =
                         after.chars().take_while(|c| c.is_ascii_digit()).collect();
                     let n: usize = num_str.parse().unwrap_or(1);
-                    (n, after[num_str.len()..].trim_start())
+                    (n, true, after[num_str.len()..].trim_start())
                 } else {
-                    (1, after)
+                    (1, false, after)
                 };
                 // Extract the reason string (single or double quoted)
                 let reason = if let Some(start) = after_count.find('\'') {
@@ -515,7 +517,11 @@ impl Interpreter {
                 } else {
                     "todo"
                 };
-                pending_todo = Some((format!("__mutsu_backend_todo__:{reason}"), count));
+                pending_todo = Some((
+                    format!("__mutsu_backend_todo__:{reason}"),
+                    count,
+                    explicit_count,
+                ));
                 output.push('\n');
                 continue;
             }
@@ -524,14 +530,39 @@ impl Interpreter {
             // Emit `todo 'reason', count;` once with the full count so that
             // the Test module marks the correct number of upcoming tests as
             // TODO, regardless of how many source lines each test spans.
-            if let Some((ref reason, count)) = pending_todo
+            if let Some((ref reason, count, explicit)) = pending_todo
                 && !trimmed.is_empty()
                 && !trimmed.starts_with('#')
             {
+                let final_count = if !explicit && trimmed == "{" {
+                    // Block-level #?rakudo todo without explicit count:
+                    // scan ahead to count test assertions inside the block.
+                    let mut block_depth = 1usize;
+                    let mut test_count = 0usize;
+                    for future_line in &all_lines[line_idx + 1..] {
+                        let ft = future_line.trim_start();
+                        for ch in ft.chars() {
+                            if ch == '{' {
+                                block_depth += 1;
+                            } else if ch == '}' {
+                                block_depth = block_depth.saturating_sub(1);
+                            }
+                        }
+                        if block_depth == 0 {
+                            break;
+                        }
+                        if test_funcs.iter().any(|f| ft.starts_with(f)) {
+                            test_count += 1;
+                        }
+                    }
+                    test_count.max(1)
+                } else {
+                    count
+                };
                 output.push_str(&format!(
                     "todo {}, {};\n",
                     Self::raku_single_quoted_literal(reason),
-                    count
+                    final_count
                 ));
                 pending_todo = None;
             }

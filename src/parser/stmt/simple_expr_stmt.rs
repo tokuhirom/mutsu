@@ -225,6 +225,22 @@ fn bind_source_name(expr: &Expr) -> Option<String> {
         Expr::Var(name) => Some(name.clone()),
         Expr::ArrayVar(name) => Some(format!("@{}", name)),
         Expr::HashVar(name) => Some(format!("%{}", name)),
+        // For indexed expressions like @a[1], encode as "@a\x00idx\x001"
+        // so that binding can track the specific array/hash element.
+        Expr::Index { target, index, .. } => {
+            let target_name = match target.as_ref() {
+                Expr::ArrayVar(name) => Some(format!("@{}", name)),
+                Expr::HashVar(name) => Some(format!("%{}", name)),
+                Expr::Var(name) => Some(name.clone()),
+                _ => None,
+            }?;
+            let idx_str = match index.as_ref() {
+                Expr::Literal(Value::Int(n)) => n.to_string(),
+                Expr::Literal(Value::Str(s)) => s.to_string(),
+                _ => return None,
+            };
+            Some(format!("{}\x00idx\x00{}", target_name, idx_str))
+        }
         _ => None,
     }
 }

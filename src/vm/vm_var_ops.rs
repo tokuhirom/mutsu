@@ -156,11 +156,7 @@ impl VM {
             }
             Some(Value::Pair(name, source)) if name == BOUND_ARRAY_REF_SENTINEL => {
                 let source_name = source.to_string_value();
-                self.interpreter
-                    .env()
-                    .get(&source_name)
-                    .cloned()
-                    .unwrap_or(Value::Nil)
+                self.resolve_bound_source(&source_name)
             }
             // If the element is a hole (Package("Any") from deletion or
             // uninitialized gap) and a non-Nil default is available,
@@ -170,6 +166,29 @@ impl VM {
             }
             Some(value) => value.clone(),
             None => default,
+        }
+    }
+
+    /// Resolve a bound source reference. Handles both simple variable names
+    /// (e.g. "$x") and indexed references (e.g. "@a\0idx\01" for `@a[1]`).
+    fn resolve_bound_source(&self, source_name: &str) -> Value {
+        if let Some(rest) = source_name.find("\x00idx\x00") {
+            let var_name = &source_name[..rest];
+            let idx_str = &source_name[rest + 5..]; // "\x00idx\x00" is 5 bytes
+            if let Some(Value::Array(items, _)) = self.interpreter.env().get(var_name) {
+                if let Ok(i) = idx_str.parse::<usize>() {
+                    return items.get(i).cloned().unwrap_or(Value::Nil);
+                }
+            } else if let Some(Value::Hash(hash)) = self.interpreter.env().get(var_name) {
+                return hash.get(idx_str).cloned().unwrap_or(Value::Nil);
+            }
+            Value::Nil
+        } else {
+            self.interpreter
+                .env()
+                .get(source_name)
+                .cloned()
+                .unwrap_or(Value::Nil)
         }
     }
 
