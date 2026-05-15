@@ -28,6 +28,76 @@ pub(crate) fn reorder_phasers(stmts: &mut Vec<Stmt>) {
     reorder_recursive(stmts);
 }
 
+/// EVAL-specific phaser reordering.  In addition to the standard
+/// `reorder_phasers`, this also lifts BEGIN phasers from closure bodies
+/// that are direct children of the EVAL'd code.  This is needed because
+/// EVAL'd code like `$x = { ... BEGIN { ... } ... }` should run the
+/// BEGIN at EVAL compile time, not when the closure is called.
+///
+/// Unlike the general case, closures in EVAL cannot reference locally
+/// declared subs from a parent scope (the EVAL scope is already the
+/// outermost scope), so lifting BEGIN from them is safe.
+pub(crate) fn reorder_phasers_for_eval(stmts: &mut Vec<Stmt>) {
+    reorder_recursive(stmts);
+    // Second pass: lift BEGIN from closure bodies to the top level.
+    let mut extra_begin: Vec<Stmt> = Vec::new();
+    for stmt in stmts.iter_mut() {
+        lift_begin_from_eval_stmt(stmt, &mut extra_begin);
+    }
+    if !extra_begin.is_empty() {
+        // Find the position of the first non-VarDecl, non-Use statement
+        // to insert BEGIN blocks after declarations but before code.
+        let insert_pos = stmts
+            .iter()
+            .position(|s| {
+                !matches!(
+                    s,
+                    Stmt::VarDecl { .. }
+                        | Stmt::Use { .. }
+                        | Stmt::Phaser {
+                            kind: PhaserKind::Begin,
+                            ..
+                        }
+                )
+            })
+            .unwrap_or(stmts.len());
+        // Insert lifted BEGIN blocks as Stmt::Phaser nodes (not raw body
+        // stmts) to match reorder_at_level's BEGIN handling.
+        for (i, s) in extra_begin.into_iter().enumerate() {
+            stmts.insert(insert_pos + i, s);
+        }
+        // Re-run reorder to properly sort the newly inserted phasers
+        reorder_recursive(stmts);
+    }
+}
+
+/// Lift BEGIN phasers from closures that are directly in EVAL'd code.
+fn lift_begin_from_eval_stmt(stmt: &mut Stmt, begin: &mut Vec<Stmt>) {
+    match stmt {
+        Stmt::Assign { expr, .. } | Stmt::VarDecl { expr, .. } => {
+            lift_begin_from_eval_expr(expr, begin);
+        }
+        Stmt::Expr(expr) => {
+            lift_begin_from_eval_expr(expr, begin);
+        }
+        _ => {}
+    }
+}
+
+fn lift_begin_from_eval_expr(expr: &mut Expr, begin: &mut Vec<Stmt>) {
+    match expr {
+        Expr::Block(stmts)
+        | Expr::AnonSub { body: stmts, .. }
+        | Expr::AnonSubParams { body: stmts, .. } => {
+            extract_begin_from_stmts(stmts, begin);
+        }
+        Expr::Lambda { body, .. } => {
+            extract_begin_from_stmts(body, begin);
+        }
+        _ => {}
+    }
+}
+
 fn reorder_recursive(stmts: &mut Vec<Stmt>) {
     // Flatten SyntheticBlocks so VarDecls get hoisted properly.
     flatten_synthetic_blocks(stmts);
@@ -192,6 +262,11 @@ fn lift_phasers_from_stmt(
 /// Extract INIT/CHECK statement-level phasers from a stmt list.
 /// Replaces extracted phasers with a temp variable expression so the phaser's
 /// return value is available in expression context (e.g. string interpolation).
+///
+/// BEGIN is NOT extracted here because transparent blocks may contain local
+/// sub declarations that the BEGIN body references (see begin.t test case
+/// with `sub my-uc`). BEGIN is only extracted from closure bodies via
+/// `extract_phasers_from_closure_stmts`.
 fn extract_phasers_from_stmts(
     stmts: &mut [Stmt],
     _begin: &mut Vec<Stmt>,

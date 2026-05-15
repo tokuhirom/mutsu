@@ -23,7 +23,12 @@ impl Interpreter {
                 self.check_eval_undeclared_names(&stmts)?;
                 // When EVAL is called inside a class body, MethodDecl statements
                 // should be added to the enclosing class rather than lowered to subs.
-                let stmts = self.inject_eval_methods_into_class(stmts);
+                let mut stmts = self.inject_eval_methods_into_class(stmts);
+                // Reorder phasers so BEGIN/CHECK run at compile time and INIT
+                // runs once before the main body, matching the top-level pipeline.
+                // Use the EVAL-specific variant that also lifts BEGIN from
+                // closure bodies in the EVAL'd code.
+                crate::runtime::phasers::reorder_phasers_for_eval(&mut stmts);
                 let value = self.eval_block_value(&stmts)?;
                 if self.eval_result_is_unresolved_bareword(&stmts, &value) {
                     return Err(RuntimeError::undeclared_symbols("Undeclared name"));
