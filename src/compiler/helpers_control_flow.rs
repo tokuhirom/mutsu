@@ -136,14 +136,15 @@ impl Compiler {
     }
 
     pub(super) fn body_mutates_topic(stmts: &[Stmt]) -> bool {
-        // Only check if the *first* statement assigns `$_` directly.
+        // Only check if the *first* non-SetLine statement assigns `$_` directly.
         // This detects `with`-style topic switches (where the parser inserts a
         // `$_ = <expr>` as the first statement of the then-branch) but avoids
         // falsely triggering on user code like `if COND { ...; $_ = 2 }` where
         // the assignment is NOT at the start. The Block wrapping created when
         // this returns true causes BlockScope to save/restore `$_`, isolating
         // the `with` topic from the outer scope.
-        matches!(stmts.first(), Some(Stmt::Assign { name, .. }) if name == "_")
+        let first_real = stmts.iter().find(|s| !matches!(s, Stmt::SetLine(_)));
+        matches!(first_real, Some(Stmt::Assign { name, .. }) if name == "_")
     }
 
     /// Returns true only if the body contains a `$_ :=` rebind — used by the

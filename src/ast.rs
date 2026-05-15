@@ -686,6 +686,9 @@ pub(crate) enum Stmt {
         is_default: Option<Expr>,
         /// `is Type` trait — container type for `@`/`%` attributes (e.g. `is Buf`, `is BagHash`)
         is_type: Option<String>,
+        /// `is DEPRECATED` message: None = not deprecated, Some("") = deprecated without message,
+        /// Some(msg) = deprecated with custom message.
+        deprecated_message: Option<String>,
     },
     MethodDecl {
         name: Symbol,

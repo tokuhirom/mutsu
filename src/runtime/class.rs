@@ -767,7 +767,8 @@ impl Interpreter {
         }
         // Check for `is DEPRECATED` trait on the method
         if let Some(ref msg) = method_def.deprecated_message {
-            self.check_deprecation_for_method(method_name, &owner_class, msg);
+            let cl = self.test_pending_callsite_line;
+            self.check_deprecation_for_method_with_line(method_name, &owner_class, msg, cl);
         }
         let result = self.run_instance_method_resolved(
             receiver_class_name,

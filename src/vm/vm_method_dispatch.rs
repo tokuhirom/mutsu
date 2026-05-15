@@ -18,6 +18,16 @@ impl VM {
         invocant: Option<Value>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+        // Check for `is DEPRECATED` trait on the method
+        if let Some(ref msg) = method_def.deprecated_message {
+            let cl = self.interpreter.pending_callsite_line();
+            self.interpreter.check_deprecation_for_method_with_line(
+                method_name,
+                owner_class,
+                msg,
+                cl,
+            );
+        }
         // Build the base (self) value
         let mut base = if let Some(inv) = invocant {
             inv

@@ -59,6 +59,11 @@ impl VM {
                         if !has_junction {
                             let start = self.stack.len() - arity_usize;
                             let args: Vec<Value> = self.stack.drain(start..).collect();
+                            // Extract callsite line for deprecation tracking
+                            let cl = crate::runtime::Interpreter::peek_callsite_line(&args);
+                            if cl.is_some() {
+                                self.interpreter.set_pending_callsite_line(cl);
+                            }
                             let result = self.call_compiled_function_positional_light(
                                 cf,
                                 &args,
@@ -89,6 +94,11 @@ impl VM {
                     if self.stack.len() >= arity_usize {
                         let start = self.stack.len() - arity_usize;
                         let args: Vec<Value> = self.stack.drain(start..).collect();
+                        // Extract callsite line for deprecation tracking
+                        let cl = crate::runtime::Interpreter::peek_callsite_line(&args);
+                        if cl.is_some() {
+                            self.interpreter.set_pending_callsite_line(cl);
+                        }
                         let result = self.call_compiled_function_light(cf, args, compiled_fns)?;
                         self.stack.push(result);
                         self.env_dirty = true;
@@ -117,6 +127,12 @@ impl VM {
                     if self.stack.len() >= arity_usize {
                         let start = self.stack.len() - arity_usize;
                         let args: Vec<Value> = self.stack.drain(start..).collect();
+
+                        // Extract callsite line for deprecation tracking
+                        let cl = crate::runtime::Interpreter::peek_callsite_line(&args);
+                        if cl.is_some() {
+                            self.interpreter.set_pending_callsite_line(cl);
+                        }
 
                         let result = if Self::is_light_call_eligible(&cf, name_str) {
                             self.call_compiled_function_light(&cf, args, compiled_fns)
@@ -204,10 +220,15 @@ impl VM {
                 && Self::is_fast_call_eligible(cf, name_str)
                 && !cf.is_raw
             {
-                // Pop the callsite pair arg(s) from the stack without processing
+                // Pop the callsite pair arg(s) from the stack and extract callsite line
                 let arity = arity as usize;
-                if self.stack.len() >= arity {
-                    self.stack.truncate(self.stack.len() - arity);
+                if self.stack.len() >= arity && arity > 0 {
+                    let start = self.stack.len() - arity;
+                    let popped: Vec<Value> = self.stack.drain(start..).collect();
+                    let cl = crate::runtime::Interpreter::peek_callsite_line(&popped);
+                    if cl.is_some() {
+                        self.interpreter.set_pending_callsite_line(cl);
+                    }
                 }
                 self.ensure_env_synced(code);
                 let result = self.call_compiled_function_fast(cf, compiled_fns)?;
@@ -606,7 +627,10 @@ impl VM {
                 } else {
                     let resolved_def = self.interpreter.resolve_function_with_types(name, &args);
                     if let Some(ref def) = resolved_def {
-                        self.interpreter.check_deprecation_for_def(def);
+                        let cl = crate::runtime::Interpreter::peek_callsite_line(&args)
+                            .or_else(|| self.interpreter.pending_callsite_line());
+                        self.interpreter
+                            .check_deprecation_for_def_with_line(def, cl);
                     }
                     resolved_def
                         .map(|def| def.package.resolve())

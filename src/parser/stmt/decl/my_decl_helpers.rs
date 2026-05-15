@@ -338,6 +338,7 @@ pub(super) fn try_dot_twigil_attr<'a>(
             is_my: !is_our && !is_state,
             is_default: None,
             is_type: None,
+            deprecated_message: None,
         };
         if apply_modifier {
             return parse_statement_modifier(after_name, stmt).map(Some);
