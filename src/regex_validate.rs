@@ -20,6 +20,8 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
     let mut prev_was_quantifier = false;
     let mut prev_was_tilde = false;
     let mut prev_was_anchor = false; // Track non-quantifiable anchors (^, ^^, $, $$)
+    let mut has_atom = false; // Track whether any quantifiable atom has been seen
+    let mut prev_was_code_block = false; // Track non-quantifiable code blocks ({})
 
     while let Some(c) = chars.next() {
         match c {
@@ -33,6 +35,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             '^' => {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
+                prev_was_code_block = false;
                 // ^^ is start-of-line, ^ is start-of-string — both non-quantifiable
                 if chars.peek() == Some(&'^') {
                     chars.next(); // consume second ^
@@ -44,7 +47,13 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             '.' | '|' | '&' | '~' | '=' | ',' | '«' | '»' => {
                 prev_was_quantifier = false;
                 prev_was_anchor = false;
+                prev_was_code_block = false;
                 prev_was_tilde = c == '~';
+                if c == '.' {
+                    has_atom = true;
+                } else if c == '|' || c == '&' {
+                    has_atom = false;
+                }
             }
             // % can be separator quantifier or hash aliasing (%<name>=, %foo=)
             '%' => {
@@ -90,12 +99,14 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                 }
                 prev_was_quantifier = false;
                 prev_was_anchor = false;
+                prev_was_code_block = false;
             }
             // Variable interpolation: $, @
             // These can be followed by variable names, <name>, {code}, digits, etc.
             // After the variable reference, '=' is valid (capture aliasing)
             '$' | '@' => {
                 prev_was_quantifier = false;
+                prev_was_code_block = false;
                 prev_was_anchor = false;
                 // $ can be an anchor (end-of-string) or $$ (end-of-line)
                 if c == '$' {
@@ -144,30 +155,26 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                     }
                 }
                 skip_variable_ref(&mut chars);
+                has_atom = true;
             }
             // Quantifiers
             '*' | '+' | '?' => {
                 if prev_was_anchor {
                     return Err(make_non_quantifiable_error());
                 }
-                if prev_was_tilde {
-                    let msg = "Quantifier quantifies nothing";
-                    let mut attrs = HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(msg.to_string()));
-                    let ex = Value::make_instance(
-                        Symbol::intern("X::Syntax::Regex::SolitaryQuantifier"),
-                        attrs,
-                    );
-                    let mut err = RuntimeError::new(msg);
-                    err.exception = Some(Box::new(ex));
-                    return Err(err);
+                if prev_was_code_block {
+                    return Err(make_non_quantifiable_error());
+                }
+                if !has_atom || prev_was_tilde {
+                    return Err(make_solitary_quantifier_error());
                 }
                 if prev_was_quantifier {
-                    return Err(make_quantifier_error(c));
+                    return Err(make_solitary_quantifier_error());
                 }
                 prev_was_quantifier = true;
                 prev_was_tilde = false;
                 prev_was_anchor = false;
+                prev_was_code_block = false;
                 // ** is the general quantifier (e.g., ** 2, ** 2..5)
                 if c == '*' && chars.peek() == Some(&'*') {
                     chars.next(); // consume second *
@@ -230,6 +237,8 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
                 prev_was_anchor = false;
+                prev_was_code_block = false;
+                has_atom = true;
                 if let Some(&esc) = chars.peek() {
                     chars.next();
                     if esc.is_ascii_alphabetic() {
@@ -243,6 +252,8 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
                 prev_was_anchor = false;
+                prev_was_code_block = false;
+                has_atom = true;
                 let close = match c {
                     '\'' => '\'',
                     '"' => '"',
@@ -269,12 +280,16 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
                 prev_was_anchor = false;
+                prev_was_code_block = false;
+                has_atom = true;
                 chars.next(); // consume second <
             }
             '>' if chars.peek() == Some(&'>') => {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
                 prev_was_anchor = false;
+                prev_was_code_block = false;
+                has_atom = true;
                 chars.next(); // consume second >
             }
             // Assertions/named rules — skip balanced <...>
@@ -282,6 +297,7 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
                 prev_was_anchor = false;
+                prev_was_code_block = false;
                 // Collect the content to check for longname aliases
                 let mut content = String::new();
                 let mut depth = 1u32;
@@ -327,24 +343,35 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                 }
                 // Validate bracket character classes for Perl 5 range syntax
                 validate_bracket_class_content(ct)?;
+                // Code assertions like <?{...}> and <!{...}> are non-quantifiable
+                if ct.starts_with("?{") || ct.starts_with("!{") {
+                    prev_was_code_block = true;
+                } else {
+                    has_atom = true;
+                }
             }
             // Grouping — skip balanced content
             '[' => {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
                 prev_was_anchor = false;
+                prev_was_code_block = false;
+                has_atom = true;
                 skip_balanced(&mut chars, '[', ']');
             }
             '(' => {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
                 prev_was_anchor = false;
+                prev_was_code_block = false;
+                has_atom = true;
                 skip_balanced(&mut chars, '(', ')');
             }
             '{' => {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
                 prev_was_anchor = false;
+                prev_was_code_block = true; // code blocks are non-quantifiable
                 // Collect content inside braces to check for $!attr
                 let mut content = String::new();
                 let mut depth = 1u32;
@@ -365,6 +392,22 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                         }
                     }
                     content.push(ch);
+                }
+                // Detect P5-style {N,M} or {N,} quantifiers
+                {
+                    let trimmed = content.trim();
+                    if let Some((left, right)) = trimmed.split_once(',') {
+                        let is_p5 = left.trim().chars().all(|c| c.is_ascii_digit())
+                            && !left.trim().is_empty()
+                            && (right.is_empty()
+                                || right.trim().chars().all(|c| c.is_ascii_digit()));
+                        if is_p5 {
+                            return Err(RuntimeError::obsolete(
+                                "{N,M} as general quantifier",
+                                "** N..M (or ** N..*)",
+                            ));
+                        }
+                    }
                 }
                 // Check for $!attr inside the code block
                 if let Some(pos) = content.find("$!") {
@@ -391,12 +434,14 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
                 prev_was_anchor = false;
+                prev_was_code_block = false;
             }
             // Comment
             '#' => {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
                 prev_was_anchor = false;
+                prev_was_code_block = false;
                 for ch in chars.by_ref() {
                     if ch == '\n' {
                         break;
@@ -407,12 +452,36 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
             ':' => {
                 prev_was_quantifier = false;
                 prev_was_anchor = false;
+                prev_was_code_block = false;
                 // Backtracking control modifier (e.g., [ ... ]:!).
-                // It applies to the preceding atom and is valid as a standalone
-                // modifier marker with no name.
                 if chars.peek() == Some(&'!') {
                     chars.next();
                     continue;
+                }
+                // Check for bare `:` (no following modifier) — solitary backtrack control.
+                // Only flag as error if there's no preceding atom (`:` after an atom
+                // is a valid ratchet modifier).
+                if !has_atom {
+                    let mut lookahead = chars.clone();
+                    while lookahead.peek().is_some_and(|ch| ch.is_whitespace()) {
+                        lookahead.next();
+                    }
+                    if lookahead.peek().is_none()
+                        || lookahead.peek().is_some_and(|ch| {
+                            !ch.is_alphanumeric() && *ch != '_' && !ch.is_ascii_digit()
+                        })
+                    {
+                        let msg = "Backtrack control ':' does not seem to have a preceding atom to control";
+                        let mut attrs = HashMap::new();
+                        attrs.insert("message".to_string(), Value::str(msg.to_string()));
+                        let ex = Value::make_instance(
+                            Symbol::intern("X::Syntax::Regex::SolitaryBacktrackControl"),
+                            attrs,
+                        );
+                        let mut err = RuntimeError::new(msg);
+                        err.exception = Some(Box::new(ex));
+                        return Err(err);
+                    }
                 }
                 // Check if it's followed by digits only (unrecognized modifier)
                 let mut digits = String::new();
@@ -478,6 +547,8 @@ pub(crate) fn validate_regex_syntax(pattern: &str) -> Result<(), RuntimeError> {
                 prev_was_quantifier = false;
                 prev_was_tilde = false;
                 prev_was_anchor = false;
+                prev_was_code_block = false;
+                has_atom = true;
             }
             // Bare '-' is not valid as a literal in regex
             '-' => {
@@ -680,24 +751,24 @@ fn make_unrecognized_modifier_error(modifier: &str) -> RuntimeError {
     err
 }
 
-fn make_non_quantifiable_error() -> RuntimeError {
-    let msg = "Can only quantify a construct that produces a match".to_string();
+fn make_solitary_quantifier_error() -> RuntimeError {
+    let msg = "Quantifier quantifies nothing".to_string();
     let mut attrs = HashMap::new();
     attrs.insert("message".to_string(), Value::str(msg.clone()));
-    let ex = Value::make_instance(Symbol::intern("X::Syntax::Regex::NonQuantifiable"), attrs);
+    let ex = Value::make_instance(
+        Symbol::intern("X::Syntax::Regex::SolitaryQuantifier"),
+        attrs,
+    );
     let mut err = RuntimeError::new(msg);
     err.exception = Some(Box::new(ex));
     err
 }
 
-fn make_quantifier_error(quant: char) -> RuntimeError {
-    let msg = format!(
-        "Quantifier quantifies nothing (preceding atom is also a quantifier: {})",
-        quant
-    );
+fn make_non_quantifiable_error() -> RuntimeError {
+    let msg = "Can only quantify a construct that produces a match".to_string();
     let mut attrs = HashMap::new();
     attrs.insert("message".to_string(), Value::str(msg.clone()));
-    let ex = Value::make_instance(Symbol::intern("X::Syntax::Regex::Quantifier"), attrs);
+    let ex = Value::make_instance(Symbol::intern("X::Syntax::Regex::NonQuantifiable"), attrs);
     let mut err = RuntimeError::new(msg);
     err.exception = Some(Box::new(ex));
     err

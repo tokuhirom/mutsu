@@ -776,20 +776,138 @@ impl Interpreter {
             return None;
         }
         let prefix = &body[..body.len() - base.len_utf8()];
-        if prefix.ends_with('\\') {
-            return None;
+        if let Some(esc_prefix) = prefix.strip_suffix('\\') {
+            // The base char is part of a backslash escape: `\d`, `\w`, etc.
+            // Treat `\X` as the atom and everything before `\` as the prefix.
+            return Some((esc_prefix.to_string(), format!("\\{base}{quant}")));
         }
         Some((prefix.to_string(), format!("{base}{quant}")))
     }
 
-    fn expand_ltm_pattern(pattern: &str) -> String {
+    /// Parse a quantifier range string like "3", "2..4", "2..*", "2..^5",
+    /// "1^..4", "1^..^5", "^5", "1_0", handling exclusive markers (^) and
+    /// underscore separators in numeric literals.
+    fn parse_quantifier_range(count_str: &str) -> (usize, Option<usize>) {
+        fn parse_num(s: &str) -> usize {
+            let cleaned: String = s.chars().filter(|c| *c != '_').collect();
+            cleaned.parse::<usize>().unwrap_or(0)
+        }
+
+        // Handle ^N (shorthand for 0..^N, i.e. 0..N-1)
+        if let Some(rest) = count_str.strip_prefix('^') {
+            let n = parse_num(rest);
+            return (0, Some(if n > 0 { n - 1 } else { 0 }));
+        }
+
+        if let Some((min_str, max_str)) = count_str.split_once("..") {
+            // Handle exclusive min: N^..M -> (N+1)..M
+            let min_val = if let Some(stripped) = min_str.strip_suffix('^') {
+                parse_num(stripped) + 1
+            } else {
+                parse_num(min_str)
+            };
+            if max_str == "*" {
+                (min_val, None)
+            } else if let Some(stripped) = max_str.strip_prefix('^') {
+                // Exclusive max: N..^M -> N..(M-1)
+                let m = parse_num(stripped);
+                (min_val, Some(if m > 0 { m - 1 } else { 0 }))
+            } else {
+                (min_val, Some(parse_num(max_str)))
+            }
+        } else {
+            let exact = parse_num(count_str);
+            let exact = if exact == 0 { 1 } else { exact };
+            (exact, Some(exact))
+        }
+    }
+
+    /// Split a compact regex string into the first atom and the remainder.
+    /// Returns (first_atom, rest). Used to extract the single-atom separator
+    /// for `%` / `%%` operators (Raku's `%` only takes a single atom).
+    fn split_first_atom(s: &str) -> (String, String) {
+        if s.is_empty() {
+            return (String::new(), String::new());
+        }
+        let chars: Vec<char> = s.chars().collect();
+        let end = match chars[0] {
+            // Balanced bracket groups
+            '[' | '(' | '<' => {
+                let (open, close) = match chars[0] {
+                    '[' => ('[', ']'),
+                    '(' => ('(', ')'),
+                    _ => ('<', '>'),
+                };
+                let mut depth = 1u32;
+                let mut j = 1;
+                while j < chars.len() {
+                    if chars[j] == open {
+                        depth += 1;
+                    } else if chars[j] == close {
+                        depth -= 1;
+                        if depth == 0 {
+                            j += 1;
+                            break;
+                        }
+                    }
+                    j += 1;
+                }
+                j
+            }
+            // Quoted strings: '...' / "..." and unicode quote pairs
+            '\'' | '"' | '\u{2018}' | '\u{201A}' | '\u{201C}' | '\u{201E}' | '\u{FF62}' => {
+                let close = match chars[0] {
+                    '\'' => '\'',
+                    '"' => '"',
+                    '\u{2018}' | '\u{201A}' => '\u{2019}',
+                    '\u{201C}' | '\u{201E}' => '\u{201D}',
+                    '\u{FF62}' => '\u{FF63}',
+                    _ => chars[0],
+                };
+                let mut j = 1;
+                while j < chars.len() {
+                    if chars[j] == '\\' {
+                        j += 2;
+                        continue;
+                    }
+                    if chars[j] == close {
+                        j += 1;
+                        break;
+                    }
+                    j += 1;
+                }
+                j
+            }
+            // Backslash escape: \x
+            '\\' => {
+                if chars.len() > 1 {
+                    2
+                } else {
+                    1
+                }
+            }
+            // Single character atom
+            _ => 1,
+        };
+        // Also consume a trailing quantifier (+, *, ?) if present,
+        // since it's part of the atom (e.g., \s+ is one quantified atom).
+        let mut atom_end = end;
+        if atom_end < chars.len() && matches!(chars[atom_end], '+' | '*' | '?') {
+            atom_end += 1;
+        }
+        let first: String = chars[..atom_end].iter().collect();
+        let rest: String = chars[atom_end..].iter().collect();
+        (first, rest)
+    }
+
+    fn expand_ltm_pattern(pattern: &str, sigspace: bool) -> String {
         let compact: String = pattern.chars().filter(|ch| !ch.is_whitespace()).collect();
         if compact.is_empty() {
             return pattern.to_string();
         }
 
         static WITH_COUNT: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new(r"^(.+?)\*\*([0-9]+(?:\.\.(?:[0-9]+|\*))?)(?:(%%|%)(.+))?$")
+            Regex::new(r"^(.+?)\*\*(\^?[0-9_]+(?:\^?\.\.(?:\^?[0-9_]+|\*))?)(?:(%%|%)(.+))?$")
                 .expect("ltm count regex is valid")
         });
         static BARE_SEP: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
@@ -802,26 +920,40 @@ impl Interpreter {
             let atom = caps.get(1).map(|m| m.as_str()).unwrap_or_default();
             let count_spec = caps.get(2).map(|m| m.as_str()).unwrap_or_default();
             let sep_mode = caps.get(3).map(|m| m.as_str());
-            let sep = caps.get(4).map(|m| m.as_str());
-            // Only apply LTM expansion when the atom is a single regex token.
-            // The regex captures everything before ** as the "atom", but if the
-            // "atom" contains multiple regex tokens (e.g., "xe" for /xe**2/),
-            // the expansion would incorrectly repeat all of them.
-            // Detect single atoms: single char, bracket group, angle bracket,
-            // quoted string, or backslash escape.
+            let full_sep_str = caps.get(4).map(|m| m.as_str()).unwrap_or_default();
+            // `%` takes only a single atom as separator
+            let (sep_atom_str, sep_rest_str) = if sep_mode.is_some() {
+                Self::split_first_atom(full_sep_str)
+            } else {
+                (String::new(), String::new())
+            };
+            let sep = if sep_mode.is_some() {
+                Some(sep_atom_str.as_str())
+            } else {
+                None
+            };
             let is_single_atom = Self::is_single_regex_atom(atom);
             if is_single_atom {
-                // Detect empty range (e.g. 2..1) before LTM expansion: skip expansion
-                // so the normal Repeat quantifier match arm can detect and throw the error.
-                if let Some((min_str, max_str)) = count_spec.split_once("..")
-                    && max_str != "*"
-                    && let (Ok(min_val), Some(max_val)) =
-                        (min_str.parse::<usize>(), max_str.parse::<usize>().ok())
-                    && min_val > max_val
+                // Detect empty range (e.g. 2..1) before LTM expansion
+                let (parsed_min, parsed_max) = Self::parse_quantifier_range(count_spec);
+                if let Some(max_val) = parsed_max
+                    && parsed_min > max_val
                 {
                     return pattern.to_string();
                 }
-                return Self::build_ltm_expansion(atom, count_spec, sep_mode, sep);
+                let use_spaced = sigspace && pattern.len() != compact.len();
+                let expanded = if use_spaced {
+                    Self::build_ltm_expansion_spaced(atom, count_spec, sep_mode, sep)
+                } else {
+                    Self::build_ltm_expansion(atom, count_spec, sep_mode, sep)
+                };
+                return if sep_rest_str.is_empty() {
+                    expanded
+                } else if use_spaced {
+                    format!("{expanded} {sep_rest_str}")
+                } else {
+                    format!("{expanded}{sep_rest_str}")
+                };
             }
             // Fall through to let the normal parser handle ** quantifiers
         }
@@ -835,30 +967,47 @@ impl Interpreter {
                 .unwrap_or_default()
                 .to_string();
             let sep_mode = caps.get(2).map(|m| m.as_str());
-            let sep = caps.get(3).map(|m| m.as_str());
+            let full_sep = caps.get(3).map(|m| m.as_str()).unwrap_or_default();
+            // `%` takes only a single atom as separator; split off the remainder.
+            let (sep_atom, sep_rest) = Self::split_first_atom(full_sep);
+            let sep = Some(sep_atom.as_str());
+            let use_spaced = sigspace && pattern.len() != compact.len();
+            let build_with_rest = |expanded: String| -> String {
+                if sep_rest.is_empty() {
+                    expanded
+                } else if use_spaced {
+                    format!("{expanded} {sep_rest}")
+                } else {
+                    format!("{expanded}{sep_rest}")
+                }
+            };
+            let expand = if use_spaced {
+                Self::build_ltm_expansion_spaced
+            } else {
+                Self::build_ltm_expansion
+            };
+            let sp = if use_spaced { " " } else { "" };
             if let Some((prefix, quantified_tail)) = Self::split_simple_quantified_atom(&atom) {
-                return format!(
-                    "{}{}",
-                    prefix,
-                    Self::build_ltm_expansion(&quantified_tail, "1..*", sep_mode, sep)
-                );
+                return build_with_rest(format!(
+                    "{prefix}{sp}{}",
+                    expand(&quantified_tail, "1..*", sep_mode, sep)
+                ));
             }
             // Handle prefix + quantified bracket: e.g. `'u'<cp>+` where 'u' is a
             // non-repeating prefix and only the bracket atom repeats with the separator.
             if let Some((prefix, bracket_atom, count_spec)) =
                 Self::split_prefix_and_quantified_bracket(&atom)
             {
-                return format!(
-                    "{}{}",
-                    prefix,
-                    Self::build_ltm_expansion(&bracket_atom, &count_spec, sep_mode, sep)
-                );
+                return build_with_rest(format!(
+                    "{prefix}{sp}{}",
+                    expand(&bracket_atom, &count_spec, sep_mode, sep)
+                ));
             }
             // Handle bracket-delimited atoms with quantifiers (e.g. `<value>*`)
             if let Some((base, count_spec)) = Self::strip_bracket_quantifier(&atom) {
-                return Self::build_ltm_expansion(&base, &count_spec, sep_mode, sep);
+                return build_with_rest(expand(&base, &count_spec, sep_mode, sep));
             }
-            return Self::build_ltm_expansion(&atom, "1..*", sep_mode, sep);
+            return build_with_rest(expand(&atom, "1..*", sep_mode, sep));
         }
         pattern.to_string()
     }
@@ -896,37 +1045,56 @@ impl Interpreter {
         sep_mode: Option<&str>,
         sep: Option<&str>,
     ) -> String {
-        let (min, max) = if let Some((min_str, max_str)) = count_spec.split_once("..") {
-            let min = min_str.parse::<usize>().unwrap_or(0);
-            let max = if max_str == "*" {
-                None
-            } else {
-                max_str.parse::<usize>().ok()
-            };
-            (min, max)
-        } else {
-            let exact = count_spec.parse::<usize>().unwrap_or(1);
-            (exact, Some(exact))
-        };
+        Self::build_ltm_expansion_inner(atom, count_spec, sep_mode, sep, false)
+    }
+
+    fn build_ltm_expansion_spaced(
+        atom: &str,
+        count_spec: &str,
+        sep_mode: Option<&str>,
+        sep: Option<&str>,
+    ) -> String {
+        Self::build_ltm_expansion_inner(atom, count_spec, sep_mode, sep, true)
+    }
+
+    fn build_ltm_expansion_inner(
+        atom: &str,
+        count_spec: &str,
+        sep_mode: Option<&str>,
+        sep: Option<&str>,
+        spaced: bool,
+    ) -> String {
+        let (min, max) = Self::parse_quantifier_range(count_spec);
 
         let allow_trailing_sep = matches!(sep_mode, Some("%%"));
         let sep = sep.unwrap_or_default();
+        let sp = if spaced { " " } else { "" };
+        // In spaced mode, insert explicit <ws> around the separator inside
+        // repetition groups so sigspace works at iteration boundaries.
+        let sws = if spaced { "<ws>" } else { "" };
 
-        let repeat_atom = |count: usize| -> String { atom.repeat(count) };
-        let build_exact_list = |count: usize| -> String {
+        let repeat_atom = |count: usize| -> String {
+            if spaced {
+                let atoms: Vec<&str> = (0..count).map(|_| atom).collect();
+                atoms.join(" ")
+            } else {
+                atom.repeat(count)
+            }
+        };
+        let build_exact_list_inner = |count: usize, trailing: bool| -> String {
             if count == 0 {
                 return String::new();
             }
             let mut out = atom.to_string();
             for _ in 1..count {
-                out.push_str(sep);
-                out.push_str(atom);
+                out.push_str(&format!("{sws}{sep}{sws}{atom}"));
             }
-            if allow_trailing_sep {
-                out.push_str(&format!("({sep})?"));
+            if trailing && allow_trailing_sep {
+                out.push_str(&format!("({sws}{sep})?"));
             }
             out
         };
+        let build_exact_list = |count: usize| -> String { build_exact_list_inner(count, true) };
 
         if sep_mode.is_none() {
             return match max {
@@ -939,13 +1107,13 @@ impl Interpreter {
                         format!("({})", alts.join("|"))
                     }
                 }
-                None => format!("{}({atom})*", repeat_atom(min)),
+                None => format!("{}({sp}{atom})*", repeat_atom(min)),
             };
         }
 
         if max.is_none() && min == 1 && atom.ends_with('?') && !sep.is_empty() {
             if allow_trailing_sep {
-                return format!("{atom}({sep})?");
+                return format!("{atom}({sws}{sep})?");
             }
             return atom.to_string();
         }
@@ -963,16 +1131,18 @@ impl Interpreter {
             None => {
                 if min == 0 {
                     // 0..* with separator: [atom(sep atom)*]?
-                    let mut inner = format!("{atom}({sep}{atom})*");
+                    let mut inner = format!("{atom}({sws}{sep}{sws}{atom})*");
                     if allow_trailing_sep {
-                        inner.push_str(&format!("({sep})?"));
+                        inner.push_str(&format!("({sws}{sep})?"));
                     }
                     format!("[{inner}]?")
                 } else {
-                    let mut out = build_exact_list(min);
-                    out.push_str(&format!("({sep}{atom})*"));
+                    // Use inner without trailing sep — the trailing sep is
+                    // added after the unbounded repetition group below.
+                    let mut out = build_exact_list_inner(min, false);
+                    out.push_str(&format!("({sws}{sep}{sws}{atom})*"));
                     if allow_trailing_sep {
-                        out.push_str(&format!("({sep})?"));
+                        out.push_str(&format!("({sws}{sep})?"));
                     }
                     out
                 }
@@ -1239,7 +1409,7 @@ impl Interpreter {
             }
         }
 
-        let expanded = Self::expand_ltm_pattern(source);
+        let expanded = Self::expand_ltm_pattern(source, sigspace);
         let mut chars = expanded.chars().peekable();
         let mut tokens = Vec::new();
         let mut anchor_start = false;
@@ -2855,6 +3025,28 @@ impl Interpreter {
                             code.push(ch);
                         }
                     }
+                    // Detect P5-style {N,M} or {N,} quantifiers
+                    let trimmed_code = code.trim();
+                    if !trimmed_code.is_empty() {
+                        let is_p5_quant = if let Some((left, right)) = trimmed_code.split_once(',')
+                        {
+                            left.trim().chars().all(|c| c.is_ascii_digit())
+                                && !left.trim().is_empty()
+                                && (right.is_empty()
+                                    || right.trim().chars().all(|c| c.is_ascii_digit()))
+                        } else {
+                            false
+                        };
+                        if is_p5_quant {
+                            PENDING_REGEX_ERROR.with(|e| {
+                                *e.borrow_mut() = Some(RuntimeError::obsolete(
+                                    "{N,M} as general quantifier",
+                                    "** N..M (or ** N..*)",
+                                ));
+                            });
+                            return None;
+                        }
+                    }
                     RegexAtom::CodeAssertion {
                         code,
                         negated: false,
@@ -2926,26 +3118,20 @@ impl Interpreter {
                                 }
                                 RegexQuant::RepeatCode(code)
                             } else {
-                                // Parse the count/range: N, N..M, N..*
+                                // Parse the count/range: N, N..M, N..*, with
+                                // optional exclusion markers (^) and underscore
+                                // separators in numeric literals.
                                 let mut count_str = String::new();
                                 while chars.peek().is_some_and(|ch| {
-                                    ch.is_ascii_digit() || *ch == '.' || *ch == '*'
+                                    ch.is_ascii_digit()
+                                        || *ch == '.'
+                                        || *ch == '*'
+                                        || *ch == '^'
+                                        || *ch == '_'
                                 }) {
                                     count_str.push(chars.next().unwrap());
                                 }
-                                let (min, max) =
-                                    if let Some((min_str, max_str)) = count_str.split_once("..") {
-                                        let min = min_str.parse::<usize>().unwrap_or(0);
-                                        let max = if max_str == "*" {
-                                            None
-                                        } else {
-                                            max_str.parse::<usize>().ok()
-                                        };
-                                        (min, max)
-                                    } else {
-                                        let exact = count_str.parse::<usize>().unwrap_or(1);
-                                        (exact, Some(exact))
-                                    };
+                                let (min, max) = Self::parse_quantifier_range(&count_str);
                                 RegexQuant::Repeat(min, max)
                             }
                         } else {
