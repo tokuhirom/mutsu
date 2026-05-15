@@ -650,6 +650,8 @@ pub(crate) enum Stmt {
         body: Vec<Stmt>,
         /// Language version active when this class was declared (e.g., "6.c", "6.d", "6.e")
         language_version: String,
+        /// Custom `is` traits with optional arguments, dispatched via `trait_mod:<is>`
+        custom_traits: Vec<(String, Option<Expr>)>,
     },
     HasDecl {
         name: Symbol,
@@ -723,6 +725,8 @@ pub(crate) enum Stmt {
         is_rw: bool,
         /// Language version active when this role was declared (e.g., "6.c", "6.d", "6.e")
         language_version: String,
+        /// Custom `is` traits with optional arguments, dispatched via `trait_mod:<is>`
+        custom_traits: Vec<(String, Option<Expr>)>,
     },
     DoesDecl {
         name: Symbol,

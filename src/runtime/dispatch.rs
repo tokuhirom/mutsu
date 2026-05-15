@@ -220,7 +220,7 @@ impl Interpreter {
     fn candidate_specificity_rank(
         &self,
         def: &FunctionDef,
-    ) -> (usize, usize, usize, usize, usize, usize, usize, usize) {
+    ) -> (usize, usize, usize, usize, usize, usize, usize) {
         let literal_value_count = Self::dispatch_visible_params(def)
             .filter(|p| p.literal_value.is_some())
             .count();
@@ -251,12 +251,6 @@ impl Interpreter {
         let named_count = Self::dispatch_visible_params(def)
             .filter(|p| p.named)
             .count();
-        // Required named params (`:$a!`) are more specific than optional ones
-        let required_named_count = def
-            .param_defs
-            .iter()
-            .filter(|p| p.named && p.required)
-            .count();
         let trait_count = Self::dispatch_visible_params(def)
             .filter(|p| {
                 p.traits
@@ -271,7 +265,6 @@ impl Interpreter {
             typed_param_count,
             subsig_count,
             named_count,
-            required_named_count,
             trait_count,
         )
     }
@@ -284,13 +277,44 @@ impl Interpreter {
     fn candidate_type_distance(&self, args: &[Value], def: &FunctionDef) -> usize {
         let mut total = 0usize;
         let params: Vec<&ParamDef> = Self::dispatch_visible_params(def).collect();
-        for (i, pd) in params.iter().enumerate() {
+        let mut pos_idx = 0usize;
+        for pd in params.iter() {
             if let Some(constraint) = &pd.type_constraint {
                 let base = Self::constraint_base_name(constraint);
-                if i < args.len() {
+                // For named params, find the matching Pair arg
+                if pd.named {
+                    let bare_name = pd.name.trim_start_matches(|c: char| "$@%&".contains(c));
+                    let named_val = args.iter().find_map(|a| {
+                        if let Value::Pair(key, val) = a {
+                            if key == bare_name {
+                                Some(val.as_ref().clone())
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    });
+                    if let Some(val) = named_val {
+                        total += self.type_hierarchy_distance_with_var_type(base, &val, None);
+                    } else {
+                        total += 1000;
+                    }
+                    continue;
+                }
+                if pos_idx < args.len() {
+                    // Skip Pair args when looking for positional args
+                    while pos_idx < args.len() && matches!(&args[pos_idx], Value::Pair(..)) {
+                        pos_idx += 1;
+                    }
+                    if pos_idx >= args.len() {
+                        total += 1000;
+                        continue;
+                    }
                     // Unwrap VarRef Capture wrappers and check the source
                     // variable's declared type constraint for native type dispatch.
-                    let (mut arg, var_type) = self.unwrap_varref_for_dispatch(&args[i]);
+                    let (mut arg, var_type) = self.unwrap_varref_for_dispatch(&args[pos_idx]);
+                    pos_idx += 1;
                     if pd.name.starts_with('&')
                         && let Some(return_type) = self.callable_return_type(&arg)
                     {
@@ -332,6 +356,9 @@ impl Interpreter {
                 }
             } else {
                 total += 1000;
+                if !pd.named {
+                    pos_idx += 1;
+                }
             }
         }
         total

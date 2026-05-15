@@ -43,6 +43,7 @@ impl Compiler {
                 repr,
                 body,
                 language_version,
+                custom_traits,
                 ..
             } => {
                 let new_parents: Vec<String> = parents.iter().map(&qualify_parent).collect();
@@ -60,6 +61,7 @@ impl Compiler {
                     repr: repr.clone(),
                     body: body.clone(),
                     language_version: language_version.clone(),
+                    custom_traits: custom_traits.clone(),
                 }
             }
             Stmt::RoleDecl {
@@ -70,6 +72,7 @@ impl Compiler {
                 body,
                 is_rw,
                 language_version,
+                custom_traits,
                 ..
             } => Stmt::RoleDecl {
                 name: qualified_sym,
@@ -80,6 +83,7 @@ impl Compiler {
                 body: body.clone(),
                 is_rw: *is_rw,
                 language_version: language_version.clone(),
+                custom_traits: custom_traits.clone(),
             },
             _ => stmt.clone(),
         }

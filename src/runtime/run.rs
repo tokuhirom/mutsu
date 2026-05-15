@@ -185,6 +185,7 @@ impl Interpreter {
                 repr,
                 body: _,
                 language_version,
+                custom_traits,
             } = &stmts[idx]
             {
                 let body: Vec<Stmt> = stmts[idx + 1..].to_vec();
@@ -200,6 +201,7 @@ impl Interpreter {
                     repr: repr.clone(),
                     body,
                     language_version: language_version.clone(),
+                    custom_traits: custom_traits.clone(),
                 });
             }
             result
