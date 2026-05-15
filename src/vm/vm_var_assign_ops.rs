@@ -664,6 +664,10 @@ impl VM {
         if var_name.starts_with('%')
             && let Value::Hash(map) = value
         {
+            // Preserve original keys from the source hash before coercion
+            // (coercion creates a new Arc, losing the registration).
+            let saved_original_keys =
+                runtime::utils::hash_original_keys_snapshot(&Value::Hash(map.clone()));
             let value_constraint = self.interpreter.var_type_constraint(var_name);
             let key_constraint = self.interpreter.var_hash_key_constraint(var_name);
             let mut coerced_map = std::collections::HashMap::with_capacity(map.len());
@@ -726,7 +730,12 @@ impl VM {
                 };
                 coerced_map.insert(coerced_key, coerced_val);
             }
-            return Ok(Value::hash(coerced_map));
+            let result = Value::hash(coerced_map);
+            // Re-register original keys on the new hash Arc.
+            if let Some(orig) = saved_original_keys {
+                runtime::utils::register_hash_original_keys(&result, orig);
+            }
+            return Ok(result);
         }
 
         Ok(value)

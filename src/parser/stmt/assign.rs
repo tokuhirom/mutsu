@@ -1123,13 +1123,15 @@ fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                     r = r2;
                 }
                 let (r, _) = parse_char(r, ')')?;
+                // Wrap in Grouped so that expand_call_arg does not split the
+                // parenthesized assignment's RHS back into separate call args.
                 return Ok((
                     r,
-                    Expr::AssignExpr {
+                    Expr::Grouped(Box::new(Expr::AssignExpr {
                         name,
                         expr: Box::new(Expr::ArrayLiteral(items)),
                         is_bind: false,
-                    },
+                    })),
                 ));
             }
         }
