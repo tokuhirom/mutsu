@@ -350,16 +350,45 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             }
         }
         "uniname" => {
+            match arg {
+                Value::Int(i) => match super::unicode::uniname_from_int(*i) {
+                    Ok(name) => Some(Ok(Value::str(name))),
+                    Err(e) => Some(Err(e)),
+                },
+                Value::Package(name) => {
+                    // Type objects like Str, Int should throw X::Multi::NoMatch
+                    let msg = format!(
+                        "Cannot resolve caller uniname({}); none of these signatures matches:\n    (\\what)",
+                        name
+                    );
+                    let mut attrs = HashMap::new();
+                    attrs.insert("message".to_string(), Value::str(msg.clone()));
+                    let ex = Value::make_instance(Symbol::intern("X::Multi::NoMatch"), attrs);
+                    let mut err = RuntimeError::new(&msg);
+                    err.exception = Some(Box::new(ex));
+                    Some(Err(err))
+                }
+                _ => {
+                    let s = arg.to_string_value();
+                    if s.is_empty() {
+                        return Some(Ok(Value::Nil));
+                    }
+                    if let Some(ch) = s.chars().next() {
+                        let name = unicode_char_name(ch);
+                        Some(Ok(Value::str(name)))
+                    } else {
+                        Some(Ok(Value::Nil))
+                    }
+                }
+            }
+        }
+        "uninames" => {
             let s = arg.to_string_value();
-            if s.is_empty() {
-                return Some(Ok(Value::Nil));
-            }
-            if let Some(ch) = s.chars().next() {
-                let name = unicode_char_name(ch);
-                Some(Ok(Value::str(name)))
-            } else {
-                Some(Ok(Value::Nil))
-            }
+            let names: Vec<Value> = s
+                .chars()
+                .map(|ch| Value::str(unicode_char_name(ch)))
+                .collect();
+            Some(Ok(Value::array(names)))
         }
         "uniparse" | "parse-names" => {
             let s = arg.to_string_value();

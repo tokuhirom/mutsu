@@ -886,6 +886,7 @@ pub(super) fn is_listop(name: &str) -> bool {
             | "uniprop"
             | "unimatch"
             | "uniname"
+            | "uninames"
             | "unival"
             | "univals"
             | "lines"

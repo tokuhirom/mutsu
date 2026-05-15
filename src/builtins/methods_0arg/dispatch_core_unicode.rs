@@ -110,16 +110,23 @@ pub(super) fn dispatch(
                 crate::builtins::unicode::unicode_general_category(ch),
             ))))
         }
-        "uniname" => {
-            let s = target.to_string_value();
-            if s.is_empty() {
-                return Some(Some(Ok(Value::Nil)));
+        "uniname" => match target {
+            Value::Int(i) => match crate::builtins::unicode::uniname_from_int(*i) {
+                Ok(name) => Some(Some(Ok(Value::str(name)))),
+                Err(e) => Some(Some(Err(e))),
+            },
+            Value::Package(_) => Some(Some(Err(make_no_match_error("uniname")))),
+            _ => {
+                let s = target.to_string_value();
+                if s.is_empty() {
+                    return Some(Some(Ok(Value::Nil)));
+                }
+                let ch = s.chars().next().unwrap();
+                Some(Some(Ok(Value::str(
+                    crate::builtins::unicode::unicode_char_name(ch),
+                ))))
             }
-            let ch = s.chars().next().unwrap();
-            Some(Some(Ok(Value::str(
-                crate::builtins::unicode::unicode_char_name(ch),
-            ))))
-        }
+        },
         "uninames" => {
             let s = target.to_string_value();
             let names: Vec<Value> = s
