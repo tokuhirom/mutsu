@@ -638,6 +638,17 @@ pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
             return Ok((r2, Expr::ArrayVar(name)));
         }
     }
+    // @{expr} is Perl 5 array dereference syntax — throw X::Obsolete
+    if twigil.is_empty() && rest.starts_with('{') {
+        if let Ok((_r2, inner)) = super::misc::block_or_hash_expr(rest) {
+            if !matches!(inner, crate::ast::Expr::Hash(_)) {
+                return Err(PError::fatal(
+                    "X::Obsolete: Unsupported use of @{expr}. In Raku please use: @(expr)."
+                        .to_string(),
+                ));
+            }
+        }
+    }
     // Bare @ (anonymous array variable) — each occurrence gets a unique name
     let next_is_ident =
         !rest.is_empty() && rest.chars().next().is_some_and(is_raku_identifier_start);
@@ -690,13 +701,35 @@ pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
     } else {
         (input, "")
     };
-    // Contextualized scalar specials (e.g., %$/, %$_): parse `$...` then lift
-    // to a hash variable targeting the same underlying name.
-    if twigil.is_empty()
-        && rest.starts_with('$')
-        && let Ok((r2, Expr::Var(name))) = scalar_var(rest)
-    {
-        return Ok((r2, Expr::HashVar(name)));
+    // Contextualized scalar specials (e.g., %$h, %$/, %$_): parse `$...` then
+    // coerce to hash context via a `.hash` method call.
+    if twigil.is_empty() && rest.starts_with('$') {
+        if let Ok((r2, expr)) = scalar_var(rest) {
+            return Ok((
+                r2,
+                Expr::MethodCall {
+                    target: Box::new(expr),
+                    name: crate::symbol::Symbol::intern("hash"),
+                    args: vec![],
+                    modifier: None,
+                    quoted: false,
+                },
+            ));
+        }
+    }
+    // %{...} — hash coercion of a block expression
+    // In Raku, %{expr} treats the block as a hash initializer.
+    if twigil.is_empty() && rest.starts_with('{') {
+        if let Ok((r2, inner)) = super::misc::block_or_hash_expr(rest) {
+            // Wrap in hash() call — this will fail at runtime if odd number of elements
+            return Ok((
+                r2,
+                Expr::Call {
+                    name: crate::symbol::Symbol::intern("hash"),
+                    args: vec![inner],
+                },
+            ));
+        }
     }
     // Bare % (anonymous hash variable)
     let next_is_ident =

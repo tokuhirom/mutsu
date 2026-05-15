@@ -184,6 +184,7 @@ roast/S03-operators/comparison-simple.t
 roast/S03-operators/comparison.t
 roast/S03-operators/composition.t
 roast/S03-operators/context-forcers.t
+roast/S03-operators/context.t
 roast/S03-operators/custom.t
 roast/S03-operators/div.t
 roast/S03-operators/equality.t
@@ -367,6 +368,7 @@ roast/S05-metasyntax/changed.t
 roast/S05-metasyntax/charset.t
 roast/S05-metasyntax/delimiters.t
 roast/S05-metasyntax/interpolating-closure.t
+roast/S05-metasyntax/litvar.t
 roast/S05-metasyntax/lookaround.t
 roast/S05-metasyntax/null.t
 roast/S05-metasyntax/proto-token-ltm.t

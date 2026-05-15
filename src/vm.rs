@@ -880,7 +880,14 @@ impl VM {
                         name.strip_prefix('@')
                             .and_then(|bare| self.interpreter.env().get(bare).cloned())
                     })
-                    .unwrap_or(Value::Nil);
+                    .unwrap_or_else(|| {
+                        // Anonymous @-sigil variables default to empty Array
+                        if name.contains("__ANON_ARRAY_") || name == "@__ANON_ARRAY__" {
+                            Value::real_array(vec![])
+                        } else {
+                            Value::Nil
+                        }
+                    });
                 // When @-sigil dereferences a Hash, convert to a list of pairs
                 let val = match val {
                     Value::Hash(ref map) => {
@@ -912,7 +919,13 @@ impl VM {
                         if name == "%ENV" {
                             return Err(RuntimeError::undeclared("name", "%ENV"));
                         }
-                        self.stack.push(Value::Nil);
+                        // Anonymous %-sigil variables default to empty Hash
+                        if name == "%__ANON_HASH__" {
+                            self.stack
+                                .push(Value::hash(std::collections::HashMap::new()));
+                        } else {
+                            self.stack.push(Value::Nil);
+                        }
                     }
                 }
                 *ip += 1;

@@ -1752,6 +1752,16 @@ impl Value {
         Value::Hash(Arc::new(map))
     }
 
+    /// Coerce a value into item context (`.item` method).
+    /// Arrays get their kind itemized, other values get wrapped in Scalar.
+    pub fn item(self) -> Self {
+        match self {
+            Value::Array(items, kind) => Value::Array(items, kind.itemize()),
+            Value::Hash(_) => Value::Scalar(Box::new(self)),
+            other => other,
+        }
+    }
+
     /// Autovivify a hash entry: if the key doesn't exist, insert an empty Hash.
     /// Returns a `HashSlotRef` pointing to the entry in the parent hash.
     /// Uses interior mutation of the `Arc<HashMap>` so that **all** clones of

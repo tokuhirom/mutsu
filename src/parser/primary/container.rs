@@ -605,6 +605,59 @@ pub(super) fn itemized_paren_expr(input: &str) -> PResult<'_, Expr> {
     ))
 }
 
+/// Parse list-context parenthesized expression: `@(...)`.
+///
+/// In Raku, `@(expr)` coerces the expression into list context.
+/// We lower this to a method call `.list` on the inner expression.
+pub(super) fn list_context_paren_expr(input: &str) -> PResult<'_, Expr> {
+    let Some(rest) = input.strip_prefix('@') else {
+        return Err(PError::expected("list-context parenthesized expression"));
+    };
+    if !rest.starts_with('(') {
+        return Err(PError::expected("list-context parenthesized expression"));
+    }
+    let (rest, inner) = paren_expr(rest)?;
+    Ok((
+        rest,
+        Expr::MethodCall {
+            target: Box::new(inner),
+            name: Symbol::intern("list"),
+            args: vec![],
+            modifier: None,
+            quoted: false,
+        },
+    ))
+}
+
+/// Parse hash-context parenthesized expression: `%(...)`.
+///
+/// In Raku, `%(values)` builds a Hash from the given key-value pairs.
+/// We lower this to a call to `hash(...)`.
+pub(super) fn hash_context_paren_expr(input: &str) -> PResult<'_, Expr> {
+    let Some(rest) = input.strip_prefix('%') else {
+        return Err(PError::expected("hash-context parenthesized expression"));
+    };
+    if !rest.starts_with('(') {
+        return Err(PError::expected("hash-context parenthesized expression"));
+    }
+    let (rest, inner) = paren_expr(rest)?;
+    let args = match inner {
+        Expr::Grouped(ref boxed) => match boxed.as_ref() {
+            Expr::ArrayLiteral(items) => items.clone(),
+            other => vec![other.clone()],
+        },
+        Expr::ArrayLiteral(ref items) => items.clone(),
+        other => vec![other],
+    };
+    Ok((
+        rest,
+        Expr::Call {
+            name: Symbol::intern("hash"),
+            args,
+        },
+    ))
+}
+
 /// Parse itemized brace expression: `${ }`.
 ///
 /// In Raku, `${ a => 1, b => 2 }` creates an itemized hash — it wraps the
@@ -631,7 +684,10 @@ pub(super) fn itemized_brace_expr(input: &str) -> PResult<'_, Expr> {
             },
         ))
     } else {
-        Ok((rest, Expr::CaptureLiteral(vec![inner])))
+        // ${expr} where expr is not a hash is Perl 5 scalar dereference syntax
+        Err(PError::fatal(
+            "X::Obsolete: Unsupported use of ${expr}. In Raku please use: $(expr).".to_string(),
+        ))
     }
 }
 

@@ -423,7 +423,14 @@ impl Interpreter {
             "roundrobin" => self.builtin_roundrobin(&args),
             // List operations
             "join" => self.builtin_join(&args),
-            "item" => Ok(args.first().cloned().unwrap_or(Value::Nil)),
+            "item" => {
+                if args.len() <= 1 {
+                    let val = args.first().cloned().unwrap_or(Value::Nil);
+                    Ok(val.item())
+                } else {
+                    Ok(Value::array(args.clone()))
+                }
+            }
             "list" => self.builtin_list(&args),
             "cache" => self.builtin_cache(&args),
             "circumfix:<[ ]>" => Ok(Value::real_array(args.clone())),
