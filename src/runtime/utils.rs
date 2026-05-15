@@ -78,6 +78,52 @@ fn shaped_array_ids() -> &'static Mutex<HashMap<usize, Vec<usize>>> {
     SHAPED_ARRAY_IDS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Global registry of original (non-string) keys for object hashes.
+/// Keyed by the hash's Arc pointer identity.
+fn hash_original_keys_registry() -> &'static Mutex<HashMap<usize, HashMap<String, Value>>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<usize, HashMap<String, Value>>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Register original keys for a hash value.
+pub(crate) fn register_hash_original_keys(hash: &Value, original_keys: HashMap<String, Value>) {
+    if original_keys.is_empty() {
+        return;
+    }
+    if let Value::Hash(arc) = hash {
+        let id = Arc::as_ptr(arc) as usize;
+        if let Ok(mut reg) = hash_original_keys_registry().lock() {
+            reg.insert(id, original_keys);
+        }
+    }
+}
+
+/// Snapshot the original keys for a hash, if any are registered.
+pub(crate) fn hash_original_keys_snapshot(hash: &Value) -> Option<HashMap<String, Value>> {
+    if let Value::Hash(arc) = hash {
+        let id = Arc::as_ptr(arc) as usize;
+        if let Ok(reg) = hash_original_keys_registry().lock() {
+            return reg.get(&id).cloned();
+        }
+    }
+    None
+}
+
+/// Retrieve the original (typed) key value for a hash entry, if available.
+/// Falls back to the string key if no original key is registered.
+pub(crate) fn hash_typed_key(hash: &Value, str_key: &str) -> Value {
+    if let Value::Hash(arc) = hash {
+        let id = Arc::as_ptr(arc) as usize;
+        if let Ok(reg) = hash_original_keys_registry().lock()
+            && let Some(orig_keys) = reg.get(&id)
+            && let Some(orig) = orig_keys.get(str_key)
+        {
+            return orig.clone();
+        }
+    }
+    Value::str(str_key.to_string())
+}
+
 fn grep_view_bindings() -> &'static Mutex<GrepViewMap> {
     static GREP_VIEW_BINDINGS: OnceLock<Mutex<GrepViewMap>> = OnceLock::new();
     GREP_VIEW_BINDINGS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -431,26 +477,37 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                 }
             }
             let mut map = HashMap::new();
+            let mut original_keys: HashMap<String, Value> = HashMap::new();
             let mut i = 0;
             while i < flat.len() {
                 if let Value::Pair(k, v) = &flat[i] {
                     map.insert(k.clone(), *v.clone());
                     i += 1;
                 } else if let Value::ValuePair(k, v) = &flat[i] {
-                    map.insert(k.to_string_value(), *v.clone());
+                    let str_key = k.to_string_value();
+                    if !matches!(k.as_ref(), Value::Str(_)) {
+                        original_keys.insert(str_key.clone(), *k.clone());
+                    }
+                    map.insert(str_key, *v.clone());
                     i += 1;
                 } else {
-                    let key = flat[i].to_string_value();
+                    let key_val = &flat[i];
+                    let str_key = key_val.to_string_value();
+                    if !matches!(key_val, Value::Str(_)) {
+                        original_keys.insert(str_key.clone(), key_val.clone());
+                    }
                     let val = if i + 1 < flat.len() {
                         flat[i + 1].clone()
                     } else {
                         Value::Nil
                     };
-                    map.insert(key, val);
+                    map.insert(str_key, val);
                     i += 2;
                 }
             }
-            Value::hash(map)
+            let result = Value::hash(map);
+            register_hash_original_keys(&result, original_keys);
+            result
         }
         Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) | Value::Slip(items) => {
             let mut map = HashMap::new();
@@ -550,6 +607,7 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
         .map(Value::to_string_value)
         .unwrap_or_else(|| "Nil".to_string());
     let mut map = HashMap::new();
+    let mut original_keys: HashMap<String, Value> = HashMap::new();
     let mut iter = items.into_iter();
     while let Some(item) = iter.next() {
         match item {
@@ -557,7 +615,11 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
                 map.insert(key, *boxed_val);
             }
             Value::ValuePair(key, boxed_val) => {
-                map.insert(Value::hash_key_encode(&key), *boxed_val);
+                let str_key = Value::hash_key_encode(&key);
+                if !matches!(key.as_ref(), Value::Str(_)) {
+                    original_keys.insert(str_key.clone(), *key);
+                }
+                map.insert(str_key, *boxed_val);
             }
             other => {
                 let Some(value) = iter.next() else {
@@ -577,11 +639,17 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
                     err.exception = Some(Box::new(ex));
                     return Err(err);
                 };
-                map.insert(Value::hash_key_encode(&other), value);
+                let str_key = Value::hash_key_encode(&other);
+                if !matches!(&other, Value::Str(_)) {
+                    original_keys.insert(str_key.clone(), other);
+                }
+                map.insert(str_key, value);
             }
         }
     }
-    Ok(Value::hash(map))
+    let result = Value::hash(map);
+    register_hash_original_keys(&result, original_keys);
+    Ok(result)
 }
 
 /// Maximum number of elements when expanding an infinite range into an Array.

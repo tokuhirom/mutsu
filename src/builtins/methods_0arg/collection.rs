@@ -139,7 +139,8 @@ fn invert_value(target: &Value) -> Option<Value> {
     match target {
         Value::Hash(items) => {
             for (k, v) in items.iter() {
-                extend_inverted_pairs(&mut result, Value::str(k.clone()), v);
+                let orig_key = crate::runtime::utils::hash_typed_key(target, k);
+                extend_inverted_pairs(&mut result, orig_key, v);
             }
         }
         Value::Bag(items, _) => {
@@ -577,20 +578,19 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 return Some(Ok(Value::array(pairs)));
             }
             match target {
-                Value::Hash(items) => Some(Ok(Value::array(
-                    items
+                Value::Hash(items) => {
+                    let pairs: Vec<Value> = items
                         .iter()
-                        .map(|(k, v)| match v {
-                            Value::Str(s) => {
-                                Value::Pair(s.to_string(), Box::new(Value::str(k.clone())))
+                        .map(|(k, v)| {
+                            let orig_key = crate::runtime::utils::hash_typed_key(target, k);
+                            match v {
+                                Value::Str(s) => Value::Pair(s.to_string(), Box::new(orig_key)),
+                                _ => Value::ValuePair(Box::new(v.clone()), Box::new(orig_key)),
                             }
-                            _ => Value::ValuePair(
-                                Box::new(v.clone()),
-                                Box::new(Value::str(k.clone())),
-                            ),
                         })
-                        .collect(),
-                ))),
+                        .collect();
+                    Some(Ok(Value::array(pairs)))
+                }
                 Value::Bag(items, _) => Some(Ok(Value::array(
                     items
                         .iter()
