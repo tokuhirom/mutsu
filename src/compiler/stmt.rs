@@ -1533,6 +1533,7 @@ impl Compiler {
                 name,
                 body,
                 is_unit,
+                is_my,
             } => {
                 let qualified_name = self.qualify_package_name(&name.resolve());
                 // Detect stub body: `module Foo { ... }` — body is a stub operator
@@ -1561,7 +1562,11 @@ impl Compiler {
                 } else {
                     let name_idx = self.code.add_constant(Value::str(qualified_name.clone()));
                     // Non-unit package declarations also produce a type object value.
-                    self.code.emit(OpCode::RegisterPackage { name_idx });
+                    if *is_my {
+                        self.code.emit(OpCode::RegisterPackageMy { name_idx });
+                    } else {
+                        self.code.emit(OpCode::RegisterPackage { name_idx });
+                    }
                     // Clear any previous stub status for this package
                     self.code.emit(OpCode::ClearPackageStub { name_idx });
                     let pkg_idx = self.code.emit(OpCode::PackageScope {

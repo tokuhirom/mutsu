@@ -29,7 +29,7 @@ use crate::value::Value;
 
 use super::sub::parse_type_constraint_expr;
 use super::{
-    class::{module_decl, package_decl, proto_decl, role_decl},
+    class::{module_decl, package_decl_my, proto_decl, role_decl},
     keyword, parse_assign_expr_or_comma, parse_statement_modifier,
 };
 

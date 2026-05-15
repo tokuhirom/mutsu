@@ -654,6 +654,12 @@ pub(crate) enum OpCode {
     RegisterPackage {
         name_idx: u32,
     },
+    /// Register a lexically-scoped (`my`) package type object.
+    /// Same as RegisterPackage but marks the name as block-declared
+    /// so it is cleaned up when the enclosing block scope exits.
+    RegisterPackageMy {
+        name_idx: u32,
+    },
     /// Register a package as a stub (body is `...`, `!!!`, or `???`).
     RegisterPackageStub {
         name_idx: u32,

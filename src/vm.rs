@@ -2845,6 +2845,24 @@ impl VM {
                 self.env_dirty = true;
                 *ip += 1;
             }
+            OpCode::RegisterPackageMy { name_idx } => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                let pkg_val = Value::Package(Symbol::intern(&name));
+                self.interpreter
+                    .env_mut()
+                    .insert(name.clone(), pkg_val.clone());
+                self.interpreter
+                    .chain_declared_packages
+                    .insert(name.clone());
+                self.update_local_if_exists(code, &name, &pkg_val);
+                // Mark as block-declared so the name is cleaned up
+                // when the enclosing block scope exits.
+                if let Some(set) = self.block_declared_vars.last_mut() {
+                    set.insert(name);
+                }
+                self.env_dirty = true;
+                *ip += 1;
+            }
             OpCode::RegisterPackageStub { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.interpreter.package_stubs.insert(name);
