@@ -671,6 +671,9 @@ impl VM {
                 self.interpreter.set_pending_call_arg_sources(arg_sources);
                 let result = self.interpreter.call_function(name, args);
                 self.interpreter.set_pending_call_arg_sources(None);
+                // Interpreter function calls (e.g. `require`) may register
+                // new subs — invalidate function resolution caches.
+                self.fn_resolve_gen += 1;
                 // substr-rw returns a Proxy that must be preserved (not auto-FETCHed)
                 let auto_fetch = name != "substr-rw";
                 self.interpreter.maybe_fetch_rw_proxy(result?, auto_fetch)
