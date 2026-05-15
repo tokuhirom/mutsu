@@ -487,18 +487,27 @@ impl VM {
         let right_name = Self::const_str(code, right_name_idx);
 
         // Resolve alias chains to find the binding root of each variable.
+        // =:= tests container identity — two named variables are identical
+        // only when they share the same binding root (via `:=`).
         let left_root = self.resolve_alias_root(left_name);
         let right_root = self.resolve_alias_root(right_name);
 
         let result = if left_root == right_root {
             // Same binding root → same container.
             true
-        } else if !Self::is_value_non_reference(&left, &right) {
-            // Reference types: check Arc pointer identity.
-            crate::runtime::values_identical(&left, &right)
         } else {
-            // Distinct scalar containers → never identical.
-            false
+            // Different binding roots. For most types, this means different
+            // containers → False. But singleton/unboxed types like Package
+            // (type objects) and Sub have no container semantics — two
+            // variables holding the same Package are considered =:=.
+            // Instance values (user objects) are NOT singletons: assignment
+            // copies the reference but creates a new container, so =:= is False.
+            match (&left, &right) {
+                (Value::Package(a), Value::Package(b)) => a == b,
+                (Value::Sub(a), Value::Sub(b)) => std::sync::Arc::ptr_eq(a, b),
+                (Value::WeakSub(a), Value::WeakSub(b)) => a.ptr_eq(b),
+                _ => false,
+            }
         };
         self.stack.push(Value::Bool(result));
     }
@@ -517,6 +526,59 @@ impl VM {
             }
         }
         current
+    }
+
+    /// Container identity (`=:=`) for indexed expressions (array/hash elements).
+    /// Checks if one element has a binding sentinel pointing to the other's source.
+    pub(super) fn exec_container_eq_indexed_op(
+        &mut self,
+        code: &CompiledCode,
+        left_name_idx: u32,
+        right_name_idx: u32,
+    ) {
+        let _right = self.stack.pop().unwrap();
+        let _left = self.stack.pop().unwrap();
+        let left_source = Self::const_str(code, left_name_idx);
+        let right_source = Self::const_str(code, right_name_idx);
+
+        // Check if left element's binding sentinel points to right source.
+        let left_bound_to = self.get_binding_source_of_indexed(left_source);
+        if left_bound_to.as_deref() == Some(right_source) {
+            self.stack.push(Value::Bool(true));
+            return;
+        }
+        // Check if right element's binding sentinel points to left source.
+        let right_bound_to = self.get_binding_source_of_indexed(right_source);
+        if right_bound_to.as_deref() == Some(left_source) {
+            self.stack.push(Value::Bool(true));
+            return;
+        }
+        // Both point to the same third source.
+        if let (Some(lb), Some(rb)) = (&left_bound_to, &right_bound_to)
+            && lb == rb
+        {
+            self.stack.push(Value::Bool(true));
+            return;
+        }
+        // Same encoded source (e.g. @a[1] =:= @a[1])
+        let result = left_source == right_source;
+        self.stack.push(Value::Bool(result));
+    }
+
+    /// For an encoded source like "@b\0idx\01", look up the raw array element
+    /// and if it has a BOUND_ARRAY_REF_SENTINEL, return the bound source name.
+    fn get_binding_source_of_indexed(&self, encoded: &str) -> Option<String> {
+        let sep_pos = encoded.find("\x00idx\x00")?;
+        let var_name = &encoded[..sep_pos];
+        let idx_str = &encoded[sep_pos + 5..];
+        let i = idx_str.parse::<usize>().ok()?;
+        if let Some(Value::Array(items, _)) = self.interpreter.env().get(var_name)
+            && let Some(Value::Pair(name, source)) = items.get(i)
+            && name == super::vm_var_ops::BOUND_ARRAY_REF_SENTINEL
+        {
+            return Some(source.to_string_value());
+        }
+        None
     }
 
     pub(super) fn exec_str_eq_op(&mut self) -> Result<(), RuntimeError> {

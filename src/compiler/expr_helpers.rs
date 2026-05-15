@@ -234,6 +234,27 @@ impl Compiler {
         }
     }
 
+    /// Encode an Index expression as a source name for container identity
+    /// checking.  Returns `Some("@a\0idx\01")` for `@a[1]`, etc.
+    pub(super) fn encode_index_source(expr: &Expr) -> Option<String> {
+        if let Expr::Index { target, index, .. } = expr {
+            let target_name = match target.as_ref() {
+                Expr::ArrayVar(name) => Some(format!("@{}", name)),
+                Expr::HashVar(name) => Some(format!("%{}", name)),
+                Expr::Var(name) => Some(name.clone()),
+                _ => None,
+            }?;
+            let idx_str = match index.as_ref() {
+                Expr::Literal(Value::Int(n)) => n.to_string(),
+                Expr::Literal(Value::Str(s)) => s.to_string(),
+                _ => return None,
+            };
+            Some(format!("{}\x00idx\x00{}", target_name, idx_str))
+        } else {
+            None
+        }
+    }
+
     pub(super) fn expr_is_fresh_container(expr: &Expr) -> bool {
         match expr {
             // Indexing into an array/hash element produces a value that

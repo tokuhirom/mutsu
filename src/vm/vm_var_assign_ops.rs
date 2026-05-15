@@ -110,6 +110,30 @@ impl VM {
         source_index: Option<usize>,
         value: Value,
     ) -> Result<(), RuntimeError> {
+        // Handle indexed source encoding: "varname\x00idx\x00index_str"
+        if let Some(sep_pos) = source_name.find("\x00idx\x00") {
+            let var_name = &source_name[..sep_pos];
+            let idx_str = &source_name[sep_pos + 5..];
+            if let Ok(i) = idx_str.parse::<usize>() {
+                let Some(container) = self.interpreter.env_mut().get_mut(var_name) else {
+                    return Err(RuntimeError::assignment_ro(None));
+                };
+                if let Value::Array(items, ..) = container {
+                    let arr = Arc::make_mut(items);
+                    if i >= arr.len() {
+                        arr.resize(i + 1, Value::Package(Symbol::intern("Any")));
+                    }
+                    arr[i] = value;
+                    return Ok(());
+                }
+            }
+            if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(source_name) {
+                let h = Arc::make_mut(hash);
+                h.insert(idx_str.to_string(), value);
+                return Ok(());
+            }
+            return Err(RuntimeError::assignment_ro(None));
+        }
         if let Some(i) = source_index {
             let Some(container) = self.interpreter.env_mut().get_mut(source_name) else {
                 return Err(RuntimeError::assignment_ro(None));
