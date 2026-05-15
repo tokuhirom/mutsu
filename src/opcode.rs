@@ -1182,6 +1182,11 @@ pub(crate) struct CompiledFunction {
     /// When true, parameters must be written to env (not just locals) so that
     /// nested functions can capture them via closure.
     pub(crate) has_inner_subs: bool,
+    /// Pre-computed mapping for named parameters: (match_key, local_slot, sub_sig_slots).
+    /// sub_sig_slots is a list of (inner_key, inner_slot) for sub_signature aliases.
+    /// Used by the OTF named call fast path to avoid name-based lookup per call.
+    #[allow(clippy::type_complexity)]
+    pub(crate) named_param_slots: Option<Vec<(String, usize, Vec<(String, usize)>)>>,
 }
 
 impl CompiledFunction {
@@ -1206,6 +1211,57 @@ impl CompiledFunction {
         }
         if !slots.is_empty() {
             self.param_local_slots = Some(slots);
+        }
+    }
+
+    /// Pre-compute the mapping for named parameters: match_key -> (local_slot, sub_sig_slots).
+    pub(crate) fn precompute_named_param_slots(&mut self) {
+        if self.param_defs.is_empty() || !self.param_defs.iter().all(|pd| pd.named) {
+            return;
+        }
+        let mut slots = Vec::new();
+        for pd in &self.param_defs {
+            let match_key = pd
+                .name
+                .strip_prefix('@')
+                .or_else(|| pd.name.strip_prefix('%'))
+                .unwrap_or(&pd.name);
+            let match_key = match_key
+                .strip_prefix('!')
+                .or_else(|| match_key.strip_prefix('.'))
+                .unwrap_or(match_key)
+                .to_string();
+            let slot = self
+                .code
+                .locals
+                .iter()
+                .position(|n| n == &pd.name)
+                .unwrap_or(0);
+            // Pre-compute sub_signature alias slots
+            let mut sub_sig_slots = Vec::new();
+            if let Some(ref sub_params) = pd.sub_signature {
+                for sub_pd in sub_params {
+                    if !sub_pd.named {
+                        continue;
+                    }
+                    let inner_key = sub_pd
+                        .name
+                        .strip_prefix(':')
+                        .unwrap_or(&sub_pd.name)
+                        .to_string();
+                    let inner_slot = self
+                        .code
+                        .locals
+                        .iter()
+                        .position(|n| n == &sub_pd.name)
+                        .unwrap_or(0);
+                    sub_sig_slots.push((inner_key, inner_slot));
+                }
+            }
+            slots.push((match_key, slot, sub_sig_slots));
+        }
+        if !slots.is_empty() {
+            self.named_param_slots = Some(slots);
         }
     }
 

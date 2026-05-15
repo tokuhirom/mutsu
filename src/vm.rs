@@ -146,6 +146,12 @@ pub(crate) struct VM {
     /// (target_name, source_name): after the closure returns, the caller
     /// creates local_bind_pairs from these so writes to source propagate to target.
     pending_alias_bind_names: Vec<(String, String)>,
+    /// On-the-fly compiled function call cache: maps function name to its
+    /// compiled form. Used to avoid going through the interpreter fallback
+    /// for user-defined functions that were compiled on-the-fly.
+    otf_call_cache: HashMap<Symbol, CompiledFunction>,
+    /// The generation at which otf_call_cache was last valid.
+    otf_call_cache_gen: u64,
 }
 
 impl VM {
@@ -303,6 +309,8 @@ impl VM {
             pos_light_call_cache_gen: 0,
             block_declared_vars: Vec::new(),
             pending_alias_bind_names: Vec::new(),
+            otf_call_cache: HashMap::new(),
+            otf_call_cache_gen: 0,
         }
     }
 

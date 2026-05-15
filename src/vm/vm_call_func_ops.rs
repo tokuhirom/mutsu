@@ -101,6 +101,60 @@ impl VM {
             }
         }
 
+        // OTF-compiled function cache check: for user-defined functions that
+        // were compiled on-the-fly (not in compiled_fns), use the cached
+        // compiled form to avoid the expensive interpreter fallback.
+        // We take() the CF from the cache to avoid holding a borrow on self,
+        // then put it back after the call.
+        {
+            let name_str = Self::const_str(code, name_idx);
+            let name_sym = Symbol::intern(name_str);
+            if self.otf_call_cache_gen == self.fn_resolve_gen {
+                if let Some(cf) = self.otf_call_cache.remove(&name_sym)
+                    && !cf.has_inner_subs
+                {
+                    let arity_usize = arity as usize;
+                    if self.stack.len() >= arity_usize {
+                        let start = self.stack.len() - arity_usize;
+                        let args: Vec<Value> = self.stack.drain(start..).collect();
+
+                        let result = if Self::is_light_call_eligible(&cf, name_str) {
+                            self.call_compiled_function_light(&cf, args, compiled_fns)
+                        } else if Self::is_positional_light_call_eligible(&cf, name_str) {
+                            self.call_compiled_function_positional_light(&cf, &args, compiled_fns)
+                        } else {
+                            let pkg = self.interpreter.current_package().to_string();
+                            self.interpreter.push_samewith_context(name_str, None);
+                            let pushed_dispatch =
+                                self.interpreter.push_multi_dispatch_frame(name_str, &args);
+                            let r = self.call_compiled_function_named(
+                                &cf,
+                                args,
+                                compiled_fns,
+                                &pkg,
+                                name_str,
+                            );
+                            self.interpreter.pop_samewith_context();
+                            if pushed_dispatch {
+                                self.interpreter.pop_multi_dispatch();
+                            }
+                            r
+                        };
+                        // Put CF back in cache
+                        self.otf_call_cache.insert(name_sym, cf);
+                        self.stack.push(result?);
+                        self.env_dirty = true;
+                        return Ok(());
+                    }
+                    // Put CF back if we couldn't use it (stack underflow)
+                    self.otf_call_cache.insert(name_sym, cf);
+                }
+            } else {
+                self.otf_call_cache.clear();
+                self.otf_call_cache_gen = self.fn_resolve_gen;
+            }
+        }
+
         // If there's a lexical `&name` override — either as a compiled local
         // slot (e.g. from a `&foo` parameter binding) or in the env — it
         // shadows package-level subs. Skip the fast path and dispatch via
@@ -588,6 +642,27 @@ impl VM {
                 self.try_native_function(Symbol::intern(name), &args)
             {
                 native_result
+            } else if !self.is_interpreter_handled_function(name)
+                && !self.has_multi_candidates_cached(name)
+                && let Some(def) = self.interpreter.resolve_function_with_types(name, &args)
+                && !Self::function_body_needs_interpreter(&def.body)
+                // Only OTF-compile simple functions: no default params, no
+                // code params (&foo), no where constraints, no closures.
+                && def.param_defs.iter().all(|pd| {
+                    pd.default.is_none()
+                        && pd.where_constraint.is_none()
+                        && pd.code_signature.is_none()
+                        && !pd.name.starts_with('&')
+                })
+            {
+                // On-the-fly compile: compile the function definition to
+                // bytecode and execute via the VM, avoiding the slow
+                // tree-walking interpreter path. The compiled result is
+                // cached in otf_compile_cache for subsequent calls.
+                // Skip functions with class/role declarations or complex
+                // parameter signatures as they need the full interpreter
+                // path for correct behavior.
+                self.compile_and_call_function_def(&def, args, compiled_fns)
             } else {
                 // Sync VM locals to env before spawning threads so closures capture them
                 if name == "start" {
@@ -600,6 +675,41 @@ impl VM {
                 let auto_fetch = name != "substr-rw";
                 self.interpreter.maybe_fetch_rw_proxy(result?, auto_fetch)
             }
+        }
+    }
+
+    /// Check if a function body contains constructs that require
+    /// the full interpreter path (class/role declarations, start blocks).
+    fn function_body_needs_interpreter(body: &[crate::ast::Stmt]) -> bool {
+        use crate::ast::Stmt;
+        for stmt in body {
+            match stmt {
+                Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } => return true,
+                Stmt::Expr(expr) => {
+                    if Self::expr_needs_interpreter(expr) {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    fn expr_needs_interpreter(expr: &crate::ast::Expr) -> bool {
+        use crate::ast::Expr;
+        match expr {
+            Expr::DoStmt(stmt) => Self::function_body_needs_interpreter(std::slice::from_ref(stmt)),
+            Expr::Block(body) => Self::function_body_needs_interpreter(body),
+            Expr::MethodCall { target, args, .. } => {
+                Self::expr_needs_interpreter(target)
+                    || args.iter().any(Self::expr_needs_interpreter)
+            }
+            Expr::Call { name, args } => {
+                // start blocks need the interpreter for proper thread spawning
+                name.resolve() == "start" || args.iter().any(Self::expr_needs_interpreter)
+            }
+            _ => false,
         }
     }
 }

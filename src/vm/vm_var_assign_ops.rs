@@ -1199,7 +1199,7 @@ impl VM {
             .is_some_and(|t| t == "SetHash");
         let idx_val = self.stack.pop().unwrap_or(Value::Nil);
         let key = idx_val.to_string_value();
-        let mut container = self.get_env_with_main_alias(&name);
+        let container = self.get_env_with_main_alias(&name);
         let current = if let Some(container_value) = container.as_ref() {
             match container_value {
                 Value::Hash(h) => h.get(&key).cloned().unwrap_or(Value::Nil),
@@ -1240,61 +1240,87 @@ impl VM {
         } else {
             self.decrement_value_smart(&effective)?
         };
-        if let Some(container_value) = container.as_mut() {
-            match container_value {
-                Value::Hash(h) => {
-                    Arc::make_mut(h).insert(key, new_val.clone());
-                }
-                Value::Array(arr, ..) => {
-                    if let Ok(i) = idx_val.to_string_value().parse::<usize>() {
-                        let a = Arc::make_mut(arr);
-                        while a.len() <= i {
-                            a.push(Value::Nil);
+        // Modify the container in-place in the env to preserve Arc sharing
+        // (e.g. when two variables reference the same array via Arc).
+        // First try to modify via env_mut().get_mut() to avoid clone.
+        let modified_in_place =
+            if let Some(container_value) = self.interpreter.env_mut().get_mut(&name) {
+                match container_value {
+                    Value::Hash(h) => {
+                        Arc::make_mut(h).insert(key.clone(), new_val.clone());
+                        true
+                    }
+                    Value::Array(arr, ..) => {
+                        if let Ok(i) = idx_val.to_string_value().parse::<usize>() {
+                            // Use in-place mutation when the array is shared
+                            // (strong_count > 1) to preserve identity semantics,
+                            // matching the behavior of index assignment.
+                            // SAFETY: mutsu is single-threaded.
+                            let use_inplace = Arc::strong_count(arr) > 1 && !name.starts_with('@');
+                            let a: &mut Vec<Value> = if use_inplace {
+                                unsafe { &mut *(Arc::as_ptr(arr) as *mut _) }
+                            } else {
+                                Arc::make_mut(arr)
+                            };
+                            while a.len() <= i {
+                                a.push(Value::Nil);
+                            }
+                            a[i] = new_val.clone();
+                            true
+                        } else {
+                            false
                         }
-                        a[i] = new_val.clone();
                     }
+                    Value::Mix(mix, is_mutable) => {
+                        if !*is_mutable {
+                            return Err(RuntimeError::assignment_ro(Some("Mix")));
+                        }
+                        let m = Arc::make_mut(mix);
+                        if new_val.truthy() {
+                            m.insert(key.clone(), Self::mix_assignment_weight(&new_val));
+                        } else {
+                            m.remove(&key);
+                        }
+                        true
+                    }
+                    Value::Set(set, is_mutable) => {
+                        if !*is_mutable {
+                            return Err(RuntimeError::assignment_ro(Some("Set")));
+                        }
+                        let s = Arc::make_mut(set);
+                        if new_val.truthy() {
+                            s.insert(key.clone());
+                        } else {
+                            s.remove(&key);
+                        }
+                        true
+                    }
+                    Value::Bag(bag, is_mutable) => {
+                        if !*is_mutable {
+                            return Err(RuntimeError::assignment_ro(Some("Bag")));
+                        }
+                        let b = Arc::make_mut(bag);
+                        let n = match &new_val {
+                            Value::Int(i) => *i,
+                            _ => 0,
+                        };
+                        if n > 0 {
+                            b.insert(key.clone(), n);
+                        } else {
+                            b.remove(&key);
+                        }
+                        true
+                    }
+                    _ => false,
                 }
-                Value::Mix(mix, is_mutable) => {
-                    if !*is_mutable {
-                        return Err(RuntimeError::assignment_ro(Some("Mix")));
-                    }
-                    let m = Arc::make_mut(mix);
-                    if new_val.truthy() {
-                        m.insert(key, Self::mix_assignment_weight(&new_val));
-                    } else {
-                        m.remove(&key);
-                    }
-                }
-                Value::Set(set, is_mutable) => {
-                    if !*is_mutable {
-                        return Err(RuntimeError::assignment_ro(Some("Set")));
-                    }
-                    let s = Arc::make_mut(set);
-                    if new_val.truthy() {
-                        s.insert(key);
-                    } else {
-                        s.remove(&key);
-                    }
-                }
-                Value::Bag(bag, is_mutable) => {
-                    if !*is_mutable {
-                        return Err(RuntimeError::assignment_ro(Some("Bag")));
-                    }
-                    let b = Arc::make_mut(bag);
-                    let n = match &new_val {
-                        Value::Int(i) => *i,
-                        _ => 0,
-                    };
-                    if n > 0 {
-                        b.insert(key, n);
-                    } else {
-                        b.remove(&key);
-                    }
-                }
-                _ => {}
+            } else {
+                false
+            };
+        if modified_in_place {
+            // Update local slot to match the modified env value
+            if let Some(val) = self.interpreter.env().get(&name).cloned() {
+                self.update_local_if_exists(code, &name, &val);
             }
-            self.set_env_with_main_alias(&name, container_value.clone());
-            self.update_local_if_exists(code, &name, container_value);
         }
         if return_new {
             self.stack.push(new_val);
