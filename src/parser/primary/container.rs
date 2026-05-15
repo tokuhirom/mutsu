@@ -631,8 +631,8 @@ pub(super) fn list_context_paren_expr(input: &str) -> PResult<'_, Expr> {
 
 /// Parse hash-context parenthesized expression: `%(...)`.
 ///
-/// In Raku, `%(values)` builds a Hash from the given key-value pairs.
-/// We lower this to a call to `hash(...)`.
+/// In Raku, `%(expr)` coerces the expression into hash context.
+/// We lower this to a method call `.hash` on the inner expression.
 pub(super) fn hash_context_paren_expr(input: &str) -> PResult<'_, Expr> {
     let Some(rest) = input.strip_prefix('%') else {
         return Err(PError::expected("hash-context parenthesized expression"));
@@ -641,19 +641,14 @@ pub(super) fn hash_context_paren_expr(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("hash-context parenthesized expression"));
     }
     let (rest, inner) = paren_expr(rest)?;
-    let args = match inner {
-        Expr::Grouped(ref boxed) => match boxed.as_ref() {
-            Expr::ArrayLiteral(items) => items.clone(),
-            other => vec![other.clone()],
-        },
-        Expr::ArrayLiteral(ref items) => items.clone(),
-        other => vec![other],
-    };
     Ok((
         rest,
-        Expr::Call {
+        Expr::MethodCall {
+            target: Box::new(inner),
             name: Symbol::intern("hash"),
-            args,
+            args: vec![],
+            modifier: None,
+            quoted: false,
         },
     ))
 }

@@ -648,6 +648,28 @@ pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
             "X::Obsolete: Unsupported use of @{expr}. In Raku please use: @(expr).".to_string(),
         ));
     }
+    // Handle @<name> — list coercion of a named capture variable from $/
+    // (e.g., after a regex match, @<fie> gives the positional elements of $<fie>)
+    if twigil.is_empty()
+        && rest.starts_with('<')
+        && let Some(after_lt) = rest.strip_prefix('<')
+        && let Some(end) = after_lt.find('>')
+    {
+        let name = &after_lt[..end];
+        if !name.is_empty() {
+            let after_gt = &after_lt[end + 1..];
+            return Ok((
+                after_gt,
+                Expr::MethodCall {
+                    target: Box::new(Expr::CaptureVar(name.to_string())),
+                    name: crate::symbol::Symbol::intern("list"),
+                    args: vec![],
+                    modifier: None,
+                    quoted: false,
+                },
+            ));
+        }
+    }
     // Bare @ (anonymous array variable) — each occurrence gets a unique name
     let next_is_ident =
         !rest.is_empty() && rest.chars().next().is_some_and(is_raku_identifier_start);
@@ -731,6 +753,28 @@ pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
                 args: vec![inner],
             },
         ));
+    }
+    // Handle %<name> — hash coercion of a named capture variable from $/
+    // (e.g., after a regex match, %<foe> gives the hash view of $<foe>)
+    if twigil.is_empty()
+        && rest.starts_with('<')
+        && let Some(after_lt) = rest.strip_prefix('<')
+        && let Some(end) = after_lt.find('>')
+    {
+        let name = &after_lt[..end];
+        if !name.is_empty() {
+            let after_gt = &after_lt[end + 1..];
+            return Ok((
+                after_gt,
+                Expr::MethodCall {
+                    target: Box::new(Expr::CaptureVar(name.to_string())),
+                    name: crate::symbol::Symbol::intern("hash"),
+                    args: vec![],
+                    modifier: None,
+                    quoted: false,
+                },
+            ));
+        }
     }
     // Bare % (anonymous hash variable)
     let next_is_ident =
