@@ -371,6 +371,7 @@ roast/S05-metasyntax/lookaround.t
 roast/S05-metasyntax/null.t
 roast/S05-metasyntax/proto-token-ltm.t
 roast/S05-metasyntax/regex.t
+roast/S05-metasyntax/repeat.t
 roast/S05-metasyntax/sequential-alternation.t
 roast/S05-metasyntax/single-quotes.t
 roast/S05-metasyntax/unicode-property-pair.t
