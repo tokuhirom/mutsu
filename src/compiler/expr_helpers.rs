@@ -177,7 +177,7 @@ impl Compiler {
     pub(super) fn expr_is_fresh_container(expr: &Expr) -> bool {
         match expr {
             // Indexing into an array/hash element produces a value that
-            // was copied into the array, hence a distinct container.
+            // was copied into the container, hence a distinct container.
             Expr::Index { .. } => true,
             _ => false,
         }

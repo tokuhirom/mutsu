@@ -29,6 +29,33 @@ impl Compiler {
         }
     }
 
+    /// Check if a method call is a mutating method on a *nested* Index target
+    /// (e.g. `%h<a><b>.push(...)` where the immediate target is Index and its
+    /// inner target is also an Index). The single-level case is already handled
+    /// by `is_mutating_method_on_index`.
+    pub(super) fn is_nested_mutating_method_on_index(
+        target: &Expr,
+        method_name: &crate::symbol::Symbol,
+    ) -> bool {
+        let method = method_name.resolve();
+        let is_mutating = matches!(
+            method.as_str(),
+            "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
+        );
+        if !is_mutating {
+            return false;
+        }
+        // Only match nested Index (Index whose target is another Index)
+        if let Expr::Index {
+            target: idx_target, ..
+        } = target
+        {
+            matches!(idx_target.as_ref(), Expr::Index { .. })
+        } else {
+            false
+        }
+    }
+
     /// Extract the variable name from a DoStmt(VarDecl { .. }) expression,
     /// used for `++state $` patterns.
     pub(super) fn extract_vardecl_name(expr: &Expr) -> Option<String> {

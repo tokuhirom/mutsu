@@ -405,9 +405,15 @@ pub(crate) enum OpCode {
         is_positional: bool,
     },
     /// Like Index, but auto-vivifies intermediate hash entries and returns
-    /// a `HashSlotRef` for the final key.  Used for `:=` bind to hash elements
-    /// (e.g. `my $b := %h<foo><baz>`).
+    /// a `HashSlotRef` for the final key.  Used by IndexAutovivifyLazy's
+    /// fallback path for non-hash targets.
+    #[allow(dead_code)]
     IndexAutovivify,
+    /// Like IndexAutovivify but does NOT create the hash entry if missing.
+    /// Returns a HashSlotRef that defers creation until write.
+    /// Used for the outermost level of `:=` bind so that binding alone
+    /// does not autovivify (e.g. `my $b := %h<a><b>` keeps %h empty).
+    IndexAutovivifyLazy,
     DeleteIndexNamed(u32),
     DeleteIndexExpr,
     /// Multi-dimensional indexing: @a[$x;$y;$z]

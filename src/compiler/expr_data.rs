@@ -309,11 +309,8 @@ impl Compiler {
 
     /// Compile Index expression (target[index] or target{index}).
     pub(super) fn compile_expr_index(&mut self, target: &Expr, index: &Expr, is_positional: bool) {
-        // When in scalar bind context (`:=`), emit IndexAutovivify so that
-        // the VM auto-vivifies intermediate hashes (returning HashSlotRef)
-        // or returns ArraySlotRef for positional indexing.
-        // This enables `my $b := %h<foo><baz>; $b = 42` and
-        // `my $b := @a[1]; $b = 42`.
+        // When in scalar bind context (`:=`), emit IndexAutovivifyLazy so that
+        // binding alone doesn't autovivify (deferred until assignment).
         let use_autovivify = self.scalar_bind_autovivify;
 
         // Special case: %*ENV<key> compiles to GetEnvIndex
@@ -326,7 +323,7 @@ impl Compiler {
                     self.compile_expr(target);
                     self.compile_expr(index);
                     if use_autovivify {
-                        self.code.emit(OpCode::IndexAutovivify);
+                        self.code.emit(OpCode::IndexAutovivifyLazy);
                     } else {
                         self.code.emit(OpCode::Index { is_positional });
                     }
@@ -335,7 +332,7 @@ impl Compiler {
                 self.compile_expr(target);
                 self.compile_expr(index);
                 if use_autovivify {
-                    self.code.emit(OpCode::IndexAutovivify);
+                    self.code.emit(OpCode::IndexAutovivifyLazy);
                 } else {
                     self.code.emit(OpCode::Index { is_positional });
                 }
@@ -344,7 +341,7 @@ impl Compiler {
             self.compile_expr(target);
             self.compile_expr(index);
             if use_autovivify {
-                self.code.emit(OpCode::IndexAutovivify);
+                self.code.emit(OpCode::IndexAutovivifyLazy);
             } else {
                 self.code.emit(OpCode::Index { is_positional });
             }

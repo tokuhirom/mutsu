@@ -70,6 +70,11 @@ pub(crate) struct Compiler {
     constant_vars: std::collections::HashSet<String>,
     /// Last source line emitted via SetSourceLine (for tracking block definition lines).
     last_source_line: Option<i64>,
+    /// Pending writebacks for Index expressions passed to function calls.
+    /// After the call returns, if the `is rw` parameter was written to,
+    /// we need to write the temp variable value back to the original hash/array slot.
+    /// Each entry is (original Index Expr, temp variable name).
+    pub(super) pending_index_rw_writebacks: Vec<(Expr, String, String)>,
 }
 
 impl Compiler {
@@ -92,6 +97,7 @@ impl Compiler {
             scalar_bind_autovivify: false,
             constant_vars: std::collections::HashSet::new(),
             last_source_line: None,
+            pending_index_rw_writebacks: Vec::new(),
         }
     }
 

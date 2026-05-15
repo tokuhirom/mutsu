@@ -169,6 +169,17 @@ impl Compiler {
                 let idx = self.code.add_constant(Value::str_from("Nil"));
                 self.code.emit(OpCode::LoadConst(idx));
             }
+            // Method call on nested-index target with mutating method -- writeback via IndexAssign.
+            // e.g. %h<a><b>.push(1, 2) => %h<a><b> = %h<a><b>.push(1, 2)
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                modifier,
+                quoted,
+            } if Self::is_nested_mutating_method_on_index(target, name) => {
+                self.compile_expr_nested_method_writeback(target, name, args, modifier, *quoted);
+            }
             // Method call on non-variable target (no writeback needed)
             Expr::MethodCall {
                 target,

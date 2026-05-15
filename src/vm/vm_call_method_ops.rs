@@ -614,12 +614,25 @@ impl VM {
                         // Any:U autovivification: push/append/unshift/prepend on
                         // an undefined value creates a new Array.
                         "push" | "append" | "unshift" | "prepend" => {
-                            let arr: Vec<Value> =
-                                if matches!(method.as_str(), "unshift" | "prepend") {
-                                    args.to_vec()
-                                } else {
-                                    args
-                                };
+                            let arr: Vec<Value> = match method.as_str() {
+                                "append" | "prepend" => {
+                                    // Flatten list arguments for append/prepend
+                                    let mut flat = Vec::new();
+                                    for arg in &args {
+                                        match arg {
+                                            Value::Array(items, _)
+                                            | Value::Seq(items)
+                                            | Value::Slip(items) => {
+                                                flat.extend(items.iter().cloned());
+                                            }
+                                            other => flat.push(other.clone()),
+                                        }
+                                    }
+                                    flat
+                                }
+                                "unshift" => args.to_vec(),
+                                _ => args,
+                            };
                             self.stack.push(Value::real_array(arr));
                             self.env_dirty = true;
                             return Ok(());
@@ -642,10 +655,23 @@ impl VM {
                 if matches!(method.as_str(), "push" | "append" | "unshift" | "prepend")
                     && matches!(&target, Value::Package(name) if name.resolve() == "Any" || name.resolve() == "Mu")
                 {
-                    let arr: Vec<Value> = if matches!(method.as_str(), "unshift" | "prepend") {
-                        args.to_vec()
-                    } else {
-                        args
+                    let arr: Vec<Value> = match method.as_str() {
+                        "append" | "prepend" => {
+                            let mut flat = Vec::new();
+                            for arg in &args {
+                                match arg {
+                                    Value::Array(items, _)
+                                    | Value::Seq(items)
+                                    | Value::Slip(items) => {
+                                        flat.extend(items.iter().cloned());
+                                    }
+                                    other => flat.push(other.clone()),
+                                }
+                            }
+                            flat
+                        }
+                        "unshift" => args.to_vec(),
+                        _ => args,
                     };
                     self.stack.push(Value::real_array(arr));
                     self.env_dirty = true;
