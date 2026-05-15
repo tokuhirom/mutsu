@@ -1236,14 +1236,16 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         let parsed_operand =
             super::precedence_meta_ops::power_expr_tight(rest).or_else(|_| prefix_expr(rest));
         if let Ok((rest, expr)) = parsed_operand {
-            return postfix_expr_continue(
-                rest,
-                Expr::Binary {
-                    left: Box::new(Expr::Literal(Value::Int(0))),
-                    op: TokenKind::DotDotCaret,
-                    right: Box::new(expr),
-                },
-            );
+            let mut node = Expr::Binary {
+                left: Box::new(Expr::Literal(Value::Int(0))),
+                op: TokenKind::DotDotCaret,
+                right: Box::new(expr.clone()),
+            };
+            // ^* is WhateverCode: given N, returns ^N (unlike 0..^* which is a Range)
+            if super::contains_whatever(&expr) || super::is_whatever(&expr) {
+                node = super::wrap_whatevercode(&node);
+            }
+            return postfix_expr_continue(rest, node);
         }
     }
     // Hyper-prefix slip forms: |<< expr / |>> expr.
