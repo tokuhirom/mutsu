@@ -2845,11 +2845,6 @@ impl VM {
                 self.env_dirty = true;
                 *ip += 1;
             }
-            OpCode::SetCurrentPackage { name_idx } => {
-                let name = Self::const_str(code, *name_idx).to_string();
-                self.interpreter.set_current_package(name);
-                *ip += 1;
-            }
             OpCode::RegisterPackageStub { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.interpreter.package_stubs.insert(name);

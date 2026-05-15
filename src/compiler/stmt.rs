@@ -1553,10 +1553,6 @@ impl Compiler {
                     // Register the package name so it's accessible as a value
                     let name_idx = self.code.add_constant(Value::str(qualified_name.clone()));
                     self.code.emit(OpCode::RegisterPackage { name_idx });
-                    // Also set the interpreter's current_package at runtime so
-                    // that sub registrations use the module's namespace rather
-                    // than GLOBAL (prevents non-exported subs from leaking).
-                    self.code.emit(OpCode::SetCurrentPackage { name_idx });
                 } else if is_stub_body {
                     // Stub package — register name but don't execute the body
                     let name_idx = self.code.add_constant(Value::str(qualified_name.clone()));

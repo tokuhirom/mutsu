@@ -3449,6 +3449,49 @@ impl Interpreter {
                 }
             }
 
+            // Remove GLOBAL:: operator sub entries (infix/prefix/postfix/circumfix)
+            // that were added by sub hoisting during module loading but are NOT
+            // exported. This prevents non-exported operators from leaking into
+            // the caller's namespace while preserving regular function hoisting.
+            let mut exported_op_names: HashSet<String> = HashSet::new();
+            for source in ["GLOBAL", module] {
+                if let Some(subs) = self.exported_subs.get(source) {
+                    for name in subs.keys() {
+                        if name.contains(":<") {
+                            exported_op_names.insert(name.clone());
+                        }
+                    }
+                }
+            }
+            if let Some(subs) = self.unit_module_exported_subs.get(module) {
+                for name in subs.keys() {
+                    if name.contains(":<") {
+                        exported_op_names.insert(name.clone());
+                    }
+                }
+            }
+            let non_exported_op_globals: Vec<Symbol> = self
+                .functions
+                .keys()
+                .filter(|k| {
+                    if func_keys_before.contains(k) {
+                        return false;
+                    }
+                    let ks = k.resolve();
+                    if let Some(name) = ks.strip_prefix("GLOBAL::") {
+                        let base = name.split('/').next().unwrap_or(name);
+                        // Only remove operator subs (infix:<...>, prefix:<...>, etc.)
+                        base.contains(":<") && !exported_op_names.contains(base)
+                    } else {
+                        false
+                    }
+                })
+                .copied()
+                .collect();
+            for k in non_exported_op_globals {
+                self.functions.remove(&k);
+            }
+
             self.loaded_modules.insert(module.to_string());
             if let Err(err) = self.import_module(module, tags)
                 && !err.message.starts_with("No exports found for module:")
