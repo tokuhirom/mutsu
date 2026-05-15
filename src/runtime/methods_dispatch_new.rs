@@ -280,7 +280,11 @@ impl Interpreter {
             for (attr_name, _is_public, default, _is_rw, _, _, _) in
                 self.collect_class_attributes(&class_name.resolve())
             {
-                let val = if let Some(expr) = default {
+                let val = if let Some(Expr::Literal(ref lit_val)) = default {
+                    // Fast path: simple literal defaults (e.g. native type
+                    // defaults like Int(0)) don't need interpretation.
+                    lit_val.clone()
+                } else if let Some(expr) = default {
                     self.eval_block_value(&[Stmt::Expr(expr)])?
                 } else {
                     // Native types have zero/empty defaults instead of Nil
