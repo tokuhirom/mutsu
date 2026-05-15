@@ -585,6 +585,7 @@ roast/S12-construction/new.t
 roast/S12-construction/roles-6e.t
 roast/S12-enums/anonymous.t
 roast/S12-enums/as-role.t
+roast/S12-enums/basic.t
 roast/S12-enums/misc.t
 roast/S12-enums/non-int.t
 roast/S12-enums/pseudo-functional.t
