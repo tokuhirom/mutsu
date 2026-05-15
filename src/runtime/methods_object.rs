@@ -2619,43 +2619,50 @@ impl Interpreter {
                         let val = self.call_sub_value(build_override, Vec::new(), false)?;
                         Self::coerce_attr_value_by_sigil(val, sigil)
                     } else if let Some(expr) = default {
-                        let temp_self = Value::make_instance(*class_name, attrs.clone());
-                        let old_self = self.env.get("self").cloned();
-                        self.env.insert("self".to_string(), temp_self);
-                        // Set !attr_name and .attr_name in env so that $!a / $.a
-                        // references in default expressions resolve to already-
-                        // initialized attributes (e.g. `has $.c = $!a + $!b`).
-                        let mut saved_attr_env: Vec<(String, Option<Value>)> = Vec::new();
-                        for (a_name, a_val) in &attrs {
-                            let bang = format!("!{}", a_name);
-                            let dot = format!(".{}", a_name);
-                            saved_attr_env.push((bang.clone(), self.env.get(&bang).cloned()));
-                            saved_attr_env.push((dot.clone(), self.env.get(&dot).cloned()));
-                            self.env.insert(bang, a_val.clone());
-                            self.env.insert(dot, a_val.clone());
-                        }
-                        // Temporarily switch to the class package so that
-                        // class-scoped subs (e.g. `sub inner`) are found
-                        // when evaluating attribute default expressions.
-                        let saved_package = self.current_package.clone();
-                        self.current_package = class_key.to_string();
-                        let result = self.eval_block_value(&[Stmt::Expr(expr)]);
-                        self.current_package = saved_package;
-                        // Restore previous env state for attribute variables
-                        for (key, old_val) in saved_attr_env {
-                            if let Some(v) = old_val {
-                                self.env.insert(key, v);
-                            } else {
-                                self.env.remove(&key);
-                            }
-                        }
-                        if let Some(old) = old_self {
-                            self.env.insert("self".to_string(), old);
+                        // Fast path: simple literal defaults (e.g. from native types
+                        // like `has uint32 $.a` which generate `default: Int(0)`)
+                        // don't need env manipulation or self-binding.
+                        if let Expr::Literal(ref lit_val) = expr {
+                            Self::coerce_attr_value_by_sigil(lit_val.clone(), sigil)
                         } else {
-                            self.env.remove("self");
+                            let temp_self = Value::make_instance(*class_name, attrs.clone());
+                            let old_self = self.env.get("self").cloned();
+                            self.env.insert("self".to_string(), temp_self);
+                            // Set !attr_name and .attr_name in env so that $!a / $.a
+                            // references in default expressions resolve to already-
+                            // initialized attributes (e.g. `has $.c = $!a + $!b`).
+                            let mut saved_attr_env: Vec<(String, Option<Value>)> = Vec::new();
+                            for (a_name, a_val) in &attrs {
+                                let bang = format!("!{}", a_name);
+                                let dot = format!(".{}", a_name);
+                                saved_attr_env.push((bang.clone(), self.env.get(&bang).cloned()));
+                                saved_attr_env.push((dot.clone(), self.env.get(&dot).cloned()));
+                                self.env.insert(bang, a_val.clone());
+                                self.env.insert(dot, a_val.clone());
+                            }
+                            // Temporarily switch to the class package so that
+                            // class-scoped subs (e.g. `sub inner`) are found
+                            // when evaluating attribute default expressions.
+                            let saved_package = self.current_package.clone();
+                            self.current_package = class_key.to_string();
+                            let result = self.eval_block_value(&[Stmt::Expr(expr)]);
+                            self.current_package = saved_package;
+                            // Restore previous env state for attribute variables
+                            for (key, old_val) in saved_attr_env {
+                                if let Some(v) = old_val {
+                                    self.env.insert(key, v);
+                                } else {
+                                    self.env.remove(&key);
+                                }
+                            }
+                            if let Some(old) = old_self {
+                                self.env.insert("self".to_string(), old);
+                            } else {
+                                self.env.remove("self");
+                            }
+                            let val = result?;
+                            Self::coerce_attr_value_by_sigil(val, sigil)
                         }
-                        let val = result?;
-                        Self::coerce_attr_value_by_sigil(val, sigil)
                     } else {
                         match sigil {
                             '@' => {
@@ -2923,7 +2930,10 @@ impl Interpreter {
                             continue;
                         }
                         // Evaluate the default expression for this class's attribute
-                        let val = if let Some(expr) = default {
+                        let val = if let Some(Expr::Literal(ref lit_val)) = default {
+                            // Fast path: simple literal defaults
+                            Self::coerce_attr_value_by_sigil(lit_val.clone(), sigil)
+                        } else if let Some(expr) = default {
                             let temp_self = Value::make_instance(*class_name, attrs.clone());
                             let old_self = self.env.get("self").cloned();
                             self.env.insert("self".to_string(), temp_self);
