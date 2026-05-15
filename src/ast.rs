@@ -523,6 +523,8 @@ pub(crate) enum Stmt {
         /// extends to the rest of the enclosing scope, false for brace-scoped
         /// `package Foo { ... }`.
         is_unit: bool,
+        /// True when declared with `my package` (lexically scoped).
+        is_my: bool,
     },
     Return(Expr),
     For {

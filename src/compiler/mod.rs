@@ -47,7 +47,7 @@ pub(crate) struct Compiler {
     /// The enclosing package name before closure mangling. Used for `$?PACKAGE`
     /// so that methods inside a class report the class name, not the internal
     /// closure package name.
-    enclosing_package: Option<String>,
+    pub(crate) enclosing_package: Option<String>,
     tmp_counter: usize,
     dynamic_scope_all: bool,
     dynamic_scope_names: Option<std::collections::HashSet<String>>,
@@ -100,10 +100,7 @@ impl Compiler {
     }
 
     pub(crate) fn qualify_package_name(&self, name: &str) -> String {
-        if self.current_package == "GLOBAL"
-            || name.contains("::")
-            || self.current_package.contains("::&")
-        {
+        if self.current_package == "GLOBAL" || self.current_package.contains("::&") {
             name.to_string()
         } else {
             format!("{}::{}", self.current_package, name)

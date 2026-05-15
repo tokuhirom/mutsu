@@ -64,7 +64,15 @@ impl VM {
 
         // Use cached compilation if available, otherwise compile on-the-fly.
         // Caching is essential to preserve state variable identity across calls.
-        let cf = if let Some(cached) = self.otf_compile_cache.get(&fingerprint) {
+        // The cache key includes the package name because compile-time
+        // pseudo-variables like $?PACKAGE depend on the compilation context.
+        let cache_key = {
+            let mut hasher = std::hash::DefaultHasher::new();
+            std::hash::Hash::hash(&fingerprint, &mut hasher);
+            std::hash::Hash::hash(&pkg, &mut hasher);
+            std::hash::Hasher::finish(&hasher)
+        };
+        let cf = if let Some(cached) = self.otf_compile_cache.get(&cache_key) {
             cached.clone()
         } else {
             let cc = {
@@ -88,7 +96,7 @@ impl VM {
             };
             cf.precompute_param_local_slots();
             cf.detect_inner_subs();
-            self.otf_compile_cache.insert(fingerprint, cf.clone());
+            self.otf_compile_cache.insert(cache_key, cf.clone());
             cf
         };
 
@@ -216,6 +224,39 @@ impl VM {
                         found_key = Some(name.to_string());
                     } else {
                         found_key = None;
+                    }
+                }
+            }
+            // If not found directly, try qualifying with the current package
+            // when the prefix package is visible in the current scope.
+            if found_key.is_none() && pkg != "GLOBAL" {
+                let prefix_visible = if let Some((pkg_prefix, _)) = name.rsplit_once("::") {
+                    self.interpreter.env().get(pkg_prefix).is_some()
+                        || self
+                            .interpreter
+                            .env()
+                            .get(&format!("{}::{}", pkg, pkg_prefix))
+                            .is_some()
+                } else {
+                    false
+                };
+                if prefix_visible {
+                    let qname = format!("{}::{}", pkg, name);
+                    let key_typed = format!("{qname}/{arity}:{}", type_sig.join(","));
+                    if compiled_fns.get(&key_typed).is_some_and(&matches_resolved) {
+                        found_key = Some(key_typed);
+                    } else {
+                        let key_fp = format!("{qname}/{}#{:x}", arity, expected_fingerprint);
+                        if compiled_fns.get(&key_fp).is_some_and(&matches_resolved) {
+                            found_key = Some(key_fp);
+                        } else {
+                            let key_arity = format!("{qname}/{arity}");
+                            if compiled_fns.get(&key_arity).is_some_and(&matches_resolved) {
+                                found_key = Some(key_arity);
+                            } else if compiled_fns.get(&qname).is_some_and(&matches_resolved) {
+                                found_key = Some(qname);
+                            }
+                        }
                     }
                 }
             }

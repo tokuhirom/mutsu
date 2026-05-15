@@ -35,7 +35,30 @@ impl Interpreter {
 
     pub(super) fn resolve_function(&self, name: &str) -> Option<FunctionDef> {
         if name.contains("::") {
-            return self.functions.get(&Symbol::intern(name)).cloned();
+            // Try direct lookup first
+            if let Some(def) = self.functions.get(&Symbol::intern(name)).cloned() {
+                return Some(def);
+            }
+            // If not found, try qualifying with the current package prefix
+            // when the prefix package is visible in the current scope.
+            if self.current_package != "GLOBAL" {
+                let prefix_visible = if let Some((pkg_prefix, _)) = name.rsplit_once("::") {
+                    self.env.get(pkg_prefix).is_some()
+                        || self
+                            .env
+                            .get(&format!("{}::{}", self.current_package, pkg_prefix))
+                            .is_some()
+                } else {
+                    false
+                };
+                if prefix_visible {
+                    let qualified = format!("{}::{}", self.current_package, name);
+                    if let Some(def) = self.functions.get(&Symbol::intern(&qualified)).cloned() {
+                        return Some(def);
+                    }
+                }
+            }
+            return None;
         }
         let local = format!("{}::{}", self.current_package, name);
         self.functions
@@ -1442,6 +1465,10 @@ impl Interpreter {
         compiler.is_routine = !self.routine_stack.is_empty();
         compiler.lexically_in_routine = !self.routine_stack.is_empty();
         let scope = if let Some(frame) = self.routine_stack.last() {
+            // Set enclosing_package to the clean package name so that
+            // $?PACKAGE resolves to the package, not the mangled routine
+            // scope (e.g., "PackageTest" instead of "PackageTest::&pkg").
+            compiler.enclosing_package = Some(frame.package.clone());
             format!("{}::&{}", frame.package, frame.name)
         } else {
             self.current_package.clone()

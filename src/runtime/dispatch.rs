@@ -615,7 +615,55 @@ impl Interpreter {
             if let Some(def) = self.choose_best_matching_candidate(name, arg_values, candidates) {
                 return Some(def);
             }
-            return self.functions.get(&Symbol::intern(name)).cloned();
+            if let Some(def) = self.functions.get(&Symbol::intern(name)).cloned() {
+                return Some(def);
+            }
+            // Try qualifying with the current package prefix when the
+            // prefix package is visible in the current scope (i.e., exists
+            // as a Package value in env).  This handles calls like
+            // `Our::Package::pkg()` inside `PackageTest` where the nested
+            // package was registered as `PackageTest::Our::Package`.
+            if self.current_package != "GLOBAL" {
+                // Check if the prefix package (everything before the last `::`)
+                // is visible in env as a Package type object.
+                let prefix_visible = if let Some((pkg_prefix, _)) = name.rsplit_once("::") {
+                    self.env.get(pkg_prefix).is_some()
+                        || self
+                            .env
+                            .get(&format!("{}::{}", self.current_package, pkg_prefix))
+                            .is_some()
+                } else {
+                    false
+                };
+                if prefix_visible {
+                    let qualified = format!("{}::{}", self.current_package, name);
+                    if let Some(def) = self.functions.get(&Symbol::intern(&qualified)).cloned() {
+                        return Some(def);
+                    }
+                    let q_prefix = format!("{qualified}/{arity}:");
+                    let q_untyped_key = format!("{qualified}/{}", arity);
+                    let q_untyped_key_sym = Symbol::intern(&q_untyped_key);
+                    let q_untyped_m_prefix = format!("{}__m", q_untyped_key);
+                    let mut q_candidates: Vec<(String, FunctionDef)> = self
+                        .functions
+                        .iter()
+                        .filter(|(key, _)| {
+                            let ks = key.resolve();
+                            ks.starts_with(&q_prefix)
+                                || **key == q_untyped_key_sym
+                                || ks.starts_with(&q_untyped_m_prefix)
+                        })
+                        .map(|(key, def)| (key.resolve(), def.clone()))
+                        .collect();
+                    self.sort_candidates_by_specificity(&mut q_candidates);
+                    if let Some(def) =
+                        self.choose_best_matching_candidate(&qualified, arg_values, q_candidates)
+                    {
+                        return Some(def);
+                    }
+                }
+            }
+            return None;
         }
         let exact_local = format!("{}::{}", self.current_package, name);
         if let Some(def) = self.functions.get(&Symbol::intern(&exact_local)).cloned() {

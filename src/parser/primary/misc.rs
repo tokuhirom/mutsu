@@ -1690,6 +1690,7 @@ pub(super) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
             name: Symbol::intern(&name),
             body,
             is_unit: false,
+            is_my: false,
         })),
     ))
 }

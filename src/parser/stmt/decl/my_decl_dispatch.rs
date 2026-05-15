@@ -4,7 +4,7 @@ use super::super::super::parse_result::{PError, opt_char};
 use super::super::{ident, keyword, qualified_ident};
 use super::constant_subset::{constant_decl, subset_decl};
 use super::{
-    class_decl_body, method_decl_body, method_decl_body_my, module_decl, package_decl,
+    class_decl_body, method_decl_body, method_decl_body_my, module_decl, package_decl_my,
     parse_statement_modifier, role_decl, sub_decl_body,
 };
 use crate::ast::Stmt;
@@ -180,7 +180,7 @@ pub(super) fn try_keyword_dispatch(
     }
     // my package Name { ... }
     if keyword("package", rest).is_some() {
-        return package_decl(rest).map(Some);
+        return package_decl_my(rest).map(Some);
     }
     // my subset Name of BaseType where ...
     if keyword("subset", rest).is_some() {

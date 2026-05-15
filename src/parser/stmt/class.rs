@@ -1630,6 +1630,7 @@ pub(super) fn module_decl(input: &str) -> PResult<'_, Stmt> {
         name: Symbol::intern(&name),
         body,
         is_unit: false,
+        is_my: false,
     };
     if stmts.is_empty() {
         return Ok((rest, package_stmt));
@@ -1830,12 +1831,22 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
             name: Symbol::intern(&name),
             body: Vec::new(),
             is_unit: true,
+            is_my: false,
         },
     ))
 }
 
 /// Parse `package` declaration.
 pub(super) fn package_decl(input: &str) -> PResult<'_, Stmt> {
+    package_decl_with_scope(input, false)
+}
+
+/// Parse `my package` declaration (lexically scoped).
+pub(super) fn package_decl_my(input: &str) -> PResult<'_, Stmt> {
+    package_decl_with_scope(input, true)
+}
+
+fn package_decl_with_scope(input: &str, is_my: bool) -> PResult<'_, Stmt> {
     let rest = keyword("package", input).ok_or_else(|| PError::expected("package declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
@@ -1848,6 +1859,7 @@ pub(super) fn package_decl(input: &str) -> PResult<'_, Stmt> {
             name: Symbol::intern(&name),
             body,
             is_unit: false,
+            is_my,
         },
     ))
 }

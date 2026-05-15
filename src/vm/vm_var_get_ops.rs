@@ -233,8 +233,15 @@ impl VM {
                     || Self::is_type_with_smiley(bare, &self.interpreter))
             {
                 Value::Package(Symbol::intern(Self::resolve_type_alias(bare)))
-            } else {
+            } else if self.interpreter.has_type(name)
+                || self.interpreter.chain_declared_packages.contains(name)
+            {
                 Value::Package(Symbol::intern(name))
+            } else {
+                return Err(RuntimeError::new(format!(
+                    "X::Undeclared::Symbols: Undeclared name:\n    {} used at line 1",
+                    name,
+                )));
             }
         } else if name.chars().count() == 1 {
             // Single unicode character — check for vulgar fractions etc.
