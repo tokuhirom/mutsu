@@ -527,11 +527,11 @@ fn try_wrap_whatevercode_call_chain(expr: &Expr) -> Option<Expr> {
     }
 }
 
-fn is_whatever(expr: &Expr) -> bool {
+pub(super) fn is_whatever(expr: &Expr) -> bool {
     matches!(expr, Expr::Whatever)
 }
 
-fn contains_whatever(expr: &Expr) -> bool {
+pub(super) fn contains_whatever(expr: &Expr) -> bool {
     match expr {
         e if is_whatever(e) => true,
         // Don't treat bare * inside range/sequence operators as WhateverCode.
@@ -563,6 +563,21 @@ fn contains_whatever(expr: &Expr) -> bool {
             left,
             ..
         } => contains_whatever(left),
+        // Named FatArrow pairs (colonpairs): `:as(*)` produces `"as" => *` which should
+        // be Pair("as", Whatever), NOT a WhateverCode.  When the left side is a string
+        // literal, skip WhateverCode propagation so the Pair is not auto-curried.
+        Expr::Binary {
+            op: TokenKind::FatArrow,
+            left,
+            ..
+        } if matches!(left.as_ref(), Expr::Literal(Value::Str(_))) => false,
+        // Composition operators `o` and `∘` never auto-curry: their operands are
+        // always treated as callables, so `(* + 1) o (* * 2)` should compose
+        // two WhateverCodes rather than becoming a WhateverCode itself.
+        Expr::Binary {
+            op: TokenKind::Ident(name),
+            ..
+        } if name == "o" || name == "\u{2218}" => false,
         Expr::Binary { left, right, .. } => contains_whatever(left) || contains_whatever(right),
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => contains_whatever(expr),
         // Pseudo-methods (.WHAT, .WHO, .HOW, etc.) are always evaluated immediately
@@ -579,7 +594,23 @@ fn contains_whatever(expr: &Expr) -> bool {
             contains_whatever(target)
         }
         Expr::CallOn { target, args } => {
-            contains_whatever(target) || args.iter().any(contains_whatever)
+            // Already-wrapped WhateverCode args (Lambda/AnonSubParams with
+            // is_whatever_code: true) are opaque values, not raw Whatever
+            // placeholders.  Only bare * or compound-Whatever args should
+            // trigger auto-currying of the whole CallOn.
+            contains_whatever(target)
+                || args.iter().any(|a| {
+                    !matches!(
+                        a,
+                        Expr::Lambda {
+                            is_whatever_code: true,
+                            ..
+                        } | Expr::AnonSubParams {
+                            is_whatever_code: true,
+                            ..
+                        }
+                    ) && contains_whatever(a)
+                })
         }
         // Only check target, not index: @a[*-1] should NOT make the whole expr a WhateverCode.
         // The [*-1] subscript handles its own WhateverCode wrapping.

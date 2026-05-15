@@ -1322,10 +1322,29 @@ impl Interpreter {
                                 callback,
                                 value: val,
                                 delay_seconds,
-                                ..
+                                as_fn,
+                                with_fn,
+                                tap_index,
                             } => {
-                                Self::sleep_for_supply_delay(delay_seconds);
-                                let _ = self.call_sub_value(callback, vec![val], true);
+                                let key = if let Some(f) = as_fn {
+                                    self.call_sub_value(f, vec![val.clone()], true)
+                                        .unwrap_or(val.clone())
+                                } else {
+                                    val.clone()
+                                };
+                                let is_dup = self
+                                    .supplier_unique_check_seen(
+                                        supplier_id,
+                                        tap_index,
+                                        &key,
+                                        &with_fn,
+                                    )
+                                    .unwrap_or(false);
+                                if !is_dup {
+                                    supplier_unique_mark_seen(supplier_id, tap_index, key);
+                                    Self::sleep_for_supply_delay(delay_seconds);
+                                    let _ = self.call_sub_value(callback, vec![val], true);
+                                }
                             }
                             SupplierEmitAction::ClassifyCheck {
                                 value: val,
