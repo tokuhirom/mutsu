@@ -632,7 +632,16 @@ impl Interpreter {
             ) => {
                 let text = left.to_string_value();
                 let pat = pat.to_string();
-                if let Some(captures) = self.regex_match_with_captures(&pat, &text) {
+                // Set $_ to the match target so $( $_ ) works inside regex
+                let saved_topic = self.env.get("_").cloned();
+                self.env.insert("_".to_string(), Value::str(text.clone()));
+                let match_result = self.regex_match_with_captures(&pat, &text);
+                if let Some(v) = &saved_topic {
+                    self.env.insert("_".to_string(), v.clone());
+                } else {
+                    self.env.remove("_");
+                }
+                if let Some(captures) = match_result {
                     // Reset stale numeric capture vars from any previous match.
                     let stale_numeric: Vec<String> = self
                         .env

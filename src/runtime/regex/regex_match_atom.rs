@@ -119,6 +119,9 @@ impl Interpreter {
                 new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                 out.push((end, new_caps));
             }
+            // Ensure greedy semantics: sort by position so the LIFO stack
+            // tries the longest match first (same convention as Alternation).
+            out.sort_by(|a, b| a.0.cmp(&b.0));
             return out;
         }
         if let RegexAtom::GoalMatch {
