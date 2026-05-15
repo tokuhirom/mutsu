@@ -565,7 +565,7 @@ impl Interpreter {
                 .map(|f| Value::str(f.clone()))
                 .unwrap_or(Value::Nil)));
         }
-        if method == "of" && args.is_empty() {
+        if matches!(method, "of" | "returns") && args.is_empty() {
             let type_name = self
                 .callable_return_type(target)
                 .unwrap_or_else(|| "Mu".to_string());

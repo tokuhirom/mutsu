@@ -890,6 +890,32 @@ impl Interpreter {
                         {
                             // Binding accepts numeric widening into Num parameters.
                         } else if !self.type_matches_value(&resolved_constraint, &value) {
+                            // :D/:U smiley mismatch → X::Parameter::InvalidConcreteness
+                            let (base_type, smiley) =
+                                crate::runtime::types::strip_type_smiley(&resolved_constraint);
+                            if smiley.is_some_and(|s| s == ":D" || s == ":U")
+                                && self.type_matches_value(base_type, &value)
+                            {
+                                let should_be_concrete = smiley == Some(":D");
+                                let got_type = if let Value::Package(pkg) = &value {
+                                    pkg.resolve().to_string()
+                                } else {
+                                    crate::runtime::value_type_name(&value).to_string()
+                                };
+                                let routine = self
+                                    .samewith_context_stack
+                                    .last()
+                                    .map(|(name, _)| name.as_str())
+                                    .unwrap_or("<anon>");
+                                return Err(RuntimeError::parameter_invalid_concreteness(
+                                    base_type,
+                                    &got_type,
+                                    routine,
+                                    &pd.name,
+                                    should_be_concrete,
+                                    pd.is_invocant,
+                                ));
+                            }
                             let display_name = if pd.name == "__type_only__" {
                                 format!("parameter '{}'", resolved_constraint)
                             } else {

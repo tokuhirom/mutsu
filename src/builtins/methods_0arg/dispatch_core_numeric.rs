@@ -7,10 +7,70 @@ use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 use num_traits::{Signed, ToPrimitive, Zero};
 
+/// Check if a Package type object is calling a :D-requiring numeric method.
+/// Returns X::Parameter::InvalidConcreteness error if so.
+fn check_numeric_type_object_method(
+    target: &Value,
+    method: &str,
+) -> Option<Option<Result<Value, RuntimeError>>> {
+    if let Value::Package(pkg_name) = target {
+        let name = pkg_name.resolve();
+        // Numeric types whose instances have these methods
+        let is_numeric_type = matches!(
+            name.as_ref(),
+            "Int" | "UInt" | "Num" | "Rat" | "FatRat" | "Complex" | "Cool" | "Numeric"
+        );
+        if !is_numeric_type {
+            return None;
+        }
+        // Methods that require :D (a concrete instance)
+        let is_d_method = matches!(
+            method,
+            "abs"
+                | "sign"
+                | "sqrt"
+                | "exp"
+                | "log"
+                | "log2"
+                | "log10"
+                | "ceiling"
+                | "floor"
+                | "round"
+                | "truncate"
+                | "narrow"
+                | "lsb"
+                | "msb"
+                | "base"
+                | "polymod"
+        );
+        if !is_d_method {
+            return None;
+        }
+        // Determine the parent numeric type for the error
+        let expected_type = match name.as_ref() {
+            "UInt" => "Int",
+            _ => &name,
+        };
+        return Some(Some(Err(RuntimeError::parameter_invalid_concreteness(
+            expected_type,
+            &name,
+            method,
+            "self",
+            true, // should_be_concrete
+            true, // param_is_invocant
+        ))));
+    }
+    None
+}
+
 pub(super) fn dispatch(
     target: &Value,
     method: &str,
 ) -> Option<Option<Result<Value, RuntimeError>>> {
+    // Type objects calling :D-requiring numeric methods
+    if let result @ Some(_) = check_numeric_type_object_method(target, method) {
+        return result;
+    }
     match method {
         "elems" => {
             if let Value::LazyList(list) = target {

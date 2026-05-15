@@ -44,6 +44,14 @@ pub(in crate::runtime) fn wrap_native_int_for_binding(
     if !native_types::is_native_int_type(base) {
         return Ok(val);
     }
+    // Type objects cannot be unboxed to native types
+    if let Value::Package(pkg_name) = &val {
+        return Err(crate::value::RuntimeError::new(format!(
+            "Cannot unbox a type object ({}) to {}.",
+            pkg_name.resolve(),
+            base
+        )));
+    }
     let big_val = match &val {
         Value::Int(n) => NumBigInt::from(*n),
         Value::BigInt(n) => (**n).clone(),
