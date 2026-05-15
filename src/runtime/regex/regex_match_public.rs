@@ -1,4 +1,5 @@
 use super::super::*;
+use super::regex_casefold::{casefold_pattern, casefold_text, needs_casefold_expansion};
 use super::regex_helpers::{map_pos, strip_marks_pattern, strip_marks_text};
 
 impl Interpreter {
@@ -157,6 +158,44 @@ impl Interpreter {
                 if let Some((end, mut caps)) = self.regex_match_end_from_caps_in_pkg(
                     &stripped_parsed,
                     &stripped_chars,
+                    start,
+                    &pkg,
+                ) {
+                    let from = map_pos(caps.capture_start.unwrap_or(start), &pos_map, orig_len);
+                    let to = map_pos(caps.capture_end.unwrap_or(end), &pos_map, orig_len);
+                    caps.from = from;
+                    caps.to = to;
+                    caps.matched = orig_chars[from..to].iter().collect();
+                    return Some(caps);
+                }
+            }
+            return None;
+        }
+
+        // When :i (ignorecase) is set and there are characters with multi-char
+        // case folds (e.g., 'ß' -> 'ss', 'ﬁ' -> 'fi'), pre-process both text
+        // and pattern into case-folded form, match on folded forms, then map
+        // positions back to the original text.
+        if parsed.ignore_case && needs_casefold_expansion(&orig_chars, &parsed) {
+            let (folded_chars, pos_map) = casefold_text(&orig_chars);
+            let folded_parsed = casefold_pattern(&parsed);
+            let orig_len = orig_chars.len();
+            if folded_parsed.anchor_start {
+                return self
+                    .regex_match_end_from_caps_in_pkg(&folded_parsed, &folded_chars, 0, &pkg)
+                    .map(|(end, mut caps)| {
+                        let from = map_pos(caps.capture_start.unwrap_or(0), &pos_map, orig_len);
+                        let to = map_pos(caps.capture_end.unwrap_or(end), &pos_map, orig_len);
+                        caps.from = from;
+                        caps.to = to;
+                        caps.matched = orig_chars[from..to].iter().collect();
+                        caps
+                    });
+            }
+            for start in 0..=folded_chars.len() {
+                if let Some((end, mut caps)) = self.regex_match_end_from_caps_in_pkg(
+                    &folded_parsed,
+                    &folded_chars,
                     start,
                     &pkg,
                 ) {

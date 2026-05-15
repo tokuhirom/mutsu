@@ -497,7 +497,15 @@ impl Interpreter {
         let matched = match atom {
             RegexAtom::Literal(ch) => {
                 if ignore_case {
-                    ch.to_lowercase().to_string() == c.to_lowercase().to_string()
+                    // In case-insensitive mode, a plain literal should not match
+                    // a synthetic grapheme (base + combining marks) because they
+                    // are different graphemes.
+                    let ge = grapheme_end(chars, pos);
+                    if ge > pos + 1 {
+                        false
+                    } else {
+                        ch.to_lowercase().to_string() == c.to_lowercase().to_string()
+                    }
                 } else {
                     *ch == c
                 }
