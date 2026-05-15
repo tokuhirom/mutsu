@@ -2362,8 +2362,36 @@ impl Interpreter {
                                     }
                                 } else if let Some(var_name) = trimmed.strip_prefix('$') {
                                     // <$var> — look up scalar variable and compile as regex
-                                    let value =
-                                        self.env.get(var_name).cloned().unwrap_or(Value::Nil);
+                                    let value = match self.env.get(var_name).cloned() {
+                                        Some(v) => v,
+                                        None => {
+                                            // Variable not declared — X::Undeclared
+                                            let symbol = format!("${var_name}");
+                                            let msg = format!(
+                                                "Variable '{symbol}' is not declared"
+                                            );
+                                            let mut attrs =
+                                                std::collections::HashMap::new();
+                                            attrs.insert(
+                                                "symbol".to_string(),
+                                                Value::str(symbol),
+                                            );
+                                            attrs.insert(
+                                                "message".to_string(),
+                                                Value::str(msg.clone()),
+                                            );
+                                            let ex = Value::make_instance(
+                                                Symbol::intern("X::Undeclared"),
+                                                attrs,
+                                            );
+                                            let mut err = RuntimeError::new(&msg);
+                                            err.exception = Some(Box::new(ex));
+                                            PENDING_REGEX_ERROR.with(|e| {
+                                                *e.borrow_mut() = Some(err);
+                                            });
+                                            return None;
+                                        }
+                                    };
                                     let pat_str = match &value {
                                         Value::Regex(pat) => pat.to_string(),
                                         Value::RegexWithAdverbs { pattern, .. } => {
@@ -2387,8 +2415,21 @@ impl Interpreter {
                                         });
                                         return None;
                                     }
-                                    // Parse the pattern string as a regex
-                                    if let Some(parsed) = self.parse_regex(&pat_str) {
+                                    // Parse as regex, propagating outer modifiers (:i, :m)
+                                    let scoped_pat = if ignore_case || ignore_mark {
+                                        let mut s = String::new();
+                                        if ignore_case {
+                                            s.push_str(":i ");
+                                        }
+                                        if ignore_mark {
+                                            s.push_str(":m ");
+                                        }
+                                        s.push_str(&pat_str);
+                                        s
+                                    } else {
+                                        pat_str
+                                    };
+                                    if let Some(parsed) = self.parse_regex(&scoped_pat) {
                                         RegexAtom::Group(parsed)
                                     } else {
                                         continue;
@@ -3254,10 +3295,62 @@ impl Interpreter {
                         .env
                         .get(&name)
                         .cloned()
-                        .or_else(|| self.env.get(&format!("${name}")).cloned())
-                        .unwrap_or(Value::Nil);
+                        .or_else(|| self.env.get(&format!("${name}")).cloned());
+                    let value = match value {
+                        Some(v) => v,
+                        None => {
+                            // Variable not declared — signal X::Undeclared
+                            let symbol = format!("${name}");
+                            let msg =
+                                format!("Variable '{symbol}' is not declared");
+                            let mut attrs = std::collections::HashMap::new();
+                            attrs.insert(
+                                "symbol".to_string(),
+                                Value::str(symbol),
+                            );
+                            attrs.insert(
+                                "message".to_string(),
+                                Value::str(msg.clone()),
+                            );
+                            let ex = Value::make_instance(
+                                Symbol::intern("X::Undeclared"),
+                                attrs,
+                            );
+                            let mut err = RuntimeError::new(&msg);
+                            err.exception = Some(Box::new(ex));
+                            return Err(err);
+                        }
+                    };
                     Self::check_hash_in_regex(&value)?;
                     Self::push_value_as_regex_pattern(&value, &mut out);
+                    i = j;
+                    continue;
+                } else if j < chars.len() && chars[j] == '(' {
+                    // $( expr ) — scalar contextualizer: evaluate expr
+                    // and match the result as a literal string.
+                    if inside_sq {
+                        out.push('$');
+                        i += 1;
+                        continue;
+                    }
+                    j += 1; // skip '('
+                    let mut depth = 1usize;
+                    let expr_start = j;
+                    while j < chars.len() && depth > 0 {
+                        if chars[j] == '(' {
+                            depth += 1;
+                        } else if chars[j] == ')' {
+                            depth -= 1;
+                        }
+                        if depth > 0 {
+                            j += 1;
+                        }
+                    }
+                    let expr_str: String = chars[expr_start..j].iter().collect();
+                    j += 1; // skip closing ')'
+                    let val = self.eval_string_as_source(&expr_str);
+                    let literal = val.to_string_value();
+                    out.push_str(&Self::escape_regex_scalar_literal(&literal));
                     i = j;
                     continue;
                 }
@@ -3270,6 +3363,44 @@ impl Interpreter {
                     continue;
                 }
                 let mut j = i + 1;
+                // @$var — dereference scalar as array for alternation
+                if j < chars.len() && chars[j] == '$' {
+                    j += 1; // skip '$'
+                    let name_start = j;
+                    while j < chars.len()
+                        && (chars[j].is_alphanumeric() || chars[j] == '_' || chars[j] == '-')
+                    {
+                        j += 1;
+                    }
+                    if j > name_start {
+                        let bare_name: String = chars[name_start..j].iter().collect();
+                        let value = self
+                            .env
+                            .get(&bare_name)
+                            .cloned()
+                            .or_else(|| self.env.get(&format!("${bare_name}")).cloned())
+                            .unwrap_or(Value::Nil);
+                        let elements = match &value {
+                            Value::Array(arr, _) => arr.as_ref().clone(),
+                            _ => vec![value],
+                        };
+                        let mut alts = Vec::new();
+                        for elt in &elements {
+                            match elt {
+                                Value::Regex(pat) => alts.push(pat.to_string()),
+                                Value::RegexWithAdverbs { pattern, .. } => {
+                                    alts.push(pattern.to_string())
+                                }
+                                other => alts.push(Self::escape_regex_scalar_literal(
+                                    &other.to_string_value(),
+                                )),
+                            }
+                        }
+                        Self::push_regex_interpolated_alternation(&mut out, &alts);
+                        i = j;
+                        continue;
+                    }
+                }
                 if j < chars.len() && (chars[j].is_alphabetic() || chars[j] == '_') {
                     let name_start = j;
                     while j < chars.len()
@@ -3424,6 +3555,10 @@ impl Interpreter {
     /// be used for injection attacks. Returns true if the pattern is dangerous.
     pub(super) fn contains_dangerous_regex_code(pattern: &str) -> bool {
         let s = pattern.trim();
+        // Check for nested assertions: <$var>, <@var> inside a reinterpreted string
+        if s.contains("<$") || s.contains("<@") {
+            return true;
+        }
         // Check for code interpolation patterns
         if s.contains("$(") || s.contains("@(") {
             return true;
