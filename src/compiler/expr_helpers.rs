@@ -174,6 +174,66 @@ impl Compiler {
     /// Returns `true` when `expr` provably produces a fresh container
     /// -- i.e. the result is a copy that cannot share identity with any
     /// existing container.
+    /// Try to resolve the variable name that an expression's container refers to.
+    /// For `Var("foo")`, returns `Some("foo")`.
+    /// For `($foo, "x")[0]` where index 0 points to `Var("foo")`, returns `Some("foo")`.
+    /// For `($foo, "x", 17)[0,1][0]` (chained indexing), resolves recursively.
+    pub(super) fn resolve_container_var_name(expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::Var(name) => Some(name.clone()),
+            Expr::Index {
+                target,
+                index,
+                is_positional: true,
+            } => {
+                // If target is an ArrayLiteral and index is a literal Int,
+                // resolve the element at that index.
+                if let Expr::ArrayLiteral(elements) = target.as_ref() {
+                    if let Expr::Literal(Value::Int(i)) = index.as_ref() {
+                        let i = *i as usize;
+                        if i < elements.len() {
+                            return Self::resolve_container_var_name(&elements[i]);
+                        }
+                    }
+                    // Multi-index slice: [0,1] produces ArrayLiteral
+                    if let Expr::ArrayLiteral(indices) = index.as_ref() {
+                        // This creates a new list, not a single container.
+                        // However, indexing this list with [0] later may resolve.
+                        // We don't handle this case directly.
+                        let _ = indices;
+                    }
+                }
+                // If target is itself an Index (chained), try to resolve the
+                // intermediate result. E.g., ($foo, "x", 17)[0,1][0]
+                // The inner [0,1] produces a list, and [0] of that list is ($foo).
+                // This requires knowing the inner result, which we can approximate:
+                // if the inner target is an ArrayLiteral and inner index is an
+                // ArrayLiteral of ints, we can compute the resulting list.
+                if let Expr::Index {
+                    target: inner_target,
+                    index: inner_index,
+                    is_positional: true,
+                } = target.as_ref()
+                    && let Expr::ArrayLiteral(elements) = inner_target.as_ref()
+                    && let Expr::ArrayLiteral(indices) = inner_index.as_ref()
+                    && let Expr::Literal(Value::Int(outer_i)) = index.as_ref()
+                {
+                    let outer_i = *outer_i as usize;
+                    if outer_i < indices.len()
+                        && let Expr::Literal(Value::Int(inner_i)) = &indices[outer_i]
+                    {
+                        let inner_i = *inner_i as usize;
+                        if inner_i < elements.len() {
+                            return Self::resolve_container_var_name(&elements[inner_i]);
+                        }
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
     pub(super) fn expr_is_fresh_container(expr: &Expr) -> bool {
         match expr {
             // Indexing into an array/hash element produces a value that

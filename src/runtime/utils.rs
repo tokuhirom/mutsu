@@ -2118,6 +2118,7 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
             ))
         }
         Value::Uni { ref text, .. } => Value::Int(text.chars().count() as i64),
+        Value::Capture { ref positional, .. } => Value::Int(positional.len() as i64),
         _ => Value::Int(0),
     }
 }
@@ -3086,6 +3087,7 @@ pub(crate) fn to_int(v: &Value) -> i64 {
         Value::Hash(items) => items.len() as i64,
         Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => items.len() as i64,
         Value::Slip(items) => items.len() as i64,
+        Value::Capture { positional, .. } => positional.len() as i64,
         Value::Instance { attributes, .. } => attributes.get("__mutsu_int_value").map_or(0, to_int),
         _ => 0,
     }

@@ -311,6 +311,47 @@ impl Compiler {
                 name_idx,
                 is_positional: outer_positional,
             });
+        } else if let Expr::ArrayLiteral(elements) = target {
+            // List construction container assignment:
+            // ($var1, literal, $var2, ...)[idx] = value
+            // When the target is a literal list, resolve which element is
+            // being assigned and write through to the original variable.
+            if let Some(indices) = Self::extract_literal_int_indices(index) {
+                // Multi-index slice or single index
+                if indices.len() == 1 {
+                    // Single index: ($foo, "x")[0] = 23
+                    let i = indices[0] as usize;
+                    if i < elements.len() {
+                        if let Expr::Var(name) = &elements[i] {
+                            self.compile_expr(value);
+                            let name_idx = self.code.add_constant(Value::str(name.clone()));
+                            self.code.emit(OpCode::AssignExpr(name_idx));
+                        } else {
+                            // Assigning to a literal element — emit code
+                            // that throws X::Assignment::RO at runtime.
+                            self.compile_expr(target);
+                            self.compile_expr(index);
+                            self.compile_expr(value);
+                            self.code.emit(OpCode::IndexAssignGeneric);
+                        }
+                    } else {
+                        self.compile_expr(target);
+                        self.compile_expr(index);
+                        self.compile_expr(value);
+                        self.code.emit(OpCode::IndexAssignGeneric);
+                    }
+                } else {
+                    // Multi-index slice: ($foo, 42, $bar, 19)[0, 2] = (23, 24)
+                    // Compile value first, then distribute assignments
+                    self.compile_list_slice_assign(elements, &indices, value);
+                }
+            } else {
+                // Non-literal index — fall through to generic
+                self.compile_expr(target);
+                self.compile_expr(index);
+                self.compile_expr(value);
+                self.code.emit(OpCode::IndexAssignGeneric);
+            }
         } else {
             // Generic fallback: compile target, then index, then value
             // and emit IndexAssignGeneric to do runtime assignment.
@@ -347,6 +388,78 @@ impl Compiler {
             self.compile_expr(value);
             self.code
                 .emit(OpCode::MultiDimIndexAssignGeneric(dimensions.len() as u32));
+        }
+    }
+
+    /// Extract literal integer indices from an index expression.
+    /// Returns `Some(vec![i])` for `Literal(Int(i))`, or `Some(vec![i, j, ...])`
+    /// for `ArrayLiteral([Literal(Int(i)), Literal(Int(j)), ...])`.
+    fn extract_literal_int_indices(index: &Expr) -> Option<Vec<i64>> {
+        match index {
+            Expr::Literal(Value::Int(i)) => Some(vec![*i]),
+            Expr::ArrayLiteral(items) => {
+                let mut result = Vec::with_capacity(items.len());
+                for item in items {
+                    if let Expr::Literal(Value::Int(i)) = item {
+                        result.push(*i);
+                    } else {
+                        return None;
+                    }
+                }
+                Some(result)
+            }
+            _ => None,
+        }
+    }
+
+    /// Compile a list-slice assignment: ($foo, 42, $bar, 19)[0, 2] = (23, 24)
+    /// Each index maps to an element in the target ArrayLiteral.
+    /// Variable elements get assigned; literal elements cause X::Assignment::RO.
+    fn compile_list_slice_assign(&mut self, elements: &[Expr], indices: &[i64], value: &Expr) {
+        // Check if all indexed elements are variables (for success path)
+        // or if any is a literal (for error path — dies-ok test).
+        let mut all_vars = true;
+        let mut has_literal = false;
+        for &i in indices {
+            let i = i as usize;
+            if i < elements.len() && !matches!(&elements[i], Expr::Var(_)) {
+                all_vars = false;
+                has_literal = true;
+            }
+        }
+
+        if all_vars {
+            // Extract value elements: compile value, then assign each element
+            // to the corresponding variable.
+            // First, compute the value into an array.
+            self.compile_expr(value);
+            // For each index, extract element and assign to var.
+            for (pos, &i) in indices.iter().enumerate() {
+                let i = i as usize;
+                if i < elements.len()
+                    && let Expr::Var(name) = &elements[i]
+                {
+                    // Dup the value array, index into it, assign to var
+                    self.code.emit(OpCode::Dup);
+                    let idx = self.code.add_constant(Value::Int(pos as i64));
+                    self.code.emit(OpCode::LoadConst(idx));
+                    self.code.emit(OpCode::Index {
+                        is_positional: true,
+                    });
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
+                    self.code.emit(OpCode::AssignExpr(name_idx));
+                    self.code.emit(OpCode::Pop);
+                }
+            }
+            // The value array is still on the stack.
+        } else if has_literal {
+            // If any indexed element is a literal, the assignment should die
+            // with X::Assignment::RO since literals are immutable containers.
+            let ro_call = Expr::Call {
+                name: Symbol::intern("__mutsu_assignment_ro"),
+                args: Vec::new(),
+            };
+            self.compile_expr(&ro_call);
         }
     }
 }
