@@ -2410,6 +2410,15 @@ impl Interpreter {
                                         });
                                         return None;
                                     }
+                                    // Check for undeclared variables in the resolved string
+                                    if let Some(err) =
+                                        self.check_undeclared_vars_in_pattern(&pat_str)
+                                    {
+                                        PENDING_REGEX_ERROR.with(|e| {
+                                            *e.borrow_mut() = Some(err);
+                                        });
+                                        return None;
+                                    }
                                     // Parse as regex, propagating outer modifiers (:i, :m)
                                     let scoped_pat = if ignore_case || ignore_mark {
                                         let mut s = String::new();
@@ -3290,22 +3299,8 @@ impl Interpreter {
                         .env
                         .get(&name)
                         .cloned()
-                        .or_else(|| self.env.get(&format!("${name}")).cloned());
-                    let value = match value {
-                        Some(v) => v,
-                        None => {
-                            // Variable not declared — signal X::Undeclared
-                            let symbol = format!("${name}");
-                            let msg = format!("Variable '{symbol}' is not declared");
-                            let mut attrs = std::collections::HashMap::new();
-                            attrs.insert("symbol".to_string(), Value::str(symbol));
-                            attrs.insert("message".to_string(), Value::str(msg.clone()));
-                            let ex = Value::make_instance(Symbol::intern("X::Undeclared"), attrs);
-                            let mut err = RuntimeError::new(&msg);
-                            err.exception = Some(Box::new(ex));
-                            return Err(err);
-                        }
-                    };
+                        .or_else(|| self.env.get(&format!("${name}")).cloned())
+                        .unwrap_or(Value::Nil);
                     Self::check_hash_in_regex(&value)?;
                     Self::push_value_as_regex_pattern(&value, &mut out);
                     i = j;
@@ -3464,6 +3459,44 @@ impl Interpreter {
 
     /// Convert a Value to its regex pattern representation and push to output.
     /// Handles Nil (always-fail), Regex, Junction (alternation), and literals.
+    /// Check if a pattern string contains `$varname` references to undeclared
+    /// variables. Used by the `<$var>` handler to detect undeclared variables
+    /// in the resolved pattern content (one level of reinterpretation).
+    fn check_undeclared_vars_in_pattern(&self, pattern: &str) -> Option<RuntimeError> {
+        let chars: Vec<char> = pattern.chars().collect();
+        let mut i = 0;
+        while i < chars.len() {
+            if chars[i] == '$' {
+                let j = i + 1;
+                if j < chars.len() && (chars[j].is_alphabetic() || chars[j] == '_') {
+                    let mut end = j;
+                    while end < chars.len()
+                        && (chars[end].is_alphanumeric() || chars[end] == '_' || chars[end] == '-')
+                    {
+                        end += 1;
+                    }
+                    let name: String = chars[j..end].iter().collect();
+                    if self.env.get(&name).is_none() && self.env.get(&format!("${name}")).is_none()
+                    {
+                        let symbol = format!("${name}");
+                        let msg = format!("Variable '{symbol}' is not declared");
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("symbol".to_string(), Value::str(symbol));
+                        attrs.insert("message".to_string(), Value::str(msg.clone()));
+                        let ex = Value::make_instance(Symbol::intern("X::Undeclared"), attrs);
+                        let mut err = RuntimeError::new(&msg);
+                        err.exception = Some(Box::new(ex));
+                        return Some(err);
+                    }
+                    i = end;
+                    continue;
+                }
+            }
+            i += 1;
+        }
+        None
+    }
+
     fn push_value_as_regex_pattern(value: &Value, out: &mut String) {
         match value {
             Value::Nil => out.push_str("<!>"),
