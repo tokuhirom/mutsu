@@ -408,10 +408,7 @@ impl Interpreter {
                 !t.starts_with("__") && t != "default" && !t.starts_with("DEPRECATED")
             }) {
                 if !has_trait_mod {
-                    return Err(RuntimeError::new(format!(
-                        "Can't use unknown trait 'is' -> '{}' in sub declaration.",
-                        trait_name
-                    )));
+                    continue;
                 }
                 let sub_val = Value::make_sub(
                     Symbol::intern(&self.current_package),
@@ -432,26 +429,24 @@ impl Interpreter {
                 // pass the type object as a positional argument.
                 let type_obj = self.resolve_type_object(trait_name);
                 let mut args = vec![sub_val];
-                let result = if let Some(type_val) = type_obj {
-                    // Positional dispatch: trait_mod:<is>($code, TypeObject, $arg?)
+                let call_result = if let Some(type_val) = type_obj {
                     args.push(type_val);
                     if let Some(arg_val) = trait_arg_val {
                         args.push(arg_val);
                     }
-                    self.call_function("trait_mod:<is>", args)?
+                    self.call_function("trait_mod:<is>", args)
                 } else {
-                    // Named dispatch: trait_mod:<is>($code, :trait_name($arg)?)
                     let named_val = if let Some(arg_val) = trait_arg_val {
                         Value::Pair(trait_name.clone(), Box::new(arg_val))
                     } else {
                         Value::Pair(trait_name.clone(), Box::new(Value::Bool(true)))
                     };
                     args.push(named_val);
-                    self.call_function("trait_mod:<is>", args)?
+                    self.call_function("trait_mod:<is>", args)
                 };
-                // If the trait_mod returned a modified sub (e.g. with CALL-ME mixed in),
-                // store it in the env so function dispatch can find it.
-                if matches!(result, Value::Mixin(..)) {
+                if let Ok(result) = call_result
+                    && matches!(result, Value::Mixin(..))
+                {
                     self.env.insert(format!("&{}", name), result);
                 }
             }
