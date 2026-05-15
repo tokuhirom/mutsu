@@ -44,7 +44,7 @@ pub(super) fn try_keyword_dispatch(
                     *return_type = Some(routine_type.clone());
                 }
                 if is_our {
-                    custom_traits.push("__our_scoped".to_string());
+                    custom_traits.push(("__our_scoped".to_string(), None));
                 }
             }
             return Ok(Some((r, stmt)));
@@ -62,7 +62,7 @@ pub(super) fn try_keyword_dispatch(
                     *return_type = Some(routine_type.clone());
                 }
                 if is_our {
-                    custom_traits.push("__our_scoped".to_string());
+                    custom_traits.push(("__our_scoped".to_string(), None));
                 }
             }
             return Ok(Some((r, stmt)));
@@ -126,7 +126,7 @@ pub(super) fn try_keyword_dispatch(
             .unwrap_or(r);
         let (r, mut stmt) = sub_decl_body(r, true, false, false)?;
         if is_our && let Stmt::SubDecl { custom_traits, .. } = &mut stmt {
-            custom_traits.push("__our_scoped".to_string());
+            custom_traits.push(("__our_scoped".to_string(), None));
         }
         return Ok(Some((r, stmt)));
     }
@@ -136,7 +136,7 @@ pub(super) fn try_keyword_dispatch(
         let (r, _) = ws1(r)?;
         let (r, mut stmt) = sub_decl_body(r, false, false, false)?;
         if is_our && let Stmt::SubDecl { custom_traits, .. } = &mut stmt {
-            custom_traits.push("__our_scoped".to_string());
+            custom_traits.push(("__our_scoped".to_string(), None));
         }
         return Ok(Some((r, stmt)));
     }

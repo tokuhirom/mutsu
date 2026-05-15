@@ -90,12 +90,14 @@ impl Interpreter {
         is_raw: bool,
         is_test_assertion: bool,
         supersede: bool,
-        custom_traits: &[String],
+        custom_traits: &[(String, Option<crate::ast::Expr>)],
     ) -> Result<(), RuntimeError> {
-        let is_method_value_decl = custom_traits.iter().any(|t| t == "__mutsu_method_decl");
+        let is_method_value_decl = custom_traits
+            .iter()
+            .any(|(t, _)| t == "__mutsu_method_decl");
         let allow_redeclare = supersede || is_method_value_decl;
-        let is_our_scoped = custom_traits.iter().any(|t| t == "__our_scoped");
-        let is_lexical_hoist = custom_traits.iter().any(|t| t == "__lexical_hoist");
+        let is_our_scoped = custom_traits.iter().any(|(t, _)| t == "__our_scoped");
+        let is_lexical_hoist = custom_traits.iter().any(|(t, _)| t == "__lexical_hoist");
         Self::validate_callable_param_return_redeclaration(param_defs)?;
         if let Some(spec) = return_type
             && self.is_definite_return_spec(spec)
@@ -160,7 +162,7 @@ impl Interpreter {
             (param_defs.to_vec(), false)
         };
         self.validate_static_default_typechecks(&effective_param_defs)?;
-        let deprecated_message = custom_traits.iter().find_map(|t| {
+        let deprecated_message = custom_traits.iter().find_map(|(t, _)| {
             if t == "DEPRECATED" {
                 Some(String::new())
             } else {
@@ -192,7 +194,7 @@ impl Interpreter {
             is_method: false,
             empty_sig,
             return_type: return_type.cloned(),
-            is_default: custom_traits.iter().any(|t| t == "default"),
+            is_default: custom_traits.iter().any(|(t, _)| t == "default"),
             deprecated_message,
         };
         let single_key = format!("{}::{}", self.current_package, name);
@@ -220,6 +222,7 @@ impl Interpreter {
                 return Err(RuntimeError::redeclaration_routine(name));
             }
         }
+        let has_user_custom_traits = custom_traits.iter().any(|(t, _)| !t.starts_with("__"));
         if let Some(existing) = self.functions.get(&single_key_sym) {
             let same = existing.package == new_def.package
                 && existing.name == new_def.name
@@ -227,7 +230,7 @@ impl Interpreter {
                 && format!("{:?}", existing.param_defs) == format!("{:?}", new_def.param_defs)
                 && body_debug_without_setline(&existing.body)
                     == body_debug_without_setline(&new_def.body);
-            if same {
+            if same && !has_user_custom_traits {
                 let callable_key =
                     format!("__mutsu_callable_id::{}::{}", self.current_package, name);
                 self.env.insert(
@@ -236,18 +239,24 @@ impl Interpreter {
                 );
                 return Ok(());
             }
-            let same_signature = existing.package == new_def.package
-                && existing.name == new_def.name
-                && existing.params == new_def.params
-                && format!("{:?}", existing.param_defs) == format!("{:?}", new_def.param_defs);
-            if body.is_empty() && same_signature {
-                let callable_key =
-                    format!("__mutsu_callable_id::{}::{}", self.current_package, name);
-                self.env.insert(
-                    callable_key,
-                    Value::Int(crate::value::next_instance_id() as i64),
-                );
-                return Ok(());
+            // When re-registering a hoisted sub with custom traits, skip redeclaration
+            // checks but don't return early — fall through to apply trait_mod:<is>.
+            if same && has_user_custom_traits {
+                // Fall through to trait dispatch below
+            } else {
+                let same_signature = existing.package == new_def.package
+                    && existing.name == new_def.name
+                    && existing.params == new_def.params
+                    && format!("{:?}", existing.param_defs) == format!("{:?}", new_def.param_defs);
+                if body.is_empty() && same_signature {
+                    let callable_key =
+                        format!("__mutsu_callable_id::{}::{}", self.current_package, name);
+                    self.env.insert(
+                        callable_key,
+                        Value::Int(crate::value::next_instance_id() as i64),
+                    );
+                    return Ok(());
+                }
             }
         }
         let existing_is_stub = self
@@ -255,10 +264,15 @@ impl Interpreter {
             .get(&single_key_sym)
             .is_some_and(|existing| Self::is_stub_routine_body(&existing.body));
         if multi {
-            if has_single && !has_proto && !allow_redeclare && !allow_lexical_shadow {
+            if has_single
+                && !has_proto
+                && !allow_redeclare
+                && !allow_lexical_shadow
+                && !has_user_custom_traits
+            {
                 return Err(RuntimeError::redeclaration_routine(name));
             }
-        } else if !allow_redeclare && !allow_lexical_shadow {
+        } else if !allow_redeclare && !allow_lexical_shadow && !has_user_custom_traits {
             if has_multi && !has_proto {
                 return Err(RuntimeError::redeclaration_routine(name));
             }
@@ -386,11 +400,19 @@ impl Interpreter {
             self.env
                 .insert(format!("__mutsu_method_value::{}", name), Value::Bool(true));
         }
-        // Apply custom trait_mod:<is> for each non-builtin trait (only if trait_mod:<is> is defined)
-        if !custom_traits.is_empty()
-            && (self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>"))
+        // Apply custom trait_mod:<is> for each non-builtin trait
+        let has_trait_mod =
+            self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>");
         {
-            for trait_name in custom_traits.iter().filter(|t| !t.starts_with("__")) {
+            for (trait_name, trait_arg) in
+                custom_traits.iter().filter(|(t, _)| !t.starts_with("__"))
+            {
+                if !has_trait_mod {
+                    return Err(RuntimeError::new(format!(
+                        "Can't use unknown trait 'is' -> '{}' in sub declaration.",
+                        trait_name
+                    )));
+                }
                 let sub_val = Value::make_sub(
                     Symbol::intern(&self.current_package),
                     Symbol::intern(name),
@@ -400,8 +422,33 @@ impl Interpreter {
                     is_rw,
                     self.env.clone(),
                 );
-                let named_arg = Value::Pair(trait_name.clone(), Box::new(Value::Bool(true)));
-                let result = self.call_function("trait_mod:<is>", vec![sub_val, named_arg])?;
+                // Evaluate the trait argument expression if present
+                let trait_arg_val = if let Some(arg_expr) = trait_arg {
+                    Some(self.eval_block_value(&[crate::ast::Stmt::Expr(arg_expr.clone())])?)
+                } else {
+                    None
+                };
+                // Try positional dispatch first: if the trait name is a known type/role,
+                // pass the type object as a positional argument.
+                let type_obj = self.resolve_type_object(trait_name);
+                let mut args = vec![sub_val];
+                let result = if let Some(type_val) = type_obj {
+                    // Positional dispatch: trait_mod:<is>($code, TypeObject, $arg?)
+                    args.push(type_val);
+                    if let Some(arg_val) = trait_arg_val {
+                        args.push(arg_val);
+                    }
+                    self.call_function("trait_mod:<is>", args)?
+                } else {
+                    // Named dispatch: trait_mod:<is>($code, :trait_name($arg)?)
+                    let named_val = if let Some(arg_val) = trait_arg_val {
+                        Value::Pair(trait_name.clone(), Box::new(arg_val))
+                    } else {
+                        Value::Pair(trait_name.clone(), Box::new(Value::Bool(true)))
+                    };
+                    args.push(named_val);
+                    self.call_function("trait_mod:<is>", args)?
+                };
                 // If the trait_mod returned a modified sub (e.g. with CALL-ME mixed in),
                 // store it in the env so function dispatch can find it.
                 if matches!(result, Value::Mixin(..)) {
@@ -410,6 +457,27 @@ impl Interpreter {
             }
         }
         Ok(())
+    }
+
+    /// Resolve a name to a type object (Package value) if the name refers to a known class or role.
+    fn resolve_type_object(&self, name: &str) -> Option<Value> {
+        let fq_name = format!("{}::{}", self.current_package, name);
+        if self.classes.contains_key(name)
+            || self.classes.contains_key(fq_name.as_str())
+            || self.roles.contains_key(name)
+            || self.roles.contains_key(fq_name.as_str())
+        {
+            Some(Value::Package(Symbol::intern(name)))
+        } else if let Some(val) = self.env.get(name) {
+            // Also check env for type objects (e.g. lexical roles/classes)
+            if matches!(val, Value::Package(_)) {
+                Some(val.clone())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 
     pub(crate) fn register_token_decl(

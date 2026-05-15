@@ -2300,7 +2300,7 @@ impl Interpreter {
                     }
                 }
                 Stmt::SubDecl { custom_traits, .. }
-                    if custom_traits.iter().any(|t| t == "__our_scoped") =>
+                    if custom_traits.iter().any(|(t, _)| t == "__our_scoped") =>
                 {
                     Some("sub")
                 }
