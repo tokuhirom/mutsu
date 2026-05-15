@@ -1085,6 +1085,7 @@ impl Compiler {
                     source_var_names,
                     autothread_junctions,
                     explicit_zero_params: *explicit_zero_params,
+                    multi_param_names: params.clone(),
                 });
                 self.compile_body_with_implicit_try(&loop_body);
                 self.code.patch_loop_end(loop_idx);

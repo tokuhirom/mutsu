@@ -47,7 +47,11 @@ impl Interpreter {
                         type_name
                     ))));
                 }
-                let numeric = args[0].clone();
+                // Unwrap allomorphic (Mixin) arguments to get the inner numeric value
+                let numeric = match &args[0] {
+                    Value::Mixin(inner, _) => (**inner).clone(),
+                    other => other.clone(),
+                };
                 let string = args[1].to_string_value();
                 let mut mixins = std::collections::HashMap::new();
                 mixins.insert("Str".to_string(), Value::str(string));
