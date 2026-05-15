@@ -546,6 +546,9 @@ pub(crate) enum OpCode {
         /// When true, the block explicitly declared zero parameters (`-> {}`).
         /// Passing any argument should throw "Too many positionals passed".
         explicit_zero_params: bool,
+        /// Names of multi-param bindings (for `-> $a, \b, $c` loops).
+        /// Used to temporarily clear sigilless readonly flags before binding.
+        multi_param_names: Vec<String>,
     },
     /// C-style loop: [cond opcodes][body opcodes][step opcodes].
     /// Layout after CStyleLoop: cond at [ip+1..cond_end), body at [cond_end..step_start),

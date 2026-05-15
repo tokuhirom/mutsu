@@ -45,7 +45,12 @@ pub(crate) fn parse_raku_str_to_numeric(input: &str) -> Option<Value> {
         return try_parse_generic_radix(body).map(|v| apply_sign(v, sign));
     }
 
-    // Try 0-prefixed radix (0x, 0o, 0b, 0d)
+    // Try multiplicative notation `N*B**K` (e.g., `2*10**3`, `0b1111*10**3`)
+    if let Some(v) = try_parse_multiplicative(body, sign) {
+        return Some(v);
+    }
+
+    // Try 0-prefixed radix (0x, 0o, 0b, 0d) with optional fractional part
     if body.starts_with('0')
         && body.len() >= 3
         && let Some(v) = try_parse_0_radix(body)
@@ -53,7 +58,7 @@ pub(crate) fn parse_raku_str_to_numeric(input: &str) -> Option<Value> {
         return Some(apply_sign(v, sign));
     }
 
-    // Try fraction `N/D`
+    // Try fraction `N/D` (with optional decimal parts and signed denominators)
     if let Some(v) = try_parse_fraction(body, sign) {
         return Some(v);
     }
@@ -148,7 +153,100 @@ fn try_parse_inf_nan(s: &str) -> Option<Value> {
     }
 }
 
-/// Parse `0x`, `0o`, `0b`, `0d` prefixed integers.
+/// Parse multiplicative notation: `N*B**K` (e.g., `2*10**3`, `42.25*10**4`)
+/// The base B can have an optional sign: `N*+B**K`, `N*-B**K`
+/// The exponent K can also have an optional sign: `N*B**+K`
+fn try_parse_multiplicative(body: &str, sign: i32) -> Option<Value> {
+    let star_pos = body.find('*')?;
+    let left = &body[..star_pos];
+    let right = &body[star_pos + 1..];
+
+    // Right side must contain ** (power notation)
+    let pow_pos = right.find("**")?;
+    let base_str = &right[..pow_pos];
+    let exp_str = &right[pow_pos + 2..];
+
+    // Parse left (coefficient): can be integer, decimal, or 0-prefixed radix
+    let coeff = parse_coefficient(left)?;
+
+    // Parse base with optional sign
+    let (base_sign, base_body) = strip_sign(base_str);
+    let base_clean = strip_underscores(base_body)?;
+    if base_clean.is_empty() || !base_clean.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let base_int: i64 = base_clean.parse().ok()?;
+    let base_int = if base_sign < 0 { -base_int } else { base_int };
+
+    // Parse exponent with optional sign
+    let (exp_sign, exp_body) = strip_sign(exp_str);
+    let exp_clean = strip_underscores(exp_body)?;
+    if exp_clean.is_empty() || !exp_clean.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let exp_val: i32 = exp_clean.parse().ok()?;
+    let exp_val = if exp_sign < 0 { -exp_val } else { exp_val };
+
+    // Try to produce an exact integer or Rat result when possible
+    if exp_val >= 0
+        && let Some(power) = (base_int).checked_pow(exp_val as u32)
+    {
+        match &coeff {
+            Value::Int(n) => {
+                if let Some(result) = n.checked_mul(power) {
+                    let result = if sign < 0 { -result } else { result };
+                    return Some(Value::Int(result));
+                }
+            }
+            Value::Rat(n, d) => {
+                if let Some(result_n) = n.checked_mul(power) {
+                    let result_n = if sign < 0 { -result_n } else { result_n };
+                    return Some(crate::value::make_rat(result_n, *d));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let result = value_to_f64(&coeff) * (base_int as f64).powi(exp_val);
+    let result = if sign < 0 { -result } else { result };
+    Some(Value::Num(result))
+}
+
+/// Parse a coefficient for multiplicative notation.
+/// Can be plain integer, decimal, or 0-prefixed radix number (with optional fractional part).
+fn parse_coefficient(s: &str) -> Option<Value> {
+    // Try 0-prefixed radix first
+    if s.starts_with('0')
+        && s.len() >= 3
+        && let Some(v) = try_parse_0_radix(s)
+    {
+        return Some(v);
+    }
+    // Try decimal with dot
+    if let Some(v) = try_parse_decimal_rat(s, 1) {
+        return Some(v);
+    }
+    // Try plain integer
+    try_parse_plain_int(s, 1)
+}
+
+/// Convert a Value to f64 for arithmetic operations.
+fn value_to_f64(v: &Value) -> f64 {
+    match v {
+        Value::Int(i) => *i as f64,
+        Value::Num(f) => *f,
+        Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+        Value::FatRat(n, d) if *d != 0 => *n as f64 / *d as f64,
+        Value::BigInt(n) => {
+            use num_traits::ToPrimitive;
+            n.to_f64().unwrap_or(f64::INFINITY)
+        }
+        _ => 0.0,
+    }
+}
+
+/// Parse `0x`, `0o`, `0b`, `0d` prefixed numbers (with optional fractional part).
 fn try_parse_0_radix(body: &str) -> Option<Value> {
     let (base, digits) = match body.as_bytes().get(1)? {
         b'x' | b'X' => (16, &body[2..]),
@@ -158,6 +256,30 @@ fn try_parse_0_radix(body: &str) -> Option<Value> {
         _ => return None,
     };
 
+    // Check for fractional part (e.g., 0b111.11)
+    if let Some(dot_pos) = digits.find('.') {
+        let int_part = &digits[..dot_pos];
+        let frac_part = &digits[dot_pos + 1..];
+
+        let int_clean = strip_underscores_radix_body(int_part)?;
+        let frac_clean = strip_underscores_radix_body(frac_part)?;
+
+        if int_clean.is_empty() || frac_clean.is_empty() {
+            return None;
+        }
+
+        // Validate digits for base
+        validate_radix_digits(&int_clean, base)?;
+        validate_radix_digits(&frac_clean, base)?;
+
+        // Calculate: int_part + frac_part / base^frac_len as Rat
+        let int_val = i64::from_str_radix(&int_clean, base).ok()?;
+        let frac_val = i64::from_str_radix(&frac_clean, base).ok()?;
+        let denom = (base as i64).checked_pow(frac_clean.len() as u32)?;
+        let numer = int_val.checked_mul(denom)?.checked_add(frac_val)?;
+        return Some(crate::value::make_rat(numer, denom));
+    }
+
     // Allow leading underscore after 0b/0o/0x/0d prefix (Raku allows `0b_1`)
     let clean = strip_underscores_radix_body(digits)?;
     if clean.is_empty() {
@@ -165,17 +287,7 @@ fn try_parse_0_radix(body: &str) -> Option<Value> {
     }
 
     // Check all digits valid for base
-    for c in clean.chars() {
-        let dv = match c {
-            '0'..='9' => c as u32 - '0' as u32,
-            'a'..='f' => 10 + c as u32 - 'a' as u32,
-            'A'..='F' => 10 + c as u32 - 'A' as u32,
-            _ => return None,
-        };
-        if dv >= base {
-            return None;
-        }
-    }
+    validate_radix_digits(&clean, base)?;
 
     if let Ok(n) = i64::from_str_radix(&clean, base) {
         Some(Value::Int(n))
@@ -186,6 +298,22 @@ fn try_parse_0_radix(body: &str) -> Option<Value> {
             .ok()
             .map(|b| Value::BigInt(std::sync::Arc::new(b)))
     }
+}
+
+/// Validate that all characters are valid digits for the given base.
+fn validate_radix_digits(s: &str, base: u32) -> Option<()> {
+    for c in s.chars() {
+        let dv = match c {
+            '0'..='9' => c as u32 - '0' as u32,
+            'a'..='f' => 10 + c as u32 - 'a' as u32,
+            'A'..='F' => 10 + c as u32 - 'A' as u32,
+            _ => return None,
+        };
+        if dv >= base {
+            return None;
+        }
+    }
+    Some(())
 }
 
 /// Strip underscores in radix body (allows leading underscore like `0b_1`).
@@ -210,9 +338,17 @@ fn try_parse_generic_radix(body: &str) -> Option<Value> {
         return None;
     }
 
-    let rest = after_base.strip_prefix('<')?;
-    let close_pos = rest.find('>')?;
-    if !rest[close_pos + 1..].trim().is_empty() {
+    // Support both <> and «» (French/guillemet) delimiters
+    let (rest, close_char) = if let Some(r) = after_base.strip_prefix('<') {
+        (r, '>')
+    } else if let Some(r) = after_base.strip_prefix('\u{ab}') {
+        // «
+        (r, '\u{bb}') // »
+    } else {
+        return None;
+    };
+    let close_pos = rest.find(close_char)?;
+    if !rest[close_pos + close_char.len_utf8()..].trim().is_empty() {
         return None;
     }
     let digits_body = &rest[..close_pos];
@@ -262,26 +398,66 @@ fn try_parse_fraction(body: &str, sign: i32) -> Option<Value> {
     let num_str = &body[..slash_pos];
     let den_str = &body[slash_pos + 1..];
 
-    // Both parts must be plain integers (no dots, no e, no radix)
-    let num_clean = strip_underscores(num_str)?;
-    let den_clean = strip_underscores(den_str)?;
+    // Parse numerator (can be integer or decimal with underscores)
+    let (num_n, num_d) = parse_fraction_part(num_str, false)?;
+    // Parse denominator (can have optional sign, can be integer or decimal)
+    let (den_n, den_d) = parse_fraction_part(den_str, true)?;
 
-    // Must be pure digits
-    if num_clean.is_empty()
-        || den_clean.is_empty()
-        || !num_clean.chars().all(|c| c.is_ascii_digit())
-        || !den_clean.chars().all(|c| c.is_ascii_digit())
-    {
+    if den_n == 0 && den_d == 0 {
         return None;
     }
 
-    let n: i64 = num_clean.parse().ok()?;
-    let d: i64 = den_clean.parse().ok()?;
-    if d == 0 {
+    // Result is (num_n/num_d) / (den_n/den_d) = (num_n * den_d) / (num_d * den_n)
+    let result_n = num_n.checked_mul(den_d)?;
+    let result_d = num_d.checked_mul(den_n.abs())?;
+    if result_d == 0 {
         return None;
     }
-    let n = if sign < 0 { -n } else { n };
-    Some(crate::value::make_rat(n, d))
+
+    let result_n = if sign < 0 { -result_n } else { result_n };
+    let result_n = if den_n < 0 { -result_n } else { result_n };
+    Some(crate::value::make_rat(result_n, result_d))
+}
+
+/// Parse a numerator or denominator part of a fraction.
+/// Returns (numerator, denominator) as a rational number.
+/// When `allow_sign` is true, the part can have a leading +/- sign.
+fn parse_fraction_part(s: &str, allow_sign: bool) -> Option<(i64, i64)> {
+    let (part_sign, body) = if allow_sign { strip_sign(s) } else { (1, s) };
+
+    if let Some(dot_pos) = body.find('.') {
+        // Decimal part (e.g., "42.15" or "15.45")
+        let int_str = &body[..dot_pos];
+        let frac_str = &body[dot_pos + 1..];
+        let int_clean = strip_underscores(int_str)?;
+        let frac_clean = strip_underscores(frac_str)?;
+        let int_clean = if int_clean.is_empty() {
+            "0".to_string()
+        } else {
+            int_clean
+        };
+        if !int_clean.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        if frac_clean.is_empty() || !frac_clean.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        let int_val: i64 = int_clean.parse().ok()?;
+        let frac_val: i64 = frac_clean.parse().ok()?;
+        let denom = 10i64.checked_pow(frac_clean.len() as u32)?;
+        let numer = int_val.checked_mul(denom)?.checked_add(frac_val)?;
+        let numer = if part_sign < 0 { -numer } else { numer };
+        Some((numer, denom))
+    } else {
+        // Plain integer
+        let clean = strip_underscores(body)?;
+        if clean.is_empty() || !clean.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        let val: i64 = clean.parse().ok()?;
+        let val = if part_sign < 0 { -val } else { val };
+        Some((val, 1))
+    }
 }
 
 /// Parse scientific notation: `123e0`, `123.0e2`, `1_2_3E0_0`, etc.
@@ -386,7 +562,13 @@ fn try_parse_decimal_rat(body: &str, sign: i32) -> Option<Value> {
     let int_clean = strip_underscores(int_str)?;
     let frac_clean = strip_underscores(frac_str)?;
 
-    if int_clean.is_empty() || !int_clean.chars().all(|c| c.is_ascii_digit()) {
+    // Allow empty integer part (e.g., ".13" → "0.13")
+    let int_clean = if int_clean.is_empty() {
+        "0".to_string()
+    } else {
+        int_clean
+    };
+    if !int_clean.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
     if frac_clean.is_empty() || !frac_clean.chars().all(|c| c.is_ascii_digit()) {

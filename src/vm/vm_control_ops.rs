@@ -18,6 +18,9 @@ pub(super) struct ForLoopSpec {
     pub(super) autothread_junctions: bool,
     /// When true, `-> {}` was used — throw on any items.
     pub(super) explicit_zero_params: bool,
+    /// Names of multi-param bindings (for `-> $a, \b, $c` loops).
+    /// Used to temporarily clear sigilless readonly flags before binding.
+    pub(super) multi_param_names: Vec<String>,
 }
 
 pub(super) struct WhileLoopSpec {
@@ -403,6 +406,19 @@ impl VM {
         } else {
             None
         };
+        // Save multi-param values and readonly state so they can be restored
+        // after the loop (inner loops must not clobber outer scope bindings).
+        let saved_multi_params: Vec<(String, Option<Value>, bool, Option<Value>)> = spec
+            .multi_param_names
+            .iter()
+            .map(|name| {
+                let val = self.interpreter.env().get(name).cloned();
+                let was_readonly = self.interpreter.readonly_vars().contains(name);
+                let sigilless_key = format!("__mutsu_sigilless_readonly::{}", name);
+                let sigilless_ro = self.interpreter.env().get(&sigilless_key).cloned();
+                (name.clone(), val, was_readonly, sigilless_ro)
+            })
+            .collect();
         let total_items = chunked_items.len();
         'for_loop: for (idx, item) in chunked_items.into_iter().enumerate() {
             self.topic_source_var = if writes_back_topic {
@@ -440,6 +456,16 @@ impl VM {
                 && let Some(ref name) = param_name
             {
                 self.interpreter.mark_readonly(name);
+            }
+            // Temporarily clear readonly flags for multi-param names
+            // so the bind stmts (Stmt::Assign) at the start of the body can
+            // re-bind variables that may be readonly from an outer scope.
+            for mp_name in &spec.multi_param_names {
+                // Clear regular readonly flag
+                self.interpreter.unmark_readonly(mp_name);
+                // Clear sigilless readonly flag
+                let key = format!("__mutsu_sigilless_readonly::{}", mp_name);
+                self.interpreter.env_mut().insert(key, Value::Bool(false));
             }
             'body_redo: loop {
                 match self.run_range(code, body_start, loop_end, compiled_fns) {
@@ -678,6 +704,25 @@ impl VM {
             && let Some(ref name) = param_name
         {
             self.interpreter.readonly_vars_mut().remove(name);
+        }
+        // Restore saved multi-param values and readonly state
+        for (name, saved_val, was_readonly, sigilless_ro) in saved_multi_params {
+            if let Some(v) = saved_val {
+                self.interpreter.env_mut().insert(name.clone(), v);
+            } else {
+                self.interpreter.env_mut().remove(&name);
+            }
+            if was_readonly {
+                self.interpreter.mark_readonly(&name);
+            } else {
+                self.interpreter.unmark_readonly(&name);
+            }
+            let sigilless_key = format!("__mutsu_sigilless_readonly::{}", name);
+            if let Some(ro_val) = sigilless_ro {
+                self.interpreter.env_mut().insert(sigilless_key, ro_val);
+            } else {
+                self.interpreter.env_mut().remove(&sigilless_key);
+            }
         }
         self.topic_source_var = saved_topic_source;
         if spec.restore_topic {
