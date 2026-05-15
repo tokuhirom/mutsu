@@ -291,11 +291,16 @@ impl Compiler {
 
         // Special-case: =:= (container identity)
         if matches!(op, TokenKind::Ident(name) if name == "=:=") {
-            if let (Expr::Var(left_name), Expr::Var(right_name)) = (left, right) {
+            // Resolve variable names from both sides, including through
+            // list-indexing patterns like ($foo, "x")[0] which preserves
+            // the container of $foo.
+            let left_name = Self::resolve_container_var_name(left);
+            let right_name = Self::resolve_container_var_name(right);
+            if let (Some(ln), Some(rn)) = (&left_name, &right_name) {
                 self.compile_expr(left);
                 self.compile_expr(right);
-                let left_idx = self.code.add_constant(Value::str(left_name.clone()));
-                let right_idx = self.code.add_constant(Value::str(right_name.clone()));
+                let left_idx = self.code.add_constant(Value::str(ln.clone()));
+                let right_idx = self.code.add_constant(Value::str(rn.clone()));
                 self.code.emit(OpCode::ContainerEqNamed {
                     left_name_idx: left_idx,
                     right_name_idx: right_idx,

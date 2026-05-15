@@ -1441,6 +1441,37 @@ impl VM {
                     _ => Value::Nil,
                 }
             }
+            // Scalar value with Range index: treat as single-element list.
+            // If the range start >= 1, it's out of range (0..0).
+            (ref val, ref range_idx)
+                if !matches!(
+                    val,
+                    Value::Array(..) | Value::Hash(_) | Value::Nil | Value::Instance { .. }
+                ) && matches!(
+                    range_idx,
+                    Value::Range(..)
+                        | Value::RangeExcl(..)
+                        | Value::RangeExclStart(..)
+                        | Value::RangeExclBoth(..)
+                        | Value::GenericRange { .. }
+                ) =>
+            {
+                // Extract the start of the range
+                let start = match range_idx {
+                    Value::Range(a, _) | Value::RangeExcl(a, _) | Value::RangeExclBoth(a, _) => *a,
+                    Value::RangeExclStart(a, _) => *a + 1,
+                    Value::GenericRange { start, .. } => start.to_f64() as i64,
+                    _ => 0,
+                };
+                if start >= 1 {
+                    return Err(RuntimeError::out_of_range(
+                        "Index",
+                        Value::Int(start),
+                        "0..0",
+                    ));
+                }
+                val.clone()
+            }
             _ => Value::Nil,
         };
         self.stack.push(result);

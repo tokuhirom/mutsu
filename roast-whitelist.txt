@@ -124,6 +124,7 @@ roast/S02-types/int-uint.t
 roast/S02-types/is-type.t
 roast/S02-types/lazy-lists.t
 roast/S02-types/list.t
+roast/S02-types/lists.t
 roast/S02-types/mix-iterator.t
 roast/S02-types/mu.t
 roast/S02-types/nan.t

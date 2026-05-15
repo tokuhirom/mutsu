@@ -12,6 +12,55 @@ use crate::value::Value;
 use super::operators::{PrefixUnaryOp, parse_postfix_update_op, parse_prefix_unary_op};
 use super::{expression, expression_no_sequence};
 
+/// Check if an expression is a negative integer literal (e.g., `-(1)` from `-1`).
+/// Returns the negative value string (e.g., "-1") if so.
+fn extract_negative_literal(expr: &Expr) -> Option<String> {
+    if let Expr::Unary {
+        op: TokenKind::Minus,
+        expr: inner,
+    } = expr
+    {
+        if let Expr::Literal(Value::Int(n)) = inner.as_ref() {
+            return Some(format!("-{}", n));
+        }
+        if let Expr::Literal(Value::BigInt(n)) = inner.as_ref() {
+            return Some(format!("-{}", n));
+        }
+    }
+    None
+}
+
+/// Check if an expression is a range ending in a negative literal (e.g., `0..-1`).
+/// Returns the negative end value string if so.
+fn extract_range_negative_end(expr: &Expr) -> Option<String> {
+    if let Expr::Binary {
+        op: TokenKind::DotDot | TokenKind::DotDotCaret,
+        right,
+        ..
+    } = expr
+    {
+        return extract_negative_literal(right);
+    }
+    None
+}
+
+/// Build a fatal X::Obsolete parse error for negative subscripts.
+fn make_negative_subscript_error(neg_val: &str) -> PError {
+    let old = format!("a negative {} subscript to index from the end", neg_val);
+    let replacement = format!("a function such as *{}", neg_val);
+    let message = format!(
+        "X::Obsolete: Unsupported use of {}. In Raku please use: {}.",
+        old, replacement
+    );
+    let err = crate::value::RuntimeError::obsolete(&old, &replacement);
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("old".to_string(), Value::str(old));
+    attrs.insert("replacement".to_string(), Value::str(replacement));
+    attrs.insert("message".to_string(), Value::str(err.message.clone()));
+    let exception = Value::make_instance(crate::symbol::Symbol::intern("X::Obsolete"), attrs);
+    PError::fatal_with_exception(message, Box::new(exception))
+}
+
 /// Check if a character is valid inside an angle-bracket word key (`<key>`).
 /// Raku allows any non-whitespace character that isn't `>` in angle bracket words.
 /// We allow: alphanumeric, common ASCII punctuation used in identifiers/keys,
@@ -2080,7 +2129,19 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ']')?;
             match parsed {
-                ParsedBracketIndex::Single(index) => {
+                ParsedBracketIndex::Single(ref index) => {
+                    // Raku forbids explicit negative integer subscripts like @a[-1].
+                    // Users must use *-1 instead.
+                    if let Some(neg_val) = extract_negative_literal(index) {
+                        return Err(make_negative_subscript_error(&neg_val));
+                    }
+                    // Also forbid ranges ending in negative literals: @a[0..-1]
+                    if let Some(neg_val) = extract_range_negative_end(index) {
+                        return Err(make_negative_subscript_error(&neg_val));
+                    }
+                    let ParsedBracketIndex::Single(index) = parsed else {
+                        unreachable!()
+                    };
                     expr = Expr::Index {
                         target: Box::new(expr),
                         index: Box::new(index),
