@@ -1926,6 +1926,26 @@ pub(super) fn try_interpolate_var<'a>(
                 }
             }
         }
+        // ${...} is Perl 5 scalar dereference syntax — throw X::Obsolete
+        if next == '{' {
+            if !current.is_empty() {
+                parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+            }
+            parts.push(Expr::Call {
+                name: Symbol::intern("die"),
+                args: vec![Expr::Literal(Value::str(
+                    "X::Obsolete: Unsupported use of ${expr}. In Raku please use: $(expr)."
+                        .to_string(),
+                ))],
+            });
+            let after_brace = &rest[2..];
+            let end = after_brace.find('}').unwrap_or(after_brace.len());
+            return Some(if end < after_brace.len() {
+                &after_brace[end + 1..]
+            } else {
+                after_brace
+            });
+        }
         if next.is_alphabetic()
             || next == '_'
             || next == '*'
@@ -1979,6 +1999,26 @@ pub(super) fn try_interpolate_var<'a>(
                 try_double_sigil_interp(rest, parts, current, parse_postcircumfix_index)
         {
             return Some(result);
+        }
+        // @{...} is Perl 5 array dereference syntax — throw X::Obsolete
+        if next == '{' {
+            if !current.is_empty() {
+                parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+            }
+            parts.push(Expr::Call {
+                name: Symbol::intern("die"),
+                args: vec![Expr::Literal(Value::str(
+                    "X::Obsolete: Unsupported use of @{expr}. In Raku please use: @(expr)."
+                        .to_string(),
+                ))],
+            });
+            let after_brace = &rest[2..];
+            let end = after_brace.find('}').unwrap_or(after_brace.len());
+            return Some(if end < after_brace.len() {
+                &after_brace[end + 1..]
+            } else {
+                after_brace
+            });
         }
         if next.is_alphabetic() || next == '_' {
             let var_rest = &rest[1..];

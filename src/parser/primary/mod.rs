@@ -203,8 +203,10 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         // so that e.g. circumfix:<@ @> is recognized before `@` is parsed as an array sigil.
         try_primary!(ident::declared_circumfix_op(input));
         try_primary!(var::scalar_var(input));
+        try_primary!(container::list_context_paren_expr(input));
         try_primary!(var::array_var(input));
         try_primary!(container::percent_hash_literal(input));
+        try_primary!(container::hash_context_paren_expr(input));
         try_primary!(var::hash_var(input));
         try_primary!(var::code_var(input));
         try_primary!(container::paren_expr(input));
@@ -775,7 +777,16 @@ mod tests {
     fn primary_parses_hash_match_var() {
         let (rest, expr) = primary("%$/").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::HashVar(ref n) if n.as_str() == "/"));
+        // %$/ is now parsed as a .hash method call on $/ (hash coercion)
+        assert!(matches!(
+            expr,
+            Expr::MethodCall {
+                ref target,
+                ref name,
+                ..
+            } if matches!(target.as_ref(), Expr::Var(n) if n.as_str() == "/")
+                && name.resolve() == "hash"
+        ));
     }
 
     #[test]
