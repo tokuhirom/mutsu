@@ -74,6 +74,7 @@ roast/S02-magicals/USER.t
 roast/S02-magicals/VM.t
 roast/S02-magicals/args.t
 roast/S02-magicals/block.t
+roast/S02-magicals/dollar-underscore.t
 roast/S02-magicals/dollar_bang.t
 roast/S02-magicals/env.t
 roast/S02-magicals/file_line.t

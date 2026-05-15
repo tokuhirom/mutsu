@@ -473,6 +473,7 @@ impl VM {
             })
             .unwrap_or_default();
         self.interpreter.use_module_with_tags(module, &tags)?;
+        self.fn_resolve_gen += 1;
         self.env_dirty = true;
         Ok(())
     }
@@ -497,6 +498,7 @@ impl VM {
             })
             .unwrap_or_default();
         self.interpreter.import_module(module, &tags)?;
+        self.fn_resolve_gen += 1;
         self.env_dirty = true;
         Ok(())
     }
@@ -508,6 +510,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let module = Self::const_str(code, name_idx);
         self.interpreter.no_module(module)?;
+        self.fn_resolve_gen += 1;
         self.env_dirty = true;
         Ok(())
     }
@@ -519,6 +522,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let module = Self::const_str(code, name_idx);
         self.interpreter.need_module(module)?;
+        self.fn_resolve_gen += 1;
         self.env_dirty = true;
         Ok(())
     }
