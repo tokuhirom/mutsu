@@ -89,6 +89,7 @@ pub(crate) fn known_methods_for_type(type_name: &str) -> &'static [&'static str]
             "trim-trailing",
             "uc",
             "uniname",
+            "uninames",
             "unival",
             "uppercase",
             "lowercase",

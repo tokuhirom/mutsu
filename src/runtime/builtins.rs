@@ -880,6 +880,7 @@ impl Interpreter {
                 | "zprintf"
                 | "printf"
                 | "uniname"
+                | "uninames"
                 | "uniprop"
                 | "unimatch"
                 | "uniparse"
