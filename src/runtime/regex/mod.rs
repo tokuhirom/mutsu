@@ -1,3 +1,4 @@
+mod regex_casefold;
 mod regex_eval;
 mod regex_helpers;
 mod regex_interpolate;

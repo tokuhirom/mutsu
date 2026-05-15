@@ -1,4 +1,5 @@
 use super::super::*;
+use super::regex_casefold::{casefold_pattern, casefold_text, needs_casefold_expansion};
 use super::regex_helpers::{map_pos, strip_marks_pattern, strip_marks_text};
 
 impl Interpreter {
@@ -162,6 +163,69 @@ impl Interpreter {
                 ) {
                     let from = map_pos(caps.capture_start.unwrap_or(start), &pos_map, orig_len);
                     let to = map_pos(caps.capture_end.unwrap_or(end), &pos_map, orig_len);
+                    caps.from = from;
+                    caps.to = to;
+                    caps.matched = orig_chars[from..to].iter().collect();
+                    return Some(caps);
+                }
+            }
+            return None;
+        }
+
+        // When :i (ignorecase) is set and there are characters with multi-char
+        // case folds (e.g., 'ß' -> 'ss', 'ﬁ' -> 'fi'), pre-process both text
+        // and pattern into case-folded form, match on folded forms, then map
+        // positions back to the original text.
+        //
+        // Important: matches must start and end at "fold boundaries" — positions
+        // in folded space that correspond to the start of an original character's
+        // fold expansion. This prevents false matches in the middle of a fold
+        // (e.g., matching 't' from the expansion of 'ﬆ' -> 'st').
+        if parsed.ignore_case && needs_casefold_expansion(&orig_chars, &parsed) {
+            let (folded_chars, pos_map) = casefold_text(&orig_chars);
+            let folded_parsed = casefold_pattern(&parsed);
+            let orig_len = orig_chars.len();
+
+            // Helper: check if a position in folded space is at a fold boundary
+            // (i.e., the start of an original character's expansion).
+            let is_fold_boundary = |pos: usize| -> bool {
+                pos == 0 || pos >= folded_chars.len() || pos_map[pos] != pos_map[pos - 1]
+            };
+
+            if folded_parsed.anchor_start {
+                return self
+                    .regex_match_end_from_caps_in_pkg(&folded_parsed, &folded_chars, 0, &pkg)
+                    .and_then(|(end, mut caps)| {
+                        let end_pos = caps.capture_end.unwrap_or(end);
+                        if !is_fold_boundary(end_pos) {
+                            return None;
+                        }
+                        let from = map_pos(caps.capture_start.unwrap_or(0), &pos_map, orig_len);
+                        let to = map_pos(end_pos, &pos_map, orig_len);
+                        caps.from = from;
+                        caps.to = to;
+                        caps.matched = orig_chars[from..to].iter().collect();
+                        Some(caps)
+                    });
+            }
+            for start in 0..=folded_chars.len() {
+                // Only try start positions at fold boundaries
+                if !is_fold_boundary(start) {
+                    continue;
+                }
+                if let Some((end, mut caps)) = self.regex_match_end_from_caps_in_pkg(
+                    &folded_parsed,
+                    &folded_chars,
+                    start,
+                    &pkg,
+                ) {
+                    let end_pos = caps.capture_end.unwrap_or(end);
+                    // Only accept matches that end at fold boundaries
+                    if !is_fold_boundary(end_pos) {
+                        continue;
+                    }
+                    let from = map_pos(caps.capture_start.unwrap_or(start), &pos_map, orig_len);
+                    let to = map_pos(end_pos, &pos_map, orig_len);
                     caps.from = from;
                     caps.to = to;
                     caps.matched = orig_chars[from..to].iter().collect();
