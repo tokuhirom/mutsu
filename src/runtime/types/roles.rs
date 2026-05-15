@@ -159,6 +159,11 @@ impl Interpreter {
             if let Some(target_name) = Self::var_target_name_from_value(&left) {
                 self.set_var_meta_value(&target_name, result.clone());
             }
+            // Persist HOW mixin: if the left is a HOW meta-object, store the
+            // composed result so future `.HOW` calls return the mixed-in value.
+            if let Some(how_target) = Self::how_target_from_value(&left) {
+                self.class_how_values.insert(how_target, result.clone());
+            }
             return Ok(result);
         }
         let role_name = right.to_string_value();
@@ -196,6 +201,18 @@ impl Interpreter {
                 Some(Value::Str(name)) => Some(name.to_string()),
                 _ => None,
             },
+            _ => None,
+        }
+    }
+
+    /// Check if a value is a HOW meta-object and return the target class name.
+    fn how_target_from_value(value: &Value) -> Option<String> {
+        match value {
+            Value::Instance { attributes, .. } => match attributes.get("__mutsu_how_target") {
+                Some(Value::Str(name)) => Some(name.to_string()),
+                _ => None,
+            },
+            Value::Mixin(inner, _) => Self::how_target_from_value(inner),
             _ => None,
         }
     }

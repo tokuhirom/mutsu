@@ -223,6 +223,17 @@ impl Interpreter {
                 attrs,
             ));
         }
+        // Check for persistent HOW values (set by `$c.HOW does Role`)
+        let how_lookup_name = match target {
+            Value::Package(name) => Some(name.resolve()),
+            Value::Instance { class_name, .. } => Some(class_name.resolve()),
+            _ => None,
+        };
+        if let Some(ref name) = how_lookup_name
+            && let Some(how_val) = self.class_how_values.get(name)
+        {
+            return Ok(how_val.clone());
+        }
         // Return a meta-object (ClassHOW) for any value
         let type_name = match target {
             Value::Package(name) => name.resolve(),
@@ -282,7 +293,8 @@ impl Interpreter {
             "Perl6::Metamodel::ClassHOW"
         };
         let mut attrs = HashMap::new();
-        attrs.insert("name".to_string(), Value::str(type_name));
+        attrs.insert("name".to_string(), Value::str(type_name.clone()));
+        attrs.insert("__mutsu_how_target".to_string(), Value::str(type_name));
         Ok(Value::make_instance(Symbol::intern(how_name), attrs))
     }
 

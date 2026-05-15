@@ -153,10 +153,11 @@ impl Interpreter {
             return matches.into_iter().next();
         }
 
-        // Sort matches by specificity rank (primary, DESC) then type hierarchy
-        // distance (secondary, ASC) so that subset types win over plain types,
-        // and among equal-rank candidates, more specific types (e.g. Bool:D)
-        // are preferred over less specific ones (e.g. Numeric:D).
+        // Sort matches by specificity rank (primary, DESC), type hierarchy
+        // distance (secondary, ASC), then required named count (tertiary, DESC)
+        // so that subset types win over plain types, more specific types
+        // (e.g. Str:D) beat less specific ones (e.g. Any), and among
+        // equally-specific candidates, those with required named params win.
         {
             let mut ranked: Vec<(usize, _)> = matches
                 .iter()
@@ -164,12 +165,16 @@ impl Interpreter {
                 .map(|(i, def)| {
                     let rank = self.candidate_specificity_rank(def);
                     let dist = self.candidate_type_distance(args, def);
-                    (i, (rank, dist))
+                    let req_named = Self::candidate_required_named_count(def);
+                    (i, (rank, dist, req_named))
                 })
                 .collect();
             ranked.sort_by(|a, b| {
-                // Higher rank first, then lower distance
-                b.1.0.cmp(&a.1.0).then(a.1.1.cmp(&b.1.1))
+                // Higher rank first, then lower distance, then higher required named
+                b.1.0
+                    .cmp(&a.1.0)
+                    .then(a.1.1.cmp(&b.1.1))
+                    .then(b.1.2.cmp(&a.1.2))
             });
             let sorted_matches: Vec<FunctionDef> =
                 ranked.iter().map(|(i, _)| matches[*i].clone()).collect();
@@ -179,11 +184,13 @@ impl Interpreter {
         let best_rank = self.candidate_specificity_rank(&matches[0]);
         let best_shape = self.candidate_dispatch_shape(&matches[0]);
         let best_distance = self.candidate_type_distance(args, &matches[0]);
+        let best_req_named = Self::candidate_required_named_count(&matches[0]);
         let tied: Vec<FunctionDef> = matches
             .iter()
             .filter(|def| {
                 self.candidate_specificity_rank(def) == best_rank
                     && self.candidate_type_distance(args, def) == best_distance
+                    && Self::candidate_required_named_count(def) == best_req_named
             })
             .cloned()
             .collect();
@@ -220,7 +227,7 @@ impl Interpreter {
     fn candidate_specificity_rank(
         &self,
         def: &FunctionDef,
-    ) -> (usize, usize, usize, usize, usize, usize, usize, usize) {
+    ) -> (usize, usize, usize, usize, usize, usize, usize) {
         let literal_value_count = Self::dispatch_visible_params(def)
             .filter(|p| p.literal_value.is_some())
             .count();
@@ -251,12 +258,6 @@ impl Interpreter {
         let named_count = Self::dispatch_visible_params(def)
             .filter(|p| p.named)
             .count();
-        // Required named params (`:$a!`) are more specific than optional ones
-        let required_named_count = def
-            .param_defs
-            .iter()
-            .filter(|p| p.named && p.required)
-            .count();
         let trait_count = Self::dispatch_visible_params(def)
             .filter(|p| {
                 p.traits
@@ -271,9 +272,18 @@ impl Interpreter {
             typed_param_count,
             subsig_count,
             named_count,
-            required_named_count,
             trait_count,
         )
+    }
+
+    /// Count required named parameters — used as a tertiary tiebreaker
+    /// AFTER rank and type distance, so it only matters when type constraints
+    /// are equally specific.
+    fn candidate_required_named_count(def: &FunctionDef) -> usize {
+        def.param_defs
+            .iter()
+            .filter(|p| p.named && p.required)
+            .count()
     }
 
     /// Compute the total type hierarchy distance between a candidate's type
@@ -284,13 +294,44 @@ impl Interpreter {
     fn candidate_type_distance(&self, args: &[Value], def: &FunctionDef) -> usize {
         let mut total = 0usize;
         let params: Vec<&ParamDef> = Self::dispatch_visible_params(def).collect();
-        for (i, pd) in params.iter().enumerate() {
+        let mut pos_idx = 0usize;
+        for pd in params.iter() {
             if let Some(constraint) = &pd.type_constraint {
                 let base = Self::constraint_base_name(constraint);
-                if i < args.len() {
+                // For named params, find the matching Pair arg
+                if pd.named {
+                    let bare_name = pd.name.trim_start_matches(|c: char| "$@%&".contains(c));
+                    let named_val = args.iter().find_map(|a| {
+                        if let Value::Pair(key, val) = a {
+                            if key == bare_name {
+                                Some(val.as_ref().clone())
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    });
+                    if let Some(val) = named_val {
+                        total += self.type_hierarchy_distance_with_var_type(base, &val, None);
+                    } else {
+                        total += 1000;
+                    }
+                    continue;
+                }
+                if pos_idx < args.len() {
+                    // Skip Pair args when looking for positional args
+                    while pos_idx < args.len() && matches!(&args[pos_idx], Value::Pair(..)) {
+                        pos_idx += 1;
+                    }
+                    if pos_idx >= args.len() {
+                        total += 1000;
+                        continue;
+                    }
                     // Unwrap VarRef Capture wrappers and check the source
                     // variable's declared type constraint for native type dispatch.
-                    let (mut arg, var_type) = self.unwrap_varref_for_dispatch(&args[i]);
+                    let (mut arg, var_type) = self.unwrap_varref_for_dispatch(&args[pos_idx]);
+                    pos_idx += 1;
                     if pd.name.starts_with('&')
                         && let Some(return_type) = self.callable_return_type(&arg)
                     {
@@ -332,6 +373,9 @@ impl Interpreter {
                 }
             } else {
                 total += 1000;
+                if !pd.named {
+                    pos_idx += 1;
+                }
             }
         }
         total

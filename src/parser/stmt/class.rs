@@ -860,6 +860,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         repr: anon_repr,
         body,
         language_version: super::simple::current_language_version(),
+        custom_traits: Vec::new(),
     };
     // Emit the class registration followed by unregistering the name from the scope
     let unregister = Stmt::Expr(Expr::Call {
@@ -895,6 +896,7 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
     let mut parents = Vec::new();
     let mut does_parents = Vec::new();
     let mut is_repr: Option<String> = None;
+    let mut custom_traits: Vec<(String, Option<Expr>)> = Vec::new();
     let mut r = rest;
     loop {
         if let Some(r2) = keyword("is", r) {
@@ -940,9 +942,9 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
                 r = r2;
                 continue;
             }
-            // Unrecognized `is` trait with lowercase name — treat as a potential
-            // parent class so the runtime can validate and produce
-            // X::Inheritance::UnknownParent if it doesn't exist.
+            // Unrecognized `is` trait with lowercase name — check for custom
+            // trait_mod:<is> dispatch with optional parenthesized argument, or
+            // treat as a potential parent class.
             if !matches!(
                 parent.as_str(),
                 "rw" | "hidden"
@@ -957,6 +959,25 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
                     | "repr"
                     | "open"
             ) {
+                // Check for parenthesized argument: `is trait-name('arg')`
+                // This indicates a custom trait_mod:<is> call.
+                if let Some(inner_start) = r2.strip_prefix('(') {
+                    if let Ok((after_expr, expr)) = expression(inner_start) {
+                        let after_expr = after_expr.trim_start();
+                        if let Some(after_paren) = after_expr.strip_prefix(')') {
+                            custom_traits.push((parent.clone(), Some(expr)));
+                            let (r3, _) = ws(after_paren)?;
+                            r = r3;
+                            continue;
+                        }
+                    }
+                    // Fallback: skip balanced parens
+                    let r3 = skip_balanced_parens(r2);
+                    custom_traits.push((parent.clone(), None));
+                    let (r3, _) = ws(r3)?;
+                    r = r3;
+                    continue;
+                }
                 let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
                 parents.push(format!("{}{}", parent, bracket_suffix));
                 r = r2;
@@ -1052,6 +1073,7 @@ pub(super) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
         repr,
         body,
         language_version: super::simple::current_language_version(),
+        custom_traits,
     };
     let mut stmts = Vec::new();
     for (trait_name, trait_value) in traits {
@@ -1337,6 +1359,7 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
     let mut role_is_rw = false;
     let mut is_export = false;
     let mut export_tags: Vec<String> = Vec::new();
+    let mut custom_traits: Vec<(String, Option<Expr>)> = Vec::new();
 
     // Optional parent/trait clauses in any order.
     loop {
@@ -1359,18 +1382,25 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
         if let Some(r) = keyword("is", rest) {
             let (r, _) = ws1(r)?;
             let (r, trait_name) = ident(r)?;
-            let r = skip_balanced_parens(r);
-            let (r, _) = ws(r)?;
             if trait_name == "hidden" {
                 is_hidden_role = true;
+                let r = skip_balanced_parens(r);
+                let (r, _) = ws(r)?;
+                rest = r;
             } else if trait_name == "rw" {
                 role_is_rw = true;
+                let r = skip_balanced_parens(r);
+                let (r, _) = ws(r)?;
+                rest = r;
             } else if trait_name == "export" {
                 is_export = true;
                 if !export_tags.iter().any(|t| t == "DEFAULT") {
                     export_tags.push("DEFAULT".to_string());
                 }
-            } else if !matches!(
+                let r = skip_balanced_parens(r);
+                let (r, _) = ws(r)?;
+                rest = r;
+            } else if matches!(
                 trait_name.as_str(),
                 "ok" | "required"
                     | "readonly"
@@ -1383,12 +1413,36 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
                     | "nodal"
                     | "pure"
             ) {
-                // Known lowercase trait keywords are skipped;
-                // everything else (including lowercase class/role names like irA)
-                // is treated as a parent.
-                parent_roles.push(trait_name);
+                // Known lowercase trait keywords are skipped
+                let r = skip_balanced_parens(r);
+                let (r, _) = ws(r)?;
+                rest = r;
+            } else {
+                // Unknown trait — check for parenthesized argument for
+                // custom trait_mod:<is> dispatch.
+                if let Some(inner_start) = r.strip_prefix('(') {
+                    if let Ok((after_expr, expr)) = expression(inner_start) {
+                        let after_expr = after_expr.trim_start();
+                        if let Some(after_paren) = after_expr.strip_prefix(')') {
+                            custom_traits.push((trait_name.clone(), Some(expr)));
+                            let (r2, _) = ws(after_paren)?;
+                            rest = r2;
+                            continue;
+                        }
+                    }
+                    let r2 = skip_balanced_parens(r);
+                    custom_traits.push((trait_name.clone(), None));
+                    let (r2, _) = ws(r2)?;
+                    rest = r2;
+                } else {
+                    // No parens — treat as parent role. If it's actually
+                    // a custom trait, the runtime will handle it via
+                    // trait_mod:<is> when the role name is not found.
+                    parent_roles.push(trait_name);
+                    let (r, _) = ws(r)?;
+                    rest = r;
+                }
             }
-            rest = r;
             continue;
         }
         if let Some(r) = keyword("hides", rest) {
@@ -1445,6 +1499,7 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
         body,
         is_rw: role_is_rw,
         language_version: super::simple::current_language_version(),
+        custom_traits,
     };
     // Emit __MUTSU_SET_META__ calls for ver/auth traits (like class declarations)
     let mut meta_stmts = Vec::new();
@@ -1603,6 +1658,7 @@ pub(super) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
             repr: None,
             body,
             language_version: super::simple::current_language_version(),
+            custom_traits: Vec::new(),
         },
     ))
 }
@@ -1740,6 +1796,7 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 repr: None,
                 body: Vec::new(),
                 language_version: super::simple::current_language_version(),
+                custom_traits: Vec::new(),
             },
         ));
     }
@@ -1760,6 +1817,7 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 body: Vec::new(),
                 is_rw: false,
                 language_version: super::simple::current_language_version(),
+                custom_traits: Vec::new(),
             },
         ));
     }
@@ -1817,6 +1875,7 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 repr: None,
                 body: Vec::new(),
                 language_version: super::simple::current_language_version(),
+                custom_traits: Vec::new(),
             },
         ));
     }

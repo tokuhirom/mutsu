@@ -40,6 +40,7 @@ fn builtin_role_def() -> RoleDef {
         attribute_conflicts: Vec::new(),
         own_attribute_names: HashSet::new(),
         deferred_body_stmts: Vec::new(),
+        deferred_custom_traits: Vec::new(),
     }
 }
 
@@ -621,13 +622,16 @@ impl Interpreter {
         name.to_string()
     }
 
+    /// Register a class declaration. Returns a list of unknown lowercase parent
+    /// names that were deferred for custom `trait_mod:<is>` dispatch (empty if
+    /// no custom traits are needed).
     pub(crate) fn register_class_decl(
         &mut self,
         name: &str,
         parents: &[String],
         modifiers: ClassDeclModifiers<'_>,
         body: &[Stmt],
-    ) -> Result<(), RuntimeError> {
+    ) -> Result<Vec<String>, RuntimeError> {
         self.clear_private_zeroarg_method_cache();
         let ClassDeclModifiers {
             class_is_rw,
@@ -715,7 +719,7 @@ impl Interpreter {
         // declaration), skip the stub registration to avoid overwriting the
         // real class definition.
         if is_stub_body && self.classes.contains_key(name) && !self.class_stubs.contains(name) {
-            return Ok(());
+            return Ok(Vec::new());
         }
 
         // Validate that all parent classes exist
@@ -788,6 +792,7 @@ impl Interpreter {
             "Metamodel::ClassHOW",
             "Perl6::Metamodel::ClassHOW",
         ];
+        let mut deferred_custom_traits: Vec<String> = Vec::new();
         for parent in parents {
             let resolved_parent_name = self.resolve_declared_type_name(parent);
             // Strip type arguments for validation (e.g., "R[Str:D(Numeric)]" -> "R")
@@ -816,6 +821,17 @@ impl Interpreter {
                         "X::InvalidType: Invalid typename '{}'",
                         resolved_parent_name
                     )));
+                }
+                // If trait_mod:<is> is defined, defer unknown lowercase parents
+                // to custom trait dispatch instead of erroring.
+                if (self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>"))
+                    && resolved_parent
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_ascii_lowercase())
+                {
+                    deferred_custom_traits.push(resolved_parent_name.to_string());
+                    continue;
                 }
                 {
                     let msg = format!(
@@ -1295,7 +1311,7 @@ impl Interpreter {
             self.classes.insert(name.to_string(), class_def);
             let mut stack = Vec::new();
             let _ = self.compute_class_mro(name, &mut stack)?;
-            return Ok(());
+            return Ok(deferred_custom_traits);
         }
         // Clear stub status now that the class has a real body.
         self.class_stubs.remove(name);
@@ -1992,7 +2008,7 @@ impl Interpreter {
             restore_previous_state(self);
             return Err(err);
         }
-        Ok(())
+        Ok(deferred_custom_traits)
     }
 
     /// Augment an existing class by adding methods (and attributes) from the body.
@@ -2372,6 +2388,7 @@ impl Interpreter {
             attribute_conflicts: Vec::new(),
             own_attribute_names: HashSet::new(),
             deferred_body_stmts: Vec::new(),
+            deferred_custom_traits: Vec::new(),
         };
         let is_parametric = !type_params.is_empty();
         let flattened_body: Vec<&Stmt> = body
@@ -2506,9 +2523,29 @@ impl Interpreter {
                             .push(role_name_str);
                         continue;
                     }
-                    let role = self.roles.get(base_role_name).cloned().ok_or_else(|| {
-                        RuntimeError::new(format!("Unknown role: {}", role_name_str))
-                    })?;
+                    let role = match self.roles.get(base_role_name).cloned() {
+                        Some(r) => r,
+                        None => {
+                            // If trait_mod:<is> is defined and this is a lowercase name,
+                            // defer to custom trait dispatch instead of erroring.
+                            if (self.has_proto("trait_mod:<is>")
+                                || self.has_multi_candidates("trait_mod:<is>"))
+                                && role_name_str
+                                    .chars()
+                                    .next()
+                                    .is_some_and(|c| c.is_ascii_lowercase())
+                            {
+                                role_def
+                                    .deferred_custom_traits
+                                    .push(role_name_str.to_string());
+                                continue;
+                            }
+                            return Err(RuntimeError::new(format!(
+                                "Unknown role: {}",
+                                role_name_str
+                            )));
+                        }
+                    };
                     if role.is_stub_role {
                         return Err(RuntimeError::typed_msg(
                             "X::Role::Parametric::NoSuchCandidate",

@@ -1000,6 +1000,7 @@ impl VM {
             repr,
             body,
             language_version,
+            custom_traits,
         } = stmt
         {
             let resolved_name = if let Some(expr) = name_expr {
@@ -1025,7 +1026,7 @@ impl VM {
             // earlier block), clear the suppression before running the class body
             // so that references to the class name inside the body can resolve.
             self.interpreter.unsuppress_name(&resolved_name);
-            self.interpreter.register_class_decl(
+            let deferred_traits = self.interpreter.register_class_decl(
                 &qualified_name,
                 parents,
                 crate::runtime::ClassDeclModifiers {
@@ -1117,6 +1118,34 @@ impl VM {
             // Store language revision metadata from the version captured at parse time
             self.interpreter
                 .store_language_revision_from_version(&qualified_name, language_version);
+
+            // Dispatch custom `is` traits via trait_mod:<is> if defined.
+            // Merge explicitly parsed custom_traits with deferred_traits
+            // (unknown lowercase parents deferred from register_class_decl).
+            let has_trait_mod = self.interpreter.has_proto("trait_mod:<is>")
+                || self.interpreter.has_multi_candidates("trait_mod:<is>");
+            if has_trait_mod && (!custom_traits.is_empty() || !deferred_traits.is_empty()) {
+                let type_obj = Value::Package(Symbol::intern(&qualified_name));
+                // Dispatch explicitly parsed custom traits (with args)
+                for (trait_name, trait_arg) in custom_traits {
+                    let trait_value = if let Some(arg_expr) = trait_arg {
+                        self.interpreter
+                            .eval_block_value(&[Stmt::Expr(arg_expr.clone())])?
+                    } else {
+                        Value::Bool(true)
+                    };
+                    let named_arg = Value::Pair(trait_name.clone(), Box::new(trait_value));
+                    self.interpreter
+                        .call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
+                }
+                // Dispatch deferred unknown parents as custom traits (no args)
+                for trait_name in &deferred_traits {
+                    let named_arg = Value::Pair(trait_name.clone(), Box::new(Value::Bool(true)));
+                    self.interpreter
+                        .call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
+                }
+            }
+
             self.env_dirty = true;
             Ok(())
         } else {
@@ -1165,6 +1194,7 @@ impl VM {
             body,
             is_rw,
             language_version,
+            custom_traits,
         } = stmt
         {
             let name_str = name.resolve();
@@ -1256,6 +1286,38 @@ impl VM {
                     self.interpreter.run_block_raw(std::slice::from_ref(stmt))?;
                 }
             }
+
+            // Gather deferred custom traits from role registration
+            let role_deferred = self
+                .interpreter
+                .get_role_def(&qualified_name)
+                .map(|r| r.deferred_custom_traits.clone())
+                .unwrap_or_default();
+
+            // Dispatch custom `is` traits via trait_mod:<is> if defined
+            let has_trait_mod = self.interpreter.has_proto("trait_mod:<is>")
+                || self.interpreter.has_multi_candidates("trait_mod:<is>");
+            if has_trait_mod && (!custom_traits.is_empty() || !role_deferred.is_empty()) {
+                let type_obj = Value::Package(Symbol::intern(&qualified_name));
+                for (trait_name, trait_arg) in custom_traits {
+                    let trait_value = if let Some(arg_expr) = trait_arg {
+                        self.interpreter
+                            .eval_block_value(&[Stmt::Expr(arg_expr.clone())])?
+                    } else {
+                        Value::Bool(true)
+                    };
+                    let named_arg = Value::Pair(trait_name.clone(), Box::new(trait_value));
+                    self.interpreter
+                        .call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
+                }
+                // Dispatch deferred unknown parents as custom traits (no args)
+                for trait_name in &role_deferred {
+                    let named_arg = Value::Pair(trait_name.clone(), Box::new(Value::Bool(true)));
+                    self.interpreter
+                        .call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
+                }
+            }
+
             Ok(())
         } else {
             Err(RuntimeError::new("RegisterRole expects RoleDecl"))

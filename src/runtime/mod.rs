@@ -300,6 +300,8 @@ pub(crate) struct RoleDef {
     /// These are non-method/non-attribute statements that may reference type parameters
     /// and must be re-executed for each class composition with concrete type bindings.
     pub(crate) deferred_body_stmts: Vec<Stmt>,
+    /// Unknown lowercase trait names deferred for custom `trait_mod:<is>` dispatch.
+    pub(crate) deferred_custom_traits: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -816,6 +818,8 @@ pub struct Interpreter {
     pub(crate) package_stubs: HashSet<String>,
     hidden_defer_parents: HashMap<String, HashSet<String>>,
     class_trusts: HashMap<String, HashSet<String>>,
+    /// Persistent HOW meta-objects per class/role, used for `$c.HOW does Role` persistence
+    pub(crate) class_how_values: HashMap<String, Value>,
     class_composed_roles: HashMap<String, Vec<String>>, // class -> roles composed via `does`
     class_enum_roles: HashMap<String, Vec<String>>,     // class -> enums composed via `does`
     roles: HashMap<String, RoleDef>,
@@ -2667,6 +2671,7 @@ impl Interpreter {
             package_stubs: HashSet::new(),
             hidden_defer_parents: HashMap::new(),
             class_trusts: HashMap::new(),
+            class_how_values: HashMap::new(),
             class_composed_roles: {
                 let mut ccr = HashMap::new();
                 ccr.insert(
@@ -2719,6 +2724,7 @@ impl Interpreter {
                         attribute_conflicts: Vec::new(),
                         own_attribute_names: std::collections::HashSet::new(),
                         deferred_body_stmts: Vec::new(),
+                        deferred_custom_traits: Vec::new(),
                     },
                 );
                 roles.insert(
@@ -2735,6 +2741,7 @@ impl Interpreter {
                         attribute_conflicts: Vec::new(),
                         own_attribute_names: std::collections::HashSet::new(),
                         deferred_body_stmts: Vec::new(),
+                        deferred_custom_traits: Vec::new(),
                     },
                 );
                 roles.insert(
@@ -2751,6 +2758,7 @@ impl Interpreter {
                         attribute_conflicts: Vec::new(),
                         own_attribute_names: std::collections::HashSet::new(),
                         deferred_body_stmts: Vec::new(),
+                        deferred_custom_traits: Vec::new(),
                     },
                 );
                 roles.insert(
@@ -2767,6 +2775,7 @@ impl Interpreter {
                         attribute_conflicts: Vec::new(),
                         own_attribute_names: std::collections::HashSet::new(),
                         deferred_body_stmts: Vec::new(),
+                        deferred_custom_traits: Vec::new(),
                     },
                 );
                 roles.insert(
@@ -2783,6 +2792,7 @@ impl Interpreter {
                         attribute_conflicts: Vec::new(),
                         own_attribute_names: std::collections::HashSet::new(),
                         deferred_body_stmts: Vec::new(),
+                        deferred_custom_traits: Vec::new(),
                     },
                 );
                 // CompUnit::Repository role with required stub methods
@@ -2826,6 +2836,7 @@ impl Interpreter {
                             attribute_conflicts: Vec::new(),
                             own_attribute_names: std::collections::HashSet::new(),
                             deferred_body_stmts: Vec::new(),
+                            deferred_custom_traits: Vec::new(),
                         },
                     );
                 }
@@ -4618,6 +4629,7 @@ impl Interpreter {
             package_stubs: self.package_stubs.clone(),
             hidden_defer_parents: self.hidden_defer_parents.clone(),
             class_trusts: self.class_trusts.clone(),
+            class_how_values: self.class_how_values.clone(),
             class_composed_roles: self.class_composed_roles.clone(),
             class_enum_roles: self.class_enum_roles.clone(),
             roles: self.roles.clone(),
