@@ -134,6 +134,20 @@ impl Interpreter {
 
     pub(crate) fn test_fn_plan(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if let Some(reason) = Self::named_value(args, "skip-all") {
+            // In Raku, `plan skip-all` inside a subtest uses `return` to exit the
+            // callable. `return` only works in a Sub or Method, not a Block.
+            // If we're inside a subtest with a Block callable, die with an error.
+            if self.subtest_depth > 0
+                && let Some(&false) = self.subtest_callable_is_sub.last()
+            {
+                let msg = "Must give `subtest` a (Sub) or a (Method) to be able to use \
+                           `skip-all` plan inside, but you gave a (Block)";
+                self.stderr_output.push_str(msg);
+                self.stderr_output.push('\n');
+                self.exit_code = 1;
+                self.halted = true;
+                return Err(RuntimeError::new(msg));
+            }
             self.test_state.get_or_insert_with(TestState::new).planned = Some(0);
             let reason_str = reason.to_string_value();
             if reason_str.is_empty() || reason_str == "True" {

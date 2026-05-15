@@ -753,6 +753,9 @@ pub struct Interpreter {
     warn_suppression_depth: usize,
     test_state: Option<TestState>,
     subtest_depth: usize,
+    /// Stack tracking whether each nested subtest callable is a Sub (true) or Block (false).
+    /// Used by `plan skip-all` to reject Block callables.
+    subtest_callable_is_sub: Vec<bool>,
     halted: bool,
     exit_code: i64,
     /// When true, `exit` sets the `halted` flag instead of calling
@@ -2622,6 +2625,7 @@ impl Interpreter {
             warn_suppression_depth: 0,
             test_state: None,
             subtest_depth: 0,
+            subtest_callable_is_sub: Vec::new(),
             halted: false,
             exit_code: 0,
             nested_mode: false,
@@ -4572,6 +4576,7 @@ impl Interpreter {
                 }
             },
             subtest_depth: 0,
+            subtest_callable_is_sub: Vec::new(),
             halted: false,
             exit_code: 0,
             nested_mode: self.nested_mode,

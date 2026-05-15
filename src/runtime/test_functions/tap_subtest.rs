@@ -30,7 +30,18 @@ impl Interpreter {
                 .unwrap_or(Value::Nil);
             (label, block)
         };
+        // Detect whether the callable is a Sub/Method (supports `return`) or a Block.
+        // `plan skip-all` inside a subtest uses `return`, which only works for Subs.
+        let callable_is_sub = match &block {
+            Value::Sub(data) => !data.is_bare_block,
+            Value::Routine { .. } => true,
+            _ => false,
+        };
         let ctx = self.begin_subtest();
+        // Override the default (true) set by begin_subtest
+        if let Some(last) = self.subtest_callable_is_sub.last_mut() {
+            *last = callable_is_sub;
+        }
         let saved_env = self.env.clone();
         let saved_functions = self.functions.clone();
         let saved_proto_functions = self.proto_functions.clone();
@@ -44,6 +55,31 @@ impl Interpreter {
         let saved_type_metadata = self.type_metadata.clone();
         let saved_var_type_constraints = self.snapshot_var_type_constraints();
         let run_result = self.call_sub_value(block, vec![], true);
+        // If `plan skip-all` was used inside a Block callable, the error is fatal
+        // and should propagate out of the subtest entirely (matching Raku behavior).
+        if let Err(ref e) = run_result
+            && e.message.starts_with("Must give `subtest`")
+        {
+            // Restore state before propagating
+            self.test_state = ctx.parent_test_state;
+            self.output = ctx.parent_output;
+            self.halted = ctx.parent_halted;
+            self.subtest_depth = self.subtest_depth.saturating_sub(1);
+            self.subtest_callable_is_sub.pop();
+            self.env = saved_env;
+            self.functions = saved_functions;
+            self.proto_functions = saved_proto_functions;
+            self.token_defs = saved_token_defs;
+            self.proto_subs = saved_proto_subs;
+            self.proto_tokens = saved_proto_tokens;
+            self.classes = saved_classes;
+            self.class_trusts = saved_class_trusts;
+            self.roles = saved_roles;
+            self.subsets = saved_subsets;
+            self.type_metadata = saved_type_metadata;
+            self.restore_var_type_constraints(saved_var_type_constraints);
+            return Err(run_result.unwrap_err());
+        }
         let mut merged_env = saved_env.clone();
         for (k, v) in &self.env {
             if k == "_" || k == "$_" {

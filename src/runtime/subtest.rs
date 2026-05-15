@@ -55,6 +55,8 @@ impl Interpreter {
         self.test_state = Some(TestState::new());
         self.halted = false;
         self.subtest_depth += 1;
+        // Default to true (Sub); callers like test_fn_subtest override after.
+        self.subtest_callable_is_sub.push(true);
         SubtestContext {
             parent_test_state,
             parent_output,
@@ -78,6 +80,7 @@ impl Interpreter {
         self.output = ctx.parent_output;
         self.halted = ctx.parent_halted;
         self.subtest_depth = self.subtest_depth.saturating_sub(1);
+        self.subtest_callable_is_sub.pop();
         let parent_forced_todo_reason = self.test_state.as_ref().and_then(|state| {
             let next = state.ran + 1;
             state
