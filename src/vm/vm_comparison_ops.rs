@@ -481,8 +481,8 @@ impl VM {
         left_name_idx: u32,
         right_name_idx: u32,
     ) {
-        let _right = self.stack.pop().unwrap();
-        let _left = self.stack.pop().unwrap();
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
         let left_name = Self::const_str(code, left_name_idx);
         let right_name = Self::const_str(code, right_name_idx);
 
@@ -492,7 +492,23 @@ impl VM {
         let left_root = self.resolve_alias_root(left_name);
         let right_root = self.resolve_alias_root(right_name);
 
-        let result = left_root == right_root;
+        let result = if left_root == right_root {
+            // Same binding root → same container.
+            true
+        } else {
+            // Different binding roots. For most types, this means different
+            // containers → False. But singleton/unboxed types like Package
+            // (type objects) and Sub have no container semantics — two
+            // variables holding the same Package are considered =:=.
+            // Instance values (user objects) are NOT singletons: assignment
+            // copies the reference but creates a new container, so =:= is False.
+            match (&left, &right) {
+                (Value::Package(a), Value::Package(b)) => a == b,
+                (Value::Sub(a), Value::Sub(b)) => std::sync::Arc::ptr_eq(a, b),
+                (Value::WeakSub(a), Value::WeakSub(b)) => a.ptr_eq(b),
+                _ => false,
+            }
+        };
         self.stack.push(Value::Bool(result));
     }
 
