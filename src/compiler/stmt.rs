@@ -400,7 +400,11 @@ impl Compiler {
                         if let Stmt::SubDecl { .. } = s {
                             let mut hoisted = s.clone();
                             if let Stmt::SubDecl { custom_traits, .. } = &mut hoisted {
-                                custom_traits.retain(|(t, _)| t.starts_with("__"));
+                                custom_traits.retain(|(t, _)| {
+                                    t.starts_with("__")
+                                        || t == "default"
+                                        || t.starts_with("DEPRECATED")
+                                });
                             }
                             self.compile_stmt(&hoisted);
                         }

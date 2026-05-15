@@ -162,10 +162,13 @@ impl Compiler {
                     {
                         custom_traits.push(("__lexical_hoist".to_string(), None));
                     }
-                    // Strip non-internal custom traits during hoisting.
+                    // Strip user-defined custom traits during hoisting.
                     // Traits like `is description(...)` require types/roles to be
                     // registered first; they will be applied during the normal pass.
-                    custom_traits.retain(|(t, _)| t.starts_with("__"));
+                    // Keep internal (__) and well-known traits (default, DEPRECATED).
+                    custom_traits.retain(|(t, _)| {
+                        t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED")
+                    });
                 }
                 let idx = self.code.add_stmt(hoisted);
                 self.code.emit(OpCode::RegisterSub(idx));
