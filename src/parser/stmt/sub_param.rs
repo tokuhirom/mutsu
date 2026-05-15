@@ -877,6 +877,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         } else if r2.starts_with(')')
             || r2.starts_with(',')
             || r2.starts_with(']')
+            || r2.starts_with('{')
             || r2.starts_with("-->")
         {
             // True/False in signature position are literal Bool values, not type names.
@@ -885,6 +886,11 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             // a Bool type constraint. Smartmatch against False always fails, so
             // sub f(False) would reject all calls (equivalent to an impossible constraint).
             if tc == "True" || tc == "False" {
+                super::super::add_parse_warning(format!(
+                    "Potential difficulties:\n    Literal values in signatures are smartmatched against and smartmatch with `{}` will always {}. Use the `where` clause instead.",
+                    tc,
+                    if tc == "True" { "succeed" } else { "fail" }
+                ));
                 let mut p = make_param("__type_only__".to_string());
                 p.type_constraint = Some("Bool".to_string());
                 p.named = named;
@@ -971,6 +977,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             || after_lit.starts_with(',')
             || after_lit.starts_with(';')
             || after_lit.starts_with(']')
+            || after_lit.starts_with('{')
             || after_lit.starts_with("-->"))
     {
         let mut p = make_param("__literal__".to_string());

@@ -411,6 +411,25 @@ impl Interpreter {
                     }
                     return false;
                 }
+                "Callable" | "Code" | "Sub" | "Routine" | "Block" | "Method" => {
+                    // Callable[ReturnType] — check if value is callable and has a matching return type
+                    if value.as_sub().is_some()
+                        || matches!(
+                            value,
+                            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                        )
+                    {
+                        let return_type = self
+                            .callable_return_type(value)
+                            .unwrap_or_else(|| "Mu".to_string());
+                        return Self::type_matches(&return_type, inner)
+                            || self.type_matches_value(
+                                inner,
+                                &Value::Package(Symbol::intern(&return_type)),
+                            );
+                    }
+                    return false;
+                }
                 "Buf" | "Blob" => {
                     if let Value::Instance {
                         class_name,

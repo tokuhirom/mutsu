@@ -1120,6 +1120,42 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         {
             type_constraint = Some(tc);
             r2
+        } else if r2.starts_with('{') || r2.starts_with(',') || r2.starts_with("-->") {
+            // Type-only parameter in pointy block (e.g., `-> True { }`, `-> Int { }`)
+            let tc_for_bool = if tc == "True" || tc == "False" {
+                super::super::add_parse_warning(format!(
+                    "Potential difficulties:\n    Literal values in signatures are smartmatched against and smartmatch with `{}` will always {}. Use the `where` clause instead.",
+                    tc,
+                    if tc == "True" { "succeed" } else { "fail" }
+                ));
+                "Bool".to_string()
+            } else {
+                tc.clone()
+            };
+            return Ok((
+                r2,
+                ParamDef {
+                    name: "__type_only__".to_string(),
+                    default: None,
+                    multi_invocant: true,
+                    required: false,
+                    named: false,
+                    slurpy: false,
+                    double_slurpy: false,
+                    onearg: false,
+                    sigilless: false,
+                    type_constraint: Some(tc_for_bool),
+                    literal_value: None,
+                    sub_signature: None,
+                    outer_sub_signature: None,
+                    code_signature: None,
+                    where_constraint: None,
+                    traits: Vec::new(),
+                    optional_marker: false,
+                    is_invocant: false,
+                    shape_constraints: None,
+                },
+            ));
         } else {
             rest
         }

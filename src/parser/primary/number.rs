@@ -241,6 +241,10 @@ pub(super) fn integer(input: &str) -> PResult<'_, Expr> {
         if r.starts_with('+') || r.starts_with('-') {
             exp_part.push_str(&r[..1]);
             r = &r[1..];
+        } else if r.starts_with('\u{2212}') {
+            // U+2212 MINUS SIGN — normalize to ASCII minus
+            exp_part.push('-');
+            r = &r['\u{2212}'.len_utf8()..];
         }
         // An underscore immediately after `e`/`E` (or its sign) is a hard
         // syntax error per Raku spec — emit X::Syntax::Confused.
@@ -296,6 +300,9 @@ pub(super) fn decimal(input: &str) -> PResult<'_, Expr> {
         if r.starts_with('+') || r.starts_with('-') {
             exp.push_str(&r[..1]);
             r = &r[1..];
+        } else if r.starts_with('\u{2212}') {
+            exp.push('-');
+            r = &r['\u{2212}'.len_utf8()..];
         }
         if let Some((r2, exp_digits)) = scan_decimal_digits(r) {
             exp.push_str(&exp_digits);
@@ -379,6 +386,9 @@ pub(super) fn dot_decimal(input: &str) -> PResult<'_, Expr> {
         if r.starts_with('+') || r.starts_with('-') {
             exp.push_str(&r[..1]);
             r = &r[1..];
+        } else if r.starts_with('\u{2212}') {
+            exp.push('-');
+            r = &r['\u{2212}'.len_utf8()..];
         }
         if let Some((r2, exp_digits)) = scan_decimal_digits(r) {
             exp.push_str(&exp_digits);
