@@ -2347,7 +2347,16 @@ impl Interpreter {
                         Err(e) => return Err(e),
                     }
                 }
-                let arr_kind = if kind.is_real_array() {
+                let mut use_real_array = kind.is_real_array();
+                // If the source array has a type constraint (e.g. `my Str @a`)
+                // and the mapped values don't conform, downgrade to a List.
+                if use_real_array && let Some(info) = self.container_type_metadata(target) {
+                    let vt = &info.value_type;
+                    if !vt.is_empty() && result.iter().any(|v| !v.isa_check(vt)) {
+                        use_real_array = false;
+                    }
+                }
+                let arr_kind = if use_real_array {
                     if itemize_result {
                         crate::value::ArrayKind::ItemArray
                     } else {
