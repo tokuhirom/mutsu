@@ -328,9 +328,16 @@ impl Interpreter {
                     | "close"
                     | "split"
                     | "print"
+                    | "say"
+                    | "put"
+                    | "flush"
+                    | "write"
                     | "get"
                     | "lines"
                     | "eof"
+                    | "proc"
+                    | "IO"
+                    | "path"
             )
         {
             return true;

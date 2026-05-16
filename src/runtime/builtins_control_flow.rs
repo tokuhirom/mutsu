@@ -253,6 +253,15 @@ impl Interpreter {
     pub(super) fn builtin_exit(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let code = match args.first() {
             Some(Value::Int(i)) => *i,
+            Some(Value::Bool(b)) => {
+                if *b {
+                    1
+                } else {
+                    0
+                }
+            }
+            Some(Value::Num(f)) => *f as i64,
+            Some(other) => other.to_f64() as i64,
             _ => 0,
         };
         self.halted = true;
