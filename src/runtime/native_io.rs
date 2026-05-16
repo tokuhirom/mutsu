@@ -2737,6 +2737,83 @@ impl Interpreter {
                     }
                     return Ok(Value::Bool(true));
                 }
+                "say" => {
+                    // Write to the child's stdin with a trailing newline
+                    if let Ok(map) = super::native_methods::proc_stdin_map().lock()
+                        && let Some(stdin_arc) = map.get(&pid_u32)
+                        && let Ok(mut guard) = stdin_arc.lock()
+                        && let Some(ref mut stdin) = *guard
+                    {
+                        use std::io::Write;
+                        for arg in args {
+                            let s = arg.to_string_value();
+                            let _ = stdin.write_all(s.as_bytes());
+                        }
+                        let _ = stdin.write_all(b"\n");
+                        let _ = stdin.flush();
+                    }
+                    return Ok(Value::Bool(true));
+                }
+                "put" => {
+                    // Same as say for IO handles
+                    if let Ok(map) = super::native_methods::proc_stdin_map().lock()
+                        && let Some(stdin_arc) = map.get(&pid_u32)
+                        && let Ok(mut guard) = stdin_arc.lock()
+                        && let Some(ref mut stdin) = *guard
+                    {
+                        use std::io::Write;
+                        for arg in args {
+                            let s = arg.to_string_value();
+                            let _ = stdin.write_all(s.as_bytes());
+                        }
+                        let _ = stdin.write_all(b"\n");
+                        let _ = stdin.flush();
+                    }
+                    return Ok(Value::Bool(true));
+                }
+                "flush" => {
+                    if let Ok(map) = super::native_methods::proc_stdin_map().lock()
+                        && let Some(stdin_arc) = map.get(&pid_u32)
+                        && let Ok(mut guard) = stdin_arc.lock()
+                        && let Some(ref mut stdin) = *guard
+                    {
+                        use std::io::Write;
+                        let _ = stdin.flush();
+                    }
+                    return Ok(Value::Bool(true));
+                }
+                "write" => {
+                    // Write binary data (Buf/Blob) to stdin
+                    if let Ok(map) = super::native_methods::proc_stdin_map().lock()
+                        && let Some(stdin_arc) = map.get(&pid_u32)
+                        && let Ok(mut guard) = stdin_arc.lock()
+                        && let Some(ref mut stdin) = *guard
+                    {
+                        use std::io::Write;
+                        for arg in args {
+                            match arg {
+                                Value::Instance {
+                                    class_name,
+                                    attributes,
+                                    ..
+                                } if class_name.resolve() == "Buf"
+                                    || class_name.resolve() == "Blob" =>
+                                {
+                                    if let Some(Value::Array(bytes, _)) = attributes.get("data") {
+                                        let data: Vec<u8> =
+                                            bytes.iter().map(|v| v.to_f64() as u8).collect();
+                                        let _ = stdin.write_all(&data);
+                                    }
+                                }
+                                _ => {
+                                    let s = arg.to_string_value();
+                                    let _ = stdin.write_all(s.as_bytes());
+                                }
+                            }
+                        }
+                    }
+                    return Ok(Value::Bool(true));
+                }
                 "close" => {
                     // Close the child's stdin (drop it)
                     if let Ok(map) = super::native_methods::proc_stdin_map().lock()
@@ -2831,8 +2908,28 @@ impl Interpreter {
                 {
                     state.closed = true;
                 }
-                // TODO: should return the parent Proc object for identity
+                // Return the parent Proc object so that `$pipe.close === $proc`
+                if let Some(id) = pipe_id
+                    && let Ok(map) = super::builtins_system::pipe_proc_map().lock()
+                    && let Some(proc_val) = map.get(&id)
+                {
+                    return Ok(proc_val.clone());
+                }
                 Ok(Value::Bool(true))
+            }
+            "proc" => {
+                // Return the parent Proc object
+                if let Some(id) = pipe_id
+                    && let Ok(map) = super::builtins_system::pipe_proc_map().lock()
+                    && let Some(proc_val) = map.get(&id)
+                {
+                    return Ok(proc_val.clone());
+                }
+                Ok(Value::Nil)
+            }
+            "IO" | "path" => {
+                // Returns the IO::Path type object (not an instance)
+                Ok(Value::Package(crate::symbol::Symbol::intern("IO::Path")))
             }
             "split" => {
                 // Basic split for IO::Pipe

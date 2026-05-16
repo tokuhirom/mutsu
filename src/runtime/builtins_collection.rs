@@ -1220,7 +1220,7 @@ impl Interpreter {
         Ok(Value::slip(items))
     }
 
-    pub(super) fn builtin_reverse(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_reverse(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // If multiple args, reverse the list of args
         if args.len() > 1 {
             let mut items: Vec<Value> = args.to_vec();
@@ -1232,6 +1232,20 @@ impl Interpreter {
             Some(Value::Array(mut items, ..)) => {
                 Arc::make_mut(&mut items).reverse();
                 Value::Array(items, ArrayKind::List)
+            }
+            Some(Value::LazyIoLines { ref handle, .. }) => {
+                // Materialize all lines from the lazy IO source, then reverse
+                let mut lines = Vec::new();
+                while let Some(line) = self.read_line_from_handle_value(handle)? {
+                    lines.push(Value::str(line));
+                }
+                lines.reverse();
+                Value::Array(Arc::new(lines), ArrayKind::List)
+            }
+            Some(Value::Seq(items)) => {
+                let mut v = items.to_vec();
+                v.reverse();
+                Value::Array(Arc::new(v), ArrayKind::List)
             }
             Some(Value::Str(s)) => {
                 // reverse() on a string in list context returns the string as-is

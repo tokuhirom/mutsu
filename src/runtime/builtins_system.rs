@@ -48,6 +48,15 @@ pub(crate) fn io_pipe_state_map() -> &'static IoPipeStateMap {
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
+/// Maps pipe-id to the parent Proc instance so that IO::Pipe.close and
+/// IO::Pipe.proc can return the owning Proc.
+type PipeProcMap = std::sync::Mutex<HashMap<i64, Value>>;
+
+pub(crate) fn pipe_proc_map() -> &'static PipeProcMap {
+    static MAP: OnceLock<PipeProcMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
 /// Options extracted from named arguments for run/shell.
 struct ProcOptions {
     cwd: Option<String>,
@@ -598,13 +607,39 @@ impl Interpreter {
         attrs.insert("signal".to_string(), Value::Int(signal));
         attrs.insert("pid".to_string(), Value::Int(pid));
         attrs.insert("command".to_string(), command);
+        let mut pipe_ids = Vec::new();
         if let Some(err_content) = captured_err {
-            attrs.insert("err".to_string(), Self::make_io_pipe(err_content));
+            let pipe = Self::make_io_pipe(err_content);
+            if let Value::Instance {
+                attributes: ref a, ..
+            } = pipe
+                && let Some(Value::Int(id)) = a.get("pipe-id")
+            {
+                pipe_ids.push(*id);
+            }
+            attrs.insert("err".to_string(), pipe);
         }
         if let Some(out_content) = captured_out {
-            attrs.insert("out".to_string(), Self::make_io_pipe(out_content));
+            let pipe = Self::make_io_pipe(out_content);
+            if let Value::Instance {
+                attributes: ref a, ..
+            } = pipe
+                && let Some(Value::Int(id)) = a.get("pipe-id")
+            {
+                pipe_ids.push(*id);
+            }
+            attrs.insert("out".to_string(), pipe);
         }
-        Value::make_instance(Symbol::intern("Proc"), attrs)
+        let proc_val = Value::make_instance(Symbol::intern("Proc"), attrs);
+        // Register pipe-id -> Proc mapping so IO::Pipe.close/.proc can return the Proc
+        if !pipe_ids.is_empty()
+            && let Ok(mut map) = pipe_proc_map().lock()
+        {
+            for id in pipe_ids {
+                map.insert(id, proc_val.clone());
+            }
+        }
+        proc_val
     }
 
     /// Create an IO::Pipe instance wrapping captured content. Allocates

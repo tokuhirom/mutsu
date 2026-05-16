@@ -727,6 +727,10 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             _ => Some(Ok(Value::Int(1))),
         },
         "reverse" => {
+            // LazyIoLines needs the interpreter to materialize — fall through
+            if matches!(arg, Value::LazyIoLines { .. }) {
+                return None;
+            }
             if let Some(shape) = crate::runtime::utils::shaped_array_shape(arg) {
                 if shape.len() > 1 {
                     return Some(Err(RuntimeError::illegal_on_fixed_dimension_array(
