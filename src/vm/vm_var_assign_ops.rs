@@ -2680,6 +2680,15 @@ impl VM {
         Ok(())
     }
 
+    /// Like `exec_get_local_op` but does NOT resolve DeferredHashAccess/HashSlotRef.
+    /// Pushes the raw local value, preserving container references for `=:=` checks.
+    pub(super) fn exec_get_local_raw_op(&mut self, code: &CompiledCode, idx: u32) {
+        self.ensure_locals_synced(code);
+        let idx = idx as usize;
+        let val = self.locals[idx].clone();
+        self.stack.push(val);
+    }
+
     pub(super) fn exec_get_local_op(
         &mut self,
         code: &CompiledCode,

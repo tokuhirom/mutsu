@@ -1490,6 +1490,10 @@ impl VM {
                 self.exec_container_eq_indexed_op(code, *left_name_idx, *right_name_idx);
                 *ip += 1;
             }
+            OpCode::ContainerEqRaw => {
+                self.exec_container_eq_raw_op();
+                *ip += 1;
+            }
 
             // -- String comparison --
             OpCode::StrEq => {
@@ -3257,6 +3261,10 @@ impl VM {
             // -- Local variables --
             OpCode::GetLocal(idx) => {
                 self.exec_get_local_op(code, *idx)?;
+                *ip += 1;
+            }
+            OpCode::GetLocalRaw(idx) => {
+                self.exec_get_local_raw_op(code, *idx);
                 *ip += 1;
             }
             OpCode::SetLocal(idx) => {

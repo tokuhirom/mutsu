@@ -255,6 +255,16 @@ impl Compiler {
         }
     }
 
+    /// If `expr` is a Var with a known local slot, return the slot index.
+    /// Used by `=:=` to emit GetLocalRaw for container identity checks.
+    pub(super) fn container_eq_var_slot(&self, expr: &Expr) -> Option<u32> {
+        if let Expr::Var(name) = expr {
+            self.local_map.get(name.as_str()).copied()
+        } else {
+            None
+        }
+    }
+
     pub(super) fn expr_is_fresh_container(expr: &Expr) -> bool {
         match expr {
             // Indexing into an array/hash element produces a value that

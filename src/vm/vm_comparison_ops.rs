@@ -565,6 +565,59 @@ impl VM {
         self.stack.push(Value::Bool(result));
     }
 
+    /// Container identity (`=:=`) using raw container values.
+    /// Compares DeferredHashAccess and HashSlotRef values to check if they
+    /// reference the same hash slot.
+    pub(super) fn exec_container_eq_raw_op(&mut self) {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let result =
+            Self::containers_same_slot(&left, &right) || Self::containers_same_slot(&right, &left);
+        self.stack.push(Value::Bool(result));
+    }
+
+    /// Check if two raw container values (DeferredHashAccess / HashSlotRef)
+    /// point to the same hash slot.
+    fn containers_same_slot(a: &Value, b: &Value) -> bool {
+        // Extract (arc, key) from each side
+        let a_ref = Self::extract_hash_ref(a);
+        let b_ref = Self::extract_hash_ref(b);
+        if let (Some((a_arc, a_key)), Some((b_arc, b_key))) = (a_ref, b_ref) {
+            Arc::ptr_eq(a_arc, b_arc) && a_key == b_key
+        } else {
+            // Both are the same value identity (for non-hash-ref cases)
+            crate::runtime::values_identical(a, b)
+        }
+    }
+
+    /// Extract the (hash Arc, key) from a HashSlotRef or DeferredHashAccess.
+    /// For DeferredHashAccess, resolves the parent_slot to find the inner hash.
+    fn extract_hash_ref(val: &Value) -> Option<(&Arc<HashMap<String, Value>>, &str)> {
+        match val {
+            Value::HashSlotRef { hash, key } => Some((hash, key.as_str())),
+            Value::DeferredHashAccess { parent_slot, key } => {
+                // The parent_slot is a HashSlotRef. Read its value to get the inner hash.
+                // But we need the Arc, not the resolved value. So we need to look
+                // at the hash pointed to by parent_slot, read its entry, and if that
+                // entry is a Hash, get its Arc.
+                if let Value::HashSlotRef {
+                    hash: parent_hash,
+                    key: parent_key,
+                } = parent_slot.as_ref()
+                {
+                    // Read the value at parent_key in parent_hash
+                    let ptr = Arc::as_ptr(parent_hash);
+                    let inner_val = unsafe { (*ptr).get(parent_key.as_str()) };
+                    if let Some(Value::Hash(inner_arc)) = inner_val {
+                        return Some((inner_arc, key.as_str()));
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
     /// For an encoded source like "@b\0idx\01", look up the raw array element
     /// and if it has a BOUND_ARRAY_REF_SENTINEL, return the bound source name.
     fn get_binding_source_of_indexed(&self, encoded: &str) -> Option<String> {
