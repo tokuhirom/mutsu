@@ -542,10 +542,10 @@ impl Interpreter {
                 // In Raku, enumerated char classes like <[Dd]> match whole graphemes.
                 // If the grapheme has combining marks, exact Char/Range items should
                 // NOT match (e.g., "D + combining marks" is not the same as "D").
+                // However, negated classes should still match (the grapheme is clearly
+                // NOT one of the excluded characters).
                 let ge = grapheme_end(chars, pos);
-                if ge > pos + 1 && class_has_only_exact_chars(class) {
-                    // Grapheme has combining marks and class only has exact chars;
-                    // no match.
+                if ge > pos + 1 && !class.negated && class_has_only_exact_chars(class) {
                     false
                 } else {
                     self.regex_match_class_ignorecase(class, c, ignore_case)

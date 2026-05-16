@@ -70,6 +70,28 @@ impl Interpreter {
         start: usize,
         pkg: &str,
     ) -> Vec<(usize, RegexCaptures)> {
+        // When :m (ignoremark) is set on the pattern, strip combining marks
+        // from both text and pattern, match on the stripped versions, then
+        // map positions back to the original text.
+        if pattern.ignore_mark {
+            use super::regex_helpers::{map_pos, strip_marks_pattern, strip_marks_text};
+            let text_slice = &chars[start..];
+            let (stripped_chars, pos_map) = strip_marks_text(text_slice);
+            let stripped_pattern = strip_marks_pattern(pattern);
+            let mut results =
+                self.regex_match_ends_from_caps_in_pkg(&stripped_pattern, &stripped_chars, 0, pkg);
+            let orig_len = text_slice.len();
+            for (end, caps) in &mut results {
+                *end = map_pos(*end, &pos_map, orig_len) + start;
+                if let Some(cs) = caps.capture_start.as_mut() {
+                    *cs = map_pos(*cs, &pos_map, orig_len) + start;
+                }
+                if let Some(ce) = caps.capture_end.as_mut() {
+                    *ce = map_pos(*ce, &pos_map, orig_len) + start;
+                }
+            }
+            return results;
+        }
         let apply_named_capture =
             |token: &RegexToken, from: usize, to: usize, caps: RegexCaptures| -> RegexCaptures {
                 let Some(name) = token.named_capture.as_ref() else {

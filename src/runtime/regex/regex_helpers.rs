@@ -92,7 +92,7 @@ pub(super) fn strip_marks_pattern(pattern: &RegexPattern) -> RegexPattern {
         anchor_start: pattern.anchor_start,
         anchor_end: pattern.anchor_end,
         ignore_case: pattern.ignore_case,
-        ignore_mark: pattern.ignore_mark,
+        ignore_mark: false,
     }
 }
 
